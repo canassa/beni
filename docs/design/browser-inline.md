@@ -1289,6 +1289,18 @@ route table is hoisted before the module's declarations, so it is defined when t
 an array as its widgets, or with an extra key behaves as it does with the literal shape; the
 expected transcript was made with the compiler before this change).
 
+*Amended 2026-10-24 (#936, E2): a root's handler that one event sends is written in its listener.*
+A moved key's handler — the root factory's own — that exactly one event of the root sends, with
+the fields that event gives (its payload, or none), is no longer a named function the listener
+calls: the listener is the handler. A payload event's listener reads the payload first, through
+the event's extractor, binds it as the key's one field, then runs the arm and its write pass —
+`a=>{let c=t(a);b.a=c;p(d[0])}` in place of `let f=a=>{b.a=a;p(d[0])};m(a[0],a=>{f(t(a))},"input")`.
+The payload is read exactly where the call read it, before anything the arm does, and the listener
+is still handed to `on`, so the arm runs inside the dispatch guard as before. A key two events send
+keeps one named handler both listeners call, and a handler the program hands in is untouched
+(`emit/release/inline/WidgetListeners`, `browser/inline/WidgetListeners`). When the arm reads the
+payload once, folding the binding into its use is the release optimiser's (`backend.md` §9 item 1).
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host

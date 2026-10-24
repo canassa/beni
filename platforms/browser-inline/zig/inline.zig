@@ -269,7 +269,10 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     var controls: std.ArrayList(std.ArrayList(m.Program.BucketRef)) = .empty;
     var locals: std.ArrayList(Local) = .empty;
     const names = try cx.arena.alloc(m.Name, pg.events.items.len);
-    for (pg.events.items, names) |ev, *name| {
+    // Each event's moved key's handler, null for one the program hands.
+    const local_of = try cx.arena.alloc(?usize, pg.events.items.len);
+    @memset(local_of, null);
+    for (pg.events.items, names, local_of) |ev, *name, *local| {
         const v = switch (ev.item.value.kind) {
             .dynamic => ev.item.value.dynamic.?,
             else => return limit(cx, ev.node, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key"),
@@ -294,6 +297,9 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
                 break :blk locals.items.len - 1;
             };
             name.* = locals.items[li].name;
+            local.* = li;
+            locals.items[li].uses += 1;
+            locals.items[li].payload = payload_form;
             try addRefs(cx.arena, &locals.items[li].controls, own_controls.items);
         } else {
             const hi = for (handlers.items, 0..) |h, k| {
@@ -309,32 +315,40 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
     }
     // Each moved key's handler: its arm piece writes the slice the root
-    // holds, in place, then its write pass.
-    for (locals.items) |x| {
+    // holds, in place, then its write pass. One a single event sends is
+    // written inside that event's listener instead (§8.4, amended
+    // 2026-10-24): the payload is read first, exactly where the call read
+    // it, and the arm still runs inside `on`'s dispatch guard.
+    for (locals.items) |*x| {
+        if (inside(x)) continue;
         const hblk = try js.block();
         const fields = try cx.arena.alloc(m.Name, x.fields);
         for (fields) |*f| f.* = try cx.fresh("value");
-        try cx.pieceArm(hblk, x.key, fields, try js.name(holders[0]));
-        var refs: std.ArrayList(m.Program.BucketRef) = .empty;
-        try addRefs(cx.arena, &refs, cx.keyBuckets(x.key));
-        try addRefs(cx.arena, &refs, x.controls.items);
-        std.mem.sort(m.Program.BucketRef, refs.items, {}, refLess);
-        try pg.writePass(hblk, refs.items);
+        try localArm(pg, hblk, x, fields);
         try js.constant(body, x.name, try js.arrow(fields, hblk));
     }
     // Each event wired to its handler.
-    for (pg.events.items, names) |ev, name| {
+    for (pg.events.items, names, local_of) |ev, name, local| {
         const facts = tree.eventFacts(ev.item.event);
         const dom = tree.string(facts.dom_name);
         const kind: ?[]const u8 = if (std.mem.eql(u8, dom, "click")) null else dom;
         const h = try js.name(name);
         var listener = h;
+        const own: ?*Local = if (local) |li| (if (inside(&locals.items[li])) &locals.items[li] else null) else null;
         if (ev.item.form == .payload) {
             const e = try cx.fresh("event");
             const blk = try js.block();
             const payload = if (try cx.extractor(ev.index)) |extract| try js.call(extract, &.{try js.name(e)}) else try js.name(e);
-            try js.expression(blk, try js.call(h, &.{payload}));
+            if (own) |x| {
+                const value = try cx.fresh("value");
+                try js.constant(blk, value, payload);
+                try localArm(pg, blk, x, &.{value});
+            } else try js.expression(blk, try js.call(h, &.{payload}));
             listener = try js.arrow(&.{e}, blk);
+        } else if (own) |x| {
+            const blk = try js.block();
+            try localArm(pg, blk, x, &.{});
+            listener = try js.arrow(&.{}, blk);
         }
         const node = try pg.ref(ev.target);
         if (!facts.prevent_default and !facts.stop_propagation) {
@@ -398,7 +412,27 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
 /// A handler a piece's factory writes itself: a moved key's (§8.4, amended
 /// 2026-10-22), its fields, its name, and the buckets of the controls its
 /// events are on.
-const Local = struct { key: u32, fields: u32, name: m.Name, controls: std.ArrayList(m.Program.BucketRef) = .empty };
+const Local = struct { key: u32, fields: u32, name: m.Name, controls: std.ArrayList(m.Program.BucketRef) = .empty, uses: u32 = 0, payload: bool = false };
+
+/// Whether a moved key's handler is written inside the listener of the one
+/// event that sends it, whose fields that event gives: the payload, or
+/// nothing.
+fn inside(x: *const Local) bool {
+    return x.uses == 1 and x.fields == @intFromBool(x.payload);
+}
+
+/// A moved key's arm into `blk`, its fields `fields`: the arm piece writes
+/// the slice the root holds, in place, then the write pass of the buckets
+/// its key's writes reach and of the controls its events are on.
+fn localArm(pg: *Page, blk: m.Block, x: *Local, fields: []const m.Name) m.Error!void {
+    const cx = pg.cx;
+    try cx.pieceArm(blk, x.key, fields, try cx.js.name(pg.holders[0]));
+    var refs: std.ArrayList(m.Program.BucketRef) = .empty;
+    try addRefs(cx.arena, &refs, cx.keyBuckets(x.key));
+    try addRefs(cx.arena, &refs, x.controls.items);
+    std.mem.sort(m.Program.BucketRef, refs.items, {}, refLess);
+    try pg.writePass(blk, refs.items);
+}
 
 /// `refs` added to `into`, each once.
 fn addRefs(a: std.mem.Allocator, into: *std.ArrayList(m.Program.BucketRef), refs: []const m.Program.BucketRef) !void {

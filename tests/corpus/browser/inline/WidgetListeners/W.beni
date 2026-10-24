@@ -1,0 +1,51 @@
+--! The widget: cups typed as text, kept with what was typed; a venue two
+--! inputs write; a switch.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    cups : Int
+    typed : String
+    venue : String
+    on : Bool
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = 0, typed = "", venue = "", on = False }
+
+
+pub type Msg
+    = Cups String
+    | Venue String
+    | Flip
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Cups text →
+            case String.toInt text of
+                Just n →
+                    { model | cups = n, typed = text }
+
+                Nothing →
+                    { model | typed = text }
+
+        Venue text →
+            { model | venue = text }
+
+        Flip →
+            { model | on = not model.on }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w">
+        <input data-role="cups" onInput={Cups} />
+        <p>{"${String.fromInt model.cups} from ${model.typed}"}</p>
+        <input data-role="venue" onInput={Venue} />
+        <input data-role="venue2" onInput={Venue} />
+        <p>{model.venue}</p>
+        <button data-role="flip" onClick={Flip}>{if model.on then "on" else "off"}</button>
+    </section>

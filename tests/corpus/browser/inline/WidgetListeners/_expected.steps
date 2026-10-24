@@ -1,0 +1,7 @@
+element "root"
+input [data-role=cups] "12"
+input [data-role=cups] "x"
+input [data-role=venue] "Hall"
+input [data-role=venue2] "Park"
+click [data-role=flip]
+click [data-role=flip]
