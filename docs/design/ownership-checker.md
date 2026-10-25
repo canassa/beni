@@ -6277,6 +6277,40 @@ behaviour changes.
 and the record sanitiser before O5, and O5 reuses them. The channel alone does not depend on #286;
 record enforcement and in-place record lowering do. This supersedes O6's earlier ordering above.
 
+*Amended 2026-10-25 (the owner's choice of staged enforcement, option B; #320, #978): O4 is two slices, O4a for
+lists and O4b for records.* O4's gate found that turning the pass on everywhere refuses no list demand but the
+limit fixtures (#856, #955). It refuses record demands in about 45 roots, most of them precision limits of §31's
+record rules. One whole switch would have waited on all of them. So O4 splits:
+
+- **O4a — lists everywhere (#320).** Every LIST demand (§28.5: a `List`'s, a `Dict`'s or a `Set`'s storage) is
+  enforced in every `check` and every `build`, on every platform and with none. O4's *Builds* above hold for it
+  unchanged:
+  - `"lists"` is removed from `Manifest` and from the manifests, and read as an unknown key;
+  - O0's hidden flag is deleted, with its cache subdirectory;
+  - §28.7's maker reports every platform;
+  - the `Ownership…` projects fail on every platform with the same golden, and `node` gets a project of each kind;
+  - the determinism test runs on `node`;
+  - the passages listed above are rewritten.
+
+  *Gated on* #856 and #955, which make the limit fixtures check clean. *Accepted when* the gates are green, no
+  golden changes but the refusals the slice intends, and the run hashes do not change: nothing emitted moves.
+- **O4b — records everywhere (#978).** Until O4b, RECORD demands (§31) are enforced, and records written in
+  place, only where records are written in place today: in a module whose markup lowering takes a key's leaf
+  fields (`Lowering.arm_fields`, `browser-inline`'s `inline`, §31.10's R6). This is not a manifest key, and the
+  predicate is deleted in O4b. Records stay spreads on `browser` and `browser-tea` (#966) for good, and they
+  reach `node` in place only after O4b. The corpus's `.in-place` differential (§31.12 slice 3), which builds
+  `run/` fixtures with records in place through O0's flag, moves to a hidden, test-only `--records-in-place`,
+  listed in no usage text, which enforces the record demands it lowers. *Gated on* the record precision issues
+  #978 lists, and on the fixtures that share for real taking their fixes.
+
+**Why the split keeps every guarantee.** The guarantee is value semantics: no program observes a write through
+another holder. A write in place can break it, and a copy cannot. Under O4a, every list write that may be done in
+place is checked on every platform, and every record write that is done in place is checked on the platform that
+does it, because enforcement and the in-place lowering follow one predicate. What O4b defers is the refusal of
+record writes that are still copies, the spreads, which cannot break the guarantee. Nothing is accepted that an
+in-place write would make unsafe, and no refusal becomes a silent copy: there is no fallback, because a spread is
+how the record is written there, not a substitute for a write the checker could not prove.
+
 ### 30.8 Open questions
 
 The platform question is closed, and the slices have no open question. One decision is the owner's,
