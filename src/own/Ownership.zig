@@ -21599,8 +21599,10 @@ const Walker = struct {
                 // #982: a probe asks whether what the call hands on is used
                 // after it, and an update that replaces every field writes
                 // the very object a callback may have kept: it is a use of
-                // the record whole, though it reads none of its fields.
-                if (rec.fields) |fs| switch (if (rec.kind == .probe and u.reads_none and w.o.isPrefix(u.path, h.path)) .whole else w.recordUse(u, h.path, fs)) {
+                // the record whole, though it reads none of its fields. Only
+                // the object at the holder's own path: an update of a record
+                // above it replaces the field, and writes nothing below.
+                if (rec.fields) |fs| switch (if (rec.kind == .probe and u.reads_none and u.path == h.path) .whole else w.recordUse(u, h.path, fs)) {
                     .none => continue,
                     // §31.14: a read of a written field, which the lowering
                     // reads before the write.
