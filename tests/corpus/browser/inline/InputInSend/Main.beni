@@ -1,0 +1,56 @@
+-- An `input` dispatched while a send runs reads its value through its
+-- `via` extractor while the event is dispatched (boundary.md §9.8.20 (d),
+-- #559): the value the event revealed, not the one written after it. `Go`'s
+-- command types into an input of the program's markup and into one of
+-- another module's markup, which `Html.map` places; each shows what was
+-- typed, never `later`.
+import Cmd exposing (Cmd)
+import Field
+import Html exposing (Html)
+import Poke
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Named String
+    | FieldMsg Field.Msg
+
+
+type alias Model =
+    name : String
+    field : Field.Model
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            ( model, Cmd.batch [ Poke.type_ "name" "one", Poke.type_ "field" "two" ] )
+
+        Named s →
+            ( { model | name = s }, Cmd.none )
+
+        FieldMsg sub →
+            ( { model | field = Field.update sub model.field }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="go" onClick={Go}>Go</button>
+        <input id="name" onInput={Named} />
+        <p id="shown">{model.name}</p>
+        {Html.map (Field.view model.field) FieldMsg}
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { name = "", field = Field.init ⊤ }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

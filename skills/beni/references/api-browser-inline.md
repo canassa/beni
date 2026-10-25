@@ -39,8 +39,8 @@ module Inline
   value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value on : V, V, V → ⊤  -- impure
-  value onArm : V, V, V, V → ⊤  -- impure
+  value on : V, V, V, V → ⊤  -- impure
+  value onArm : V, V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
   value part : V → V  -- impure
   value pass : V → ⊤  -- impure
@@ -49,8 +49,7 @@ module Inline
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value run : V → ⊤  -- impure
-  value send : V, V → ⊤  -- impure
-  value sendVia : V, V, V → ⊤  -- impure
+  value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
   value text : V, V → ⊤  -- impure

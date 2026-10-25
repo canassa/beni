@@ -1,0 +1,27 @@
+--! A field of its own, which the program places with `Html.map`: its
+--! input's handler writes the field's own model.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    text : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { text = "" }
+
+
+pub type Msg
+    = Typed String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed s →
+            { model | text = s }
+
+
+pub view : Model → Html Msg
+view model = <section><input id="field" onInput={Typed} /><output>{model.text}</output></section>

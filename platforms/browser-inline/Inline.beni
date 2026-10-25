@@ -33,55 +33,39 @@ queue : Js.Ref V
 queue = Js.ref Js.null
 
 
---| `(f, x)`: one entry into program code — a listener with its event, a
---| command's body, `run`'s mount. A send made while another runs is
---| queued and applied, in order, before that dispatch ends, never
---| re-entrantly (`boundary.md` §9.8.4, as amended 2026-10-17); once the
---| page has stopped it does nothing. There is no `catch`: a throw passes
---| through to the host, and stops the page.
-pub send : V, V → ⊤
-send f x =
-    if Js.read dead then
-        ⊤
-    else if Js.read running then
-        if Js.isNull (Js.read queue) then
-            Js.write queue (Js.array [])
-        _ = Js.call (Js.read queue) "push" [ f, x ]
-        ⊤
-    else
+--| `(f, x, read)`: one entry into program code — a listener with its
+--| event, a command's body, `run`'s mount. `f` is applied to `x`, or, when
+--| `read` is given, to what `read` reads of the event `x`: an event's `via`
+--| extractor, which is called first, while the event is dispatched
+--| (`boundary.md` §9.8.20 (d), #559), even when the send waits. A send made
+--| while another runs is queued and applied, in order, before that
+--| dispatch ends, never re-entrantly (`boundary.md` §9.8.4, as amended
+--| 2026-10-17); once the page has stopped it does nothing. There is no
+--| `catch`: a throw passes through to the host, and stops the page — a
+--| throw of `read` when the send waits too, which the host, not the code
+--| that dispatched the event, would otherwise hear.
+pub send : V, V, V → ⊤
+send f x read =
+    if not (Js.read dead) then
+        nested = Js.read running
         Js.write running True
         ok = Js.ref False
         Js.finally
             (λ⊤ →
-                _ = Js.apply f [ x ]
-                drain ⊤
+                v = if Js.isUndefined read then x else Js.apply read [ x ]
+                if nested then
+                    if Js.isNull (Js.read queue) then
+                        Js.write queue (Js.array [])
+                    _ = Js.call (Js.read queue) "push" [ f, v ]
+                    ⊤
+                else
+                    _ = Js.apply f [ v ]
+                    drain ⊤
                 Js.write ok True
             )
             λ⊤ →
-                Js.write running False
+                Js.write running nested
                 if Js.read ok then ⊤ else defect ⊤
-
-
---| `(f, event, read)`: `send` for a listener whose event has a `via`
---| extractor, `read`, and whose `f` takes what it reads. `read` is called
---| while the event is dispatched (`boundary.md` §9.8.20 (d)): inside the
---| dispatch this starts, or, when one runs, now, so that only the send of
---| what it read waits (#559). The host hears a throw of a listener the
---| page dispatched an event to, and the code that dispatched it does not,
---| so a throw of `read` then stops the page here, as the guard would. A
---| page whose events have no extractor ships none of it.
-pub sendVia : V, V, V → ⊤
-sendVia f event read =
-    if Js.read running && not (Js.read dead) then
-        ok = Js.ref False
-        Js.finally
-            (λ⊤ →
-                send f (Js.apply read [ event ])
-                Js.write ok True
-            )
-            λ⊤ → if Js.read ok then ⊤ else defect ⊤
-    else
-        send (Js.from λdispatched → Js.apply f [ Js.apply read [ dispatched ] ]) event
 
 
 -- Apply every queued send, in the order they were made; one applied may
@@ -168,7 +152,7 @@ crashScreen ⊤ =
 --| dispatch, so a throw while it mounts, a missing element included,
 --| stops the page as any defect does.
 pub run : V → ⊤
-run program = send program Js.undefined
+run program = send program Js.undefined Js.undefined
 
 
 --| `(id)`: the element a program mounts at, the one `id` names or
@@ -208,7 +192,7 @@ fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
 --| `dispatch`, the program's.
 pub commands : Cmd V, V → ⊤
 commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
-    send (Js.from λ_ → body λmsg → send dispatch (Js.from msg)) Js.null
+    send (Js.from λ_ → body λmsg → send dispatch (Js.from msg) Js.undefined) Js.null Js.undefined
 
 
 -- ---- The unmount (`boundary.md` §9.4.5, amended 2026-10-17) -------------
@@ -307,17 +291,20 @@ pub part : V → V
 part node = Js.call node "querySelectorAll" [ Js.from "*" ]
 
 
---| `(node, f, kind)`: a listener of event `kind`, `click` when not given,
---| whose event enters the dispatch guard with `f`.
-pub on : V, V, V → ⊤
-on node f kind =
+--| `(node, f, kind, read)`: a listener of event `kind`, `click` when not
+--| given, whose event enters the dispatch guard with `f` — through `read`,
+--| the event's `via` extractor, when it has one (`send`).
+pub on : V, V, V, V → ⊤
+on node f kind read =
     _ =
         Js.call node "addEventListener"
-            [ if Js.isUndefined kind then Js.from "click" else kind, Js.from λevent → send f event ]
+            [ if Js.isUndefined kind then Js.from "click" else kind
+            , Js.from λevent → send f event read
+            ]
     ⊤
 
 
---| `(node, f, kind, arms)`: `on` for a handler inside eager arms, `kind`
+--| `(node, f, kind, arms, read)`: `on` for a handler inside eager arms, `kind`
 --| always given. `arms` are the elements of those arms, outermost first, one
 --| bare or an array: while one of them is hidden — its `when` anchor stands in
 --| the page in its place — the event does nothing, not even enter the guard
@@ -325,11 +312,11 @@ on node f kind =
 --| The outermost is asked first: an arm inside a hidden arm may never have
 --| been written. It is apart from `on` so that a page with no handler in an
 --| arm ships neither it nor the arm walk (#874).
-pub onArm : V, V, V, V → ⊤
-onArm node f kind arms =
+pub onArm : V, V, V, V, V → ⊤
+onArm node f kind arms read =
     _ =
         Js.call node "addEventListener"
-            [ kind, Js.from λevent → if armsShown arms then send f event ]
+            [ kind, Js.from λevent → if armsShown arms then send f event read ]
     ⊤
 
 

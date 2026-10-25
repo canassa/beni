@@ -27,6 +27,6 @@ on target name read send =
             -- `send` enters the guard, which queues it.
             send (read event)
         else
-            Inline.send (Js.from λdispatched → send (read dispatched)) event
+            Inline.send (Js.from λdispatched → send (read dispatched)) event Js.undefined
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
