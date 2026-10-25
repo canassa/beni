@@ -326,7 +326,7 @@ them:
   `each ws xs f = List.map ws (λ_ → List.map xs f)`, whose inner traversal runs once per element of `ws`.
 
 No κ of the container separates two traversals: each visits every index again. The red twins
-`TwoTraversalsShared`, `FoldOverFoldShared` and `NestedTraversalShared` (Appendix B) check the rule.
+`TwoTraversalsShared`, `FoldOverFoldShared`, `NestedTraversalShared` and, across modules, `NestedTraversalAcrossModules` (Appendix B) check the rule. Blocks carry the bit and the entry (§3.6 *Traversal marks*).
 
 ### 2.3 Abstract values: shape nodes
 
@@ -1333,7 +1333,7 @@ Operation memos are owner-local: no free reuse of a callee's transient inference
 complete owner reuses its recorded computation only with the matching inputs, policy and allowance.
 
 One block per module, in the interface record (`Interface.ownership`, hashed with it: R-5.7.2) and in the cache
-entry (R-5.7.4); format `OWN2` v1, bumped by every rule change. Names nothing by session id: modules by package and
+entry (R-5.7.4); format `OWN2` v2 (v2 adds the traversal marks below, #1029), bumped by every rule change. Names nothing by session id: modules by package and
 dotted name; declarations by qualified name and canonical ordinal; constructors by module/type/constructor name
 and canonical ordinal (including schema constructors: oc §28.4), mapped back to BIR ids at the boundary; **places structurally** (`kind`, head as `package·module·type` or field names or
 arity, children) so a reader re-interns them onto its own graph; paths as canonical steps; opaque slots by number.
@@ -1341,10 +1341,48 @@ arity, children) so a reader re-interns them onto its own graph; paths as canoni
 ```
 head       : "OWN2", version, module table, string table, place table (structural)
 directory  : per declaration (canonical name/ordinal, offset, length) — summaries read lazily, one at a time (oc §28.4 #814)
-summary    : cells (origin, kind, a, b over the local numbering), labels (own instruction, callee module·declaration·label index, folded, supplies), sets, conds/atoms/groups, nodes
+summary    : cells (origin, kind, a, b over the local numbering), labels (own instruction, callee module·declaration·label index, folded ∈ {no, ordinary, recursive}, supplies), traversal marks of `taken` refinements (`single`, `entry`), sets, conds/atoms/groups, nodes
              (kind, place#, set#, κ#, children/overrides/union), the flat class/environment table (id edges and backreferences), the Class record
 value facts: per parameterless value whether it may hold a cell (R-5.7.5)
 ```
+
+**Traversal marks** (§2.2 *Traversals*, #1029). §2.2 compares two `taken` splits of one container by two
+facts that a label's chain cannot carry after a fold: the `single` bit, and the entry prefix. An importer
+needs both. If it assumed `single` for an imported split, an `each` defined in another module would reopen
+#1029. If it assumed the bit cleared, an imported `List.map` would lose its exclusivity. So each `elem` and
+`others` cell record carries:
+
+- `single`: one bit, the settled value after solving.
+- `entry`: the index, in this block's label table, of the label that ends the split's entry prefix. That is
+  the label whose last link is the call that last entered the G whose `traverseAt` made the split. It is
+  `none` when the split was made in this declaration's own G frame ("this traversal").
+
+The importer instantiates `entry` like any label, by prepending its call instruction, and compares the
+results by interned identity. `folded` records the fold kind, because "recursive wins" when an importer's
+fold merges an imported label with its own. With all three, the importer applies §2.2 exactly as the
+defining module would.
+
+**Determinism.** The marks are written after solving, with the canonical ids that this section assigns
+before children are written. `entry` is such an id, and a reader resolves it in one pass. The bits come from
+settled facts only, never from discovery order, so `--jobs=1` and `--jobs=8` write the same bytes.
+
+**Other §2.2 state, checked.**
+
+| State | Where an importer gets it |
+|---|---|
+| a refinement's parent and split | the cell record's `a` and `b` |
+| a supply's `taken` flag, owned bit and κ | the Class record |
+| `sep`/`within` atoms | conds and atoms |
+| a label's supplies | the label record |
+| the fold kind | `folded` |
+| the frame's `taken` set and its materialisations in force | frame-local and never published: a caller sees a split only as a cell |
+
+§3.7's inputs already include the imports' blocks, and nothing else in §3.7 carries ownership facts across a
+module.
+
+**Decoding.** A missing mark, an `entry` out of range, or a `single` set on a cell that is not a `taken`
+refinement is a decode failure: the summary is unknown (`⊤`, every split cleared). It is never defaulted to
+`single`.
 
 A declaration whose summary does not decode is unknown; a block that does not decode is no block (R-5.7.4).
 
@@ -2318,6 +2356,7 @@ R-5.4.8, R-5.5.9, R-5.6.1–R-5.6.3, R-5.7.1 and R-7.12.
 | `FoldOverFoldShared` | Red: `r = List.foldl xs (List.foldr xs [] λx a → List.push a x) λx a → List.push a x`, then `List.map r λl → List.push l 1`. `r` holds every list of `xs` twice; the element write is refused. Both folds stay accepted `callback-param` (their accumulator writes are storage writes). Gap 3 (a) applies only within one traversal (Appendix C.9). | R-5.3.2, R-3.1 | S4 |
 | `FeedbackPrevTwice` | Red: `st = Tuple.second (List.foldl xs ( [], [] ) λx ( prev, st ) → ( x, List.push (List.push st prev) x ))`, then `List.map st λl → List.push l 1`. Each list is in `st` twice (once as `x`, once as the next round's `prev`), so the element write is refused. Two cells that came back through the feedback are never called apart (Appendix C.9 gap 3). | R-5.3.2, R-3.1 | S4 |
 | `NestedTraversalShared` | Red: `each ws xs f = List.map ws (λ_ → List.map xs f)`; `zs = each [ 1, 2 ] xs (λl → l)`, then `List.map zs (λinner → List.map inner (λl → List.push l 1))`. `zs[0][j]` and `zs[1][j]` are one list, so the nested write must be refused: the inner traversal's splits leave the lambda through `List.map`'s folded callback label and are not `single` (§2.2 *Traversals*). Green: `each [ 1, 2 ] xs (λ_ → [ 1 ])` stays exclusive (a fresh result per call). v1 refuses the red (`exclusive`, approx). | R-4.6.9, R-3.1 | S4 |
+| `NestedTraversalAcrossModules` | `NestedTraversalShared` with `each` in module `A` and the caller in module `B`, which imports it. The red must be refused through `A`'s block, which carries `single` cleared (§3.6 *Traversal marks*); with a cache directory and `--no-cache`, the same verdict. Green: `B` calling `List.map xs λl → List.push l 1` over an exclusive `xs` stays exclusive through core's block, because `single` is set. A block whose marks are corrupted is unknown, never `single`. | R-4.6.9, R-5.7.1, R-5.7.4 | S6 |
 
 ## Appendix C. Worked derivations of the core loops (S2b, before walker code)
 
