@@ -32,6 +32,9 @@
 //!
 //! **The queue** (`Tasks`) is one-shot: a task is enqueued at most once and
 //! executes at most once (§4.1), its links in its own record.
+//!
+//! Obligations kept here: O11 (no bound accepts: a reservation is refused
+//! before the work it stands for, and a refusal is terminal).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -55,9 +58,6 @@ fn IdType(comptime Self: type) type {
         pub inline fn from(i: u32) Self {
             return @fromBackingInt(i);
         }
-        pub inline fn unwrap(i: Self) ?Self {
-            return if (i == .none) null else i;
-        }
     };
 }
 
@@ -67,131 +67,99 @@ fn IdType(comptime Self: type) type {
 pub const PlaceId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(PlaceId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const PathId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(PathId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const CellId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(CellId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const LabelId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(LabelId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 /// A node of a persistent set; a set is named by its root.
 pub const SetId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(SetId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const NodeId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(NodeId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const OverId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(OverId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const CondId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(CondId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const SplitId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(SplitId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const ClassId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(ClassId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const UseId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(UseId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const DemandId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(DemandId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const RegionId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(RegionId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const SummaryAccountId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(SummaryAccountId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const TaskId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(TaskId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 pub const ChunkId = enum(u32) {
     none = none_int,
     _,
-    const Mixin = IdType(ChunkId);
-    pub const int = Mixin.int;
-    pub const from = Mixin.from;
-    pub const unwrap = Mixin.unwrap;
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
 };
 
 /// A half-open run of a sidecar table.
@@ -224,14 +192,13 @@ pub const Category = enum(u8) {
     path,
     region,
     chunk,
+    inspection,
     other,
-
     pub const count = @typeInfo(Category).@"enum".field_names.len;
 };
 
 /// A baseline lane's role (§4.1's two tables). The ceiling is the role's.
 pub const Role = enum(u8) {
-    /// ≤ 32 constant-size records per original atom.
     direct_data,
     cell_index,
     shape_index,
@@ -246,6 +213,7 @@ pub const Role = enum(u8) {
     transfer_settlement,
     entry_delta,
 
+    /// ≤ 32 constant-size records per original atom for `direct_data`, 512 for every index or routine kernel.
     pub fn ceiling(r: Role) u32 {
         return if (r == .direct_data) 32 else 512;
     }
@@ -258,16 +226,51 @@ pub const Phase = enum(u8) { inference, validation };
 /// One baseline lane: an original atom, a role, a phase.
 pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference };
 
+/// §4.4's input and format limits, each its own named `ownership_limit`.
+pub const Limit = enum(u8) {
+    /// `step_payload` is a step past 28 bits: nothing written reaches it under the limits above, so it is the format's.
+    record_fields,
+    tuple_arity,
+    constructor_args,
+    type_places,
+    path_steps,
+    declaration_insts,
+    block_bytes,
+    step_payload,
+
+    pub fn value(l: Limit) u64 {
+        return switch (l) {
+            .record_fields, .tuple_arity, .constructor_args, .path_steps => 65_536,
+            .type_places => 1 << 24,
+            .declaration_insts, .block_bytes => 1 << 31,
+            .step_payload => 1 << 28,
+        };
+    }
+};
+
 /// A reservation refused, with what refused it (§6's two messages).
 pub const Failure = union(enum) {
     /// `ownership_limit`: the growth record that would have been
     /// `allowance + 1`, by category.
     exhausted: Category,
+    /// `ownership_limit` for an input or format limit (§4.4's table).
+    limit: Limit,
     /// `ownership_accounting_invariant`: a lane past its ceiling.
     invariant: Lane,
+
+    /// The error a failed account keeps answering with: an invariant never
+    /// reads as a limit a raise would fix.
+    pub fn err(f: Failure) AccountError {
+        return switch (f) {
+            .exhausted, .limit => error.OwnershipLimit,
+            .invariant => error.AccountingInvariant,
+        };
+    }
 };
 
 pub const AccountError = error{ OwnershipLimit, AccountingInvariant };
+/// What every charged operation can fail with.
+pub const ChargeError = Allocator.Error || AccountError;
 
 /// The account of one owning declaration (§4.4): its nested lambdas, local
 /// functions and entry work share it, and so does its final validation.
@@ -277,12 +280,13 @@ pub const Account = struct {
     allowance: u32 = default_allowance,
     /// G_f.
     growth: u32 = 0,
-    /// B_f: every baseline record ever reserved.
-    baseline: u32 = 0,
+    /// B_f: every baseline record ever reserved. 64 bits: §4.1 lets it
+    /// reach 10 304·S_f.
+    baseline: u64 = 0,
     /// S_f: the written and imported atoms, recorded by the owner's walk.
-    source: u32 = 0,
+    source: u64 = 0,
     growth_by: [Category.count]u32 = @splat(0),
-    baseline_by: [Category.count]u32 = @splat(0),
+    baseline_by: [Category.count]u64 = @splat(0),
     /// Set by the first refusal and never cleared: the exhaustion marker of
     /// §4.4, which makes every later reservation fail at once.
     failed: ?Failure = null,
@@ -296,12 +300,12 @@ pub const Account = struct {
 
     /// N_f.
     pub fn total(a: *const Account) u64 {
-        return @as(u64, a.baseline) + a.growth;
+        return a.baseline + a.growth;
     }
 
     /// Reserve `n` growth records before doing the work they stand for.
-    pub fn reserve(a: *Account, category: Category, n: u32) error{OwnershipLimit}!void {
-        if (a.failed != null) return error.OwnershipLimit;
+    pub fn reserve(a: *Account, category: Category, n: u32) AccountError!void {
+        if (a.failed) |f| return f.err();
         const next = @as(u64, a.growth) + n;
         if (next > a.allowance) {
             a.failed = .{ .exhausted = category };
@@ -314,11 +318,8 @@ pub const Account = struct {
     /// Reserve `n` baseline records in `lane`. The ceiling is the role's;
     /// the 513th (or 33rd) record is the implementation defect
     /// `ownership_accounting_invariant`, never growth (§4.1).
-    pub fn reserveLane(a: *Account, gpa: Allocator, lane: Lane, category: Category, n: u32) (Allocator.Error || AccountError)!void {
-        if (a.failed) |f| return switch (f) {
-            .exhausted => error.OwnershipLimit,
-            .invariant => error.AccountingInvariant,
-        };
+    pub fn reserveLane(a: *Account, gpa: Allocator, lane: Lane, category: Category, n: u32) ChargeError!void {
+        if (a.failed) |f| return f.err();
         const slot = try a.lanes.getOrPut(gpa, .{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase) });
         if (!slot.found_existing) slot.value_ptr.* = 0;
         const next = @as(u64, slot.value_ptr.*) + n;
@@ -331,9 +332,53 @@ pub const Account = struct {
         a.baseline_by[@backingInt(category)] += n;
     }
 
+    /// One call for the caller's classification: a baseline lane when the
+    /// record has one (§4.1's tables), growth otherwise.
+    pub fn charge(a: *Account, gpa: Allocator, lane: ?Lane, category: Category, n: u32) ChargeError!void {
+        if (lane) |l| return a.reserveLane(gpa, l, category, n);
+        return a.reserve(category, n);
+    }
+
+    /// Check an input against its named limit (§4.4): `count` past it is
+    /// the terminal `ownership_limit` naming the limit.
+    pub fn limit(a: *Account, which: Limit, count: u64) AccountError!void {
+        return a.limitOver(which, count, which.value());
+    }
+
+    /// `limit` against `max` instead of the limit's own value: what a table
+    /// with configurable limits (a test's) calls.
+    pub fn limitOver(a: *Account, which: Limit, count: u64, max: u64) AccountError!void {
+        if (a.failed) |f| return f.err();
+        if (count > max) {
+            a.failed = .{ .limit = which };
+            return error.OwnershipLimit;
+        }
+    }
+
     /// How many records `lane` has used.
     pub fn laneUsed(a: *const Account, lane: Lane) u32 {
         return a.lanes.get(.{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase) }) orelse 0;
+    }
+};
+
+/// Where an operation's records go: an account, and the baseline lane they
+/// belong to or growth. Chosen by the caller BEFORE the operation (§4.1,
+/// §4.4: "classify every record before allocation"); the primitives below
+/// take one and never choose for themselves.
+pub const Charge = struct {
+    account: *Account,
+    lane: ?Lane = null,
+
+    pub fn growth(account: *Account) Charge {
+        return .{ .account = account };
+    }
+
+    pub fn in(account: *Account, lane: Lane) Charge {
+        return .{ .account = account, .lane = lane };
+    }
+
+    pub fn reserve(c: Charge, gpa: Allocator, category: Category, n: u32) ChargeError!void {
+        return c.account.charge(gpa, c.lane, category, n);
     }
 };
 
@@ -364,11 +409,11 @@ pub const Chunks = struct {
         c.table.deinit(gpa);
     }
 
-    /// Append one word to `run`, opening a chunk (one growth record) when
+    /// Append one word to `run`, opening a chunk (one record in `charge`) when
     /// the last is full.
-    pub fn append(c: *Chunks, gpa: Allocator, account: *Account, category: Category, run: *Run, word: u32) (Allocator.Error || error{OwnershipLimit})!void {
+    pub fn append(c: *Chunks, gpa: Allocator, charge: Charge, category: Category, run: *Run, word: u32) ChargeError!void {
         if (run.last == .none or c.table.items(.len)[run.last.int()] == words_per_chunk) {
-            try account.reserve(category, 1);
+            try charge.reserve(gpa, category, 1);
             const id: ChunkId = .from(@intCast(c.table.len));
             try c.table.append(gpa, .{ .next = .none, .len = 0, .words = undefined });
             if (run.last == .none) run.first = id else c.table.items(.next)[run.last.int()] = id;
@@ -547,9 +592,9 @@ pub const Tasks = struct {
         t.table.deinit(gpa);
     }
 
-    /// A new task, one growth record, not yet queued.
-    pub fn add(t: *Tasks, gpa: Allocator, account: *Account, kind: u8, payload: [4]u32) (Allocator.Error || error{OwnershipLimit})!TaskId {
-        try account.reserve(.task, 1);
+    /// A new task, one record in `charge`, not yet queued.
+    pub fn add(t: *Tasks, gpa: Allocator, charge: Charge, kind: u8, payload: [4]u32) ChargeError!TaskId {
+        try charge.reserve(gpa, .task, 1);
         const id: TaskId = .from(@intCast(t.table.len));
         try t.table.append(gpa, .{ .kind = kind, .state = .fresh, .next = .none, .a = payload[0], .b = payload[1], .c = payload[2], .d = payload[3] });
         return id;
@@ -566,7 +611,8 @@ pub const Tasks = struct {
 
     /// The next task to run, marked done as it leaves the queue.
     pub fn dequeue(t: *Tasks) ?TaskId {
-        const id = t.head.unwrap() orelse return null;
+        if (t.head == .none) return null;
+        const id = t.head;
         t.head = t.table.items(.next)[id.int()];
         if (t.head == .none) t.tail = .none;
         t.table.items(.state)[id.int()] = .done;
@@ -661,8 +707,8 @@ test "chunks reserve each chunk before filling it and read back in order" {
     defer a.deinit(testing.allocator);
     var run: Chunks.Run = .{};
     var i: u32 = 0;
-    while (i < 2 * words_per_chunk) : (i += 1) try c.append(testing.allocator, &a, .chunk, &run, i * 7);
-    try testing.expectError(error.OwnershipLimit, c.append(testing.allocator, &a, .chunk, &run, 1));
+    while (i < 2 * words_per_chunk) : (i += 1) try c.append(testing.allocator, .growth(&a), .chunk, &run, i * 7);
+    try testing.expectError(error.OwnershipLimit, c.append(testing.allocator, .growth(&a), .chunk, &run, 1));
     try testing.expectEqual(@as(u32, 2 * words_per_chunk), run.count);
     var it = c.iterate(run);
     i = 0;
@@ -675,8 +721,8 @@ test "a task is queued once and runs once" {
     defer t.deinit(testing.allocator);
     var a: Account = .{};
     defer a.deinit(testing.allocator);
-    const x = try t.add(testing.allocator, &a, 1, .{ 1, 2, 3, 4 });
-    const y = try t.add(testing.allocator, &a, 2, .{ 0, 0, 0, 0 });
+    const x = try t.add(testing.allocator, .growth(&a), 1, .{ 1, 2, 3, 4 });
+    const y = try t.add(testing.allocator, .growth(&a), 2, .{ 0, 0, 0, 0 });
     t.enqueueOnce(x);
     t.enqueueOnce(y);
     t.enqueueOnce(x);
@@ -687,4 +733,48 @@ test "a task is queued once and runs once" {
     try testing.expectEqual(@as(u32, 2), t.executed);
     try testing.expectEqual(TaskState.done, t.get(x).state);
     try testing.expectEqual(@as(u32, 2), a.growth);
+}
+
+test "a primitive charges the lane it is given, and growth only when it is given none" {
+    var c: Chunks = .{};
+    defer c.deinit(testing.allocator);
+    var a: Account = .{ .allowance = 0 };
+    defer a.deinit(testing.allocator);
+    const lane: Lane = .{ .atom = 3, .role = .direct_data };
+    var run: Chunks.Run = .{};
+    // Source-sized work in its lane spends no growth (§4.4).
+    var i: u32 = 0;
+    while (i < 3 * words_per_chunk) : (i += 1) try c.append(testing.allocator, .in(&a, lane), .chunk, &run, i);
+    try testing.expectEqual(@as(u32, 0), a.growth);
+    try testing.expectEqual(@as(u32, 3), a.laneUsed(lane));
+    try testing.expectEqual(@as(u64, 3), a.baseline);
+    var t: Tasks = .{};
+    defer t.deinit(testing.allocator);
+    _ = try t.add(testing.allocator, .in(&a, lane), 1, .{ 0, 0, 0, 0 });
+    try testing.expectEqual(@as(u32, 4), a.laneUsed(lane));
+    // With no lane the same call is growth, and this account has none.
+    try testing.expectError(error.OwnershipLimit, t.add(testing.allocator, .growth(&a), 1, .{ 0, 0, 0, 0 }));
+}
+
+test "an invariant failure keeps reading as the invariant, and the baseline does not wrap" {
+    var a: Account = .{ .baseline = std.math.maxInt(u32) };
+    defer a.deinit(testing.allocator);
+    const lane: Lane = .{ .atom = 1, .role = .direct_data };
+    try a.reserveLane(testing.allocator, lane, .cell, 32);
+    try testing.expectEqual(@as(u64, std.math.maxInt(u32)) + 32, a.baseline);
+    try testing.expectError(error.AccountingInvariant, a.reserveLane(testing.allocator, lane, .cell, 1));
+    // Never a limit a raise would appear to fix.
+    try testing.expectError(error.AccountingInvariant, a.reserve(.cell, 1));
+    try testing.expectError(error.AccountingInvariant, a.limit(.type_places, 1));
+    try testing.expectError(error.AccountingInvariant, a.charge(testing.allocator, null, .cell, 1));
+}
+
+test "an input limit is named, terminal and checked before work" {
+    var a: Account = .{};
+    defer a.deinit(testing.allocator);
+    try a.limit(.record_fields, 65_536);
+    try testing.expectError(error.OwnershipLimit, a.limit(.record_fields, 65_537));
+    try testing.expectEqual(Limit.record_fields, a.failed.?.limit);
+    try testing.expectError(error.OwnershipLimit, a.reserve(.cell, 1));
+    try testing.expectEqual(@as(u32, 0), a.growth);
 }
