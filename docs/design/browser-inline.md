@@ -377,6 +377,11 @@ beni over `Js` in `Inline.beni`:
   (`checker-v2.md` §26) when every argument is pure and total too, so `bump (String.length s)` is
   eager; the classification is an uncapped iterative walk, so an expression's size alone never
   makes it guarded.
+  *Amended 2026-10-25 (#1028):* a call of core's `List.set`, `update`, `push`, `pop`, `swap`,
+  `insertAt`, `removeAt` or `append`, or of a declaration that calls one, is not total: it edits its
+  first argument in place once the ownership checker accepts the call, so two arms' writes would
+  meet in one array if either ran ahead of the branch. It stays inside its arm, guarded like an
+  impure call (`Totality.zig`; core's own callers are exempt).
   *Amended 2026-10-23 (#844):* it includes a well-known `==`, `≠`, `<`, `≤`, `>` or `≥`, or a
   dot-call — a `method_call` — with no hidden evidence whose callee the checker proves total
   (`checker-v2.md` §26, `Totality.termTarget`): a primitive comparison (`===`, a number's or a

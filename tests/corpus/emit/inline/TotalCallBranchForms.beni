@@ -1,0 +1,54 @@
+-- Every form of a list write stays inside its arm: a dot-call, `++`,
+-- `List.update`, `List.set` and a user function that pushes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Next
+
+
+update : Msg, Int → Int
+update _ n = n + 1
+
+
+size : List Int → Html Msg
+size xs = <p>{List.length xs}</p>
+
+
+bump : List Int → List Int
+bump xs = List.push xs 4
+
+
+choices : List Int, Int → Html Msg
+choices xs n =
+    <>
+        {case n of
+            0 →
+                <section data-arm="dot">{size (xs.push 2)}</section>
+            1 →
+                <section data-arm="append">{size (xs ++ [ 3 ])}</section>
+            2 →
+                <section data-arm="update">{size (List.update xs 0 λx → x + 1)}</section>
+            3 →
+                <section data-arm="set">{size (List.set xs 0 9)}</section>
+            _ →
+                <section data-arm="helper">{size (bump xs)}</section>
+        }
+    </>
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        {choices [ 1 ] n}
+        <button onClick={Next}>Next</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → 0, update = update, view = view })
+        "root"

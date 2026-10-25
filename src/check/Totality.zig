@@ -11,6 +11,7 @@ const InternPool = @import("../InternPool.zig");
 const Effects = @import("Effects.zig");
 const Dispatch = @import("Dispatch.zig");
 const Operator = @import("../Operator.zig");
+const WritesCore = @import("../writes/Core.zig");
 const children = @import("constrain/Decl.zig").pushChildren;
 const Inst = Bir.Inst.Index;
 
@@ -43,6 +44,11 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
         const d: u32 = @intCast(di);
         starts[d] = @intCast(edges.items.len);
         if (d < in.failed.bit_length and in.failed.isSet(d)) continue;
+        // A list writer edits its argument in place once the ownership
+        // checker accepts the call, so a caller outside core may not run it
+        // ahead of the branch that asks for it: never total. Core's own
+        // callers are exempt (`writerOutsideCore`).
+        if (isListWriter(in.graph, in.module, in.interner.slice(in.bir.symbol(decl.name)), in.interner)) continue;
         if (decl.kind == .foreign_value) {
             eligible[d] = decl.rung == .pure;
             continue;
@@ -224,6 +230,10 @@ const Reads = struct {
 
 fn importTotal(r: *Reads, module: u32, value: u32) std.mem.Allocator.Error!bool {
     const iface = try r.iface(module);
+    if (r.in.graph.modulePackage(r.in.module) == .core) {
+        const name = r.in.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]);
+        if (writerInCore(r, @fromBackingInt(module), name)) return true;
+    }
     const scheme = iface.values[value].scheme;
     return scheme != .none and iface.schemes[@backingInt(scheme)].total;
 }
@@ -236,6 +246,7 @@ fn target(r: *Reads, owner: u32, callee: Inst, edges: *std.ArrayList(u32)) std.m
             // Native execution was recognized before this dependency. A
             // genuine direct self-call already disproves totality.
             if (data.lhs == owner) break :blk false;
+            if (writerInCore(r, r.in.module, r.in.interner.slice(r.in.bir.symbol(r.in.bir.decls[data.lhs].name)))) break :blk true;
             try edges.append(in.scratch, data.lhs);
             break :blk true;
         },
@@ -249,6 +260,7 @@ fn termTarget(r: *Reads, owner: u32, term: Dispatch.Term, edges: *std.ArrayList(
     return switch (term) {
         .top => |t| blk: {
             if (t.decl.int() == owner) break :blk false;
+            if (writerInCore(r, r.in.module, r.in.interner.slice(r.in.bir.symbol(r.in.bir.decls[t.decl.int()].name)))) break :blk true;
             try edges.append(r.in.scratch, t.decl.int());
             break :blk true;
         },
@@ -315,4 +327,19 @@ fn stringCompareTarget(r: *Reads) std.mem.Allocator.Error!StringCompare {
     const iface = try r.iface(module.int());
     const value = iface.findValue(in.interner, InternPool.WellKnown.compare.symbol()) orelse return .unknown;
     return .{ .imported = try importTotal(r, module.int(), @backingInt(value)) };
+}
+
+/// Whether `name` in `module` is a writer of core's `List`
+/// (`WritesCore.listWriter`).
+fn isListWriter(graph: *const Graph, module: Graph.Index, name: []const u8, interner: *const InternPool.Global) bool {
+    if (graph.modulePackage(module) != .core) return false;
+    if (!std.mem.eql(u8, interner.slice(graph.moduleName(module)), "List")) return false;
+    return WritesCore.listWriter(name);
+}
+
+/// A call of a list writer made inside core: core's own functions write
+/// lists they built themselves, and a core function that edits its argument
+/// is a writer by name, so these calls do not disprove totality.
+fn writerInCore(r: *Reads, module: Graph.Index, name: []const u8) bool {
+    return r.in.graph.modulePackage(r.in.module) == .core and isListWriter(r.in.graph, module, name, r.in.interner);
 }
