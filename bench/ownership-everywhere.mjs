@@ -21,7 +21,7 @@
 // About a minute on a quiet 16-core machine, most of it the cost table.
 //
 // `--diff=<a>,<b>` (`ownership-v2.md` §7.2) is the whole-corpus verdict diff
-// instead: every root above, core and every platform surface is dumped under
+// instead: every root of O1's audit (`bench/ownership-roots.mjs`) is dumped under
 // `--ownership=<a>` and `--ownership=<b>` (`v1` or `v2`, hidden flags), with
 // the same rows as the tables, and the verdict lines are compared per
 // `(root, module, line:col)`. It prints three lists: the lines with the same
@@ -42,6 +42,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { availableParallelism } from "node:os";
+import { o1Roots } from "./ownership-roots.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = Object.fromEntries(
@@ -213,17 +214,20 @@ function verdicts(out) {
   return at;
 }
 
-/// Every root the diff dumps: the programs of the tables, then core and every
-/// platform surface, each with the arguments of its dump.
-function diffRoots() {
-  const roots = all.map((p) => ({ name: p.name, argv: [`--platform=${p.platform}`, ...p.root, p.dir ?? p.paths[0]] }));
-  roots.push({ name: "core", argv: ["core"] });
-  for (const p of ["node", "html", "browser", "browser-tea", "browser-inline"]) roots.push({ name: `platforms/${p}`, argv: [`--platform=${p}`, `platforms/${p}`] });
-  return roots;
-}
+/// Every root the diff dumps: O1's audit roots (`bench/ownership-roots.mjs`).
+const diffRoots = () => o1Roots(repo, scratch);
 
 async function diff(sides) {
   const roots = diffRoots();
+  // A side whose checker is not built has nothing to compare: asked once,
+  // before any root is dumped.
+  for (const side of sides) {
+    const probe = await run(["dump", "--stage=ownership", "--ownership-everywhere", `--ownership=${side}`, ...roots[0].argv]);
+    if (probe.code === 2 && /is not built yet/.test(probe.err)) {
+      console.error(`--ownership=${side}: ${probe.err.trim()}`);
+      process.exit(2);
+    }
+  }
   const dumped = sides.map(() => new Array(roots.length));
   let at = 0;
   const work = async () => {
@@ -236,14 +240,6 @@ async function diff(sides) {
   };
   await Promise.all(Array.from({ length: jobs }, work));
 
-  // A side whose checker is not built has nothing to compare.
-  for (const [s, side] of sides.entries()) {
-    const unbuilt = dumped[s].find((r) => r.code === 2 && /is not built yet/.test(r.err));
-    if (unbuilt) {
-      console.error(`--ownership=${side}: ${unbuilt.err.trim()}`);
-      process.exit(2);
-    }
-  }
   const failed = [];
   const same = [];
   const accepts = [];
