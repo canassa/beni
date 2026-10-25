@@ -3962,7 +3962,7 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .log_scope => {
             if (args.len < 2) return a.freshCall(args);
             const r = try a.apply(args[args.len - 1], &.{try a.mkLit(lit_unit, 0, 0)}, g);
-            return a.unscopedCommands(r);
+            return if (a.scopedBodies(r, 64)) a.freshEmpty() else r;
         },
         .debug_log => {
             if (args.len != 2) return a.freshCall(args);
@@ -7289,32 +7289,35 @@ pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
     return a.termWord(t, k);
 }
 
-/// What a log scope (`Core.Row.log_scope`) gives, with every command made
-/// inside it that has a body read as no command the pass can name: the
-/// body would run with the scope's log context, which `browser-inline`
-/// does not keep yet (#751, #1003), so the program is refused there as it
-/// was before the row, a limit of the compiler. `Cmd.none` and the model
-/// stay read.
-fn unscopedCommands(a: *Writes, r: u32) Error!u32 {
-    if (a.effectParts(r, .cmd)) |bodies| return if (bodies.len == 0) r else a.freshEmpty();
-    if (a.termTag(r) == .alt) return if (a.scopedBodies(r)) a.freshEmpty() else r;
-    if (a.termTag(r) != .tup or a.termLen(r) < 3 or a.effectParts(r, .sub) != null) return r;
-    const parts = try a.arena().alloc(u32, a.termLen(r) - 1);
-    for (parts, 1..) |*p, k| p.* = a.termWord(r, k);
-    const cmd = try a.unscopedCommands(parts[1]);
-    if (cmd == parts[1]) return r;
-    parts[1] = cmd;
-    return a.mkTup(parts);
-}
-
-/// Whether a term, through its alternatives and pairs, holds a command with
-/// a body.
-fn scopedBodies(a: *const Writes, t: u32) bool {
+/// Whether a log scope's result (`Core.Row.log_scope`) may hold a command
+/// with a body: one would run with the scope's log context, which
+/// `browser-inline`'s commands do not keep yet (#751, #1003), so such a
+/// result is read as before the row, `Fresh`, and an arm returning it is
+/// refused, a limit of the compiler. Only the shapes below are proved
+/// free of one; any other term may hold one, through a function or a list
+/// it builds, and so may any term deeper than `depth`.
+fn scopedBodies(a: *const Writes, t: u32, depth: u32) bool {
+    if (depth == 0) return true;
     if (a.effectParts(t, .cmd)) |bodies| return bodies.len != 0;
-    if (a.termTag(t) == .alt) {
-        for (0..a.altLen(t)) |i| if (a.scopedBodies(a.altItem(t, @intCast(i)).term)) return true;
-        return false;
-    }
-    if (a.termTag(t) == .tup and a.termLen(t) >= 3) return a.scopedBodies(a.termWord(t, 2));
-    return false;
+    return switch (a.termTag(t)) {
+        .same, .lit, .fresh, .ixeq => false,
+        .tup => for (1..a.termLen(t)) |k| {
+            if (a.scopedBodies(a.termWord(t, k), depth - 1)) break true;
+        } else false,
+        .con => for (2..a.termLen(t)) |k| {
+            if (a.scopedBodies(a.termWord(t, k), depth - 1)) break true;
+        } else false,
+        .lst_lit => for (1..a.termLen(t)) |k| {
+            if (a.scopedBodies(a.termWord(t, k), depth - 1)) break true;
+        } else false,
+        .rec => blk: {
+            var k: usize = 4;
+            while (k < a.termLen(t)) : (k += 2) if (a.scopedBodies(a.termWord(t, k), depth - 1)) break :blk true;
+            break :blk false;
+        },
+        .alt => for (0..a.altLen(t)) |i| {
+            if (a.scopedBodies(a.altItem(t, @intCast(i)).term, depth - 1)) break true;
+        } else false,
+        else => true,
+    };
 }
