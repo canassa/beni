@@ -1,0 +1,31 @@
+-- A command with a body made inside `Log.annotate` would run with the
+-- arm's log context (boundary.md §9.8.16 (b)), which `browser-inline`'s
+-- commands do not keep yet (#751, #1003): the arm stays refused, a limit
+-- of the compiler, rather than run its body with the default context.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+
+
+update : Msg, Int → Int × Cmd Msg
+update _ model = Log.annotate "request" "r1" λ⊤ → ( model + 1, Cmd.perform λ_ → Log.info "a body" )
+
+
+view : Int → Html Msg
+view model = <button onClick={Go}>{model}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

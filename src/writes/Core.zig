@@ -105,7 +105,9 @@ pub const Row = enum {
     /// last argument once, in a log context, and returns what it returns
     /// (`core/Log.beni`, `within`). So an `update` arm written inside one
     /// has its model and its command read through it (`boundary.md`
-    /// §9.8.16 (b), #751). Pinned: `browser/inline/LogCommandContext`.
+    /// §9.8.16 (b), #751). A command with a body made inside one is not
+    /// read yet (`unscopedCommands` in `Writes.zig`; #1003). Pinned:
+    /// `browser/inline/LogScopeInUpdate`, `build/bad/inline/CommandInLogScope`.
     log_scope,
     /// A value nothing relates to the old model: the scalars and the other
     /// folds of `List`, every other `Dict` and every `Set` function,
