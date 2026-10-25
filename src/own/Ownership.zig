@@ -170,7 +170,7 @@ const inst_depth: u32 = 4;
 
 /// One callback of a callee summary asked whether it returns owned at a
 /// written place (`Walker.ro_guards`, `Walker.loan_chain`).
-const RoGuard = struct { s: *const Summary, j: u32, written: u32, extent: WriteExtent };
+const RoGuard = struct { s: *const Summary, j: u32, written: u32, extent: WriteExtent, within: u32 = eps };
 
 pub const Position = struct { line: u32, col: u32 };
 
@@ -19369,11 +19369,14 @@ const Walker = struct {
     /// except while that is the guard being established (`guard`).
     fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (p.kind != .cb) return true;
-        if (p.a == guard) return true;
+        // The callback being established, asked of the same part of its
+        // result: assumed. Another part of it (a component handed on) is a
+        // different question, which the assumption does not answer.
+        if (p.a == guard and (w.ro_guards.items.len == 0 or p.path == w.ro_guards.items[w.ro_guards.items.len - 1].within)) return true;
         // A callback asked around a cycle of callbacks: the invariant's
-        // assumption (`ro_guards`).
+        // assumption (`ro_guards`), for the same part of the same result.
         const at_written = if (written == none) none else try w.o.concat(p.path, written);
-        for (w.ro_guards.items) |g| if (g.s == s and g.j == p.a and g.written == at_written and g.extent == extent) return true;
+        for (w.ro_guards.items) |g| if (g.s == s and g.j == p.a and g.written == at_written and g.extent == extent and g.within == p.path) return true;
         // Past §16.7's `callbacks` limit: an error at the declaration, as
         // `callbackLoanDemands` is; the answer is `ro_exact`, as for a
         // function the checker cannot place (not owned in the exact pass).
@@ -19795,8 +19798,6 @@ const Walker = struct {
     /// (`none`: every path). Aliases of those roots at any result path count.
     fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (c.limit != .none) return false;
-        try w.ro_guards.append(w.a, .{ .s = s, .j = j, .written = written, .extent = extent });
-        defer _ = w.ro_guards.pop();
         // A pessimistic callee's supply rows no longer say
         // where each parameter is supplied: nothing it hands back is owned.
         if (s.limit != .none) return false;
@@ -19804,6 +19805,8 @@ const Walker = struct {
         const within = w.ro_within;
         w.ro_within = eps;
         defer w.ro_within = within;
+        try w.ro_guards.append(w.a, .{ .s = s, .j = j, .written = written, .extent = extent, .within = within });
+        defer _ = w.ro_guards.pop();
         if (debug_own) {
             std.debug.print("RO depth={d} j={d} within={s} closure={d} res:\n", .{ depth, j, try w.o.pathText(within), w.ro_closure });
             for (c.res) |r| std.debug.print("   {s} {s}\n", .{ try w.o.pathText(r.path), try w.o.provText(r.prov) });

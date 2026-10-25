@@ -1,0 +1,55 @@
+-- A callback asked whether it returns owned is assumed so only for the
+-- same part of its result. `split` returns `( shared, y )`: its second
+-- component is the list it was handed, but its first is a top-level list.
+-- `self` hands `split` its own first component back, and `cycle` does so
+-- through a second callback; both then push onto the second component,
+-- which by then is `shared`. Both are refused exactly. Master accepted
+-- `self`, taking the assumption for `split`'s whole result as an answer
+-- about its first component.
+shared : List Int
+shared = [ 0 ]
+
+
+pushOne : List Int → List Int
+pushOne x = List.push x 1
+
+
+split : List Int → List Int × List Int
+split y = ( shared, y )
+
+
+pass : List Int → List Int
+pass z = z
+
+
+selfStep :
+      (List Int → List Int)
+    , (List Int → List Int × List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+selfStep f g n start =
+    ( a, _ ) = g start
+    ( _, d ) = g a
+    f (n d)
+
+
+cycleStep :
+      (List Int → List Int)
+    , (List Int → List Int × List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+cycleStep f g m n start =
+    ( a, _ ) = g start
+    ( _, d ) = g (m a)
+    f (n d)
+
+
+pub self : ⊤ → List Int
+self ⊤ = selfStep pushOne split pass []
+
+
+pub cycle : ⊤ → List Int
+cycle ⊤ = cycleStep pushOne split pass pass []
