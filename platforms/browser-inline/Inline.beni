@@ -260,11 +260,16 @@ text node shown =
 -- value (the owner, 2026-10-25): the offsets and direction read before,
 -- set again after, each clamped to the new value's length. A control with
 -- no selection (its `selectionStart` is null, or undefined on a `select`)
--- and one without the focus are written and left alone.
+-- and one without the focus are written and left alone. A `value` the
+-- control already shows is not written, and its selection is not touched.
 writeProp : V, V, V → ⊤
 writeProp el member v =
     caret = if Js.same member (Js.from "value") then Js.get el "selectionStart" else Js.undefined
-    if Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el) then
+    if Js.same member (Js.from "value") && Js.same (Js.get el member) v then
+        ⊤
+    else if
+        Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el)
+    then
         Js.set el member v
     else
         caretEnd = Js.get el "selectionEnd"
