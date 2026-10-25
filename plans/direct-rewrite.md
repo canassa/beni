@@ -166,6 +166,16 @@ A slice meets its bar when, on its scenario, seeds 1–3:
 The research project's rule 2 applies: an implementation the owner has not checked by hand through
 `./rr serve` is not in the numbers.
 
+*Amended 2026-10-25 (the owner, #298, for S2 and the slices after it):* where a decided
+representation or guarantee, not the compiler, sets a fixed cost, the bar is read in two parts.
+**Slope and N = 256** are held to 1.1× tea-inline as generated. **N = 1** is held to 1.1× tea-inline
+with beni's decided representation and guarantees (for S2: core's `Dict` with its pair index, the
+row list, LIS, typed pushes, synchronous passes), built by the switches of `plans/inline-s2/` and
+recorded beside tea-inline as generated, which is reported too. **"Every table operation ≤ 1.2×
+vanilla"** applies where tea-inline itself meets it; elsewhere the operation is held to 1.1×
+tea-inline (on big-table, `updateEvery` and the snapshot, where tea-inline is 2.2× vanilla).
+`browser-inline.md` §9.7 has the numbers this reads.
+
 ## 5. The slices
 
 Each slice: what lands, its golden, its scenario and bar, what it depends on. The order is the
@@ -244,8 +254,8 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
     1.09× at N = 256 and 1.29× at N = 1, the fixed cost being core's `Dict`, the row list, LIS and
     typed pushes (`browser-inline.md` §9.7).
   - **The slices** are S2a–S2e of `browser-inline.md` §9.9. **Depends on**: #294's ordered storage
-    (#681, after #320), O5 (#321), the owner's questions on #298 (`For` over a `Dict`, `Dict.keyAt`, the
-    index representation, the bar at N = 1), #879's schema-run cause, and the research generators
+    (#681, after #320), O5 (#321), the owner's answers on #298 (decided 2026-10-25: `For` over a `Dict`,
+    `Dict.keyAt`, the index from key to entry pair, and the bar as §4 now reads it), #879's schema-run cause, and the research generators
     moved from `List` rows to `Dict` rows by the owner's research session (`browser-inline.md` §9.8).
 
 ### S3 — derived values
