@@ -24,12 +24,14 @@
 // instead: every root of O1's audit (`bench/ownership-roots.mjs`) is dumped under
 // `--ownership=<a>` and `--ownership=<b>` (`v1` or `v2`, hidden flags), with
 // the same rows as the tables, and the verdict lines are compared per
-// `(root, module, line:col)`. It prints three lists: the lines with the same
-// verdict, those `<b>` accepts where `<a>` refused, and those `<b>` refuses
-// where `<a>` accepted. A position one side reports and the other does not is
-// an acceptance on the silent side, since a dump reports no line where it
-// demands nothing. `--diff=v1,v1` is the diff's own control: every line the
-// same. A side whose checker is not built stops the diff with exit 2.
+// demand: `(root, module, line:col, operation and base)`, a repeat at one
+// position counted apart. It prints the three lists: the demands with the
+// same verdict, those `<b>` accepts where `<a>` refused, and those `<b>`
+// refuses where `<a>` accepted; and a fourth, the demands only one side
+// reports, which a checker that drops or invents a demand fills. It exits 1
+// when any of the last three lists is not empty or a root was not dumped.
+// `--diff=v1,v1` is the diff's own control: every demand the same. A side
+// whose checker is not built stops the diff with exit 2.
 //
 //     node bench/ownership-everywhere.mjs --diff=v1,v2 [--beni=…] [--jobs=N] [--same]
 //
@@ -192,8 +194,10 @@ async function worker() {
 }
 // ---- the whole-corpus verdict diff (`ownership-v2.md` §7.2) -----------------
 
-/// One dump's verdict lines, by `module\tline:col`: whether any line at the
-/// position refused (rejected or pending), and the lines themselves.
+/// One dump's demands, one each: keyed by `module\tline:col\tdemand\t#k`,
+/// the demand being its operation and base as the line writes them and `k`
+/// counting the lines at one position that write the same demand. Each is
+/// whether it refused (rejected or pending), and its line.
 function verdicts(out) {
   const at = new Map();
   let module = "";
@@ -205,11 +209,9 @@ function verdicts(out) {
     }
     const m = line.match(/^\s+(\d+:\d+) (.*?): (accepted|rejected|pending)\b(.*)$/);
     if (!m) continue;
-    const key = `${module}\t${m[1]}`;
-    const v = at.get(key) ?? { refused: false, lines: [] };
-    v.refused ||= m[3] !== "accepted";
-    v.lines.push(line.trim());
-    at.set(key, v);
+    let k = 0;
+    while (at.has(`${module}\t${m[1]}\t${m[2]}\t#${k}`)) k++;
+    at.set(`${module}\t${m[1]}\t${m[2]}\t#${k}`, { refused: m[3] !== "accepted", line: line.trim() });
   }
   return at;
 }
@@ -244,6 +246,7 @@ async function diff(sides) {
   const same = [];
   const accepts = [];
   const refuses = [];
+  const oneSided = [];
   for (const [i, root] of roots.entries()) {
     const [a, b] = dumped.map((d) => d[i]);
     const bad = [a, b].map((r, s) => (r.code === 0 ? null : `${sides[s]}: ${r.signal ?? `exit ${r.code}`} ${r.err.split("\n")[0]}`)).filter(Boolean);
@@ -254,11 +257,12 @@ async function diff(sides) {
     const va = verdicts(a.out);
     const vb = verdicts(b.out);
     for (const key of [...new Set([...va.keys(), ...vb.keys()])].sort()) {
-      const x = va.get(key) ?? { refused: false, lines: [] };
-      const y = vb.get(key) ?? { refused: false, lines: [] };
+      const x = va.get(key);
+      const y = vb.get(key);
       const [module, pos] = key.split("\t");
-      const row = { where: `${root.name} ${module} ${pos}`, a: x.lines, b: y.lines };
-      if (x.refused === y.refused) same.push(row);
+      const row = { where: `${root.name} ${module} ${pos}`, a: x ? [x.line] : [], b: y ? [y.line] : [] };
+      if (!x || !y) oneSided.push(row);
+      else if (x.refused === y.refused) same.push(row);
       else if (x.refused) accepts.push(row);
       else refuses.push(row);
     }
@@ -279,11 +283,12 @@ async function diff(sides) {
   show(same, "The same verdict", !!args.same);
   show(accepts, `${b} accepts where ${a} refused`, true);
   show(refuses, `${b} refuses where ${a} accepted`, true);
+  show(oneSided, "Demands only one side reports", true);
   if (failed.length) {
     console.log(`\n## Roots not dumped: ${failed.length}\n`);
     for (const f of failed) console.log(`- ${f}`);
   }
-  return failed.length ? 1 : 0;
+  return failed.length || accepts.length || refuses.length || oneSided.length ? 1 : 0;
 }
 
 if (args.diff) {
