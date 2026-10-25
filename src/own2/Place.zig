@@ -465,6 +465,9 @@ pub const Table = struct {
         while (i < t.count()) : (i += 1) {
             if ((kinds[i] == .ctor or kinds[i] == .tuple) and hs[i].isEmpty()) {
                 kinds[i] = .cross;
+                // A leaf names no type: the head would otherwise carry a
+                // session id into a block.
+                t.places.items(.head)[i] = 0;
                 ranges[i].len = 0;
             }
         }
@@ -512,6 +515,9 @@ pub const Table = struct {
     /// and appends `⟲` (once). Memoised per `(path, step)`; a miss reads the
     /// ancestors and charges one record per ancestor read.
     pub fn extend(t: *Table, gpa: Allocator, charge: Charge, path: PathId, step: Step) Error!?PathId {
+        // One record per request, a memo hit included (§4.1: a cache hit is
+        // reached only through a charged edge, and charged).
+        try charge.reserve(gpa, .path, 1);
         if (t.extend_memo.get(.{ path.int(), step.word() })) |hit| return if (hit == Ids.none_int) null else PathId.from(hit);
         const here = t.pathPlace(path);
         const target = t.child(here, step) orelse {
@@ -580,7 +586,7 @@ pub const Table = struct {
         for (order.items) |p| {
             const r = t.stepRange(p);
             const k = t.kind(p);
-            const h = if (k == .tuple or k == .record or k == .cross or k == .@"var") t.head(p) else names.head(names.ctx, t.head(p));
+            const h = if (k == .tuple or k == .record) t.head(p) else names.head(names.ctx, t.head(p));
             try out.appendSlice(gpa, &.{ @backingInt(k), h, t.holds(p).bits(), r.len });
             for (t.step_tab.items(.step)[r.start..][0..r.len], t.step_tab.items(.child)[r.start..][0..r.len]) |s, c| {
                 const w = if (s.kind == .field) (Step{ .kind = .field, .payload = 0 }).word() else s.word();
@@ -621,7 +627,7 @@ pub const Table = struct {
             const k = words[at];
             if (k > @backingInt(Kind.cross)) return error.Malformed;
             const kd: Kind = @fromBackingInt(@intCast(k));
-            const h = if (kd == .tuple or kd == .record or kd == .cross or kd == .@"var") words[at + 1] else remap.head(remap.ctx, words[at + 1]);
+            const h = if (kd == .tuple or kd == .record) words[at + 1] else remap.head(remap.ctx, words[at + 1]);
             const hb = words[at + 2];
             const len = words[at + 3];
             at += 4;
@@ -809,11 +815,12 @@ test "a recursive type is one place and its canonical paths fold with ⟲" {
     // The walk's memo answers a second ask with one read and no new place.
     try testing.expectEqual(tree, try f.of(0));
     try testing.expectEqual(@as(u32, 3), t.count());
-    // A second extension of a known pair is a memo hit: nothing charged.
+    // A second extension of a known pair is a memo hit, charged one record
+    // per request and no more (no ancestor walk, no new node).
     const before = f.account.growth;
     try testing.expectEqual(deep_list, (try f.extend(below, s1)).?);
     try testing.expectEqual(below, (try f.extend(root, s0)).?);
-    try testing.expectEqual(before, f.account.growth);
+    try testing.expectEqual(before + 2, f.account.growth);
 }
 
 // `Maybe (Maybe (List Int))` and `Int × Int`: 0 outer Maybe, 1 inner Maybe,
@@ -1003,4 +1010,49 @@ test "encode writes a cycle once through the names table, and decode reads an eq
         const remap: Remap = .{ .ctx = undefined, .head = Shift.back, .field = back };
     };
     try testing.expect((try Table.decode(gpa, &f.account, words.items, Swap.remap)) == null);
+}
+
+/// One place of every kind, each nominal one with a distinctive head:
+/// 0 record { a : 1, b : 2 }, 1 list, 2 dict, 3 ref, 4 closure, 5 opaque,
+/// 6 var, 7 tuple (var, Int), 8 `type T = A T | B` (crosses), 9 Int.
+const every_kind = [_]TestGraph.TestNode{
+    .{ .kind = .record, .children = &.{ .{ .kind = .field, .payload = 10, .@"var" = 1 }, .{ .kind = .field, .payload = 11, .@"var" = 2 } } },
+    .{ .kind = .list, .head = 777, .children = &.{.{ .kind = .elem, .@"var" = 3 }} },
+    .{ .kind = .dict, .head = 778, .children = &.{.{ .kind = .elem, .@"var" = 4 }} },
+    .{ .kind = .ref, .head = 779, .children = &.{.{ .kind = .contents, .@"var" = 5 }} },
+    .{ .kind = .closure, .head = 780, .children = &.{.{ .kind = .env, .@"var" = 6 }} },
+    .{ .kind = .@"opaque", .head = 781, .children = &.{.{ .kind = .slot, .payload = 0, .@"var" = 7 }} },
+    .{ .kind = .@"var" },
+    .{ .kind = .tuple, .head = 2, .children = &.{ .{ .kind = .index, .payload = 0, .@"var" = 6 }, .{ .kind = .index, .payload = 1, .@"var" = 8 } } },
+    .{ .kind = .ctor, .head = 782, .children = &.{ .{ .kind = .ctor_arg, .payload = 0, .arg = 0, .@"var" = 8 }, .{ .kind = .ctor_arg, .payload = 1, .arg = 0, .@"var" = 9 } } },
+    .{ .kind = .cross },
+};
+
+test "no session id reaches the bytes for any place kind, a reclassified leaf included" {
+    var f: Fixture = .{};
+    f.init(&every_kind);
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.of(0);
+    // `type T = A T | B` holds nothing: a leaf, and no longer a `T`.
+    const t = try f.of(8);
+    try testing.expectEqual(Kind.cross, f.table.kind(t));
+    try testing.expectEqual(@as(u32, 0), f.table.head(t));
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(gpa);
+    try f.table.encode(gpa, rec, Shift.names, &words);
+    for (words.items) |w| {
+        for ([_]u32{ 777, 778, 779, 780, 781, 782 }) |head| try testing.expect(w != head);
+    }
+    var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
+    defer decoded.deinit(gpa);
+    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account)));
+    // Every head came back as it was, the leaf's as 0.
+    var i: u32 = 0;
+    var seen_heads: u32 = 0;
+    while (i < decoded.count()) : (i += 1) {
+        const h = decoded.head(.from(i));
+        if (h >= 777 and h <= 782) seen_heads += 1;
+    }
+    try testing.expectEqual(@as(u32, 5), seen_heads);
 }
