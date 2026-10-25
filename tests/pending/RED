@@ -196,9 +196,35 @@ tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 # literal is taken as maybe its base; R-4.4.3.
 tests/pending/ownership/PrependFreshRecord.beni exit=0 ownership-differs
 
+# CK-283 (#869): rows exchanged by index (`indexedMap` answering another
+# index's row, `swapAt`) and an edit through `List.drop` over owned rows are
+# refused; the twin putting one row twice stays refused; R-4.8.17.
+tests/pending/ownership/RecordIndexExchange.beni exit=0 ownership-differs
+
 # CK-284: a top-level alias of a writer is called as the writer, through any
 # number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
 tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
+
+# CK-290 (#394): an old field read through a wrapper (`Just p`, `( p, 1 )`)
+# then a pattern is taken as a whole use; it should be hoisted; R-4.8.12.
+tests/pending/ownership/RecordWrapperRead.beni exit=0 ownership-differs
+
+# CK-291 (#870): record bases no provenance names are pending; each needs a
+# verdict with a cause; R-4.8.14.
+tests/pending/ownership/RecordProvenanceCallbackResult.beni exit=0 ownership-differs
+tests/pending/ownership/RecordProvenanceCtorValue.beni exit=0 browser-inline.ownership-differs
+tests/pending/ownership/RecordProvenanceEntryPage.beni exit=0 browser-inline.ownership-differs
+tests/pending/ownership/RecordProvenanceSameVariant.beni exit=0 browser-inline.ownership-differs
+tests/pending/ownership/RecordProvenanceTopLevelOk.beni exit=0 ownership-differs
+
+# CK-292 (#410): a form moved between variants of one model field counts as
+# a second holder at the entry (`disjoint`); R-4.8.15.
+tests/pending/ownership/RecordVariantMove.beni exit=0 browser-inline.ownership-differs
+
+# CK-293 (#420): the issue list a schema decoder builds loses its record
+# condition with its list one; each update of an issue is refused exclusive;
+# R-4.10.8.
+tests/pending/ownership/SchemaIssuesExclusive.beni exit=0 ownership-differs
 
 # CK-294 (#188): a callee that only pushes onto the list its callback
 # returns is refused `need` when the items are shared; `need` has no path;
@@ -233,3 +259,31 @@ tests/pending/ownership/ReturnedLambdaWrite.beni exit=0 ownership-differs
 # CK-301 (#278): a function value of several known classes is not joined,
 # so it answers `⊤call` and is refused `unknown`; R-5.5.5.
 tests/pending/ownership/JoinedFunctionValue.beni exit=0 ownership-differs
+
+# CK-302 (#963): a tagger lambda over a host `Value` is refused `need`,
+# where the bare constructor is accepted; R-5.5.12.
+tests/pending/ownership/PushTagger exit=0 platform.ownership-differs
+
+# CK-303 (#957), CK-304 (#412): Conduit's entry, unchanged: the four model
+# records view events never carry are refused `payload` (approx), because the
+# arms are joined; the fresh `ChangedUrl` address is refused `escaped`
+# (approx); R-5.8.9, R-5.8.10.
+tests/pending/ownership/ConduitEntryRecords exit=0 browser-tea+everywhere.ownership-differs
+
+# CK-305 (#976): a send gives up its record objects unchecked: a top-level
+# record sent (from a function and from a lambda) and a model record sent
+# while the arm keeps the model are accepted; R-5.9.3.
+tests/pending/ownership/SendRecordObjects.beni exit=0 browser-inline.ownership-differs
+tests/pending/ownership/SendRecordObjects.beni#browser-tea+everywhere exit=0 browser-tea+everywhere.ownership-differs
+
+# CK-306 (#440): browser-inline's `Listen.on` has no send row, so a top-level
+# start handing its send to it is refused `supply` (approx); R-5.9.9.
+tests/pending/ownership/ListenTopLevelStart.beni exit=0 browser-inline.ownership-differs
+
+# CK-307 (#413): the issues of an Err from parseWith/encodeWith/printWith are
+# answered unknown (or lost), so updating them is refused; R-5.11.5.
+tests/pending/ownership/SchemaIssuesFresh.beni exit=0 ownership-differs
+
+# CK-309 (#871): Record.copy of an open record type keeps the original's
+# object, so an update of the copy is refused alias; R-4.10.4.
+tests/pending/ownership/RecordCopyOpen.beni exit=0 ownership-differs

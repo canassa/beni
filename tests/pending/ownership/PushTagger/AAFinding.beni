@@ -1,0 +1,11 @@
+-- CK-302: R-5.5.12, #963: a tagger lambda over a host value,
+-- `Push.onPush (λv → Pushed v)` with `Pushed : Value → Msg`, gets the bare
+-- constructor's verdict (`Push.onPush Other`, accepted): a foreign `Value`
+-- reaches no beni list. `Push` is the research generators' layer (as in
+-- browser/inline/LayerStart), so the project carries it as `platform/`; the
+-- program is `src/` (`_expected.sources`). Red: the bare constructor is
+-- accepted only because `ctorClass` drops fields that cannot hold a list,
+-- while the lambda's derived summary keeps `#Pushed.0 π1`, and a `Value` (a
+-- foreign type) is read as possibly a list, so the lambda is refused
+-- `need`. The golden claims the verdict lines and the totals; its summary
+-- lines are master's.

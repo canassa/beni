@@ -1,0 +1,100 @@
+-- CK-291: R-4.8.14, #870 (`writes/SameVariant`). `Edit` writes the form at
+-- `model.status#Loaded.0`, which no `init` or arm makes from anything but
+-- the form matched there, so the entry write is accepted `entry`
+-- (R-5.8.4). Red: master prints "pending: no provenance names where its
+-- base's object comes from" for that path.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Form =
+    title : String
+    body : String
+
+
+type Status
+    = Loading
+    | Loaded Form
+    | Failed
+
+
+type Phase
+    = Draft
+    | Saving
+    | Saved Int
+
+
+type Box
+    = Box Int Int
+
+
+type alias Model =
+    status : Status
+    box : Box
+    phase : Phase
+
+
+type Msg
+    = Edit String
+    | Wrap
+    | Settle
+    | Fail
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit text →
+            case model.status of
+                Loaded form →
+                    { model | status = Loaded { form | title = text } }
+
+                _ →
+                    model
+
+        Wrap →
+            case model.box of
+                Box a b →
+                    { model | box = Box (a + 1) b }
+
+        Settle →
+            case model.phase of
+                Draft →
+                    model
+
+                Saving →
+                    model
+
+                _ →
+                    { model | phase = Saved 1 }
+
+        Fail →
+            case model.status of
+                Loaded _ →
+                    { model | status = Failed }
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {case model.status of
+            Loaded form →
+                <p>{form.body}</p>
+
+            _ →
+                <p>…</p>
+        }
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { status = Loading, box = Box 0 0, phase = Draft }
+        , update = update
+        , view = view
+        }

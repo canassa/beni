@@ -1,0 +1,72 @@
+-- CK-292: R-4.8.15, #410 (Conduit Editor's `status`). `Save` moves the form
+-- from `Editing` to `Saving`: one value of `status` is one variant at a
+-- time, so the form is never reachable twice, and both `status` entry lines
+-- are accepted `entry`. Red: master counts the form at the other variant
+-- as another operand and refuses both `disjoint`. The twin: `Dup` puts the
+-- record of `a` at `b` too, a record genuinely at two model fields, and
+-- `Rename`'s write of `a` stays refused `disjoint`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Form =
+    title : String
+
+
+type Status
+    = Editing Int Form
+    | Saving Form
+
+
+type alias Model =
+    status : Status
+    a : Form
+    b : Form
+
+
+type Msg
+    = Save
+    | Typed String
+    | Dup
+    | Rename String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Save →
+            case model.status of
+                Editing _ form →
+                    { model | status = Saving form }
+
+                Saving _ →
+                    model
+
+        Typed s →
+            case model.status of
+                Editing n form →
+                    { model | status = Editing n { form | title = s } }
+
+                Saving form →
+                    { model | status = Saving { form | title = s } }
+
+        Dup →
+            { model | b = model.a }
+
+        Rename s →
+            a = model.a
+            { model | a = { a | title = s } }
+
+
+view : Model → Html Msg
+view model = <p>{"x"}</p>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { status = Editing 0 { title = "" }, a = { title = "" }, b = { title = "" } }
+        , update = update
+        , view = view
+        }

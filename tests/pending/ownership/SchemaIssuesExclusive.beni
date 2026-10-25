@@ -1,0 +1,30 @@
+-- CK-293: R-4.10.8, #420. Core rows state record conditions on their own:
+-- the issue list a decoder builds holds records it made, so `issues`'
+-- update of each issue is accepted after `decodeWith`, `parse` and
+-- `decode`. Red: the issue list is `fresh1{lost}r{lost}`, its record
+-- condition lost with the list's, and each call is refused `exclusive (a)`.
+-- `List.append` and `List.filter`, the issue's other rows, state theirs
+-- on master already.
+import Schema
+
+
+issues : Result (List Schema.Issue) a → Int
+issues r =
+    case r of
+        Ok _ →
+            0
+
+        Err found →
+            List.length (List.map found λi → { i | path = [] })
+
+
+pub decoded : ⊤ → Int
+decoded ⊤ = issues (Schema.decodeWith Schema.int (Schema.defaultOptions ⊤) 5)
+
+
+pub parsed : ⊤ → Int
+parsed ⊤ = issues (Schema.parse Schema.int "x")
+
+
+pub decodedPlain : ⊤ → Int
+decodedPlain ⊤ = issues (Schema.decode Schema.int 5)

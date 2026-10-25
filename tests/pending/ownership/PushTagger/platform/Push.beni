@@ -1,0 +1,25 @@
+--! Events the host page pushes to the program: server pushes, timer ticks,
+--! whole-state snapshots. beni has no ports (`boundary.md` §3.1): a binding
+--! the shipped platform lacks is written as the project's own platform,
+--! layered on it, and this is that layer's one module. The host dispatches
+--! a `rr-push` event on `window` whose `detail` is the event, as plain data;
+--! the program reads it with a schema.
+
+import Js
+import Listen
+import Schema exposing (Value)
+import Sub exposing (Sub)
+
+
+type Key
+    = Pushed
+
+
+--| Every event the host pushes, as the host value it sent, for as long as
+--| the subscription is in the program's set.
+pub onPush : (Value → msg) → Sub msg
+onPush tag = Sub.on Pushed (Listen.on "window" "rr-push" detail _) tag
+
+
+detail : Js.Value → Value
+detail event = Js.to (Js.get event "detail")

@@ -1,0 +1,74 @@
+-- CK-283: R-4.8.17, #869 (`browser/tea/ExchangeRows`, `writes/IndexGuard`,
+-- `browser/{dom,tea}/KeyedEnds`). An `indexedMap` that answers row 3 at
+-- index 1 and row 1 at index 3 (`exchange`, `swapAt`) leaves every row at
+-- one position, and `KeyedEnds`' edit through `List.drop` writes rows the
+-- list owns: `exchanged`, `swapped` and `dropEdit` are accepted. Red:
+-- master cannot see indexes, so the answers' record condition is lost
+-- (`exclusive (a)`), and the `List.drop` edit is refused `disjoint`. The
+-- twin `twice` puts row 3 at index 1 too and stays refused `exclusive`.
+type alias Row =
+    id : Int
+    label : String
+
+
+rows4 : ⊤ → List Row
+rows4 ⊤ =
+    [ { id = 1, label = "a" }
+    , { id = 2, label = "b" }
+    , { id = 3, label = "c" }
+    , { id = 4, label = "d" }
+    ]
+
+
+mark : List Row → List Row
+mark rows = List.map rows λr → { r | label = "x" }
+
+
+exchange : List Row → List Row
+exchange rows =
+    case ( List.get rows 1, List.get rows 3 ) of
+        ( Just a, Just b ) →
+            List.indexedMap rows λi row → if i == 1 then b else if i == 3 then a else row
+
+        _ →
+            rows
+
+
+swapAt : List Row, Int, Int → List Row
+swapAt rows i j =
+    case ( List.drop rows i ▷ List.head, List.drop rows j ▷ List.head ) of
+        ( Just a, Just b ) →
+            List.indexedMap rows λk r → if k == i then b else if k == j then a else r
+
+        _ →
+            rows
+
+
+pub exchanged : ⊤ → List Row
+exchanged ⊤ = mark (exchange (rows4 ⊤))
+
+
+pub swapped : ⊤ → List Row
+swapped ⊤ = mark (swapAt (rows4 ⊤) 0 3)
+
+
+pub dropEdit : List Row → List Row
+dropEdit rows = List.indexedMap (List.drop rows 1) λk r →
+    if k == List.length rows - 2 then
+        { r | label = r.label ++ "!" }
+    else
+        r
+
+
+twice : List Row → List Row
+twice rows =
+    case List.get rows 3 of
+        Just b →
+            List.indexedMap rows λi row → if i == 1 then b else row
+
+        Nothing →
+            rows
+
+
+pub doubled : ⊤ → List Row
+doubled ⊤ = mark (twice (rows4 ⊤))

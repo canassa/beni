@@ -1,0 +1,19 @@
+module SendRecordObjects
+  36:13 send <Got …>: rejected top-level: SendRecordObjects.origin is a top-level value [restructure]
+  46:42 send <Got …>: rejected top-level: SendRecordObjects.origin is a top-level value [restructure]
+  49:42 send <Saved …>: rejected later-use: model.form is read again at 49:13 [copy]
+  52:18 update r: accepted param
+  53:15 update model: accepted param
+  56:18 update f: accepted param
+  57:15 update model: accepted param
+  66:5 update entry SendRecordObjects.update model: accepted entry
+  66:5 update entry SendRecordObjects.update msg#Got.0: accepted entry
+  66:5 update entry SendRecordObjects.update msg#Saved.0: accepted entry
+  capture model.form: read 49:59; before 49:34
+  summary fire: π1 R; π1 calls ≤1, supply 1#Got.0 shared(SendRecordObjects.origin) borrowed
+  summary update: π1 R, π1#Got.0 W{x}, π1#Got.0.x R, π1#Saved.0 W{x}, π1#Saved.0.x R, π2 RW{n}, π2.form R; res .0 π2 π2◦, .0.form π2.form, .1#Cmd.0 fresh1{lost}r{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 ~λ?r{lost}, .1#Cmd.0[*]#Now.0◇ ~⊤{lost}r{lost}, .1#Cmd.0[*]#Perform.0 ~λ?r{lost}, .1#Cmd.0[*]#Perform.0◇ ~⊤{lost}r{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π2.form, condition(fresh2){lost}r{lost}
+  summary view: π1.n R; res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 10: accepted 7, pending 0, rejected 3 (copy 1, restructure 2); hoisted 0, eager reads 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 10: accepted 7, pending 0, rejected 3 (copy 1, restructure 2); hoisted 0, eager reads 1

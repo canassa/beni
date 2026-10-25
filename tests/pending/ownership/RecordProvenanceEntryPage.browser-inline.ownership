@@ -1,0 +1,15 @@
+module RecordProvenanceEntryPage
+  41:13 update home: accepted param
+  44:13 update home: accepted param
+  51:13 update model: accepted param
+  51:36 update home: accepted param (RecordProvenanceEntryPage.homeUpdate writes it)
+  54:13 update model: accepted param
+  62:8 update entry RecordProvenanceEntryPage.update model: accepted entry
+  62:8 update entry RecordProvenanceEntryPage.update model.page#Home.0: accepted entry
+  summary homeUpdate: π2 W{clicks, text}, π2.clicks R; res π2◦
+  summary update: π2 W{page, warning}, π2.page R, π2.page#Home.0 W{clicks, text}, π2.page#Home.0.clicks R; res .page π2.page, .page#Home.0 π2.page#Home.0◦, π2◦
+  summary view: π1.warning R; res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

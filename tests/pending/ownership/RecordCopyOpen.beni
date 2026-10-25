@@ -1,0 +1,13 @@
+-- CK-309: R-4.10.4, #871 (`run/FieldColouring`). `Record.copy` makes a new
+-- object for an open record type too, so `bound`'s update of the copy is
+-- accepted `fresh` while `r` is read whole after it, as `inline`'s is.
+-- Red: master keeps the original's object for an open type's copy and
+-- refuses `bound`'s update `alias` ("r holds it").
+pub inline : { r | cups : Int } → { r | cups : Int } × { r | cups : Int }
+inline r = ( { Record.copy r | cups = 13 }, r )
+
+
+pub bound : { r | cups : Int } → { r | cups : Int } × { r | cups : Int }
+bound r =
+    copied = Record.copy r
+    ( { copied | cups = 13 }, r )

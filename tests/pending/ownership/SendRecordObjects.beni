@@ -1,0 +1,71 @@
+-- CK-305: R-5.9.3 (#976): a send gives up the record objects its payload
+-- holds. `fire` and the `FireLambda` command send `Got origin`, a top-level
+-- record, and `Got`'s arm writes it: refused `top-level` at each send
+-- (`top_level_record_changed`). `SaveForm`'s command sends `model.form`
+-- while its arm keeps `model`, and `Saved`'s arm writes it: refused
+-- `later-use` at the send. v1 accepts all three: the send's demand and
+-- `checkSender` read lists only, so the record payloads are never asked.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias R =
+    x : Int
+
+
+type alias Model =
+    n : Int
+    form : R
+
+
+type Msg
+    = Fire
+    | FireLambda
+    | SaveForm
+    | Got R
+    | Saved R
+
+
+origin : R
+origin = { x = 0 }
+
+
+fire : Cmd.Send Msg → ⊤
+fire send = send (Got origin)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Fire →
+            ( model, Cmd.perform fire )
+
+        FireLambda →
+            ( model, Cmd.perform λsend → send (Got origin) )
+
+        SaveForm →
+            ( model, Cmd.perform λsend → send (Saved model.form) )
+
+        Got r →
+            r2 = { r | x = r.x + 1 }
+            ( { model | n = r2.x }, Cmd.none )
+
+        Saved f →
+            f2 = { f | x = f.x + 1 }
+            ( { model | n = f2.x }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <p>{String.fromInt model.n}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0, form = { x = 1 } }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
