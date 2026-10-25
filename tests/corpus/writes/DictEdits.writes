@@ -1,0 +1,28 @@
+program DictEdits.main : Tea.sandbox
+  model DictEdits.Model
+  init
+    literal ρ
+  key Add                                         indexed    node ρ; node ρ.rows ⟨at id ins⟩; value ρ.rows{id}
+  key Remove                                      indexed    node ρ; node ρ.rows ⟨at id del⟩; value ρ.rows{id}
+  key Toggle                                      indexed    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows{id}; value ρ.rows{id}.done ≈
+  key Rename                                      indexed    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows{id}; value ρ.rows{id}.label
+  key Prune                                       structural node ρ; node ρ.rows ⟨prune⟩; value ρ.rows{*}
+  key Upsert#1 · True                             indexed    node ρ; node ρ.rows ⟨at id ins⟩; value ρ.rows{id}
+  key Upsert#1 · False                            indexed    node ρ; node ρ.rows ⟨at id del⟩; value ρ.rows{id}
+  key Move                                        indexed    node ρ; value ρ.rows ⟨replaced⟩
+  key Keep                                        exact      node ρ
+  key Clear                                       indexed    node ρ; value ρ.rows ⟨clear⟩
+  key Flip                                        indexed    node ρ; value ρ.rows ⟨replaced⟩; value ρ.rows{id}; value ρ.rows{id}
+  key Set                                         indexed    node ρ; node ρ.rows ⟨at id any⟩; value ρ.rows{id}
+  keys 12: bounded 12 (100%), exact 1, indexed 10, structural 1, * 0; capped 0
+  hole DictEdits.beni:91:12                       dynamic    reads ρ.rows
+  hole DictEdits.beni:92:12                       literal    reads ρ.count
+  holes 2: static 0, literal 1, static-key 0, dynamic 1
+  site DictEdits.beni:90:5                        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 11: under * 0 (0%)
+  pairs 11 over 12 keys and 2 groups (0.92 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

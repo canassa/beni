@@ -902,8 +902,10 @@ const DirectLists = struct {
             .remove_some => .remove_some,
             .permute => .permute,
             // `kept` names no shape: its element writes are their own.
-            .kept => return,
-            .none, .replaced => .replaced,
+            .kept, .d_kept => return,
+            // A dictionary's tags (write-sets.md, amended 2026-10-25) reach
+            // no `List` row: a `For` walks a `List`.
+            .none, .replaced, .d_at_ins, .d_at_del, .d_at_any, .d_swap, .d_grow, .d_prune, .d_permute, .d_clear, .d_replaced => .replaced,
         };
         const one: Index = if (wr.s1 != none) try d.index(wr.s1) else .unknown;
         const two: Index = if (wr.s2 != none) try d.index(wr.s2) else .unknown;

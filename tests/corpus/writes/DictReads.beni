@@ -1,0 +1,43 @@
+-- writes: a hole that reads one key of a `Dict` (`write-sets.md`, amended
+-- 2026-10-25). `Dict.get model.rows 1` reads `ρ.rows{1}`: a write at the
+-- literal key 2 cannot reach it, a write at a key the message names can, and
+-- a write of the storage reaches `Dict.size`, which reads `ρ.rows` whole.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : Dict Int String
+
+
+type Msg
+    = SetTwo String
+    | SetAt Int String
+    | Rename String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SetTwo s →
+            { model | rows = Dict.insert model.rows 2 s }
+
+        SetAt k s →
+            { model | rows = Dict.insert model.rows k s }
+
+        Rename s →
+            { model | rows = Dict.update model.rows 2 λslot → Maybe.map slot λ_ → s }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <p>{Maybe.withDefault (Dict.get model.rows 1) ""}</p>
+        <p>{Dict.size model.rows}</p>
+    </div>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty }, update = update, view = view }

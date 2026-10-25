@@ -2400,3 +2400,37 @@ no read of the model. Conflict is §2.5's, unchanged.
 that must touch only the written keys edits at each write instead, where it writes the code that
 makes it (`browser-inline.md` §9.4, *Edits at the write*); the tag is what it uses for a write in
 code it does not write.
+
+### *As built 2026-10-25 (S2a, #298):* positions in a `Dict`
+
+The amendment above, built in the pass (`Writes.zig`'s `applyDictRow`, `applyFold`, `diffDict`;
+`Core.zig`'s `Dict` and `fold` rows). What the build settled:
+
+- **How a tag is written.** A tag rides on a **`node`** write of the dictionary path, beside the
+  writes below it: `at κ` adds `value p{κ}`, `grow` and `prune` add `value p{*}`, `kept` adds its
+  value writes, `swap` and `permute` add nothing (the values do not change, the order does, and a
+  read of the order reads `p` itself, which a `node` write of the same length conflicts with, §2.5).
+  `clear` and `replaced` are `value` writes of the path, as a list's are, and a join that gives
+  `replaced` makes the write a `value` write. The dump prints `node ρ.rows ⟨at id ins⟩; value
+  ρ.rows{id}`, and `ρ.rows{*}` for the any-key step.
+- **The steps** are §2.1's index steps with a mark (`PathKind.index` and `.star`, second word 1),
+  so may-coincidence, conflict and the k-limit are a list step's unchanged; the type walk reads a
+  `Dict`'s value type through them.
+- **Key symbols** are §2.3's as the pass builds them: an integer literal, or a read of the message,
+  the model or a parameter. A `String` literal key is `?`, as it is for a list index: coarser, never
+  wider.
+- **The fold row** applies only when the accumulator is a path whose type is core's `Dict`: a model
+  path by the model's type, or a summarised function's parameter by its annotation. Any other fold
+  is `Fresh`, as before, and its callback is not walked, so no fold of a `List` moves.
+- **`Dict.empty`**, a value today, is the empty storage (`clear`), and `init`'s literal check reads it
+  as the empty literal it was. `Dict.empty ⊤` gets the same row when #961 makes it a function.
+- **Not yet pinned:** `swap`, `sortBy` and `insertAt` have rows, but `core/Dict` has none of the three
+  until #294's ordered storage (#681, #961); their fixtures come with them. `Set` keeps `Fresh`,
+  since no consumer reads it. The `For` row's value root (*Reads*) waits for `For` over a `Dict`
+  (S2b).
+- **Fixtures:** `writes/DictEdits` (every tag `core/Dict` has today, a sequence, an identity update,
+  two choices), `writes/DictFold` (a fold of updates, removals and insertions, through a helper's
+  annotated parameter, and a `List` fold that stays `Fresh`), `writes/DictReads` (a one-key read that
+  a write at another literal key does not reach). Red against the previous pass, which wrote every
+  `Dict` write as a `value` write of the whole dictionary. No emitted output moved: no `emit/`,
+  `browser/` or run-hash golden changed.

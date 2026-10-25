@@ -361,7 +361,43 @@ pub const Tag = enum(u32) {
 
 const FunKind = enum(u32) { top, ctor, lambda, letdef };
 
-pub const Edit = enum(u32) { none, kept, append, prepend, clear, remove_some, insert, remove_at, swap, set, permute, replaced };
+pub const Edit = enum(u32) {
+    none,
+    kept,
+    append,
+    prepend,
+    clear,
+    remove_some,
+    insert,
+    remove_at,
+    swap,
+    set,
+    permute,
+    replaced,
+    // A `Dict`'s tags (write-sets.md, amended 2026-10-25): what the storage's
+    // keys and order became. Kept apart from a list's, whose joins differ.
+    d_kept,
+    /// `at κ`, kind `ins`: κ appended if absent, or its value replaced.
+    d_at_ins,
+    /// `at κ`, kind `del`: κ removed, or nothing.
+    d_at_del,
+    /// `at κ`, kind `any`.
+    d_at_any,
+    d_swap,
+    d_grow,
+    d_prune,
+    d_permute,
+    d_clear,
+    d_replaced,
+
+    pub fn isDict(e: Edit) bool {
+        return @backingInt(e) >= @backingInt(Edit.d_kept);
+    }
+
+    pub fn isAt(e: Edit) bool {
+        return e == .d_at_ins or e == .d_at_del or e == .d_at_any;
+    }
+};
 
 const lit_int: u32 = 0;
 const lit_float: u32 = 1;
@@ -2644,6 +2680,10 @@ fn topRef(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
 /// walked again, so the holes of a markup constant are seen.
 fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     _ = g;
+    // core's empty `Dict` is the empty storage, not its representation
+    // (write-sets.md, amended 2026-10-25: `Dict.empty`).
+    if (a.in.packages[m] == .core and std.mem.eql(u8, a.in.module_names[m], "Dict") and std.mem.eql(u8, a.declName(m, d), "empty"))
+        return a.mkLst(none, .d_clear, none, none, &.{});
     if (a.in.effects) |fx| {
         if (fx.sub_none.is(m, d)) return a.effectTerm(.sub, &.{});
         if (fx.cmd_none.is(m, d)) return a.effectTerm(.cmd, &.{});
@@ -3559,6 +3599,10 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
             }
             if (base == none) return a.mkLst(none, edit, s1, s2, elems);
             const bv = try a.substPath(sub, base);
+            if (edit.isDict()) {
+                if (a.dictBase(bv)) |db| return a.dictStep(db, edit, s1, s2, elems);
+                return a.mkLst(none, .d_replaced, none, none, &.{});
+            }
             switch (a.termTag(bv)) {
                 .same => return a.mkLst(a.termWord(bv, 1), edit, s1, s2, elems),
                 .lst => if (edit == .kept and @as(Edit, @fromBackingInt(a.termWord(bv, 2))) == .kept) {
@@ -3651,9 +3695,240 @@ fn argSym(a: *Writes, m: u32, site: Inst.Index, which: usize, t: u32) Error!u32 
     return sym_unknown;
 }
 
+// `Dict` rows (write-sets.md, amended 2026-10-25)
+
+/// What a dictionary argument already is: a path, and the edit a call before
+/// this one in the arm made of it (`none` for the path itself).
+const DictBase = struct { path: u32, edit: Edit, s1: u32, s2: u32, elems: []const Elem };
+
+fn dictBase(a: *Writes, d: u32) ?DictBase {
+    switch (a.termTag(d)) {
+        .same => return .{ .path = a.termWord(d, 1), .edit = .none, .s1 = none, .s2 = none, .elems = &.{} },
+        .lst => {
+            const e: Edit = @fromBackingInt(a.termWord(d, 2));
+            const base = a.termWord(d, 1);
+            if (!e.isDict() or base == none) return null;
+            const n = a.lstElems(d);
+            const elems = a.arena().alloc(Elem, n) catch return null;
+            for (elems, 0..) |*x, i| x.* = a.lstElem(d, @intCast(i));
+            return .{ .path = base, .edit = e, .s1 = a.termWord(d, 3), .s2 = a.termWord(d, 4), .elems = elems };
+        },
+        else => return null,
+    }
+}
+
+/// `b` followed by an edit `e`: the sequence of the two, the writes below
+/// the dictionary kept beside it.
+fn dictStep(a: *Writes, b: DictBase, e: Edit, s1: u32, s2: u32, elems: []const Elem) Error!u32 {
+    const r = seqDict(b.edit, b.s1, e, s1);
+    // The second symbol is a `swap`'s; it goes with whichever edit stands.
+    const t2 = if (r[0] != .d_swap) none else if (b.edit == .none or b.edit == .d_kept) s2 else b.s2;
+    var all: std.ArrayList(Elem) = .empty;
+    defer all.deinit(a.gpa);
+    try all.appendSlice(a.gpa, b.elems);
+    try all.appendSlice(a.gpa, elems);
+    return a.mkLst(b.path, r[0], r[1], t2, all.items);
+}
+
+/// A callback's value root, anchored to the dictionary's `{*}`.
+fn mintEpsDict(a: *Writes, p: u32) Error!u32 {
+    const star = (try a.extend(p, .star, 0, 1)) orelse p;
+    return a.mintRoot(.eps, star, false);
+}
+
+const MaybeShape = packed struct(u8) { just: bool = false, nothing: bool = false, other: bool = false, _: u5 = 0 };
+
+/// Which `Maybe` constructors the alternatives of `r` are.
+fn maybeShape(a: *Writes, r: u32) MaybeShape {
+    switch (a.termTag(r)) {
+        .con => {
+            const c = a.termWord(r, 1);
+            if (c == a.ctor_just and a.termLen(r) == 3) return .{ .just = true };
+            if (c == a.ctor_nothing) return .{ .nothing = true };
+            return .{ .other = true };
+        },
+        .alt => {
+            if (a.altLen(r) == 0) return .{ .other = true };
+            var out: MaybeShape = .{};
+            for (0..a.altLen(r)) |i| {
+                const x = a.maybeShape(a.altItem(r, @intCast(i)).term);
+                out.just = out.just or x.just;
+                out.nothing = out.nothing or x.nothing;
+                out.other = out.other or x.other;
+            }
+            return out;
+        },
+        else => return .{ .other = true },
+    }
+}
+
+/// The value inside every `Just` alternative of `r` (all of which are).
+fn justPayload(a: *Writes, r: u32) Error!u32 {
+    if (a.termTag(r) == .con) return a.termWord(r, 2);
+    var items: std.ArrayList(AltItem) = .empty;
+    defer items.deinit(a.gpa);
+    for (0..a.altLen(r)) |i| {
+        const it = a.altItem(r, @intCast(i));
+        try items.append(a.gpa, .{ .gamma = it.gamma, .term = try a.justPayload(it.term) });
+    }
+    const scrut = a.termWord(r, 1);
+    return a.mkAlt(scrut, a.termWord(r, 2) == 1, a.termWord(r, 3), items.items);
+}
+
+/// `at κ` with an unknown key, as write-sets.md's `at ?` row says.
+fn atUnknown(e: Edit) Edit {
+    return switch (e) {
+        .d_at_ins => .d_grow,
+        .d_at_del => .d_prune,
+        else => .d_replaced,
+    };
+}
+
+/// Whether the type at path `p` — a model path, or a summarised function's
+/// parameter by its annotation — is core's `Dict`.
+fn isDictPath(a: *Writes, p: u32) Allocator.Error!bool {
+    const root = a.rootOf(p);
+    const start: TyRef = switch (a.pathKind(root)) {
+        .rho => a.model_type orelse return false,
+        .pi => blk: {
+            const id = a.pathA(root);
+            const m = a.fnModule(id);
+            const d = id - a.fn_base[m];
+            const b = a.bir(m);
+            if (d >= b.decls.len) return false;
+            const ann = b.decls[d].annotation.unwrap() orelse return false;
+            if (b.instTag(ann) != .type_fn) return false;
+            const ps = b.extraSlice(b.subRange(@fromBackingInt(b.instData(ann).lhs)), Inst.Index);
+            if (a.pathB(root) >= ps.len) return false;
+            break :blk .{ .m = m, .inst = ps[a.pathB(root)].int(), .env = &.{} };
+        },
+        else => return false,
+    };
+    const ty = (try a.tyWalk(try a.tyResolve(start), p)) orelse return false;
+    return switch (ty) {
+        .nominal => |n| a.in.packages[n.m] == .core and std.mem.eql(u8, a.in.module_names[n.m], "Dict") and std.mem.eql(u8, a.declName(n.m, n.d), "Dict"),
+        else => false,
+    };
+}
+
+fn applyDictRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u32, g: u32) Error!u32 {
+    if (row == .dict_empty) return a.mkLst(none, .d_clear, none, none, &.{});
+    if (args.len == 0) return a.freshCall(args);
+    const b = a.dictBase(args[0]) orelse return a.freshCall(args);
+    switch (row) {
+        .dict_insert, .dict_remove => {
+            if (row == .dict_insert and args.len != 3) return a.freshCall(args);
+            if (row == .dict_remove and args.len != 2) return a.freshCall(args);
+            const k = try a.argSym(m, site, 1, args[1]);
+            const e: Edit = if (row == .dict_insert) .d_at_ins else .d_at_del;
+            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, &.{});
+            return a.dictStep(b, e, k, none, &.{});
+        },
+        .dict_update => {
+            if (args.len != 3 or a.ctor_just == none or a.ctor_nothing == none) return a.freshCall(args);
+            const k = try a.argSym(m, site, 1, args[1]);
+            const eps = try a.mintEpsDict(b.path);
+            const present = try a.apply(args[2], &.{try a.mkCon(a.ctor_just, &.{try a.mkSame(eps)})}, g);
+            const absent = try a.apply(args[2], &.{try a.mkCon(a.ctor_nothing, &.{})}, g);
+            const p1 = a.maybeShape(present);
+            const p0 = a.maybeShape(absent);
+            if (!p1.other and !p0.other and p1.just and !p1.nothing and p0.nothing and !p0.just) {
+                // `Nothing ↦ Nothing` writes nothing: the storage is kept,
+                // and only the value at κ is written.
+                const v = try a.justPayload(present);
+                if (a.isIdentity(v, eps)) return args[0];
+                return a.dictStep(b, .d_kept, none, none, &.{.{ .index = k, .eps = eps, .term = v }});
+            }
+            const e: Edit = if (p1.other or p0.other) .d_at_any else if (!p1.nothing) .d_at_ins else if (!p1.just and !p0.just) .d_at_del else .d_at_any;
+            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, &.{});
+            return a.dictStep(b, e, k, none, &.{});
+        },
+        .dict_swap => {
+            if (args.len != 3) return a.freshCall(args);
+            const s1 = try a.argSym(m, site, 1, args[1]);
+            const s2 = try a.argSym(m, site, 2, args[2]);
+            if (s1 == sym_unknown or s2 == sym_unknown) return a.dictStep(b, .d_permute, none, none, &.{});
+            return a.dictStep(b, .d_swap, s1, s2, &.{});
+        },
+        .dict_insert_at => return a.dictStep(b, .d_replaced, none, none, &.{}),
+        .dict_sort_by, .dict_filter => {
+            // What decides the order or the kept keys is read (as `List`'s rows).
+            if (args.len != 2) return a.freshCall(args);
+            const eps = try a.mintEpsDict(b.path);
+            var read: u32 = 0;
+            if (a.termTag(args[1]) == .fun) {
+                const key = try a.freshEmpty();
+                const r = try a.apply(args[1], &.{ key, try a.mkSame(eps) }, g);
+                read = try a.deps(r);
+            } else read = try a.deps(args[1]);
+            const elems: []const Elem = if (a.deps_t.len(read) == 0) &.{} else &.{.{ .index = sym_star, .eps = eps, .term = try a.mkFresh(read) }};
+            return a.dictStep(b, if (row == .dict_sort_by) .d_permute else .d_prune, none, none, elems);
+        },
+        .dict_map => {
+            if (args.len != 2) return a.freshCall(args);
+            const eps = try a.mintEpsDict(b.path);
+            const key = try a.freshEmpty();
+            const r = try a.apply(args[1], &.{ key, try a.mkSame(eps) }, g);
+            if (a.isIdentity(r, eps)) return a.dictStep(b, .d_kept, none, none, &.{});
+            return a.dictStep(b, .d_kept, none, none, &.{.{ .index = sym_star, .eps = eps, .term = r }});
+        },
+        .dict_get => {
+            if (args.len != 2 or b.edit != .none) return a.freshCall(args);
+            const k = try a.argSym(m, site, 1, args[1]);
+            if (k == sym_unknown) {
+                const at = try a.mkSameStep(b.path, .star, 0, 1);
+                return a.maybeOf(try a.mkFresh(try a.depsUnion(try a.deps(at), try a.deps(args[1]))));
+            }
+            return a.maybeOf(try a.mkSameStep(b.path, .index, k, 1));
+        },
+        else => return a.freshCall(args),
+    }
+}
+
+/// `List.foldl ℓ acc f` (and `foldr`) whose accumulator is a dictionary path:
+/// the callback's edit of its accumulator, every key made `?`, sequenced
+/// with itself, its writes below the dictionary moved to `{*}`
+/// (write-sets.md, amended 2026-10-25, *A fold that edits its accumulator*).
+/// Any other fold is `Fresh`, as before, and its callback is not walked.
+fn applyFold(a: *Writes, args: []const u32, g: u32) Error!u32 {
+    if (args.len != 3 or a.termTag(args[1]) != .same or a.termTag(args[2]) != .fun) return a.freshCall(args);
+    const p = a.termWord(args[1], 1);
+    if (!try a.isDictPath(p)) return a.freshCall(args);
+    const eps = try a.mintEps(args[0]);
+    const r = try a.apply(args[2], &.{ try a.mkSame(eps), args[1] }, g);
+    var edit: Edit = .d_kept;
+    var elems: std.ArrayList(Elem) = .empty;
+    defer elems.deinit(a.gpa);
+    const n: u32 = if (a.termTag(r) == .alt) a.altLen(r) else 1;
+    if (n == 0) return a.freshCall(args);
+    for (0..n) |i| {
+        const x = if (a.termTag(r) == .alt) a.altItem(r, @intCast(i)).term else r;
+        if (a.termTag(x) == .same and a.termWord(x, 1) == p) continue;
+        if (a.termTag(x) != .lst) return a.freshCall(args);
+        const e: Edit = @fromBackingInt(a.termWord(x, 2));
+        if (!e.isDict() or a.termWord(x, 1) != p) return a.freshCall(args);
+        const e2: Edit = switch (e) {
+            .d_at_ins, .d_at_del, .d_at_any => atUnknown(e),
+            .d_kept, .d_grow, .d_prune => e,
+            else => .d_replaced,
+        };
+        edit = joinEdit(edit, e2);
+        for (0..a.lstElems(x)) |j| {
+            var el = a.lstElem(x, @intCast(j));
+            el.index = sym_star;
+            try elems.append(a.gpa, el);
+        }
+    }
+    // Sequenced with itself: `kept`, `grow` and `prune` repeat to themselves.
+    if (edit != .d_kept and edit != .d_grow and edit != .d_prune) edit = .d_replaced;
+    return a.mkLst(p, edit, none, none, elems.items);
+}
+
 fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u32, g: u32) Error!u32 {
     const xs = if (args.len > 0) args[0] else none;
     switch (row) {
+        .fold => return a.applyFold(args, g),
+        .dict_insert, .dict_remove, .dict_update, .dict_swap, .dict_insert_at, .dict_sort_by, .dict_filter, .dict_map, .dict_get, .dict_empty => return a.applyDictRow(row, m, site, args, g),
         .fresh => return a.freshCall(args),
         .debug_todo => return a.freshEmpty(),
         .debug_log => {
@@ -3910,10 +4185,35 @@ fn lostBefore(a: *const Writes, x: u32, y: u32) bool {
 
 fn joinEdit(x: Edit, y: Edit) Edit {
     if (x == y) return x;
+    if (x.isDict() or y.isDict()) return joinDict(x, y);
     if (x == .none or y == .none) return .replaced;
     if (x == .kept) return y;
     if (y == .kept) return x;
     return .replaced;
+}
+
+/// Two alternatives' `Dict` tags (write-sets.md, amended 2026-10-25,
+/// *Joins*). The symbols are compared by the caller.
+fn joinDict(x: Edit, y: Edit) Edit {
+    if (x == y) return x;
+    if (x == .d_kept) return y;
+    if (y == .d_kept) return x;
+    if (x.isAt() and y.isAt()) return .d_at_any;
+    const lo: Edit = if (@backingInt(x) < @backingInt(y)) x else y;
+    const hi: Edit = if (lo == x) y else x;
+    if (lo == .d_prune and hi == .d_clear) return .d_prune;
+    if (lo == .d_swap and hi == .d_permute) return .d_permute;
+    return .d_replaced;
+}
+
+/// A sequence of two `Dict` tags in one arm (write-sets.md, amended
+/// 2026-10-25, *Sequences*), `s` and `t` their key symbols.
+fn seqDict(x: Edit, s: u32, y: Edit, t: u32) struct { Edit, u32 } {
+    if (x == .none or x == .d_kept) return .{ y, t };
+    if (y == .d_kept) return .{ x, s };
+    if (x == y and (x == .d_at_ins or x == .d_at_del) and s == t) return .{ x, s };
+    if (x == y and (x == .d_grow or x == .d_prune)) return .{ x, none };
+    return .{ .d_replaced, none };
 }
 
 /// Add `w` to `ws`, joining a write already at its path (§2.4).
@@ -3932,7 +4232,13 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
                 if (a.lostBefore(w.lost, e.lost)) e.lost = w.lost;
             }
         }
-        if (e.edit != w.edit) {
+        if (e.edit.isAt() and w.edit.isAt() and e.s1 != w.s1) {
+            e.edit = .d_replaced;
+            e.s1 = none;
+            e.s2 = none;
+        } else if (e.edit.isAt() and w.edit.isAt()) {
+            e.edit = joinEdit(e.edit, w.edit);
+        } else if (e.edit != w.edit) {
             const j = joinEdit(e.edit, w.edit);
             if (j != e.edit) {
                 e.s1 = if (j == w.edit) w.s1 else none;
@@ -3940,10 +4246,13 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
             }
             e.edit = j;
         } else if (e.s1 != w.s1 or e.s2 != w.s2) {
-            e.edit = .replaced;
+            e.edit = if (e.edit.isDict()) .d_replaced else .replaced;
             e.s1 = none;
             e.s2 = none;
         }
+        // A dictionary whose tag the join made `replaced` or `clear` is a
+        // `value` write of it (write-sets.md, amended 2026-10-25).
+        if (e.edit == .d_replaced or e.edit == .d_clear) e.kind = .value;
         return;
     }
     try ws.append(a.gpa, w);
@@ -4022,6 +4331,56 @@ fn diff(a: *Writes, t: u32, p: u32, g: u32) Error!u32 {
     return id;
 }
 
+/// A dictionary's edit read off its value (write-sets.md, amended
+/// 2026-10-25): a `node` write of the dictionary carrying its tag, beside the
+/// writes below it — `value p{κ}` for the key an `at` names, `value p{*}`
+/// for `grow` and `prune`, and a `kept`'s own value writes. `clear` and
+/// `replaced` are `value` writes of the dictionary, as a list's are.
+fn diffDict(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
+    const base = a.termWord(t, 1);
+    const edit: Edit = @fromBackingInt(a.termWord(t, 2));
+    const s1 = a.termWord(t, 3);
+    const s2 = a.termWord(t, 4);
+    if (base != p) {
+        if (base == none and edit == .d_clear) return a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .d_clear });
+        return a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .d_replaced });
+    }
+    switch (edit) {
+        .d_clear, .d_replaced => return a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = edit }),
+        else => {},
+    }
+    try a.wsAdd(ws, .{ .path = p, .kind = .node, .edit = edit, .s1 = s1, .s2 = s2 });
+    switch (edit) {
+        .d_at_ins, .d_at_del, .d_at_any => {
+            const at = (try a.extend(p, .index, s1, 1)) orelse return a.wsAdd(ws, try a.lost(p, t));
+            return a.wsAdd(ws, value(at));
+        },
+        .d_grow, .d_prune => {
+            const at = (try a.extend(p, .star, 0, 1)) orelse return a.wsAdd(ws, try a.lost(p, t));
+            try a.wsAdd(ws, value(at));
+        },
+        .d_swap, .d_permute => return,
+        else => {},
+    }
+    if (edit != .d_kept and edit != .d_grow) return;
+    for (0..a.lstElems(t)) |i| {
+        const e = a.lstElem(t, @intCast(i));
+        const at: u32 = (if (e.index == sym_star) try a.extend(p, .star, 0, 1) else try a.extend(p, .index, e.index, 1)) orelse {
+            try a.wsAdd(ws, try a.lost(p, t));
+            continue;
+        };
+        var sub: std.ArrayList(Write) = .empty;
+        defer sub.deinit(a.gpa);
+        try a.wsGet(try a.diff(e.term, e.eps, g), &sub, a.gpa);
+        for (sub.items) |w| {
+            var w2 = w;
+            w2.path = try a.rebase(w.path, at);
+            if (a.pathLen(w2.path) < a.pathLen(at) + a.pathLen(w.path)) w2.kind = .value;
+            try a.wsAdd(ws, w2);
+        }
+    }
+}
+
 fn diffChild(a: *Writes, t: u32, p: u32, kind: PathKind, x: u32, y: u32, g: u32, ws: *WsBuilder) Error!void {
     // The invariant tag reads rest on (write-sets.md, amended 2026-10-09:
     // tag reads, item 3): a write descends through a constructor step only
@@ -4092,6 +4451,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         .lst => {
             const base = a.termWord(t, 1);
             const edit: Edit = @fromBackingInt(a.termWord(t, 2));
+            if (edit.isDict()) return a.diffDict(t, p, g, ws);
             if (base == p) {
                 if (edit != .kept) return a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = edit, .s1 = a.termWord(t, 3), .s2 = a.termWord(t, 4) });
                 try a.wsAdd(ws, .{ .path = p, .kind = .node, .edit = .kept });
@@ -4245,7 +4605,12 @@ fn typeTarget(a: *const Writes, m: u32, inst: Inst.Index) ?struct { m: u32, d: u
 fn tyAt(a: *Writes, p: u32) Allocator.Error!?Ty {
     const model = a.model_type orelse return null;
     if (a.rootOf(p) != rho_path) return null;
-    var ty = try a.tyResolve(model);
+    return a.tyWalk(try a.tyResolve(model), p);
+}
+
+/// The type reached from `ty0`, the type at `p`'s root, along `p`'s steps.
+fn tyWalk(a: *Writes, ty0: Ty, p: u32) Allocator.Error!?Ty {
+    var ty = ty0;
     var buf: [k_limit + 1]u32 = undefined;
     for (a.steps(p, &buf)) |s| {
         const next: TyRef = switch (a.pathKind(s)) {
@@ -4289,6 +4654,12 @@ fn tyAt(a: *Writes, p: u32) Allocator.Error!?Ty {
                     .nominal => |n| n,
                     else => return null,
                 };
+                // A `Dict`'s key step (write-sets.md, amended 2026-10-25)
+                // reaches its value type.
+                if (a.pathB(s) == 1) {
+                    if (n.args.len != 2 or !std.mem.eql(u8, a.declName(n.m, n.d), "Dict")) return null;
+                    break :blk n.args[1];
+                }
                 if (n.args.len != 1 or !std.mem.eql(u8, a.declName(n.m, n.d), "List")) return null;
                 break :blk n.args[0];
             },
@@ -6155,7 +6526,10 @@ fn isLiteral(a: *Writes, t: u32) bool {
             while (i < a.termLen(t)) : (i += 2) if (!a.isLiteral(a.termWord(t, i + 1))) return false;
             return true;
         },
-        .lst => return a.termWord(t, 1) == none and @as(Edit, @fromBackingInt(a.termWord(t, 2))) == .clear,
+        .lst => {
+            const e: Edit = @fromBackingInt(a.termWord(t, 2));
+            return a.termWord(t, 1) == none and (e == .clear or e == .d_clear);
+        },
         else => return false,
     }
 }
@@ -6560,8 +6934,8 @@ pub fn keyClass(a: *const Writes, ws: []const Write) KeyClass {
     }
     for (ws) |w| {
         switch (w.edit) {
-            .remove_some, .permute => class = .structural,
-            .none, .kept => {},
+            .remove_some, .permute, .d_grow, .d_prune, .d_permute => class = .structural,
+            .none, .kept, .d_kept => {},
             else => if (class == .exact) {
                 class = .indexed;
             },
@@ -6675,11 +7049,12 @@ pub fn writePath(a: *const Writes, w: *std.Io.Writer, p: u32) std.Io.Writer.Erro
             .tuple => try w.print(".{d}", .{a.pathA(s)}),
             .ctor => try w.print(".{s}#{d}", .{ a.ctorName(a.pathA(s)), a.pathB(s) }),
             .index => {
-                try w.writeByte('[');
+                const dict = a.pathB(s) == 1;
+                try w.writeByte(if (dict) '{' else '[');
                 try a.writeSym(w, a.pathA(s));
-                try w.writeByte(']');
+                try w.writeByte(if (dict) '}' else ']');
             },
-            .star => try w.writeAll("[*]"),
+            .star => try w.writeAll(if (a.pathB(s) == 1) "{*}" else "[*]"),
             else => {},
         }
     }
@@ -6750,6 +7125,14 @@ pub fn writeEdit(a: *const Writes, w: *std.Io.Writer, wr: Write) std.Io.Writer.E
         .set => "set",
         .permute => "permute",
         .replaced => "replaced",
+        .d_kept => "kept",
+        .d_at_ins, .d_at_del, .d_at_any => "at",
+        .d_swap => "swap",
+        .d_grow => "grow",
+        .d_prune => "prune",
+        .d_permute => "permute",
+        .d_clear => "clear",
+        .d_replaced => "replaced",
     };
     try w.print(" ⟨{s}", .{name});
     if (wr.s1 != none) {
@@ -6759,6 +7142,12 @@ pub fn writeEdit(a: *const Writes, w: *std.Io.Writer, wr: Write) std.Io.Writer.E
     if (wr.s2 != none) {
         try w.writeByte(' ');
         try a.writeSym(w, wr.s2);
+    }
+    switch (wr.edit) {
+        .d_at_ins => try w.writeAll(" ins"),
+        .d_at_del => try w.writeAll(" del"),
+        .d_at_any => try w.writeAll(" any"),
+        else => {},
     }
     try w.writeAll("⟩");
 }
