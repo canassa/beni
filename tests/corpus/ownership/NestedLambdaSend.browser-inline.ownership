@@ -4,7 +4,7 @@ module NestedLambdaSend
   56:5 entry NestedLambdaSend.update msg#Got.1: accepted entry
   summary search: π2 R; π2 calls ≤1, supply 1#Got.1 fresh owned
   summary leak: π2 R; π2 calls ≤1, supply 1#Got.1 shared(NestedLambdaSend.shared) borrowed
-  summary update: π1 R, π1#Got.1 RAW[storage], π1#Got.1[*] A, π2 RA; res .0 ~condition(fresh2) π1#Got.1 π2, .0[*] ~π1#Got.1[*], .1#Perform.0 condition(fresh3) ⊤call{lost}r{lost}, .1#Perform.0⋆ ~λr{lost} ~λr{lost}, condition(fresh1){lost}
+  summary update: π1 R, π1#Got.1 RAW[storage], π1#Got.1[*] A, π2 RA; res .0 π1#Got.1 π2, .0[*] ~π1#Got.1[*], .1#Perform.0 λr{lost} λr{lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
 total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1

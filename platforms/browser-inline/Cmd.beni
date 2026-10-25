@@ -7,7 +7,6 @@
 --! command where it is made, so `none` costs a page nothing.
 
 import Js
-import Task
 
 
 --| How a body sends a message: it is applied once the body returns, in the
@@ -34,20 +33,10 @@ batch cmds = Batch cmds
 
 
 --| Run `body` after the page shows the model `update` returned, in the same
---| dispatch: each message it sends is applied after it returns. The body has
---| the log context of the place where the command was made: its
---| annotations, spans, minimum and sink (`boundary.md` §9.8.16 (b), amended
---| 2026-10-22; #751). A body that may suspend needs the task kernel, which
---| this platform does not have yet.
+--| dispatch: each message it sends is applied after it returns. A body that
+--| may suspend needs the task kernel, which this platform does not have yet.
 pub perform : (Send msg → ⊤) → Cmd msg
-perform body = Perform (keep body)
-
-
--- `Task.keepLogContext`, as a function of a body: the type it is read at
--- keeps the program's function one that does not suspend, which a body
--- here never does (class 2 refuses one that may).
-keep : (Send msg → ⊤) → (Send msg → ⊤)
-keep = Js.to (Js.from Task.keepLogContext)
+perform body = Perform body
 
 
 --| Every body of a command, in order: what the runtime runs.

@@ -1,0 +1,26 @@
+-- load
+<body>
+  <main>
+    <button id="annotated">"annotated"</button>
+    <button id="spanned">"spanned"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #annotated
+console.debug: in the arm {"request":"p1"}
+<body>
+  <main>
+    <button id="annotated">"annotated"</button>
+    <button id="spanned">"spanned"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #spanned
+console.info: in a span save=0ms
+<body>
+  <main>
+    <button id="annotated">"annotated"</button>
+    <button id="spanned">"spanned"</button>
+    <p>"2"</p>
+  </main>
+</body>

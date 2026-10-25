@@ -1,15 +1,18 @@
-## 2026-10-25 02:18 CET — browser-inline command log context
+## 2026-10-25 02:18 CET — browser-inline command log context, in part
 
 **What I did**
 
-- Fixed #751. The write-set pass gets a core row, `log_scope`, for `Log.annotate`, `span`, `minimum` and `withSink`. The row is their last argument applied to `⊤`. Before this, browser-inline refused any `update` arm written inside one of them (class 4).
-- `browser-inline`'s `Cmd.perform` gives its body to `Task.keepLogContext`.
-- The fixture is `browser/inline/LogCommandContext`. Its transcript equals browser-tea's for the same program. It is refused on master, and it gives the default context with the write-set change alone.
-- Release output did not change by one byte. Six ownership summaries changed. No verdict changed.
+- Landed half of #751.
+  - The write-set pass gets a core row, `log_scope`. It reads `Log.annotate`, `span`, `minimum` and `withSink` as their last argument applied to `⊤`.
+  - So an `update` arm written inside one of them builds on browser-inline: its model is written and its own lines carry the arm's context. browser-inline refused every such arm before.
+  - A command with a body made inside a scope is still refused, as before.
+  - Fixtures: `browser/inline/LogScopeInUpdate`, whose transcript equals browser-tea's, and `build/bad/inline/CommandInLogScope`.
+- The platform half, `Cmd.perform` giving its body to `Task.keepLogContext`, is blocked by #1003. My first version hid the effect behind a `Js.to`/`Js.from` cast. The manager refused it under rule 10.
 
 **What I learned**
 
-- `Cmd.perform body = Perform (Task.keepLogContext body)` made the program's body count as suspendable (`own` was not `no`). browser-inline then refused every command with class 2. Two other fixes were possible:
-  - `sync` on `perform`'s parameter. That works, but it turns the class-2 limit into the language error `sync_boundary`.
-  - Reading `keepLogContext` at the type `(Send msg → ⊤) → (Send msg → ⊤)` through `Js.to`/`Js.from`. This keeps the decided diagnostic, so I chose it.
-- Why the checker made the body suspendable through `keepLogContext`'s `(a → b !impure) → (a → b !impure)` is not explained. It may hide the same cost in `browser`'s `Hosted.job`.
+- With `Perform (Task.keepLogContext body)`, every body's own answer is `poly`, not `yes`. The same happens with any higher-order function between the body and the constructor, even a pure one stored beside it.
+  - The reason is §14.5's single hidden class per nominal application. It makes `update`'s `Cmd Msg` class sensitive, so `update` gets a twin body.
+  - browser-tea never reaches `update$s`.
+  - The write-set pass's `funSuspends` reads `poly` as `yes`. The defect is there, not in the checker.
+- Never hide an effect from the checker with a `Js` cast to get a build through: it is rule 10's case. Instrument the reading instead. A one-line debug print of `own` and `twin` found the cause in minutes.
