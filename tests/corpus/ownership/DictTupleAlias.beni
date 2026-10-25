@@ -1,10 +1,10 @@
 -- CK-270: one list in the tuple payloads at two dictionary keys (#474).
 -- Editing it in place at key 1 would change what key 2 holds, so the
 -- callback's write must be rejected `exclusive`, as DictFocus.twice is for
--- a bare list. Master accepts `shared`: the §20.8 separation of what
+-- a bare list. The folded tree accepted `shared`: the §20.8 separation of what
 -- `Dict.insert` stores reaches only the payload's root, not its `.0`.
--- `fresh` stores two distinct fresh lists and stays accepted. Red until
--- #294's representation replaces the folded tree.
+-- `fresh` stores two distinct fresh lists and stays accepted. Ordered storage
+-- (#294) refuses it.
 import Dict exposing (Dict)
 
 
@@ -15,11 +15,11 @@ grow p = ( List.push p.0 9, p.1 )
 pub shared : ⊤ → Dict Int (List Int × Int)
 shared ⊤ =
     xs = [ 1 ]
-    d = Dict.insert (Dict.insert Dict.empty 1 ( xs, 0 )) 2 ( xs, 0 )
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 ( xs, 0 )) 2 ( xs, 0 )
     Dict.update d 1 λm → Maybe.map m grow
 
 
 pub fresh : ⊤ → Dict Int (List Int × Int)
 fresh ⊤ =
-    d = Dict.insert (Dict.insert Dict.empty 1 ( [ 1 ], 0 )) 2 ( [ 2 ], 0 )
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 ( [ 1 ], 0 )) 2 ( [ 2 ], 0 )
     Dict.update d 1 λm → Maybe.map m grow

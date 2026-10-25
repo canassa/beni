@@ -135,12 +135,6 @@ tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
 # CK-269 (#856): a deep tuple's summary lists 2^16 places; building them to the
 # `entries` limit (1 276 786) takes past the 20 s case timeout.
 tests/pending/ownership/DeepTupleDag.beni timeout
-
-# CK-270 (#474): one list in the tuple or record payloads at two dictionary
-# keys, edited in place at one; red until #294's representation.
-tests/pending/ownership/DictHelperAlias.beni exit=0 node+everywhere.ownership-differs
-tests/pending/ownership/DictRecordAlias.beni exit=0 node+everywhere.ownership-differs
-tests/pending/ownership/DictTupleAlias.beni exit=0 node+everywhere.ownership-differs
 # CK-271 (#681): a default node build accepts a write to a live old Dict;
 # waits on #320's enforcement on every platform.
 tests/pending/build/bad/DictLiveOldNode BuildDidNotFail

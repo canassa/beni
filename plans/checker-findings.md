@@ -6351,6 +6351,11 @@ The same pull request fixed the general half of #474 (construction guards
 skipped an operand that stands above the stored path; `BesideTupleHelper`,
 `BesideRecordHelper`, `BesideLiteralHelper`, `BesideSpreadHelper`).
 
+**As built (2026-10-25, #294).** With ordered Dict storage and its precise
+rows, `shared` is refused `exclusive` in all three fixtures and `fresh` stays
+accepted, with no change to the checker beyond the tree's removal. The
+fixtures are promoted to `tests/corpus/ownership/`.
+
 ## CK-271 — a write to a live old Dict builds on node (2026-10-25)
 
 **Issue:** #681; waits on #320. **Fixture:** `tests/pending/build/bad/DictLiveOldNode/`.

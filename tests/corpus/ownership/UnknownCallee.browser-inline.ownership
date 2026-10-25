@@ -8,7 +8,7 @@ module UnknownCallee
   86:14 List.push <call UnknownCallee.make>: accepted call
   90:15 List.push <call UnknownCallee.apply>: accepted call
   96:5 List.push <call>: accepted call
-  summary badDict: res [*] ~condition(fresh1) ~⊤call{lost}r{lost}, [*]⋆ ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*], ⊤call{lost}r{lost}, ⋆ ~condition(fresh2) ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*]
+  summary badDict: res [*] ~condition(fresh1) ~⊤call{lost}r{lost}, [*]⋆ ~condition(fresh3) ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*], ⊤call{lost}r{lost}, ⋆ ~condition(fresh2) ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*]
   summary load: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
   summary badField: res [*] ~shared(UnknownCallee.shared)[*], shared(UnknownCallee.shared)
   summary goodField: res [*] ~fresh2, fresh1

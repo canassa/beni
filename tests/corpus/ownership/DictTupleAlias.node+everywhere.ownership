@@ -1,0 +1,20 @@
+module DictTupleAlias
+  12:12 List.push p.0: accepted param
+  18:9 call Dict.insert <call Dict.insert>: accepted call
+  18:22 call Dict.insert <call Dict.empty>: accepted call
+  19:5 call Dict.update d: accepted call (Dict.update writes π1)
+  19:5 call Dict.update d[*].0: accepted call (<lambda> writes what Dict.update supplies it)
+  19:26 call Maybe.map m#Just.0.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  19:26 value DictTupleAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  24:9 call Dict.insert <call Dict.insert>: accepted call
+  24:22 call Dict.insert <call Dict.empty>: accepted call
+  25:5 call Dict.update d: accepted call (Dict.update writes π1)
+  25:5 call Dict.update d[*].0: accepted call (<lambda> writes what Dict.update supplies it)
+  25:26 call Maybe.map m#Just.0.0: accepted callback-param (Dict.update supplies it owned)
+  25:26 value DictTupleAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  summary grow: π1.0 RAW[storage], π1.0[*] A, π1.1 R; res .0 π1.0, .0[*] ~π1.0[*]
+  summary shared: res [*] ~condition(fresh3) ~fresh3{lost}r{lost}, [*].0 ~condition(fresh1) ~fresh1{lost}r{lost}, [*].0[*] ~fresh4{lost}r{lost}, fresh2{lost}r{lost}
+  summary fresh: res [*] ~condition(fresh2) ~fresh2, [*].0 ~condition(fresh3) ~fresh3, [*].0[*] ~fresh4, fresh1
+  demands 13: accepted 12 (fresh 0, call 8, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 13: accepted 12 (fresh 0, call 8, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

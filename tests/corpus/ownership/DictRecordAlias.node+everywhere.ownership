@@ -1,0 +1,20 @@
+module DictRecordAlias
+  15:20 List.push p.items: accepted param
+  21:9 call Dict.insert <call Dict.insert>: accepted call
+  21:22 call Dict.insert <call Dict.empty>: accepted call
+  22:5 call Dict.update d: accepted call (Dict.update writes π1)
+  22:5 call Dict.update d[*].items: accepted call (<lambda> writes what Dict.update supplies it)
+  22:26 call Maybe.map m#Just.0.items: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  22:26 value DictRecordAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  28:9 call Dict.insert <call Dict.insert>: accepted call
+  28:22 call Dict.insert <call Dict.empty>: accepted call
+  30:5 call Dict.update d: accepted call (Dict.update writes π1)
+  30:5 call Dict.update d[*].items: accepted call (<lambda> writes what Dict.update supplies it)
+  30:26 call Maybe.map m#Just.0.items: accepted callback-param (Dict.update supplies it owned)
+  30:26 value DictRecordAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  summary grow: π1.items RAW[storage], π1.items[*] A, π1.n R; res .items π1.items, .items[*] ~π1.items[*], fresh501◦
+  summary shared: res [*] ~condition(fresh3) ~fresh3{lost}r{lost} ~fresh501◦ ~fresh502◦ ~fresh503◦, [*].items ~condition(fresh1) ~fresh1{lost}r{lost}, [*].items[*] ~fresh4{lost}r{lost}, fresh2{lost}r{lost}
+  summary fresh: res [*] ~condition(fresh2) ~fresh2 ~fresh501◦ ~fresh502◦ ~fresh503◦, [*].items ~condition(fresh3) ~fresh3, [*].items[*] ~fresh4, fresh1
+  demands 13: accepted 12 (fresh 0, call 8, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 13: accepted 12 (fresh 0, call 8, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

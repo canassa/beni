@@ -1,0 +1,21 @@
+module DictHelperAlias
+  10:14 call Dict.insert d: accepted param
+  14:10 call Maybe.map m#Just.0.0: accepted param (<lambda> writes what Maybe.map supplies it)
+  14:29 List.push p.0: accepted callback-param (Maybe.map supplies it owned)
+  20:5 call Dict.update <call DictHelperAlias.put>: accepted call (Dict.update writes π1)
+  20:5 call Dict.update <call DictHelperAlias.put>[*].0: accepted call (DictHelperAlias.grow writes what Dict.update supplies it)
+  20:5 value DictHelperAlias.grow: rejected exclusive: Dict.update hands its parameter 1 an element of <call DictHelperAlias.put>, whose elements may share one list (approx)
+  20:18 call DictHelperAlias.put <call DictHelperAlias.put>: accepted call (DictHelperAlias.put writes π1)
+  20:23 call DictHelperAlias.put <call Dict.empty>: accepted call (DictHelperAlias.put writes π1)
+  24:11 call Dict.update <call DictHelperAlias.put>: accepted call (Dict.update writes π1)
+  24:11 call Dict.update <call DictHelperAlias.put>[*].0: accepted call (DictHelperAlias.grow writes what Dict.update supplies it)
+  24:11 value DictHelperAlias.grow: accepted callback-param (Dict.update supplies it owned)
+  24:24 call DictHelperAlias.put <call DictHelperAlias.put>: accepted call (DictHelperAlias.put writes π1)
+  24:29 call DictHelperAlias.put <call Dict.empty>: accepted call (DictHelperAlias.put writes π1)
+  summary put: π1 RAW[storage], π1[*] A, π3 RA; res [*] ~π1[*], [*].0 ~condition(fresh1) ~π3, π1{excl π3, sep π1[*] π3}
+  summary grow: π1 R, π1#Just.0 R, π1#Just.0.0 AW[storage], π1#Just.0.0[*] A; res #Just.0.0 π1#Just.0.0, #Just.0.0[*] ~π1#Just.0.0[*]
+  summary shared: res [*] ~fresh3{lost}, [*].0 ~condition(fresh1) ~fresh1{lost}, [*].0[*] ~fresh4{lost}, fresh2{lost}
+  summary fresh: res [*] ~fresh2, [*].0 ~condition(fresh3) ~fresh3, [*].0[*] ~fresh4, fresh1
+  demands 13: accepted 12 (fresh 0, call 8, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 13: accepted 12 (fresh 0, call 8, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1
