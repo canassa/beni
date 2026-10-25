@@ -147,6 +147,24 @@ const list_rows = [_]Entry{
     .{ "foldr", .fold },
 };
 
+/// Whether core's `List.<name>` writes its first argument in place when the
+/// ownership checker accepts the call (`ownership-checker.md` §3.1): a
+/// demand, not a pure computation. `cons` is not one: a prepend copies.
+pub fn listWriter(name: []const u8) bool {
+    const writers = [_]Row{ .update, .set, .swap, .push, .append, .insert_at, .remove_at };
+    for (list_rows) |e| {
+        if (!std.mem.eql(u8, e[0], name)) continue;
+        for (writers) |w| if (w == e[1]) return true;
+        return std.mem.eql(u8, name, "pop");
+    }
+    return false;
+}
+
+test "list writers" {
+    for ([_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" }) |n| try std.testing.expect(listWriter(n));
+    for ([_][]const u8{ "cons", "map", "take", "drop", "length", "reverse" }) |n| try std.testing.expect(!listWriter(n));
+}
+
 /// The `Dict` rows, by value name.
 const dict_rows = [_]Entry{
     .{ "insert", .dict_insert },

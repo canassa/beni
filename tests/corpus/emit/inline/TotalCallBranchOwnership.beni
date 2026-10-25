@@ -1,0 +1,43 @@
+-- Each arm consumes the fresh array once. Eager argument preparation must
+-- preserve the ownership proof's mutually exclusive branch lifetimes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Bool → Bool
+update _ shown = not shown
+
+
+helper : List Int → Html Msg
+helper xs = <p>{List.length xs}</p>
+
+
+choices : List Int, Bool → Html Msg
+choices xs shown =
+    <>
+        {if shown then
+            <section data-arm="left">{helper (List.push xs 2)}</section>
+         else
+            <section data-arm="right">{helper (List.push xs 3)}</section>
+        }
+    </>
+
+
+view : Bool → Html Msg
+view shown =
+    <main>
+        {choices [ 1 ] shown}
+        <button onClick={Toggle}>Toggle</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → False, update = update, view = view })
+        "root"
