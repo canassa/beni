@@ -29,6 +29,7 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const Edges = @import("../check/Edges.zig");
 const Scc = @import("../check/Scc.zig");
 const InternPool = @import("../InternPool.zig");
 
@@ -86,10 +87,28 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
     defer ops.deinit(gpa);
     const tags = bir.insts.items(.tag);
     const datas = bir.insts.items(.data);
+    var leg_edges: std.ArrayList(Edges.Edge) = .empty;
+    defer leg_edges.deinit(gpa);
     for (bir.decls, 0..) |d, di| {
         starts[di] = @intCast(edges.items.len);
         if (!d.kind.isValue() or d.body == .none) continue;
         try frames(gpa, bir, d, enclosing_frame, &ops);
+        // The SCC edges: `check/Edges.zig`'s three legs — `refs`, the `top`
+        // instructions, every dispatch site's callee and evidence terms and
+        // the bodies of the derived rows they name, each term once. Without
+        // a dispatch table (a test, or before the checker) the `top`
+        // instructions alone.
+        if (in.dispatch) |dt| {
+            leg_edges.clearRetainingCapacity();
+            try Edges.declEdges(&leg_edges, gpa, bir, dt, @intCast(di));
+            for (leg_edges.items) |e| switch (e) {
+                .top => |target| if (target < n) {
+                    if (target == di) self_edge[di] = true;
+                    try edges.append(gpa, target);
+                },
+                else => {},
+            };
+        }
         var i = d.inst_start.int();
         while (i < d.inst_end.int()) : (i += 1) {
             const inst: Bir.Inst.Index = @fromBackingInt(i);
@@ -97,23 +116,14 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
                 .top => {
                     const target = datas[i].lhs;
                     if (target < n) {
-                        if (target == di) self_edge[di] = true;
-                        try edges.append(gpa, target);
+                        if (in.dispatch == null) {
+                            if (target == di) self_edge[di] = true;
+                            try edges.append(gpa, target);
+                        }
                         // R-4.9.3: a direct read outside lambdas, by a
                         // parameterless initializer.
-                        if (enclosing_frame[i] == none and d.params == 0) {
-                            read_count[target] += 1;
-                            reader[target] = if (read_count[target] == 1) @intCast(di) else none;
-                        } else {
-                            read_count[target] += 1;
-                            reader[target] = none;
-                        }
-                    }
-                },
-                .method_call, .type_dispatch => if (in.dispatch) |dt| {
-                    if (dt.siteOf(inst)) |site| {
-                        if (site.callee.unwrap()) |ci| try termDecls(gpa, dt, ci, di, self_edge, &edges);
-                        for (dt.argsAt(site.evidence)) |ti| try termDecls(gpa, dt, ti, di, self_edge, &edges);
+                        read_count[target] += 1;
+                        reader[target] = if (enclosing_frame[i] == none and d.params == 0 and read_count[target] == 1) @intCast(di) else none;
                     }
                 },
                 .call => try join(gpa, bir, in.joins, inst, &joins),
@@ -172,22 +182,6 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
         .spreads = &.{},
         .joins = try arena.dupe(Facts.Prepass.MaybeJoin, joins.items),
     };
-}
-
-/// Every `top` declaration an evidence term reaches (a derived
-/// `eq`/`compare` applies the declared ones of its parts), as SCC edges.
-fn termDecls(gpa: Allocator, dt: *const Dispatch, ti: Dispatch.TermIndex, di: usize, self_edge: []bool, edges: *std.ArrayList(u32)) Allocator.Error!void {
-    const term = dt.term(ti);
-    switch (term) {
-        .top => |t| {
-            if (t.decl.int() == di) self_edge[di] = true;
-            try edges.append(gpa, t.decl.int());
-        },
-        else => {},
-    }
-    // Terms are allocated in pre-order, acyclic: the recursion is bounded by
-    // the tree's depth.
-    for (dt.argsOfTerm(ti)) |arg| try termDecls(gpa, dt, arg, di, self_edge, edges);
 }
 
 /// The enclosing frame of every lambda and local function of `d`
@@ -468,4 +462,87 @@ test "subtree starts: a post-ordered tree's first instruction" {
     try testing.expectEqual(param.int() + 1, first[body.int() - d.inst_start.int()]);
     // A leaf is its own start.
     try testing.expectEqual(param.int(), first[param.int() - d.inst_start.int()]);
+}
+
+test "with a dispatch table the edges include a derived row's body: a `pub compare` sorting with its own `compare` is recursive" {
+    var l = try lowerSource(
+        \\module Main exposing (f)
+        \\
+        \\f : Int → Int
+        \\f n =
+        \\    n + 1
+        \\
+        \\g : Int → Int
+        \\g n =
+        \\    n + 2
+    );
+    defer l.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const f = l.declNamed("f");
+    const g = l.declNamed("g");
+    // A site on `f`'s first instruction whose callee is derived row 0, whose
+    // body names `g`; and a site on `g` whose evidence root is `top f`: a
+    // cycle no `top` instruction spells.
+    const terms = [_]Dispatch.Term{
+        .{ .derived = .{ .index = 0 } },
+        .{ .top = .{ .decl = @fromBackingInt(g) } },
+        .{ .top = .{ .decl = @fromBackingInt(f) } },
+    };
+    const args = [_]Dispatch.TermIndex{ @fromBackingInt(1), @fromBackingInt(2) };
+    const derived = [_]Dispatch.Derived{.{ .kind = .compare, .shape = .unit, .body = .{ .start = 0, .len = 1 } }};
+    const fd = l.bir.decls[f];
+    const gd = l.bir.decls[g];
+    const sites = [_]Dispatch.Site{
+        .{ .inst = fd.inst_start, .callee = @fromBackingInt(0) },
+        .{ .inst = gd.inst_start, .evidence = .{ .start = 1, .len = 1 } },
+    };
+    var dispatch: Dispatch = .empty;
+    dispatch.terms = &terms;
+    dispatch.args = &args;
+    dispatch.derived = &derived;
+    dispatch.sites = if (fd.inst_start.int() < gd.inst_start.int()) &sites else &.{ sites[1], sites[0] };
+    const without = try run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir });
+    try testing.expect(without.group_of[f] != without.group_of[g]);
+    const with = try run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .dispatch = &dispatch });
+    try testing.expectEqual(with.group_of[f], with.group_of[g]);
+    try testing.expect(with.recursive[with.group_of[f]]);
+}
+
+test "the withDefault shape is matched on resolved references too" {
+    var l = try lowerSource(
+        \\module Main exposing (j)
+        \\
+        \\j mm dd =
+        \\    Maybe.withDefault (Maybe.map mm (λx → x)) dd
+    );
+    defer l.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    // What `Resolve` does to the two `qualified` references: an `ext_value`
+    // of (module, value index).
+    const wd = l.qualifiedTarget("Maybe", "withDefault");
+    const mp = l.qualifiedTarget("Maybe", "map");
+    const tags = l.bir.insts.items(.tag);
+    const datas = l.bir.insts.items(.data);
+    for (tags, datas) |*tag, *data| {
+        if (tag.* != .qualified) continue;
+        if (data.lhs == wd.lhs and data.rhs == wd.rhs) {
+            tag.* = .ext_value;
+            data.* = .{ .lhs = 3, .rhs = 7 };
+        } else if (data.lhs == mp.lhs and data.rhs == mp.rhs) {
+            tag.* = .ext_value;
+            data.* = .{ .lhs = 3, .rhs = 8 };
+        }
+    }
+    const resolved = [_]JoinTargets{.{
+        .with_default = .{ .tag = .ext_value, .lhs = 3, .rhs = 7 },
+        .map = .{ .tag = .ext_value, .lhs = 3, .rhs = 8 },
+    }};
+    const pp = try run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .joins = &resolved });
+    try testing.expectEqual(@as(usize, 1), pp.joins.len);
+    // The unresolved targets no longer match anything.
+    const stale = [_]JoinTargets{.{ .with_default = wd, .map = mp }};
+    const none_found = try run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .joins = &stale });
+    try testing.expectEqual(@as(usize, 0), none_found.joins.len);
 }

@@ -73,6 +73,7 @@ const base_imports = [_]BaseImport{
     .{ .path = "../check/Types.zig", .only = "Place.zig" },
     .{ .path = "../check/Walk.zig", .only = "Place.zig" },
     .{ .path = "../check/Dispatch.zig" },
+    .{ .path = "../check/Edges.zig" },
     .{ .path = "../check/SchemaPlan.zig" },
     .{ .path = "../check/EffectPlan.zig" },
     .{ .path = "../check/Scc.zig" },

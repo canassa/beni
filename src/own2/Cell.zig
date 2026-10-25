@@ -381,10 +381,17 @@ pub const Table = struct {
         }
         // `a` is the deepest common ancestor; one path IS it → a prefix.
         if (below_a == .none or below_b == .none) return true;
-        // Two different continuations are two paths: another field, another
-        // index, another constructor (alternatives of one value, R-4.8.15),
-        // or `⟲` against an exact step — the levels below against the root's
-        // own child. None is one object.
+        // `⟲` re-entering place P matches the other side's step when that
+        // step leads onto P's cycle — the levels below P include whatever it
+        // reaches (`Rose (List Rose)`: the children list and the subtrees).
+        // A step off the cycle (`Node Tree (List Int) Tree`'s own list
+        // against its subtrees), another field, another index or another
+        // constructor (alternatives of one value, R-4.8.15) is another path.
+        const sa = places.pathStep(below_a);
+        const sb = places.pathStep(below_b);
+        if (sa.kind == .level and sb.kind == .level) return true;
+        if (sa.kind == .level) return places.sameCycle(places.pathPlace(below_a), places.pathPlace(below_b));
+        if (sb.kind == .level) return places.sameCycle(places.pathPlace(below_b), places.pathPlace(below_a));
         return false;
     }
 
@@ -1045,4 +1052,121 @@ test "alias on refinements answers the split, and two taken elements the contain
     try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, b0, b2));
     try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, lv, b2));
     try testing.expectEqual(b0, try f.cells.refine(gpa, &f.account, .below, tree, l1, 0, .none, .none));
+}
+
+/// Recursive types whose cycle passes through another place: 0 `type Rose =
+/// Rose (List Rose)` (1 its `List Rose`); 2 `type T = T (Maybe T) (List
+/// Int)` (3 `Maybe T`, 4 `List Int`); 5 `type A = A B | Leaf Int`, 6 `type B
+/// = B (List A)` (7 `List A`); 8 `Int`.
+const CycleGraph = struct {
+    table: *Place.Table,
+    account: *Ids.Account,
+    gpa: Allocator,
+
+    fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
+        const g: *CycleGraph = @ptrCast(@alignCast(ctx));
+        const step = struct {
+            fn ctor(gg: *CycleGraph, c: u32, i: u32) Place.Step {
+                return gg.table.ctorStep(gg.gpa, gg.account, c, i) catch unreachable;
+            }
+        };
+        switch (v) {
+            0 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 0), .@"var" = 1 });
+                return .{ .kind = .ctor, .head = 500 };
+            },
+            1 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 0 });
+                return .{ .kind = .list, .head = 200 };
+            },
+            2 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 0), .@"var" = 3 });
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 1), .@"var" = 4 });
+                return .{ .kind = .ctor, .head = 600 };
+            },
+            3 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 1, 0), .@"var" = 2 });
+                return .{ .kind = .ctor, .head = 300 };
+            },
+            4 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 8 });
+                return .{ .kind = .list, .head = 200 };
+            },
+            5 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 0), .@"var" = 6 });
+                try out.append(g.gpa, .{ .step = step.ctor(g, 1, 0), .@"var" = 8 });
+                return .{ .kind = .ctor, .head = 700 };
+            },
+            6 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 0), .@"var" = 7 });
+                return .{ .kind = .ctor, .head = 800 };
+            },
+            7 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 5 });
+                return .{ .kind = .list, .head = 200 };
+            },
+            8 => return .{ .kind = .cross },
+            else => unreachable,
+        }
+    }
+};
+
+test "⟲ matches a step onto its cycle: Rose, Maybe T and mutual recursion" {
+    var places: Place.Table = .{};
+    defer places.deinit(testing.allocator);
+    var cells: Table = .{};
+    defer cells.deinit(testing.allocator);
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    var g: CycleGraph = .{ .table = &places, .account = &account, .gpa = testing.allocator };
+    const source: Place.Source = .{ .ctx = &g, .describe = CycleGraph.describe };
+    const gpa = testing.allocator;
+    const Ctx = struct {
+        places: *Place.Table,
+        cells: *Table,
+        account: *Ids.Account,
+        fn param(c: @This(), i: u32, root: Place.PlaceId, steps: []const Place.Step) !CellId {
+            var at = try c.places.rootPath(testing.allocator, root);
+            for (steps) |s| at = (try c.places.extend(testing.allocator, .growth(c.account), at, s)).?;
+            return c.cells.symbolic(testing.allocator, c.account, c.places, .param, i, at, 0);
+        }
+    };
+    const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
+    // Rose: the root's children list is `#Rose.0`; its elements re-enter
+    // Rose and are `⟲`. The list aliases the subtrees, and so does a list
+    // below.
+    const rose = try places.of(gpa, &account, source, 0);
+    const r0 = try places.ctorStep(gpa, &account, 0, 0);
+    const kids = try cx.param(1, rose, &.{r0});
+    const subtrees = try cx.param(1, rose, &.{ r0, Place.Step.elem });
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(subtrees).b)).kind);
+    try testing.expectEqual(Alias.yes, cells.alias(&places, kids, subtrees));
+    const deep_kids = try cx.param(1, rose, &.{ r0, Place.Step.elem, r0 });
+    try testing.expectEqual(Alias.yes, cells.alias(&places, kids, deep_kids));
+    try testing.expect(places.sameCycle(rose, places.child(rose, r0).?));
+    // Maybe T: the `Maybe` step is on T's cycle, the `List Int` is not.
+    const t = try places.of(gpa, &account, source, 2);
+    const t0 = try places.ctorStep(gpa, &account, 0, 0);
+    const t1 = try places.ctorStep(gpa, &account, 0, 1);
+    const just = try places.ctorStep(gpa, &account, 1, 0);
+    const maybe = try cx.param(2, t, &.{t0});
+    const below_t = try cx.param(2, t, &.{ t0, just });
+    const own_list = try cx.param(2, t, &.{t1});
+    try testing.expectEqual(Alias.yes, cells.alias(&places, maybe, below_t));
+    try testing.expectEqual(Alias.no, cells.alias(&places, own_list, below_t));
+    try testing.expectEqual(Alias.no, cells.alias(&places, own_list, maybe));
+    // Mutual recursion: A's B, B's list and the A below are one cycle; A's
+    // `Leaf Int` is not.
+    const a = try places.of(gpa, &account, source, 5);
+    const a0 = try places.ctorStep(gpa, &account, 0, 0);
+    const leaf = try places.ctorStep(gpa, &account, 1, 0);
+    const b0 = try places.ctorStep(gpa, &account, 0, 0);
+    const b = try cx.param(3, a, &.{a0});
+    const b_list = try cx.param(3, a, &.{ a0, b0 });
+    const below_a = try cx.param(3, a, &.{ a0, b0, Place.Step.elem });
+    try testing.expectEqual(Alias.yes, cells.alias(&places, b, below_a));
+    try testing.expectEqual(Alias.yes, cells.alias(&places, b_list, below_a));
+    const a_leaf = try cx.param(3, a, &.{leaf});
+    try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, below_a));
+    try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, b));
 }
