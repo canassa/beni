@@ -83,9 +83,26 @@ pub const Row = enum {
     debug_log,
     /// `Debug.todo`: never returns.
     debug_todo,
-    /// A value nothing relates to the old model: the scalars and folds of
-    /// `List`, every `Dict` and `Set` function (O3), `Basics`, `Int`,
-    /// `Float`, `String`, `Char`, `Cmd`, `Sub`, `Task`, `Js`.
+    /// `List.foldl`, `foldr`: `Fresh`, except a fold whose accumulator is
+    /// a dictionary its callback edits (write-sets.md, amended 2026-10-25).
+    fold,
+    /// The ordered `Dict`'s rows (write-sets.md, amended 2026-10-25: positions
+    /// in a `Dict`, O3 lifted). Each restates `language.md` §6.8's promise of
+    /// what the operation does to the storage's keys and order; the writes are
+    /// in place (`backend.md` §4, *Ordered dictionaries*).
+    dict_insert,
+    dict_remove,
+    dict_update,
+    dict_swap,
+    dict_insert_at,
+    dict_sort_by,
+    dict_filter,
+    dict_map,
+    dict_get,
+    dict_empty,
+    /// A value nothing relates to the old model: the scalars and the other
+    /// folds of `List`, every other `Dict` and every `Set` function,
+    /// `Basics`, `Int`, `Float`, `String`, `Char`, `Cmd`, `Sub`, `Task`, `Js`.
     fresh,
 };
 
@@ -117,6 +134,22 @@ const list_rows = [_]Entry{
     .{ "get", .get },
     .{ "head", .head },
     .{ "last", .last },
+    .{ "foldl", .fold },
+    .{ "foldr", .fold },
+};
+
+/// The `Dict` rows, by value name.
+const dict_rows = [_]Entry{
+    .{ "insert", .dict_insert },
+    .{ "remove", .dict_remove },
+    .{ "update", .dict_update },
+    .{ "swap", .dict_swap },
+    .{ "insertAt", .dict_insert_at },
+    .{ "sortBy", .dict_sort_by },
+    .{ "filter", .dict_filter },
+    .{ "map", .dict_map },
+    .{ "get", .dict_get },
+    .{ "empty", .dict_empty },
 };
 
 /// The modules every function of which is `Fresh` of its arguments, save
@@ -138,6 +171,10 @@ pub fn row(module: []const u8, name: []const u8) ?Row {
         for (list_rows) |e| if (std.mem.eql(u8, e[0], name)) return e[1];
         return .fresh;
     }
+    if (std.mem.eql(u8, module, "Dict")) {
+        for (dict_rows) |e| if (std.mem.eql(u8, e[0], name)) return e[1];
+        return .fresh;
+    }
     if (std.mem.eql(u8, module, "Debug")) {
         if (std.mem.eql(u8, name, "log")) return .debug_log;
         if (std.mem.eql(u8, name, "todo")) return .debug_todo;
@@ -150,9 +187,12 @@ pub fn row(module: []const u8, name: []const u8) ?Row {
 
 test "rows" {
     try std.testing.expectEqual(Row.map, row("List", "map").?);
-    try std.testing.expectEqual(Row.fresh, row("List", "foldl").?);
+    try std.testing.expectEqual(Row.fold, row("List", "foldl").?);
+    try std.testing.expectEqual(Row.fresh, row("List", "length").?);
     try std.testing.expectEqual(Row.debug_log, row("Debug", "log").?);
     try std.testing.expectEqual(@as(?Row, null), row("Basics", "identity"));
     try std.testing.expectEqual(@as(?Row, null), row("Maybe", "map"));
-    try std.testing.expectEqual(Row.fresh, row("Dict", "insert").?);
+    try std.testing.expectEqual(Row.dict_insert, row("Dict", "insert").?);
+    try std.testing.expectEqual(Row.fresh, row("Dict", "size").?);
+    try std.testing.expectEqual(Row.fresh, row("Set", "insert").?);
 }

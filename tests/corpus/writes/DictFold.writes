@@ -1,0 +1,21 @@
+program DictFold.main : Tea.sandbox
+  model DictFold.Model
+  init
+    literal ρ
+  key Touch                                       structural node ρ; node ρ.rows ⟨kept⟩; node ρ.rows{*}; value ρ.rows{*}.label
+  key Drop                                        structural node ρ; node ρ.rows ⟨prune⟩; value ρ.rows{*}
+  key Fill                                        structural node ρ; node ρ.rows ⟨grow⟩; value ρ.rows{*}
+  key Mark                                        structural node ρ; node ρ.rows ⟨kept⟩; node ρ.rows{*}; value ρ.rows{*}.done
+  key Log                                         exact      node ρ; value ρ.seen ≈
+  keys 5: bounded 5 (100%), exact 1, indexed 0, structural 4, * 0; capped 0
+  hole DictFold.beni:65:12                        dynamic    reads ρ.rows
+  hole DictFold.beni:66:12                        dynamic    reads ρ.seen
+  holes 2: static 0, literal 0, static-key 0, dynamic 2
+  site DictFold.beni:64:5                         unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 5: under * 0 (0%)
+  pairs 5 over 5 keys and 2 groups (1.00 per key); every key calls 0 of 2 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

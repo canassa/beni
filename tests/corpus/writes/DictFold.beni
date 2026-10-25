@@ -1,0 +1,71 @@
+-- writes: a fold that edits a dictionary accumulator (`write-sets.md`,
+-- amended 2026-10-25). Each key folds over a list of the message's ids:
+-- updates that keep the storage are `kept` with writes at `{*}`, removals
+-- `prune`, insertions `grow`; a helper whose parameter is annotated a `Dict`
+-- folds the same way; a fold into a `List` stays `Fresh`, as before.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    label : String
+    done : Bool
+
+
+type alias Model =
+    rows : Dict Int Row
+    seen : List Int
+
+
+type Msg
+    = Touch (List Int)
+    | Drop (List Int)
+    | Fill (List Int)
+    | Mark (List Int)
+    | Log (List Int)
+
+
+markAll : Dict Int Row, List Int → Dict Int Row
+markAll rows ids = List.foldl ids rows λid acc →
+    Dict.update acc id λslot → Maybe.map slot λr → { r | done = True }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Touch ids →
+            { model
+                | rows =
+                    List.foldl ids model.rows λid acc →
+                        Dict.update acc id λslot → Maybe.map slot λr → { r | label = "!" }
+            }
+
+        Drop ids →
+            { model | rows = List.foldl ids model.rows λid acc → Dict.remove acc id }
+
+        Fill ids →
+            { model
+                | rows =
+                    List.foldl ids model.rows λid acc →
+                        Dict.insert acc id { label = "", done = False }
+            }
+
+        Mark ids →
+            { model | rows = markAll model.rows ids }
+
+        Log ids →
+            { model | seen = List.foldl ids model.seen λid acc → List.push acc id }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <p>{Dict.size model.rows}</p>
+        <p>{List.length model.seen}</p>
+    </div>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty, seen = [] }, update = update, view = view }

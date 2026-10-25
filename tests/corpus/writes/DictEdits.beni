@@ -1,0 +1,97 @@
+-- writes: `Dict` positions and edit tags (`write-sets.md`, amended
+-- 2026-10-25: positions in a `Dict`, O3 lifted). Each key writes the rows'
+-- dictionary through one primitive, or a sequence, or a choice of two.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    label : String
+    done : Bool
+
+
+type alias Model =
+    rows : Dict Int Row
+    count : Int
+
+
+type Msg
+    = Add Int String
+    | Remove Int
+    | Toggle Int
+    | Rename Int String
+    | Prune
+    | Upsert Int Bool
+    | Move Int
+    | Keep Int
+    | Clear
+    | Flip Int String
+    | Set Int String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add id label →
+            { model | rows = Dict.insert model.rows id { label = label, done = False } }
+
+        Remove id →
+            { model | rows = Dict.remove model.rows id }
+
+        Toggle id →
+            { model
+                | rows =
+                    Dict.update model.rows id λslot → Maybe.map slot λr → { r | done = not r.done }
+            }
+
+        Rename id label →
+            { model
+                | rows = Dict.update model.rows id λslot → Maybe.map slot λr → { r | label = label }
+            }
+
+        Prune →
+            { model | rows = Dict.filter model.rows λ_ r → not r.done }
+
+        Upsert id on →
+            if on then
+                { model | rows = Dict.insert model.rows id { label = "", done = True } }
+            else
+                { model | rows = Dict.remove model.rows id }
+
+        Move id →
+            { model
+                | rows = Dict.insert (Dict.remove model.rows id) id { label = "", done = False }
+            }
+
+        Keep id →
+            { model | rows = Dict.update model.rows id λslot → slot }
+
+        Clear →
+            { model | rows = Dict.empty }
+
+        Flip id label →
+            if label == "" then
+                { model | rows = Dict.remove model.rows id }
+            else
+                { model | rows = Dict.insert model.rows id { label = label, done = False } }
+
+        Set id label →
+            { model
+                | rows =
+                    Dict.update model.rows id λ_ →
+                        if label == "" then Nothing else Just { label = label, done = False }
+            }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <p>{Dict.size model.rows}</p>
+        <p>{model.count}</p>
+    </div>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty, count = 0 }, update = update, view = view }
