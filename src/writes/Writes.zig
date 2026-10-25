@@ -3723,10 +3723,21 @@ fn dictStep(a: *Writes, b: DictBase, e: Edit, s1: u32, s2: u32, elems: []const E
     const r = seqDict(b.edit, b.s1, e, s1);
     // The second symbol is a `swap`'s; it goes with whichever edit stands.
     const t2 = if (r[0] != .d_swap) none else if (b.edit == .none or b.edit == .d_kept) s2 else b.s2;
+    // The writes below stay, each once; what the steps read is one element,
+    // so a recursion that repeats an edit reaches its fixpoint (§4.3).
     var all: std.ArrayList(Elem) = .empty;
     defer all.deinit(a.gpa);
-    try all.appendSlice(a.gpa, b.elems);
-    try all.appendSlice(a.gpa, elems);
+    var read: u32 = 0;
+    for ([_][]const Elem{ b.elems, elems }) |es| for (es) |el| {
+        if (el.index == none) {
+            read = try a.depsUnion(read, try a.deps(el.term));
+            continue;
+        }
+        for (all.items) |x| {
+            if (x.index == el.index and x.eps == el.eps and x.term == el.term) break;
+        } else try all.append(a.gpa, el);
+    };
+    if (a.deps_t.len(read) != 0) try all.append(a.gpa, .{ .index = none, .eps = none, .term = try a.mkFresh(read) });
     return a.mkLst(b.path, r[0], r[1], t2, all.items);
 }
 
@@ -3738,7 +3749,8 @@ fn dictReads(a: *Writes, p: u32, xs: []const u32) Error![]const Elem {
     for (xs) |x| read = try a.depsUnion(read, try a.deps(x));
     if (a.deps_t.len(read) == 0) return &.{};
     const out = try a.arena().alloc(Elem, 1);
-    out[0] = .{ .index = none, .eps = try a.mintEpsDict(p), .term = try a.mkFresh(read) };
+    _ = p;
+    out[0] = .{ .index = none, .eps = none, .term = try a.mkFresh(read) };
     return out;
 }
 
@@ -4007,22 +4019,26 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .swap => {
             if (args.len != 3) return a.freshCall(args);
             const p = a.listBase(xs) orelse return a.freshCall(args);
-            return a.mkLst(p, .swap, try a.argSym(m, site, 1, args[1]), try a.argSym(m, site, 2, args[2]), &.{});
+            return a.mkLst(p, .swap, try a.argSym(m, site, 1, args[1]), try a.argSym(m, site, 2, args[2]), try a.readsOf(xs, args[1..]));
         },
+        // An edit that is not `kept` carries what it read beside the list
+        // it edits: the values it adds, the indices it was given. `diff`
+        // never reads that element; `deps` does, so a term made in `view`
+        // reads them (#989, found by the review of #986).
         .push => {
             const p = a.listBase(xs) orelse return a.freshCall(args);
-            return a.mkLst(p, .append, none, none, &.{});
+            return a.mkLst(p, .append, none, none, try a.readsOf(xs, args[1..]));
         },
         .append => {
             if (args.len != 2) return a.freshCall(args);
-            if (a.listBase(args[0])) |p| return a.mkLst(p, .append, none, none, &.{});
-            if (a.listBase(args[1])) |q| return a.mkLst(q, .prepend, none, none, &.{});
+            if (a.listBase(args[0])) |p| return a.mkLst(p, .append, none, none, try a.readsOf(args[0], args[1..2]));
+            if (a.listBase(args[1])) |q| return a.mkLst(q, .prepend, none, none, try a.readsOf(args[1], args[0..1]));
             return a.freshCall(args);
         },
         .cons => {
             if (args.len != 2) return a.freshCall(args);
             const q = a.listBase(args[1]) orelse return a.freshCall(args);
-            return a.mkLst(q, .prepend, none, none, &.{});
+            return a.mkLst(q, .prepend, none, none, try a.readsOf(args[1], args[0..1]));
         },
         .tail => {
             const p = a.listBase(xs) orelse return a.freshCall(args);
@@ -4032,7 +4048,7 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             const p = a.listBase(xs) orelse return a.freshCall(args);
             if (args.len < 2) return a.freshCall(args);
             const s = try a.argSym(m, site, 1, args[1]);
-            return a.mkLst(p, if (row == .insert_at) .insert else .remove_at, s, none, &.{});
+            return a.mkLst(p, if (row == .insert_at) .insert else .remove_at, s, none, try a.readsOf(xs, args[1..]));
         },
         .get, .head, .last => {
             const p = a.listBase(xs) orelse return a.freshCall(args);
@@ -4059,6 +4075,20 @@ fn readsElem(a: *Writes, xs: u32, eps0: u32, read: u32) Error![]const Elem {
     const eps = if (eps0 == none) try a.mintEps(xs) else eps0;
     const out = try a.arena().alloc(Elem, 1);
     out[0] = .{ .index = sym_star, .eps = eps, .term = try a.mkFresh(read) };
+    return out;
+}
+
+/// `readsElem` of what the arguments `xs` read.
+/// It mints no element root: `diff` never reads the element, and a root minted
+/// at each evaluation would keep a recursion's rounds from ever meeting
+/// (§4.3).
+fn readsOf(a: *Writes, list: u32, xs: []const u32) Error![]const Elem {
+    _ = list;
+    var read: u32 = 0;
+    for (xs) |x| read = try a.depsUnion(read, try a.deps(x));
+    if (a.deps_t.len(read) == 0) return &.{};
+    const out = try a.arena().alloc(Elem, 1);
+    out[0] = .{ .index = sym_star, .eps = none, .term = try a.mkFresh(read) };
     return out;
 }
 
@@ -4215,6 +4245,9 @@ fn joinDict(x: Edit, y: Edit) Edit {
     if (x == .d_kept) return y;
     if (y == .d_kept) return x;
     if (x.isAt() and y.isAt()) return .d_at_any;
+    // An insertion's promise is `grow`'s, a removal's `prune`'s (#989).
+    if ((x == .d_at_ins and y == .d_grow) or (x == .d_grow and y == .d_at_ins)) return .d_grow;
+    if ((x == .d_at_del and y == .d_prune) or (x == .d_prune and y == .d_at_del)) return .d_prune;
     const lo: Edit = if (@backingInt(x) < @backingInt(y)) x else y;
     const hi: Edit = if (lo == x) y else x;
     if (lo == .d_prune and hi == .d_clear) return .d_prune;
@@ -4229,6 +4262,8 @@ fn seqDict(x: Edit, s: u32, y: Edit, t: u32) struct { Edit, u32 } {
     if (y == .d_kept) return .{ x, s };
     if (x == y and (x == .d_at_ins or x == .d_at_del) and s == t) return .{ x, s };
     if (x == y and (x == .d_grow or x == .d_prune)) return .{ x, none };
+    if ((x == .d_at_ins or x == .d_grow) and (y == .d_at_ins or y == .d_grow)) return .{ .d_grow, none };
+    if ((x == .d_at_del or x == .d_prune) and (y == .d_at_del or y == .d_prune)) return .{ .d_prune, none };
     return .{ .d_replaced, none };
 }
 
@@ -4249,7 +4284,9 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
             }
         }
         if (e.edit.isAt() and w.edit.isAt() and e.s1 != w.s1) {
-            e.edit = .d_replaced;
+            // Two keys: as `at ?` joins, so the join is the same whatever
+            // the order of the alternatives (the review of #992).
+            e.edit = if (e.edit == .d_at_ins and w.edit == .d_at_ins) .d_grow else if (e.edit == .d_at_del and w.edit == .d_at_del) .d_prune else .d_replaced;
             e.s1 = none;
             e.s2 = none;
         } else if (e.edit.isAt() and w.edit.isAt()) {

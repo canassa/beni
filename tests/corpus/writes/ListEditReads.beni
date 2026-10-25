@@ -1,0 +1,40 @@
+-- writes: what a list edit that is not `kept` reads (#989, found by the
+-- review of #986). `List.push`, `List.cons`, `++`, `List.insertAt`,
+-- `List.removeAt` and `List.swap` give the edited list's tag and carry the
+-- reads of what they add or are given, so a hole that reads a list made in
+-- `view` reads `ρ.x` too, and `Set`, which writes only `x`, reaches it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    ids : List Int
+    x : Int
+
+
+type Msg
+    = Set
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set →
+            { model | x = model.x + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <p>{Maybe.withDefault (List.last (List.push model.ids model.x)) 0}</p>
+        <p>{Maybe.withDefault (List.head (List.cons model.x model.ids)) 0}</p>
+        <p>{Maybe.withDefault (List.last (model.ids ++ [ model.x ])) 0}</p>
+        <p>{Maybe.withDefault (List.head (List.insertAt model.ids 0 model.x)) 0}</p>
+        <p>{List.length (List.removeAt model.ids model.x)}</p>
+        <p>{Maybe.withDefault (List.head (List.swap model.ids 0 model.x)) 0}</p>
+    </div>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { ids = [ 1 ], x = 0 }, update = update, view = view }

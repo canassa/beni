@@ -2442,3 +2442,26 @@ The amendment above, built in the pass (`Writes.zig`'s `applyDictRow`, `applyFol
   a write at another literal key does not reach). Red against the previous pass, which wrote every
   `Dict` write as a `value` write of the whole dictionary. No emitted output moved: no `emit/`,
   `browser/` or run-hash golden changed.
+
+### *Amended 2026-10-25 (#989):* what a list edit reads, and a `Dict` edit in a recursion
+
+- **A list edit that is not `kept` carries what it read.** `List.push`, `cons`, `append` (`++`),
+  `insertAt`, `removeAt` and `swap` made `Lst(p, tag)` with no element, so a term built from one
+  forgot the values it added and the indices it was given: a hole reading
+  `List.last (List.push model.ids model.x)` read `ρ.ids` and not `ρ.x`. Each now carries one
+  element that writes nothing (§3.4's `diff` does not read an element of a tag other than `kept`)
+  and holds those reads, as `filter`'s already did (`writes/ListEditReads`). In emitted code this
+  was not reachable today: such an edit of a model list in `view` is the ownership checker's
+  `view_changes_model`. It is the domain's promise, that a term reads what made it.
+- **Such an element mints no root.** A root minted at each evaluation kept a recursion's rounds from
+  meeting, so a function that threads a `Dict` through `insert` hit the instruction cap; the
+  `Dict` steps of a sequence also keep one read-only element, merged, and each write below the path
+  once.
+- **Sequences and joins of insertions and removals.** `at κ ins` sequenced or joined with `at κ' ins`
+  or `grow` is `grow`, and `at κ del` with `at κ' del` or `prune` is `prune`, whatever the keys: an
+  insertion keeps `grow`'s promise and a removal `prune`'s. This widens *Sequences* above (where
+  different keys gave `replaced`), soundly; the write set's own join of two `at` of different keys does the same
+  (*corrected the same day, the review of #992*: it gave `replaced`, so the join depended on the
+  order of the alternatives). A recursion of `Dict.insert` or `Dict.remove` is `grow` or `prune`
+  (`writes/DictRecursion`). A recursion through `Dict.update` (or `List.update`) still reaches the
+  instruction cap: its value element needs a root, minted at each evaluation (#998).
