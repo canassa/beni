@@ -162,8 +162,8 @@ name symbolic cells (§2.2) and block entries (§3.6); `⟲` is what folds recur
 | `param πᵢ·q` | the object at canonical path `q` of parameter `i` on entry | `param πᵢ·(q·s)` canonical | singleton unless `q` holds `[*]` or `⟲` |
 | `env x·q` | in a frame: the object at `q` of captured local `x` | `env x·(q·s)` | as `param` |
 | `shared M.v·q` | the object at `q` of top-level `M.v` | `shared M.v·(q·s)` | as `param` |
-| `result ι·k` / `esc ι·k` | the callee's `fresh k`/`esc k` at the frame's call ι (a callee's own `result` cells are renumbered into its `fresh` at read-off, so no chain is needed) | nothing |
-| `cb j@λ·q` | what the frame's function parameter `j` returned, at `q`, where λ is a **label**: the frame's own call instruction ι when the frame calls `j` there, or `ι·L` when a callee called `j` (handed on as the actual for its parameter `j′`) and published the result under its own label `L` — a label is a DAG node (this frame's instruction, the callee's label id), so a label's size is one record and a frame has at most one label per (call instruction, callee label); at **read-off** labels are **folded uniformly by first instruction** (§2.10): a first instruction ι is folded when any label of ι stands under a summary position (`[*]`, `⟲`) or two different labels of ι meet at one ordinary path, *anywhere in the class* — `res`, κ atoms, supplies, the class table; then **every** label of ι, everywhere in the class, becomes the one folded label `ι⋆` (so no unfolded `(ι, L)` can coexist with an `ι⋆` whose chains contain it); a single label of ι never folds, and distinct labels `(ι, L₁)`, `(ι, L₂)` at distinct ordinary paths stay distinct (`pair` through a wrapper stays precise). A composite `(ι, L)` with `L` folded is folded. A published class has at most one label per call site plus one per (call site, callee label) pair, each carrying the **supplies** handed at the calls it stands for | `cb j@λ·(q·s)` |
+| `result λ·k` / `esc λ·k` | the callee's `fresh k`/`esc k` at the frame's call ι, or `(ι·λ′)·k` when minted by the instantiation of a callback label λ′ (§2.11 item 6); a callee's own `result` cells are renumbered into its `fresh` at read-off | nothing |
+| `cb j@λ·q` | what the frame's function parameter `j` returned, at `q`, where λ is a **label**: the frame's own call instruction ι when the frame calls `j` there, or `ι·L` when a callee called `j` (handed on as the actual for its parameter `j′`) and published the result under its own label `L` — a label is a DAG node (this frame's instruction, the callee's label id), so a label's size is one record and a frame has at most one label per (call instruction, callee label); at **read-off** labels are **folded uniformly by first instruction** (§2.10): a first instruction ι is folded when any label of ι stands under a summary position (`[*]`, `⟲`), when the class holds two different labels of ι anywhere — as a cell at any path of `res`, in a κ atom, in a supply node (one joined node per `(j, k)`), in `refs`, in a class of the table, or *as a supply key* — or when ι is a call into the frame's own recursive group (so a supplies-only recursion `h f x = if p x then ⊤ else h f (f x)` folds at once); then **every** label of ι, everywhere in the class, becomes the one folded label `ι⋆` (so no unfolded `(ι, L)` can coexist with an `ι⋆` whose chains contain it); a single label of ι at ordinary paths only never folds, and distinct labels `(ι, L₁)`, `(ι, L₂)` at distinct ordinary paths stay distinct (`pair` through a wrapper stays precise; a wrapper that puts one of them under `[*]` folds both, and a write through the other is then refused approximately — the fold's one precision cost). A composite `(ι, L)` with `L` folded is folded. A published class has at most one label per call site plus one per (call site, callee label) pair, each carrying the **supplies** handed at the calls it stands for | `cb j@λ·(q·s)` |
 | `msg·q` | the message `update` receives, at `q` | `msg·(q·s)` | as `param` |
 | `⊤` | an object the analysis cannot name | `⊤` (prefix-closed) | summary |
 | `elem c·ι` / `others c·ι` | materialised: the one position of `c`'s `[*]` taken at ι, and the others | `proj(c,[*])·s` refined | singleton / summary |
@@ -194,12 +194,19 @@ fresh cells, distinct; one that returns its parameter gives the two supplies, wh
 may be one object (`h g x y = [ g x, g y ]` with `h (λl → l) x x`: both supplies are `site x` → `shared`); one
 that returns a capture gives the same `env` cell twice → `shared`; `⊤` → `lost`. There is no "returns owned"
 predicate: `need` and a feedback supply are discharged the same way, by instantiating the result and demanding
-the cells it names (§2.11 item 5). The self-atom `within(λ⋆)` (§2.10) is discharged the same way too: the actual's
-`res` instantiated under `λ⋆`'s supplies must give only cells distinct per call — a `result (ι·λ⋆)·k` (fresh per
-call) or a supply the row marks `taken` (a distinct position per call, O9); a non-`taken` parameter, an `env`, a
-`shared` or a `⊤` cell fails it. **Instantiation is a memoised least fixpoint over the finite label graph**: a
-label's supplies may name labels (a feedback edge: `supplies(ι_a⋆) ∋ cb f@ι_a⋆`), so each label is instantiated
-once, a cycle contributes its current set, and the shape is widened (§2.3). **Soundness.** A run-time object enters a value at an ordinary path once per
+the cells it names (§2.11 item 5). The self-atom `within(λ⋆)` (§2.10) is discharged the same way too, as an `apart` over the instantiated cell
+set in which a folded label counts as two occurrences: a `result (ι·λ⋆)·k` passes unless it is also reached through
+a feedback supply (a result handed back and re-returned is a previous call's object); a supply the row marks
+`taken` passes **under κ of its container at the supply's path** — two `taken` positions are two objects only where
+the container is exclusive there (`twoAt g xs = ( g (traverseAt xs 0), g (traverseAt xs 1) )`, or `List.map` itself,
+over `[ a, a ]` hands one object twice): `yes` passes, `and{…}` records `xreq`, `shared`/`lost` fails; a non-`taken`
+parameter, a projection or refinement of a supply, an `env`, a `shared`, a `⊤` cell, or two labels of different
+containers' elems that alias, fails; an instantiation that yields the caller's *own* `cb` label (a lambda calling a
+captured function parameter) carries the atom forward to the caller's class, as every `sep` over arrivals is. **Instantiation is a least fixpoint over the finite label graph**, solved by §2.12's sparse propagation (labels
+are nodes, "the supplies of λ name λ′" the edges, cell sets pushed in topological order over the condensed graph,
+a cycle's members sharing one set), so every label's instantiated set is complete before a demand or an `apart`
+reads it; shapes are widened (§2.3); split chains fold with the labels (`elem(xs·(ι_rec·(ι_rec·ι_t)))` is
+`elem(xs·ι_rec⋆)`), so a supply never grows round by round. **Soundness.** A run-time object enters a value at an ordinary path once per
 store, and each store is one occurrence of one label; the label of a callback's result is a function of the
 concrete call chain, so two different unfolded labels never name one call; whether two calls' results are one
 object is decided by instantiating what the callback returns under what each call handed it, which is exactly the
@@ -574,17 +581,16 @@ re-derived: `put b i (func (traverseAt a (o + i)))` stores `cb₅@ι` (this acti
 arrivals) and `res[*] = {cb₅@ι, π₆[*]}`, published under `[*]` as `cb₅@ι⋆` with its supply `elem(π₁·ι_t)`; round 2's
 recursive call at ι_rec instantiates the callee's `cb₅@ι⋆` as `cb₅@(ι_rec·ι⋆)` with supply `elem(a·(ι_rec·ι_t))`,
 so the store compares this activation's `cb₅@ι` (supply `elem(a·ι_t)`) with the deeper activations' label — two
-different labels, never the same call — giving the atom `sep(cb₅@ι, cb₅@(ι_rec·ι⋆)) ∧ sep(cb₅, π₆[*])`, stable
-from then on (round 3 folds the deeper label under `[*]` to the same `ι_rec⋆`); at `List.map`'s caller the atom is
-discharged by instantiation: `λl → List.push l 1` returns its parameter, so the two instantiated cells are the two
-supplies, two materialised positions of `xs` apart under `xs`'s κ — `List.map xs λl → …` keeps `xs`'s exclusivity,
-which is R-4.10.2's "elements keep identity"; `λ_ → [ 1 ]` gives two `result` cells, distinct; `λ_ → shared` gives
-`shared` twice. Round 3 instantiates the callee's `sep(ι⋆, ι_rec⋆)` at ι_rec as `sep((ι_rec·ι⋆), (ι_rec·ι_rec⋆))`,
-whose two sides fold into one `ι_rec⋆`: the fold emits `within(ι_rec⋆)`, not `lost`, so κ(res[*]) =
-`sep(ι⋆, ι_rec⋆) ∧ within(ι_rec⋆) ∧ sep(cb₅, π₆[*])`, stable; at the caller `within` is discharged by
-instantiation — `λl → List.push l 1` returns its `taken` supply (a distinct position per call), `λ_ → [ 1 ]` a fresh
-`result` per call, both pass; `λ_ → shared` fails — so `List.map xs λl → …` is exclusive and `List.map xs λ_ →
-shared` is not. `twice`'s `[ y, y ]` stores
+different labels, never the same call — giving `sep(ι⋆, ι_rec⋆) ∧ sep(ι⋆, π₆[*]) ∧ sep(ι_rec⋆, π₆[*])`.
+Round 3 instantiates the callee's `sep(ι⋆, ι_rec⋆)` at ι_rec as `sep((ι_rec·ι⋆), (ι_rec·ι_rec⋆))`, whose two sides
+fold into one `ι_rec⋆`: the fold emits `within(ι_rec⋆)`, so κ(res[*]) = `sep(ι⋆, ι_rec⋆) ∧ within(ι_rec⋆) ∧
+sep(ι⋆, π₆[*]) ∧ sep(ι_rec⋆, π₆[*])`, stable (round 4 re-folds to the same atoms). `List.map xs f` is one call of
+`mapHelp` at ι_m, so its published κ folds both labels to `ι_m⋆` and the `sep` into `within(ι_m⋆)` with every
+supply a `taken` elem of `xs`. At a caller `within` is discharged by instantiation under κ: `λl → List.push l 1`
+returns its `taken` supply, two positions of `xs` apart *under κ(xs[*])* — `List.map xs λl → …` keeps `xs`'s
+exclusivity (R-4.10.2's "elements keep identity") and `List.map [ x, x ] λl → l` fails it (κ `shared`); `λ_ →
+[ 1 ]` gives a fresh `result` per call, pass; `λ_ → shared` fails — so `List.map xs λl → …` is exclusive and
+`List.map xs λ_ → shared` is not. `twice`'s `[ y, y ]` stores
 `cb₁@ι₁` twice: `shared`, so `List.update (twice λ⊤ → [ 1 ]) 0 λl → List.push l 9` is refused `exclusive`
 (`p/CallbackResultTwice`, a red twin to write). Validation: one more walk against the final assumptions must read off
 `F(x) ⊑ x` (coinductive `leq`) and is the walk whose demands are reported. Inside a group a member's fresh numbers
@@ -796,7 +802,10 @@ only at the store of the value it names (O1, O2); the second because a label is 
 chain (the frame's instruction, then the callee's label, which is the same function one level down), so different
 labels have disjoint chains — which the uniform fold keeps: a first instruction is folded everywhere or nowhere in
 a class, so no unfolded label's chains lie inside a folded label's. Whether two different calls' results are one object is what §2.11 item 5's
-instantiation decides from what the callback returns under what it was handed (O14). ∎
+instantiation decides from what the callback returns under what it was handed (O14). A folded label is
+approximate: two occurrences of it from one value are `lost`, and `within` rests on two per-cell claims, each an
+obligation — a `result` not reached through a feedback supply is allocated afresh by each call (O1), and two `taken`
+positions of a container exclusive at that path are two objects (I-κ, O9). ∎
 
 **Invariant I-κ (exclusivity).** *For every node `n` whose κ(n) holds at `p` (`yes`, or `and{atoms}` with every
 atom true of the actual arrivals), no object of `γ(n)` sits at two distinct positions of a summary place, nor at
@@ -830,7 +839,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O11 | *No bound accepts* | §4.4, R-3.7 |
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's deep condition holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
-| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` or `within` over labels holds when — ⇐ — the instantiations under their supplies are apart; folding is uniform per first instruction so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.11, §2.13.15 |
+| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
 | O15 | *Join lowers κ:* κ(join) is below every member's κ (`and{A} ⊔ and{B} = and{A ∪ B}`), and a union's κ is the join of its members'; computed by `Cond.lower` where `Transfer` and `Summary` join, since `Shape.join` knows no κ | §2.3, §2.9, §2.10 |
 
 The Lean oracle stays advisory (R-8.11).
@@ -866,7 +875,7 @@ path_bytes  : []u32 interned canonical paths (`⟲` a reserved step kind); `path
 Cell.Table (per walk)
   origin   : u8     site | param | env | shared | result | esc | cb | msg | top | elem | others | level | below | loan
   kind     : u8     list | dict | record | ref | closure | opaque
-  a, b     : u32    site/result/esc/refinements: instruction, k or parent CellId; param/env/shared/msg: index + PathId; cb: LabelId + PathId
+  a, b     : u32    site: instruction; result/esc: LabelId + k; refinements: parent CellId + LabelId (the split's chain); param/env/shared/msg: index + PathId; cb: LabelId + PathId
 labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the frame's own call or a folded `ι⋆`), folded: u1 (set for `ι⋆` and for any composite whose callee label is folded), supplies: Range }   interned by (inst, callee_label, folded); refinements' `b` is a LabelId too (a split's chain)
   place    : PlaceId
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
