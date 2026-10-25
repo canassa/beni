@@ -1,0 +1,47 @@
+-- CK-273: #1000, a miscompile (`ownership-checker.md` §16.4's keep edge,
+-- §31.5). `split` hands `f` a fresh list (or record) that holds `r`, and
+-- then writes `r` in place: `BoxL` keeps the list, so the box would see the
+-- write. Both calls should be refused `supply`, as the tuple form is. Red:
+-- the supply's ownership is judged for the literal at its root, not for
+-- the record inside it, which `split` uses after the call; the supply
+-- counts as owned and the keep edge is never asked. On browser-inline the
+-- page that reads `old.x * 10 + new.x` showed 11 where value semantics
+-- gives 1 (master after #983). The golden claims the verdict lines and
+-- the totals; its summary lines are master's, to be blessed again with
+-- the fix.
+type alias R =
+    x : Int
+
+
+type BoxL
+    = BoxL (List R)
+
+
+type alias W =
+    w : R
+
+
+type BoxW
+    = BoxW W
+
+
+inList : (List R → BoxL), R → BoxL × R
+inList f r =
+    b = f [ r ]
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inRecord : (W → BoxW), R → BoxW × R
+inRecord f r =
+    b = f { w = r }
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+pub useList : ⊤ → BoxL × R
+useList ⊤ = inList BoxL { x = 0 }
+
+
+pub useRecord : ⊤ → BoxW × R
+useRecord ⊤ = inRecord BoxW { x = 0 }

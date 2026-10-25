@@ -6357,3 +6357,27 @@ the call, so `toggle`'s in-place write of each decoded row is refused `exclusive
 actual schema argument's slot at the call. Since #962 that slot carries the records a conversion
 answers (`build/bad/inline/RecordConversionAnswer` stays refused). It is left to the checker's
 rewrite: the owner froze `src/own/` on 2026-10-25, and this is an acceptance test for the rewrite.
+
+## CK-272 — a record written before it is handed on and then returned is refused (2026-10-25)
+
+**Issue:** #999. **Fixture:** `tests/pending/ownership/RecordWriteBeforeKeep.beni`. `r2 = { r | x = 1 }; b = f r2;
+( b, r2 )` is safe, and #982's record twin of §16.4's keep edge refuses it, approximately. The edge
+reads only the callee's summary, which says that `π2` is written and that its supply is borrowed, not
+which comes first. The list twin has the same blind spot. #982 accepts the false refusal on purpose,
+because the checker is frozen for its rewrite. A precise rule needs a "written after the supply" fact
+for each supply entry.
+
+## CK-273 — a record inside a fresh literal handed to a function that keeps it is written in place (2026-10-25)
+
+**Issue:** #1000. **Fixture:** `tests/pending/ownership/RecordKeptInLiteral.beni`. `b = f [ r ]` (or
+`f { w = r }`), then `{ r | x = 1 }`, with `f = BoxL` keeping its argument, is accepted on master and
+miscompiled: 11 for 1. The supply's ownership is judged for the literal at its root (`recordProbe`
+reads ε only), so the record inside it, used after the call, is never asked about. A tuple wrapper is
+refused.
+
+## CK-274 — a nested record written through a local after its parent was kept is written in place (2026-10-25)
+
+**Issue:** #1001. **Fixture:** `tests/pending/ownership/RecordInnerKept.beni`. `b = f o; i = o.inner;
+{ i | x = 1 }`, with `f = BoxO` keeping `o`, is accepted on master and miscompiled: 11 for 1. The probe
+at the supply of `o` sees no later use of `o`, because `i` is no holder of `o`. The whole-path form is
+refused, and so is the local form with no callback.

@@ -1,0 +1,26 @@
+-- CK-272: #999, a false refusal accepted on purpose by #982
+-- (`ownership-checker.md` §16.4's keep edge, §31.5). `split` writes `r`
+-- before it hands the result to `f`, and returns it beside `f`'s answer:
+-- `f` may keep `r2`, but nothing writes it after, so the program is safe and
+-- should be accepted. Red: the keep edge reads only the callee's summary,
+-- which says that `π2` is written and that its supply is borrowed (`r2` is
+-- returned), not in which order, so the call is refused `supply`. The
+-- golden claims the verdict lines and the totals; its summary lines are
+-- master's, to be blessed again with the fix.
+type alias R =
+    x : Int
+
+
+type Box
+    = Box R
+
+
+split : (R → Box), R → Box × R
+split f r =
+    r2 = { r | x = 1 }
+    b = f r2
+    ( b, r2 )
+
+
+pub use : ⊤ → Box × R
+use ⊤ = split Box { x = 0 }
