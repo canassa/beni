@@ -162,9 +162,8 @@ name symbolic cells (§2.2) and block entries (§3.6); `⟲` is what folds recur
 | `param πᵢ·q` | the object at canonical path `q` of parameter `i` on entry | `param πᵢ·(q·s)` canonical | singleton unless `q` holds `[*]` or `⟲` |
 | `env x·q` | in a frame: the object at `q` of captured local `x` | `env x·(q·s)` | as `param` |
 | `shared M.v·q` | the object at `q` of top-level `M.v` | `shared M.v·(q·s)` | as `param` |
-| `result ι·k` / `esc ι·k` | the callee's `fresh k`/`esc k` at call ι | nothing | singleton, unless ι is inside a feedback loop (§2.12) |
-| `cb j@ι·q` | what function parameter `j` returned **at the call site ι of this frame**, at `q` | `cb j@ι·(q·s)` | **singleton**: instruction ι runs once per activation (beni has no loops but recursion), so one call's result stored twice is `shared` (`twice f = (y = f ⊤; _ = f ⊤; [ y, y ])`) |
-| `cb j@∘·q` | what `j` returned at a call the frame did not make itself: a callee's call of the function it was handed, or a feedback supply (a fold's accumulator), at `q` | `cb j@∘·(q·s)` | summary: `sep` between two different `cb j` cells (`@ι₁`/`@ι₂`, or `@ι`/`@∘`) is the deferred atom `distinct cb_j`, decided where the class is discharged (§2.9) |
+| `result σ·k` / `esc σ·k` | the callee's `fresh k`/`esc k` at the call chain σ | nothing | singleton |
+| `cb j@σ·q` | what function parameter `j` returned at the **call chain** σ, at `q`: σ is the sequence of call instructions from this frame to the call of `j` (`ι` for the frame's own call at ι; `ι·ι′` for the callee's call at ι′ reached through the frame's call at ι; …), **folded** as a canonical path is — a call instruction repeated in σ pops back to its first occurrence and appends `⟲` (`ι_rec⟲·ι₁`: the call of `j` at ι₁ in some activation below the recursive call at ι_rec) | `cb j@σ·(q·s)` | singleton (see below) |
 | `msg·q` | the message `update` receives, at `q` | `msg·(q·s)` | as `param` |
 | `⊤` | an object the analysis cannot name | `⊤` (prefix-closed) | summary |
 | `elem c·ι` / `others c·ι` | materialised: the one position of `c`'s `[*]` taken at ι, and the others | `proj(c,[*])·s` refined | singleton / summary |
@@ -177,19 +176,29 @@ cell and a split ι; `base(c)` climbs to the first non-refinement. **The cells f
 parent is its path minus one step, every refinement's parent is the cell it refines, so the descendants of `c`
 that the program ever named are enumerable (§2.8's deep demands; cost = the trie nodes under `c`).
 
-**Singleton or summary.** A singleton cell stands for one object per activation of its frame; a summary cell for
-many (positions, levels, the results of a callback called many times, `⊤`). `sep(c, c)` for a singleton is
-`shared`; for a summary it is the atom `distinct c`. For a callback's results the two questions are kept apart by
-the cell: `sep(cb j@ι, cb j@ι)` — *one call's result stored twice* — is `shared` (`twice`'s `[ y, y ]`, whatever
-`calls` is); `sep` between two *different* `cb j` cells — two call sites, or a site and the calls made through a
-callee or a feedback edge — is the deferred atom `distinct cb_j`, *the callback returns owned at every call*,
-decided where the class is discharged against the actual's class (every result provenance `fresh`, an owned supply,
-or `cb j` itself, none at two result paths); `( f ⊤, f ⊤ )` is two sites and so two objects when `f` returns
-owned. No κ a round reads off depends on an assumed `calls`, and κ is joined round to round like every other
-component; for `elem`/`[*]` arrivals `excl` of the container; for `⟲`
-levels `excl` of the value; for a `result ι·k` inside a feedback loop `yes` (each iteration's call allocates
-afresh); for `⊤` `lost`. This is what makes `mapHelp`'s `put b i (func …)` store `cb₅`
-exclusively when `func` returns owned (P1 of the second review; R-5.2.9, R-4.10.7).
+**The one rule for singletons and summaries.** *A cell is a label for one object per occurrence; being many is a
+property of a **position**, never of a label.* Every occurrence of a cell at an ordinary path of a value in one
+activation denotes one object, and two occurrences of one label in one value denote the same object, because a
+label can reach two ordinary paths of one value only by the same value being stored twice: `sep(c, c)` is
+`shared` for every `c`, and no `calls` count, no `∘` and no "summary cell" exists. The places where one label stands
+for several objects are exactly the **summary positions** — `[*]` (positions), `⟲` (levels) and a folded call chain
+(`ι_rec⟲`, activations) — and at none of them is `sep(c, c)` ever asked: whether distinct positions or levels hold
+distinct objects is κ, computed at every *store* by comparing the stored value's cells with the container's
+then-contents and carried as atoms (§2.9); a folded chain label is compared only with labels of other sites or
+chains (different calls, so different objects iff the callback returns owned: the atom `distinct cb_j`) or with
+itself (a genuine re-store of the same value: `shared`). Why this is sound: a run-time object enters a value at an
+ordinary path once per store, and each store is one occurrence of one label; the only way one label denotes two
+objects is through a summary position or a folded chain, where the construction rule compared the two stores when
+they happened; so every `distinct cb_j` the analysis emits is about two stores of two different calls' results,
+never about one result stored twice. What this gives: `twice f = (y = f ⊤; _ = f ⊤; [ y, y ])` → `cb₁@ι₂` twice →
+`shared`; `once f = f ⊤; dup f = (a = once f; [ a, a ])` → `cb f@(ι·ι_once)` twice → `shared`; `h f = (_ = f ⊤;
+f ⊤); k f = (a = h f; [ a, a ])` → `cb f@(ι·ι₂)` twice → `shared` (the fourth review's hole: no `calls` decides
+anything); the recursive `h f n = if n == 0 then f ⊤ else h f (n − 1)` → `res = {cb f@ι₁, cb f@(ι_rec⟲·ι₁)}`, two
+labels for one object, each stored twice by `[ a, a ]` → `shared`; `pair f = ( f ⊤, f ⊤ )` → `.0 = cb f@ι₁`, `.1 =
+cb f@ι₂`, two labels → `distinct cb_f`, two objects at a caller when `f` returns owned (precise); `y = f ⊤` beside a
+deeper activation's results (`List.push (g f (n − 1)) y`) → `cb f@ι_y` against `cb f@(ι_g⟲·…)` → `distinct`; a fold
+accumulator → the fold's recursion, `cb f@(ι_rec⟲·ι)` against `cb f@ι` → `distinct`; a lambda capturing `a = f ⊤`
+then `[ a, g ⊤ ]` → `env a ↦ cb f@ι` beside `cb f@ι` → `shared`. `mapHelp`: §2.12. (R-5.2.9, R-4.10.7)
 
 **May-alias.** `alias(a, b)` ∈ {no, yes, under split ι}: `base(a) ~ base(b)`, where symbolic cells are `~` when
 one canonical path is a prefix of the other (`⟲` matching any continuation), **except** that two paths diverging
@@ -397,15 +406,16 @@ values at `acc[*].1` have separate conditions, and a write at `.1` relies on κ 
 | `shared` | fails exactly: one cell at two positions or two paths (`[ r, r ]`, `{ a = xs, b = xs }`, a taken element stored back) |
 | `lost` | fails approximately: `⊤`, a conservative call, a spread of a variable after the base (R-4.6.1), a recast, a pessimistic class |
 
-Atoms name **arrivals and summary cells only**: `excl c`, `sep c d`, `distinct c` (a summary cell's positions or
-calls are pairwise distinct: `owned cb_j` for a callback result), `apart{c₁…cₙ}` (every `sep` over a set, stated
+Atoms name **arrivals only** (parameters, captures, callback results, the cells under a summary position of one):
+`excl c`, `sep c d`, `distinct cb_j` (two different chains' results of `j` are two objects: `owned cb_j`, decided
+by the actual's class), `apart{c₁…cₙ}` (every `sep` over a set, stated
 once), `keep cb_j` (the callback puts back what it was handed, at the same path, or a fresh value: "keeps shape"),
 `writes cb_j`.
 
-`sep(a, b)`: two singleton concrete cells, distinct → `yes`; one singleton twice → `shared`; a summary cell twice
-→ `distinct c`; two *different* `cb j` cells (`@ι₁`/`@ι₂`, `@ι`/`@∘`) → `distinct cb_j`; `⊤`/approximate → `lost`;
-two other arrivals not aliasing → the atom `sep a b`. A construction sorts its
-stored cells once: duplicates decide at once, the arrivals and summary cells among them form one `apart` group;
+`sep(a, b)`: two concrete cells, distinct → `yes`; any cell twice → `shared` (§2.2's one rule); two *different*
+`cb j` cells (different chains) → `distinct cb_j`; `⊤`/approximate → `lost`; two other arrivals not aliasing → the
+atom `sep a b`. A construction sorts its
+stored cells once: duplicates decide at once (`shared`), the arrivals among them form one `apart` group;
 discharging an instantiated `apart` at a call is the same sort over the arguments' cells, O(n log n), the
 arrivals among *them* one `apart` of the caller's own (#693, `ListOfParams`).
 
@@ -441,7 +451,7 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 | Field | Content |
 |---|---|
 | `use(i)` | a shape over πᵢ's places labelled `{R, A, E, W}` plus `W`'s field set `F` and deep flag `S`; `unused` where nothing is named |
-| `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@ι·q`, `cb j@∘·q`, `⊤`; `fresh` numbered by the canonical result path of first occurrence (two distinct sites at one path share a number, which only adds aliasing; their κ is published, not re-derived) |
+| `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@σ·q`, `⊤`; `fresh` numbered by the canonical result path of first occurrence (two distinct sites at one path share a number, which only adds aliasing; their κ is published, not re-derived) |
 | `κ` | per `res` node, atoms over arrivals (a parameter's own `excl` implicit) |
 | `xreq` | the atoms the body relied on |
 | `fun(j)` | `calls ∈ {0, ≤1, many}`; `supply(k)`: nodes handed as πⱼ's `k`th argument with `owned`, `taken` and κ; `need`; `seen`; `keeps`: the keep edges of §2.11 |
@@ -457,9 +467,8 @@ beside `lost` and winning as a cause; classes pointwise, a class identified by i
 
 **Read-off** (oc §16.3): `W` at `(i, q)` when a demand's base cells include `param πᵢ·q` (verdict irrelevant); `E`
 from Esc; `A` from `res`; `R` from uses; `res = widen(map(A(body), f))` with `f`: `site`/`result` → `fresh k`/`esc k`,
-`param` → `πᵢ·q`, `env` → `env x·q` (a lambda's class), `shared`/`⊤` kept, `cb j@ι` kept when `fun(j).calls ≤ 1`
-and renamed `cb j@∘` when `many` (two calls of `j` in one activation are two objects only if `j` returns owned,
-which the caller decides), a refinement → its base's image,
+`param` → `πᵢ·q`, `env` → `env x·q` (a lambda's class), `shared`/`⊤` kept, `cb j@σ` kept with its chain (no renaming: `calls` decides nothing about identity), a
+refinement → its base's image,
 approximate; `fun(j)` from the recorded supplies and keep edges; `classes` from the closure nodes reached. A
 parameterless value: `res` with each cell its definition makes as `shared M.v·q` at its path (R-4.9.2).
 
@@ -486,14 +495,12 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
 5. **Returns owned**: every result provenance `fresh`, a parameter supplied owned and not escaped, or `cb j` itself,
    none at two result paths (thesis §3.7); owned supplies relied on are followed to the caller (oc §16.4 CK-233).
 6. **Result**: `map(S.res, inst)`: `πᵢ·q ↦ proj(aᵢ, q)` (grafting), `fresh k ↦ result ι·k`, `esc k ↦ esc ι·k` (escaped),
-   `shared`/`⊤` kept; a callee's `cb j@ι′·q` or `cb j@∘·q ↦` the actual's `res` with its `π_k` replaced by
-   `S.supply(k)`, `env` by the captured nodes, and **its `fresh k` by `result (ι, ι′)·k`** — one singleton per
-   callback site, so `pair f = ( f ⊤, f ⊤ )` yields two objects at the caller when `f` returns fresh, and
-   `( f ⊤, f ⊤ )` with `f = λ⊤ → shared` two `shared` cells; when the actual is the caller's own function
-   parameter `j′`: **`cb j′@ι·q`, the caller's singleton keyed by this call instruction, if the callee's
-   `fun(j).calls ≤ 1`** (the callee runs once here and calls `j` at most once in it, as `result ι·k` reasons), and
-   `cb j′@∘·q` (summary) if `calls = many` or the edge is a feedback edge — so `once f = f ⊤; dup f = (a = once f;
-   [ a, a ])` stores one singleton twice and is `shared`; a feedback supply is a fixpoint (§2.12); a closure node in `res` carries its class from `S.classes`
+   `shared`/`⊤` kept; a callee's `cb j@σ′·q ↦` the actual's `res` with its `π_k` replaced by `S.supply(k)`, `env`
+   by the captured nodes, and its `fresh k` by `result (ι·σ′)·k` — one label per callback site, so `pair f = ( f ⊤,
+   f ⊤ )` yields two objects at the caller when `f` returns fresh and two `shared` cells when `f = λ⊤ → shared`;
+   when the actual is the caller's own function parameter `j′`: **`cb j′@(ι·σ′)·q`**, the chain extended by this
+   call instruction and folded (§2.2), whatever the callee's `calls` — so `k f = (a = h f; [ a, a ])` stores
+   `cb f@(ι·ι₂)` twice and is `shared`; a feedback supply is a fixpoint (§2.12); a closure node in `res` carries its class from `S.classes`
    instantiated the same way. Crossing → `∅`.
 7. **Conditions**: κ(res) instantiated; `S.xreq` discharged on the arguments, reported on that call's line (R-4.6.6).
 
@@ -536,11 +543,10 @@ would flip from `shared` to an atom as `calls` grows — does not arise, because
 inside every class and a group-internal call instantiates the assumed κ with that atom intact. `mapHelp`
 re-derived: `put b i (func (traverseAt a (o + i)))` stores `cb₅@ι` (this activation's one call) into `b` whose
 `[*]` holds `π₆[*]`; round 1 reads off κ(res[*]) = `apart{cb₅@ι, π₆[*]}` = `sep(cb₅@ι, π₆[*])` (an atom over two
-arrivals) and `res[*] = {cb₅@ι, π₆[*]}`, published with `cb₅@ι` as `cb₅@∘` once `fun(5).calls` is `many`
-(own call plus the translated recursive one); round 2's recursive call instantiates the callee's published atom
-`sep(cb₅@∘, π₆[*])` with `π₆[*] := {π₆[*], cb₅@ι}` (the actual `put b i (func …)` carries this activation's
-`@ι`), so κ instantiation compares `cb₅@∘` with `cb₅@ι` — two different `cb₅` cells, never the same call —
-giving `distinct cb₅ ∧ sep(cb₅, π₆[*])`, stable from then on; at `List.map`'s caller (`π₆` the fresh
+arrivals) and `res[*] = {cb₅@ι, π₆[*]}`; round 2's recursive call at ι_rec instantiates the callee's `cb₅@ι` as
+`cb₅@(ι_rec·ι)` (the actual for `func` is this frame's own `func`), so the store compares this activation's
+`cb₅@ι` with the deeper activations' `cb₅@(ι_rec·ι)` — two different chains, never the same call — giving
+`distinct cb₅ ∧ sep(cb₅, π₆[*])`; round 3 folds `cb₅@(ι_rec·ι_rec·ι)` to `cb₅@(ι_rec⟲·ι)`, stable from then on; at `List.map`'s caller (`π₆` the fresh
 `builder`, so `sep` holds) the atom is discharged against the lambda's class: owned when it returns `fresh` per
 call, so `List.map xs λl → …` is exclusive and `List.map xs λ_ → shared` is not. `twice`'s `[ y, y ]` stores
 `cb₁@ι₁` twice: `shared`, so `List.update (twice λ⊤ → [ 1 ]) 0 λl → List.push l 9` is refused `exclusive`
@@ -777,7 +783,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O11 | *No bound accepts* | §4.4, R-3.7 |
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's deep condition holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
-| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals and summary cells (`distinct cb_j` ⇔ returns owned); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.11, §2.13.15 |
+| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (`distinct cb_j` ⇔ the actual returns owned); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.11, §2.13.15 |
 | O15 | *Join lowers κ:* κ(join) is below every member's κ (`and{A} ⊔ and{B} = and{A ∪ B}`), and a union's κ is the join of its members'; computed by `Cond.lower` where `Transfer` and `Summary` join, since `Shape.join` knows no κ | §2.3, §2.9, §2.10 |
 
 The Lean oracle stays advisory (R-8.11).
@@ -1399,4 +1405,4 @@ header pointing here (never renumbered: rule 2).
 | RecordSplitPushBack (264), RecordWriteBeforeKeep (272), RecordKeptInLiteral (273), RecordInnerKept (274), RecordWrapperRead (290), RecordProvenanceCallbackResult (291), RecordCopyOpen (309), RecordIndexExchange (283), ReturnedLambdaWrite (300), OnceLaterArgument (299), PrependFreshRecord (282) | R-4.6.9, R-4.8.11, R-4.8.12, R-4.8.14, R-4.10.4, R-4.8.17, R-5.4.9, R-5.4.5, R-4.4.3 | S5 |
 | ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), RecordProvenanceTopLevelOk (291), SchemaIssuesFresh (307), SchemaIssuesExclusive (293) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5, R-4.10.8 | S7 |
 | DictFocusGrow (267), DictHelperAlias (270), DictRecordAlias (270), DictTupleAlias (270), CopyApart (276), RefOwnsContents (286), LogAnnotateUpdate (308) | R-4.10.12, R-4.10.13, R-4.6.8, R-5.12.3, R-5.12.2 | S8 |
-| *to write, red twins found by review:* CallbackResultTwice (`twice f = (y = f ⊤; _ = f ⊤; [ y, y ])` then `List.update … 0 λl → List.push l 9`: `exclusive`), the `dup2` and 3-cycle twins of RecordIndexExchange (`exclusive`) | R-4.6.2, R-4.8.17 | S4, S5 |
+| *to write, red twins found by review:* CallbackResultTwice (`twice f = (y = f ⊤; _ = f ⊤; [ y, y ])` then `List.update … 0 λl → List.push l 9`: `exclusive`), CallbackResultForwarded (`h f = (_ = f ⊤; f ⊤); k f = (a = h f; [ a, a ])`, its recursive `h f n` twin, and `once`/`dup`: `exclusive`), the `dup2` and 3-cycle twins of RecordIndexExchange (`exclusive`) | R-4.6.2, R-4.8.17 | S4, S5 |
