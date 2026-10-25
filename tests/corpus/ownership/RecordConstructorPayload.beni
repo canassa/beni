@@ -1,0 +1,78 @@
+-- ownership: a bare constructor handed on as a function value holds its
+-- record payload, as `λp → Home p` does (`ownership-checker.md` §31.7;
+-- #962, #879's routed-app). `wrap Home page` answers a screen that holds
+-- `page`'s record, so the entry knows where `model.screen#Home.0` and the
+-- modal below it come from: `Open` makes the modal, `Write` writes the
+-- one the model holds, and every entry line is accepted. Before #962 the
+-- constructor's answer dropped a field that holds no list, and the entry's
+-- modal line was `pending: no provenance names where its base's object
+-- comes from`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Modal =
+    note : String
+
+
+type alias Page =
+    age : Int
+    modal : Maybe Modal
+
+
+type Screen
+    = Home Page
+
+
+type alias Model =
+    screen : Screen
+
+
+type Msg
+    = Open
+    | Write String
+
+
+write : String, Page → Page
+write typed page =
+    case page.modal of
+        Just modal →
+            { page | modal = Just { modal | note = typed } }
+
+        Nothing →
+            page
+
+
+wrap : (p → Screen), p, Model → Model
+wrap toScreen p model = { model | screen = toScreen p }
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model.screen ) of
+        ( Open, Home page ) →
+            wrap Home { page | modal = Just { note = "" } } model
+
+        ( Write typed, Home page ) →
+            wrap Home (write typed page) model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Open}>open</button>
+        <button onClick={Write "x"}>write</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { screen = Home { age = 1, modal = Nothing } }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

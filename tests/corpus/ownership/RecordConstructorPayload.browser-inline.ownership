@@ -1,0 +1,20 @@
+module RecordConstructorPayload
+  41:13 update page: accepted param
+  41:35 update modal: accepted param
+  48:25 update model: accepted param
+  55:13 update model: accepted param (RecordConstructorPayload.wrap writes it)
+  55:23 update page: accepted param
+  58:13 update model: accepted param (RecordConstructorPayload.wrap writes it)
+  58:24 update page: accepted param (RecordConstructorPayload.write writes it)
+  58:24 update page.modal#Just.0: accepted param (RecordConstructorPayload.write writes it)
+  72:10 update entry RecordConstructorPayload.update model: accepted entry
+  72:10 update entry RecordConstructorPayload.update model.screen#Home.0: accepted entry
+  72:10 update entry RecordConstructorPayload.update model.screen#Home.0.modal#Just.0: accepted entry
+  summary write: π2 RW{modal}, π2.modal R, π2.modal#Just.0 W{note}; res .modal#Just.0 π2.modal#Just.0◦, π2 π2◦
+  summary wrap: π1 R, π2 R, π3 W{screen}; res .screen cb1r{excl cb1}, π3◦; π1 calls ≤1, supply 1 π2 owned{excl π2}r{excl π2}
+  summary update: π2 W{screen}, π2.screen R, π2.screen#Home.0 RW{modal}, π2.screen#Home.0.modal R, π2.screen#Home.0.modal#Just.0 RW{note}; res .screen#Home.0 π2.screen#Home.0 π2.screen#Home.0◦, .screen#Home.0.modal#Just.0 fresh501◦ π2.screen#Home.0.modal#Just.0◦, π2◦
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 11: accepted 11, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 11: accepted 11, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

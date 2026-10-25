@@ -1,0 +1,53 @@
+-- A bare constructor handed on as a function value holds its record
+-- payload (`ownership-checker.md` §31.7; #962). `apply Box r` answers a box
+-- that holds `r`, so the update of `r` after it is refused: written in
+-- place, it would change the box's record too, and `old.x` would read 1
+-- where value semantics reads 0. Before #962 the constructor's summary
+-- dropped every field that holds no list, the box held nothing, and the
+-- build wrote `r.x = 1` into the record the box holds.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias R =
+    x : Int
+
+
+type Box
+    = Box R
+
+
+apply : (a → b), a → b
+apply f v = f v
+
+
+split : R → Box × R
+split r =
+    b = apply Box r
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+type alias Model =
+    n : Int
+
+
+type Msg
+    = Go
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            ( Box old, new ) = split { x = 0 }
+            { model | n = old.x * 10 + new.x }
+
+
+view : Model → Html Msg
+view model = <button data-role="go" onClick={Go}>{model.n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { n = 5 }, update = update, view = view }) "root"

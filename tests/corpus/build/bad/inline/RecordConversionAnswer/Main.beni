@@ -1,0 +1,67 @@
+-- A conversion whose answer is a record the program made (`schema.md`;
+-- `ownership-checker.md` §30.10, §31.4 item 6; #962): `Pt`'s codec decodes
+-- every number to the top-level `origin`, so a decoded list holds that one
+-- record at every position, and `bump`'s in-place write is refused. Before
+-- #962 the conversion's slot held nothing for a record with no list in it,
+-- the decoder's answer was taken for fresh records, and the build wrote
+-- `origin` once per position: `[1,2,3]` decoded and bumped to three
+-- `{ x = 3 }`, where value semantics gives three `{ x = 1 }`.
+import Browser
+import Html exposing (Html)
+import Json
+import Schema exposing (Codec)
+import Tea
+
+
+pub type Pt
+    = Pt { x : Int }
+
+
+origin : Pt
+origin = Pt { x = 0 }
+
+
+pub codec : ⊤ → Codec Pt
+codec ⊤ = Schema.erased (Schema.converted Schema.int (Schema.conversion (λ_ → Ok origin) λ_ → Ok 0))
+
+
+bump : List Pt → List Pt
+bump ps = List.map ps λp →
+    case p of
+        Pt r →
+            Pt { r | x = r.x + 1 }
+
+
+total : List Pt → Int
+total ps = List.foldl ps 0 λp sum →
+    case p of
+        Pt r →
+            sum + r.x
+
+
+type alias Model =
+    n : Int
+
+
+type Msg
+    = Go
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            case Json.decode "[1,2,3]" of
+                Ok ps →
+                    { model | n = total (bump ps) }
+
+                Err _ →
+                    model
+
+
+view : Model → Html Msg
+view model = <button data-role="go" onClick={Go}>{model.n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { n = 5 }, update = update, view = view }) "root"

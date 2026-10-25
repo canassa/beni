@@ -1,0 +1,40 @@
+-- A view message that carries a top-level record hands `update` that
+-- constant (`ownership-checker.md` §31.6, §31.8; #962), so the arm that
+-- writes it is refused. Before #962 the view's messages dropped a constant
+-- that holds no list, and the build wrote `origin.x` in place: each click
+-- counted 1, 2, 3, … where value semantics shows 1 every time.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias R =
+    x : Int
+
+
+origin : R
+origin = { x = 0 }
+
+
+type alias Model =
+    n : Int
+
+
+type Msg
+    = Go R
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go r →
+            r2 = { r | x = r.x + 1 }
+            { model | n = r2.x }
+
+
+view : Model → Html Msg
+view model = <button data-role="go" onClick={Go origin}>{model.n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { n = 5 }, update = update, view = view }) "root"
