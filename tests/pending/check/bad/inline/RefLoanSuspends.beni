@@ -1,0 +1,35 @@
+-- CK-287: R-5.12.3 (#981). `Ref.get` returns a loan, and a loan alive
+-- across a point where the fiber may suspend is refused: `tellEach` walks
+-- the room's members and yields at each one, so another fiber's join may
+-- edit the cell under the walk. The fix named is
+-- `List.copy (Ref.get room.members)`; the join itself edits in place.
+-- Red: v1 has no loans. It reports nothing at the walk and rejects the
+-- join's `[ …members, … ]` instead (`list_may_be_shared`, Ref.update
+-- supplies it borrowed). R-6.1 leaves the code open: the refusal is
+-- sharing the text shows, so the code here is the exact list one, and the
+-- column is left open (no rule names which span a loan's refusal takes).
+import Ref exposing (Ref)
+import Task
+
+
+type alias Room =
+    members : Ref (List (String × Int))
+
+
+pub join : Room, String, Int → ⊤
+join room name id = Ref.update room.members λmembers → [ …members, ( name, id ) ]
+
+
+pub tellAll : Room, String → ⊤
+tellAll room event = tellEach (Ref.get room.members) event
+
+
+tellEach : List (String × Int), String → ⊤
+tellEach members event =
+    case members of
+        [] →
+            ⊤
+
+        [ _, …rest ] →
+            Task.yieldNow ⊤
+            tellEach rest event

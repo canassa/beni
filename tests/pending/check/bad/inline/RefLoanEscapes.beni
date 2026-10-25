@@ -1,0 +1,17 @@
+-- CK-288: R-5.12.3 (#981). `Ref.get` returns a loan, and a loan that
+-- escapes — here stored in the model — is refused; the fix named is
+-- `List.copy (Ref.get model.cell)`. Red: v1 has no loans; it reads
+-- `Ref.get` as an unknown value and, with nothing written, reports
+-- nothing, so `check` exits 0. R-6.1 leaves the code open: the escape is
+-- in the text, so the code here is the exact list one, and the column is
+-- left open (no rule names which span a loan's refusal takes).
+import Ref exposing (Ref)
+
+
+type alias Model =
+    items : List Int
+    cell : Ref (List Int)
+
+
+pub remember : Model → Model
+remember model = { model | items = Ref.get model.cell }

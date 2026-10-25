@@ -1,0 +1,2 @@
+# The loan's refusal, on the line that stores it; the column is open.
+list_still_used 17:* contains "List.copy (Ref.get model.cell)"

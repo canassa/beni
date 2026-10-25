@@ -1,0 +1,38 @@
+-- CK-286: R-5.12.3 (#981). A `Ref` owns its contents: examples/chat/server's
+-- room, reduced, with `Ref.update`'s join written with no `List.copy`.
+-- `Ref.get` is a loan that `List.filter` only reads before the fiber
+-- suspends, so the join edits the cell in place: accepted.
+-- Red: v1 takes what `Ref.get` hands out as shared, and `Ref.update`
+-- supplies its callback's parameter borrowed, so the join is rejected
+-- `supply` (approx); the chat server copies to pass. Only the verdict
+-- lines and the totals are required; the rest is master's.
+import Ref exposing (Ref)
+import Task
+
+
+type alias Room =
+    members : Ref (List (String × Int))
+
+
+pub join : Room, String, Int → ⊤
+join room name id = Ref.update room.members λmembers → [ …members, ( name, id ) ]
+
+
+pub leave : Room, Int → ⊤
+leave room id = Ref.update room.members λmembers → List.filter members λ( _, s ) → s ≠ id
+
+
+pub tellOthers : Room, Int, String → ⊤
+tellOthers room self event =
+    tellEach (List.filter (Ref.get room.members) λ( _, s ) → s ≠ self) event
+
+
+tellEach : List (String × Int), String → ⊤
+tellEach members event =
+    case members of
+        [] →
+            ⊤
+
+        [ _, …rest ] →
+            Task.yieldNow ⊤
+            tellEach rest event

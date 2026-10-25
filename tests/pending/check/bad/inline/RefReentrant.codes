@@ -1,0 +1,4 @@
+# One refusal per callback, at the inner `Ref` operation's line, column
+# open; neither is v1's borrowed-supply refusal of the push.
+list_still_used 13:* lacks "borrowed"
+list_may_be_shared 17:* lacks "borrowed"

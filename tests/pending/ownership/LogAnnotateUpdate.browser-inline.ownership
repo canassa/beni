@@ -1,0 +1,10 @@
+module LogAnnotateUpdate
+  24:46 update model: accepted once
+  33:5 update entry LogAnnotateUpdate.update model: accepted entry
+  capture model.n: read 24:65; before 24:39
+  summary update: π2 RW{n}, π2.n R; res .0 π2◦
+  summary view: π1.n R; res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1

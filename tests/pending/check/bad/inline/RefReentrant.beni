@@ -1,0 +1,17 @@
+-- CK-289: R-5.12.3 (#981). Inside `Ref.update`'s callback the cell's
+-- contents are moved out to `xs`; a `Ref` operation on a cell not proven
+-- to be another one before the callback returns is refused at compile
+-- time, never trapped at run time. `again` reads `r` itself, exact;
+-- `other` reads `b`, which may be `a`, a limit. Red: v1 has no such rule.
+-- It rejects each push instead, `Ref.update` supplying `xs` borrowed
+-- (`list_may_be_shared` both), a refusal the push itself must not get
+-- (the update edits in place). R-6.1 leaves the span open: the column is.
+import Ref exposing (Ref)
+
+
+pub again : Ref (List Int) → ⊤
+again r = Ref.update r λxs → List.push xs (List.length (Ref.get r))
+
+
+pub other : Ref (List Int), Ref (List Int) → ⊤
+other a b = Ref.update a λxs → List.push xs (List.length (Ref.get b))

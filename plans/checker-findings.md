@@ -6452,6 +6452,16 @@ holds one list at three levels, none of them in the right subtree, and both call
 `exclusive`: the checker cannot tell a write to one of the region's lists from a write to every one.
 R-4.7.8 requires both accepted. `c1` and `c2` (`incAll2` writes every level) stay `exclusive`.
 
+## CK-281 — a write in a type's `eq` is accepted (2026-10-25)
+
+**Fixture:** `tests/pending/check/bad/inline/ComparisonWrites.beni`. A type's `eq` and `compare` may
+only read their arguments, and `List.push a 0` in `eq (T a) (T b)` must be `comparison_changes_value`
+at the push (R-5.13.1, owner 2026-10-10 and 2026-10-25). v1 has no such rule: it accepts the push as a
+write of its own parameter (`accepted param`), and `check` exits 0. The code is not in
+`diagnostic.Code` yet, so the fixture pins a `.diag` (a `.codes` naming an unknown code is malformed)
+with the code, the title and the span, and a placeholder message that the slice adding the code
+blesses.
+
 ## CK-282 — a prepend in front of a fresh constructor value or record is taken as maybe its base (2026-10-25)
 
 **Issue:** none (R-4.4.3, owner 2026-10-25). **Fixture:** `tests/pending/ownership/PrependFreshRecord.beni`.
@@ -6478,6 +6488,46 @@ as `List.push` is, but v1 also marks the alias itself `pending: it is returned`,
 Through nine names (`nine xs = ( a9 xs, xs )`) v1 calls a function it cannot identify and prints no
 line, because alias chains stop at eight (R-7.5). Required: no pending line, and `later-use` at every
 call through any chain. o/AliasWriter pins v1's opposite and changes with the fix.
+
+## CK-285 — a list handed to `Task.resume` is not given up (2026-10-25)
+
+**Issue:** #981's scope (R-5.10.12). **Fixture:** `tests/pending/check/bad/inline/ResumeGivesUp.beni`.
+`Task.callback`'s `Resume` gives up what it is handed, as a send does, so `xs` read after `Task.resume
+r xs` is `later-use` at the resume. v1 infers `resume` from its body over `Js`, which writes nothing
+(`hand: π1 RE`), and reports no line. The read-only half of the row is met by v1: `Task.andThen`,
+`isWaiting`, `scope`, `onExit`, `uninterruptible`, `withoutLogContext` and `Schema.encode`, `write`,
+`print`, `decode` are all `π1 R`, and a push after each is accepted, so it has no red fixture.
+
+## CK-286 — a `Ref`'s contents are taken to be shared (2026-10-25)
+
+**Issue:** #981 (decided 2026-10-25). **Fixture:** `tests/pending/ownership/RefOwnsContents.beni`
+(browser-inline), a reduction of `examples/chat/server`'s room. A `Ref` owns its contents, and
+`Ref.get` is a loan that `List.filter` only reads before the fiber suspends, so `Ref.update
+room.members λmembers → [ …members, x ]` with no `List.copy` edits the cell in place and must be
+accepted (R-5.12.3). v1 reads `Ref.update`'s supply as borrowed and rejects it `supply` (approx); the
+chat server copies to pass.
+
+## CK-287 — a loan of `Ref.get` alive across a suspension is not refused (2026-10-25)
+
+**Issue:** #981. **Fixture:** `tests/pending/check/bad/inline/RefLoanSuspends.beni`. `tellEach (Ref.get
+room.members) event` yields at each member, so another fiber's join may edit the array under the walk.
+It must be refused, with the fix `List.copy (Ref.get room.members)`, while the join edits in place
+(R-5.12.3). v1 has no loans: it is silent at the walk and refuses the join. The code is
+`list_still_used` and the column is open: R-6.1 names neither for a loan.
+
+## CK-288 — a loan of `Ref.get` stored in a model is not refused (2026-10-25)
+
+**Issue:** #981. **Fixture:** `tests/pending/check/bad/inline/RefLoanEscapes.beni`. `{ model | items =
+Ref.get model.cell }` lets a loan escape, and must be refused with the fix `List.copy (Ref.get
+model.cell)` (R-5.12.3). v1 writes nothing there and reports nothing.
+
+## CK-289 — a `Ref` operation inside `Ref.update`'s callback is not refused (2026-10-25)
+
+**Issue:** #981. **Fixture:** `tests/pending/check/bad/inline/RefReentrant.beni`. While `Ref.update`'s
+callback holds the moved-out contents, a `Ref` operation on a cell not proven to be another one is a
+compile-time error (R-5.12.3). `again` reads `r` itself (exact, `list_still_used`); `other` reads `b`,
+which may be `a` (a limit, `list_may_be_shared`). v1 has no such rule and rejects each callback's push
+as a borrowed supply, a refusal the push must not get.
 
 ## CK-290 — an old field read through a wrapper is a whole use (2026-10-25)
 
@@ -6631,6 +6681,14 @@ the run `unknown` (its conversions are not followed) and refuses the update of e
 (a)`, or `exclusive (a)` for `printWith`. R-5.11.5 makes them fresh: all three are accepted
 (run/SchemaDepth's `Show.issue { i | path = [] }`).
 
+## CK-308 — a record update inside a `Log.annotate` lambda is refused (2026-10-25)
+
+**Issue:** #996. **Fixture:** `tests/pending/ownership/LogAnnotateUpdate.beni` (browser-inline).
+`update _ model = Log.annotate "k" "v" λ⊤ → ( { model | n = model.n + 1 }, Cmd.none )` writes `model`
+once and must be accepted (R-5.12.2). v1 does not know that `annotate` calls `work` once and rejects
+the update `later-use`, claiming sharing it can see. The same update bound before the annotate is
+accepted (`browser/inline/LogScopeInUpdate`).
+
 ## CK-309 — `Record.copy` of an open record type keeps the original's object (2026-10-25)
 
 **Issue:** #871. **Fixture:** `tests/pending/ownership/RecordCopyOpen.beni`. `copied = Record.copy r`
@@ -6639,3 +6697,21 @@ with `r : { r | cups : Int }`, then `{ copied | cups = 13 }` while `r` is return
 (run/FieldColouring). R-4.10.4: the copy is a new object for an open type too. The inline form
 `{ Record.copy r | … }` is the control, accepted on master.
 
+## CK-310 — a refusal resting on an unknown call count says it is visible sharing (2026-10-25)
+
+**Issue:** #996. **Fixture:** `tests/pending/check/bad/inline/LogScopeUnknownLimit.beni`. A record
+update inside a lambda handed to `scope`, a function value taken from a list, is refused: the checker
+cannot see how often `scope` calls it, and a second call would see the first's write. The refusal
+stands, but it rests on that approximation, so R-6.2/R-6.3 require `record_may_be_shared` and "This is
+a limit of the checker". v1 prints `record_still_used`, "This is sharing the checker can see: model is
+read again at 34:21", and the place it names is the lambda's `next.n`, not a read of `model`. #996's
+own `Log.annotate` program gets the same wrong label; R-5.12.2 accepts that program (CK-308), so the
+fixture uses a scope the checker cannot identify.
+
+## CK-311 — a lambda applied directly to a function parameter overflows the ownership dump (2026-10-25)
+
+**Issue:** #954. **Fixture:** `tests/pending/ownership/AppliedLambdaRecursion.beni`. `applyTwice f x =
+(λg y → g (g y)) f x`, reduced from `tests/corpus/parse/good/Lambdas.beni`, makes `dump
+--stage=ownership` recurse without end (`instCb` → `passOn`) and die of a stack overflow; `check`
+passes. R-7.12: every input ends in a report or `ownership_limit`. The golden is the report of the same
+program with the lambda named (`twice f x`); the slice that turns it green blesses the real one.

@@ -1,0 +1,2 @@
+# The update inside the lambda `scope` is handed: a limit, not visible sharing.
+record_may_be_shared 33:24 contains "This is a limit of the checker" lacks "sharing the checker can see"
