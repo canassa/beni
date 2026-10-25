@@ -72,11 +72,15 @@ pub const Radix = struct {
         return r.nodes.get(id.int());
     }
 
-    /// One node, interned; a new one is one record in `charge`.
+    /// One node, interned. The record is reserved BEFORE the dictionary is
+    /// touched, so a refused reservation leaves no half-written entry; and
+    /// it is reserved on a hit as well as a miss (§4.1: a request reserves
+    /// its logical entry even when the physical node exists already, so
+    /// what a request costs never depends on which owner built the node).
     fn make(r: *Radix, gpa: Allocator, charge: Charge, n: RadixNode) Error!SetId {
+        try charge.reserve(gpa, .set, 1);
         const got = try r.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
-        try charge.reserve(gpa, .set, 1);
         const id: SetId = .from(@intCast(r.nodes.len));
         got.value_ptr.* = id.int();
         try r.nodes.append(gpa, n);
@@ -386,8 +390,9 @@ test "a union adding nothing returns the destination root, and shares the larger
     try testing.expectEqual(@as(u32, 65), r.count(joined));
     // One path copied: at most 33 new nodes, plus the leaf.
     try testing.expect(r.nodes.len - before <= 34);
-    // Every node was reserved, and so was every inspection.
-    try testing.expectEqual(@as(u32, @intCast(r.nodes.len)), a.growth_by[@backingInt(Ids.Category.set)]);
+    // Every node was reserved (a hit as well, so at least one record per
+    // node), and so was every inspection.
+    try testing.expect(a.growth_by[@backingInt(Ids.Category.set)] >= @as(u32, @intCast(r.nodes.len)));
     try testing.expect(a.growth_by[@backingInt(Ids.Category.inspection)] > 0);
 }
 
@@ -422,4 +427,27 @@ test "a union that adds nothing still pays its inspections, before it reads" {
     try testing.expectEqual(x, try r.unionWith(gpa, .in(&lane_account, lane), x, y));
     try testing.expectEqual(@as(u32, 0), lane_account.growth);
     try testing.expect(lane_account.laneUsed(lane) > 0);
+}
+
+test "a refused reservation leaves the set table whole, and a hit is charged like a miss" {
+    var r: Radix = .{};
+    defer r.deinit(testing.allocator);
+    const gpa = testing.allocator;
+    var broke: Account = .{ .allowance = 0 };
+    defer broke.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, r.insert(gpa, .growth(&broke), .none, 42, 0));
+    try testing.expectEqual(@as(usize, 0), r.nodes.len);
+    // Another owner making the same node gets a real one, not the refused
+    // owner's half-written entry.
+    var a: Account = .{};
+    defer a.deinit(gpa);
+    const s = try r.insert(gpa, .growth(&a), .none, 42, 0);
+    try testing.expectEqual(@as(usize, 1), r.nodes.len);
+    try testing.expectEqual(@as(u32, 0), s.int());
+    try testing.expect(r.member(s, 42));
+    // The same node again is a hit, and the request is charged all the same
+    // (§4.1: what a request costs never depends on who built the node).
+    const before = a.growth;
+    try testing.expectEqual(s, try r.insert(gpa, .growth(&a), .none, 42, 0));
+    try testing.expectEqual(before + 1, a.growth);
 }
