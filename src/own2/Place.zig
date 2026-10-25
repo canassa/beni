@@ -126,8 +126,8 @@ pub const StepKind = enum(u4) {
     field,
     /// `.i`: a tuple index.
     index,
-    /// `C#i`: the payload is the constructor ordinal (12 bits) over the
-    /// argument index (16 bits), so the word orders by `(C, i)`.
+    /// `C#i`: the payload indexes the table's interned `(constructor,
+    /// argument)` pairs; canonical order among them is by the pair.
     ctor_arg,
     /// `[*]`.
     elem,
@@ -259,6 +259,10 @@ pub const Table = struct {
     /// `extend`'s memo: `(path, step)` → the canonical result, `none` for
     /// no such step.
     extend_memo: Ids.FixedDict(2) = .{},
+    /// `C#i` steps: `(constructor, argument)` pairs interned, the payload
+    /// their index, so a module has 2²⁸ of them (`ctor_steps`); the
+    /// canonical order among them is by the pair (`stepLess`).
+    ctor_args: Ids.FixedDict(2) = .{},
     limits: Limits = .{},
     /// Instrumentation: places visited by the holds fixpoint.
     holds_visits: u32 = 0,
@@ -270,6 +274,7 @@ pub const Table = struct {
         t.paths.deinit(gpa);
         t.path_index.deinit(gpa);
         t.extend_memo.deinit(gpa);
+        t.ctor_args.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -311,31 +316,38 @@ pub const Table = struct {
         var hi: usize = words.len;
         while (lo < hi) {
             const mid = (lo + hi) / 2;
-            if (words[mid].word() < step.word()) lo = mid + 1 else hi = mid;
+            if (t.stepLess(words[mid], step)) lo = mid + 1 else hi = mid;
         }
         if (lo < words.len and words[lo].word() == step.word()) return t.step_tab.items(.child)[r.start + lo];
         return null;
+    }
+
+    /// The canonical order of steps (§3.1): by kind, then a field by its
+    /// text rank, an index or slot by its number, a `C#i` by its
+    /// `(constructor, argument)` pair — not by its interned index.
+    pub fn stepLess(t: *const Table, a: Step, b: Step) bool {
+        if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
+        if (a.kind != .ctor_arg) return a.payload < b.payload;
+        const pa = t.ctorArgOf(a);
+        const pb = t.ctorArgOf(b);
+        return if (pa[0] != pb[0]) pa[0] < pb[0] else pa[1] < pb[1];
     }
 
     /// The `C#i` step for constructor `c`'s argument `i`: its word orders
     /// by `(c, i)`, so a place's constructor steps are in declaration order
     /// whatever order the pairs were first seen in.
     pub fn ctorStep(t: *Table, gpa: Allocator, account: *Account, c: u32, i: u32) Error!Step {
-        _ = t;
-        _ = gpa;
-        // The argument index has §4.4's `constructor_args` (65 536, 16
-        // bits); the constructor ordinal takes the 12 bits above it, a
-        // format limit (`step_payload`) §4.4 does not list: 4 096
-        // constructors of one type.
         try account.limit(.constructor_args, @as(u64, i) + 1);
-        try account.limit(.step_payload, (@as(u64, c) << 16) + i + 1);
-        return .{ .kind = .ctor_arg, .payload = @intCast((c << 16) | i) };
+        try account.limit(.ctor_steps, @as(u64, t.ctor_args.count()) + 1);
+        const got = try t.ctor_args.getOrPut(gpa, .{ c, i });
+        if (!got.found_existing) got.value_ptr.* = got.index;
+        return .{ .kind = .ctor_arg, .payload = @intCast(got.value_ptr.*) };
     }
 
     /// The `(constructor, argument)` a `ctor_arg` step stands for.
-    pub fn ctorArgOf(step: Step) [2]u32 {
+    pub fn ctorArgOf(t: *const Table, step: Step) [2]u32 {
         std.debug.assert(step.kind == .ctor_arg);
-        return .{ step.payload >> 16, step.payload & 0xffff };
+        return t.ctor_args.keys.items[@as(usize, step.payload) * 2 ..][0..2].*;
     }
 
     // ---- building -------------------------------------------------------
@@ -412,9 +424,9 @@ pub const Table = struct {
         // The canonical step order is the word order of `Step`: fields by
         // text rank, indices, `C#i` by (constructor, argument). A source
         // may describe children in any order.
-        std.mem.sort(Child, scratch.items[first..], {}, struct {
-            fn lessThan(_: void, a: Child, b: Child) bool {
-                return a.step.word() < b.step.word();
+        std.mem.sort(Child, scratch.items[first..], t, struct {
+            fn lessThan(tt: *Table, a: Child, b: Child) bool {
+                return tt.stepLess(a.step, b.step);
             }
         }.lessThan);
         try t.step_tab.ensureUnusedCapacity(gpa, len);
@@ -696,6 +708,8 @@ pub const Table = struct {
                 try out.appendSlice(gpa, &.{ w, ordinal.get(c).? });
                 // A field's name follows its step, through the string table.
                 if (s.kind == .field) try out.append(gpa, names.field(names.ctx, s.payload));
+                // A `C#i` payload is this table's intern index: the pair follows.
+                if (s.kind == .ctor_arg) try out.appendSlice(gpa, &t.ctorArgOf(s));
             }
         }
     }
@@ -751,7 +765,12 @@ pub const Table = struct {
                     s = try Step.field(account, remap.field(remap.ctx, words[at]));
                     at += 1;
                 }
-                if (j > 0 and s.word() <= last) return error.Malformed;
+                if (s.kind == .ctor_arg) {
+                    if (at + 2 > words.len) return error.Malformed;
+                    s = try t.ctorStep(gpa, account, words[at], words[at + 1]);
+                    at += 2;
+                }
+                if (j > 0 and !t.stepLess(Step.fromWord(@intCast(last)), s)) return error.Malformed;
                 last = s.word();
                 try t.step_tab.append(gpa, .{ .step = s, .child = .from(c) });
             }
@@ -782,7 +801,12 @@ pub const Table = struct {
             if (rx.len != ry.len) return false;
             var i: u32 = 0;
             while (i < rx.len) : (i += 1) {
-                if (!ta.step_tab.items(.step)[rx.start + i].eql(tb.step_tab.items(.step)[ry.start + i])) return false;
+                const sx = ta.step_tab.items(.step)[rx.start + i];
+                const sy = tb.step_tab.items(.step)[ry.start + i];
+                if (sx.kind != sy.kind) return false;
+                if (sx.kind == .ctor_arg) {
+                    if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) return false;
+                } else if (!sx.eql(sy)) return false;
                 try stack.append(gpa, .{ ta.step_tab.items(.child)[rx.start + i], tb.step_tab.items(.child)[ry.start + i] });
             }
         }
@@ -1040,12 +1064,12 @@ test "constructor steps order by (constructor, argument), whatever order they we
     // Seen "out of order" first: the words still sort by the pair.
     const late = try f.ctor(0, 2);
     const early = try f.ctor(0, 0);
-    try testing.expect(early.word() < late.word());
-    try testing.expectEqual([2]u32{ 0, 2 }, Table.ctorArgOf(late));
+    try testing.expect(f.table.stepLess(early, late) and !f.table.stepLess(late, early));
+    try testing.expectEqual([2]u32{ 0, 2 }, f.table.ctorArgOf(late));
     const tree = try f.of(0);
     const s = f.table.steps(tree);
     try testing.expectEqual(@as(usize, 3), s.steps.len);
-    try testing.expect(s.steps[0].word() < s.steps[1].word() and s.steps[1].word() < s.steps[2].word());
+    try testing.expect(f.table.stepLess(s.steps[0], s.steps[1]) and f.table.stepLess(s.steps[1], s.steps[2]));
 }
 
 /// A remap for the encode/decode test: heads and field names shifted by a
@@ -1085,7 +1109,7 @@ test "encode writes a cycle once through the names table, and decode reads an eq
     try f.table.encode(gpa, rec, Shift.names, &words);
     // 4 places; a field step carries its name; heads are shifted.
     try testing.expectEqual(@as(u32, 4), words.items[0]);
-    try testing.expectEqual(@as(usize, 1 + (4 + 2 * 3) + (4 + 2) + 4 + (4 + 3 * 2)), words.items.len);
+    try testing.expectEqual(@as(usize, 1 + (4 + 2 * 3) + (4 + 2) + 4 + (4 + 3 * 4)), words.items.len);
     try testing.expectEqual(@as(u32, 1010), words.items[1 + 4 + 2]);
     // The nominal head of `Tree` went through the table; the record's did not.
     try testing.expectEqual(@as(u32, 0), words.items[2]);

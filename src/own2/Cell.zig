@@ -235,9 +235,9 @@ pub const Table = struct {
     /// label is one growth record: its context is reserved before creation
     /// against the owning declaration (§4.4).
     pub fn label(t: *Table, gpa: Allocator, account: *Account, inst: u32, callee_label: LabelId, folded: bool) Error!LabelId {
+        try account.reserve(.label, 1);
         const got = try t.label_intern.getOrPut(gpa, .{ inst, callee_label.int(), @intFromBool(folded) });
         if (got.found_existing) return .from(got.value_ptr.*);
-        try account.reserve(.label, 1);
         got.value_ptr.* = @intCast(t.labels.len);
         try t.labels.append(gpa, .{ .inst = inst, .callee_label = callee_label, .folded = folded, .supplies = .empty });
         return .from(got.value_ptr.*);
@@ -257,9 +257,9 @@ pub const Table = struct {
     /// The cell `(origin, kind, a, b, c)` at `place`, interned, with its
     /// trie parent. One growth record when new.
     fn internCell(t: *Table, gpa: Allocator, account: *Account, o: Origin, k: Kind, a: u32, b: u32, c: u32, at: PlaceId, trie_parent: CellId) Error!CellId {
+        try account.reserve(.cell, 1);
         const got = try t.intern.getOrPut(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c });
         if (got.found_existing) return .from(got.value_ptr.*);
-        try account.reserve(.cell, 1);
         const id: CellId = .from(t.count());
         got.value_ptr.* = id.int();
         try t.cells.append(gpa, .{ .origin = o, .kind = k, .a = a, .b = b, .c = c, .place = at, .parent = trie_parent, .first_child = .none, .last_child = .none, .next_sibling = .none });
@@ -337,9 +337,9 @@ pub const Table = struct {
     /// The split of `container` at the chain `l` (§2.2's `taken` set), made
     /// with `cond` on first sight.
     pub fn split(t: *Table, gpa: Allocator, account: *Account, container: CellId, inst: u32, l: LabelId, cond: CondId) Error!SplitId {
+        try account.reserve(.other, 1);
         const got = try t.split_intern.getOrPut(gpa, .{ container.int(), l.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
-        try account.reserve(.other, 1);
         got.value_ptr.* = @intCast(t.splits.len);
         try t.splits.append(gpa, .{ .container = container, .inst = inst, .label = l, .cond = cond });
         return .from(got.value_ptr.*);
@@ -879,6 +879,8 @@ test "a refused reservation leaves the set table whole, and a hit is charged lik
     const before = a.growth;
     try testing.expectEqual(s, try r.insert(gpa, .growth(&a), .none, 42, 0));
     try testing.expectEqual(before + 1, a.growth);
+}
+
 /// A test place graph: `r` a record `{ a : List Int, b : List Int }`, with
 /// the list's element a crossing `Int`; `t` the `Tree` of `Place.zig`'s
 /// tests. Built by hand through `Place.Source`.

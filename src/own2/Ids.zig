@@ -237,13 +237,14 @@ pub const Limit = enum(u8) {
     declaration_insts,
     block_bytes,
     step_payload,
+    ctor_steps,
 
     pub fn value(l: Limit) u64 {
         return switch (l) {
             .record_fields, .tuple_arity, .constructor_args, .path_steps => 65_536,
             .type_places => 1 << 24,
             .declaration_insts, .block_bytes => 1 << 31,
-            .step_payload => 1 << 28,
+            .step_payload, .ctor_steps => 1 << 28,
         };
     }
 };
