@@ -746,7 +746,11 @@ fn storageMessage(a: Allocator, src: Src, m: u32, d: Demand) Allocator.Error![]c
     if (d.verdict == .rejected and d.verdict.rejected == .exclusive) {
         try out.print(a, "`{s}` changes the {s} `{s}` in place, and it needs the values stored in it\nnot to share a list. They {s}.\n\n", .{ operation, noun, base, if (d.approx) "may" else "do" });
         if (d.span[0] != none) try writePlaces(a, &out, src, m, &.{.{ .m = m, .first = d.span[0], .last = d.span[1], .label = "the values are changed here" }});
-        try out.print(a, "\nA storage copy with `{s}` does not help: it is shallow, and the copy holds the\nsame values.\n\nGive each key a value of its own: where one list is stored a second time, store\n`List.copy` of it (or `Record.copy` of a record) instead.\n\n", .{copyName(d.storage_kind)});
+        try out.print(a, "\nA storage copy with `{s}` does not help: it is shallow, and the copy holds the\nsame values.\n\n", .{copyName(d.storage_kind)});
+        // Only sharing the code shows has a value to copy. An approximate
+        // refusal is the checker's limit (a fold's accumulator, a helper), and
+        // a copy there would be advice that does not build.
+        if (!d.approx) try out.print(a, "Store a list of its own at each key: where one list is stored a second time,\nstore `List.copy` of it instead.\n\n", .{});
         const detail = try plain(a, d.detail);
         try out.print(a, "{s}: {s}", .{ if (d.approx) "This is a limit of the checker, not proof of sharing" else "This is sharing the code shows", detail });
         return out.toOwnedSlice(a);

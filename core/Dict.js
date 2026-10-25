@@ -11,6 +11,7 @@ export const size = (d) => d.entries.length;
 export const has = (d, k) => d.index.has(k);
 export const valueFor = (d, k) => d.index.get(k)[1];
 export const keyIndex = (d, i) => d.entries[i][0];
+export const isIndex = (d, i) => Number.isInteger(i) && i >= 0 && i < d.entries.length;
 export const valueAt = (d, i) => d.entries[i][1];
 export const traverseAt = (d, i) => d.entries[i][1];
 export const keySame = (a, b) => a === b;
