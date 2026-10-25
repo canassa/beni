@@ -229,7 +229,8 @@ predicate: `need` and a feedback supply are discharged the same way, by instanti
 the cells it names (§2.11 item 5). The self-atom `within(λ⋆)` (§2.10) is discharged the same way too, as an `apart` over the instantiated cell
 set in which a folded label counts as two occurrences: a `result (ι·λ⋆)·k` passes unless it is also reached through
 a feedback supply (a result handed back and re-returned is a previous call's object); a supply the row marks
-`taken` passes **under κ of its container at the supply's path** — two `taken` positions are two objects only where
+`taken` passes **under κ of its container at the supply's path** when the occurrences are splits of **one
+traversal** (*Traversals* below; splits of two traversals fail, `lost`) — two `taken` positions are two objects only where
 the container is exclusive there (`twoAt g xs = ( g (traverseAt xs 0), g (traverseAt xs 1) )`, or `List.map` itself,
 over `[ a, a ]` hands one object twice): `yes` passes, `and{…}` records `xreq`, `shared`/`lost` fails; a non-`taken`
 parameter, a projection or refinement of a supply, an `env`, a `shared`, a `⊤` cell, or two labels of different
@@ -266,8 +267,10 @@ at a `ctor` place on *different constructors* are alternatives and never `~` (on
 with different constructors are two positions and are compared by `apart` at the construction); concrete cells
 `~` when equal; `⊤` with everything; and when `a`, `b` descend from one split ι on different sides (`elem`/
 `others`, `level`/`below`, two `below`s of distinct steps, two `level`s of distinct steps) the answer is *under
-ι*; and when `a`, `b` are two `taken` `elem`s of one container from *distinct* splits (`elem(xs·ι_t)` and
-`elem(xs·(ι_rec·ι_t))`: two positions read once each, O9) the answer is *under the container's κ*; the general
+ι*; and when `a`, `b` are two `taken` `elem`s of one container from *distinct* splits **of one traversal**
+(`elem(xs·ι_t)` and `elem(xs·(ι_rec·ι_t))`: two positions read once each, O9; *Traversals* below) the answer
+is *under the container's κ*, while two `taken` `elem`s of one container from **two traversals** may be one
+position and alias (`lost` in a `sep`, never an atom: a traversal visits every index again, #1029); the general
 `under` rule: not aliases if the split's condition `κ` held at ι. A test that passes only *under ι* **relies** on κ(ι)
 (§2.9): `yes` passes, `and{atoms}` passes and records `xreq`, `shared`/`lost` is the refusal `exclusive`.
 `o/Split`'s `construction r: accepted param … xreq excl π1` is this rule. `alias` is the one relation every
@@ -280,6 +283,50 @@ container stands for, so a pending operand holding the container (the recursive 
 hold the element handed to the callback. The frame then has `W` on `c[*]` if the element was written, and the
 split's κ is `xreq`. Sound because the element is a distinct position of an exclusive container, read once by
 the obligation on the callers of a `taken` primitive (§2.13.6, pinned).
+
+**Traversals** (#1029). Let G be the recursive group of a pinned `taken`-result caller (§2.13.6, O9:
+`mapHelp`, `foldlFrom`, …). One **traversal** is one activation of G entered from outside G, together with
+every G activation it reaches through G's own recursive calls. The index obligation holds per traversal:
+"once per index, one way" is true inside one traversal and says nothing across two. A second traversal of the
+same container hands out the same positions again.
+
+**The `single` bit.** A folded label keeps only its first instruction and drops its tail, so a split cannot
+be traced back to its traversal by its chain. It therefore carries a bit, `single`, which says that every
+activation its label stands for belongs to one traversal.
+
+- **Set** when `traverseAt` makes the split in G's frame. G's own recursion (`ι_rec⋆`) keeps it: those
+  activations are the same traversal.
+- **Kept** when the split leaves a frame through a plain call instruction's view, even when that instruction
+  is folded *ordinarily* (under `[*]`/`⟲`, or a folded callee label). One execution of that call in one
+  activation of the frame is still one traversal. So `List.map`'s splits are `single` at `ι_m⋆`, and so are
+  a caller's at `(ι_c·ι_m)`.
+- **Cleared** in two cases:
+  - the label folds an instruction *recursively* (it calls into its frame's own recursive group, outside G);
+  - a cell that a callback's actual class makes itself (a split made at any depth under the actual's frame,
+    in nested callees and closures and on captured containers alike, under the labels `(ι·λ)·…`; only the
+    cells grafted from the actual's supplies are excluded) is carried out through a **folded callback label** `λ⋆`, or through a callback with
+    `calls many`.
+
+  In the second case, the actual's activations are many, and each may be another traversal. Cells grafted
+  from the supplies (the actual's `π_k`) keep their own bit: a supply is substitution and makes no split.
+- **Joins**: where both triggers fold one instruction, *recursive* wins, and the bit of a joined cell is the
+  AND of its parts (a fold that merges splits of two traversals into one folded split is not `single`).
+
+**Comparing two `taken` elements of one container.** Two *distinct* split cells are apart under the
+container's κ only if both are `single` and their entry prefixes are the same. One folded split cell met
+twice stays §2.9's `sep(c, c)` (`lost`), unless the comparison is a `within` made by a fold over an existing
+`sep` atom. The entry prefix is the prefix of the label's chain up to
+and including the call that last entered the G whose `traverseAt` made the split. In G's own frame it is
+empty; each instantiation prepends the caller's call instruction.
+
+Everything else is two traversals, which give `lost` (approximate) wherever a `sep` or `within` compares
+them:
+- different entry prefixes (`List.map xs` and `List.foldl xs` in one body);
+- a split that is not `single`: a recursive caller traversing `xs` once per activation, or
+  `each ws xs f = List.map ws (λ_ → List.map xs f)`, whose inner traversal runs once per element of `ws`.
+
+No κ of the container separates two traversals: each visits every index again. The red twins
+`TwoTraversalsShared`, `FoldOverFoldShared` and `NestedTraversalShared` (Appendix B) check the rule.
 
 ### 2.3 Abstract values: shape nodes
 
@@ -1109,7 +1156,7 @@ a class, so no unfolded label's chains lie inside a folded label's. Whether two 
 instantiation decides from what the callback returns under what it was handed (O14). A folded label is
 approximate: two occurrences of it from one value are `lost`, and `within` rests on two per-cell claims, each an
 obligation — a `result` not reached through a feedback supply is allocated afresh by each call (O1), and two `taken`
-positions of a container exclusive at that path are two objects (I-κ, O9). A closure call changes the
+positions of one traversal (§2.2) of a container exclusive at that path are two objects (I-κ, O9). A closure call changes the
 identity of its new allocations only, never captured origins. The recursive environment quotient unions
 possibilities and keeps every capture edge; settled facts and independently validated obligations are required.
 A cycle or exhausted resource cannot establish either claim. ∎
@@ -1146,7 +1193,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion; no partial summary or lowering channel | §4.4, R-3.7 |
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's deep condition holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
-| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
+| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply of one traversal (§2.2) under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
 | O15 | *Join lowers κ:* κ(join) is below every member's κ (`and{A} ⊔ and{B} = and{A ∪ B}`), and a union's κ is the join of its members'; computed by `Cond.lower` where `Transfer` and `Summary` join, since `Shape.join` knows no κ | §2.3, §2.9, §2.10 |
 
 The Lean oracle stays advisory (R-8.11).
@@ -2267,6 +2314,10 @@ R-5.4.8, R-5.5.9, R-5.6.1–R-5.6.3, R-5.7.1 and R-7.12.
 | `RoutineBaselineFamilies` | Scale source-sized recursive bodies/local functions, identity-or-fresh record-update arms and the corresponding wide-model main independently. Initial/final scans, direct queries/calls and entry equations stay baseline; never Θ(length) G_f just for another validation/query. Counter-twins require transfer×version, demand×holder, call×obligation or cross-field products and exercise the same loud limit, not silent coarsening. | R-7.2, R-7.4 | S1, S3b, S5, S7, S9 |
 | `BaselineLaneInvariant` | A test mutation making a 512-record kernel request record513 produces ownership_accounting_invariant in all build modes, no clean block, never growth spill/raise suggestion. Alpha-renaming/permutation preserves baseline eligibility by source incidence; no first-visitor credit. | R-7.4, R-7.6, R-7.7 | S1, S9 |
 | `SendDualProvenance` | Alias protocol value forwarded through msg→⊤ helper remains a send; an arbitrary same-type function does not become one. Nominal Send.to agrees under v2. Legacy corpus/API/v1 inputs remain unchanged before S10; migrated v2 corpus matches recorded semantic baseline at S10. | R-5.9.9, R-8.3 | S2b, S7, S9, S10 |
+| `TwoTraversalsShared` | Red: `ys = List.push (List.map xs λl → l) (List.foldl xs [] λx _ → x)`, then `List.map ys λl → List.push l 1`, `xs : List (List Int)` exclusive and dead. `ys` holds `xs`'s last list twice, and the element write must be refused `exclusive` (approximate): the two splits come from two traversals of `xs` (§2.2, #1029). Green: `List.map xs λl → List.push l 1` over an exclusive `xs` stays accepted. v1 refuses the red on `browser-inline` and under `--ownership-everywhere` (#1029). | R-4.6.9, R-3.1 | S4 |
+| `FoldOverFoldShared` | Red: `r = List.foldl xs (List.foldr xs [] λx a → List.push a x) λx a → List.push a x`, then `List.map r λl → List.push l 1`. `r` holds every list of `xs` twice; the element write is refused. Both folds stay accepted `callback-param` (their accumulator writes are storage writes). Gap 3 (a) applies only within one traversal (Appendix C.9). | R-5.3.2, R-3.1 | S4 |
+| `FeedbackPrevTwice` | Red: `st = Tuple.second (List.foldl xs ( [], [] ) λx ( prev, st ) → ( x, List.push (List.push st prev) x ))`, then `List.map st λl → List.push l 1`. Each list is in `st` twice (once as `x`, once as the next round's `prev`), so the element write is refused. Two cells that came back through the feedback are never called apart (Appendix C.9 gap 3). | R-5.3.2, R-3.1 | S4 |
+| `NestedTraversalShared` | Red: `each ws xs f = List.map ws (λ_ → List.map xs f)`; `zs = each [ 1, 2 ] xs (λl → l)`, then `List.map zs (λinner → List.map inner (λl → List.push l 1))`. `zs[0][j]` and `zs[1][j]` are one list, so the nested write must be refused: the inner traversal's splits leave the lambda through `List.map`'s folded callback label and are not `single` (§2.2 *Traversals*). Green: `each [ 1, 2 ] xs (λ_ → [ 1 ])` stays exclusive (a fresh result per call). v1 refuses the red (`exclusive`, approx). | R-4.6.9, R-3.1 | S4 |
 
 ## Appendix C. Worked derivations of the core loops (S2b, before walker code)
 
@@ -2331,7 +2382,7 @@ writes a taken element. It hands the element on, and κ goes with the supply.
 | 4 | the callee's `sep(ι_f⋆, ι_rec⋆)` gives `sep((ι_rec·ι_f⋆), (ι_rec·ι_rec⋆))`. Both sides fold into `ι_rec⋆`, so the fold emits `within(ι_rec⋆)` (§2.10 read-off) | round 3 `∧ within(ι_rec⋆)` |
 | 5 | `within(ι_rec⋆)` gives `within((ι_rec·ι_rec⋆))`, which is `within(ι_rec⋆)` | = round 4: **fixpoint**. The validation walk under it reads it off again (`F(x) ⊑ x`) |
 
-**`mapHelp`'s class.** π₁ `R`, `[*]` `R` (§2.10: `A` comes from `res`, which names no `π₁[*]`; the element reaches a caller only through a callback label). π₅ `R`, called many times (an operand of ι_rec). π₆ `RAW` (storage, ε). res ε `{π₆}`, `[*]`
+**`mapHelp`'s class.** π₁ `R`, `[*]` `R` (§2.10: `A` comes from `res`, which names no `π₁[*]`; the element reaches a caller only through a callback label). π₅ `R`, called many times (an operand of ι_rec). π₆ `RAW` (storage, ε), `[*]` `A` (res names `π₆[*]`). res ε `{π₆}`, `[*]`
 `{π₆[*], cb₅@ι_f⋆, cb₅@ι_rec⋆}`. κ(res[*]) `= excl π₆ ∧ excl(ι_f⋆) ∧ excl(ι_rec⋆) ∧ sep(ι_f⋆, π₆[*]) ∧
 sep(ι_rec⋆, π₆[*]) ∧ sep(ι_f⋆, ι_rec⋆) ∧ within(ι_rec⋆)`. `fun(5).supply(1)`: `elem(π₁·ι_t)` at `ι_f⋆` and
 `elem(π₁·ι_rec⋆)` at `ι_rec⋆`, each `taken`, owned and κ `excl π₁`. This is §2.12's result plus the
@@ -2350,7 +2401,7 @@ res: ε `fresh 1`. `[*]`: `π₆[*] ↦ ∅`, `ι_f⋆ ↦ cb₂@(ι_m·ι_f⋆)
 every label whose first instruction is ι_m into `cb₂@ι_m⋆` (they occur under `[*]`). κ: `excl π₆ ↦ yes`;
 `sep(·, π₆[*])` is an `apart` over the empty set, so `yes`; `sep(ι_f⋆, ι_rec⋆)` and `within(ι_rec⋆)` give
 `within(ι_m⋆)`. Supplies fold to `elem(π₁·ι_m⋆)`, which is owned because no holder outside the call is left
-after ι_m.
+after ι_m. They are splits of one traversal (§2.2): their entry prefix is `(ι_m)`, and ι_m's fold is ordinary (under `[*]`, folded callee labels), and the splits are `single`, so `within(ι_m⋆)` may be discharged under κ(xs[*]).
 
 **`List.map`'s class.** π₁ `R`, `[*]` `R`. π₂ `R`, called many times. res `fresh 1` with `[*]` `{cb₂@ι_m⋆}`;
 κ(res[*]) `= excl(ι_m⋆) ∧ within(ι_m⋆)`. `fun(2).supply(1) = elem(π₁·ι_m⋆)`: `taken`, owned, κ `excl π₁`.
@@ -2459,8 +2510,9 @@ R-5.3.2. C.2–C.6 hold only when `base` and `offset` have v1's rows, which the 
 | `sliceOf` | **weaker when inferred; decided: asserted** (gap 1) | Inferred, π₁ `E` and res `⊤`. Required: a fresh read with aliased elements that keeps record exclusivity (R-4.10.6, R-4.10.7) |
 | `sortWith` | **weaker** (gap 2, open) | record κ at `[*]` is `lost`, not `excl π₁`. Required: "`sortWith` keeps it" (R-4.10.7, R-4.10.8, `o/RecordSortWith`) |
 
-**No unsound row was found.** Each inferred class contains its body's behaviour (O5). Each acceptance in C.6
-rests on an atom that a run-time fact discharges.
+**No unsound inferred core row was found. A caller's discharge is sound with §2.2's *Traversals* rule (#1029, C.11).** Each inferred class
+contains its body's behaviour (O5). Each acceptance in C.6 rests on an atom that a run-time fact discharges.
+The merged §2.2, without that rule, had a hole; C.11 gives three counterexamples.
 
 ### C.9 Gaps and their options
 
@@ -2547,9 +2599,11 @@ from **one** earlier call, and the fold erases which call supplied each.
   the container's κ" **only** in this case:
   - `X` is the actual's own `taken` supply parameter: this call's element as handed to it, not a value that
     came back through the feedback supply.
-  - `Y` is a cell reached through the feedback supply that is a taken element of the same folded split.
+  - `Y` is a cell reached through the feedback supply that is a taken element of the same folded split **and
+    of the same traversal as `X`** (§2.2 *Traversals*).
 
-  Every other pair stays as §2.9 says. That includes two cells both reached through the feedback, as in the
+  **(a) depends on §2.2's one-traversal restriction (#1029).** Without it, (a) composes with the merged §2.2
+  into a second hole (C.11, `FoldOverFoldShared`). Every other pair stays as §2.9 says. That includes two cells both reached through the feedback, as in the
   counterexample. A taken cell against an untaken `π₁[*]` from the initial accumulator also stays as it is.
 
   The argument:
@@ -2560,7 +2614,7 @@ from **one** earlier call, and the fold erases which call supplied each.
   - In the counterexample, `sep(π₁, π₂.0)` and `sep(π₁, π₂.1[*])` are discharged (true: `x_k` is not
     `x_{k−1}`), but `sep(π₂.0, π₂.1[*])` stays `lost`, so `List.map st …` is still refused.
 
-  This is an argument, not a proof. S4 would add the counterexample as a red twin.
+  This is an argument, not a proof. The counterexample is the red twin `FeedbackPrevTwice` (Appendix B).
 - *(b) Leave it: κ `lost`.*
 
 ### C.10 Points of the text the derivation hit, now fixed in their sections
@@ -2579,6 +2633,80 @@ from **one** earlier call, and the fold erases which call supplied each.
 5. **`excl` atoms.** §2.12's `mapHelp` narrative left out the `excl` atoms that §2.9's construction rule adds
    through `put`'s `stored`. They are added there.
 
+### C.11 Two traversals of one container (#1029)
+
+The PR's re-review found a hole in §2.2 as merged, outside the loop derivations. "Two `taken` elems of one
+container from distinct splits are apart under the container's κ" is justified by O9 only inside one
+traversal. §2.2 now restricts the clause, and `within`'s `taken` case, to splits of one traversal
+(*Traversals*). Two traversals give `lost`.
+
+**Counterexample 1** (`TwoTraversalsShared`), with `xs : List (List Int)` exclusive and dead after `ys`:
+
+```text
+ys = List.push (List.map xs λl → l) (List.foldl xs [] λx _ → x)
+List.map ys λl → List.push l 1
+```
+
+- `List.map xs λl → l`: `[*] = {elem(xs·(ι₁·ι_m⋆))}`, κ `yes` under κ(xs[*]) (one traversal).
+- `List.foldl xs [] λx _ → x`: res `{site [], elem(xs·(ι₂·ι_l⋆))}`. The callback returns its taken supply.
+- `List.push`: `apart{stored, base[*]}` compares `elem(xs·(ι₂·ι_l⋆))` with `elem(xs·(ι₁·ι_m⋆))`.
+  - *Merged §2.2:* these are distinct splits, so they are apart under κ(xs). κ(ys[*]) is `yes`, and the second
+    `List.map` passes `within` and pushes `xs`'s last list twice, in place.
+  - *Fixed §2.2:* the entry prefixes `(ι₁·ι_m)` and `(ι₂·ι_l)` differ, so these are two traversals. κ(ys[*])
+    is `lost`, and the write is refused `exclusive` (approximate).
+
+**Counterexample 2** (`FoldOverFoldShared`):
+
+```text
+r = List.foldl xs (List.foldr xs [] λx a → List.push a x) λx a → List.push a x
+List.map r λl → List.push l 1
+```
+
+- The initial accumulator's `[*]` holds `elem(xs·(ι_r·…))`.
+- Each outer step stores `elem(xs·(ι_l·…))`.
+- Under gap 3's restricted (a), only pairs of the outer traversal are apart.
+- The `ι_l` against `ι_r` pairs are two traversals, so `lost`.
+- κ(r[*]) is `lost`, and the element write is refused. Both folds stay accepted (storage writes).
+
+Under the merged §2.2 together with the old (a), every pair was apart and the write was accepted.
+
+**Counterexample 3** (`NestedTraversalShared`, from the verifier of this fix). A first, entry-prefix-only
+form of the rule missed it:
+
+```text
+each ws xs f = List.map ws (λ_ → List.map xs f)
+zs = each [ 1, 2 ] xs (λl → l)
+List.map zs (λinner → List.map inner (λl → List.push l 1))
+```
+
+- The inner traversal of `xs` runs once per element of `ws`.
+- Its splits leave the lambda through `List.map`'s folded callback label, and the fold at `each`'s read-off
+  drops the tail that showed that.
+- With prefixes alone, `within` at the caller compared equal, ordinarily folded prefixes, called them one
+  traversal, and accepted a double push.
+- The `single` bit is cleared where the lambda's own splits pass the folded callback label, so the write is
+  refused. v1 refuses it as well.
+
+**Every use of the rule, re-checked:**
+
+| Use | Splits compared | One traversal? | Verdict |
+|---|---|---|---|
+| `mapHelp` (C.2) | `elem(π₁·ι_t)`, `elem(π₁·ι_rec⋆)` | yes: empty entry prefix; `ι_rec⋆` is after the entry | unchanged |
+| `foldlFrom` (C.4) | the same pair; no κ atom compares them | yes | unchanged |
+| `List.map` (C.3) | `within(ι_m⋆)` | yes: entry `(ι_m)`, ordinary fold | unchanged |
+| `List.foldl`/`foldr` (C.5) | none in κ | — | unchanged |
+| C.6 map rows: push, `λ_ → [1]`, `λ_ → shared`, `[x, x]` | `within` at a caller: entry `(ι_c·ι_m)`; the split is map's own and `single` | yes | unchanged |
+| C.6 `edit` | at `edit`'s caller the prefix is `(ι_e·ι_c⋆·ι_m)`, `ι_c` ordinarily folded; the split is map's own supply, grafted into the lambda, not made by it, so it stays `single` | yes | unchanged |
+| C.6 fold rows | κ already `lost`; the twins are refused by the certificate or by `env` | — | unchanged |
+| gap 3 (a) | restricted to one traversal | — | depends on the fix |
+| a recursive caller that maps `xs` once per activation and stores the results under `[*]` | prefix `(ι_rec⋆·ι_c·ι_m)` carries a recursive fold | no | `lost`: an imprecision only where each activation maps another list |
+
+C.8's verdicts for the core rows hold. The callers' discharge of `within` and `sep` is sound only with the whole *Traversals* rule, `single` bit included.
+
+**v1 today.** v1 is `src/own/` at `origin/master` `19714094f`; it was not edited. It **refuses** both
+counterexamples (`exclusive`, approximate) on `browser-inline`, where lists are edited in place (`beni check` fails with "LIST MAY BE SHARED").
+On `node`, `dump --stage=ownership` reports the same rejected line, but `check` passes: `node` does not edit lists in place, so it builds them as copies. There is
+no live miscompile (#1029).
 A read-only adversarial verifier checked this appendix, and the PR review checked it again. Neither found
 an unsound inferred row or an accepted program that reads a stale value. The probes:
 - callbacks that capture the list or an element of it
@@ -2589,4 +2717,4 @@ an unsound inferred row or an accepted program that reads a stale value. The pro
 
 The review found that gap 3's unrestricted option is unsound (the counterexample above). Its corrections are
 folded in above: the `use` bits, the foldl κ, the causes in C.6, gap 2's option (c) and `sortRange`'s range,
-and the C.10 fixes.
+and the C.10 fixes. The re-review then found the two-traversal hole in the merged §2.2 (C.11, #1029); the restriction is in §2.2, and a second read-only verifier checked it.
