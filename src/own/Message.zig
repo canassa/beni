@@ -741,6 +741,16 @@ fn storageMessage(a: Allocator, src: Src, m: u32, d: Demand) Allocator.Error![]c
     const operation = if (std.mem.startsWith(u8, d.op, "call ")) d.op[5..] else d.op;
     const base = if (d.storage_kind == .set and std.mem.endsWith(u8, d.base, "#Set.0")) d.base[0 .. d.base.len - 6] else d.base;
     var out: std.ArrayList(u8) = .empty;
+    // The write needs the stored values not to share (§18.4): the storage
+    // is not the problem, and a storage copy is shallow, so it is no fix.
+    if (d.verdict == .rejected and d.verdict.rejected == .exclusive) {
+        try out.print(a, "`{s}` changes the {s} `{s}` in place, and it needs the values stored in it\nnot to share a list. They {s}.\n\n", .{ operation, noun, base, if (d.approx) "may" else "do" });
+        if (d.span[0] != none) try writePlaces(a, &out, src, m, &.{.{ .m = m, .first = d.span[0], .last = d.span[1], .label = "the values are changed here" }});
+        try out.print(a, "\nA storage copy with `{s}` does not help: it is shallow, and the copy holds the\nsame values.\n\nGive each key a value of its own: where one list is stored a second time, store\n`List.copy` of it (or `Record.copy` of a record) instead.\n\n", .{copyName(d.storage_kind)});
+        const detail = try plain(a, d.detail);
+        try out.print(a, "{s}: {s}", .{ if (d.approx) "This is a limit of the checker, not proof of sharing" else "This is sharing the code shows", detail });
+        return out.toOwnedSlice(a);
+    }
     try out.print(a, "`{s}` changes the {s} `{s}` in place, and another use {s} its storage.\n\n", .{ operation, noun, base, if (d.approx) "may still hold" else "still holds" });
     var places: std.ArrayList(Place) = .empty;
     if (d.span[0] != none) try places.append(a, .{ .m = m, .first = d.span[0], .last = d.span[1], .label = "the storage is changed here" });
