@@ -636,7 +636,10 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    supplies; captures and `shared` retain their original identity. A nested callback's actual class may depend
    on a supply, so that lookup is deferred too. `need`, `sep`, `within`, carried classes and feedback use this
    same interpretation, with feedback settled before reading a result. There is no "fresh means apart" shortcut
-   for two occurrences of the **same** invocation.
+   for two occurrences of the **same** invocation. A feedback supply's `callsite` demand runs on the caller's
+   *argument* (item 4), so its Disjoint sees the initial value, not the settled feedback node. A duplication
+   that only the feedback creates (an arm returning `.0` and also storing it at `.1[*]`) is refused instead by
+   §2.12's preservation certificate (*Recursive proofs*), which S4 implements (Appendix C.6).
 
    Setup costs one template plus constant-size view records, rather than labels × template size. This is an
    exact sharing of substitution, not a coarsening. It does **not** establish a linear total: the number of
@@ -737,12 +740,15 @@ depends on an assumed `calls` and κ is monotone. `mapHelp`
 re-derived: `put b i (func (traverseAt a (o + i)))` stores `cb₅@ι` (this activation's one call) into `b` whose
 `[*]` holds `π₆[*]`; round 1 reads off κ(res[*]) = `apart{cb₅@ι, π₆[*]}` = `sep(cb₅@ι, π₆[*])` (an atom over two
 arrivals) and `res[*] = {cb₅@ι, π₆[*]}`, published under `[*]` as `cb₅@ι⋆` with its supply `elem(π₁·ι_t)`; round 2's
-recursive call at ι_rec instantiates the callee's `cb₅@ι⋆` as `cb₅@(ι_rec·ι⋆)` with supply `elem(a·(ι_rec·ι_t))`,
+recursive call at ι_rec instantiates the callee's `cb₅@ι⋆` as `cb₅@(ι_rec·ι⋆)` with supply `elem(a·(ι_rec·ι_t))`
+(strictly a refinement of `others(π₁·ι_t)`, which the pending `a` holds while ι_t is in force; both reduce to
+κ(π₁[*])),
 so the store compares this activation's `cb₅@ι` (supply `elem(a·ι_t)`) with the deeper activations' label — two
 different labels, never the same call — giving `sep(ι⋆, ι_rec⋆) ∧ sep(ι⋆, π₆[*]) ∧ sep(ι_rec⋆, π₆[*])`.
 Round 3 instantiates the callee's `sep(ι⋆, ι_rec⋆)` at ι_rec as `sep((ι_rec·ι⋆), (ι_rec·ι_rec⋆))`, whose two sides
 fold into one `ι_rec⋆`: the fold emits `within(ι_rec⋆)`, so κ(res[*]) = `sep(ι⋆, ι_rec⋆) ∧ within(ι_rec⋆) ∧
-sep(ι⋆, π₆[*]) ∧ sep(ι_rec⋆, π₆[*])`, stable (round 4 re-folds to the same atoms). `List.map xs f` is one call of
+sep(ι⋆, π₆[*]) ∧ sep(ι_rec⋆, π₆[*])`, plus `excl π₆ ∧ excl(ι⋆) ∧ excl(ι_rec⋆)` (the stored values' deep
+conditions, which §2.9's construction rule adds through `put`'s `stored`), stable (round 4 re-folds to the same atoms). `List.map xs f` is one call of
 `mapHelp` at ι_m, so its published κ folds both labels to `ι_m⋆` and the `sep` into `within(ι_m⋆)` with every
 supply a `taken` elem of `xs`. At a caller `within` is discharged by instantiation under κ: `λl → List.push l 1`
 returns its `taken` supply, two positions of `xs` apart *under κ(xs[*])* — `List.map xs λl → …` keeps `xs`'s
@@ -785,7 +791,8 @@ one allowlisted name comparison of the fence in §5.
    a spread literal inside another's last spread its own write. `[ …xs ]` is `xs`; a literal is a fresh `site`
    (R-4.10.5); `++` chains per R-2.2. The emitted prepend writes no existing array (R-4.4.4): the lowering's
    obligation, asserted under runtime safety.
-3. **Patterns and views** (R-2.14, R-4.5): `[ x, …rest ]` on `n`: `x ↦ elem(c·ι)` per `c ∈ cellsAt(n, [*])`,
+3. **Patterns and views** (R-2.14, R-4.5): `[ x, …rest ]` on `n`: `x ↦ elem(c·ι)` per container cell
+   `c ∈ cellsAt(n, ε)` (§2.2: the position of `c`'s `[*]` taken at ι),
    `rest ↦` a node with `n`'s `ε` cells (a view shares the storage) and `[*] ↦ others(c·ι)`; the split records
    κ(n) at ι (§2.2). A constructor pattern on a recursive place materialises `level(c·ι)` for the matched node's
    non-recursive arguments and one `below(c·C#i·ι)` per recursive child step, pairwise apart under κ (R-4.7.1,
@@ -903,7 +910,7 @@ one allowlisted name comparison of the fence in §5.
    | parameter 1 `cellwrite`, parameter 2 `cellupdate sync` | Second parameter is a→a, invoked once with taken owned contents under κ; while focused it must have no possibly-aliasing `refs`. Put its result back into the same slot. `Ref.update`. `cellupdate` implies once/taken/owned, cannot duplicate those words. |
    | parameter 1 `cellwrite`, parameter 2 `cellmodify sync` | Callback a→(b×a) is once/taken/owned; .1 is put back, .0 returned. Compare .0's reachable cells with the stored .1 and remaining slot contents: any overlapping or unknown component returns as a **loan of that slot**; only proved disjoint transferred/fresh components return ordinary origins. `Ref.modify`. Thus `(xs,xs)` cannot export unloaned contents. |
    | parameter 1 `cellcomplete`, parameter 2 `consumed cellstored` | Single-assignment cell: join already-completed/no-store and empty/store alternatives; first accepted payload stays the slot's contents. Bool result crosses. `Deferred.complete`; callbacks/resumptions get loans, not ownership of independent copies. |
-   | result `builderdone` | Unary sequence storage in parameter 1 is returned as the result sequence with **the same cells, children and κ**; changes only nominal wrapper and logical length. `List.done`; not fresh exclusive. Parameter 1 is `returned`, length parameter crossing/borrowed. |
+   | result `builderdone` | Unary sequence storage in parameter 1 is returned as the result sequence with **the same cells, children and κ**; changes only nominal wrapper and logical length. `List.done`; not fresh exclusive. Parameter 1 is `written returned` (setting the logical length is a storage write at `ε`), length parameter crossing/borrowed. |
    | result `concatenated` | Two sequence parameters, result storage may be parameter 1 or fresh; contents are the union of both `[*]` shapes. List-kind descendant κ is lost, record-kind κ preserved only if both inputs are exclusive and mutually apart. `List.append`; no `List.append` name test. Both inputs get their read/use rows, with the existing write demand on the first storage argument at EVERY call, direct or through an alias/wrapper/method (R-2.2/R-2.7); the `written` companion is mandatory. Spread/`++` fusion lowers that same demand once per surface construction. |
 
    `cellstored` is a destination-specific store word: it means parameter 1's ◆, unlike `stored`, which means
@@ -1042,7 +1049,16 @@ one allowlisted name comparison of the fence in §5.
     guard and take sets agree yet position `b` keeps `rowB` beside position `a`'s `rowB`: a red twin of
     `p/RecordIndexExchange`). `swapAt` and `List.drop`
     over an exclusive source keep κ as a storage permutation and a view (R-4.10.11, §2.13.3).
-16. **Core's library**: every function of `core/` not asserted (R-5.10.8) is inferred from its body (R-1.10): the
+16. **Core's library**: every function of `core/` not asserted (R-5.10.8) is inferred from its body (R-1.10).
+    `List.base`, `offset`, `unsafeGet` and `sliceOf` read the runtime representation, so they are **`List` array
+    primitives** under R-5.10.8. They are asserted with existing words and pinned under R-5.10.7 (decided
+    2026-10-25, Appendix C.9):
+    - `base : returned List a → List a`: π₁ `RA`, res π₁.
+    - `offset : borrowed List a → Int`: π₁ `R`, crossing.
+    - `unsafeGet` takes `at`'s words: π₁ `R`, `[*]` `A`, res π₁`[*]`.
+    - `sliceOf` takes `copy`'s: fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁`.
+
+    The
     builders return fresh storage because they start in the `sequence` Builder
     with empty contents, whose `put` is `written`/`stored` and whose `done` preserves provenance/κ; the result word
     `concatenated`: `returned` π₁ with κ `lost` at `[*]` for lists and κ kept for records when each input is exclusive and
@@ -1907,7 +1923,7 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints three lists | — | S1, S2 | 7 |
 | S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked baseline provenance/role counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 10 |
 | S2 | **Conditions and summaries** | `Cond` (κ column, per-path), `Summary` (classes table, lattice, normal form, print), `Liveness` (by path, per-written-demand query lanes, fixed-word region ancestry, lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 8 |
-| S2b | **Words, the spread fact, core in-process** | all §2.13.6 type/value words and the temporary §2.13.5 `sender` alias-port metadata in separate v2 columns through lexer/parser/lowering, typed interfaces and formatter with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught all new words, including sequence/cell/failure metadata, Ref/Deferred slot rows, Builder/`done`/`concatenated`, and renamed-type/value tests; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16 (on paper in Appendix C; its gaps, C.9, are the owner's decisions); **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session; Bump the frontend artifact/BIR, typed-interface and affected cache payload/key versions for spread facts, ownership metadata and the attribute; old bytes are cache misses, cold/warm inputs identical. Raise-attribute grammar, placement, formatting, cache input and diagnostics (§4.4), `OwnershipSummarySizeRaised`, `language.md` and `skills/beni/`; **instrumentation:** record B_f/G_f/S_f/N_f and per-category high-water sizes on corpus and research apps, generator-deduplicated, report G_f ≥10% of default growth allowance to owner. Initially record supported constructs, never call unsupported zero; repeat in S4/S7. Minimal blocks already encode class/environment backreferences. | `zig build gates` green under v1 (runtime types/code unchanged by words; ownership metadata is retained, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 15 |
+| S2b | **Words, the spread fact, core in-process** | all §2.13.6 type/value words and the temporary §2.13.5 `sender` alias-port metadata in separate v2 columns through lexer/parser/lowering, typed interfaces and formatter with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`, and the representation readers `base`, `offset`, `unsafeGet`, `sliceOf` with the words of §2.13.16), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught all new words, including sequence/cell/failure metadata, Ref/Deferred slot rows, Builder/`done`/`concatenated`, and renamed-type/value tests; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16 (on paper in Appendix C; its gap 1 is decided, gaps 2–3 are the owner's, C.9); **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session; Bump the frontend artifact/BIR, typed-interface and affected cache payload/key versions for spread facts, ownership metadata and the attribute; old bytes are cache misses, cold/warm inputs identical. Raise-attribute grammar, placement, formatting, cache input and diagnostics (§4.4), `OwnershipSummarySizeRaised`, `language.md` and `skills/beni/`; **instrumentation:** record B_f/G_f/S_f/N_f and per-category high-water sizes on corpus and research apps, generator-deduplicated, report G_f ≥10% of default growth allowance to owner. Initially record supported constructs, never call unsupported zero; repeat in S4/S7. Minimal blocks already encode class/environment backreferences. | `zig build gates` green under v1 (runtime types/code unchanged by words; ownership metadata is retained, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 15 |
 | S3a | **Lists in one declaration** | `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5 | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 6 |
 | S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 10 |
 | S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes; §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 20 |
@@ -2255,8 +2271,8 @@ R-5.4.8, R-5.5.9, R-5.6.1–R-5.6.3, R-5.7.1 and R-7.12.
 ## Appendix C. Worked derivations of the core loops (S2b, before walker code)
 
 *Part of #1014; §8.1's first risk. Done on paper with §2's rules alone, against `core/List.beni` at
-`7013ed4ac`. No rule is changed here; C.9 lists the gaps and options, and C.10 the points of the text the work
-hit.* Notation as §2: `excl(c)` is the deep condition of an arrival `c`, `sep`/`within` as §2.9–§2.10.
+`7013ed4ac`. C.9 records the gaps: gap 1 is decided and gaps 2–3 are open. C.10 lists the points of the text
+the work hit, each now fixed in its section.* Notation as §2: `excl(c)` is the deep condition of an arrival `c`, `sep`/`within` as §2.9–§2.10.
 Instructions are named by role: `ι_t` the `traverseAt`, `ι_f` the call of the function parameter, `ι_p` the
 `put`, `ι_rec` the recursive call, `ι_d` the `done`. **Rounds count from ⊥**: round k is the class after the
 k-th walk under the class of round k − 1. §2.12's propagation computes the same limit, and §2.12's prose
@@ -2274,9 +2290,9 @@ Asserted (R-5.10.8; §2.13.6's words):
 | `done` (`builderdone`) | parameter 1's node unchanged: the same cells, children and κ |
 | `length` | π₁ `R`; crossing result |
 
-**Not asserted:** `base` and `offset`. §8's S2b list leaves them out, so §2.13.16 infers them. C.7 shows what
+**`base` and `offset`.** §8's S2b list first left them out, so §2.13.16 inferred them; C.7 shows what
 inference gives them. C.2–C.6 first use v1's rows for them (`base`: π₁ `RA`, res π₁; `offset`: π₁ `R`,
-crossing). This keeps the loop derivations apart from that gap.
+crossing), which C.9's decision on gap 1 now gives them.
 
 ### C.2 `mapHelp`
 
@@ -2315,7 +2331,7 @@ writes a taken element. It hands the element on, and κ goes with the supply.
 | 4 | the callee's `sep(ι_f⋆, ι_rec⋆)` gives `sep((ι_rec·ι_f⋆), (ι_rec·ι_rec⋆))`. Both sides fold into `ι_rec⋆`, so the fold emits `within(ι_rec⋆)` (§2.10 read-off) | round 3 `∧ within(ι_rec⋆)` |
 | 5 | `within(ι_rec⋆)` gives `within((ι_rec·ι_rec⋆))`, which is `within(ι_rec⋆)` | = round 4: **fixpoint**. The validation walk under it reads it off again (`F(x) ⊑ x`) |
 
-**`mapHelp`'s class.** π₁ `R`, `[*]` `R` (§2.10: `A` comes from `res`, which names no `π₁[*]`; the element reaches a caller only through a callback label). π₅ called many times. π₆ `RAW` (storage, ε). res ε `{π₆}`, `[*]`
+**`mapHelp`'s class.** π₁ `R`, `[*]` `R` (§2.10: `A` comes from `res`, which names no `π₁[*]`; the element reaches a caller only through a callback label). π₅ `R`, called many times (an operand of ι_rec). π₆ `RAW` (storage, ε). res ε `{π₆}`, `[*]`
 `{π₆[*], cb₅@ι_f⋆, cb₅@ι_rec⋆}`. κ(res[*]) `= excl π₆ ∧ excl(ι_f⋆) ∧ excl(ι_rec⋆) ∧ sep(ι_f⋆, π₆[*]) ∧
 sep(ι_rec⋆, π₆[*]) ∧ sep(ι_f⋆, ι_rec⋆) ∧ within(ι_rec⋆)`. `fun(5).supply(1)`: `elem(π₁·ι_t)` at `ι_f⋆` and
 `elem(π₁·ι_rec⋆)` at `ι_rec⋆`, each `taken`, owned and κ `excl π₁`. This is §2.12's result plus the
@@ -2336,7 +2352,7 @@ every label whose first instruction is ι_m into `cb₂@ι_m⋆` (they occur und
 `within(ι_m⋆)`. Supplies fold to `elem(π₁·ι_m⋆)`, which is owned because no holder outside the call is left
 after ι_m.
 
-**`List.map`'s class.** π₁ `R`, `[*]` `R`. π₂ called many times. res `fresh 1` with `[*]` `{cb₂@ι_m⋆}`;
+**`List.map`'s class.** π₁ `R`, `[*]` `R`. π₂ `R`, called many times. res `fresh 1` with `[*]` `{cb₂@ι_m⋆}`;
 κ(res[*]) `= excl(ι_m⋆) ∧ within(ι_m⋆)`. `fun(2).supply(1) = elem(π₁·ι_m⋆)`: `taken`, owned, κ `excl π₁`.
 **v1**: `π2 calls many, supply 1 π1[*] owned taken{excl π1}`, κ `{excl cb2, sep cb2 cb2}`: the same facts. v1
 also lists approximate `fresh2` entries at `[*]`, which come from its `builder` row (`res fresh1` with no
@@ -2366,7 +2382,7 @@ Else-arm: `π₄`. The frame has no `W` demand at all, so there are no keep edge
 | 3 | the callee's `cb₅@ι_f` gives `cb₅@(ι_rec·ι_f)`, which is `ι_rec⋆` | res `{π₄, ι_f, ι_rec⋆}`; κ `∧ excl(ι_rec⋆)`; `ι_rec⋆`'s supply 2 is `{cb₅@ι_f, cb₅@ι_rec⋆}` |
 | 4 | nothing new | fixpoint |
 
-**`foldlFrom`'s class.** π₁ `R`, `[*]` `R`. π₄ `A`. π₅ called many times. res `{π₄, cb₅@ι_f, cb₅@ι_rec⋆}`;
+**`foldlFrom`'s class.** π₁ `R`, `[*]` `R`. π₄ `RA` (a supply argument, used at ε, §2.6). π₅ `R`, called many times. res `{π₄, cb₅@ι_f, cb₅@ι_rec⋆}`;
 κ `excl π₄ ∧ excl(ι_f) ∧ excl(ι_rec⋆)`. Supply 1: `elem` `taken`, owned, κ `excl π₁`. Supply 2: π₄ owned,
 and the feedback cells `{cb₅@ι_f, cb₅@ι_rec⋆}`. **v1**: `π4 RA; res ~cb5 π4; supply 1 π1[*] owned taken{excl
 π1}, supply 2 cb5 owned{excl cb5}, supply 2 π4 owned{excl π4}`: the same facts.
@@ -2375,7 +2391,7 @@ and the feedback cells `{cb₅@ι_f, cb₅@ι_rec⋆}`. **v1**: `π4 RA; res ~cb
 
 `foldl xs acc func = foldlFrom (base xs) (offset xs) (offset xs + length xs) acc func` is one call, ι_l, with
 π₄ ↦ π₂ and π₅ ↦ the frame's own π₃. The labels `(ι_l·ι_f)` and `(ι_l·ι_rec⋆)` have a folded callee label,
-so every label of ι_l folds into `ι_l⋆`. **`List.foldl`'s class:** π₁ `R`, `[*]` `R`. π₂ `A`. π₃ called many
+so every label of ι_l folds into `ι_l⋆`. **`List.foldl`'s class:** π₁ `R`, `[*]` `R`. π₂ `RA`. π₃ `R`, called many
 times. res `{π₂, cb₃@ι_l⋆}`; κ `excl π₂ ∧ excl(ι_l⋆)`. Supply 1: `elem(π₁·ι_l⋆)`, `taken`, owned, κ
 `excl π₁`. Supply 2: `{π₂ owned, cb₃@ι_l⋆ feedback}`. **`List.foldr`**: `foldrFrom` is `foldlFrom` with the
 index going down (still one direction, so the index obligation holds) and the same parameter roles. The walk
@@ -2408,9 +2424,9 @@ rows. That leaves **`base`, `offset`, `unsafeGet`, `sliceOf` and `sortWith`** to
   `reach(v) ∋ env xs`. `Js.pure` returns the lambda's answer and carries its `E`. **Inferred:** π₁ `RAE`, res
   `{π₁, ⊤}` approximate. v1's row: π₁ `RA`, res π₁. v1's own walk agrees (its dump has `isTrie: π1 RE`).
 - **`offset`**: the same tests. **Inferred:** π₁ `RE`, crossing. v1: π₁ `R`.
-- **`unsafeGet`** (`Js.at`, `Js.get`). **Inferred:** π₁ `RAE`, res `⊤`. v1: π₁ `R`, `[*]` `A`, res π₁`[*]`.
+- **`unsafeGet`** (`Js.at`, `Js.get`). **Inferred:** π₁ `RE`, res `⊤` (`A` comes from `res`, which names no π₁). v1: π₁ `R`, `[*]` `A`, res π₁`[*]`.
 - **`sliceOf`**, even with v1's rows for `base` and `offset`: `Js.call (Js.from (base xs)) "slice" …` escapes
-  π₁'s object and answers `⊤`. **Inferred:** π₁ `RAE`, res `⊤`. v1: fresh, `[*]` π₁`[*]`, list κ `lost`,
+  π₁'s object and answers `⊤`. **Inferred:** π₁ `RE`, res `⊤`. v1: fresh, `[*]` π₁`[*]`, list κ `lost`,
   record κ `excl π₁`. `copy` has the same body and is on the S2b list.
 - **`sortWith`**, with v1's rows for the four above. `merge` reads `x = at xs i`, which is not taken: `at` makes
   no split, and after `GT` the next round reads `at xs i` again. So each `put b (i + j) x` stores the symbolic
@@ -2428,94 +2444,149 @@ rows. That leaves **`base`, `offset`, `unsafeGet`, `sliceOf` and `sortWith`** to
 `compare`, `concat` and `map2`–`map5`. The `maximum`, `minimum` and `intersperse` loops also get them through
 `unsafeGet`. Then `List.map xs f` lets `xs` escape: a later `List.push xs 1` is refused `escaped`, and a
 callback that writes its element is refused `unknown`. That is against R-4.10.2, R-4.10.6, R-5.2.9 and
-R-5.3.2. C.2–C.6 hold only when `base` and `offset` have v1's rows.
+R-5.3.2. C.2–C.6 hold only when `base` and `offset` have v1's rows, which the decision on gap 1 gives them.
 
 ### C.8 Verdicts
 
 | Function | Verdict | Reason |
 |---|---|---|
-| `mapHelp` | **reaches the required row** (given `base`/`offset`, C.9 gap 1) | C.2. It is v1's row with `sep cb cb` refined into `sep ∧ within` |
+| `mapHelp` | **reaches the required row** (with `base`/`offset` asserted, C.9 gap 1) | C.2. It is v1's row with `sep cb cb` refined into `sep ∧ within` |
 | `List.map` | **reaches it** (same condition) | C.3. The four C.6 cases come out as required |
 | `foldlFrom`, `foldrFrom` | **reaches it**, with one precision loss | C.4. The in-place accumulator is accepted, and the keeping and replacing twins are refused. The accumulator's element κ is `lost` (gap 3); no requirement names it |
 | `List.foldl`, `List.foldr` | **reaches it** (same condition), with gap 3's precision loss | C.5 |
-| `base`, `offset` | **weaker** | π₁ `E` and res `⊤` instead of v1's rows. Lost: everything downstream (R-4.10.2, R-4.10.6, R-5.2.9, R-5.3.2) |
-| `unsafeGet` | **weaker** | π₁ `E`, res `⊤`. Its callers `maximum`, `minimum` and `intersperse` let their argument escape (R-4.10.2, R-4.10.6) |
-| `sliceOf` | **weaker** | π₁ `E`, res `⊤`. Required: a fresh read with aliased elements that keeps record exclusivity (R-4.10.6, R-4.10.7) |
-| `sortWith` | **weaker** | record κ at `[*]` is `lost`, not `excl π₁`. Required: "`sortWith` keeps it" (R-4.10.7, R-4.10.8, `o/RecordSortWith`) |
+| `base`, `offset` | **weaker when inferred; decided: asserted** (gap 1) | Inferred, π₁ `E` and res `⊤` instead of v1's rows. Lost: everything downstream (R-4.10.2, R-4.10.6, R-5.2.9, R-5.3.2) |
+| `unsafeGet` | **weaker when inferred; decided: asserted** (gap 1) | Inferred, π₁ `E` and res `⊤`. Its callers `maximum`, `minimum` and `intersperse` let their argument escape (R-4.10.2, R-4.10.6) |
+| `sliceOf` | **weaker when inferred; decided: asserted** (gap 1) | Inferred, π₁ `E` and res `⊤`. Required: a fresh read with aliased elements that keeps record exclusivity (R-4.10.6, R-4.10.7) |
+| `sortWith` | **weaker** (gap 2, open) | record κ at `[*]` is `lost`, not `excl π₁`. Required: "`sortWith` keeps it" (R-4.10.7, R-4.10.8, `o/RecordSortWith`) |
 
 **No unsound row was found.** Each inferred class contains its body's behaviour (O5). Each acceptance in C.6
 rests on an atom that a run-time fact discharges.
 
 ### C.9 Gaps and their options
 
-These decisions are the owner's. This appendix does not take them.
+Gap 1 is decided. Gaps 2 and 3 are the owner's open choices; this appendix does not take them.
 
-**Gap 1 — `base`, `offset`, `unsafeGet`, `sliceOf`.** The rule that falls short is §2.13.16 ("every function
-not asserted is inferred") together with §8's S2b list, which leaves these four out. No rule of §2 can see
-through a host read. `Js.get` and `Js.call` are pessimistic by R-5.10.1 and O10. No truthful word fits them,
-because a getter or a method runs arbitrary JavaScript. A cast loses exactness after a step (§2.13.9). Each of
-the four reads the runtime representation, as `view` and `copy` (on the list) do.
+**Gap 1 — `base`, `offset`, `unsafeGet`, `sliceOf`: decided 2026-10-25 (manager, from R-5.10.8).**
 
-- *(a) Fix the rule.* No inference rule can be fixed here. The change available is a classification: name the
-  four in §8's S2b list and in §2.13.16 as `List` array primitives. R-5.10.8 already asserts those without
-  enumerating them, so the requirements do not change. Words: `base` is `returned` π₁; `offset` is a borrowed
-  read with a crossing result; `unsafeGet` takes `at`'s words; `sliceOf` takes `copy`'s. Each is pinned under
-  R-5.10.7. (No body change removes the need: `traverseAt` reads `a[i]` of an array that `base` returned, so
-  the loops need `base` and `offset` whatever reads the elements.)
-- *(b) Assert them with pinned bodies as a recorded deviation under R-5.10.8.*
+Why inference falls short: §2.13.16 ("every function not asserted is inferred") applied to four bodies that
+read the runtime representation. No rule of §2 can see through a host read:
+- `Js.get` and `Js.call` are pessimistic by R-5.10.1 and O10.
+- No truthful word fits them, because a getter or a method runs arbitrary JavaScript.
+- A cast loses exactness after a step (§2.13.9).
 
-**Gap 2 — `sortWith`.** The rules that fall short are §2.2's "distinctness is never derived from a label at a
-summary position" and §2.9's κ at a construction. Neither has a fact that `merge` stores each position of π₁
-exactly once. `at` makes no split. The two halves' `[*]` are the same `π₁[*]`, because the domain has no index
-ranges.
+They are representation readers, as `view` and `copy` are, so they are `List` array primitives. R-5.10.8
+already asserts those without enumerating them. The decision names them in §2.13.16 and in §8's S2b list,
+with existing words, each pinned under R-5.10.7:
+
+| Function | Words | Row |
+|---|---|---|
+| `base` | `returned List a → List a` | π₁ `RA`, res π₁ |
+| `offset` | `borrowed List a → Int` | π₁ `R`, crossing |
+| `unsafeGet` | `at`'s | π₁ `R`, `[*]` `A`, res π₁`[*]` |
+| `sliceOf` | `copy`'s | fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁` |
+
+These are v1's rows, so C.2–C.6 hold. No requirement changes. No body change removes the need: `traverseAt`
+reads `a[i]` of an array that `base` returned.
+
+**Gap 2 — `sortWith` (owner's choice).** As written, §2's rules have no fact that `merge` stores each position
+of π₁ exactly once:
+- `at` makes no split.
+- The two halves' `[*]` are both `π₁[*]`.
+- §2.2 never derives distinctness from a label at a summary position.
+- §2.9's construction κ then gives `lost`.
+
+The rules do keep κ through `copy` and storage permutations, which option (c) uses.
 
 - *(a) Fix the rule.* Add index-range refinements:
   - `sliceOf` publishes its result's `[*]` as `range(π₁[*], from, to)`.
-  - `sortRange`'s `mid = lo + half (hi − lo)` makes `[lo, mid)` and `[mid, hi)` disjoint by a linear fact on
-    `Int` locals.
+  - **`sortRange`'s own result** carries `range(π₁[*], lo, hi)` through its recursion. A range on `sliceOf`
+    alone is not enough, because `merge`'s inputs are `sortRange` results.
+  - `mid = lo + half (hi − lo)` makes `[lo, mid)` and `[mid, hi)` disjoint by a linear fact on `Int` locals.
   - `merge` reads each index once through `traverseAt`. Today it reads `at xs i` again after `GT`, so its body
-    changes too.
-  - A store treats two taken elements of disjoint ranges of one container as apart under the container's κ.
+    changes.
+  - A store treats two taken elements of disjoint ranges of one container as apart under its κ.
 
-  This is index arithmetic, which the design avoids elsewhere (§9 item 3), plus a new refinement kind. It also
-  changes `merge`'s body, which needs the owner's agreement too (rule 10).
+  This is index arithmetic, which the design avoids elsewhere (§9 item 3), plus a new refinement kind and a
+  body change (rule 10).
 - *(b) Assert `sortWith`'s row with a pinned body, as v1 does.* The row: res fresh, `[*]` π₁`[*]`, list κ
   `lost`, record κ `excl π₁`, `cmp` called many times with borrowed supplies. This is a deviation from
   R-5.10.8, because `sortWith` is not a primitive.
+- *(c) Change the body so that today's rules infer the row.*
+  - `copy xs`: `copy` keeps value conditions (§2.9; record κ `excl π₁`).
+  - Then sort the copy stably with `swap` alone: an insertion sort, or a rotation-based in-place merge at
+    O(n log² n).
+  - A storage permutation "lowers nothing" (§2.9), so record κ stays `excl π₁`.
+  - The comparator reads by `at`, and its supplies stay borrowed.
 
-**Gap 3 — the element condition of a fold's accumulator (precision only).** A list that
-`List.foldl xs [] λx acc → List.push acc x` builds is accepted and edited in place (R-5.3.2 is met), but its
-κ at `[*]` is `lost` (C.6). The rule that falls short: §2.10 makes `within` only when a fold merges the two
-sides of a `sep` between *different* labels. A fold's feedback stores one call's supply beside earlier calls'
-supplies inside the callback, so both sides are one folded label `elem(xs·ι_l⋆)`, and §2.9 makes that `lost`.
-No requirement names the case, but a later write into an element of such a list is refused `exclusive`
-(approximate).
+  It is slower than today's merge sort and changes core's body, so it is the owner's (rule 10).
 
-- *(a) Fix the rule.* Treat two taken elements under one folded split label, met at a store across feedback,
-  as §2.2 already treats two taken elements of distinct splits: apart under the container's κ. This is sound
-  only because each call takes another index (the pinned index obligation, O9). Write that as a stated case of
-  `within` for `taken` supplies.
-- *(b) Leave it, or assert `foldl`/`foldr` with pinned bodies under R-5.10.8.*
+**Gap 3 — the element condition of a fold's accumulator (owner's choice; precision only).**
+`List.foldl xs [] λx acc → List.push acc x` is accepted and edited in place, so R-5.3.2 is met. But its κ at
+`[*]` is `lost` (C.6), and a later write into an element of the result is refused `exclusive` (approximate).
+No requirement names the case.
 
-### C.10 Points of the text the derivation hit
+Why: §2.10 makes `within` only when a fold merges the two sides of a `sep` between *different* labels. In a
+fold the callback stores this call's supply beside cells that came back through the feedback. Both sides are
+one folded label `elem(xs·ι_l⋆)`, and §2.9 makes that `lost`.
 
-1. §2.2 writes a split as `elem c·ι` with `c` the container ("the one position of `c`'s `[*]`"). §2.13.3 writes
-   `elem(c·ι)` per `c ∈ cellsAt(n, [*])`. This appendix uses §2.2's form, as §2.12 does.
-2. `done`'s `builderdone` makes parameter 1 `returned` but not `written`. Yet `done`'s body sets `length` when
-   `n` differs (`filter`'s builder). Core uses a `Builder` linearly, so no reader can see the change. But O9
-   asks rows to state their bodies, so S2b should word `done` `written returned` or say why not.
-3. Under §2.2's materialisations in force, the recursive call's operand `a` holds `others(π₁·ι_t)`. The deeper
-   supply is then a refinement of `others`; §2.12 writes it as `elem(a·(ι_rec·ι_t))`. In every test here, both
-   reduce to `κ(π₁[*])`.
-4. §2.11 items 4–5 put a feedback supply's `callsite` demand on "the caller's argument", so Disjoint sees the
-   initial accumulator, not the settled feedback node. A duplication that only the feedback creates is refused
-   by §2.12's preservation certificate (C.6), not by Disjoint. S4 must implement it that way, or the text must
-   say that Disjoint also runs on the feedback node.
-5. §2.12's `mapHelp` narrative gives κ(res[*]) without the `excl` atoms that §2.9's construction rule adds
-   through `put`'s `stored`. C.2 includes them.
+**The unrestricted fix is unsound.** Treating any two taken elements under the folded split label as apart
+under κ(xs[*]) accepts this:
 
-A read-only adversarial verifier checked this appendix. It found no unsound row and no accepted program that
-reads a stale value. It probed callbacks capturing the list, an initial accumulator holding an element, a
-callback returning its element or a capture as the next accumulator, `λl → ( l, l )`, and `maximum`'s
-`foldlFrom` call. Its corrections are folded in above: the `use` bits, the foldl κ (gap 3), and the causes in
-C.6.
+```text
+st = Tuple.second (List.foldl xs ( [], [] ) λx ( prev, st ) → ( x, List.push (List.push st prev) x ))
+ys = List.map st λl → List.push l 1
+```
+
+Each `x` is stored once as `x` and once more as the next round's `prev`, so `st` holds each list twice. Under
+the unrestricted rule the lambda's `sep(π₂.0, π₂.1[*])` is `elem⋆` against `elem⋆`, and it would be called
+apart. `List.map st …` would then pass `within` under κ(xs[*]) and push one list twice in place. The fold
+writes nothing, so §2.12's certificate never runs. Two values that came back through the feedback may come
+from **one** earlier call, and the fold erases which call supplied each.
+
+- *(a) Fix the rule, restricted.* At a fold's call, instantiate the actual's atom `sep(X, Y)` as "apart under
+  the container's κ" **only** in this case:
+  - `X` is the actual's own `taken` supply parameter: this call's element as handed to it, not a value that
+    came back through the feedback supply.
+  - `Y` is a cell reached through the feedback supply that is a taken element of the same folded split.
+
+  Every other pair stays as §2.9 says. That includes two cells both reached through the feedback, as in the
+  counterexample. A taken cell against an untaken `π₁[*]` from the initial accumulator also stays as it is.
+
+  The argument:
+  - By the pinned index obligation (O9), this call's index is different from every index handed earlier.
+  - A taken element reached through the feedback was handed by an earlier call. The current element enters
+    the feedback node only after this call returns.
+  - So `X` and `Y` are different positions, and they are apart under κ(xs[*]).
+  - In the counterexample, `sep(π₁, π₂.0)` and `sep(π₁, π₂.1[*])` are discharged (true: `x_k` is not
+    `x_{k−1}`), but `sep(π₂.0, π₂.1[*])` stays `lost`, so `List.map st …` is still refused.
+
+  This is an argument, not a proof. S4 would add the counterexample as a red twin.
+- *(b) Leave it: κ `lost`.*
+
+### C.10 Points of the text the derivation hit, now fixed in their sections
+
+1. **`elem`.** §2.13.3 wrote `elem(c·ι)` per `c ∈ cellsAt(n, [*])`, an element cell. §2.2 and §2.12 use the
+   container cell. §2.13.3 now says "per container cell `c ∈ cellsAt(n, ε)`".
+2. **`builderdone`.** It made parameter 1 `returned` only. Yet `done`'s body sets `length` when `n` differs,
+   and O9 asks rows to state their bodies. §2.13.6 now makes parameter 1 `written returned`; v1's `done` is
+   storage-`W` too. No derivation here changes: `put` already writes the builder.
+3. **The deeper supply.** Under §2.2's materialisations in force, the recursive call's operand `a` holds
+   `others(π₁·ι_t)`, so the deeper supply is a refinement of `others`. §2.12 wrote `elem(a·(ι_rec·ι_t))`. It
+   now says so; both reduce to `κ(π₁[*])`.
+4. **The fed-back accumulator.** §2.11 items 4–5 put a feedback supply's `callsite` demand on the caller's
+   argument, so Disjoint sees the initial value. §2.11 item 5 now says that a duplication only the feedback
+   creates is refused by §2.12's preservation certificate, which S4 implements.
+5. **`excl` atoms.** §2.12's `mapHelp` narrative left out the `excl` atoms that §2.9's construction rule adds
+   through `put`'s `stored`. They are added there.
+
+A read-only adversarial verifier checked this appendix, and the PR review checked it again. Neither found
+an unsound inferred row or an accepted program that reads a stale value. The probes:
+- callbacks that capture the list or an element of it
+- an initial accumulator that holds an element
+- a callback that returns its element or a capture as the next accumulator
+- `λl → ( l, l )`
+- `maximum`'s `foldlFrom` call
+
+The review found that gap 3's unrestricted option is unsound (the counterexample above). Its corrections are
+folded in above: the `use` bits, the foldl κ, the causes in C.6, gap 2's option (c) and `sortRange`'s range,
+and the C.10 fixes.
