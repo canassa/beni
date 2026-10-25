@@ -146,3 +146,8 @@ tests/pending/ownership/DeepTupleDag.beni timeout
 tests/pending/ownership/DictHelperAlias.beni exit=0 node+everywhere.ownership-differs
 tests/pending/ownership/DictRecordAlias.beni exit=0 node+everywhere.ownership-differs
 tests/pending/ownership/DictTupleAlias.beni exit=0 node+everywhere.ownership-differs
+
+# CK-271 (#879): the rows a run of a schema built at run time answers are
+# new records, but `schemaRunRow` is never refined at the call; an
+# acceptance test for the checker's rewrite.
+tests/pending/ownership/RecordSchemaRun.beni exit=0 ownership-differs
