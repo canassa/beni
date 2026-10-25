@@ -50,3 +50,10 @@ Appendix B.
 v1 refuses both counterexamples on `browser-inline` (no live miscompile; comment on #1029). A label already
 carries a call chain, so the traversal identity costs no new representation, only a bit per fold saying
 which trigger made it.
+
+**Third round.** The re-review could not break *Traversals* within one module, but blocks did not carry it:
+§3.6's label record had no `single` bit and no entry mark. An importer would have to guess, and both guesses
+are wrong: one reopens #1029 through an imported `each`, the other costs `List.map` its exclusivity. Blocks
+now carry `single`, `entry` and the fold kind, with a determinism rule and a decode-failure rule (never
+default to `single`). `OWN2` is v2, and `NestedTraversalAcrossModules` is an S6 red twin. Any new per-cell fact
+that §2 compares must enter the block format in the same change.
