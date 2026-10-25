@@ -1,0 +1,48 @@
+-- load
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <input id="name" .value="">
+    <p id="shown"></p>
+    <section>
+      <input id="field" .value="">
+      <output></output>
+    </section>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <input id="name" .value="later">
+    <p id="shown">"one"</p>
+    <section>
+      <input id="field" .value="later">
+      <output>"two"</output>
+    </section>
+  </main>
+</body>
+-- input #name "three"
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <input id="name" .value="three">
+    <p id="shown">"three"</p>
+    <section>
+      <input id="field" .value="later">
+      <output>"two"</output>
+    </section>
+  </main>
+</body>
+-- input #field "four"
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <input id="name" .value="three">
+    <p id="shown">"three"</p>
+    <section>
+      <input id="field" .value="four">
+      <output>"four"</output>
+    </section>
+  </main>
+</body>

@@ -1,0 +1,17 @@
+--! A command whose body types into an input while a send runs: it sets the
+--! input's value, dispatches `input`, then sets another value, which no
+--! event reveals.
+
+import Cmd exposing (Cmd)
+import Js
+
+
+--| Set the value of the input `id` names to `text`, dispatch a bubbling
+--| `input` on it, then set its value to `"later"`.
+pub type_ : String, String → Cmd msg
+type_ id text = Cmd.perform λ_ →
+    element = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    Js.set element "value" (Js.from text)
+    event = Js.construct (Js.global "Event") [ Js.from "input", Js.from { bubbles = True } ]
+    _ = Js.call element "dispatchEvent" [ event ]
+    Js.set element "value" (Js.from "later")
