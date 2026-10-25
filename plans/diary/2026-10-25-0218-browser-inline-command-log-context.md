@@ -16,3 +16,5 @@
   - browser-tea never reaches `update$s`.
   - The write-set pass's `funSuspends` reads `poly` as `yes`. The defect is there, not in the checker.
 - Never hide an effect from the checker with a `Js` cast to get a build through: it is rule 10's case. Instrument the reading instead. A one-line debug print of `own` and `twin` found the cause in minutes.
+- A refusal written as a list of shapes leaks. My first scan of a scope's result looked only at `( model, cmd )`, and review carried a command out of the scope in six other shapes. Prove a term free of the thing, and treat any term you cannot see into as holding it.
+- `git checkout <rev> -- <path>` over uncommitted work destroys it, and it happened to me a second time: I restored from a copy in the scratch lane. Commit before every red-proof checkout.
