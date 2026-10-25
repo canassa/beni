@@ -1,0 +1,39 @@
+-- A command with a body made inside `Log.annotate` and carried out of it
+-- in a value of another shape than `( model, cmd )` (here a record) is refused
+-- too: its body would run with the default log context (#751, #1003;
+-- found in review of #993).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Done
+
+
+type alias R =
+    m : Int
+    c : Cmd Msg
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    r = Log.annotate "k" "v" λ⊤ → { m = model + 1, c = Cmd.perform λ_ → Log.info "body" }
+    ( r.m, r.c )
+
+
+view : Int → Html Msg
+view model = <button onClick={Go}>{model}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
