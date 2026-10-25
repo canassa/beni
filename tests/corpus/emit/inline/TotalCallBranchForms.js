@@ -1,11 +1,13 @@
-import { List$push, List$append, List$update, List$set } from "./_core/List.mjs";
+import { List$push, List$singleton, List$append, List$update, List$set } from "./_core/List.mjs";
 import { Inline$root, Inline$own, Inline$when, Inline$text, Inline$entry, Inline$pass, Inline$on, Inline$first } from "./_platform/Inline.mjs";
+const TotalCallBranchForms$inc = (x$1) => x$1 + 1;
 const TotalCallBranchForms$bump = (xs$1) => List$push(xs$1, 4);
+const TotalCallBranchForms$glue = (xs$1) => List$append(xs$1, List$singleton(1));
 const TotalCallBranchForms$main = ($id$1) => {
   const $root$2 = Inline$root("root");
   const $init$3 = 0;
   let $model$4 = $init$3;
-  $root$2.insertAdjacentHTML("beforeend", "<main><section data-arm=dot><p></section><section data-arm=append><p></section><section data-arm=update><p></section><section data-arm=set><p></section><section data-arm=helper><p></section><button>Next");
+  $root$2.insertAdjacentHTML("beforeend", "<main><section data-arm=dot><p></section><section data-arm=append><p></section><section data-arm=update><p></section><section data-arm=set><p></section><section data-arm=helper><p></section><section data-arm=glue><p></section><button>Next");
   const $node$5 = $root$2.lastChild;
   Inline$own(() => {
     $node$5.remove();
@@ -29,6 +31,9 @@ const TotalCallBranchForms$main = ($id$1) => {
     let $value$32;
     let $selected$33;
     let $value$36;
+    let $value$37;
+    let $selected$38;
+    let $value$41;
     {
       const $t$8 = [1];
       let $t$11;
@@ -56,9 +61,14 @@ const TotalCallBranchForms$main = ($id$1) => {
                 $t$10 = 3;
                 break $c$0;
               }
-            default:
+            case 4:
               {
                 $t$10 = 4;
+                break $c$0;
+              }
+            default:
+              {
+                $t$10 = 5;
                 break $c$0;
               }
           }
@@ -76,14 +86,14 @@ const TotalCallBranchForms$main = ($id$1) => {
       $value$17 = $arm$9 !== 1;
       $selected$18 = $arm$9 === 1;
       if ($selected$18) {
-        const $t$19 = List$append($t$8, [3]);
+        const $t$19 = List$append($t$8, List$singleton($model$4));
         const $t$20 = $t$19.length;
         $value$21 = `${$t$20}`;
       }
       $value$22 = $arm$9 !== 2;
       $selected$23 = $arm$9 === 2;
       if ($selected$23) {
-        const $t$24 = List$update($t$8, 0, (x$4) => x$4 + 1);
+        const $t$24 = List$update($t$8, 0, TotalCallBranchForms$inc);
         const $t$25 = $t$24.length;
         $value$26 = `${$t$25}`;
       }
@@ -100,6 +110,13 @@ const TotalCallBranchForms$main = ($id$1) => {
         const $t$34 = TotalCallBranchForms$bump($t$8);
         const $t$35 = $t$34.length;
         $value$36 = `${$t$35}`;
+      }
+      $value$37 = $arm$9 !== 5;
+      $selected$38 = $arm$9 === 5;
+      if ($selected$38) {
+        const $t$39 = TotalCallBranchForms$glue($t$8);
+        const $t$40 = $t$39.length;
+        $value$41 = `${$t$40}`;
       }
     }
     Inline$when($elements$6[0], $value$12);
@@ -122,11 +139,15 @@ const TotalCallBranchForms$main = ($id$1) => {
     if ($selected$33) {
       Inline$text($elements$6[9], $value$36);
     }
+    Inline$when($elements$6[10], $value$37);
+    if ($selected$38) {
+      Inline$text($elements$6[11], $value$41);
+    }
   }, $table$7[0][0]);
-  Inline$on($elements$6[10], () => {
-    const $value$37 = "Next";
-    const $before$38 = $model$4;
-    $model$4 = $before$38 + 1;
+  Inline$on($elements$6[12], () => {
+    const $value$42 = "Next";
+    const $before$43 = $model$4;
+    $model$4 = $before$43 + 1;
     Inline$pass($table$7[0][0]);
   });
   Inline$first();

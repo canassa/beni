@@ -47,7 +47,7 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
         // A list writer edits its argument in place once the ownership
         // checker accepts the call, so a caller outside core may not run it
         // ahead of the branch that asks for it: never total. Core's own
-        // callers are exempt (`writerOutsideCore`).
+        // callers are exempt (`writerInCore`).
         if (isListWriter(in.graph, in.module, in.interner.slice(in.bir.symbol(decl.name)), in.interner)) continue;
         if (decl.kind == .foreign_value) {
             eligible[d] = decl.rung == .pure;
@@ -93,6 +93,11 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
                     if (Operator.atCall(in.graph, in.interfaces, in.bir, in.module, at, in.dispatch, in.interner)) |op| {
                         if (!op.pureTotal()) eligible[d] = false;
                         try stack.appendSlice(a, args);
+                        continue;
+                    }
+                    // `xs ++ ys` on lists is `List.append` (`Dispatch.appends`).
+                    if (in.graph.modulePackage(in.module) != .core and (in.dispatch.isListAppend(at) or in.dispatch.isListAppend(callee))) {
+                        eligible[d] = false;
                         continue;
                     }
                     if (!try target(&reads, d, callee, &edges)) {

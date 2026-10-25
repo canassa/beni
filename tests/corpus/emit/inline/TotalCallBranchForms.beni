@@ -1,5 +1,6 @@
 -- Every form of a list write stays inside its arm: a dot-call, `++`,
--- `List.update`, `List.set` and a user function that pushes.
+-- `List.update`, `List.set` and a user function that pushes. Operands are
+-- named values, not literals or lambdas, which are never hoisted anyway.
 import Browser
 import Html exposing (Html)
 import Tea
@@ -17,8 +18,16 @@ size : List Int → Html Msg
 size xs = <p>{List.length xs}</p>
 
 
+inc : Int → Int
+inc x = x + 1
+
+
 bump : List Int → List Int
 bump xs = List.push xs 4
+
+
+glue : List Int → List Int
+glue xs = xs ++ List.singleton 1
 
 
 choices : List Int, Int → Html Msg
@@ -28,13 +37,15 @@ choices xs n =
             0 →
                 <section data-arm="dot">{size (xs.push 2)}</section>
             1 →
-                <section data-arm="append">{size (xs ++ [ 3 ])}</section>
+                <section data-arm="append">{size (xs ++ List.singleton n)}</section>
             2 →
-                <section data-arm="update">{size (List.update xs 0 λx → x + 1)}</section>
+                <section data-arm="update">{size (List.update xs 0 inc)}</section>
             3 →
                 <section data-arm="set">{size (List.set xs 0 9)}</section>
-            _ →
+            4 →
                 <section data-arm="helper">{size (bump xs)}</section>
+            _ →
+                <section data-arm="glue">{size (glue xs)}</section>
         }
     </>
 
