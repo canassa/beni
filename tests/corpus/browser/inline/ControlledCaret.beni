@@ -1,0 +1,55 @@
+-- A controlled text input whose `update` transforms what was typed keeps
+-- the caret where the user's edit left it (the owner, 2026-10-25, #642):
+-- the write of a value that differs from the live one restores the
+-- selection offsets, each clamped to the new value's length, when the
+-- control has the focus. `up` upper-cases, so a second character typed in
+-- the middle stays in the middle; `same` accepts what was typed and is
+-- never written; `cap` keeps four characters, so an insertion at the end
+-- is clamped to the length; `mirror` shows `up` and has no focus, so its
+-- selection is the browser's own.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Up String
+    | Same String
+    | Cap String
+
+
+type alias Model =
+    up : String
+    same : String
+    cap : String
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Up s →
+            { m | up = String.toUpper s }
+
+        Same s →
+            { m | same = s }
+
+        Cap s →
+            { m | cap = String.left s 4 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <input id="up" value={m.up} onInput={Up} />
+        <input id="same" value={m.same} onInput={Same} />
+        <input id="cap" value={m.cap} onInput={Cap} />
+        <input id="mirror" value={m.up} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { up = "abcdef", same = "abcdef", cap = "abcd" }
+        , update = update
+        , view = view
+        }

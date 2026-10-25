@@ -1,0 +1,111 @@
+-- selection
+-- load
+<body>
+  <main>
+    <input id="up" .value="abcdef" .selection=6-6>
+    <input id="same" .value="abcdef" .selection=6-6>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="abcdef" .selection=6-6>
+  </main>
+</body>
+-- focus #up
+<body>
+  <main>
+    <input id="up" .value="abcdef" .selection=6-6 :focus>
+    <input id="same" .value="abcdef" .selection=6-6>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="abcdef" .selection=6-6>
+  </main>
+</body>
+-- select #up 3
+<body>
+  <main>
+    <input id="up" .value="abcdef" .selection=3-3 :focus>
+    <input id="same" .value="abcdef" .selection=6-6>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="abcdef" .selection=6-6>
+  </main>
+</body>
+-- insert #up "x"
+<body>
+  <main>
+    <input id="up" .value="ABCXDEF" .selection=4-4 :focus>
+    <input id="same" .value="abcdef" .selection=6-6>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="ABCXDEF" .selection=7-7>
+  </main>
+</body>
+-- insert #up "y"
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5 :focus>
+    <input id="same" .value="abcdef" .selection=6-6>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- focus #same
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcdef" .selection=6-6 :focus>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- select #same 3
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcdef" .selection=3-3 :focus>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- insert #same "x"
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcxdef" .selection=4-4 :focus>
+    <input id="cap" .value="abcd" .selection=4-4>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- focus #cap
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcxdef" .selection=4-4>
+    <input id="cap" .value="abcd" .selection=4-4 :focus>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- select #cap 2
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcxdef" .selection=4-4>
+    <input id="cap" .value="abcd" .selection=2-2 :focus>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- insert #cap "x"
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcxdef" .selection=4-4>
+    <input id="cap" .value="abxc" .selection=3-3 :focus>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- select #cap 4
+<body>
+  <main>
+    <input id="up" .value="ABCXYDEF" .selection=5-5>
+    <input id="same" .value="abcxdef" .selection=4-4>
+    <input id="cap" .value="abxc" .selection=4-4 :focus>
+    <input id="mirror" .value="ABCXYDEF" .selection=8-8>
+  </main>
+</body>
+-- insert #cap "yz"
+(the DOM did not change)

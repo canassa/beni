@@ -466,7 +466,11 @@ write in place the model is never reassigned, so release folds the handler to it
 `selected`) is called by the handler of every key one of its own element's events reaches, whatever
 the key writes, so the control shows the model after the user's edit even when the arm leaves the
 model as it was (`plans/direct-rewrite.md` §8, pay-per-use). `prop` compares with the DOM's live
-value, so an edit the model agrees with writes nothing. *Noted 2026-10-18:* the rule is per element, so an `<option selected={…}>` is not
+value, so an edit the model agrees with writes nothing. *Amended 2026-10-25 (#642):* a write of a
+`value` that differs keeps a focused text control's caret — the selection offsets read before the
+write and set after it, each clamped to the new length, for a control that has a selection
+(`backend.md` §15.3, *The caret survives a write*). `prop` does it; a write it skips touches no
+selection (`browser/inline/ControlledCaret`). *Noted 2026-10-18:* the rule is per element, so an `<option selected={…}>` is not
 written back on its `<select>`'s event — the event is the select's, not the option's; a select shows
 the model through its own `value`.
 

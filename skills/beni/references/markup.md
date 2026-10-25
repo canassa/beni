@@ -46,6 +46,9 @@ message. Which one is decided by the handler's type.
 
 - `onClick={Clicked}` sends `Clicked`.
 - `onInput={Typed}` calls `Typed` with the input's value, a `String`, and sends the result.
+- A text input shows the model's value. When `update` changes the typed text (for example, to upper
+  case), the caret stays at the offset it had. If the new text is shorter, the offset is cut to its
+  length. The page does not map the caret through the change.
 - A handler receives the raw `Html.Event` where the vocabulary says so (`onKeyDown`, `onSubmit`,
   `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
@@ -186,4 +189,4 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §8.2, §8.4; `platforms/html/Html.beni`.
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3; `platforms/html/Html.beni`.

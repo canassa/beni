@@ -255,6 +255,32 @@ text node shown =
         Js.set node "textContent" shown
 
 
+-- A control's property written with the model's value. A text control the
+-- user is editing keeps its selection across a write that changes its
+-- value (the owner, 2026-10-25): the offsets and direction read before,
+-- set again after, each clamped to the new value's length. A control with
+-- no selection (its `selectionStart` is null, or undefined on a `select`)
+-- and one without the focus are written and left alone.
+writeProp : V, V, V → ⊤
+writeProp el member v =
+    caret = if Js.same member (Js.from "value") then Js.get el "selectionStart" else Js.undefined
+    if Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el) then
+        Js.set el member v
+    else
+        caretEnd = Js.get el "selectionEnd"
+        direction = Js.get el "selectionDirection"
+        Js.set el member v
+        length = Js.get (Js.get el "value") "length"
+        math = Js.global "Math"
+        _ =
+            Js.call el "setSelectionRange"
+                [ Js.call math "min" [ caret, length ]
+                , Js.call math "min" [ caretEnd, length ]
+                , direction
+                ]
+        ⊤
+
+
 --| `(node, value, key)`: a property binding — the DOM property `key`, a
 --| control's `value` when `key` is not given, written when it differs
 --| from the node's live one, so a control the user edited shows the model.
@@ -262,7 +288,7 @@ pub prop : V, V, V → ⊤
 prop node value key =
     name = if Js.isUndefined key then Js.from "value" else key
     if not (Js.same (Js.get node name) value) then
-        Js.set node name value
+        writeProp node name value
 
 
 --| `(node, hidden)`: an eager `when` — the node in the page, or, while

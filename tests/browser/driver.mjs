@@ -1163,6 +1163,10 @@ function step(s) {
     return null;
   }
   // An element the program mounts at, put in the page before it loads.
+  if (s.command === "selection") {
+    globalThis.__beniHarness.selection = true;
+    return null;
+  }
   if (s.command === "element") {
     const at = document.createElement("div");
     at.id = s.text;
@@ -1283,6 +1287,23 @@ function step(s) {
       target.value += s.text;
       target.dispatchEvent(new InputEvent("input", { ...init, cancelable: false, inputType: "insertText", data: s.text }));
       return null;
+    // A caret or a range in a text control, as the user places one.
+    case "select":
+      if (typeof target.setSelectionRange !== "function") return "the element has no selection";
+      target.setSelectionRange(s.start, s.end ?? s.start);
+      return null;
+    // Editing at the selection, which neither DOM offers as one call: the
+    // selected text replaced by the step's, the caret after it, then an
+    // input (inputType insertText) as after a user's edit.
+    case "insert": {
+      if (typeof target.setSelectionRange !== "function" || target.selectionStart === null) return "the element has no selection";
+      const from = target.selectionStart;
+      const to = target.selectionEnd;
+      target.value = target.value.slice(0, from) + s.text + target.value.slice(to);
+      target.setSelectionRange(from + s.text.length, from + s.text.length);
+      target.dispatchEvent(new InputEvent("input", { ...init, cancelable: false, inputType: "insertText", data: s.text }));
+      return null;
+    }
     case "key": {
       const key = { ...init, key: s.key, code: s.code, ...s.modifiers };
       if (!target.dispatchEvent(new KeyboardEvent("keydown", key))) globalThis.__beniHarness.log.push("(keydown's default prevented)");
@@ -1557,6 +1578,9 @@ function serialise(also) {
       open += ` .value=${quote(node.value)}`;
       if (node.type === "checkbox" || node.type === "radio") open += ` .checked=${node.checked}`;
     }
+    if (globalThis.__beniHarness.selection && (tag === "input" || tag === "textarea") && typeof node.selectionStart === "number") {
+      open += ` .selection=${node.selectionStart}-${node.selectionEnd}`;
+    }
     if (node === active && node !== document.body) open += " :focus";
     open += ">";
     const template = tag === "template";
@@ -1661,9 +1685,10 @@ if (stepsPath !== undefined) {
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
-    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element"))) {
+    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element" && s.command !== "selection"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
+    if (line === "selection") return void steps.push({ line: written, where, command: "selection", selector: null, throws });
     if (["back", "forward", "location", "title", "file", "load", "stop"].includes(line)) {
       steps.push({ line: written, where, command: line, selector: null, throws });
       return;
@@ -1833,7 +1858,7 @@ if (stepsPath !== undefined) {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
     } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
-    } else if (command === "input" || command === "type" || command === "set") {
+    } else if (command === "input" || command === "type" || command === "set" || command === "insert") {
       try {
         s.text = JSON.parse(argument ?? "");
       } catch {
@@ -1841,6 +1866,11 @@ if (stepsPath !== undefined) {
       }
       if (typeof s.text !== "string") usage(`${where}: \`${command}\` takes a selector and a JSON string`);
       if (command === "type" && s.text === "") usage(`${where}: \`type\` takes at least one character`);
+    } else if (command === "select") {
+      const w = (argument ?? "").match(/^([0-9]+)(?:\s+([0-9]+))?$/);
+      if (w === null) usage(`${where}: a select step takes a selector and one or two offsets`);
+      s.start = Number(w[1]);
+      s.end = w[2] === undefined ? undefined : Number(w[2]);
     } else if (command === "key") {
       const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
       if (words.length === 0) usage(`${where}: \`key\` takes a selector, one key name and at most its modifiers and \`code:<code>\``);
@@ -2199,7 +2229,7 @@ async function runPage(entry, fiber) {
   // up: they run before the program loads, each a heading with nothing
   // under it.
   const setup = [];
-  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store" || script[0].command === "element") && !script[0].throws) setup.push(script.shift());
+  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store" || script[0].command === "element" || script[0].command === "selection") && !script[0].throws) setup.push(script.shift());
   let setupFault = null;
   for (const s of setup) {
     transcript.push(`-- ${s.line}`);

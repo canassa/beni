@@ -11721,6 +11721,20 @@ is now kept in two halves, each proportional to what changed.
   (one set per mount, `$$e` on the mount node), so a render reconciles only its own program's
   controls; the runtime's own marks (below) belong to the render that made them. Reconciling
   evaluates nothing.
+- **The caret survives a write** (*amended 2026-10-25, #642: the owner's decision*). A write of a
+  `value` that differs from the page's — the model's side, a reconcile, a transformed edit such as
+  an upper-cased one — moves a text control's caret to the end of the new text, because that is what
+  assigning `value` does. So every write of a control's `value` goes through one step: when the
+  control has a selection (`selectionStart` is a number: a `textarea`, and an `input` whose type
+  supports one — `text`, `search`, `url`, `tel`, `password`; for the others, such as `number`,
+  `email` and `date`, the property reads `null`, and the step does nothing, with no `try`) and is
+  `document.activeElement`, the runtime reads `selectionStart`, `selectionEnd` and
+  `selectionDirection` before the write and calls `setSelectionRange` after it with the same
+  offsets, each clamped to the new value's length. A transform that changes the length (a mask, a
+  separator) therefore keeps the clamped offset; mapping the caret exactly is a library's job, which
+  can set the selection itself. A control without the focus is not given a selection, and a write
+  the comparison skips (the value is the page's) neither writes nor touches the selection, so an
+  accepted edit is as it was. `browser/dom/ControlledCaret`, `browser/tea/ControlledCaret`.
 
 **Every way a control's property can change without the model**, what reveals it, and what the
 runtime does. The runtime listens, in the capture phase on the document, for `input`, `change`,
