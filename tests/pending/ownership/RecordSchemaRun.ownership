@@ -1,0 +1,15 @@
+module RecordSchemaRun
+  23:15 update rows[*]: accepted param (List.map writes it)
+  23:34 update r: accepted callback-param (List.map supplies it owned)
+  30:13 update rows[*]: accepted call (RecordSchemaRun.toggle writes it)
+  40:13 update <literal>[*]: accepted call (RecordSchemaRun.toggle writes it)
+  50:13 update rows[*]: accepted call (List.map writes it)
+  50:32 update r: accepted callback-param (List.map supplies it owned)
+  summary toggle: π1 R, π1[*] W{on}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary viaList: π1 R; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost}, fresh1r{lost}
+  summary viaOne: π1 R; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost}, fresh1r{lost}
+  summary fromJson: π1 R; res [*] ~condition(fresh2) ~fresh2 ~fresh501◦, fresh1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

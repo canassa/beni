@@ -1,0 +1,53 @@
+-- CK-271: #879's big-table, the rows a run of a schema built at run time
+-- answers (`ownership-checker.md` §30.10, §31.4 item 6). The rows that
+-- `Schema.read (Schema.list (RowJson.schema ⊤))` decodes are new records,
+-- one per position: the specialised read builds an object for each, and
+-- the schema's conversions answer nothing the program made. So `toggle`'s
+-- in-place write of each row should be accepted, as it is for
+-- `Json.decodeValue` (`fromJson`). Red: `schemaRunRow` answers `lost` for
+-- every run of `core/Schema` and is never refined at the call, so the write
+-- is refused `exclusive`. A run whose conversion answers one record the
+-- program made must stay refused (`build/bad/inline/RecordConversionAnswer`).
+-- The golden claims the verdict lines and the totals; its summary lines are
+-- master's, to be blessed again with the fix.
+import Json
+import Schema exposing (Value)
+
+
+schema RowJson =
+    id : Int
+    on : Bool
+
+
+toggle : List RowJson.Type → List RowJson.Type
+toggle rows = List.map rows λr → { r | on = not r.on }
+
+
+pub viaList : Value → List RowJson.Type
+viaList value =
+    case Schema.read (Schema.list (RowJson.schema ⊤)) value of
+        Ok rows →
+            toggle rows
+
+        Err _ →
+            []
+
+
+pub viaOne : Value → List RowJson.Type
+viaOne value =
+    case Schema.read (RowJson.schema ⊤) value of
+        Ok row →
+            toggle [ row ]
+
+        Err _ →
+            []
+
+
+pub fromJson : Value → List { id : Int, on : Bool }
+fromJson value =
+    case Json.decodeValue value of
+        Ok rows →
+            List.map rows λr → { r | on = not r.on }
+
+        Err _ →
+            []

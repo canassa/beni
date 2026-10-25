@@ -6345,3 +6345,15 @@ stay accepted.
 The same pull request fixed the general half of #474 (construction guards
 skipped an operand that stands above the stored path; `BesideTupleHelper`,
 `BesideRecordHelper`, `BesideLiteralHelper`, `BesideSpreadHelper`).
+
+## CK-271 — the rows a run of a schema built at run time answers are taken to share (2026-10-25)
+
+**Issue:** #879 (reactivity-research's big-table, `T14.serverRows`). **Fixture:**
+`tests/pending/ownership/RecordSchemaRun.beni`. `Schema.read (Schema.list (RowJson.schema ⊤))` and
+`Schema.read (RowJson.schema ⊤)` answer new records, one per position, as `Json.decodeValue` does. But
+`schemaRunRow` (§30.10) answers `fresh{lost}` for every run of `core/Schema` and is never refined at
+the call, so `toggle`'s in-place write of each decoded row is refused `exclusive`. The refinement
+`codecRunRow` makes — "the decoded slot holds nothing the program made" — must be read off the
+actual schema argument's slot at the call. Since #962 that slot carries the records a conversion
+answers (`build/bad/inline/RecordConversionAnswer` stays refused). It is left to the checker's
+rewrite: the owner froze `src/own/` on 2026-10-25, and this is an acceptance test for the rewrite.
