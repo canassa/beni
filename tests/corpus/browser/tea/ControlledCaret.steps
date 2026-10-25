@@ -1,0 +1,15 @@
+selection
+focus #up
+select #up 3
+insert #up "x"
+# The second character goes after the first, not at the end.
+insert #up "y"
+focus #same
+select #same 3
+insert #same "x"
+focus #cap
+select #cap 2
+insert #cap "x"
+# Past the end of the shorter value, the offset is clamped.
+select #cap 4
+insert #cap "yz"

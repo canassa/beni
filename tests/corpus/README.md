@@ -372,6 +372,18 @@ project) against it, one step per line, `#` for a comment:
                                 inputs*)
     type <selector> "<text>"    per character, in a task of its own: append
                                 it to the live `.value`, then `input`
+    select <selector> <start> [<end>]
+                                `setSelectionRange`: place the caret, or a
+                                range, in a text control
+    insert <selector> "<text>"  edit at the selection: the selected text
+                                replaced by `text`, the caret after it,
+                                then an `input` (`insertText`). Neither DOM
+                                has a call for it (happy-dom has no
+                                `execCommand`), so the driver does the edit
+                                itself in both, and the two agree
+    selection                   a setup step (before the program loads),
+                                after which every text control in the
+                                transcript carries `.selection=<start>-<end>`
     key <selector> <key> [<modifier>…] [code:<code>]
                                 `keydown` and `keyup` with that `key`, each
                                 modifier (`ctrl`, `shift`, `alt`, `meta`,
