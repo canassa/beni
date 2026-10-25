@@ -8,5 +8,8 @@
 -- R-5.8.10: the `ChangedUrl` address is a new record at every event and
 -- `update` does not keep it, so `msg#ChangedUrl.0` is accepted `entry`. v1
 -- refuses it `escaped` (approx).
--- The golden is `ownership/Conduit`'s with those five lines and the counts
--- changed; the four `status` `disjoint` lines (#410, R-4.8.15) stay as v1.
+-- R-4.8.15 (#410, CK-292): the form `update` moves between the variants of
+-- `model#Editor.1.status` is not a second holder, so its four lines are
+-- accepted `entry`. v1 refuses them `disjoint`.
+-- The golden is `ownership/Conduit`'s with those nine lines and the counts
+-- changed.

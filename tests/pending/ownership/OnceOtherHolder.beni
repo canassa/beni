@@ -5,10 +5,10 @@
 -- one record, a closure in a record field, and a closure destructured out
 -- of a captured tuple. Red: v1 decides the capture write from the closure's
 -- creation and its one call without checking the closure's body against
--- the other holders, and accepts all five `once`. Required: `alias` where
--- another binding holds the list, `captured` where a closure does (R-4.3.1,
--- R-5.4.1). The golden claims the verdict lines and the totals; its summary
--- lines are master's.
+-- the other holders, and accepts all five `once`. Required: `alias`, as the
+-- R-8.2 row says (`later-use` or `alias`), also where a closure holds the
+-- list (R-5.4.1 would say `captured`; the row is followed). The golden
+-- claims the verdict lines and the totals; its summary lines are master's.
 pub aliased : List Int → List Int × Int
 aliased xs =
     ys = xs
