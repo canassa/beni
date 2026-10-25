@@ -802,9 +802,18 @@ Not writes (they read their operands):
 - R-5.12.2 `Log.annotate`, `span`, `minimum`, `withSink` call `work` once: `update _ model = Log.annotate "k" "v"
   λ⊤ → ( { model | n = model.n + 1 }, Cmd.none )` is accepted. [G #996] Summaries through `Task.keepLogContext`
   are as precise as the bare body's (no verdict changes today) [G #774].
-- R-5.12.3 `Ref.update` hands its callback the value borrowed, so editing it in place is refused; a `Ref.get`
-  snapshot is a holder. [O 2026-10-16, #219] (cbi/RefUpdateShared, cbi/RefConstructShared) Editing a `Ref`'s
-  collection in place is undecided (#981); the design must be able to express it. [O 2026-10-25]
+- R-5.12.3 **A `Ref` owns its contents.** [O 2026-10-25, #981; supersedes #219's borrowed callback] (R-8.2)
+  - `Ref.get r` returns a *loan*, not an independent value. A loan is a holder: it may be read, passed to callees
+    that only read it, and used to build new values (`List.filter`, `List.map`).
+  - A loan alive across a point where the fiber may suspend (as the effect checker infers it), or a loan that
+    escapes (stored, captured, sent, given to JavaScript, returned out of its scope), is refused; the fix named is
+    `List.copy (Ref.get r)`, `Dict.copy` or `Record.copy`.
+  - `Ref.update` and `Ref.modify` edit the contents in place when no loan of that cell is alive (across fibers this
+    follows from the suspension rule; within one fiber it is ordinary liveness).
+  - A `Ref` operation inside another `Ref` operation's callback, while that callback holds the moved-out contents,
+    is refused at compile time for any `Ref` not proven to be another cell; never a run-time trap.
+  - `Ref` and `Deferred` words (R-5.10.12) follow this model. (cbi/RefUpdateShared, cbi/RefConstructShared change
+    accordingly)
 - R-5.12.4 `Js.ref` contents are unknown, so a collection kept in a `Js.ref` is not edited in place; platform code
   uses a fold. [decided 2026-10-25, #969]
 - R-5.12.5 `Js.maySuspend f` neither uses `f` nor loses sight of it. (oc §23.3)
@@ -1052,6 +1061,11 @@ Not writes (they read their operands):
   | R-5.11.6 #228 | a schema field with a list `default`, decoded twice, the first answer's default pushed while the second is read | accept |
   | R-5.5.6 | `writer = List.push`, `ys = writer xs 1` with `xs` read later; a nine-hop alias chain | no *pending*; `later-use` at the call, as for `List.push` |
   | R-5.10.12 | `Task.callback` whose `Resume` is handed a list read after; a read-only call of each worded `Ref`/`Deferred`/`Task`/schema function, then a push | `later-use`; accept |
+  | R-5.12.3 | `examples/chat/server` with `Ref.update room.members λmembers → [ …members, x ]` (no `List.copy`) and `tellEach (List.filter (Ref.get room.members) …) event` | both accepted; the join edits in place |
+  | R-5.12.3 | iterating `Ref.get room.members` directly while sending to each member | refused (loan alive across a suspension), fix `List.copy (Ref.get room.members)` |
+  | R-5.12.3 | `Ref.get r` stored in a model | refused (the loan escapes) |
+  | R-5.12.3 | `Ref.update r λxs → …` whose callback calls `Ref.get r` (or any `Ref` operation on a cell not proven distinct) before it returns | refused at compile time |
+  | R-5.12.3 | check/good/RefUpdateImpure (callback touches no `Ref`) | stays accepted |
   | R-4.8.7 | `shift 3 origin`, then `(shift 3 origin).x` | first call refused `later-use` (`record_still_used`), fix `shift 3 (Record.copy origin)` |
   | R-4.8.12 #394 | #394's `caseAlias` and `tupleDestr` | accept, `[hoisted 1]` |
   | R-4.8.13 #414 | a caller updating a record after a callee whose callback keeps one list field of it | accept; no list line moves |
