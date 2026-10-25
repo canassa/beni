@@ -135,7 +135,7 @@ inner dictionary) is another variable and another place (R-4.7.3).
 **Identity.** Within a module a place graph is interned by `(kind, head, children place ids)` where the head is the
 session `TypeId` of a nominal or foreign type, the field names (by text) of a record, the arity of a tuple. §36's
 type keys are *not* used: they exist only for closed, non-wild types of application modules
-(`check/TypeKeys.zig:20-28`, `682-688`; `check/Module.zig:410`), so neither core nor `Schema` nor a polymorphic
+(`check/TypeKeys.zig:20-28`, `682-688`; `check/Module.zig:432`), so neither core nor `Schema` nor a polymorphic
 type has one. Across modules and the cache a place is named **structurally**: a block (§3.6) writes a place as
 `(kind, head name as package·module·type, children)` and the reader re-interns it onto its own graph, which is
 the same graph because both were built from the same definition. A cast (§2.13.9) compares places by this
@@ -181,7 +181,8 @@ many (positions, levels, the results of a callback called many times, `⊤`). `s
 `shared`; for a summary it is the atom `distinct c`: for `cb j` *the callback returns owned at every call* (the
 `owned cb_j` atom, discharged at the call by the actual's class: every result provenance `fresh`, an owned
 supply, or `cb j` itself, none at two result paths); for `elem`/`[*]` arrivals `excl` of the container; for `⟲`
-levels `excl` of the value; for `⊤` `lost`. This is what makes `mapHelp`'s `put b i (func …)` store `cb₅`
+levels `excl` of the value; for a `result ι·k` inside a feedback loop `yes` (each iteration's call allocates
+afresh); for `⊤` `lost`. This is what makes `mapHelp`'s `put b i (func …)` store `cb₅`
 exclusively when `func` returns owned (P1 of the second review; R-5.2.9, R-4.10.7).
 
 **May-alias.** `alias(a, b)` ∈ {no, yes, under split ι}: `base(a) ~ base(b)`, where symbolic cells are `~` when
@@ -257,7 +258,7 @@ A frame is a declaration body or a lambda body (oc §7.3):
   taken at an arm's start. In-scope bindings at a point = the log segments of its enclosing regions (§2.5).
 - `Esc`: the monotone set of `(cell, point)` escapes (thesis §3.4). **Escape is deep and directional**: escaping a
   node marks every cell in `reach(n)` (once per node, memoised); a cell is *escaped at p* when it or any trie
-  ancestor of it (a symbolic prefix; a refinement's parent; the cell whose node holds it as a child) escaped at a
+  ancestor of it (a symbolic prefix or a refinement's parent; concrete containment needs no link because escaping a node marks its `reach` eagerly) escaped at a
   compatible point before `p`. A *deep* demand (send, `consumed`, focus) is also blocked by an escaped descendant;
   a storage write is not (a callback keeping a list stored inside the accumulator does not refuse writes to the
   accumulator, R-5.2.5 #749). O8.
@@ -318,7 +319,7 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 
 | Query | Lists | Answer |
 |---|---|---|
-| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use whose node `U` is non-empty at the remainder counts the same |
+| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`; a `call` use non-empty only at untouched fields is no use |
 | a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**; kind `call`/`whole` → a whole use, refused |
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
@@ -332,8 +333,11 @@ A **demand** is `(point, kind, base NodeId, F, operands, pending, deep?)`; kinds
 `callsite` (R-2.6), `send` (R-2.9, deep), `once` (R-2.8), `entry` (R-2.10), `consumed` (R-2.11, deep), `focus`
 (R-2.12).
 
-**Resolution** (`Demands.zig`), after the frame's index exists, in evaluation order, for each `c ∈ cellsAt(base, ε)`
-(approximate `⊤`-like pairs whose kind may be the base's included), in cause-precedence order (R-4.3.6):
+**Resolution** (`Demands.zig`), after the frame's index exists, in evaluation order, for each `c` in the demand's
+**cell set** — `cellsAt(base, ε)` for a shallow demand; for a *deep* one (send, `consumed`, focus) `reach(base)`
+together with the trie descendants of its symbolic cells, so a concrete container's contents (`inner` inside
+`ys = [ inner ]`) and a parameter's fields (`param π₂·.a` under `param π₂·ε`) are both demanded — approximate
+`⊤`-like pairs whose kind may be the base's included, in cause-precedence order (R-4.3.6):
 
 1. **Known**: `c ≠ ⊤`; not a `loan` where a loan may not be written.
 2. **Unescaped**: `c` not escaped at `p` per §2.4 (ancestors; for a deep demand descendants too); not `shared`
@@ -351,7 +355,7 @@ last use, so a holder dead for good costs nothing) and whose `reach(node)` conta
 its trie ancestors (O(path) lookups), and for a *deep* demand its trie descendants (the subtree under `c`, each a
 lookup). Then, for each such holder, the paths at which it holds the cell (a pruned walk of the node guided by
 `reach`), and §2.7's queries. Cost per demand O((|live scope| · (path + descendants)) · log + holders found ·
-query). `o/BridgeResultPaths`'s `ys = r.a` then `send (Got r)` is found: `send` is deep, `param π₂·.a` is a trie
+query). The second review's `ys = r.a` then `send (Got r)` is found: `send` is deep, `param π₂·.a` is a trie
 descendant of `param π₂·ε`, `ys` holds it and is used after → refused (R-5.9.1).
 
 **Verdicts** (R-0.3): `accepted` {`fresh`, `call`, `param`, `callback-param`, `once`, `entry`}; `pending detail`
@@ -428,7 +432,7 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 **Lattice.** Pointwise: bits by inclusion; provenance shapes by `leq` (the lower order, `fresh k ⊑ esc k ⊑ ⊤`,
 thesis §4.6) **after widening** (§2.3), so a shape ranges over at most one node per canonical path and the
 lattice is finite; `owned ⊑ borrowed`; `calls 0 ⊑ ≤1 ⊑ many`; κ: `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost`, `shared`
-beside `lost` and winning as a cause; classes pointwise; `limit` above all.
+beside `lost` and winning as a cause; classes pointwise, a class identified by its closure node's canonical position in the shape; `limit` above all.
 
 **Read-off** (oc §16.3): `W` at `(i, q)` when a demand's base cells include `param πᵢ·q` (verdict irrelevant); `E`
 from Esc; `A` from `res`; `R` from uses; `res = widen(map(A(body), f))` with `f`: `site`/`result` → `fresh k`/`esc k`,
@@ -467,8 +471,12 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
 **Calling a function parameter** πⱼ in the body (the rule v1 lacked where #982, #1000, #1001 lived): the result is
 the leaf `{cb j·ε}`; each argument's node `Nₖ` is recorded as a supply `(j, k, Nₖ, p)`, its cells used at `ε`.
 **Keep edges**: after the walk, for every supply `(j, k, N, p)` and every later compatible demand in the frame with
-`W` (own or `callsite`) whose base cells alias — by prefix in either direction, through `reach(N)` and the trie —
-any cell in `N`, record `keep(j, k, path of the cell in N, written path)`; `supply(k).owned` is decided by Dead at
+`W` (own or `callsite`) whose base cells alias a cell in `N` — the written cell equal to or a trie descendant of a
+cell in `reach(N)` (the keeper may hold the parent or the part), or a trie *ancestor* of one only when the next
+step of the kept path is a written field (`b = f o.inner; { o | y = 3 }` writes `o` at `y`, off the kept path
+`.inner`, and records no edge: a keeper of one field with a write of another is accepted, R-4.8.13, R-5.2.4); a
+list storage write never counts against the elements it holds — record `keep(j, k, path of the cell in N, written
+path)`; `supply(k).owned` is decided by Dead at
 `p` as for any demand. At the caller: an actual whose class may hold its `k`th parameter at a path aliasing the
 kept path in its result (`res` names `π_k·q` with `q` overlapping, or `cb`, or `⊤`) is refused `supply (a)` at the
 function value supplied (R-4.8.11, `p/RecordKeptInLiteral`: `f [ r ]` supplies a fresh list whose `[*]` holds `r`,
@@ -490,7 +498,7 @@ Two instance shapes, one driver (`Fix.zig`), both over finite lattices with no r
 
 | Instance | Unknown | Shape | Step |
 |---|---|---|---|
-| a recursive group of declarations (R-5.6.1) or a block's local functions (oc §18.7) | each member's class | **worklist over frames**: members in the SCC's reverse postorder, each re-walked only when a class it reads changed (chaotic iteration, Lean 263-326; Roc's queue), reading the latest assumptions | `xᵢ₊₁ = widen(xᵢ ⊔ F(xᵢ))` per member |
+| a recursive group of declarations (R-5.6.1) or a block's local functions (oc §18.7) | each member's class | **worklist over frames, cells by propagation**: a walk of a member records, beside its shape, the inclusion edges a recursive call makes (argument node → callee parameter path, callee result path → call result); the cells then flow along the whole group's edges by the sparse propagation below, so growing cell sets never cause a re-walk. A member is re-walked, in the SCC's reverse postorder reading the latest assumptions (Lean 263-326; Roc's queue), only when a callee's *structural* facts changed: a `use` bit, `calls`, `need`, `seen`, κ's atoms, a class's shape | `xᵢ₊₁ = widen(xᵢ ⊔ F(xᵢ))` per member; cells by propagation |
 | a callback fed its own result (R-5.3.2, `Dict.merge`'s cycle R-5.3.6) and the entry's model (§2.13.4) | the `cb`/`M` node and its κ | **sparse propagation over per-path inclusion edges** (Morphic I:114-171): the step's `res` is read once as edges `source path ⊆ target path` (a `delta` over π₂ gives one edge per override; `π₂.f_{k-1} ⊆ π₂.f_k` for the rotate family); the edges' graph is condensed into SCCs and the cells are pushed along it in topological order with persistent sets, so each cell crosses each edge once and a set that grows by one shares the rest | push the difference, never re-instantiate the whole |
 
 Termination: finite lattices (cells bounded by canonical paths × sites; shapes widened to one node per canonical
@@ -501,10 +509,11 @@ one level per step without widening; with it, `res` is the cyclic `Node(self, {f
 two steps. Polymorphic recursion (R-5.6.2) adds nothing: a call at another type grafts through `proj`/`recast`.
 
 **The BIR pre-pass** (`Prepass.zig`, L3, reads the BIR, the dispatch table and the graph): SCC edges = `refs` ∪
-the callees `Dispatch` resolves for `method_call` (BIR adds no `refs` edge for them, `Bir.zig:307-314`) ∪ derived
+the callees `Dispatch` resolves for `method_call` (BIR adds no `refs` edge for them, `Bir.zig:329-330`) ∪ derived
 `eq`/`compare`; alias chains of function values (R-5.5.6); read counts of private parameterless values (R-4.9.3);
 which declarations are a type's `eq`/`compare`; the spread chains `Lower` recorded (§2.13.2); the
-`withDefault (map m f) d` shapes (§2.13.12).
+`withDefault (map m f) d` shapes (§2.13.12), recognised through the `WellKnown` symbols `Lower` itself uses — the
+one allowlisted name comparison of the fence in §5.
 
 ### 2.13 Reductions: every surface construct to the core
 
@@ -518,8 +527,9 @@ which declarations are a type's `eq`/`compare`; the spread chains `Lower` record
    checker and the emitter read. `Transfer` evaluates the chain as one instruction at its root: `[ x₁…xₖ, …xs ]`
    (one spread, last) is a **prepend**: cells `{site ι}` ∪ `cellsAt(xs, ε)` approximate (re-cons may answer the
    base, R-4.4.2), `[*] ↦ join(x₁…xₖ, proj(xs, [*]))`, κ `lost` — **except** when every front item is a `List` whose
-   `ε` cells are a non-empty set of `site`/`result` cells not escaped and not in `reach(xs)`, or a fresh record or
-   constructor (a `site` at `ε`): then `{site ι}` alone (R-4.4.3, `p/PrependFreshRecord`); a scalar, parameter,
+   `ε` cells are a non-empty set of `site`/`result` cells not escaped and not in `reach(xs)`, or whose *instruction*
+   is a record literal, a constructor application or a tuple (fresh objects by construction, whatever their cells —
+   a tuple's and constructor's cells are `∅`): then `{site ι}` alone (R-4.4.3, `p/PrependFreshRecord`); a scalar, parameter,
    capture, taken element, top-level value or callback result keeps the base's cells (`call (a)`). Anything after
    the first spread is a `construction` demand with base = the first spread's operand, each stored item lowering κ,
    a spread literal inside another's last spread its own write. `[ …xs ]` is `xs`; a literal is a fresh `site`
@@ -564,12 +574,15 @@ which declarations are a type's `eq`/`compare`; the spread chains `Lower` record
    value, `put`'s); `taken`, on a function parameter (the supply is a materialised element of the first container
    argument: `List.focus`, `Dict.focus`, `Dict.update`) **and on a result** (`foreign pure traverseAt : List a, Int →
    taken a`: the result is a materialised element of parameter 1, in force for the rest of the frame); result
-   `lent` (a loan of parameter 1's `◆`: `Ref.get`). A `taken` element is owned iff the container is exclusive, owned
-   and dead outside the call, and an owned item does not make an accumulator outliving the call owned (R-5.3.4).
+   `lent` (a loan of parameter 1's `◆`: `Ref.get`). A `taken` element is owned iff the container is exclusive, owned, and
+   has no holder of the *element* outside the call — a holder of the container holds `others`, not the taken
+   element, while the split is in force (§2.2), so `mapHelp`'s pending `a` does not borrow it; and an owned item
+   does not make an accumulator outliving the call owned (R-5.3.4).
    **The index obligation**: a body that calls a `taken`-result primitive reads the container only through it, once
    per index, moving one way (`core/List.beni:502-509`); every such body (`mapHelp`, `foldlFrom`, …) is listed with
    a body hash in `o/word-bodies.txt` and a gate fails when one is added unlisted or changes — R-5.10.7's mechanism
-   extended to the callers of a `taken` result, not a new trusted surface. Derived `eq`/`compare` have no body and
+   extended to the callers of a `taken` result; these pinned bodies *are* part of the trusted surface, and R-3.6 and
+   R-5.10.7 are to be amended to name them and P-sync (§2.13.7) — a requirements change, listed in §9. Derived `eq`/`compare` have no body and
    get a synthesised read-only class. Every worded declaration keeps its pinning fixture and flip report; a wordless
    `foreign` lets every argument escape and answers `⊤` unless crossing (R-5.10.1); words are erased by lowering
    (R-5.10.5); `misplaced_ownership_word` gains the new words' placement rules (`taken` only on a function parameter
@@ -631,9 +644,10 @@ which declarations are a type's `eq`/`compare`; the spread chains `Lower` record
 15. **Index exchange** (R-4.8.17, #869, `p/RecordIndexExchange`): a callback of `List.indexedMap` (its index
     supplied as a scalar) keeps the source's κ when it is an **exact permutation**: every arm either returns the
     element parameter, or is reached only under the guard `i == eₖ` (the arm's region guard, §2.5; `eₖ` a local
-    not rebound in the callback) and returns `rowₖ` bound outside the callback as `List.get xs e'ₖ` (or a pattern)
-    from the *same* exclusive source, and the guard locals `{eₖ}` and the take locals `{e'ₖ}` are the same set of
-    locals (so every taken row's own position is overwritten: the swap `i == a → rowB; i == b → rowA` with `rowA =
+    not rebound in the callback or an integer literal) and returns `rowₖ` bound outside the callback as `List.get xs
+    e'ₖ`, a pattern, or `List.drop xs e'ₖ ▷ List.head` (a view of the same source then its head) from the *same*
+    exclusive source, and the guard indices `{eₖ}` and the take indices `{e'ₖ}` are the same set (locals by
+    identity, literals by value) (so every taken row's own position is overwritten: the swap `i == a → rowB; i == b → rowA` with `rowA =
     get a`, `rowB = get b`). A take whose index is not a guard (`dup`'s `i == a → rowB`) puts one row at two
     positions and is refused `exclusive`, as is one cell in two arms or an unguarded arm. `swapAt` and `List.drop`
     over an exclusive source keep κ as a storage permutation and a view (R-4.10.11, §2.13.3).
@@ -700,7 +714,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's deep condition holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
 | O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals and summary cells (`distinct cb_j` ⇔ returns owned); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.11, §2.13.15 |
-| O15 | *Join lowers κ:* κ(join) is below every member's κ (`and{A} ⊔ and{B} = and{A ∪ B}`), and a union's κ is the join of its members' | §2.3, §2.10 |
+| O15 | *Join lowers κ:* κ(join) is below every member's κ (`and{A} ⊔ and{B} = and{A ∪ B}`), and a union's κ is the join of its members'; computed by `Cond.lower` where `Transfer` and `Summary` join, since `Shape.join` knows no κ | §2.3, §2.9, §2.10 |
 
 The Lean oracle stays advisory (R-8.11).
 
@@ -842,10 +856,10 @@ in the worker that checked `m`, after its type check and before `Incremental.pub
 the block into `d.interfaces[m].ownership`, and `Incremental.zig:300` hands importers their blocks from the
 interfaces. v2 keeps this hook unchanged (`Enforce.zig` is ported), so the firewall (R-5.7.3), the interface hash
 (R-5.7.2) and R-7.8 (a module's pass runs in its own worker, no new wait) hold as today. The serial
-`Enforce.run` of `Session.zig:2264` is the `dump` path.
+`Enforce.run` of `Session.zig:2255-2270` is the serial `dump` path.
 
 Outputs (R-1.8): diagnostics (§6); the report (R-7.15); the block; the lowering channel (`Hoists.zig`, format v2:
-`Step` gains a constructor-argument kind for pattern reads through a wrapper, R-4.8.12; list writes added at O5):
+`Step` gains a constructor-argument kind for pattern reads through a wrapper, R-4.8.12; list writes added at the plan item O5 of oc §30.7, not obligation O5):
 per accepted write its instruction and fields; per hoisted read the holder, chain, written-field prefix, placement
 (the demand's instruction, phase 0/1, or for a read after a join the first instruction of the innermost region
 containing write and read; always after the holder's binding and before the first write the read's version does
@@ -885,8 +899,8 @@ per demand, U uses, C cells.
 | conditions | O(1) per `and`; a flatten once per distinct condition; `apart` O(n log n) per construction | hash-consed conjunctions |
 | join | O(k + Σ\|Oᵢ\|) for k arms; a projection through a union O(groups) once per (union, step) | §2.3 |
 | `widen`, `leq`, `eq` | O(\|n\|) / O(\|n\| + \|m\|) when shapes agree, O(\|n\|·\|m\|) pairs at most, memoised | coinductive, per pair |
-| group / local fixpoint | walks ≤ members × changes along the cycle; a k-cycle passing one fact: O(k) walks | worklist, latest assumptions |
-| feedback / entry fixpoint | O(E + F) where E = per-path inclusion edges of `res(update)` (one per override), F = facts moved (each cell crosses each edge once); the representation is O(E + distinct sets) by sharing | sparse propagation over the condensed graph |
+| group / local fixpoint | re-walks ≤ members × the height of the *structural* lattice (bits 4 per named path, `calls` 2, `need` 1, `seen` 1, κ's atom set, class structure), never the cell lattice: cells flow along the edges a walk records, by propagation | §2.12: a walk yields a shape and an edge graph; cells propagate; a member is re-walked only when a callee's structural facts change |
+| feedback / entry fixpoint | O(E · log C): E per-path inclusion edges (one per override of `res(update)`, one per argument of a recursive call), one persistent union per edge in topological order sharing the larger operand, so a chain whose sets nest costs O(E log C) however many facts they denote | sparse propagation over the condensed graph |
 | block write/read | O(\|S\|) per summary, read lazily | §3.6 |
 
 **Linear in the program.** Every table is sized by what the program writes: nodes by instructions and callee
@@ -894,9 +908,12 @@ summaries, places by types, cells by canonical paths the program named × sites,
 overrides. A value's size never appears: a DAG node stands for every path reaching it, a `union` for a join not yet
 asked for, a persistent set for a set that grew by one. The one honest superlinear family is a fixpoint whose
 *facts* are quadratic — the rotate `update` (`S_k → { model | f_k = model.f_{k−1} }`) makes `f_N` hold N
-provenances, Θ(N²) facts — which sparse propagation represents in O(N) shared sets and moves in O(E + F) = O(N²)
-set operations only because the facts exist; `WideModel`, `WideModelArms`, `EntryRelay` and Conduit have
-independent arms and are O(N). §7.6 pins both families.
+provenances, Θ(N²) facts — which sparse propagation represents in O(N) shared sets (each `f_k`'s set is
+`f_{k−1}`'s plus one) and computes in O(N log N): one union per edge, the union sharing the larger operand, so
+the facts are never enumerated and §7.6's ≤ ×5 bar from N = 64 to 256 holds. A recursive function rotating N
+parameters (`f a b … = f b … a`) is the same family inside a group: its walk records N argument→parameter edges
+once and the cells flow along them, with no re-walk, since nothing structural changes. `WideModel`,
+`WideModelArms`, `EntryRelay` and Conduit have independent arms and are O(N). §7.6 pins all three families.
 
 ### 4.2 The six places v1 went superlinear
 
@@ -945,15 +962,16 @@ import each other; upward needs go through interface structs passed down (`Class
 `Fix.Instance{ctx, step, join, leq}` for the driver, `Obligation.entry` records for `Entry`).
 
 ```
-L12 Enforce
-L11 Ownership
-L10 Report  Message  Hoists  Block
-L9  Groups  Entry
-L8  Walk
-L7  Transfer  Fix
-L6  Calls  Demands
-L5  Liveness  Rows
-L4  Regions  Cond  Summary
+L13 Enforce
+L12 Ownership
+L11 Report  Message  Hoists  Block
+L10 Groups  Entry
+L9  Walk
+L8  Transfer  Fix
+L7  Calls
+L6  Rows  Demands
+L5  Summary  Liveness
+L4  Regions  Cond
 L3  Prepass  Shape
 L2  Cell  Facts
 L1  Place
@@ -971,22 +989,22 @@ L0  Ids
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility, guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rangesAfter`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | κ column, atoms, `apart`, `sep`, deep conditions, instantiation, rely | `yes/lost/shared`, `and`, `atom`, `kappa`, `deep`, `sep`, `lower`, `instantiate`, `rely`, `flat` | Ids, Cell, Shape | ≤ 1 000 |
-| `Summary.zig` | 4 | the class record and table, lattice, normal form, equality, pessimistic, text | `Class`, `join`, `leq`, `eq`, `normalize`, `pessimistic`, `print` | Ids, Place, Cell, Shape | ≤ 1 200 |
+| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, pessimistic, text | `Class`, `join`, `leq`, `eq`, `normalize`, `pessimistic`, `print` | Ids, Place, Cell, Shape, Cond | ≤ 1 200 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Regions, Shape | ≤ 700 |
-| `Rows.zig` | 5 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
-| `Calls.zig` | 6 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
+| `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
+| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, holders, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness | ≤ 1 200 |
-| `Transfer.zig` | 7 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
-| `Fix.zig` | 7 | the two fixpoint shapes and validation | `worklist(Instance)`, `propagate(Edges)` | Ids, Cell, Shape, Summary | ≤ 500 |
-| `Walk.zig` | 8 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Transfer, Demands, Fix, Liveness, Calls, Summary, Facts | ≤ 1 500 |
-| `Groups.zig` | 9 | the module: pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Walk, Fix, Prepass, Summary, Facts | ≤ 900 |
-| `Entry.zig` | 9 | the entry protocol at a constructor call | `check(Obligation.entry)` | Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Block.zig` | 10 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Summary, Place, Cell, Shape, Cond | ≤ 1 000 |
-| `Hoists.zig` | 10 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
-| `Message.zig` | 10 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
-| `Report.zig` | 10 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 11 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, Hoists, Message, Report | ≤ 300 |
-| `Enforce.zig` | 12 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block | ≤ 450 |
+| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
+| `Fix.zig` | 8 | the two fixpoint shapes and validation | `worklist(Instance)`, `propagate(Edges)` | Ids, Cell, Shape, Cond, Summary | ≤ 500 |
+| `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Transfer, Demands, Fix, Liveness, Calls, Summary, Facts | ≤ 1 500 |
+| `Groups.zig` | 10 | the module: pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Walk, Fix, Prepass, Summary, Facts | ≤ 900 |
+| `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
+| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Summary, Place, Cell, Shape, Cond | ≤ 1 000 |
+| `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
+| `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
+| `Ownership.zig` | 12 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, Hoists, Message, Report | ≤ 300 |
+| `Enforce.zig` | 13 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 Every edge in the *Imports* column points to a strictly lower layer (checked by hand against the layer numbers
@@ -1028,21 +1046,21 @@ are identical and nothing is written (R-7.11).
 
 1. **Corpus and pending fixtures** (R-8.1, R-8.2). `tests/corpus/ownership/`, every `build/bad/` and `check/bad/`
    fixture with a §6 code, `run/` and `browser/` unchanged; goldens compared on verdict and count lines (R-7.15).
-   `tests/pending/ownership/` — the 46 fixtures of PR #1008 (CK-262 to CK-311) — is v2's acceptance; Appendix B
+   `tests/pending/ownership/` — the 45 fixtures of PR #1008 (CK-262 to CK-311) — is v2's acceptance; Appendix B
    maps each to its slice; each moves to the corpus as it turns green.
 2. **Whole-corpus verdict diff against frozen v1** (R-8.3). `bench/ownership-everywhere.mjs --diff=<v1>,<v2>`: every
    root of oc §30.7 O1 (1 505 roots) dumped under both (`--ownership=v1|v2`, hidden), verdict lines compared per
    `(module, line:col)`: same / v2 accepts where v1 refused (each cited to a requirement or pinned as a v1 defect) /
    v2 refuses where v1 accepted (a stop condition unless the requirement says v1 was unsound). Zero unjustified
    differences is a switch-over criterion.
-3. **The stale-read sanitiser, the arbiter** (R-8.5). `--sanitize-records` exists (`Cli.zig:345`, `js/Lower.zig:338`,
+3. **The stale-read sanitiser, the arbiter** (R-8.5). `--sanitize-records` exists (`Cli.zig:345`, `js/Lower.zig:340`,
    `6379`): an accepted record write **copies** the object and makes each written field of the old object a read
    that throws, so a holder older than the write traps where it reads — copy-and-poison, which needs no stamps on
    edges and no boxing. S0 extends the same mechanism to lists: an accepted list write copies and poisons the old
    array (its indices and `length` become throwing accessors; a view's base likewise), `Dict` storage likewise; the
    hoisted reads run before the write as today. Under runtime safety the lowering asserts every in-place store is
    an accepted write of a clean module (R-8.9). `zig build test-records-in-place` (new: every `run/` and `browser/`
-   program plain, sanitised and `--release` against its golden; `BENI_IN_PLACE=all`) and its list twin at O5. A trap
+   program plain, sanitised and `--release` against its golden; `BENI_IN_PLACE=all`; the step exists at `build.zig:775` for `run_dev` only and is extended) and its list twin at oc §30.7's O5. A trap
    on an accepted program is a soundness defect regardless of any checker.
 4. **Differential fuzzing.** The Lean bridge's generator (`proofs/ownership/BRIDGE.md`, recorded seeds) extended to
    records, `Dict`, patterns and callbacks: each program checked by v1 and v2, run under the sanitiser where both
@@ -1076,13 +1094,13 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S1 | **L0–L2** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 6 |
 | S2 | **L3–L4** | `Cond` (κ column, per-path), `Summary` (classes table, lattice, normal form, print), `Liveness` (by path, lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 5 |
 | S2b | **Words, the spread fact, core in-process** | the four words through lexer/parser/lowering with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; the nominal `Send` type and `Send.to` in the browser platforms (every `send m` → `send.to m`); `core/List.beni`, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16 | `zig build gates` green under v1 (words erased, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed | S2 | — | 5 |
-| S3a | **Lists in one declaration** | `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade under `dump --ownership=v2` | list lines of: Accumulator's non-fold lines, LaterRead, StoredTwice, Disjoint (not `capture`), Spreads, SelfSpreads, Prepend (not its `map`), PrependFresh, Split, ViewAliases, Binders, Toplevel, Nest, PathCut, ParamHole, OneListTwoLevels, DeeperLevel, MarkerAcross; `p/PrependFreshRecord`, `p/PatternStoredBack`, `p/CopyApart`, `p/DeepTupleDag`, `p/AppliedLambdaRecursion` (R-7.12) | S2b | — | 6 |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), `Groups` with the worklist `Fix`, levels, initialization transfer, `eq`/`compare`'s `writes` | ReturnsFresh, ReturnsArg, CallerSide, Recursion, RecursiveFunctions, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, FoldLevels' non-callback lines, Initialization*, AliasWriter; `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`; the R-5.13.1 fixture; R-7.6 #428 | S3a | — | 6 |
-| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, returns-owned, the sparse feedback fixpoint, function values and pending, once closures, local groups, `withDefault`, carried classes | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/OnceLaterArgument`, `p/ReturnedLambdaWrite`, `p/JoinedFunctionValue`, `p/RecordWriteBeforeKeep`'s list half | S3b | — | 8 |
-| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, `Record.copy`, once closures over records, field captures | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenance{CallbackResult,TopLevelOk}`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/SchemaIssuesExclusive`; R-4.8.7's fixture | S4 | — | 7 |
+| S3a | **Lists in one declaration** | `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade under `dump --ownership=v2` | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Binders, Nest, PathCut, ParamHole, OneListTwoLevels, DeeperLevel, MarkerAcross; `p/DeepTupleDag`. Fixtures with a callback, closure or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel) | S2b | — | 6 |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), `Groups` with the worklist `Fix`, levels, initialization transfer, `eq`/`compare`'s `writes` | ReturnsFresh, ReturnsArg, CallerSide, Recursion, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter; `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; R-7.6 #428. RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 6 |
+| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, returns-owned, the sparse feedback fixpoint, function values and pending, once closures, local groups, `withDefault`, carried classes | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 8 |
+| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, `Record.copy`, once closures over records, field captures | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 7 |
 | S6 | **Modules, blocks, cache, core** | `Block` v1 with structural places and class tables, the interface section through the existing hook, lazy reads, firewall test, core and platform facts in the checked core, `dump` of embedded core | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; core and every platform clean under v2 (R-1.10, R-8.4) | S5 | S7 | 5 |
-| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), `Send.to` as a worded call, markup rows, schema rows, `try`'s early return, `recast` | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant}`, `p/SchemaIssuesFresh` | S5 | S6 | 8 |
-| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` loans, `refs`, the suspension rule via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified | DictFocus, DictValueWritten, DictTupleFocus*, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords | S4, #961 | S6, S7 | 7 |
+| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), `Send.to` as a worded call, markup rows, schema rows, `try`'s early return, `recast` | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 8 |
+| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` loans, `refs`, the suspension rule via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified | DictFocus, DictValueWritten, DictTupleFocus*, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords | S4, #961 | S6, S7 | 7 |
 | S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run | R-8.1–R-8.8 whole; R-7.1's +10 % or a report | S6, S7, S8 | — | 8 |
 | S10 | **Switch-over and deletion** | §8.2 met; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 updated (words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — | 3 |
 
@@ -1132,7 +1150,10 @@ header pointing here (never renumbered: rule 2).
    message names `List.swap`.
 4. **The `level (a)` cause.** Kept only for a `below` written while a `level` or another `below` of the same split
    is read later (§2.9); nothing else prints it.
-5. **Inferring `map`/`fold` versus asserting them.** Recommended: infer, with the `taken` result word and the
+5. **Two amendments the requirements need** (not open, but the requirements win and must say it): R-3.6 and
+   R-5.10.7 list the pinned callers of a `taken` result and P-sync (§2.13.6, §2.13.7) as part of the trusted
+   surface; R-5.9.9's send positions become `Send.to`'s word.
+6. **Inferring `map`/`fold` versus asserting them.** Recommended: infer, with the `taken` result word and the
    pinned index obligation on their callers (§2.13.6); if S2b's derivation shows a gap, assert with pinned bodies
    and record the deviation from R-5.10.8 as the owner's decision.
 
@@ -1303,9 +1324,9 @@ header pointing here (never renumbered: rule 2).
 
 | Fixture (CK) | Requirement | Slice |
 |---|---|---|
-| DeepTupleDag (269), PrependFreshRecord (282), PatternStoredBack (278), CopyApart (276), AppliedLambdaRecursion (311) | R-7.2, R-4.4.3, R-4.6.9, R-4.6.8, R-7.12 | S3a |
-| MutualListField (279), WriteOneLevel (280), AliasWriterCall (284), ExclusiveFreshHelper (275), UpdateReturnsHeld (277) | R-4.7.4, R-4.7.8, R-5.5.6, R-4.6.7, R-4.6.10 | S3b |
-| CyclicFold (296), NeedOuterOnly (294), EditAnsweredList (295), OnceOtherHolder (297), CalledTwicePusher (298), OnceLaterArgument (299), ReturnedLambdaWrite (300), JoinedFunctionValue (301) | R-5.3.7, R-5.2.8, R-5.2.9, R-5.4.3, R-5.4.4, R-5.4.5, R-5.4.9, R-5.5.5 | S4 |
-| RecordSplitPushBack (264), RecordWriteBeforeKeep (272), RecordKeptInLiteral (273), RecordInnerKept (274), RecordWrapperRead (290), RecordProvenanceCallbackResult (291), RecordProvenanceTopLevelOk (291), RecordCopyOpen (309), RecordIndexExchange (283), SchemaIssuesExclusive (293) | R-4.6.9, R-4.8.11, R-4.8.12, R-4.8.14, R-4.10.4, R-4.8.17, R-4.10.8 | S5 |
-| ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), SchemaIssuesFresh (307) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5 | S7 |
-| DictFocusGrow (267), DictHelperAlias (270), DictRecordAlias (270), DictTupleAlias (270), RefOwnsContents (286), LogAnnotateUpdate (308) | R-4.10.12, R-4.10.13, R-5.12.3, R-5.12.2 | S8 |
+| DeepTupleDag (269) | R-7.2 | S3a |
+| MutualListField (279), WriteOneLevel (280), AliasWriterCall (284) | R-4.7.4, R-4.7.8, R-5.5.6 | S3b |
+| PatternStoredBack (278), ExclusiveFreshHelper (275), UpdateReturnsHeld (277), AppliedLambdaRecursion (311), CyclicFold (296), NeedOuterOnly (294), EditAnsweredList (295), OnceOtherHolder (297), CalledTwicePusher (298), JoinedFunctionValue (301) | R-4.6.9, R-4.6.7, R-4.6.10, R-7.12, R-5.3.7, R-5.2.8, R-5.2.9, R-5.4.3, R-5.4.4, R-5.5.5 | S4 |
+| RecordSplitPushBack (264), RecordWriteBeforeKeep (272), RecordKeptInLiteral (273), RecordInnerKept (274), RecordWrapperRead (290), RecordProvenanceCallbackResult (291), RecordCopyOpen (309), RecordIndexExchange (283), ReturnedLambdaWrite (300), OnceLaterArgument (299), PrependFreshRecord (282) | R-4.6.9, R-4.8.11, R-4.8.12, R-4.8.14, R-4.10.4, R-4.8.17, R-5.4.9, R-5.4.5, R-4.4.3 | S5 |
+| ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), RecordProvenanceTopLevelOk (291), SchemaIssuesFresh (307), SchemaIssuesExclusive (293) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5, R-4.10.8 | S7 |
+| DictFocusGrow (267), DictHelperAlias (270), DictRecordAlias (270), DictTupleAlias (270), CopyApart (276), RefOwnsContents (286), LogAnnotateUpdate (308) | R-4.10.12, R-4.10.13, R-4.6.8, R-5.12.3, R-5.12.2 | S8 |
