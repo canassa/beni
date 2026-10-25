@@ -1,46 +1,464 @@
 //! L2: cells, the provenance labels of objects (`docs/design/ownership-v2.md`
-//! §2.2, §3.2), and the persistent sets of them every shape, condition and
-//! holder index is built over.
+//! §2.2, §3.2): the cell table and its trie, call labels, interning,
+//! splits, the may-alias relation, and the persistent sets of
+//! `(cell, approx)` every shape, condition and holder index is built over.
+//! The live inverted index holders are found through (§2.8's `set_head`
+//! chains and live counts) is `Demands`' (§5: `holders`), built over these
+//! sets when that layer lands.
 //!
-//! **This file lands in two pieces.** This one is the set representation
-//! §4.1 prescribes; the cell table itself — origins, kinds, labels, the
-//! trie, interning, splits and `alias` — follows in the next pull request of
-//! the same slice.
+//! **One rule** (§2.2): a cell labels one object per occurrence; "many" is a
+//! property of a position (`[*]`, `⟲`, a folded label), never of a label.
+//! Nothing here derives distinctness from a label.
+//!
+//! **The trie.** A symbolic cell's parent is its path minus one step, a
+//! refinement's the cell it refines, so the descendants of a cell the
+//! program ever named are enumerable (§2.8's deep demands). Children are an
+//! intrusive list in first-sight order.
+//!
+//! **`alias`** is the one relation every holder test, `sep` atom and
+//! Disjoint reads (§2.2, *May-alias*); it costs O(path length) column reads
+//! and returns a `SplitId` when the answer rests on a split's condition.
+//! Only this file compares two cells (§5's fence).
 //!
 //! **The persistent set** (`Radix`) is Okasaki–Gill's big-endian patricia
-//! tree over `u32` keys (a `CellId`'s rank) with one value bit per key, the
-//! `approx` of a `(cell, approx)` pair (§2.3): canonical — equal contents
-//! have one structure — and hash-consed, so they have one id too, which is
-//! what lets a shape node be interned by its set. An insert of a present key
-//! and a union adding nothing return the ORIGINAL root (§4.1's idempotence,
-//! what keeps a fixpoint from seeing a change where none is). A path copy
-//! touches at most 33 nodes. The recursion in `unionWith` and `subset` is
-//! bounded by the key width, 33 frames, a constant and not a function of
-//! the input (R-7.12).
+//! tree over `u32` keys (a `CellId`) with one value bit per key, the
+//! `approx` of a pair (§2.3): canonical — equal contents have one structure
+//! — so an insert of a present key and a union adding nothing return the
+//! ORIGINAL root (§4.1's idempotence, what keeps a fixpoint from seeing a
+//! change where none is). A path copy touches at most 33 nodes, and every
+//! node made is one growth record reserved before it is made. The
+//! recursion in `unionWith` and `subset` is bounded by the key width, 33
+//! frames, a constant and not a function of the input (R-7.12). A pair's
+//! value joins by `and`: an exact pair wins over an approximate one.
 //!
-//! **Values.** A pair's bit is 0 for exact, 1 for approximate. The join is
-//! `and`: an exact pair wins over an approximate one (R-6.3: an exact
-//! failure wins), so in the order `subset` tests, approximate ⊑ exact — a
-//! set is below another when every key is there with a bit no larger.
-//!
-//! **Charging.** Every node made and every node a union, an insert or a
-//! subset test INSPECTS is one record reserved in the caller's `Charge`
-//! before the node is touched (§4.1: a union pays for the entries it visits,
-//! not only the cells it adds; §4.4: reserve before set inspection). A set
-//! that adds nothing still costs its inspections. The charge is the
-//! caller's choice of lane or growth, made before the operation.
-//!
-//! Obligations kept here: O4 (a union is a union: `unionWith` adds every
-//! key of both operands and drops none).
+//! Obligations kept here: O4 (a union is a union), O6 (a split's
+//! refinements are told apart only under its κ: `alias` answers `under`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Place = @import("Place.zig");
 
+pub const CellId = Ids.CellId;
+pub const LabelId = Ids.LabelId;
 pub const SetId = Ids.SetId;
+pub const SplitId = Ids.SplitId;
+pub const PathId = Ids.PathId;
+pub const PlaceId = Ids.PlaceId;
+pub const CondId = Ids.CondId;
 pub const Account = Ids.Account;
+
 pub const Charge = Ids.Charge;
 pub const Error = Ids.ChargeError;
+
+pub const Origin = enum(u8) {
+    site,
+    param,
+    env,
+    shared,
+    result,
+    esc,
+    cb,
+    msg,
+    top,
+    elem,
+    others,
+    level,
+    below,
+    loan,
+
+    /// Symbolic origins stand for everything under them: projecting appends
+    /// a step (§2.2).
+    pub fn isSymbolic(o: Origin) bool {
+        return switch (o) {
+            .param, .env, .shared, .cb, .msg, .top => true,
+            else => false,
+        };
+    }
+
+    /// A refinement has a parent cell and a split (§2.2).
+    pub fn isRefinement(o: Origin) bool {
+        return switch (o) {
+            .elem, .others, .level, .below, .loan => true,
+            else => false,
+        };
+    }
+};
+
+/// The kind of object a cell labels: the place it is made at (§2.2).
+pub const Kind = enum(u8) {
+    list,
+    dict,
+    record,
+    ref,
+    closure,
+    @"opaque",
+    /// A cell at a `var` place, or `⊤`: anything.
+    any,
+    /// A trie node at a place that holds no object of its own (a tuple, a
+    /// constructor, a crossing leaf): the ancestor of its children.
+    none,
+
+    pub fn ofPlace(k: Place.Kind) Kind {
+        return switch (k) {
+            .list => .list,
+            .dict => .dict,
+            .record => .record,
+            .ref => .ref,
+            .closure => .closure,
+            .@"opaque" => .@"opaque",
+            .@"var" => .any,
+            .tuple, .ctor, .cross => .none,
+        };
+    }
+};
+
+/// One cell. `a`, `b`, `c` by origin (§3.2): `site`: the instruction;
+/// `result`/`esc`: label + k; `param`/`env`/`shared`/`msg`: index + path;
+/// `cb`: label + path, `c` the function parameter; refinements: parent +
+/// the split's label, `below`'s `c` its step; `loan`: contents cell + label.
+pub const Cell = struct {
+    origin: Origin,
+    kind: Kind,
+    a: u32,
+    b: u32,
+    c: u32,
+    place: PlaceId,
+    /// The trie parent: the path minus one step, or the refined cell.
+    parent: CellId,
+    first_child: CellId,
+    last_child: CellId,
+    next_sibling: CellId,
+};
+
+/// A call label (§2.2): an interned `(call instruction, callee label)`
+/// pair; `folded` for `ι⋆` and for a composite whose callee label is
+/// folded. `supplies` is filled by the walk (§2.11).
+pub const Label = struct {
+    inst: u32,
+    callee_label: LabelId,
+    folded: bool,
+    supplies: Ids.Range,
+};
+
+/// A split in force (§2.2): a container, the instruction that took from
+/// it, the label its refinements carry, and κ of the container at ι.
+pub const Split = struct {
+    container: CellId,
+    inst: u32,
+    label: LabelId,
+    cond: CondId,
+};
+
+/// `alias`'s answer (§2.2).
+pub const Alias = union(enum) {
+    no,
+    yes,
+    /// Not aliases if the split's condition held at its instruction.
+    under: SplitId,
+    /// Two `taken` elements of one container from distinct splits: not
+    /// aliases under the container's κ at `[*]`.
+    under_kappa: CellId,
+};
+
+pub const Table = struct {
+    cells: std.MultiArrayList(Cell) = .empty,
+    intern: Ids.FixedDict(4) = .{},
+    labels: std.MultiArrayList(Label) = .empty,
+    label_intern: Ids.FixedDict(3) = .{},
+    splits: std.MultiArrayList(Split) = .empty,
+    /// `(container, label)` → split.
+    split_intern: Ids.FixedDict(2) = .{},
+    sets: Radix = .{},
+
+    pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.cells.deinit(gpa);
+        t.intern.deinit(gpa);
+        t.labels.deinit(gpa);
+        t.label_intern.deinit(gpa);
+        t.splits.deinit(gpa);
+        t.split_intern.deinit(gpa);
+        t.sets.deinit(gpa);
+    }
+
+    pub fn count(t: *const Table) u32 {
+        return @intCast(t.cells.len);
+    }
+
+    pub fn get(t: *const Table, c: CellId) Cell {
+        return t.cells.get(c.int());
+    }
+
+    pub fn origin(t: *const Table, c: CellId) Origin {
+        return t.cells.items(.origin)[c.int()];
+    }
+
+    pub fn kind(t: *const Table, c: CellId) Kind {
+        return t.cells.items(.kind)[c.int()];
+    }
+
+    pub fn parent(t: *const Table, c: CellId) CellId {
+        return t.cells.items(.parent)[c.int()];
+    }
+
+    pub fn place(t: *const Table, c: CellId) PlaceId {
+        return t.cells.items(.place)[c.int()];
+    }
+
+    /// The trie children of `c`, in first-sight order.
+    pub const Children = struct {
+        t: *const Table,
+        at: CellId,
+
+        pub fn next(it: *Children) ?CellId {
+            if (it.at == .none) return null;
+            const c = it.at;
+            it.at = it.t.cells.items(.next_sibling)[c.int()];
+            return c;
+        }
+    };
+
+    pub fn children(t: *const Table, c: CellId) Children {
+        return .{ .t = t, .at = t.cells.items(.first_child)[c.int()] };
+    }
+
+    /// The first non-refinement above `c` (§2.2).
+    pub fn base(t: *const Table, c: CellId) CellId {
+        var at = c;
+        while (t.origin(at).isRefinement()) at = t.parent(at);
+        return at;
+    }
+
+    // ---- labels -----------------------------------------------------------
+
+    /// The label `(inst, callee_label, folded)`, interned (§2.2). A new
+    /// label is one growth record: its context is reserved before creation
+    /// against the owning declaration (§4.4).
+    pub fn label(t: *Table, gpa: Allocator, account: *Account, inst: u32, callee_label: LabelId, folded: bool) Error!LabelId {
+        const got = try t.label_intern.getOrPut(gpa, .{ inst, callee_label.int(), @intFromBool(folded) });
+        if (got.found_existing) return .from(got.value_ptr.*);
+        try account.reserve(.label, 1);
+        got.value_ptr.* = @intCast(t.labels.len);
+        try t.labels.append(gpa, .{ .inst = inst, .callee_label = callee_label, .folded = folded, .supplies = .empty });
+        return .from(got.value_ptr.*);
+    }
+
+    pub fn labelOf(t: *const Table, l: LabelId) Label {
+        return t.labels.get(l.int());
+    }
+
+    /// The first instruction of a label's chain.
+    pub fn labelInst(t: *const Table, l: LabelId) u32 {
+        return t.labels.items(.inst)[l.int()];
+    }
+
+    // ---- interning ----------------------------------------------------------
+
+    /// The cell `(origin, kind, a, b, c)` at `place`, interned, with its
+    /// trie parent. One growth record when new.
+    fn internCell(t: *Table, gpa: Allocator, account: *Account, o: Origin, k: Kind, a: u32, b: u32, c: u32, at: PlaceId, trie_parent: CellId) Error!CellId {
+        const got = try t.intern.getOrPut(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c });
+        if (got.found_existing) return .from(got.value_ptr.*);
+        try account.reserve(.cell, 1);
+        const id: CellId = .from(t.count());
+        got.value_ptr.* = id.int();
+        try t.cells.append(gpa, .{ .origin = o, .kind = k, .a = a, .b = b, .c = c, .place = at, .parent = trie_parent, .first_child = .none, .last_child = .none, .next_sibling = .none });
+        if (trie_parent != .none) {
+            const p = trie_parent.int();
+            const last = t.cells.items(.last_child)[p];
+            if (last == .none) t.cells.items(.first_child)[p] = id else t.cells.items(.next_sibling)[last.int()] = id;
+            t.cells.items(.last_child)[p] = id;
+        }
+        return id;
+    }
+
+    /// `site ι` of kind `k` at `place`: the object a literal, construction,
+    /// copy or lambda at ι makes.
+    pub fn site(t: *Table, gpa: Allocator, account: *Account, inst: u32, at: PlaceId, k: Kind) Error!CellId {
+        return t.internCell(gpa, account, .site, k, inst, 0, 0, at, .none);
+    }
+
+    /// `⊤`: an object the analysis cannot name (O10).
+    pub fn top(t: *Table, gpa: Allocator, account: *Account) Error!CellId {
+        return t.internCell(gpa, account, .top, .any, 0, 0, 0, .none, .none);
+    }
+
+    /// `result λ·k` or `esc λ·k`.
+    pub fn result(t: *Table, gpa: Allocator, account: *Account, o: Origin, l: LabelId, k: u32, at: PlaceId, kind_at: Kind) Error!CellId {
+        std.debug.assert(o == .result or o == .esc);
+        return t.internCell(gpa, account, o, kind_at, l.int(), k, 0, at, .none);
+    }
+
+    /// A symbolic cell `origin index·path` (`param πᵢ·q`, `env x·q`,
+    /// `shared M.v·q`, `msg·q`, `cb j@λ·q`): its trie parent is the cell at
+    /// the path's parent, interned on the way. The kind is the path's
+    /// place's. Costs O(depth of the path not yet interned).
+    pub fn symbolic(t: *Table, gpa: Allocator, account: *Account, places: *const Place.Table, o: Origin, index: u32, path: PathId, j: u32) Error!CellId {
+        std.debug.assert(o.isSymbolic() and o != .top);
+        // Find the deepest interned ancestor, then build down.
+        var missing: [max_symbolic_depth]PathId = undefined;
+        var n: usize = 0;
+        var at = path;
+        var found: CellId = .none;
+        while (true) {
+            const key = [4]u32{ (@as(u32, @backingInt(o)) << 8) | @backingInt(Kind.ofPlace(places.kind(places.pathPlace(at)))), index, at.int(), j };
+            if (t.intern.get(key)) |hit| {
+                found = .from(hit);
+                break;
+            }
+            if (n == missing.len) return error.OwnershipLimit;
+            missing[n] = at;
+            n += 1;
+            at = places.pathParent(at);
+            if (at == .none) break;
+        }
+        var p = found;
+        while (n > 0) {
+            n -= 1;
+            const q = missing[n];
+            p = try t.internCell(gpa, account, o, Kind.ofPlace(places.kind(places.pathPlace(q))), index, q.int(), j, places.pathPlace(q), p);
+        }
+        return p;
+    }
+
+    /// A deep symbolic chain is bounded by `max_path_steps` of §4.4; one
+    /// call interns at most this many new ancestors before it is charged
+    /// again, so the stack stays constant-size.
+    const max_symbolic_depth = 256;
+
+    /// `elem c·ι`/`others c·ι` or `level c·ι`/`below c·s·ι`/`loan c·ι`:
+    /// a refinement of `c` by the split labelled `l`, with `step` for
+    /// `below`. Records the split (one record) on first sight.
+    pub fn refine(t: *Table, gpa: Allocator, account: *Account, o: Origin, c: CellId, l: LabelId, step: u32, at: PlaceId, k: Kind) Error!CellId {
+        std.debug.assert(o.isRefinement());
+        return t.internCell(gpa, account, o, k, c.int(), l.int(), step, at, c);
+    }
+
+    /// The split of `container` at the chain `l` (§2.2's `taken` set), made
+    /// with `cond` on first sight.
+    pub fn split(t: *Table, gpa: Allocator, account: *Account, container: CellId, inst: u32, l: LabelId, cond: CondId) Error!SplitId {
+        const got = try t.split_intern.getOrPut(gpa, .{ container.int(), l.int() });
+        if (got.found_existing) return .from(got.value_ptr.*);
+        try account.reserve(.other, 1);
+        got.value_ptr.* = @intCast(t.splits.len);
+        try t.splits.append(gpa, .{ .container = container, .inst = inst, .label = l, .cond = cond });
+        return .from(got.value_ptr.*);
+    }
+
+    pub fn splitOf(t: *const Table, s: SplitId) Split {
+        return t.splits.get(s.int());
+    }
+
+    fn findSplit(t: *const Table, container: CellId, l: LabelId) SplitId {
+        return if (t.split_intern.get(.{ container.int(), l.int() })) |s| .from(s) else .none;
+    }
+
+    // ---- may-alias --------------------------------------------------------------
+
+    /// Whether two symbolic cells of one origin and index may be one
+    /// object: one canonical path a prefix of the other, `⟲` matching any
+    /// continuation, except two paths diverging at a `ctor` place on
+    /// different constructors (§2.2). O(path length).
+    fn pathsMayAlias(places: *const Place.Table, p: PathId, q: PathId) bool {
+        if (p == q) return true;
+        var a = p;
+        var b = q;
+        var below_a: PathId = .none;
+        var below_b: PathId = .none;
+        while (places.pathDepth(a) > places.pathDepth(b)) {
+            below_a = a;
+            a = places.pathParent(a);
+        }
+        while (places.pathDepth(b) > places.pathDepth(a)) {
+            below_b = b;
+            b = places.pathParent(b);
+        }
+        while (a != b) {
+            below_a = a;
+            below_b = b;
+            a = places.pathParent(a);
+            b = places.pathParent(b);
+        }
+        // `a` is the deepest common ancestor; one path IS it → a prefix.
+        if (below_a == .none or below_b == .none) return true;
+        // Two different continuations are two paths: another field, another
+        // index, another constructor (alternatives of one value, R-4.8.15),
+        // or `⟲` against an exact step — the levels below against the root's
+        // own child. None is one object.
+        return false;
+    }
+
+    /// Whether the bases `x` and `y` (no refinement) may be one object.
+    fn basesMayAlias(t: *const Table, places: *const Place.Table, x: CellId, y: CellId) bool {
+        if (x == y) return true;
+        const ox = t.origin(x);
+        const oy = t.origin(y);
+        if (ox == .top or oy == .top) return true;
+        if (ox != oy) return false;
+        if (!ox.isSymbolic()) return false; // concrete: equal or not
+        const cx = t.get(x);
+        const cy = t.get(y);
+        if (cx.a != cy.a or cx.c != cy.c) return false;
+        return pathsMayAlias(places, .from(cx.b), .from(cy.b));
+    }
+
+    /// May `a` and `b` be one object (§2.2)? `yes`; `no`; `under ι` when
+    /// they descend from one split on different sides; `under_kappa` for
+    /// two `taken` elements of one container from distinct splits.
+    pub fn alias(t: *const Table, places: *const Place.Table, a: CellId, b: CellId) Alias {
+        if (a == b) return .yes;
+        const base_a = t.base(a);
+        const base_b = t.base(b);
+        if (!t.basesMayAlias(places, base_a, base_b)) return .no;
+        if (base_a != base_b) return .yes;
+        // One base: walk both refinement chains from the base out.
+        var ca = t.chainFrom(base_a, a);
+        var cb = t.chainFrom(base_b, b);
+        while (true) {
+            const ra = ca.next() orelse return .yes;
+            const rb = cb.next() orelse return .yes;
+            if (ra == rb) continue;
+            const xa = t.get(ra);
+            const xb = t.get(rb);
+            if (xa.b == xb.b) {
+                // One split, two sides.
+                const sides = (xa.origin == .elem and xb.origin == .others) or (xa.origin == .others and xb.origin == .elem) or
+                    (xa.origin == .level and xb.origin == .below) or (xa.origin == .below and xb.origin == .level) or
+                    (xa.origin == .below and xb.origin == .below and xa.c != xb.c);
+                if (!sides) return .yes;
+                const s = t.findSplit(xa.parent, .from(xa.b));
+                return if (s == .none) .yes else .{ .under = s };
+            }
+            // Two splits of one container.
+            if (xa.origin == .elem and xb.origin == .elem) return .{ .under_kappa = xa.parent };
+            return .yes;
+        }
+    }
+
+    /// The refinements between `base` (exclusive) and `c` (inclusive), from
+    /// the base outwards. Depth is a few splits; a fixed stack of 64.
+    const Chain = struct {
+        items: [64]CellId,
+        len: usize,
+        i: usize = 0,
+
+        fn next(ch: *Chain) ?CellId {
+            if (ch.i == ch.len) return null;
+            ch.i += 1;
+            return ch.items[ch.len - ch.i];
+        }
+    };
+
+    fn chainFrom(t: *const Table, base_cell: CellId, c: CellId) Chain {
+        var ch: Chain = .{ .items = undefined, .len = 0 };
+        var at = c;
+        while (at != base_cell and ch.len < ch.items.len) : (at = t.parent(at)) {
+            ch.items[ch.len] = at;
+            ch.len += 1;
+        }
+        return ch;
+    }
+};
 
 // ---------------------------------------------------------------------------
 // The persistent set: a big-endian patricia tree over u32 keys (§4.1)
@@ -295,7 +713,11 @@ pub const Radix = struct {
 };
 
 comptime {
+    Ids.assertRecord(Cell);
+    Ids.assertRecord(Label);
+    Ids.assertRecord(Split);
     Ids.assertRecord(RadixNode);
+    std.debug.assert(@sizeOf(Cell) == 36);
     std.debug.assert(@sizeOf(RadixNode) == 16);
 }
 
@@ -450,4 +872,177 @@ test "a refused reservation leaves the set table whole, and a hit is charged lik
     const before = a.growth;
     try testing.expectEqual(s, try r.insert(gpa, .growth(&a), .none, 42, 0));
     try testing.expectEqual(before + 1, a.growth);
+/// A test place graph: `r` a record `{ a : List Int, b : List Int }`, with
+/// the list's element a crossing `Int`; `t` the `Tree` of `Place.zig`'s
+/// tests. Built by hand through `Place.Source`.
+const TestGraph = struct {
+    table: *Place.Table,
+    account: *Ids.Account,
+    gpa: Allocator,
+
+    fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
+        const g: *TestGraph = @ptrCast(@alignCast(ctx));
+        switch (v) {
+            // record { a : List Int, b : List Int }
+            0 => {
+                try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, 10) catch unreachable), .@"var" = 1 });
+                try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, 11) catch unreachable), .@"var" = 1 });
+                return .{ .kind = .record };
+            },
+            1 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 2 });
+                return .{ .kind = .list, .head = 200 };
+            },
+            2 => return .{ .kind = .cross },
+            // type Tree = Node Tree (List Int) Tree
+            3 => {
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 0, 0) catch unreachable), .@"var" = 3 });
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 0, 1) catch unreachable), .@"var" = 1 });
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 0, 2) catch unreachable), .@"var" = 3 });
+                return .{ .kind = .ctor, .head = 100 };
+            },
+            // type Status = Editing (List Int) | Saving (List Int)
+            4 => {
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 1, 0) catch unreachable), .@"var" = 1 });
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 2, 0) catch unreachable), .@"var" = 1 });
+                return .{ .kind = .ctor, .head = 300 };
+            },
+            else => unreachable,
+        }
+    }
+
+    fn source(g: *TestGraph) Place.Source {
+        return .{ .ctx = g, .describe = describe };
+    }
+};
+
+const Fixture = struct {
+    places: Place.Table = .{},
+    cells: Table = .{},
+    account: Account = .{},
+    graph: TestGraph = undefined,
+
+    fn init(f: *Fixture) void {
+        f.graph = .{ .table = &f.places, .account = &f.account, .gpa = testing.allocator };
+    }
+
+    fn deinit(f: *Fixture) void {
+        f.places.deinit(testing.allocator);
+        f.cells.deinit(testing.allocator);
+        f.account.deinit(testing.allocator);
+    }
+
+    fn path(f: *Fixture, root: u32, steps: []const Place.Step) !PathId {
+        const p = try f.places.of(testing.allocator, &f.account, f.graph.source(), root);
+        var at = try f.places.rootPath(testing.allocator, p);
+        for (steps) |s| at = (try f.places.extend(testing.allocator, .growth(&f.account), at, s)).?;
+        return at;
+    }
+
+    fn param(f: *Fixture, i: u32, root: u32, steps: []const Place.Step) !CellId {
+        return f.cells.symbolic(testing.allocator, &f.account, &f.places, .param, i, try f.path(root, steps), 0);
+    }
+};
+
+test "a symbolic cell interns its trie ancestors, and children are in first-sight order" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const a_elems = try f.param(1, 0, &.{ try Place.Step.field(&f.account, 10), Place.Step.elem });
+    // `param π₁·ε`, `·.a` and `·.a[*]` exist; `.b` does not yet.
+    try testing.expectEqual(@as(u32, 3), f.cells.count());
+    const a = f.cells.parent(a_elems);
+    const root = f.cells.parent(a);
+    try testing.expectEqual(CellId.none, f.cells.parent(root));
+    try testing.expectEqual(Kind.record, f.cells.kind(root));
+    try testing.expectEqual(Kind.list, f.cells.kind(a));
+    try testing.expectEqual(Kind.none, f.cells.kind(a_elems));
+    const b = try f.param(1, 0, &.{try Place.Step.field(&f.account, 11)});
+    try testing.expectEqual(@as(u32, 4), f.cells.count());
+    try testing.expectEqual(a, try f.param(1, 0, &.{try Place.Step.field(&f.account, 10)}));
+    var it = f.cells.children(root);
+    try testing.expectEqual(a, it.next().?);
+    try testing.expectEqual(b, it.next().?);
+    try testing.expectEqual(@as(?CellId, null), it.next());
+    try testing.expectEqual(@as(u32, 4), f.account.growth_by[@backingInt(Ids.Category.cell)]);
+    try testing.expectEqual(a_elems, f.cells.base(a_elems));
+}
+
+test "alias: prefixes, fields, constructors' alternatives, concrete cells and ⊤" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const r = try f.param(1, 0, &.{});
+    const ra = try f.param(1, 0, &.{try Place.Step.field(&f.account, 10)});
+    const rb = try f.param(1, 0, &.{try Place.Step.field(&f.account, 11)});
+    const ra_elem = try f.param(1, 0, &.{ try Place.Step.field(&f.account, 10), Place.Step.elem });
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, r, ra));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, ra_elem, r));
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, ra, rb));
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, ra_elem, rb));
+    // Another parameter of the same type: never.
+    const other = try f.param(2, 0, &.{try Place.Step.field(&f.account, 10)});
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, ra, other));
+    // Two constructors of one value are alternatives (R-4.8.15).
+    const editing = try f.param(3, 4, &.{try f.places.ctorStep(testing.allocator, &f.account, 1, 0)});
+    const saving = try f.param(3, 4, &.{try f.places.ctorStep(testing.allocator, &f.account, 2, 0)});
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, editing, saving));
+    // `⟲` matches any continuation: the root's list and a list below.
+    const s1 = try f.places.ctorStep(testing.allocator, &f.account, 0, 1);
+    const s0 = try f.places.ctorStep(testing.allocator, &f.account, 0, 0);
+    const top_list = try f.param(4, 3, &.{s1});
+    const deep_list = try f.param(4, 3, &.{ s0, s1 });
+    const below = try f.param(4, 3, &.{s0});
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, top_list, deep_list));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, below, deep_list));
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, below, top_list));
+    // Concrete cells alias only themselves; ⊤ aliases everything.
+    const list_place = try f.places.of(testing.allocator, &f.account, f.graph.source(), 1);
+    const s7 = try f.cells.site(testing.allocator, &f.account, 7, list_place, .list);
+    const s8 = try f.cells.site(testing.allocator, &f.account, 8, list_place, .list);
+    try testing.expectEqual(s7, try f.cells.site(testing.allocator, &f.account, 7, list_place, .list));
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, s7, s8));
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, s7, ra));
+    const t = try f.cells.top(testing.allocator, &f.account);
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, t, s8));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, ra, t));
+}
+
+test "alias on refinements answers the split, and two taken elements the container's κ" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const xs = try f.param(1, 1, &.{});
+    const elem_place = try f.places.of(gpa, &f.account, f.graph.source(), 2);
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    const l2 = try f.cells.label(gpa, &f.account, 41, .none, false);
+    try testing.expectEqual(l1, try f.cells.label(gpa, &f.account, 40, .none, false));
+    try testing.expect(l1 != l2);
+    const split1 = try f.cells.split(gpa, &f.account, xs, 40, l1, .none);
+    _ = try f.cells.split(gpa, &f.account, xs, 41, l2, .none);
+    const e1 = try f.cells.refine(gpa, &f.account, .elem, xs, l1, 0, elem_place, .none);
+    const o1 = try f.cells.refine(gpa, &f.account, .others, xs, l1, 0, .none, .list);
+    const e2 = try f.cells.refine(gpa, &f.account, .elem, xs, l2, 0, elem_place, .none);
+    try testing.expectEqual(xs, f.cells.base(e1));
+    try testing.expectEqual(Alias{ .under = split1 }, f.cells.alias(&f.places, e1, o1));
+    try testing.expectEqual(Alias{ .under_kappa = xs }, f.cells.alias(&f.places, e1, e2));
+    // The container whole and its element may alias; a different list's
+    // element never.
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, xs, e1));
+    const ys = try f.param(2, 1, &.{});
+    const ey = try f.cells.refine(gpa, &f.account, .elem, ys, l1, 0, elem_place, .none);
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, e1, ey));
+    // Two `below`s of distinct steps are two sides; of one step, one cell.
+    const tree = try f.param(3, 3, &.{});
+    const b0 = try f.cells.refine(gpa, &f.account, .below, tree, l1, 0, .none, .none);
+    const b2 = try f.cells.refine(gpa, &f.account, .below, tree, l1, 2, .none, .none);
+    const lv = try f.cells.refine(gpa, &f.account, .level, tree, l1, 0, .none, .none);
+    const split_t = f.cells.findSplit(tree, l1);
+    try testing.expectEqual(SplitId.none, split_t);
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, b0, b2)); // no split recorded: conservative
+    const st = try f.cells.split(gpa, &f.account, tree, 40, l1, .none);
+    try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, b0, b2));
+    try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, lv, b2));
+    try testing.expectEqual(b0, try f.cells.refine(gpa, &f.account, .below, tree, l1, 0, .none, .none));
 }

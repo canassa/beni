@@ -189,6 +189,10 @@ pub const own2 = struct {
     pub const Ids = @import("own2/Ids.zig");
     pub const Place = @import("own2/Place.zig");
     pub const Cell = @import("own2/Cell.zig");
+    pub const Facts = @import("own2/Facts.zig");
+    pub const Shape = @import("own2/Shape.zig");
+    pub const Prepass = @import("own2/Prepass.zig");
+    pub const Regions = @import("own2/Regions.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {
