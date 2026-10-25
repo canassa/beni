@@ -63,7 +63,9 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
     };
     defer if (cache) |*c| c.close();
-    if (cache) |*c| if (build.common.ownership_everywhere) c.into("ownership-everywhere", &cache_failure) catch {
+    // `--records-in-place` enforces as `--ownership-everywhere` does, so
+    // its entries are that flag's.
+    if (cache) |*c| if (build.common.ownership_everywhere or build.records_in_place) c.into("ownership-everywhere", &cache_failure) catch {
         const f = cache_failure.?;
         return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
     };
@@ -91,9 +93,16 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // `ownership-checker.md` §28.3: the pass runs when the chain edits
     // lists in place, and not otherwise.
     options.ownership = true;
+    options.records_in_place = build.records_in_place;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
+    // The list sanitiser judges accepted writes, and only a build that
+    // enforces has them: anywhere else it would pass every program while
+    // checking none (`ownership-v2.md` §7.3).
+    if (build.sanitize_lists and !session.enforce_ownership) {
+        return fail(stderr, "beni: --sanitize-lists needs a build that enforces ownership: an in-place platform, --ownership-everywhere or --records-in-place", .{});
+    }
 
     const summary = session.run(build.paths, Session.check_phases, stderr) catch |err| switch (err) {
         error.InputPath => {
@@ -144,6 +153,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .allow_debug = build.allow_debug,
         .test_hooks = build.test_hooks,
         .sanitize_records = build.sanitize_records,
+        .sanitize_lists = build.sanitize_lists,
         .schema_library = build.schema_library,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,

@@ -1,0 +1,3 @@
+The lists differential corpus (ownership-v2.md §7.3): every list writer, on every form a list's base takes,
+built again under the list stale-read sanitiser with the ownership check enforced, against the answers of
+the plain build.

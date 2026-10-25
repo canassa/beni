@@ -379,6 +379,11 @@ pub const Options = struct {
     /// `--ownership-records-lost` (`Cli.Common`, `ownership-checker.md`
     /// §31.4 item 6): every record condition fails. Hidden and test-only.
     ownership_records_lost: bool = false,
+    /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
+    /// chain, as an in-place one does, so that every module whose demands
+    /// were all accepted has its records written in place. Hidden and
+    /// test-only.
+    records_in_place: bool = false,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
@@ -578,7 +583,7 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
     if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = options.ownership_everywhere or c.inPlace();
+        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or c.inPlace();
     };
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.

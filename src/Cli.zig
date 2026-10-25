@@ -199,7 +199,18 @@ pub const Common = struct {
     /// its list lines byte for byte those of the ordinary run. On `Common`
     /// for `--ownership-everywhere`'s reason; absent from `usage`.
     ownership_records_lost: bool = false,
+    /// `--ownership=v1|v2` — **hidden** and test-only (`ownership-v2.md`
+    /// §7.2, §8): which ownership checker `check`, `build` and `dump` run.
+    /// `v1` is `src/own/`, frozen, and the default; `v2` is the checker
+    /// `ownership-v2.md` specifies, which is not built yet, so a command
+    /// given it says so and exits 2 (`main.zig`). On `Common` for
+    /// `--ownership-everywhere`'s reason: the whole-corpus diff dumps every
+    /// root under both. Absent from `usage`. Deleted with v1 (§8.3).
+    ownership: OwnershipChecker = .v1,
 };
+
+/// The two ownership checkers (`Common.ownership`).
+pub const OwnershipChecker = enum { v1, v2 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
 ///
@@ -347,6 +358,21 @@ pub const Build = struct {
     /// (`ownership-checker.md` §31.12 slice 3, `Lower.Input.sanitize_records`).
     /// Development builds only.
     sanitize_records: bool = false,
+    /// `--sanitize-lists` — **hidden**, for `--allow-debug`'s reason: the
+    /// stale-read sanitiser for lists (`ownership-v2.md` §7.3,
+    /// `Lower.Input.sanitize_lists`): each accepted list write runs on a
+    /// copy and poisons the list it wrote. Development builds only, and
+    /// only a build that enforces ownership (`build/Command.zig`).
+    sanitize_lists: bool = false,
+    /// `--records-in-place` — **hidden**, for `--allow-debug`'s reason:
+    /// the build enforces the ownership check, as an in-place platform's
+    /// does, and so writes the records of every module whose demands were
+    /// all accepted in place (`ownership-checker.md` §30.7, *O4a*; R-8.5).
+    /// It is the records differential's switch, which needs neither
+    /// `--ownership-everywhere`'s other rows nor an in-place platform.
+    /// Until record enforcement is apart from list enforcement (O4a), it
+    /// enforces both.
+    records_in_place: bool = false,
     /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
     /// schema declaration's `parse` and `print` run through the library
     /// interpreter rather than its specialised code, which is the forced
@@ -726,6 +752,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
         common.ownership_records_lost = true;
         return null;
     }
+    // Hidden and test-only (see `Common.ownership`).
+    if (std.mem.eql(u8, name, "--ownership")) {
+        const v = value orelse return needsValue(name, "v1|v2");
+        common.ownership = std.meta.stringToEnum(OwnershipChecker, v) orelse return needsValue(name, "v1|v2");
+        return null;
+    }
     if (std.mem.eql(u8, name, "--core-root")) {
         const v = value orelse return needsValue(name, "<dir>");
         if (v.len == 0) return needsValue(name, "<dir>");
@@ -868,6 +900,8 @@ const BuildSpecific = struct {
     allow_debug: bool = false,
     test_hooks: bool = false,
     sanitize_records: bool = false,
+    sanitize_lists: bool = false,
+    records_in_place: bool = false,
     schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
@@ -918,6 +952,16 @@ const BuildSpecific = struct {
             // A hidden flag (see `Build.sanitize_records`).
             if (value != null) return noValue(name);
             self.sanitize_records = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--sanitize-lists")) {
+            // A hidden flag (see `Build.sanitize_lists`).
+            if (value != null) return noValue(name);
+            self.sanitize_lists = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--records-in-place")) {
+            // A hidden flag (see `Build.records_in_place`).
+            if (value != null) return noValue(name);
+            self.records_in_place = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--schema-library")) {
             // The fourth hidden flag (see `Build.schema_library`).
@@ -992,6 +1036,9 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     if (s.specific.sanitize_records and s.specific.release) {
         return .{ .usage = .init("beni: --sanitize-records is for development builds, not --release", .{}) };
     }
+    if (s.specific.sanitize_lists and s.specific.release) {
+        return .{ .usage = .init("beni: --sanitize-lists is for development builds, not --release", .{}) };
+    }
     const platform = s.specific.platform orelse defaults.platform orelse
         return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
     if (defaults.base) |base| if (!validBase(base)) {
@@ -1016,6 +1063,8 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .allow_debug = s.specific.allow_debug,
         .test_hooks = s.specific.test_hooks,
         .sanitize_records = s.specific.sanitize_records,
+        .sanitize_lists = s.specific.sanitize_lists,
+        .records_in_place = s.specific.records_in_place,
         .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
@@ -1742,6 +1791,32 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
         &.{ "check", "--ownership-everywhere=1", "src" },
     );
     try testing.expect(std.mem.indexOf(u8, usage, "everywhere") == null);
+
+    // `--ownership=v1|v2` (ownership-v2.md §7.2): on `Common`, so the diff
+    // can dump every root under both.
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .ownership = .v2 }, .stage = .ownership, .file = "M.beni" } },
+        &.{ "dump", "--stage=ownership", "--ownership=v2", "M.beni" },
+    );
+    try expectCommand(
+        .{ .check = .{ .common = .{ .ownership = .v1 }, .platform = "node", .paths = &.{"src"} } },
+        &.{ "check", "--ownership=v1", "--platform=node", "src" },
+    );
+    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2", &.{ "check", "--ownership=v3", "src" });
+    try expectUsage("beni: option '--ownership' needs a value: --ownership=v1|v2", &.{ "check", "--ownership", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "--ownership") == null);
+
+    // The two differential switches of a build (ownership-v2.md §7.3),
+    // hidden; the list sanitiser is a development build's.
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .sanitize_lists = true, .records_in_place = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--sanitize-lists", "--records-in-place", "src" },
+    );
+    try expectUsage("beni: --sanitize-lists is for development builds, not --release", &.{ "build", "--platform=node", "--sanitize-lists", "--release", "src" });
+    try expectUsage("beni: option '--records-in-place' does not take a value", &.{ "build", "--platform=node", "--records-in-place=1", "src" });
+    try expectUsage("beni: unknown option '--sanitize-lists'; run 'beni help' for usage", &.{ "check", "--sanitize-lists", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "sanitize-lists") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "records-in-place") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

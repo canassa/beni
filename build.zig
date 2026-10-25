@@ -766,14 +766,26 @@ pub fn build(b: *std.Build) void {
     lost.has_side_effects = true;
     lost_step.dependOn(&lost.step);
 
-    // Every `run/` program built again with its records written in place,
-    // under the hidden stale-read sanitiser, against its golden, recorded
-    // under spreads (ownership-checker.md §31.12 slice 3); a program the
-    // ownership checker refuses under `--ownership-everywhere` is skipped.
-    // Not a gate: a third build and run of every `run/` program. The
-    // gates run the `.in-place` fixtures, the seeded differential corpus.
-    const in_place_step = b.step("test-records-in-place", "Build every run/ program with its records written in place, as shipped and under the stale-read sanitiser, and compare its output with its golden (ownership-checker.md §31.12); not a gate");
+    // Every `run/` program and every `browser/inline/` page built again with
+    // its records written in place (`--records-in-place`) — under the hidden
+    // stale-read sanitiser, as shipped and as a release ships them —
+    // against its golden, recorded under spreads (ownership-checker.md
+    // §31.12 slice 3; ownership-v2.md §7.3); a program the ownership checker
+    // refuses under the flag is skipped. Not a gate: three more builds and
+    // runs of every program. The gates run the `.in-place` fixtures, the
+    // seeded differential corpus.
+    const in_place_step = b.step("test-records-in-place", "Build every run/ program and browser/inline/ page with its records written in place, under the stale-read sanitiser, as shipped and under --release, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
     in_place_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "all" }).step);
+    in_place_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "all" }).step);
+    // Its list twin (ownership-v2.md §7.3, oc §30.7 O5): every `run/`
+    // program, with the ownership check enforced, and every
+    // `browser/inline/` page built again under the list stale-read
+    // sanitiser, against its golden. Lists are not written in place yet, so
+    // this is the one pass; S8b adds the stores. Not a gate. The gates run
+    // the `.sanitize-lists` fixtures.
+    const lists_step = b.step("test-lists-in-place", "Build every run/ program and browser/inline/ page under the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
+    lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists" }).step);
+    lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists" }).step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);
@@ -2303,8 +2315,9 @@ const HarnessEnvironment = struct {
     /// fuzz longer than the gates' (`zig build fuzz`).
     fuzz_seeds: []const u8 = "",
     fuzz_steps: []const u8 = "",
-    /// The corpus walker's `BENI_IN_PLACE` (`all`): every `run/` fixture
-    /// built again with its records written in place, under the sanitiser.
+    /// The corpus walker's `BENI_IN_PLACE`: `all`, every `run/` fixture and
+    /// `browser/inline/` page built again with its records written in place;
+    /// `lists`, built again under the list sanitiser.
     in_place: []const u8 = "",
 };
 

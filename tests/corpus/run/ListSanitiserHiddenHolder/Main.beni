@@ -1,0 +1,15 @@
+-- A write the ownership checker accepts, of a list a platform kept behind
+-- its back (`Keeper.keep`), whose old version the platform then reads. The
+-- plain build prints nothing. Under the list stale-read sanitiser
+-- (`ownership-v2.md` §7.3) the write poisons the list it wrote, and the
+-- platform's read traps: a holder older than an accepted write is caught
+-- wherever it hides.
+import Keeper
+import List
+import Node
+
+
+main : Node.Program
+main =
+    written = List.push (Keeper.keep [ 1, 2, 3 ]) 4
+    Node.printLines (Keeper.audit written)

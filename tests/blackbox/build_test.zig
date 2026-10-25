@@ -7612,3 +7612,89 @@ test "root closures: warm, cold and cache-less builds agree after each owner, re
     const fourth = try w.read("none-3-dev-1/Main.mjs");
     try testing.expect(std.mem.indexOf(u8, fourth, "W1$update$$arm$0(") != null);
 }
+
+test "the list sanitiser runs only where ownership is enforced, and writes its runtime only there" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §7.3: the sanitiser judges the writes the checker
+    // accepted. A build that does not enforce accepts nothing, so the flag
+    // there would pass every program and check none: it is refused. Where
+    // the build enforces, the program prints what the plain build prints.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (List.length (List.push [ 1, 2 ] 3)))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const refused = try w.runWith(&.{ "build", "--platform=node", "--sanitize-lists", "--out=refused", "Main.beni" }, raw);
+    const plain = try w.run(&.{ "build", "--platform=node", "--ownership-everywhere", "--out=plain", "Main.beni" });
+    const sanitised = try w.run(&.{ "build", "--platform=node", "--ownership-everywhere", "--sanitize-lists", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), refused.exit_code);
+    try testing.expectEqualStrings("beni: --sanitize-lists needs a build that enforces ownership: an in-place platform, --ownership-everywhere or --records-in-place\n", refused.stderr);
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqual(@as(u8, 0), sanitised.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "3\n" });
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY FILES                            │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/Main.mjs"), "_core/_sanitize.mjs") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("plain/Main.mjs"), "_sanitize") == null);
+    _ = try w.read("out/_core/_sanitize.mjs");
+    for (try w.listFiles("plain")) |rel| try testing.expect(std.mem.indexOf(u8, rel, "_sanitize") == null);
+}
+
+test "the ownership checker v2 is not built yet, and every command given it says so" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §8: v2 is built behind the hidden `--ownership=v2`,
+    // slice by slice; until a slice builds it, there is nothing to run.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "hi"
+        \\
+    );
+    const message = "beni: --ownership=v2: the ownership checker v2 is not built yet; run v1, the default\n";
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const check = try w.runWith(&.{ "check", "--ownership=v2", "--platform=node", "Main.beni" }, raw);
+    const build = try w.runWith(&.{ "build", "--ownership=v2", "--platform=node", "Main.beni" }, raw);
+    const dump = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, raw);
+    const v1 = try w.run(&.{ "check", "--ownership=v1", "--platform=node", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ check, build, dump }) |r| {
+        try testing.expectEqual(@as(u8, 2), r.exit_code);
+        try testing.expectEqualStrings(message, r.stderr);
+        try testing.expectEqualStrings("", r.stdout);
+    }
+    try testing.expectEqual(@as(u8, 0), v1.exit_code);
+}

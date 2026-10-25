@@ -68,6 +68,12 @@ pub fn main(init: std.process.Init) u8 {
         .usage => |u| return fail(stderr, "{s}", .{u.message()}),
     };
 
+    if (ownershipV2(command)) {
+        // `--ownership=v2` (`Cli.Common.ownership`): the checker
+        // `ownership-v2.md` specifies is built slice by slice behind the
+        // flag (§8), and until a slice builds it there is nothing to run.
+        return fail(stderr, "beni: --ownership=v2: the ownership checker v2 is not built yet; run v1, the default", .{});
+    }
     switch (command) {
         .version => {
             // The build id follows the version (`fast-compiler.md` §8): a
@@ -107,6 +113,19 @@ pub fn main(init: std.process.Init) u8 {
         },
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }
+}
+
+/// Whether `command` asks for the ownership checker v2 (`--ownership=v2`).
+fn ownershipV2(command: Cli.Command) bool {
+    const common: Cli.Common = switch (command) {
+        .build => |b| b.common,
+        .serve => |s| s.build.common,
+        .check => |c| c.common,
+        .fmt => |f| f.common,
+        .dump => |d| d.common,
+        else => return false,
+    };
+    return common.ownership == .v2;
 }
 
 fn fail(stderr: *Io.Writer, comptime fmt: []const u8, args: anytype) u8 {
