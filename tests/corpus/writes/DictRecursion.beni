@@ -1,0 +1,49 @@
+-- writes: a recursion that inserts into a `Dict` it threads (#989). The
+-- element that carries what an edit read mints no root, so the rounds of
+-- §4.3's fixpoint meet: `Fill` is `grow`, not a cap. `Either` and `Rather` join
+-- two insertions of different keys in either order: `grow` both ways.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : Dict Int Int
+
+
+type Msg
+    = Fill Int
+    | Either Int
+    | Rather Int
+
+
+fill : Dict Int Int, Int → Dict Int Int
+fill rows n = if n ≤ 0 then rows else fill (Dict.insert rows n 0) (n - 1)
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Fill n →
+            { model | rows = fill model.rows n }
+
+        Either n →
+            if n > 3 then
+                { model | rows = Dict.insert model.rows 1 n }
+            else
+                { model | rows = Dict.insert model.rows 2 n }
+
+        Rather n →
+            if n > 3 then
+                { model | rows = Dict.insert model.rows 2 n }
+            else
+                { model | rows = Dict.insert model.rows 1 n }
+
+
+view : Model → Html Msg
+view model = <p>{Dict.size model.rows}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty }, update = update, view = view }

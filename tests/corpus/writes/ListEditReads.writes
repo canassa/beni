@@ -1,0 +1,21 @@
+program ListEditReads.main : Tea.sandbox
+  model ListEditReads.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.x ≈
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole ListEditReads.beni:30:12                   dynamic    reads ρ.ids; ρ.x
+  hole ListEditReads.beni:31:12                   dynamic    reads ρ.ids; ρ.x
+  hole ListEditReads.beni:32:12                   dynamic    reads ρ.ids; ρ.x
+  hole ListEditReads.beni:33:12                   dynamic    reads ρ.ids; ρ.x
+  hole ListEditReads.beni:34:12                   dynamic    reads ρ.ids; ρ.x
+  hole ListEditReads.beni:35:12                   dynamic    reads ρ.ids; ρ.x
+  holes 6: static 0, literal 0, static-key 0, dynamic 6
+  site ListEditReads.beni:29:5                    unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 1 over 1 keys and 1 groups (1.00 per key); every key calls 1 of 1 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
