@@ -6294,20 +6294,34 @@ record rules. One whole switch would have waited on all of them. So O4 splits:
 
   *Gated on* #856 and #955, which make the limit fixtures check clean. *Accepted when* the gates are green, no
   golden changes but the refusals the slice intends, and the run hashes do not change: nothing emitted moves.
-- **O4b — records everywhere (#978).** Until O4b, RECORD demands (§31) are enforced, and records written in
-  place, only where records are written in place today: in a module whose markup lowering takes a key's leaf
-  fields (`Lowering.arm_fields`, `browser-inline`'s `inline`, §31.10's R6). This is not a manifest key, and the
-  predicate is deleted in O4b. Records stay spreads on `browser` and `browser-tea` (#966) for good, and they
-  reach `node` in place only after O4b. The corpus's `.in-place` differential (§31.12 slice 3), which builds
-  `run/` fixtures with records in place through O0's flag, moves to a hidden, test-only `--records-in-place`,
-  listed in no usage text, which enforces the record demands it lowers. *Gated on* the record precision issues
-  #978 lists, and on the fixtures that share for real taking their fixes.
+- **O4b — records everywhere (#978).** Until O4b, a build's one switch (`Session.enforce_ownership`, today
+  `"lists": "in-place"` or O0's flag) is two:
+  - **list enforcement**, on in every build;
+  - **record enforcement**, on only where records are written in place today: in a build whose chain's markup
+    lowering takes a key's leaf fields (`Lowering.arm_fields`; `browser-inline`'s `inline`, §31.10's R6, or a
+    lowering registered with `-Dplatform` that declares it).
+
+  Record enforcement gates both the record diagnostics and the in-place record lowering: `Emit`'s
+  `clean_modules`, each module's `ownership` table, and so `Lower.recordUpdateInPlace` and the hoists. List
+  enforcement never turns them on. So O4a writes records in place nowhere it does not today. Record demands
+  are still computed in every run, as the dump shows them today, and a module's table is clean only when every
+  demand it holds was accepted, its record demands included (`allAccepted`). A project's platform layered on
+  `browser-inline` with a lowering of its own that does not declare `arm_fields` gets spreads, where today it
+  would write in place. That is the safe direction; no such platform exists. The predicate is not a manifest
+  key, and O4b deletes it. After O4b, record demands are enforced in every build. Records are then written in
+  place on every platform except `browser` and `browser-tea`, which keep spreads until #966 retires them (the
+  owner, 2026-10-25). This supersedes, for those two platforms only, the "every platform" of O6 as amended
+  2026-10-17, §31.11 and §31.12. Records reach `node` in place only after O4b. The corpus's `.in-place`
+  differential (§31.12 slice 3) builds `run/` fixtures with records in place through O0's flag. It moves to a
+  hidden, test-only `--records-in-place`, listed in no usage text, which turns record enforcement on with the
+  lowering. *Gated on* the record precision issues #978 lists, and on the fixtures that share for real taking
+  their fixes.
 
 **Why the split keeps every guarantee.** The guarantee is value semantics: no program observes a write through
 another holder. A write in place can break it, and a copy cannot. Under O4a, every list write that may be done in
-place is checked on every platform, and every record write that is done in place is checked on the platform that
-does it, because enforcement and the in-place lowering follow one predicate. What O4b defers is the refusal of
-record writes that are still copies, the spreads, which cannot break the guarantee. Nothing is accepted that an
+place is checked on every platform. Every record write that is done in place is checked on the platform that does
+it, because enforcement and the in-place lowering follow one switch, record enforcement. What O4b defers is the
+refusal of record writes that are still copies, the spreads, which cannot break the guarantee. Nothing is accepted that an
 in-place write would make unsafe, and no refusal becomes a silent copy: there is no fallback, because a spread is
 how the record is written there, not a substitute for a write the checker could not prove.
 
