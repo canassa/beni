@@ -354,8 +354,16 @@ pub const Table = struct {
         defer scratch.deinit(gpa);
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        // Everything this walk adds is undone if any step of it is refused,
+        // so a refusal leaves no half-built place for another owner to read
+        // (§4.4: the owner that hit the limit stops; nobody gets a wrong
+        // answer).
+        var added: std.ArrayList(u32) = .empty;
+        defer added.deinit(gpa);
         const first_new = t.count();
-        const top = try t.open(gpa, account, source, root, &scratch, &stack);
+        const first_step: usize = t.step_tab.len;
+        errdefer t.rollback(first_new, first_step, added.items);
+        const top = try t.open(gpa, account, source, root, &scratch, &stack, &added);
         while (stack.items.len > 0) {
             const f = &stack.items[stack.items.len - 1];
             if (f.cursor == f.len) {
@@ -370,24 +378,32 @@ pub const Table = struct {
                 t.step_tab.items(.child)[slot] = known;
                 continue;
             }
-            const made = try t.open(gpa, account, source, c.@"var", &scratch, &stack);
+            const made = try t.open(gpa, account, source, c.@"var", &scratch, &stack, &added);
             t.step_tab.items(.child)[slot] = made;
         }
         try t.settleHolds(gpa, first_new);
         return top;
     }
 
-    /// Allocate `v`'s place, memoise it BEFORE its children are visited
-    /// (the knot), describe it and push a frame for its children.
-    fn open(t: *Table, gpa: Allocator, account: *Account, source: Source, v: u32, scratch: *std.ArrayList(Child), stack: *std.ArrayList(Frame)) Error!PlaceId {
+    /// Undo a refused walk: its places, their steps and their memo entries.
+    fn rollback(t: *Table, first_new: u32, first_step: usize, vars: []const u32) void {
+        for (vars) |v| t.by_var.remove(v);
+        t.places.shrinkRetainingCapacity(first_new);
+        t.step_tab.shrinkRetainingCapacity(first_step);
+    }
+
+    /// Describe `v` and check every limit FIRST; only then allocate its
+    /// place and memoise it — before its children are visited (the knot) —
+    /// and push a frame for them.
+    fn open(t: *Table, gpa: Allocator, account: *Account, source: Source, v: u32, scratch: *std.ArrayList(Child), stack: *std.ArrayList(Frame), added: *std.ArrayList(u32)) Error!PlaceId {
         try account.limitOver(.type_places, @as(u64, t.count()) + 1, t.limits.type_places);
-        const id: PlaceId = .from(t.count());
-        try t.by_var.put(gpa, v, id);
-        try t.places.append(gpa, .{ .kind = .cross, .head = 0, .steps = .empty, .holds = .{}, .class = .none });
         const first: u32 = @intCast(scratch.items.len);
         const d = try source.describe(source.ctx, v, scratch);
         const len: u32 = @intCast(scratch.items.len - first);
         if (d.kind.childLimit()) |l| try account.limitOver(l, len, t.limits.children);
+        const id: PlaceId = .from(t.count());
+        try added.append(gpa, v);
+        try t.by_var.put(gpa, v, id);
         const start: u32 = @intCast(t.step_tab.len);
         // The canonical step order is the word order of `Step`: fields by
         // text rank, indices, `C#i` by (constructor, argument). A source
@@ -399,7 +415,7 @@ pub const Table = struct {
         }.lessThan);
         try t.step_tab.ensureUnusedCapacity(gpa, len);
         for (scratch.items[first..]) |c| t.step_tab.appendAssumeCapacity(.{ .step = c.step, .child = .none });
-        t.places.set(id.int(), .{ .kind = d.kind, .head = d.head, .steps = .{ .start = start, .len = len }, .holds = d.kind.own(), .class = .none });
+        try t.places.append(gpa, .{ .kind = d.kind, .head = d.head, .steps = .{ .start = start, .len = len }, .holds = d.kind.own(), .class = .none });
         try stack.append(gpa, .{ .place = id, .first = first, .len = len, .cursor = 0 });
         return id;
     }
@@ -1055,4 +1071,38 @@ test "no session id reaches the bytes for any place kind, a reclassified leaf in
         if (h >= 777 and h <= 782) seen_heads += 1;
     }
     try testing.expectEqual(@as(u32, 5), seen_heads);
+}
+
+test "a refused walk leaves no placeholder: the next owner gets the real place" {
+    var f: Fixture = .{};
+    f.init(&record_nodes);
+    defer f.deinit();
+    // Owner A is refused by the child limit after `describe`; owner B, with
+    // the limit restored, must see the record and its lists, not a leaf.
+    f.table.limits.children = 1;
+    try testing.expectError(error.OwnershipLimit, f.of(0));
+    try testing.expectEqual(@as(u32, 0), f.table.count());
+    try testing.expectEqual(@as(usize, 0), f.table.step_tab.len);
+    f.table.limits.children = Ids.Limit.record_fields.value();
+    var b: Account = .{};
+    defer b.deinit(testing.allocator);
+    // The source checks step payloads against the owner's account too.
+    f.graph.account = &b;
+    const rec = try f.table.of(testing.allocator, &b, f.graph.source(), 0);
+    try testing.expectEqual(Kind.record, f.table.kind(rec));
+    try testing.expectEqual(@as(usize, 2), f.table.steps(rec).steps.len);
+    try testing.expect(f.table.holds(rec).list);
+    // An exhausted owner deep in a walk (the tree below the record) undoes
+    // everything it added, and B rebuilds it whole.
+    var g: Fixture = .{};
+    g.init(&record_nodes);
+    defer g.deinit();
+    g.account.allowance = 0;
+    try testing.expectError(error.OwnershipLimit, g.account.reserve(.cell, 1));
+    try testing.expectError(error.OwnershipLimit, g.of(0));
+    try testing.expectEqual(@as(u32, 0), g.table.count());
+    g.graph.account = &b;
+    const rec2 = try g.table.of(testing.allocator, &b, g.graph.source(), 0);
+    try testing.expectEqual(@as(u32, 4), g.table.count());
+    try testing.expectEqual(Kind.ctor, g.table.kind(g.table.child(rec2, try Step.field(&b, 11)).?));
 }
