@@ -1,0 +1,113 @@
+-- ownership: a call with no summary may hold a `List ⊤` it is handed (#952).
+-- `fns.f` and its twins are read from a record of named functions, so the
+-- checker sees no summary and asks the result's type whether it may hold
+-- the argument. A field written `List ⊤`, `Maybe (List ⊤)` or
+-- `List (List ⊤)` may hold a `List ⊤`, as a record's or a tuple's may. Each
+-- `push…` pushes onto the list a result may hold and reads the result
+-- after: rejected `call`, as the `List Int` twin `pushInt` is. `pushOther`
+-- holds a different list: accepted.
+type Box
+    = Box (List ⊤) Int
+
+
+type BoxM
+    = BoxM (Maybe (List ⊤)) Int
+
+
+type BoxN
+    = BoxN (List (List ⊤)) Int
+
+
+type BoxI
+    = BoxI (List Int) Int
+
+
+fns :
+    { f : List ⊤ → Box
+    , fm : List ⊤ → BoxM
+    , fn : List ⊤ → BoxN
+    , fi : List Int → BoxI
+    , fr : List ⊤ → { xs : List ⊤, k : Int }
+    , ft : List ⊤ → List ⊤ × Int
+    }
+fns =
+    { f = mkBox
+    , fm = mkMaybe
+    , fn = mkNested
+    , fi = mkInt
+    , fr = mkRecord
+    , ft = mkTuple
+    }
+
+
+mkBox : List ⊤ → Box
+mkBox xs = Box xs 0
+
+
+mkMaybe : List ⊤ → BoxM
+mkMaybe xs = BoxM (Just xs) 0
+
+
+mkNested : List ⊤ → BoxN
+mkNested xs = BoxN [ xs ] 0
+
+
+mkInt : List Int → BoxI
+mkInt xs = BoxI xs 0
+
+
+mkRecord : List ⊤ → { xs : List ⊤, k : Int }
+mkRecord xs = { xs = xs, k = 0 }
+
+
+mkTuple : List ⊤ → List ⊤ × Int
+mkTuple xs = ( xs, 0 )
+
+
+pub pushBox : ⊤ → Box × List ⊤
+pushBox ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.f xs
+    ( b, List.push xs ⊤ )
+
+
+pub pushMaybe : ⊤ → BoxM × List ⊤
+pushMaybe ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.fm xs
+    ( b, List.push xs ⊤ )
+
+
+pub pushNested : ⊤ → BoxN × List ⊤
+pushNested ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.fn xs
+    ( b, List.push xs ⊤ )
+
+
+pub pushInt : ⊤ → BoxI × List Int
+pushInt ⊤ =
+    xs = List.repeat 1 3
+    b = fns.fi xs
+    ( b, List.push xs 2 )
+
+
+pub pushRecord : ⊤ → { xs : List ⊤, k : Int } × List ⊤
+pushRecord ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.fr xs
+    ( b, List.push xs ⊤ )
+
+
+pub pushTuple : ⊤ → (List ⊤ × Int) × List ⊤
+pushTuple ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.ft xs
+    ( b, List.push xs ⊤ )
+
+
+pub pushOther : ⊤ → Box × List ⊤
+pushOther ⊤ =
+    xs = List.repeat ⊤ 3
+    b = fns.f (List.repeat ⊤ 2)
+    ( b, List.push xs ⊤ )

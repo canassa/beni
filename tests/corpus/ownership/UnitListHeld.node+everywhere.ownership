@@ -1,0 +1,24 @@
+module UnitListHeld
+  71:10 List.push xs: rejected call: b⋆ may hold it through the call at 70:12, and is read at 71:5 (approx)
+  78:10 List.push xs: rejected call: b⋆ may hold it through the call at 77:12, and is read at 78:5 (approx)
+  85:10 List.push xs: rejected call: b⋆ may hold it through the call at 84:12, and is read at 85:5 (approx)
+  92:10 List.push xs: rejected call: b⋆ may hold it through the call at 91:12, and is read at 92:5 (approx)
+  99:10 List.push xs: rejected call: b⋆ may hold it through the call at 98:12, and is read at 99:5 (approx)
+  106:10 List.push xs: rejected call: b⋆ may hold it through the call at 105:12, and is read at 106:5 (approx)
+  113:10 List.push xs: accepted call
+  summary mkBox: π1 RA; res #Box.0 π1
+  summary mkMaybe: π1 RA; res #BoxM.0#Just.0 π1
+  summary mkNested: π1 RA; res #BoxN.0 fresh1{excl π1}, #BoxN.0[*] π1
+  summary mkInt: π1 RA; res #BoxI.0 π1
+  summary mkRecord: π1 RA; res .xs π1, fresh501◦
+  summary mkTuple: π1 RA; res .0 π1
+  summary pushBox: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost} ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost} ~fresh3{lost}, condition(fresh4){lost}r{lost}
+  summary pushMaybe: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost} ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost} ~fresh3{lost}, condition(fresh4){lost}r{lost}
+  summary pushNested: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost} ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost} ~fresh3{lost}, condition(fresh4){lost}r{lost}
+  summary pushInt: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost}r{lost} ~fresh3{lost}r{lost}, .1 fresh1{lost}r{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost}r{lost} ~fresh3{lost}r{lost}, condition(fresh4){lost}r{lost}
+  summary pushRecord: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost} ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost} ~fresh3{lost}, condition(fresh4){lost}r{lost}
+  summary pushTuple: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~condition(fresh6) ~fresh1{lost} ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh7), .1[*] ~condition(fresh2) ~condition(fresh3) ~fresh2{lost} ~fresh3{lost}, condition(fresh4){lost}r{lost}
+  summary pushOther: res .0 ~condition(fresh5) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh3) ~fresh3{lost}, .1 fresh1{lost} ~condition(fresh6), .1[*] ~condition(fresh2) ~fresh2{lost}, condition(fresh4){lost}r{lost}
+  demands 7: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 7: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause call 6
