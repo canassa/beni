@@ -4214,10 +4214,11 @@ fn schemaSummary(o: *Ownership, m: u32, d: u32) Allocator.Error!*const Summary {
     const t = try o.schemaTaint(m, d);
     const a = o.keep.allocator();
     var res: std.ArrayList(ResEntry) = .empty;
-    for (t.decoded) |p| try res.append(a, .{ .path = try o.child(eps, .schema_decoded, 0), .prov = p });
-    for (t.encoded) |p| try res.append(a, .{ .path = try o.child(eps, .schema_encoded, 0), .prov = p });
+    var objs: std.ArrayList(ResEntry) = .empty;
+    for (t.decoded) |p| try o.putSlot(&res, &objs, try o.child(eps, .schema_decoded, 0), p);
+    for (t.encoded) |p| try o.putSlot(&res, &objs, try o.child(eps, .schema_encoded, 0), p);
     const s = try a.create(Summary);
-    s.* = try o.normalize(.{ .params = 0, .res = res.items });
+    s.* = try o.normalize(.{ .params = 0, .res = res.items, .objs = objs.items });
     return s;
 }
 
@@ -4393,7 +4394,40 @@ fn slotProvs(o: *Ownership, s: *const Summary, t: [2]u32, shared: bool) Allocato
         if (into_decoded) try decoded.append(keep, p);
         if (into_encoded) try encoded.append(keep, p);
     }
+    // §31.7 (#962): the records a slot holds that no list's fact reads — a
+    // conversion's `λ_ → Ok origin` — are the slot's too, as objects alone
+    // (`obj`), which a run's answer carries in `objs`. An object at the
+    // root is the value's own, and says nothing of its slots.
+    for (s.objs) |r| {
+        const first = o.firstStep(r.path) orelse continue;
+        const into_decoded, const into_encoded = switch (first.kind) {
+            .schema_decoded => .{ true, false },
+            .schema_encoded => .{ false, true },
+            .any => if (first.arg == 0) .{ true, true } else continue,
+            else => continue,
+        };
+        var p: Prov = switch (r.prov.kind) {
+            .fresh, .esc => if (shared) .{ .kind = .shared, .a = t[0], .b = t[1], .path = r.path } else .{ .kind = .top, .a = unfollowed },
+            .shared => r.prov,
+            else => .{ .kind = .top, .a = if (r.prov.kind == .top) r.prov.a else unfollowed },
+        };
+        p.obj = true;
+        if (into_decoded) try decoded.append(keep, p);
+        if (into_encoded) try encoded.append(keep, p);
+    }
     return .{ .decoded = decoded.items, .encoded = encoded.items };
+}
+
+/// A slot's provenance `p` at `path` of a run's or a schema's answer: in
+/// `objs` when it is a record's object alone (`slotProvs`), which no list's
+/// fact reads, else in `res`; `any` puts it anywhere (`anywhereIn`).
+fn putSlot(o: *Ownership, res: *std.ArrayList(ResEntry), objs: *std.ArrayList(ResEntry), path: ?u32, p: Prov) Allocator.Error!void {
+    const keep = o.keep.allocator();
+    if (p.obj) {
+        try objs.append(keep, .{ .path = path orelse try o.child(eps, .any, 0), .prov = p, .approx = path == null });
+        return;
+    }
+    if (path) |at| try res.append(keep, .{ .path = at, .prov = p }) else try o.anywhereIn(res, p);
 }
 
 /// §30.10: the summary of a call of a schema declaration's member —
@@ -4423,6 +4457,7 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
     const any = try o.child(eps, .any, 0);
     var uses: std.ArrayList(UseEntry) = .empty;
     var res: std.ArrayList(ResEntry) = .empty;
+    var objs: std.ArrayList(ResEntry) = .empty;
     try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } });
     switch (kind) {
         .schema => {
@@ -4435,8 +4470,8 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
                 try res.append(keep, .{ .path = kept, .prov = .{ .kind = .param, .a = i, .path = eps }, .approx = true });
                 for (slots) |p| try res.append(keep, .{ .path = p, .prov = .{ .kind = .param, .a = i, .path = p } });
             }
-            for (taint.decoded) |p| try res.append(keep, .{ .path = slots[0], .prov = p });
-            for (taint.encoded) |p| try res.append(keep, .{ .path = slots[1], .prov = p });
+            for (taint.decoded) |p| try o.putSlot(&res, &objs, slots[0], p);
+            for (taint.encoded) |p| try o.putSlot(&res, &objs, slots[1], p);
         },
         .parse, .parse_with => {
             for (0..n) |iu| {
@@ -4446,7 +4481,7 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
                 try o.anywhereIn(&res, .{ .kind = .param, .a = i, .path = slots[0] });
             }
             for (n..arity) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = R });
-            for (taint.decoded) |p| try o.anywhereIn(&res, p);
+            for (taint.decoded) |p| try o.putSlot(&res, &objs, null, p);
         },
         .print, .print_with => {
             for (0..arity - 1) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = R });
@@ -4461,7 +4496,7 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
     // answer values the program made.
     if ((kind == .parse or kind == .parse_with) and n == 0 and taint.decoded.len == 0) res.items[0].rxc = .{};
     const s = try keep.create(Summary);
-    s.* = try o.normalize(.{ .params = arity, .uses = uses.items, .res = res.items, .asserted = true });
+    s.* = try o.normalize(.{ .params = arity, .uses = uses.items, .res = res.items, .objs = objs.items, .asserted = true });
     try o.schema_members.put(o.in.gpa, key, s);
     return s;
 }
@@ -14263,17 +14298,18 @@ const Walker = struct {
         const keep = o.keep.allocator();
         const slots = [_]u32{ try o.child(eps, .schema_decoded, 0), try o.child(eps, .schema_encoded, 0) };
         var uses: std.ArrayList(UseEntry) = .empty;
+        var objs: std.ArrayList(ResEntry) = .empty;
         var res: std.ArrayList(ResEntry) = .empty;
         try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } });
         for (0..arity) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_r });
         switch (kind) {
             .schema => {
-                for (taint.decoded) |p| try res.append(keep, .{ .path = slots[0], .prov = p });
-                for (taint.encoded) |p| try res.append(keep, .{ .path = slots[1], .prov = p });
+                for (taint.decoded) |p| try o.putSlot(&res, &objs, slots[0], p);
+                for (taint.encoded) |p| try o.putSlot(&res, &objs, slots[1], p);
             },
-            .decode => for (taint.decoded) |p| try o.anywhereIn(&res, p),
+            .decode => for (taint.decoded) |p| try o.putSlot(&res, &objs, null, p),
             .decode_value, .encode_value => {
-                for (if (kind == .decode_value) taint.decoded else taint.encoded) |p| try o.anywhereIn(&res, p);
+                for (if (kind == .decode_value) taint.decoded else taint.encoded) |p| try o.putSlot(&res, &objs, null, p);
                 const input: u32 = @intCast(arity - 1);
                 uses.items[input].bits |= bit_a;
                 try o.inputAside(&res, input);
@@ -14287,7 +14323,7 @@ const Walker = struct {
         // which no record a program can write is reached.
         if ((kind == .decode or kind == .decode_value) and taint.decoded.len == 0) res.items[0].rxc = .{};
         const s = try w.a.create(Summary);
-        s.* = try o.normalize(.{ .params = @intCast(arity), .uses = uses.items, .res = res.items, .asserted = true });
+        s.* = try o.normalize(.{ .params = @intCast(arity), .uses = uses.items, .res = res.items, .objs = objs.items, .asserted = true });
         return s;
     }
 
@@ -14383,22 +14419,32 @@ const Walker = struct {
             // list it makes is new — but either, returned at two places,
             // puts one list at two positions of the answer (#268).
             if (!argument_is_input and try w.o.returnsOneCellTwice(w.store, s, source, target)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
-            for (s.res) |r| switch (r.prov.kind) {
-                .fresh => {},
-                // `backward` is handed the program's value: what it returns of
-                // it is the run's input (`input_marker`). `forward` is handed
-                // what the run built.
-                .param => if (argument_is_input) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = 2 })),
-                .esc => try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed })),
-                .env => if (ci == none)
-                    try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed }))
-                else
-                    try out.appendSlice(w.a, try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .closure = ci, .depth = 1, .effects = false })),
-                .shared, .top => try out.appendSlice(w.a, try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 1, .effects = false })),
-                .cb, .klass => try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed })),
-            };
+            for (s.res) |r| try out.appendSlice(w.a, try w.answerOf(r, s, inst, ci, argument_is_input));
+            // §31.7 (#962): and the records it returns that no list's fact
+            // reads — a captured or top-level record of numbers, `λ_ → Ok
+            // origin` — as cells no list's fact reads. Left out, a decoder
+            // whose conversion answers one record took its answer for fresh.
+            for (s.objs) |r| try out.appendSlice(w.a, try w.objectView(try w.answerOf(r, s, inst, ci, argument_is_input)));
         }
         return w.norm(out.items);
+    }
+
+    /// `functionAnswer`'s reading of one result entry of `s`.
+    fn answerOf(w: *Walker, r: ResEntry, s: *const Summary, inst: Inst.Index, ci: u32, argument_is_input: bool) Allocator.Error!AV {
+        return switch (r.prov.kind) {
+            .fresh => &.{},
+            // `backward` is handed the program's value: what it returns of
+            // it is the run's input (`input_marker`). `forward` is handed
+            // what the run built.
+            .param => if (argument_is_input) try w.single(.{ .kind = .top, .a = 2 }) else &.{},
+            .esc => try w.single(.{ .kind = .top, .a = unfollowed }),
+            .env => if (ci == none)
+                try w.single(.{ .kind = .top, .a = unfollowed })
+            else
+                try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .closure = ci, .depth = 1, .effects = false }),
+            .shared, .top => try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 1, .effects = false }),
+            .cb, .klass => try w.single(.{ .kind = .top, .a = unfollowed }),
+        };
     }
 
     fn callOp(w: *Walker, t: Target) Allocator.Error![]const u8 {
@@ -15128,11 +15174,17 @@ const Walker = struct {
             try held.append(w.a, e);
         }
         // A top-level value whose type can hold no list — a footer, an icon
-        // — is markup the view includes, not a message.
+        // — is no list a message carries. It may still be a record a
+        // message carries (`Go origin`, #962), so it stays, as a cell no
+        // list's fact reads (§31.2): a record demand that reaches it is
+        // `top-level`, and where the value is markup no record demand does.
         var out: std.ArrayList(Entry) = .empty;
         for (try w.anywhere(try w.norm(held.items), inst)) |e| {
             const c = w.cells.items[e.cell];
-            if (c.kind == .shared and c.path == eps and !try w.sharedHoldsList(c.a, c.b)) continue;
+            if (c.kind == .shared and c.path == eps and !try w.sharedHoldsList(c.a, c.b)) {
+                if (!c.condition_only) try out.append(w.a, .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown });
+                continue;
+            }
             try out.append(w.a, e);
         }
         return w.norm(out.items);
@@ -19208,24 +19260,44 @@ const Walker = struct {
         const keep = w.o.keep.allocator();
         var uses: std.ArrayList(UseEntry) = .empty;
         var res: std.ArrayList(ResEntry) = .empty;
-        // A field that can hold no list `update` could write carries nothing.
+        // §31.7 (#962): a field that holds a record and no list carries it
+        // where only the record facts read it, in `objs`, as a lambda's
+        // `λx → C x` answers it. Dropped, the constructor's answer held
+        // nothing of it: a holder that was not one, so an update of the
+        // record was accepted while the constructed value still held it.
+        var objs: std.ArrayList(ResEntry) = .empty;
+        // A field that can hold no list `update` could write, and no
+        // record, carries nothing.
         for (ps, 0..) |pt, i| {
-            if (!try w.o.holdsList(w.store, pt, 0)) continue;
+            const at = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i)));
+            const prov: Prov = .{ .kind = .param, .a = @intCast(i), .path = eps };
+            if (try w.o.holdsList(w.store, pt, 0)) {
+                try res.append(keep, .{ .path = at, .prov = prov });
+            } else if (try w.o.holdsRecord(w.store, pt, 0)) {
+                try objs.append(keep, .{ .path = at, .prov = prov });
+            } else continue;
             try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
-            try res.append(keep, .{ .path = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
-        // Its operands pairwise apart (§16.7, #693), as a construction's.
+        // Its operands pairwise apart (§16.7, #693), as a construction's:
+        // the lists' among the list fields, the records' among all.
         var separation: std.ArrayList(XAtom) = .empty;
         {
             const gs = try keep.alloc([]Prov, res.items.len);
             for (gs, res.items) |*g, r| g.* = try keep.dupe(Prov, &.{r.prov});
             try apartAtoms(keep, .apart, gs, &separation);
         }
-        if (separation.items.len != 0) try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1, .condition_only = true }, .xc = .{ .atoms = separation.items }, .rxc = .{ .atoms = separation.items } });
+        var rseparation: std.ArrayList(XAtom) = .empty;
+        {
+            const gs = try keep.alloc([]Prov, res.items.len + objs.items.len);
+            for (gs[0..res.items.len], res.items) |*g, r| g.* = try keep.dupe(Prov, &.{r.prov});
+            for (gs[res.items.len..], objs.items) |*g, r| g.* = try keep.dupe(Prov, &.{r.prov});
+            try apartAtoms(keep, .apart, gs, &rseparation);
+        }
+        if (separation.items.len != 0 or rseparation.items.len != 0) try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1, .condition_only = true }, .xc = .{ .atoms = separation.items }, .rxc = .{ .atoms = rseparation.items } });
         const out = try w.a.create(Summary);
         // A constructor has exactly this primitive row, so unseen callback
         // calls cannot bypass its need check (including a variable-held one).
-        out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items, .asserted = true });
+        out.* = try w.o.normalize(.{ .params = @intCast(ps.len), .uses = uses.items, .res = res.items, .objs = objs.items, .asserted = true });
         return out;
     }
 

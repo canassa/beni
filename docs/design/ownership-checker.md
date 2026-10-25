@@ -7237,6 +7237,24 @@ lines go, none appears, and no list line moves. A callee that also reads the wri
 write whose fields a block could not name, stays a use of the record whole. Summaries print `W{F}` where
 they printed `RW{F}` for such a parameter.
 
+*Revised 2026-10-25 (#962): three places asked only "may this hold a list?", and so lost a record's cell.*
+§31.2 gave a record a cell of its own, and these three places still read the old rule. Each is now told
+about records, and does not let a list's fact read them:
+- **A constructor handed on as a function value** (`wrap Home page`, `withGlobal P4 …`). Its row carries a
+  field that holds a record and no list in `objs`, as `λp → Home p` answers it, and states the record
+  separation among all its fields. Before, the field was dropped, so the constructed value was no holder of
+  the record. `b = apply Box r; { r | x = 1 }; ( b, … )` was accepted and written in place
+  (`build/bad/inline/RecordConstructorValue`). The entry also found no cell under such a payload
+  (`ownership/RecordConstructorPayload`).
+- **A view's messages** keep a top-level value that holds no list, as a cell no list's fact reads. So
+  `onClick={Go origin}` hands `update` the constant, and writing it is `top-level`
+  (`build/bad/inline/RecordViewMessageConstant`).
+- **A conversion's answer** (`conversionSlots`) and **a slot's provenances** (`slotProvs`) read a summary's
+  `objs` as well as its `res`. A record's object in a slot is an `obj` provenance, which a run's or a
+  member's row carries in `objs`. So `λ_ → Ok origin` puts `origin` in ⟨decoded⟩, and the "decoded slot
+  empty" refinement of §31.4 item 6 no longer holds for it (`build/bad/inline/RecordConversionAnswer`).
+No list line of the corpus moves.
+
 ### 31.9 The errors
 
 Lines with the same position, verdict, cause and detail are one diagnostic (§28.5). The codes follow §28.6's
