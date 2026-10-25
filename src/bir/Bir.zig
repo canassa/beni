@@ -1676,6 +1676,59 @@ pub inline fn inlineRange(data: Inst.Data) SubRange {
     return .{ .start = @fromBackingInt(@intCast(data.lhs)), .end = @fromBackingInt(@intCast(data.rhs)) };
 }
 
+/// Append the instruction operands of `inst` — its sub-expressions, patterns
+/// and type instructions, in source order — to `out`. A `lambda`'s and a
+/// `let_def`'s parameters come before their body; a `let`'s definitions
+/// before its body; a `case`'s scrutinee before its branches. Locals,
+/// symbols and tokens are not instructions and are not appended. A schema
+/// plan's instructions are a graph of their own (`Decl.schema_body`) and
+/// appear in a value's body only as resolved leaf references.
+pub fn operands(bir: *const Bir, gpa: Allocator, inst: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+    const data = bir.instData(inst);
+    const lhs: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+    const rhs: Inst.Index = @fromBackingInt(@intCast(data.rhs));
+    switch (bir.instTag(inst)) {
+        .field_access, .tuple_index, .pat_as, .pat_spread, .@"try" => try out.append(gpa, lhs),
+        .let_stmt => try out.append(gpa, rhs),
+        .let_pattern, .branch => try out.appendSlice(gpa, &.{ lhs, rhs }),
+        .type_app, .call, .pat_ctor => {
+            try out.append(gpa, lhs);
+            try out.appendSlice(gpa, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index));
+        },
+        .type_fn, .lambda, .let => {
+            try out.appendSlice(gpa, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index));
+            try out.append(gpa, rhs);
+        },
+        .case => {
+            try out.append(gpa, lhs);
+            try out.appendSlice(gpa, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index));
+        },
+        .type_tuple, .tuple, .list, .interp, .pat_tuple, .pat_list => try out.appendSlice(gpa, bir.extraSlice(inlineRange(data), Inst.Index)),
+        .type_record, .record => for (bir.extraSlice(inlineRange(data), Field)) |f| try out.append(gpa, f.value),
+        .type_record_ext, .record_update => {
+            try out.append(gpa, lhs);
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Field)) |f| try out.append(gpa, f.value);
+        },
+        .method_call => {
+            try out.append(gpa, lhs);
+            const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), MethodCall);
+            try out.appendSlice(gpa, bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index));
+        },
+        .type_dispatch => {
+            const t = bir.extraData(@fromBackingInt(@intCast(data.rhs)), TypeDispatch);
+            try out.appendSlice(gpa, bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+        },
+        .let_def => {
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), LetDef);
+            if (def.annotation.unwrap()) |a| try out.append(gpa, a);
+            try out.appendSlice(gpa, bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index));
+            try out.append(gpa, rhs);
+        },
+        .markup => try bir.markupValues(gpa, @fromBackingInt(@intCast(data.lhs)), out),
+        else => {},
+    }
+}
+
 /// The bytes of a `string`, `chunk`, `pat_string`, `int`, `float` or
 /// `pat_int` instruction.
 pub fn bytes(bir: *const Bir, inst: Inst.Index) []const u8 {
