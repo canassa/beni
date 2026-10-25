@@ -6396,8 +6396,10 @@ reproduced), R-5.5.6's `where` alias (#279, met on master), R-5.12.3's `RefUpdat
 gated), R-5.11.6 (#228, schema defaults are not built: `default` does not parse), R-6.6 (the
 diagnostic schema has no field for a fix edit; its shape is a design choice), and R-7.6 (#428, did
 not reproduce in 12 dumps under load; a load scenario belongs in `pending_test.zig`). Within R-4.8.14,
-`writes/TagHeader`'s `SignIn` and `writes/B3HelperRecord` have no fixture: the requirements fix no
-verdict for them.
+`writes/TagHeader`'s `SignIn` and `writes/B3HelperRecord` have no fixture. `SignIn`'s `init` returns the
+top-level `Shared.start` through `λ⊤ →`, which R-5.8.3 keeps shared, so whether `model#Home.0` is
+accepted `entry` or refused `top-level` is not fixed. `B3HelperRecord`'s line is "pending: it is
+stored in a record", which R-5.5.3 keeps as a *pending* verdict.
 
 ## CK-275 — a helper editing one element of distinct fresh lists is refused exclusive (2026-10-25)
 
@@ -6556,7 +6558,7 @@ each.
 time, so the form is never reachable twice, yet the entry's record demand counts the other variant's
 path as another operand and refuses `model.status#Editing.1` and `#Saving.0` `disjoint`. R-4.8.15
 accepts them `entry`. In the same program `Dup` stores `model.a` at `b` too, and `Rename`'s write of
-`a` must stay `disjoint`.
+`a` must stay `disjoint`. Conduit's own four `status` lines are in CK-303's project.
 
 ## CK-293 — a schema decoder's issue list loses its record condition (2026-10-25)
 
@@ -6598,8 +6600,8 @@ accepted lines must stay as they are.
 `once`: an alias `ys = xs`; a second closure `g` over `xs`; `s = { a = xs, b = xs }`; a closure in a
 record field; a closure destructured from a captured tuple. The `.env` capture-write case decides from
 the creation and the one call, without checking the closure's body against the other holders.
-Required (R-5.4.3): refused, `alias` where a binding or field holds the list and `captured` where a
-closure does (R-4.3.1, R-5.4.1).
+Required (R-5.4.3 and its R-8.2 row): refused `alias`, also where a closure holds the list. R-5.4.1
+would name a closure holder `captured`; the two requirements disagree, and the fixture follows the row.
 
 ## CK-298 — a closure that pushes its capture is called twice (2026-10-25)
 
@@ -6648,7 +6650,8 @@ Conduit's view events carry only `Cred` and strings, so `model#Article.0.article
 `feed#Loaded.0#Model.0` and `model#Settings.0.status#Loaded.0` at `Main.beni:254` are accepted
 `entry`. v1 refuses them `payload` (approx): it joins the arms (§20.5, §23.6), and `viewPage`'s
 `Html.map` leaves the events approximate. The golden is `ownership/Conduit`'s with those lines and the
-counts changed; #410's four `status` lines stay refused.
+counts changed. Its four `model#Editor.1.status` lines are R-4.8.15's (#410, CK-292), refused
+`disjoint` by v1 and accepted `entry` in the golden.
 
 ## CK-304 — Conduit's ChangedUrl address is refused escaped at the entry (2026-10-25)
 

@@ -291,7 +291,8 @@ tests/pending/ownership/PushTagger exit=0 platform.ownership-differs
 # CK-303 (#957), CK-304 (#412): Conduit's entry, unchanged: the four model
 # records view events never carry are refused `payload` (approx), because the
 # arms are joined; the fresh `ChangedUrl` address is refused `escaped`
-# (approx); R-5.8.9, R-5.8.10.
+# (approx); the form moved between `status` variants is refused `disjoint`
+# (#410, CK-292); R-5.8.9, R-5.8.10, R-4.8.15.
 tests/pending/ownership/ConduitEntryRecords exit=0 browser-tea+everywhere.ownership-differs
 
 # CK-305 (#976): a send gives up its record objects unchecked: a top-level
