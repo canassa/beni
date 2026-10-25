@@ -1,18 +1,21 @@
 # The ownership checker v2 — design and implementation plan
 
-*Draft 2026-10-25, revised after the fifth review; not implementation-ready. Part of #1006. The WHAT is
-[`ownership-requirements.md`](ownership-requirements.md) (R-n.m below); this document is the HOW. Where the two
-disagree, the requirements win and this document has a bug. The owner's decisions it builds on: the end state
-(lists and records enforced on every platform); no algorithmic cap, only named resource limits no real program
-reaches (§4.4); no copy fallback, warning or coarsening; deterministic output; time and memory linear in program
-size, never in value size; the `Ref` loan model (#981); ordered `Dict` only (#961); room for #587 and for an
-in-place shared cell type.*
+*Draft 2026-10-25, revised for the owner's decisions of that date; approval covers this design and the
+requirements amendments in this PR. Part of #1006. The WHAT is
+[`ownership-requirements.md`](ownership-requirements.md) (R-n.m below); this document is the HOW. Where they
+disagree, the requirements win. End state: lists and records enforced on every platform; no copy fallback,
+warning or resource-triggered coarsening; deterministic output; the `Ref` loan model (#981); ordered `Dict`
+only (#961); room for #587 and an in-place shared cell type.*
 
-**Blocking complexity finding (round 5).** The semantic rule in §2.2 has survived the review's aliasing
-examples, but the representation does **not** yet meet R-7.2. Interning explicit call-chain labels still grows
-exponentially; sharing an actual's result template removes eager copies but does not bound demanded comparisons.
-§4.1 gives the counterexamples, the bounds actually established, and the proof still owed. §8's implementation
-estimate is conditional on closing this blocker. No precision cap or new folding policy is adopted to hide it.
+**Decided resource contract [O 2026-10-25].** Precise ordinary callback labels stay. The one analysis-size
+resource, `ownership_summary_size`, defaults to 65,536 records per owning declaration, including its nested
+classes, environments, contexts, sets and retained analysis memo records. It is charged before expansion and
+fails with `ownership_limit`; an attribute can raise it (§4.4). Genuine recursive summary dependencies use
+§2.10's graph backreferences, never a merge of ordinary invocation contexts. §4.1 proves the total bounded
+cost and identifies the fragments with stronger linear bounds; it makes no general source-linear claim.
+The structural measurement's maximum **10** at `o/LimitOwnedAtoms.beni:45` counts callback labels, not the
+complete new resource; S2b must measure the latter. The former complexity blocker is resolved by this explicit
+owner decision, not by claiming exponential labels became linear.
 
 **Reading order for an implementer.** §1 says why the shape family; §2 is the semantics every module obeys and
 §2.14 the lemmas each rule must keep; §3 the layout of every table; §5 the files and the layering gate; §8 the
@@ -39,7 +42,7 @@ file:line into the vendored checkers; `papers/`, `catalogue/`), `docs/design/res
 | P6 | levels of a recursive value told apart where the text does, folded finitely where it does not | R-4.7 |
 | P7 | directional aliasing (`ys = xs` then a write through `ys` with `xs` dead is accepted), branches that keep the old value | R-4.1.5, R-4.2 |
 
-Plus a soundness argument per rule (R-3), size linear in the program (R-7.2), modular summaries hashed with the
+Plus a soundness argument per rule (R-3), the proved-fragment and resource bounds (R-7.2–R-7.4), modular summaries hashed with the
 interface (R-5.7), and a three-place diagnostic (R-6.6).
 
 ### 1.2 The four candidates, judged
@@ -85,10 +88,10 @@ predicate.**
 
 1. **Places are type-shaped and folded per type SCC**, derived from the solved type graph, which `unify` builds
    coinductively (`checker-v2.md` §7.3 as built): a cyclic type with no name (#955) is one place.
-2. **Abstract values are hash-consed shape nodes over places**, with a `delta` node for a record update, a lazy
+2. **Abstract values are structurally interned shape nodes over places**, with a `delta` node for a record update, a lazy
    `union` node for a join that cannot merge, and *widening onto the place graph* in every fixpoint unknown, so
    `w5`'s result is 17 nodes (#856), an `update` of N arms is O(N) (#716, #975), and every fixpoint must range over a
-   finite lattice (§2.12; the callback-context construction remains open in §4.1).
+   finite lattice (§2.12), with inventory growth guarded before expansion (§4.4).
 3. **Cells carry provenance and are singleton or summary**; refinements (`elem`, `others`, `level`, `below`) are
    materialised at a match or a destructive read (SRW focus) and their non-alias is a *condition*, so a taken
    element stored back refutes exclusivity (R-4.6.9), distinct fresh elements keep it (R-4.6.7), `List.map`'s
@@ -100,7 +103,7 @@ predicate.**
    carries its own class (R-5.4.8, R-5.4.9). A class names no declaration: the room #587 needs (§2.10).
 6. **Two fixpoint shapes, one driver**: a worklist over frames for groups and local functions, and sparse
    propagation of cells over per-path inclusion edges for a callback's feedback and the entry's model (Morphic
-   I:114-171), both required to use finite lattices, no round cap (R-7.4; §4.1's context proof remains open).
+   I:114-171), both use finite lattices, no round cap (R-7.4); their retained operation graphs obey §4.1.
 7. **Rows are data**: ownership words (oc §24) extended by four words (§2.13.6); a send is a call of a worded
    operation on a nominal `Send` type (§2.13.5). No Zig names a declaration.
 8. **The contract fails loudly** (Koka `fip`): every unprovable write is an error with a named fix; a resource limit
@@ -119,7 +122,7 @@ appends; nothing rebinds).
 ### 2.1 Places
 
 A **place** is a node of the *place graph* of a type: one node per store variable reachable from it, children by
-step; a type variable, function type, foreign type or crossing primitive is a leaf. Computed by one memoised walk
+step; a type variable, function type, foreign type or crossing primitive is a leaf in the type graph; lexical closure environments are additional accounted edges. Computed by one memoised walk
 over the solved type graph (`check/Walk.zig`'s `structural` successors) with knot-tying: a variable reached again
 while on the walk's stack is the node being built, so a recursive type, named or not, folds onto itself; a
 *different instantiation* (`Tree (Tree (List Int))`'s inner tree, `Maybe (Maybe a)`, `Dict String (Dict String …)`'s
@@ -138,8 +141,11 @@ inner dictionary) is another variable and another place (R-4.7.3).
 | `var` | none | any | a type variable may hold anything (R-5.5.11) |
 | `cross` | none | none | primitives, `⊤`, `⊥`, a nominal type reaching no tracked place, a crossing foreign type |
 
-**Identity.** Within a module a place graph is interned by `(kind, head, children place ids)` where the head is the
-session `TypeId` of a nominal or foreign type, the field names (by text) of a record, the arity of a tuple. §36's
+**Identity.** Initial construction uses the dense `by_var` memo: each solved store variable is visited once,
+including its outgoing edges. It does not need global structural interning to construct a cyclic graph.
+Structural identity compares `(kind, head, children)` where the head is the session `TypeId` of a nominal or
+foreign type, the field names (by text) of a record, the arity of a tuple. Comparisons/re-interning needed by an
+owner or codec use charged graph-pair tasks, not an unproved linear structural-isomorphism operation. §36's
 type keys are *not* used: they exist only for closed, non-wild types of application modules
 (`check/TypeKeys.zig:20-28`, `682-688`; `check/Module.zig:432`), so neither core nor `Schema` nor a polymorphic
 type has one. Across modules and the cache a place is named **structurally**: a block (§3.6) writes a place as
@@ -162,14 +168,14 @@ name symbolic cells (§2.2) and block entries (§3.6); `⟲` is what folds recur
 
 `Cell = (origin, kind)`; kind from the place it is made at. Every cell labels one object per occurrence (the rule below).
 
-| Origin | Meaning | Projection by `s` | Class |
+| Origin | Meaning | Projection by `s` | Occurrence position |
 |---|---|---|---|
 | `site ι` | the object a literal, construction, copy, `Dict.empty ⊤` or lambda at ι makes, per activation | nothing (children) | singleton |
 | `param πᵢ·q` | the object at canonical path `q` of parameter `i` on entry | `param πᵢ·(q·s)` canonical | singleton unless `q` holds `[*]` or `⟲` |
 | `env x·q` | in a frame: the object at `q` of captured local `x` | `env x·(q·s)` | as `param` |
 | `shared M.v·q` | the object at `q` of top-level `M.v` | `shared M.v·(q·s)` | as `param` |
-| `result λ·k` / `esc λ·k` | the callee's `fresh k`/`esc k` at the frame's call ι, or `(ι·λ′)·k` when minted by the instantiation of a callback label λ′ (§2.11 item 6); a callee's own `result` cells are renumbered into its `fresh` at read-off | nothing |
-| `cb j@λ·q` | what function parameter `j` returned at `q`; λ is this frame's own call instruction ι, or the interned pair `(ι, L)` referring to a callee label. Supplies are attached to the label; identity and the uniform summary/recursion fold are defined below. Explicit pairs are **not** a linear representation (§4.1). | `cb j@λ·(q·s)` |
+| `result λ·k` / `esc λ·k` | the callee's `fresh k`/`esc k` at the frame's call ι, or `(ι·λ′)·k` when minted by the instantiation of a callback label λ′ (§2.11 item 6); a callee's own `result` cells are renumbered into its `fresh` at read-off | nothing | ordinary unless at a summary position |
+| `cb j@λ·q` | what function parameter `j` returned at `q`; λ is this frame's own call instruction ι, or the interned pair `(ι, L)` referring to a callee label. Supplies are attached to the label; identity and the uniform summary/recursion fold are defined below. Explicit pairs are **not** a linear representation (§4.1). | `cb j@λ·(q·s)` | ordinary, or folded by the stated rule |
 | `msg·q` | the message `update` receives, at `q` | `msg·(q·s)` | as `param` |
 | `⊤` | an object the analysis cannot name | `⊤` (prefix-closed) | summary |
 | `elem c·ι` / `others c·ι` | materialised: the one position of `c`'s `[*]` taken at ι, and the others | `proj(c,[*])·s` refined | singleton / summary |
@@ -185,8 +191,7 @@ that the program ever named are enumerable (§2.8's deep demands; cost = the tri
 **Labels and the fold.** An ordinary label is an interned `(call instruction, callee label id)` pair; a
 direct callback call has no callee label. This records a call chain without copying its tail. Distinct labels
 at distinct ordinary paths stay distinct: `wp f = pair f` preserves `.0` and `.1`. Merely finding two labels
-with the same first instruction is **not** a fold trigger. The previous text said both that it was and that
-ordinary paths stayed distinct; those rules contradicted each other.
+with the same first instruction is **not** a fold trigger. Size never triggers this fold; exhaustion stops compilation (§4.4).
 
 At read-off, a first instruction ι folds if any of its labels occurs under `[*]` or `⟲`, has a folded callee
 label, or calls into the frame's own recursive group. Fold **every** label with first instruction ι throughout
@@ -196,10 +201,11 @@ coexists with a folded label containing its chains. Refinement chains fold with 
 Two occurrences of one label remain two occurrences of that label; the fold does not invent a comparison.
 §2.10 alone translates an existing comparison between different labels into `within`.
 
-This states the intended precision, **not a size proof**: the ordinary wrapper family has exponentially many
-different pairs, even when interned. A lazy application of a whole class would share those pairs implicitly;
-it also needs a non-expanding representation of supplies, conditions, reachability and block encoding, and a
-proof for their queries (§4.1). Do not implement eager pairs on the assumption that interning supplies that proof.
+This is exact identity within the stated abstraction, not a linear-size claim. Ordinary wrapper labels can
+be exponential; each explicit label and its context is reserved against its **owning declaration's** resource
+before creation (§4.4). No nested class gets a fresh allowance. A lazy view shares the actual template but
+never silently merges two ordinary labels. Recursive folding includes dependencies through carried closure
+environments (§2.10), not merely direct declaration calls.
 
 **The one rule: a cell labels one object per occurrence; "many" is a property of a position, never of a label.**
 Every occurrence of a cell at an ordinary path of a value in one activation denotes one object, and two occurrences
@@ -230,10 +236,11 @@ containers' elems that alias, fails; an instantiation that yields the caller's *
 captured function parameter) carries the atom forward to the caller's class, as every `sep` over arrivals is. **Instantiation denotes a least fixpoint over the label/supply graph.** The intended implementation is
 §2.12's sparse propagation (labels are nodes, "the supplies of λ name λ′" the edges, cell sets pushed over the
 condensed graph, a cycle's members sharing one set). A demand or `apart` must read the settled interpretation,
-not an incomplete cycle. Establishing a finite, program-bounded representation of this graph through carried
-lambdas and wrappers remains §4.1's prerequisite. Shapes are widened (§2.3); split chains fold with the labels
-(`elem(xs·(ι_rec·(ι_rec·ι_t)))` becomes `elem(xs·ι_rec⋆)`). This is intended to stop split-chain growth;
-the full termination proof remains §4.1's obligation.
+not an incomplete cycle. The dependency graph includes carried lambdas and their environments (§2.10–§2.12). Shapes are widened
+(§2.3); split chains fold with the labels (`elem(xs·(ι_rec·(ι_rec·ι_t)))` becomes `elem(xs·ι_rec⋆)`).
+Reserve new graph records before following their children. Finite monotone facts terminate at a fixed
+inventory; §4.4 stops inventory growth. A proof dependency cycle cannot prove its own `sep`, `within`,
+`need` or generativity claim. No demand reads an unsettled interpretation.
 
 **Soundness.** A run-time object enters a value at an ordinary path once per
 store, and each store is one occurrence of one label; the label of a callback's result is a function of the
@@ -275,7 +282,7 @@ the obligation on the callers of a `taken` primitive (§2.13.6, pinned).
 
 ### 2.3 Abstract values: shape nodes
 
-Hash-consed per walk (thesis §4.2; Chase–Wegman–Zadeck). A node denotes a function from paths to sets of
+Structurally interned per owning summary with deterministic comparison trees (thesis §4.2; Chase–Wegman–Zadeck). A node denotes a function from paths to sets of
 `(cell, approx)`.
 
 | Node kind | Fields | Meaning |
@@ -294,15 +301,16 @@ Operations, memoised on their node arguments:
   shares unchanged subtrees; a union pays for the source entries/set nodes it inspects, not only the cells it
   adds). `reach(delta) = reach(base) ∪ reach(overrides)`,
   `reach(union) = reach(l) ∪ reach(r)`, computed once per node; a chain of k updates adding k cells costs
-  O(k log), where a flat set per node would cost O(k²). Membership O(log).
+  O(k log C) when each override contributes one cell and the unchanged base root is shared. General unions,
+  including scans adding nothing, are charged by §4.1; this special case is not a union theorem. Membership O(log C).
 - `join(n₁…nₖ)`: deduplicate, **group by base** (a bare node is `delta(n, ∅)`): one group of deltas over one base →
-  one `delta(base, s ↦ join(overrides present, base's child))`, O(Σ|Oᵢ|); leaves with no children → one leaf with
+  one `delta(base, s ↦ join(overrides present, base's child))`, O(k + Σ|Oᵢ|) grouping work before recursive child joins and set unions; leaves with no children → one leaf with
   the set union; the groups left (one per distinct base, plus leaves) → a balanced `union` DAG over them,
-  O(groups). No join multiplies sizes; a projection through a union costs O(groups) once per `(union, step)`.
+  O(groups) outer nodes; inner work uses §4.1 accounting. A join can have product query work; a projection through a union costs O(groups) once per `(union, step)`.
 - `put(n, s, m)`: `delta(n, [(s, m)])` when the `ε` object is the same after the write (an update), else a copy
   with one child changed (a construction's fresh base).
 - `map(n, f)`: the functor relabelling cells, memoised per node, so a DAG stays a DAG (`w5`: 17 steps, #856).
-- `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality, memoised per pair with the pair assumed on
+- `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality, memoised per immutable-version pair with a **shape-only** coinductive assumption on
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
   along a re-entering step sits at the same place is joined into that ancestor and the edge tied back to it, so
@@ -431,12 +439,12 @@ then `mₖ₋₁` expires; the shared subtree never drops to 0 and is never reli
 unregistered, and a root with no holders decrements its children's live counts
 recursively, so a set node with no live parent is skipped. `holdersOf(c)`: for `c`, its trie ancestors and (deep
 demands) its trie descendants, walk the chain of set nodes keyed by that cell and climb their *live* parents to
-the roots. Every set node visited is live and contains the cell (the chains hold live nodes only), so the cost is
-O(live holders found × log C), not the scope, and the maintenance is O(nodes whose live count changes) per
+the roots. Every set node visited is live and contains the cell (the chains hold live nodes only), so no dead scope is scanned. A DAG can nevertheless have many live parent routes to the same holder;
+use a query-local stamped visited column and charge every inspected live edge (§4.1). Maintenance is O(nodes whose live count changes) per
 registration or expiry, each node once per transition: at `bₖ = List.push aₖ 0` with N other bindings live, only `aₖ`'s set contains `site aₖ`, and a chain of
 k record updates finds only `m_{k−1}` once `m₁…m_{k−2}` have expired. Then, for each holder, the paths at which it
-holds the cell (a pruned walk of its node guided by `reach`), and §2.7's queries. Cost per demand O(holders found
-× (log C + query)). The second review's `ys = r.a` then `send (Got r)` is found: `send` is deep, `param π₂·.a` is a trie
+holds the cell (a pruned walk of its node guided by `reach`), and §2.7's queries. Cost per demand includes the live parent edges, holder-path visits and queries actually inspected;
+§4.1 bounds their module total. Distinct routes to one root are visited once per query. The second review's `ys = r.a` then `send (Got r)` is found: `send` is deep, `param π₂·.a` is a trie
 descendant of `param π₂·ε`, `ys` holds it and is used after → refused (R-5.9.1).
 
 **Verdicts** (R-0.3): `accepted` {`fresh`, `call`, `param`, `callback-param`, `once`, `entry`}; `pending detail`
@@ -456,7 +464,7 @@ values at `acc[*].1` have separate conditions, and a write at `.1` relies on κ 
 | κ | Meaning |
 |---|---|
 | `yes` | holds |
-| `and(κ₁, κ₂)` / an atom | a hash-consed binary conjunction (O(1) to form; a chain of W stores is O(W)); flattened to a sorted atom run only when printed, compared or written, once per distinct condition |
+| `and(κ₁, κ₂)` / an atom | an interned binary conjunction (O(1) to form; a chain of W stores creates O(W) outer nodes); semantic conjunctions are deduplicated atom sets in fixpoints; flattening, including overlap visits, is charged by §4.1 |
 | `shared` | fails exactly: one cell at two positions or two paths (`[ r, r ]`, `{ a = xs, b = xs }`, a taken element stored back) |
 | `lost` | fails approximately: `⊤`, a conservative call, a spread of a variable after the base (R-4.6.1), a recast, a pessimistic class |
 
@@ -470,8 +478,10 @@ once), `keep cb_j` (the callback puts back what it was handed, at the same path,
 (§2.2's one rule); two *different* `cb j` labels → the atom `sep(cb j@λ₁, cb j@λ₂)`, discharged by
 instantiation (§2.2); `⊤`/approximate → `lost`; two other arrivals not aliasing → the atom `sep a b`. A construction sorts its
 stored cells once: duplicates decide at once (`shared`), the arrivals among them form one `apart` group;
-discharging an instantiated `apart` at a call is the same sort over the arguments' cells, O(n log n), the
-arrivals among *them* one `apart` of the caller's own (#693, `ListOfParams`).
+discharging an instantiated `apart` is O(n log n) only when identity/ordered-prefix tests settle it in one
+sort. General supplies, overlapping paths or split conditions require additional comparisons, individually
+charged by §4.1. Unresolved arrivals form one `apart` of the caller's own (#693, `ListOfParams`), not an
+eager quadratic array of `sep` atoms.
 
 Where κ is set: a literal `[ v₁…vₙ ]` → per element path `p`: `and(deep of each vᵢ at p, apart{cellsAt(vᵢ, p)})`;
 a record, tuple or constructor literal → `apart` over its field values' cells at every two distinct paths (I-κ's
@@ -504,19 +514,63 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 | Field | Content |
 |---|---|
 | `use(i)` | a shape over πᵢ's places labelled `{R, A, E, W}` plus `W`'s field set `F` and deep flag `S`; `unused` where nothing is named |
-| `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@λ·q`, `⊤`; `fresh` numbered by the canonical result path of first occurrence (two distinct sites at one path share a number, which only adds aliasing; their κ is published, not re-derived) |
+| `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@λ·q`, `⊤`; `fresh` numbered after solving by canonical result path of first occurrence (two sites at one path may share a number, adding aliasing only; κ is published, not re-derived; inference uses stable allocation/port keys) |
 | `κ` | per `res` node, atoms over arrivals (a parameter's own `excl` implicit) |
 | `xreq` | the atoms the body relied on |
 | `fun(j)` | `calls ∈ {0, ≤1, many}`; `supply(k)`: nodes handed as πⱼ's `k`th argument with `owned`, `taken` and κ; `need`; `seen`; `keeps`: the keep edges of §2.11 |
 | `classes` | **a summary-local class table**: every `closure` node in `res`, `supply` or `use` (a lambda returned, a lambda handed on, a closure in a record) carries a `ClassId` into it, in normal form, serialised with the block (R-5.4.8, R-5.4.9, R-5.5.9); the fixpoint joins classes pointwise |
 | `refs` | the `◆` cells of `Ref` places the body operates on, by provenance (`Ref.set/update/modify/get` directly or through a callee), for §2.13.7's re-entry rule |
 | `writes` | one bit: the body or a callee has `W`/`S` on a parameter path, a capture, a `shared` cell or lets one escape — a write of something that *arrived*; a `Builder`'s fresh stores do not set it (R-5.13.1) |
-| `once`, `limit` | as before: per function-typed result place; the pessimistic class past a resource limit |
+| `once` | per function-typed result place; exhaustion is a terminal error, never a published class |
 
-**Lattice.** Pointwise: bits by inclusion; provenance shapes by `leq` (the lower order, `fresh k ⊑ esc k ⊑ ⊤`,
+**Lattice.** Pointwise (closure code/port identities fixed by the rule below): bits by inclusion; provenance shapes by `leq` (the lower order, `fresh k ⊑ esc k ⊑ ⊤`,
 thesis §4.6) **after widening** (§2.3), so a shape ranges over at most one node per canonical path and the
-shape structure is finite, conditional on a finite label/context domain (§4.1); `owned ⊑ borrowed`; `calls 0 ⊑ ≤1 ⊑ many`; κ: `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost`, `shared`
-beside `lost` and winning as a cause; classes pointwise, a class identified by its closure node's canonical position in the shape; `limit` above all.
+shape structure is finite at a fixed inventory (§2.12); growth is guarded by §4.4; `owned ⊑ borrowed`; `calls 0 ⊑ ≤1 ⊑ many`; κ: `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost`, `shared`
+beside `lost` and winning as a cause; classes pointwise over the stable code/port graph below. `shared` records a definite witness, never a
+stronger acceptance; a limit is outside this lattice and aborts inference.
+
+**Carried classes and recursion [O 2026-10-25].** A callable is `(CodeId, EnvId)`: lexical code ids are
+assigned before inference and never contain captures. Every code has fixed capture-slot names. An environment
+is a graph of original-origin values and callable edges, including returned/supplied lambdas, known projected
+classes and partial applications. Different code layouts remain different alternatives, even at one function
+type. Unknown is `⊤call`, never an empty environment.
+
+1. An ordinary context is an immutable invocation/receiving-port chain. Ports are static result, supply or
+   capture slots projected on §2.1's canonical place graph; they are not paths through a freshly unfolded
+   environment and contain no round number. Keep distinct ordinary chains, including two uses of the same
+   code: `wrap k = λx → k x; a = wrap base; b = wrap a` has two ordinary contexts. Reserve each new context,
+   port, class alternative and environment edge under the enclosing declaration's account **before** visiting
+   its children. The ordinary occurrence DAG may be exponentially large; §4.4, not a false linear claim,
+   guards that inventory.
+2. A backreference is allowed only on a genuine **summary-variable dependency cycle**. Before quotienting a variable is `(ordinary root/context, lexical frame, static result/supply/capture/condition
+   port)`, so two acyclic uses of `wrap` have different variables. A call into the enclosing recursive declaration SCC with its participating input/output dependencies, or
+   a dependency back to an already active variable, witnesses the recursive segment; only that segment may
+   be quotiented. Variables name a
+   lexical frame's result, formal supply, capture slot or condition port; dependency edges say which variable
+   is read to compute another. Include edges through callable actuals and carried environments, and a lambda's
+   enclosing declaration SCC. Discover edges before expanding the dependency they name, including a deferred
+   call once its actual code is known. Re-entry to an active summary variable is a cycle witness; an SCC of
+   these edges is the equivalent batched test. Repeated CodeId or repeated function type alone is no witness.
+   Thus `grow`'s returned wrapper capturing the recursive result closes a dependency even with zero callback
+   labels; `h → wrap → lambda → h` closes through h's enclosing frame. No source-name test or context-depth
+   threshold is used. Dependency search steps and the stack are charged records (§4.1).
+3. Within that dependency, re-entry to `(CodeId, canonical closure port)` under the **same preserved ordinary
+   outer root** ties an edge to the existing recursive slot; join corresponding capture slots and code
+   alternatives. Collapse the recursive segment only, not its ordinary prefix or siblings. If a dependency is
+   discovered after provisional nodes exist, join their facts into the representative and rewrite references
+   uniformly; retain the old records in the account. Splits and callback labels use §2.2's uniform fold in
+   results, supplies, κ, refs and **all** carried classes. A stored duplicate never becomes `within`.
+4. Calling a closure substitutes its **original** captures. Only allocations evaluated during this invocation
+   acquire its fresh identity. Captured callback results, recursive results and feedback supplies do not become
+   fresh by crossing a class backreference. Solve may-origins, environments, alternatives, use/escape bits and
+   obligations to a post-fixed point before judging any write; then validate against that same point. An
+   unresolved recursive proof edge is not `yes`: a finite independent base/step certificate must discharge it
+   (§2.12). Graph encoding uses explicit backreferences (§3.6).
+
+The recursive quotient can join captures from different recursive activations, yielding `lost` at a demanded
+write. This is the stated recursion abstraction, not exhaustion coarsening. A producer of a shared closure is
+legal. Copy its returned list at the eventual write if needed; copying a closure or its outer container does
+not copy captures. Appendix B fixes the fresh/alias `grow` answers and the existing carried-recursion sites.
 
 **Read-off** (oc §16.3): `W` at `(i, q)` when a demand's base cells include `param πᵢ·q` (verdict irrelevant); `E`
 from Esc; `A` from `res`; `R` from uses; `res = widen(map(A(body), f))` with `f`: `site`/`result` → `fresh k`/`esc k`,
@@ -567,8 +621,8 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
 
    Setup costs one template plus constant-size view records, rather than labels × template size. This is an
    exact sharing of substitution, not a coarsening. It does **not** establish a linear total: the number of
-   demanded contexts and comparison pairs is the open proof obligation in §4.1. Deep conditions, `reach`,
-   read-off and block writing must not silently force every view. Their representation is not yet complete.
+   demanded contexts and comparison pairs is instead guarded by the one summary-size resource (§4.1, §4.4). Deep conditions, `reach`,
+   read-off and block writing must not silently force every view. They use the same charged operation graph; neither a deep walk nor block encoding may expand uncharged work.
 6. **Result**: semantically `map(S.res, inst)`, interpreted by the views in item 5: `πᵢ·q ↦ proj(aᵢ, q)` (grafting), `fresh k ↦ result ι·k`, `esc k ↦ esc ι·k` (escaped),
    `shared`/`⊤` kept; a callee's `cb j@L·q ↦` the actual's `res` with its `π_k` replaced by the supplies published
    for `L`, `env` by the captured nodes, its `fresh k` by `result (ι·L)·k`, and a `cb` of the actual's own function
@@ -620,17 +674,36 @@ point, naming where (R-5.5.3), except a top-level alias of a writer (R-5.5.6).
 
 ### 2.12 Fixpoints and the pre-pass
 
-Two instance shapes, one driver (`Fix.zig`). Both must operate over finite, program-bounded representations
-with no round cap (R-7.4, R-5.6.3); §4.1 identifies the missing proof for composed callback contexts:
+Two instance shapes, one driver (`Fix.zig`). Both use finite inventories guarded by §4.4,
+with no round cap (R-7.4, R-5.6.3), and the charged operation graph of §4.1:
 
 | Instance | Unknown | Shape | Step |
 |---|---|---|---|
 | a recursive group of declarations (R-5.6.1) or a block's local functions (oc §18.7) | each member's class | **worklist over frames, cells by propagation**: a walk of a member records, beside its shape, the inclusion edges a recursive call makes (argument node → callee parameter path, callee result path → call result); the cells then flow along the whole group's edges by the sparse propagation below, so growing cell sets never cause a re-walk. The `R`/`A`/`E`/`W` bits (with `F` and `S`) flow along the same edges in the other direction (a callee's `W` at `π_k·q` becomes `W` on the argument node's cells at `q`, hence on the caller's parameter path they came from), and so do the `callsite` demands they imply, so `rot a₁ … aN n = … rot a₂ … aN a₁ (n − 1)` records N edges once and its `W` reaches every parameter by propagation, not by N re-walks. After propagation the frame's resolution sweep (§2.8) runs once over all demands, the propagated `callsite` ones included, and reads off `supply.owned` and the keep edges, which depend on it. A member is re-walked, in the SCC's reverse postorder reading the latest assumptions (Lean 263-326; Roc's queue), only when a callee's facts of *shape* changed: `calls`, `need`, `seen`, a `supply.owned` bit or a keep edge (monotone: owned → borrowed, edges only added, bounded by the callee's own supplies), κ's atoms, a class's structure, a `res` node's shape (cells arriving at an existing node are not a shape change) | `xᵢ₊₁ = widen(xᵢ ⊔ F(xᵢ))` per member; cells and bits by propagation; owned/keeps by the sweep |
 | a callback fed its own result (R-5.3.2, `Dict.merge`'s cycle R-5.3.6) and the entry's model (§2.13.4) | the `cb`/`M` node and its κ | **sparse propagation over per-path inclusion edges** (Morphic I:114-171): the step's `res` is read once as edges `source path ⊆ target path` (a `delta` over π₂ gives one edge per override; `π₂.f_{k-1} ⊆ π₂.f_k` for the rotate family); the edges' graph is condensed into SCCs and the cells are pushed along it in topological order with persistent sets, so each cell crosses each edge once and a set that grows by one shares the rest | push the difference, never re-instantiate the whole |
 
-Termination requires finite lattices and monotone joins (thesis §4.6). Widening folds recursive shape paths,
-but canonical paths × sites does not bound acyclic callback chains; §4.1's representation and carried-lambda
-context proof must complete this argument before the fixpoint implementation is accepted. Every component is joined round to round, κ included: a `sep` between two `cb j` labels is an atom inside every
+**Termination.** At a fixed inventory, each may-membership, edge, code alternative and use bit is added at
+most once; each guarantee only weakens in its finite order. Conditions use a finite set of atoms over those
+inventory ids: `and(A,A)=A`, no new syntax nesting each round, and `apart` groups are canonical persistent sets.
+Finite slots and ids imply a finite possible atom inventory (not a linear one). Dependency SCCs use §2.10's
+backreferences. Facts are processed by deduplicated `(edge, fact)` deliveries or immutable-root union tasks;
+a newly discovered edge receives existing facts once. No update is lost because a task saw an earlier root.
+Thus a fixed inventory has finite monotone height and a fair worklist terminates. If inventory or operation
+records continue growing, reserving record L+1 stops **before** its work (§4.4). This proves that every input
+finishes or reports the named limit, including polymorphic recursion through carried classes, without a round cap.
+
+**Recursive proofs.** May-facts begin empty only for inference, never for acceptance. A recursion in a Boolean
+proof request has status `waiting`, not `proved`. After may-facts settle, build a finite obligation graph.
+A recursive invariant is established only by an independently checked base and a preservation check with its
+explicit invariant assumption (for example owned initial accumulator plus `keep`, or fresh allocation on every
+returning alternative). Merely traversing a cycle discharges nothing. Every outgoing capture/feedback/unknown
+alternative must satisfy the obligation. The validation walk checks the certificate and `F(x) ⊑ x`; a residual
+unjustified cycle fails the demand approximately, not by accepting the initial empty facts. This proof graph and
+validation work are part of the same account; coinductive shape equality is not a separation certificate.
+
+
+
+Every component is joined round to round, κ included: a `sep` between two `cb j` labels is an atom inside every
 class, discharged only by instantiation where the actual's class is in hand (§2.2), so nothing a round reads off
 depends on an assumed `calls` and κ is monotone. `mapHelp`
 re-derived: `put b i (func (traverseAt a (o + i)))` stores `cb₅@ι` (this activation's one call) into `b` whose
@@ -650,14 +723,16 @@ exclusivity (R-4.10.2's "elements keep identity") and `List.map [ x, x ] λl →
 `List.map xs λ_ → shared` is not. `twice`'s `[ y, y ]` stores
 `cb₁@ι₁` twice: `shared`, so `List.update (twice λ⊤ → [ 1 ]) 0 λl → List.push l 9` is refused `exclusive`
 (`p/CallbackResultTwice`, a red twin to write). Validation: one more walk against the final assumptions must read off
-`F(x) ⊑ x` (coinductive `leq`) and is the walk whose demands are reported. Inside a group a member's fresh numbers
-are by result path, the same in every round (oc §16.6 as amended). `go n t = … go (n − 1) (Node t [ n ] t)` grafts
+`F(x) ⊑ x` (coinductive `leq`) and is the walk whose demands are reported. Inside a group use stable allocation/port keys, not first-discovered numbers. Final fresh numbering is
+canonical by result path only after solving, with a simultaneous rewrite of all references; it never feeds
+another inference round. `go n t = … go (n − 1) (Node t [ n ] t)` grafts
 one level per step without widening; with it, `res` is the cyclic `Node(self, {fresh, π₂·#Node.1}, self) ∪ π₂` after
 two steps. Polymorphic recursion (R-5.6.2) adds nothing: a call at another type grafts through `proj`/`recast`.
 
 **The BIR pre-pass** (`Prepass.zig`, L3, reads the BIR, the dispatch table and the graph): SCC edges = `refs` ∪
 the callees `Dispatch` resolves for `method_call` (BIR adds no `refs` edge for them, `Bir.zig:329-330`) ∪ derived
 `eq`/`compare`; alias chains of function values (R-5.5.6); read counts of private parameterless values (R-4.9.3);
+the enclosing frame of each lambda (for the dynamic summary-dependency edges of §2.10);
 which declarations are a type's `eq`/`compare`; the spread chains `Lower` recorded (§2.13.2); the
 `withDefault (map m f) d` shapes (§2.13.12), recognised through the `WellKnown` symbols `Lower` itself uses — the
 one allowlisted name comparison of the fence in §5.
@@ -729,7 +804,7 @@ one allowlisted name comparison of the fence in §5.
    per index, moving one way (`core/List.beni:516-521`); every such body (`mapHelp`, `foldlFrom`, …) is listed with
    a body hash in `o/word-bodies.txt` and a gate fails when one is added unlisted or changes — R-5.10.7's mechanism
    extended to the callers of a `taken` result; these pinned bodies *are* part of the trusted surface, and R-3.6 and
-   R-5.10.7 are to be amended to name them and P-sync (§2.13.7) — a requirements change, listed in §9. Derived `eq`/`compare` have no body and
+   R-5.10.7 now name them and P-sync (§2.13.7), amended in this PR [O 2026-10-25]. Derived `eq`/`compare` have no body and
    get a synthesised read-only class. Every worded declaration keeps its pinning fixture and flip report; a wordless
    `foreign` lets every argument escape and answers `⊤` unless crossing (R-5.10.1); words are erased by lowering
    (R-5.10.5); `misplaced_ownership_word` gains the new words' placement rules (`taken` only on a function parameter
@@ -774,7 +849,7 @@ one allowlisted name comparison of the fence in §5.
     with `shared` cells (`top-level (p)` on any write reaching them). Transfer: when the pre-pass counts exactly one
     read of a private parameterless value — direct, outside lambdas, deferred bodies counted — by a parameterless,
     non-recursive initializer of the same application module, with no explicit or inferred `where` evidence, no
-    return-type dispatch, a non-function result and a class not past a limit, the reader sees the value's `site`
+    return-type dispatch, a non-function result and a successfully inferred class, the reader sees the value's `site`
     cells as its own; a `pub`, `foreign` or schema source, a second read, a read in a lambda, a recursive
     initializer or an unknown result transfers nothing (R-4.9.3); the destination is still top-level for a
     function; a fold's result keeps its provenance (R-4.9.4).
@@ -850,7 +925,7 @@ of (i)–(iv).*
 in `γ(param πᵢ·q)` by canonical paths (`⟲` covers every level, O6), captures in `γ(env)`, top-level in `γ(shared)`.
 Step: one transfer rule (O1–O4, O6, O7) or a call (O5: the callee's `res` over-approximates its result, its `E`
 what it hands on, its `fun(j)` what it supplies; its `refs` the `Ref` cells it touches; a callee without facts
-yields `⊤` and escape, O1, O10; a limit the pessimistic class, O11), a pattern match (O6), a record update (O7), a
+yields `⊤` and escape, O1, O10; a limit stops compilation and authorises no write, O11), a pattern match (O6), a record update (O7), a
 join (O4), an escape (O8, deep), a row (O9). ∎
 
 **Lemma 2 (labels).** *Within one activation, two occurrences of one unfolded label denote one object, and two
@@ -862,7 +937,10 @@ a class, so no unfolded label's chains lie inside a folded label's. Whether two 
 instantiation decides from what the callback returns under what it was handed (O14). A folded label is
 approximate: two occurrences of it from one value are `lost`, and `within` rests on two per-cell claims, each an
 obligation — a `result` not reached through a feedback supply is allocated afresh by each call (O1), and two `taken`
-positions of a container exclusive at that path are two objects (I-κ, O9). ∎
+positions of a container exclusive at that path are two objects (I-κ, O9). A closure call changes the
+identity of its new allocations only, never captured origins. The recursive environment quotient unions
+possibilities and keeps every capture edge; settled facts and independently validated obligations are required.
+A cycle or exhausted resource cannot establish either claim. ∎
 
 **Invariant I-κ (exclusivity).** *For every node `n` whose κ(n) holds at `p` (`yes`, or `and{atoms}` with every
 atom true of the actual arrivals), no object of `γ(n)` sits at two distinct positions of a summary place, nor at
@@ -893,7 +971,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O8 | *Escape is deep, directional and forever:* an escaped node's every cell is escaped; a write is blocked by an escaped ancestor-or-self, a deep demand also by a descendant; never undone; `shared` never owned | §2.4, §2.8 |
 | O9 | *Rows state their bodies;* the index obligation of a `taken` result is pinned on each caller; P-sync and P1–P4, P7 on each runtime | §2.13.6, §2.13.7, R-5.10.7 |
 | O10 | *Unknown is never empty* | §2.3, §2.11, R-3.4 |
-| O11 | *No bound accepts* | §4.4, R-3.7 |
+| O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion; no partial summary or lowering channel | §4.4, R-3.7 |
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's deep condition holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
 | O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
@@ -908,7 +986,7 @@ The Lean oracle stays advisory (R-8.11).
 `fast-compiler.md` §5's rules hold in every table: `MultiArrayList` columns, `u32` ids as `enum(u32)` with
 `.none = maxInt`, `extra: []u32` sidecars, no pointer in any table, no per-node allocation, one arena per walk, no
 `HashMap` keyed by a dense id (`src/rules_test.zig`; v1's `summary_bytes.zig` allowlist entries go with it). All id
-newtypes live in `Ids.zig` (L0), all record types that cross layers (`Use`, `Demand`, `Obligation`, `Supply`,
+newtypes and the low-level resource account live in `Ids.zig` (L0), all record types that cross layers (`Use`, `Demand`, `Obligation`, `Supply`,
 `Split`) in `Facts.zig` (L2), so no table refers upward.
 
 ### 3.1 Places (`Place.zig`)
@@ -921,18 +999,18 @@ Place.Table (per module)
   holds     : u8 bits     may hold: list | dict | record | ref | closure | opaque | any
   class     : ClassId     closure places: a declared class, else .none (#587's slot)
 step_tab    : MultiArrayList { step: Step (kind:4 | payload:28), child: PlaceId }
-intern      : hash of (kind, head, (step, child) run) → PlaceId   -- composite key
+identity    : structural graph-pair tasks per consuming owner; source graph built by by_var without a global hash interner
 by_var      : stamped column Var → PlaceId   (the type walk's memo; `stamped.zig`)
-path_bytes  : []u32 interned canonical paths (`⟲` a reserved step kind); `pathOf(root, steps) → PathId` in O(len)
+path_bytes  : []u32 canonical path step records (`⟲` reserved); charged construction/traversal per step, no copied uncharged path string
 ```
 
 ### 3.2 Cells (`Cell.zig`)
 
-The explicit `labels` table below encodes identity, but is not a bounded implementation for acyclic wrapper
-composition (§4.1). A complete design must add whole-class application views before S1 can claim R-7.2.
+The explicit `labels` table preserves identity and is charged before each insertion (§4.4).
+Acyclic wrapper composition may exhaust the resource; it never merges ordinary labels to fit.
 The callback views of §2.11 use `u32` template/context ids, `MultiArrayList` columns for invocation and supply
 environment, and composite memo keys; neither pointers nor a map keyed by a dense id are needed. Their query
-count is not bounded by choosing this layout.
+records count against the same owning-summary allowance; layout alone proves no linear bound.
 
 ```
 Cell.Table (per walk)
@@ -943,7 +1021,7 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
   place    : PlaceId
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
   children : Range    into `child_cells`: the trie children in first-sight order (the descendants of a cell the program named)
-intern     : hash of (origin, kind, a, b) → CellId
+intern     : owner-local comparison tree (origin, kind, a, b) → CellId
 set_head   : column CellId → SetNode   (the first persistent-set node keyed by this cell; the inverted index's entry)
 sets       : persistent sets of (CellId, approx) as balanced trees ordered by CellId in a MultiArrayList
              { key: CellId, approx, left, right, prev_same_cell, next_same_cell: SetNode (linked only while live), parents: ParentLink, live: u32 }, path-copied,
@@ -963,14 +1041,14 @@ Shape.Table (per walk)
   reach    : SetId     memo, persistent (.none until asked)
 child_tab  : []NodeId          dense per node in the place's step order
 over_tab   : MultiArrayList { step, child: NodeId, left, right: OverId }   persistent sorted tree
-intern     : hash of (kind, place, cells, a-run, b) → NodeId
-memo_proj  : stamped column NodeId → inline cache of (step, NodeId)
-memo_join  : hash of the sorted member tuple → NodeId;  memo_leq / memo_eq: hash of (NodeId, NodeId) → u8 (with the coinductive assumption bit)
-memo_map   : stamped column NodeId → NodeId, one stamp per `map`
+intern     : owner-local comparison tree (kind, place, cells, child-run id, b) → NodeId; runs built by charged chunks
+memo_proj  : stamped column NodeId → bounded inline cache of (step, immutable input version, NodeId); misses use owner-local operation records
+memo_join  : owner-local comparison tree (canonical member-run id) → NodeId; memo_leq / memo_eq: (NodeId, NodeId, immutable version ids) → u8 (coinductive shape assumption only)
+memo_map   : stamped column NodeId → NodeId within one immutable substitution context/version; different contexts never reuse that stamp
 ```
 
-κ is **not** a column of this table (D1): `Cond` owns it (§3.4). Holders are found through `reach` and the scope
-(§2.8), so there is no reverse index to keep in step.
+κ is **not** a column of this table (D1): `Cond` owns it (§3.4). Holders are found through the live inverted set index (§2.8), never a scope scan.
+Live parent links and their transition/query tasks use §4.1 accounting.
 
 ### 3.4 Conditions (`Cond.zig`)
 
@@ -978,11 +1056,11 @@ memo_map   : stamped column NodeId → NodeId, one stamp per `map`
 Cond.Table (per walk)
   kind    : u8      yes | and | atom | shared | lost
   a, b    : u32     and: (CondId, CondId); atom: (atom kind: excl | sep | within | apart | keep | writes, operands)
-groups    : interned sorted CellId runs (`apart` members)
-intern    : hash of (kind, a, b) → CondId
+groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
+intern    : owner-local comparison tree (kind, a, b) → CondId
 kappa     : column NodeId → CondId   (κ, owned here; dense per walk, cleared with the walk arena)
 flat      : memo CondId → sorted atom run (print, compare, block)
-memo_sep  : hash of (CellId, CellId) → CondId;  memo_deep: stamped column NodeId → CondId
+memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version) → CondId; memo_deep: (NodeId, κ/input version) → CondId
 ```
 
 ### 3.4a The liveness index (`Liveness.zig`)
@@ -1010,19 +1088,28 @@ Class
   refs     : SetId   the `◆` cells touched, by provenance
   writes   : u1
   once     : Range
-  limit    : u8 + u32
+  account  : SummaryAccountId   -- owner declaration, inherited by every nested class
 ```
 
 Summaries live in the module arena in **normal form**: cells relabelled to provenances in canonical order, nodes
-renumbered by a canonical DFS (children in step order, unions by member order), classes in reference order, so
-equal summaries are byte-equal (determinism; the fixpoint's stop test is `eq`).
+renumbered by a canonical DFS with backreferences (children in step order, unions in canonical semantic member order), classes in reference order, so
+equal summaries are byte-equal. Normalisation occurs after solving, never renumbers inference keys.
+The retained analysis memo graph is workspace, not interface semantics; §4.4 defines its charging and lifetime.
 
 ### 3.6 Blocks (`Block.zig`)
 
-The format below still lists explicit labels. Closing §4.1 requires a canonical encoding of shared class
-applications and their substitutions; expanding them during normalisation or serialization would recreate the
-same exponential family. Encoding references once bounds bytes by the representation, not by written program
-size until that representation's bound is proved.
+The format writes every semantic graph record once and every edge as a local id. A class table is flat:
+classes and environments refer to table entries, not recursively embedded class copies. Assign canonical ids
+before writing children; an already numbered child is a backreference, including a cycle. Application views
+store template, invocation and supply references. Normalisation, comparison, hashing and decoding obey §4.1
+accounting; they may not expand a graph into paths. The first import of a callee's complete semantic table is
+charged once to each consuming owner, even if immutable bytes are physically shared. Unknown bytes never imply
+an empty class. Analysis memo tasks are not serialized as callable semantics; the block records the resource
+policy/version, effective allowance and measured category totals for cache diagnostics. The effective allowance
+and accounting-policy version participate in the cache key; a formerly successful larger allowance cannot
+bypass a smaller one. Same-module and cached/imported calls consume the same canonical semantic table API.
+Operation memos are owner-local: no free reuse of a callee's transient inference memo is allowed. A cached
+complete owner reuses its recorded computation only with the matching inputs, policy and allowance.
 
 One block per module, in the interface record (`Interface.ownership`, hashed with it: R-5.7.2) and in the cache
 entry (R-5.7.4); format `OWN2` v1, bumped by every rule change. Names nothing by session id: modules by package and
@@ -1034,7 +1121,7 @@ arity, children) so a reader re-interns them onto its own graph; paths as canoni
 head       : "OWN2", version, module table, string table, place table (structural)
 directory  : per declaration (BIR index, offset, length) — summaries read lazily, one at a time (oc §28.4 #814)
 summary    : cells (origin, kind, a, b over the local numbering), labels (own instruction, callee module·declaration·label index, folded, supplies), sets, conds/atoms/groups, nodes
-             (kind, place#, set#, κ#, children/overrides/union), the class table (each class the same encoding), the Class record
+             (kind, place#, set#, κ#, children/overrides/union), the flat class/environment table (id edges and backreferences), the Class record
 value facts: per parameterless value whether it may hold a cell (R-5.7.5)
 ```
 
@@ -1065,6 +1152,11 @@ interface hash; a non-clean or unchecked module authorises no store (R-1.12).
 
 ### 3.8 Determinism
 
+Scheduling and resource totals use a fixed owner-local order: qualified declaration name and lexical frame/
+instruction/port order, never declaration enumeration or inter-module completion order. Canonical semantic
+input names/ports determine task ordering; mutable allocation ids do not choose which dependency runs first.
+Every resource-policy version pins this schedule, including watcher delivery order; source-declaration
+permutations are a limit/verdict determinism test (§7).
 Ids in walk order (parameters, then instructions; cells in first sight; nodes by creation; places by the type walk
 in declaration order). Nothing printed is an id: source names, canonical paths with field names, normal-form
 summary text with fields in name-text order; blocks write names and structural places; ties go to source order
@@ -1073,102 +1165,138 @@ summary text with fields in name-text order; blocks write names and structural p
 ### 3.9 Arenas and lifetimes
 
 Per worker: a **module arena** (normal-form summaries, block, report, channel) released at publication; a **walk
-arena** (cells, nodes, conds, sets, uses, demands of the group being walked) reset after each group's validation
-round. Growable lists and explicit stacks only (R-7.12).
+arena** (cells, nodes, conds, sets, uses, demands and retained operation records of the group) reset only
+after that group's final validation/encoding, never between its fixpoint rounds. The account lives through
+publication; validation and encoding inherit it, without a fresh allowance. Growable lists and explicit stacks only (R-7.12).
 
 ---
 
 ## 4. Complexity
 
-|P| the module's BIR, |T| its types as the store holds them, |S_f| callee f's summary, D demands, H live holders
-per demand, U uses, C cells.
+E, P, N_f and L_f are defined in §4.1. In local operation bounds C counts cells, U uses, D demands,
+and H live holders; these local bounds are not substitutes for the whole-module accounting.
 
 ### 4.1 Per phase
 
-| Phase | Bound | Why |
+Let **E** count written BIR/type/capture-schema edges and imported bytes actually read; **P** is the total
+selected path steps traversed by the fresh-result fragment, not the number of queries. Let F be the number of
+owning declarations, L_f its effective summary allowance, and N_f the number of retained constant-size
+analysis records charged to f (including records shared physically with another owner). N_f ≤ L_f on success.
+Source-derived place/region tables are built once in O(E); inferring memberships, canonical paths, proof
+contexts and derived indexes is not hidden in E. An input string/name is interned once in input time.
+
+| Phase | Bound actually proved | Scope |
 |---|---|---|
-| place graphs | O(\|T\|) | one memoised walk per store variable |
-| pre-pass, region tree | O(\|P\| + dispatch sites) | Tarjan + counting sort; one pass over references and sites |
-| forward walk | callback setup O(B + L), plus demanded-view and comparison work; **no established linear total** | B is the total size of distinct actual templates prepared at this call, L the label views requested; item 5 shares templates. Both L across wrappers and the query count still need §4.1's missing proof. Other forward operations retain their stated costs. |
-| `reach` and the inverted index | union work charged to inspected source entries/set nodes and copied nodes, O(visited · log C) for lookup/insertion; O(nodes whose live count changes) per holder registration or expiry | sharing saves copied nodes, not every overlap lookup; a one-new-cell chain costs O(k log C). A general total bound is open. |
-| liveness index | O(U · depth · log U) | each use entered at its ancestors; sorted per (local, path) |
-| resolution | O(Σ_D (path + trie descendants + H_D · (log C + (depth + \|F\|) · depth(regions) · log U))) | the inverted index over persistent-set nodes with expiry: each set node visited is live and holds the cell; untouched fields never read |
-| conditions | O(1) per `and`; a flatten once per distinct condition; `apart` O(n log n) per construction | hash-consed conjunctions |
-| join | O(k + Σ\|Oᵢ\|) for k arms; a projection through a union O(groups) once per (union, step) | §2.3 |
-| `widen`, `leq`, `eq` | O(\|n\|) / O(\|n\| + \|m\|) when shapes agree, O(\|n\|·\|m\|) pairs at most, memoised | coinductive, per pair |
-| group / local fixpoint | re-walks ≤ members × the height of the *shape* lattice (`calls` 2, `need` 1, `seen` 1 per function parameter, κ's atoms, class structure, `res` shape — the bound on callback-bearing shape components is still owed in §4.1); cells and `use` bits flow along the recorded edges; O(E · log C) for the nested-set/one-bit families below, general bound open | §2.12: a walk yields a shape and an edge graph; cells and bits propagate; `rot`'s rotating `W` costs N edge pushes, not N walks of N |
-| feedback / entry fixpoint | O(E · log C) for the nested-set families below; general union-work bound open: E per-path inclusion edges (one per override of `res(update)`, one per argument of a recursive call), one persistent union per edge in topological order sharing the larger operand, so a chain whose sets nest costs O(E log C) however many facts they denote | sparse propagation over the condensed graph |
-| block write/read | O(\|S\|) per summary, read lazily | §3.6 |
+| place graphs, initial pre-pass, regions | O(E) time and storage | memoised graph walk and ordinary static SCC pass; dynamic dependency discovery is charged below |
+| fresh-result selected-path fragment | O(E+P) traversal, plus deterministic dictionary lookup cost where needed | shared templates/scopes, first-divergence comparison of selected occurrences, only after whole-template generativity/internal-sharing certificates; no supplied/captured/feedback result assumed fresh |
+| actual template setup | O(B+V) traversal | B prepared template/binding edges, V requested constant-size views; neither is multiplied eagerly |
+| persistent `reach`, cell/κ sets, inverted index, general liveness/resolution, joins and shape comparisons | O(N_f log(N_f+2)) per owner | the retained operation graph and proof below include failed/zero-growth work, all live-parent routes, projected paths and all intermediate nodes |
+| recursive groups, feedback, entry | O(N_f log(N_f+2)) per owner | all deliveries, union tasks, shape-triggered re-walk continuations and validation belong to the same account; no fresh budget per round or class |
+| normalisation and block write/read | O(N_f log(N_f+2)) per owner plus bytes read/written | graph references, no recursive unfolding; inferred order/comparison work charged; fixed-size record encoding linear once ordered |
 
-**The linear claim is not established.** A bound in terms of already-expanded summaries, labels, memo
-entries or cell/edge pairs is not a bound in written program size. In particular, "at most one per
-(call instruction, callee label)" is a recurrence, not a linear bound. The following are design
-counterexamples, not measured behaviour of the unbuilt v2 checker.
+**Fresh-fragment certificate and algorithm.** For a settled result-template DAG whose every tracked origin
+is a fresh allocation k, with no parameter/capture/shared/unknown/feedback dependency, certify that property
+once per node using a dense stamped column. Repeated references to k remain repeated references: a fresh outer
+record does not prove its children separate. A selected result occurrence is `(scope occurrence path, k)`;
+same occurrence and k is shared, different allocation ids or allocating invocation occurrences are apart.
+Walk scope edges to the first divergence and retain selected-path memos; total traversed edges are P.
+The certificate scan plus selected-path traversal is O(E_template+P); fixed-key interning adds its stated
+logarithmic cost. This is a subalgorithm, **not** O(E+P) construction of every explicit ordinary wrapper label.
+Exported labels, full κ queries and contexts outside this fragment still count in N_f, and the unforced scope
+DAG must not conceal required export work.
 
-**Exponential ordinary labels.** Let `w0 f = (f ⊤, f ⊤)` and
-`wk f = (w(k−1) f, w(k−1) f)`. Write k+1 declarations, each of constant size. If Lk counts explicit labels in
-`wk`'s result, L0 = 2 and Lk = 2L(k−1) = 2^(k+1): the two instructions differ, and their callee label ids
-differ, so **no two new interner keys coincide**. Across the declarations the interner holds
-2^(k+2)−2 nodes. At depth 16: 131 072 labels in the final result, 262 142 in total. Sharing pair tails does not
-change either count. No summary position or recursive call occurs, so the semantic fold does not apply.
+The **whole module** therefore costs
+`O(E + Σ_f N_f log(N_f+2))` time and `O(E + Σ_f N_f)` arena space, up to fixed record sizes.
+On an exhausted owner its bound uses L_f+1 for the failed reservation. In particular the uniform-default bound
+is `O(E + F L log(L+2))`, L=65,536. This is a **resource-parameter bound**, not an assertion of linear growth
+as unrestricted written programs get bigger. A raised L raises the bound. The O(E+P) fragment does not prove
+P=O(E), nor does a finite fixpoint prove cheap evaluation. Budgeted general operations may stop with a loud
+error; ordinary labels are never merged to make the resource fit.
 
-An unevaluated whole-class application can represent each wrapper's two edges in O(1), hence this family's
-unforced graph in O(k). That is stronger than interning expanded pairs, but only proves **storage before
-queries**. `apart`, `reach`, substitutions in supplies, read-off, normalisation and block writing must operate on
-those applications without enumerating their leaves. Memoising a comparison per pair gives at best the product
-of the compared graph sizes; it does not prove linear time. No replacement end-state algorithm is claimed here.
+**Persistent sets: representation and total accounting.** Use immutable AVL/red-black search trees in
+columns, keys ordered by stable ids; path copying shares unchanged subtrees. Dense roots/memos use columns.
+Owner-local composite-key dictionaries and operation memos use deterministic comparison trees over constant-size keys; do not rely on average
+hash-table cost for this bound. Variable-length paths, groups and child lists are persistent cons/tree records
+with bounded-size keys; constructing or comparing their sequences uses the tasks below. Physically shared
+nodes are logically registered once to each owner which relies on them. Structural node interning is not
+canonical median rebuilding: singleton insertion copies O(log C) nodes. Equal-content trees may have different
+roots. Inserting an existing key and union adding no facts return the original destination root; charged
+inclusion/equality tasks settle different roots. This semantic idempotence, not a unique balancing shape,
+prevents spurious fixpoint changes. Condition joins have the same idempotence requirement.
 
-**Wide callback results (N × M).** `h f = { a1 = f ⊤, …, aN = f ⊤ }` applied once to an actual with an M-field
-result has O(N+M) written input with a shared result type. The old operation copied the M-node template N times,
-Θ(NM). §2.11 item 5 removes that *eager setup*: O(M+N) for one template and N views, preserving each label and
-its supplies. It leaves a second count to prove. For an M-tuple of fresh lists the tuple has no root cell
-(§2.1); checking only cells at ε says nothing about its children. The literal's two-path condition (§2.9),
-if discharged by inspecting every label's descendant paths, creates NM different `(template-node, label)`
-keys. Memoisation reuses none of them. A whole-template generativity/separation proof could avoid those queries,
-but it must also cover supplied values, captures, nested actuals and feedback; "fresh per call" alone is not that
-proof.
+The complete retained analysis workspace is a **memoised operation graph**, not only the final semantic class.
+A record is either semantic data, a membership/dependency edge, or a real memo/continuation needed to evaluate
+an operation. Every record has one fixed-size kind layout (at most 16 u32 words). Variable-size runs use one
+record per bounded-size chunk and must reserve each chunk before filling it. No record contains an uncharged
+list, child array or arbitrary-size set. Every inference operation is one of these bounded-step tasks:
 
-**Composition (N × M comparison pairs).** Let `chooseN f b x1 … xN` be a flat branch chain returning one of
-`f x1 … f xN`; define `chooseM g c y1 … yM` likewise. The branch controls b and c are independent. A caller
-builds `(a, bResult)` from their results and writes through a while bResult is still live. Each summary is a
-binary union of callback results, of size O(N) or O(M). Distributing `apart` over both unions and memoising each
-leaf-label pair visits NM distinct pairs: four times the work when both widths double. With identity actuals
-the question reduces to disjointness of two provenance sets, which a sorted group can answer in
-O((N+M) log(N+M)). Thus this example disproves **pair memoisation as the linear algorithm**, not the existence of
-a more precise factored algorithm. Calling the NM generated pairs "E edges" would hide the defect.
+| Operation | Task key / retained output |
+|---|---|
+| insert/member/union for cell, reach, κ or class-alternative sets | operation, immutable input root ids, key or subtree cursor; result root and continuation edges; union visits already-present entries as well as additions |
+| substitution, projection, deep/reach walk, `apart`, `alias`, `leq` | operation, immutable roots, invocation/supply context, path or pair cursor; a long path/pair product is a sequence of tasks, never a loop hidden in one task |
+| holder registration/expiry and inverted-index search | holder event (binding/result plus program point and immutable state version), set node, edge cursor; every live-count transition, parent link traversal and path traversal is retained; stamp visited nodes per query |
+| fixpoint propagation and shape-triggered re-walk | delivery `(edge,fact)` or immutable-root union request; new-edge replay of existing facts; watcher/notification edges; instruction cursor and immutable dependency version for each re-walk |
+| dependency cycle search, validation, numbering, block codec | graph/version plus DFS/worklist cursor, visited record and continuation; cycles write id backreferences |
 
-**Bounds proved, and what remains.** For callback setup alone let B count template nodes and supply-binding
-edges prepared once, and L constant-size views created. Setup is O(B+L), assuming bounded-cost interning.
-Track K distinct demanded contexts and A distinct comparison pairs, but do **not** treat them as a time bound:
-a comparison follows provenance paths, a projection may inspect sets, and propagation can revisit a state after
-it gains cells. Total primitive path/node visits, set insertions and propagation work, including repeat visits,
-must all be charged. Memory includes templates, views, memo entries and their result sets. These are diagnostic
-counters, not R-7.2: K or A can already be Θ(NM), and eager L can be exponential. A closure proof must bound them by written IR/types/edges, including wide and differently shaped
-summaries, arbitrary wrapper composition, recursive calls through wrappers, mutual recursion and supplies-only
-cycles. In particular, `h f x = if p x then f x else wrap (λy → h f y) x`,
-`wrap g x = g x`, recurses through a carried lambda: the h→wrap call is outside h's static group.
-The recursive h call is inside the lambda's frame. The fold must account for that frame's enclosing
-declaration group; the current direct-group wording alone is not a finite-context proof.
-The completed algorithm must preserve `pair`'s two results and the §2.2 aliasing examples. A finite recursion quotient proves
-termination, not that evaluating or comparing its facts is linear.
+A task is reserved **before** execution, runs at most once, reads/writes O(1) already-addressable words and
+creates at most a fixed number of successor requests/notification edges. Iterating a long adjacency run,
+copying a variable-width key, bulk allocation, traversing children and retrying an unsuccessful lookup all
+require continuations. Dictionary navigation of a fixed key may do O(log(N_f+2)) comparisons without a record
+per comparison; variable-key equality is not such a comparison. Source scans outside the account execute
+once, O(E), using dense columns/radix ordering over input ids, and only reserve initial tasks. A source seed
+that needs composite lookup first reserves its unique source-event task in O(1) via a dense slot; the lookup
+then belongs to that charged task. This avoids an uncharged E log N term; no uncharged interpreter loop, SCC rescan, polling or repeated
+frame walk is allowed. A completed-task cache hit is reached only from one of those bounded successor edges
+(or an O(E) source seed), so hits are bounded too. Each waiter/notification edge is registered and fired once
+per immutable input version; an in-progress cyclic request returns a dependency edge, not a recursive call.
+Mutable input ids are forbidden as sole cache keys: a changed fact set yields a new canonical immutable root,
+and a new task if necessary. Deduplicate facts and notifications before scheduling them. Queue links live in
+the task records; dequeue once, never spin on a waiting cycle. Reusing an already completed pure result is free
+of new semantic allocation, not a licence to execute its body again. All such evaluation is on explicit stacks.
 
-The earlier rotate example remains a useful *special case*: the N-field `update` chain has nested provenance
-sets, represented by persistent sharing in O(N log N) work; `rot`'s one rotating W bit traverses N edges.
-Neither proves that arbitrary persistent-set unions cost O(log C) or that every fact graph has nested sets.
-For example A = {1,…,N} and B = {2,4,…,N} with independently built roots add zero cells to A, but a union
-without a cached inclusion proof may inspect Θ(N) entries of B. A cost stated only in *new* cells misses that
-work; shared tails help only when the operation actually recognises them.
-The table's sparse-propagation O(E log C) claims apply to those shared/nested cases; a general proof is still
-owed for total set changes as well as comparisons. Morphic's cited solver condenses edges, then explicitly
-extends and clones signature-variable sets (`inequality_graph2.rs:145–169`); it does not supply a constant-cost
-union theorem. The existing `leq`/`eq` product bound also cannot be used as evidence for R-7.2.
+**Proof.** Charge data, tasks, continuation/notification edges and set-tree copies before allocating them;
+never refund within an owner's computation. There are N_f retained records. Every task executes once and
+issues boundedly many requests, every registered edge fires once, and source seeds total O(E). Thus there are
+O(E) direct source steps and O(Σ N_f) charged steps/fixed-key dictionary operations. Their height is O(log(N_f+2)); every
+variable-width operation was split into accounted steps. Summing gives the displayed module bound, including
+zero-addition unions, repeated holder activations, failed separation and validation. Workspace teardown happens
+after validation and encoding, not between rounds; normalisation/compaction cannot refund the allowance. In an
+SCC each task is attributed to the declaration whose summary it computes; a task used by two owners is logically
+registered to both. A nested class uses its enclosing owner, never its own counter. This also accounts imported
+semantic records before traversal, with no dependence on whether an import was checked or cached. ∎
 
-**No unproved fallback.** Folding every ordinary label to its first instruction would give at most one label
-per syntactic call site **in one class** and lose `wp f = pair f`'s .0/.1 precision. It would not by itself bound
-supply paths, instantiations, condition pairs or serialization across classes. We have proved the proposed
-explicit-pair strategy insufficient, not that precise shared applications cannot work. Consequently this
-revision adopts neither that fold nor a new cap; §9 records the unresolved representation/solver obligation.
-Section 7 pins the adversarial families; passing their measurements is necessary but not a universal proof.
+These are **real retained memo/continuation records**, used for deduplication, invalidation, dependency
+resumption and diagnostics, not a second counter of instructions or rounds. Dropping them to retry work later
+is outside this implementation. The limit's meaning is deliberately the full analysis summary workspace
+(§4.4); counting only final serialized facts would not prove the bound. Instrument category counts separately.
+
+**Families and stronger special cases.**
+
+- `A_i = A_(i−1) ∪ {x_i}` uses one persistent insertion per step, O(n log C) copied nodes/tasks, including
+  `reach` for a chain of single-cell deltas. Flattening all n roots would be Θ(n²) and is neither necessary nor
+  free. General union of independently built A={1,…,n}, B={2,4,…,n} may inspect Θ(n) entries while adding none;
+  those union tasks are retained and charged. Different overlapping operands can exhaust the allowance.
+- N seed origins → one relay → N consumers can deliver Θ(N²) `(edge,fact)` pairs on O(N) written edges.
+  Share immutable roots when applicable; otherwise every delivery and membership is charged. Sparse propagation
+  alone proves no O(E log C) theorem. A rotating single W bit and a chain of nested sets do have O(E log C)
+  work; this special case does not license a general claim for the model fixpoint.
+- Register/expire the same N-node reach root at K separate events: Θ(NK) live-count work is possible even if
+  no set node is allocated. Event/node continuations charge it before traversal; keeping nodes across hand-over
+  avoids it in the single-delta chain. Multiple live paths to one holder also cost inspected edges, not merely
+  the number of holders returned. The inverted index avoids unrelated scope scans, not every product.
+- For `w0 f=(f ⊤,f ⊤); wk f=(w(k−1) f,w(k−1) f)`, explicit labels number 2^(k+1) in wk; tails do not deduplicate
+  distinct pairs. Precise labels and their companion records stop at the first failed reservation, possibly
+  before 65,537 **labels** because labels are not the only charged records. The fixed-type closure tower in
+  Appendix B has zero formal callback labels but exponentially many ordinary environments; it stops likewise.
+- `h f={a1=f ⊤,…,aN=f ⊤}` and an M-field actual prepare one template plus N views, O(N+M) setup. General
+  descendant comparisons can still create NM context tasks. Fresh-only certificates avoid that particular
+  product when applicable; no such certificate is assumed for supplied/captured/feedback descendants.
+  Independent N-way/M-way callback-result unions can require NM pair tasks too. Both products are charged,
+  even if every comparison succeeds or no cell is newly added.
+- Canonical path **length** ≤2·places does not bound their **number**; a small acyclic graph can have
+  exponentially many paths. Enumerate only on demand and reserve each path/continuation first. Keep shared
+  shape DAGs shared (`DeepTupleDag`), use genuine dependency backreferences for recursion, and never prebuild
+  the Cartesian inventory before applying the guard.
 
 ### 4.2 The six places v1 went superlinear
 
@@ -1181,31 +1309,84 @@ Section 7 pins the adversarial families; passing their measurements is necessary
 | #975: Conduit +41 % | the same mechanism plus lazy blocks; measured at S9 against +10 % |
 | `ListOfParams` O(n⁴) | `and(excl π₁…πₙ, apart{π₁…πₙ})` gathered once |
 
-Also from R-7.2: `MutualCycles` one 12-node place graph; routed-app and the 256-widget application: signature-shaped summaries are the target, but the callback-label/view bound is still open (§4.1); blocks read per declaration; interface reads O(modules); `Schema.read` lazy; no width
-anywhere refuses.
+Also from R-7.2: `MutualCycles` one 12-node place graph; routed-app and the 256-widget application: shared signature-shaped summaries with the resource contract of §4.1; blocks read per declaration; interface reads O(modules); `Schema.read` lazy; these required fixtures must stay under the default allowance; arbitrary generated width is subject to §4.4.
 
 ### 4.3 Memory
 
-No linear memory bound is established until §4.1's blocker is closed. Walk tables proportional to §4.1's counts, reset per group; summaries O(|S|); blocks O(Σ|S|); persistent sets and
-conditions shared.
+O(E + Σ_f N_f) fixed-size records including persistent intermediates, tasks and live-index links (§4.1).
+Imported immutable storage may be physically shared; each owner still charges every referenced semantic record
+once. The inference account lasts through final validation and encoding; a group arena is then released.
+Blocks encode only semantic graphs, bounded by the same account; they never contain recursively embedded copies.
 
 ### 4.4 Resource limits
 
-R-7.4: no algorithmic cap. The only limits are on what a program *writes*, each a loud `ownership_limit` with the
-measured value (R-6.11), each with a gate test (`own_limits_test.zig`, S9) that the corpus, the examples and the
-research applications stay at or below a tenth:
+**`ownership_summary_size` [O 2026-10-25]: 65,536 records per owning declaration by default.** Its unit is one
+constant-size record of the complete analysis summary workspace (§4.1), including callback labels, paths,
+closure classes and environments, contexts, carried class tables, cells, set-tree nodes, membership edges,
+conditions, persistent intermediates and retained operation/dependency records. A nested lambda, local function,
+entry analysis or carried class inherits the enclosing top-level declaration's account; parameterless values
+are owners too. Imported tables are charged to each consuming owner on first use. Every variable-width run is
+chunked and charged; physical interning does not give one owner another owner's unused allowance.
 
-| Limit | Value | Bounds | Why |
-|---|---|---|---|
-| `record_fields` | 65 536 | fields of one record type | a `Step` payload is 28 bits; a dense children run |
-| `tuple_arity` | 65 536 | components of one tuple | the same |
-| `constructor_args` | 65 536 | arguments of one constructor | the same |
-| `type_places` | 2²⁴ | places of one module's table | the `PlaceId` space a block addresses |
-| `path_steps` | 65 536 | steps of one canonical path | ≤ 2·places of a type |
-| `declaration_insts` | 2³¹ | instructions of one declaration | BIR's `u32` |
-| `block_bytes` | 2³¹ | one module's block | the entry's section length |
+Reserve before work: the next new record at used=L fails before allocation, child enumeration, substitution,
+set inspection or propagation. Preflight a known-sized run by checked arithmetic; otherwise stream one charged
+chunk/task at a time. Stop that computation immediately with `ownership_limit`; publish no partial summary,
+clean bit or lowering channel. A dependent member gets no acceptance from that failure. Do not allocate L+1
+records, finish an expansion, then count. Work before failed reservation is bounded by §4.1. No separate
+iteration, alias-depth, callback-count or work-fuel limit exists. Genuine recursive/summary-position folds are
+semantic rules (§2.2, §2.10), not a means of squeezing an ordinary summary under L.
 
-v1's eleven caps (R-7.5) have no counterpart; their fixtures get ordinary verdicts (R-8.1).
+**Raise attribute (new language feature).** A standalone line at column 1:
+
+```text
+@ownership_summary_size(module, 262144)
+```
+
+sets the file/module default; it may appear once in the leading module preamble, before the first import or
+declaration (comments/blank lines may precede it). A standalone line immediately before a top-level function's
+annotation, or its definition when unannotated:
+
+```text
+@ownership_summary_size(131072)
+large : ⊤ → List Int
+large ⊤ = …
+```
+
+raises that declaration's allowance and applies to all its nested classes. A parameterless top-level value may
+also carry it, since it owns a summary. It is not allowed on expressions, lambdas, local definitions, types,
+fields or imported declarations; use the owning function's attribute. Comments may separate attribute and
+declaration, another attribute/declaration may not. One attribute per owner. The argument is a decimal integer
+literal, no expression/sign/separator, at least the inherited allowance; a function override may not lower the
+module default. Parse with checked arithmetic, maximum 2³²−2 (u32 ids reserve `.none`). Invalid placement,
+duplicates, a smaller value or overflow is `invalid_ownership_summary_size` at the attribute. Formatting keeps
+it on its own line with the spelling above. Available to user, core and platform packages; never erased from
+analysis inputs/cache keys. It changes no runtime code, types or ownership proof rules. Increasing it permits
+more analysis, never permits a write without proof. S2b adds parser/lowering/formatter/diagnostic and corpus
+coverage, `language.md` and **`skills/beni/` in that implementation PR** (CLAUDE.md rule 7 and skill policy).
+
+**Evidence and instrumentation.** The measurement scanned 11,346 .beni files (3,578 repository files and 7,768
+generated apps); the largest structurally resolved callback-label count was **10**, `o/LimitOwnedAtoms.beni:45`
+(`hand9`), versus 65,536. That is not a measurement of full workspace records or proof about unresolved calls.
+S2b records each category, total high-water N_f, effective L_f and largest owners for corpus/examples/core/
+platforms and generator-deduplicated research apps. Repeat as S4 adds classes/callbacks and S7 entry analysis.
+Report to the owner if N_f reaches one tenth of its default allowance; do not silently raise defaults, add
+attributes to core, or coarsen. `own_limits_test` checks the measured headroom. A new memo design changing the
+unit or deleting retained work records requires a new bound and policy version, not a silent budget refund.
+
+Existing huge **input/format** limits remain; these are not extra inference budgets. Each has its own named
+`ownership_limit` and measured value, checked before allocation. They are not changed by the raise attribute.
+
+| Limit | Value | Bounds |
+|---|---|---|
+| `record_fields`, `tuple_arity`, `constructor_args` | 65,536 each | written fields/components/arguments, dense source/type runs |
+| `type_places` | 2²⁴ | places in one module's source-derived table |
+| `path_steps` | 65,536 | canonical path length, in addition to charged derived path records |
+| `declaration_insts` | 2³¹ | written BIR instructions of one declaration |
+| `block_bytes` | 2³¹ | bytes in one module's encoded block |
+
+v1's precision/round caps (R-7.5) have no counterpart. Their existing small fixtures must get ordinary verdicts,
+not merely be renamed to this limit. Exhaustion is a compiler-resource error with restructure/raise suggestions
+(§6), never an approximate ownership answer, copy, warning or automatic alternative algorithm.
 
 ---
 
@@ -1235,25 +1416,25 @@ L0  Ids
 
 | File | L | Responsibility | Public API | Imports (own2) | Lines |
 |---|---|---|---|---|---|
-| `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `ClassId`, `UseId`, `DemandId`) | the types | — | ≤ 150 |
+| `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Task.enqueueOnce` | — | ≤ 600 |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 000 |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias` | `Table`, `intern`, `parent`, `children`, `alias`, `Set.{union,member,insert}` | Ids, Place | ≤ 800 |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Set.{union,member,insert}` | Ids, Place | ≤ 800 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types | Ids | ≤ 300 |
 | `Prepass.zig` | 3 | SCC edges incl. dispatch callees, alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility, guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rangesAfter`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | κ column, atoms, `apart`, `sep`, deep conditions, instantiation, rely | `yes/lost/shared`, `and`, `atom`, `kappa`, `deep`, `sep`, `lower`, `instantiate`, `rely`, `flat` | Ids, Cell, Shape | ≤ 1 000 |
-| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, pessimistic, text | `Class`, `join`, `leq`, `eq`, `normalize`, `pessimistic`, `print` | Ids, Place, Cell, Shape, Cond | ≤ 1 200 |
+| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Place, Cell, Shape, Cond | ≤ 1 200 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, holders, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness | ≤ 1 200 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
-| `Fix.zig` | 8 | the two fixpoint shapes and validation | `worklist(Instance)`, `propagate(Edges)` | Ids, Cell, Shape, Cond, Summary | ≤ 500 |
-| `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Transfer, Demands, Fix, Liveness, Calls, Summary, Facts | ≤ 1 500 |
-| `Groups.zig` | 10 | the module: pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Walk, Fix, Prepass, Summary, Facts | ≤ 900 |
-| `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Summary, Place, Cell, Shape, Cond | ≤ 1 000 |
+| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation | `worklist(Instance)`, `propagate(Edges)` | Ids, Cell, Shape, Cond, Summary | ≤ 900 |
+| `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts | ≤ 1 500 |
+| `Groups.zig` | 10 | the module: pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Walk, Fix, Prepass, Summary, Facts | ≤ 900 |
+| `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
+| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 200 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
@@ -1261,6 +1442,7 @@ L0  Ids
 | `Enforce.zig` | 13 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
+There are **24 production files plus `rules_test.zig`, on 14 layers (L0–L13)**.
 Every edge in the *Imports* column points to a strictly lower layer (checked by hand against the layer numbers
 above, and by the gate). **The layering gate** (`own2/rules_test.zig`, in `zig build test`): reads every file's
 `@import` lines against this table (an import of a same-layer or higher file, or of anything in `src/own/`,
@@ -1287,8 +1469,26 @@ binding, the later use and its label, the fix.
 | verdict line (R-6.2) | exact/position: "This is sharing the checker can see: …" or the rule; approximate/pending/`level`/limit: "This is a limit of the checker, not proof of sharing: …" naming the limit; an exact label never rests on an approximation (R-6.3; `p/LogAnnotateUpdate`'s message) |
 | sentence, places, what the program would see, fix (R-6.6, R-6.7) | the demand kind and base text; the holder's binding, the write, the later use in source order with carets and labels, shared lines, the constructor on an entry line, "defined here" last for `top-level` with another file's path; exact and position only for the observation; R-6.7's fix table keyed by cause and base kind (`List.copy`/`Dict.copy`/`Set.copy`/`Record.copy` wrappings, "or read `h` before line N", "To be safe, change a copy:", `x ⊤`, `init ⊤ = …` with the `λ⊤ → x` warning, the `view`, `need`, pending, `payload`, `level`, entry fixes, the exact/approximate `Dict` split, never `Record.copy` for a `Dict` value) |
 | `need` (R-6.8), `unknown` (R-6.9) | the function value as written / "a lambda" / "a function value" with its two places; the `⊤` cell's birth |
-| grouping (R-6.10), limits (R-6.11) | one diagnostic per (position, verdict, cause, detail); one `ownership_limit` per declaration and limit; dependent refusals carry `limit`; a pending line never hidden |
+| grouping (R-6.10), limits (R-6.11) | one diagnostic per (position, verdict, cause, detail); one `ownership_limit` per owning declaration and limit; exhaustion stops dependent inference without secondary refusals; existing independent pending lines remain |
 | JSON (R-6.6) | the same text plus each code fix as a machine-applicable edit (span, replacement) |
+
+**Summary-size exhaustion.** Code `ownership_limit`, title **OWNERSHIP CHECK TOO LARGE**, span the owning
+function/declaration name (a lambda is reported through that owner). Example at the default allowance:
+
+> Ownership summary for `w16` needs more than 65,536 records (`ownership_summary_size`). The next record
+> would make 65,537. Put repeated results in a list, make the wrapper chain recursive, or replace a closure
+> tower with data and one fold. You can raise the limit with `@ownership_summary_size(131072)` on `w16`, or
+> `@ownership_summary_size(module, 131072)` in this module's preamble.
+>
+> This is a limit of the checker, not proof of sharing.
+
+Print the effective allowance (and its attribute location when raised), attempted count and category of the
+failed reservation. Stop inference immediately; no dependent ownership noise and no clean output. This fix
+is a restructure/raise suggestion, not `List.copy`: copying does not in general reduce summary size. Ordinary
+aliasing refusals keep their copy fix. An attribute larger than the representable maximum is diagnosed by
+`invalid_ownership_summary_size`; never suggest an overflowing doubled value. JSON may insert a validated
+raise attribute, but must not pretend to rewrite a closure tower automatically. The invalid-attribute code
+and both placements enter `language.md`'s diagnostic catalogue and `skills/beni/` when S2b lands.
 
 Reported modules are the application modules this run checked (R-6.4). `check` fails with the ownership codes alone
 exactly when the report has a refused, pending or limit line (R-8.1). Under `--release --allow-debug` the diagnostics
@@ -1300,7 +1500,7 @@ are identical and nothing is written (R-7.11).
 
 1. **Corpus and pending fixtures** (R-8.1, R-8.2). `tests/corpus/ownership/`, every `build/bad/` and `check/bad/`
    fixture with a §6 code, `run/` and `browser/` unchanged; goldens compared on verdict and count lines (R-7.15).
-   `tests/pending/ownership/` — the 45 fixtures of PR #1008 (CK-262 to CK-311) — is v2's acceptance; Appendix B
+   `tests/pending/ownership/` — 45 fixture roots (47 .beni source files, including project support files) at f309230 (CK-262 to CK-311) — is v2's acceptance; Appendix B
    maps each to its slice; each moves to the corpus as it turns green.
 2. **Whole-corpus verdict diff against frozen v1** (R-8.3). `bench/ownership-everywhere.mjs --diff=<v1>,<v2>`: every
    root of oc §30.7 O1 (1 505 roots) dumped under both (`--ownership=v1|v2`, hidden), verdict lines compared per
@@ -1329,13 +1529,26 @@ are identical and nothing is written (R-7.11).
    64/256 (≤ ×5 in *time*; its facts are Θ(N²) but shared), `DeepTupleDag` to depth 32, `ListOfParams` n = 300,
    `MutualCycles`, routed-app N = 128/256 (≤ ×2.2), Conduit and Bike Wars `check` on vs off (≤ +10 %), the
    100k-line throughput, a one-body warm edit (< 15 ms). A miss is reported (rule 10).
-   Add `CallbackWrapperDag` at depths 8/16/32 (linear table/block bytes in written depth, never in 2^depth);
-   `WideCallbackResult` at independent N/M = 16/64/256, both record and tuple results; and
-   `CallbackUnionComposition` at N/M = 16/64/256. Compare scaling when only N grows, only M grows and both grow.
-   Count template visits, application views, demanded contexts, comparison pairs and serialized bytes, beside
-   wall time; a "memo hit" count alone conceals the distinct-key products. Add recursion through one and several
-   wrappers, mutual recursion, and supplies-only feedback twins. No scenario permits a depth/width refusal.
-   These scenarios belong to S4 as soon as callback queries exist, with the complete run in S9.
+   Add `CallbackWrapperDag` at depths 8/16/24, `WideCallbackResult` with independent N/M=16/64/256/512
+   (record and tuple results, fresh and supplied/captured variants), `CallbackUnionComposition` N/M=16/64/256,
+   and `ClosureTower` (Appendix B) at depths 8/16/24. Smaller cases retain their exact semantic answers;
+   generated cases exceeding the full allowance **must** fail with `ownership_limit`. The explicit `w0..wk`
+   labels and closure tower are forced by summary export even when no caller selects a leaf; no uncharged
+   expansion before the check. Use N=512/M=512 nonfresh demanded descendants for the wide-product
+   guard test, keeping each written record below `record_fields`. That fixture must actually force the product; a fresh-only shortcut is tested separately.
+   On dagon's pinned ReleaseFast build, each default-limit generated module above must stop in **≤2 seconds
+   of ownership-pass wall time**, after type checking, with no new process startup included; record CPU/model,
+   build id, peak bytes and category counts. This is an implementation acceptance target, not a measurement
+   already obtained or an asymptotic-to-seconds inference. Double excess depth/width and require ≤1.25×
+   post-input ownership time once the same owner is exhausting; compare input processing separately.
+   Count successful reservations, failed reservation, tasks executed, notification edges, set inspections,
+   live-count transitions, template/path visits and bytes. Assert every task executes at most once and no
+   work occurs after exhaustion. Fixed-size counters/queue events must match §4.1's accounting proof.
+   Add zero-growth unions, N-seed/relay/N-consumer propagation, repeated holder-root activation, recursion
+   through wrappers, mutual carried lambdas and supplies-only feedback. Run the same fixtures with module and
+   function raises; errors become ordinary semantic verdicts where the enlarged allowance suffices, never
+   changed alias answers. `OwnershipSummarySizeRaised` in Appendix B pins syntax and override precedence.
+   These scenarios start with accounting in S1/S2b, callback/class cases in S4, complete run in S9.
    Soundness twins must retain: `twice`, `once/dup` and `h/k` (including recursive h) yield non-exclusive
    repeated answers; `pair` and `wp` preserve two fresh answers; `List.map` with a fresh-returning actual is
    exclusive, with a shared-returning actual is not, and with `λl → List.push l 1` relies on the input's κ.
@@ -1349,11 +1562,10 @@ are identical and nothing is written (R-7.11).
 
 ## 8. The implementation plan
 
-**Blocked prerequisite.** Before starting the representation-dependent slices, supply and adversarially review
-the missing §4.1 bound, with a representation and solver satisfying R-7.2–R-7.4. This is design work, not an
-interim implementation with eager labels, a size cap or extra approximate refusals. S1's labels/shape views,
-S2's conditions, S4's callback interpretation and S6's blocks depend on it. No finite estimate for closing that
-proof is established.
+**Accounting precedes expansion.** The owner's chosen bound is §4.1's proved-fragment plus complete
+summary-workspace resource contract, not a deferred search for a universally linear label algorithm.
+S1 introduces reservations and one-shot operation records before it creates a label, inferred set or class;
+every later slice extends the same account. No intermediate implementation may postpone charging to read-off.
 
 PR-sized slices in dependency order; acceptance names fixtures (`o/`, `p/` as in the requirements); estimates are
 implementer-days under the owner-away rules (one `@claude` review per PR). Everything is behind the hidden
@@ -1363,42 +1575,43 @@ its runtime half is rebased, its ownership half rewritten as words.
 | # | Slice | Builds | Acceptance | Deps | ∥ | Days |
 |---|---|---|---|---|---|---|
 | S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints three lists | — | S1, S2 | 7 |
-| S1 | **L0–L2** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 6 |
-| S2 | **L3–L4** | `Cond` (κ column, per-path), `Summary` (classes table, lattice, normal form, print), `Liveness` (by path, lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (the four new words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`) | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 5 |
-| S2b | **Words, the spread fact, core in-process** | the four words through lexer/parser/lowering with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; the nominal `Send` type and `Send.to` in the browser platforms (every `send m` → `send.to m`); `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught `written`, `stored`, `taken`, `lent`; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16; **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session | `zig build gates` green under v1 (words erased, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 7 |
+| S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 9 |
+| S2 | **Conditions and summaries** | `Cond` (κ column, per-path), `Summary` (classes table, lattice, normal form, print), `Liveness` (by path, lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (the four new words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 7 |
+| S2b | **Words, the spread fact, core in-process** | the four words through lexer/parser/lowering with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; the nominal `Send` type and `Send.to` in the browser platforms (every `send m` → `send.to m`); `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught `written`, `stored`, `taken`, `lent`; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16; **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session; Raise-attribute grammar, placement, formatting, cache input and diagnostics (§4.4), `OwnershipSummarySizeRaised`, `language.md` and `skills/beni/`; **instrumentation:** record full per-owner/category high-water sizes on corpus and research apps, generator-deduplicated, report any ≥10% of default to owner. Initially record supported constructs, never call unsupported zero; repeat in S4/S7. Minimal blocks already encode class/environment backreferences. | `zig build gates` green under v1 (words erased, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 10 |
 | S3a | **Lists in one declaration** | `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5 | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 6 |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes` | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; R-7.6 #428. RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 6 |
-| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once closures, local groups, `withDefault`, carried classes | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 8 |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Charged dynamic dependency graph, fact deliveries, notifications and shape-triggered re-walks; validation shares the owner account. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; R-7.6 #428. RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 7 |
+| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once closures, local groups, `withDefault`, carried classes; §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat full-size instrumentation. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 12 |
 | S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, `Record.copy`, once closures over records, field captures | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 7 |
-| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; core and every platform clean under v2 (R-1.10, R-8.4) | S5 | S7 | 5 |
+| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh. | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; core and every platform clean under v2 (R-1.10, R-8.4) | S5 | S7 | 6 |
 | S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), `Send.to` as a worded call, markup rows, schema rows, `try`'s early return, `recast` | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 8 |
 | S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` loans, `refs`, the suspension rule via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified | DictFocus, DictValueWritten, DictTupleFocus*, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords | S4, #961 | S6, S7 | 7 |
-| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run | R-8.1–R-8.8 whole; R-7.1's +10 % or a report | S6, S7, S8 | — | 8 |
-| S10 | **Switch-over and deletion** | §8.2 met; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 updated (words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — | 3 |
+| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; R-7.1's +10 % or a report | S6, S7, S8 | — | 10 |
+| S10 | **Switch-over and deletion** | §8.2 met; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — | 3 |
 
-The existing estimate is 83 implementer-days **after the blocked prerequisite**, excluding the unestimated
-representation/solver redesign and its verification; it is not an end-to-end delivery estimate. With two implementers on S0‖S1–S2 and S6‖S7‖S8, 10–12 calendar weeks. S4 and S5 are
-sequential (both edit `Transfer`, `Calls`, `Demands`). Not in a slice because it is a review activity: the S9
-parity triage may surface v1 defects that need requirement decisions; those are issues, not slices.
+The estimate is **99 implementer-days across 13 slices**, including accounting, the raise attribute,
+closure recursion, measurement and adversarial tests. The serial dependency path is **89 days**
+(S1→S2→S2b→S3a→S3b→S4→S5→S7→S9→S10); S0 and parts of S6/S8 overlap. With two implementers, allow
+**18–20 calendar weeks**, excluding owner/review wait time. S4 and S5 remain sequential (shared files).
+S9 may uncover v1 defects needing requirement decisions; report those as issues, never weaken parity.
 
 ### 8.1 Risks and what de-risks each
 
 | Risk | De-risked by |
 |---|---|
-| precise callback composition has no proved linear representation/solver | §4.1's proof prerequisite, then §7.6's wrapper, wide-result and composition counterexamples; S1/S2/S4/S6 cannot claim the requirement without it |
+| the full workspace reaches the chosen allowance on real code | S2b/S4/S7 category measurements and §7.6 fail-fast tests; report ≥10% headroom use, no silent cap or default change |
 | `mapHelp`/`foldlFrom`'s inferred classes are not v1's asserted rows | S2b's worked derivation before any walker code; if inference cannot reach them, the finding is reported and the rows are asserted with pinned bodies under R-5.10.8 as the owner's decision (rule 10), never matched by name |
 | the rotate-`update` family's Θ(N²) facts cost time on a real app | `test-perf` at N = 64/256; sharing keeps the representation O(N); no real TEA app in the corpus has it |
 | `recast` loses exactness core's `Schema` needs | S7 runs core's `Schema` under the diff first; structural place identity covers core; a miss is a refusal of core, which fails beni's build loudly (R-1.10) |
 | the nominal `Send` churns the platforms and corpus | one mechanical edit in S2b (`send m` → `send.to m`), before S3a reads a send |
 | the keep-edge rule still misses a path | `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWriteBeforeKeep` plus the sanitiser over `run/` |
-| the entry's sparse fixpoint and κ invariant do not settle fast on Conduit | the finite context and propagation-work proofs of §4.1; S7 measures pushes on Conduit and Bike Wars |
+| the entry's sparse fixpoint and κ invariant do not settle fast on Conduit | §2.10–§2.12's recursive quotient and §4.1's total operation-graph proof; S7 measures pushes on Conduit and Bike Wars |
 | the Lean oracle models another algorithm (#399) | advisory (R-8.11); the sanitiser is the arbiter |
 | v2 refuses what v1 accepted outside the requirements | a stop condition in S9, reported, never worked around (R-8.3) |
 | `--ownership=v2` leaks into cached entries | `OWN2` blocks are a different section; a mixed cache misses |
 
 ### 8.2 Switch-over criteria
 
-(0) §4.1's representation/query bound proved against written program size, with no cap or unapproved precision loss;
+(0) §4.1's accounting invariants implemented and instrumented, §4.4's headroom gate green, no unapproved precision loss;
 (1) gates green with v2 default on every platform; (2) the whole-corpus diff has zero unjustified differences; (3)
 every `tests/pending/ownership/` fixture green or re-filed as a requirement; (4) the sanitiser runs `run/`,
 `browser/` and the examples clean with lists and records in place on `node` and `browser-inline`; (5) §7.6's
@@ -1426,20 +1639,23 @@ header pointing here (never renumbered: rule 2).
    them the message names `List.swap`.
 4. **The `level (a)` cause.** Kept only for a `below` written while a `level` or another `below` of the same split
    is read later (§2.9); nothing else prints it.
-5. **Two amendments the requirements need** (not open, but the requirements win and must say it): R-3.6 and
-   R-5.10.7 list the pinned callers of a `taken` result and P-sync (§2.13.6, §2.13.7) as part of the trusted
-   surface; R-5.9.9's send positions become `Send.to`'s word.
+5. **Requirements amendments — done in this PR [O 2026-10-25].** R-3.6 and R-5.10.7 now name pinned callers
+   of a `taken` result and P-sync as trusted; R-5.9.9 uses nominal `Send.to`'s `consumed` word instead of
+   name-based send positions (R-5.10.8's list is aligned). The core rules and O9 match those amendments.
 6. **Inferring `map`/`fold` versus asserting them.** Recommended: infer, with the `taken` result word and the
    pinned index obligation on their callers (§2.13.6); if S2b's derivation shows a gap, assert with pinned bodies
    and record the deviation from R-5.10.8 as the owner's decision.
 
-7. **Callback representation and comparison complexity — open blocker.** Ordinary paths must keep distinct
-   call results. Explicit interned pairs fail exponentially; shared templates remove eager N×M copies but
-   demanded paths and pair comparisons can still multiply (§4.1). A precise whole-class application and
-   factored-condition solver, including `reach`, supplies and canonical blocks, needs a proof before the
-   affected implementation slices start. Folding to first instruction is not adopted: it both loses `wp`'s
-   precision and leaves the other product bounds unproved. This is a wall reported under CLAUDE.md rule 10,
-   not an accepted deviation from R-7.2–R-7.4.
+7. **Callback precision, resource and recursion — decided [O 2026-10-25].** Ordinary per-call-site labels
+   stay precise. The default `ownership_summary_size` is 65,536 complete workspace records per owning summary,
+   with module/function raise attributes, pre-work charging and terminal `ownership_limit` (§4.4, §6).
+   Proved: place-graph O(E), fresh-result selected-path O(E+P), and the whole-module
+   O(E + Σ_f N_f log(N_f+2)) time / O(E + Σ_f N_f) storage bound of §4.1. General persistent unions,
+   holder transitions, context products and class tables are **resource-bounded**, not asserted linear.
+   Genuine recursive summary dependencies tie backreferences, preserve original captures, settle before any
+   acceptance and never discharge their own proof (§2.10–§2.12). The former rule-10 representation wall is
+   resolved by these owner decisions. Implementation must meet the accounting and perf obligations; a miss
+   remains a finding, not permission to merge labels or add another cap.
 
 ---
 
@@ -1591,8 +1807,8 @@ header pointing here (never renumbered: rule 2).
 | R-5.13.2 | §2.6 `type_dispatch` | S3b |
 | R-6.1–R-6.12 | §6 | S3a, S5, S7 |
 | R-7.1 | §4, §7.6 (incl. the warm edit) | S9 |
-| R-7.2 | §4.1 **open blocker**, §4.2; §7.6 adversarial families, §9.7 | proof prerequisite; S1, S2, S4, S6, S9 |
-| R-7.3, R-7.4, R-7.5 | §4.4, §7.7 (the limits gate); §4.1/§9.7 adopt no precision cap to close the blocker | S1, S9 |
+| R-7.2 | §4.1 proved fragments and total resource bound, §4.2; §7.6 | S1–S9 |
+| R-7.3, R-7.4, R-7.5 | §4.4 precise labels, complete account and raise attribute; §6, §7.7; §9 item 7 | S1, S2b, S9 |
 | R-7.6, R-7.7 | §3.8 | S3a |
 | R-7.8 | §3.7 (the existing per-module hook, no new wait), §3.9 | S6 |
 | R-7.9 | §3.7 | S3a |
@@ -1624,3 +1840,50 @@ fold unnoticed. `CallbackTakenDuplicate` pins identity `List.map [x,x]` and `two
 plus the map-with-writer supply refusal. `RecordCallbackUnknown` pins the unidentified record-parameter field
 and a known-lambda-field control. The performance generators `CallbackWrapperDag`, `WideCallbackResult` and
 `CallbackUnionComposition`, including recursive and mutual-wrapper variants, are specified in §7.6.
+
+
+**Owner-decision fixtures to write (docs-only PR; source files land in the slices below).** These additions are
+part of the acceptance inventory, not claimed existing files. Alias twins are red for the write, green controls
+must accept; a resource twin is expected to fail compilation with `ownership_limit`.
+
+| Fixture | Required answer and minimal program | Requirement | Slice |
+|---|---|---|---|
+| `GrowFresh` | `grow n = if n == 0 then (λ⊤ → [0]) else (previous = grow (n - 1); λ⊤ → previous ⊤)`; `g=grow n; a=g ⊤; b=g ⊤; (List.push a 1,b)` accepts with owned local results. Recursive dependency backreference, each invocation reaches a fresh allocation, no feedback result stored. | R-5.4.8, R-5.6.3 | S4 |
+| `GrowAlias` | replace base with `λ⊤ → xs`, thread xs through recursion; `g=grow n xs; a=g ⊤; b=g ⊤; (List.push a 1,b)` refuses (`alias`/`disjoint` according to the consuming probe). Same original xs through all captured backreferences. Copy a at the write gives the green twin. | R-3.1, R-5.4.8, R-5.6.2 | S4 |
+| `ClosureTower` | `w0 ⊤=(xs=[0]; λflag → xs)`; each written `wk ⊤=(a=w(k−1) ⊤; b=w(k−1) ⊤; λflag → if flag then a flag else b flag)`. Fixed type `⊤ → (Bool → List Int)`, zero formal callback labels, no recursive dependency: enumerate exact ordinary creation contexts at export, trip the full summary-size limit, never fold by repeated CodeId. Generate k=24; smaller/raised twins test preserved captures. | R-7.2–R-7.4, R-7.12 | S4 |
+| `OwnershipSummarySizeRaised` | source syntax below; a generated acyclic wrapper owner exceeding 65,536 full records but below 131,072 errors unannotated, checks with function raise and with module raise; a deliberately shared-result write still refuses at both settings. A 262,144 module default plus 131,072 function value is invalid (cannot lower); duplicate/local/zero/overflow attributes refuse `invalid_ownership_summary_size`. | R-7.3, R-7.4, R-7.6 | S2b, S4 |
+
+The raise fixture's source preamble and declaration forms (replace the body with the generator's wrapper):
+
+```text
+@ownership_summary_size(module, 131072)
+import List
+
+@ownership_summary_size(262144)
+large : ⊤ → List Int
+large ⊤ = [1]
+```
+
+The hand-written small body checks syntax only. The resource test generator emits successive wrappers until a
+count in (65,536,131,072] is reached, records the concrete generated source in the fixture, and pins the actual
+category totals; it must not assume one callback label equals one full resource record. Tests never lower the
+production default merely to make a trivial program exhaust it.
+
+**Carried-recursion corpus obligations (source locations at f309230).** Nine sites from the measurement,
+plus g2 and the three mutually recursive definitions: 13 definition sites. These are per-use verdicts, not
+blanket approval of fixtures containing deliberate errors. All are S4, cross-module repeat S6; together map
+R-5.4.8, R-5.5.9, R-5.6.1–R-5.6.3, R-5.7.1 and R-7.12.
+
+| Source definition | v2 answer / reason |
+|---|---|
+| `core/Schedule.beni:184` while | Accept ordinary read-only use, terminate: returned step carries next Schedule through a genuine recursive dependency; retain schedule/predicate captures. |
+| `core/Schedule.beni:259` modifyDelay | Accept read-only use, terminate with the same recursive step graph; f returns crossing Duration, captures remain. |
+| `tests/corpus/browser/inline/ReturnedValidator.beni:14` firstOf | Accept run's fresh-error-list push; settle returned validator classes and their list captures before using the fresh base result. |
+| `tests/corpus/check/bad/inline/RecursiveValidatorShared.beni:7` firstOf | Refuse run's push: kept top-level errors propagate through the same recursive class. |
+| `tests/corpus/ownership/NominalHolds.beni:49` firstOf | Terminate; check's fresh errors accepted; twice's shared errors refused; held's validator-list push accepted (nominal type filtering); heldLists' xs push still refused. |
+| `tests/corpus/ownership/PolyRecCps.beni:13` h | Terminate without an ownership refusal in h: CPS capture chain folds on recursive dependency; Int result crosses, canonical supplies kept. |
+| `tests/corpus/ownership/PolyRecCps.beni:21` cps | Terminate; useCps's write at :32 refused, because original xs is read afterwards. The recursive wrapper never freshens xs. |
+| `tests/corpus/ownership/RecursiveFunctions/Validators.beni:7` firstOf | Finite exported class graph; fresh-validator callers accept, shared-error callers refuse exactly as in-module. unknown's held list remains shared. |
+| `tests/corpus/ownership/RepresentativePrefix.beni:11` supply | Terminate with scalar callback result; preserve representative-prefix supplies and their shared κ, no fresh proof from CPS recursion. |
+| `tests/corpus/ownership/PolyRecCps.beni:39` g2 | Terminate; Int-returning closure has no ownership write; nested captures join only on the genuine recursive result dependency despite changing polymorphic input. |
+| `tests/corpus/check/bad/inline/RecursiveClassGrowth.beni:7/:11/:15` a/b/c | All three settle together; bad's push at :25 refuses the shared base. No provisional-empty or self-proving cycle acceptance. |

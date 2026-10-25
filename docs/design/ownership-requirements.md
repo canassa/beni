@@ -138,7 +138,10 @@ Not writes (they read their operands):
 - R-3.5 R-3.1 holds across modules, cached builds, the checked core, function values, recursion, polymorphism,
   casts through `Js.Value`, and every platform.
 - R-3.6 The guarantee assumes only the trusted surface (R-5.10.7): asserted rows, words, `entry` obligations
-  P1–P4 and P7, the runtimes' forwarding of sends, the schema engine's obligation. (oc §20.9, §23.9, §24.6, §30.10)
+  P1–P4 and P7, the runtimes' forwarding of sends, the schema engine's obligation, the pinned callers of a
+  `taken` result (read once per index in one direction, no competing read while materialised), and P-sync
+  (no synchronous re-entry observing a Ref loan/write; suspension is checked separately).
+  [O 2026-10-25] The pinning/gate discipline of R-5.10.7 covers these callers and each platform's P-sync body. (oc §20.9, §23.9, §24.6, §30.10)
 - R-3.7 No bound of the analysis ever produces an acceptance (R-7.3–R-7.5).
 
 ## 4. Precision: values, liveness and sharing
@@ -726,10 +729,11 @@ Not writes (they read their operands):
   `stringBody` is accepted, with `jsonBody` `need (a)` (o/HttpSendBody 48:15). `Random.generate (Random.list g n)`
   is accepted when `g` makes what it returns; `Random.constant shared` refused. (oc §24.9, §30.9 rule 5;
   o/HttpAnswer, o/HttpAnswerEdited, o/HttpSendBody, o/RandomGenerate)
-- R-5.9.9 Send positions are asserted for `browser`'s `Hosted` (`job`, `later`, `tap`, `hook`, `mapJob`, `mapLater`,
-  `mapTap`, `runJob`, `callJob`) and browser-inline's `Cmd.perform`, `Sub.on`, `Sub.map`. A top-level start handing
-  its send to `Listen.on` is today refused as a compiler limit (approximate); it must be accepted. [G #440]
-  (oc §23.3 amended)
+- R-5.9.9 Send positions come from the nominal `Send msg` operation's word:
+  `Send.to : Send msg, consumed msg → ⊤`, written as `send.to message` or `Send.to send message`.
+  No named `Hosted`, `Cmd` or `Sub` row supplies send positions; forwarding is inferred through their bodies.
+  A top-level start handing its Send to `Listen.on` must be accepted. [O 2026-10-25; G #440]
+  (ownership-v2.md §2.13.5; replaces oc §23.3's named positions)
 
 ### 5.10 `foreign`, ownership words and the trusted surface
 
@@ -761,8 +765,12 @@ Not writes (they read their operands):
   effect or changed body fails the gates. The schema engine is trusted: each decoding worker builds what it hands
   `forward` from fresh values, and one reusing a list across runs declares it. (oc §24.6, §30.10;
   o/trusted-surface.txt, o/word-bodies.txt)
+  [O 2026-10-25] Include every caller of a `taken`-result primitive (its single-direction, once-per-index
+  obligation while a materialisation is in force) and each platform runtime's P-sync obligation
+  (ownership-v2.md §2.13.6–§2.13.7). Pin their bodies and tests by the same mechanism; an added unlisted
+  caller or changed body fails the gate. They are explicit assumptions, not inferred proofs.
 - R-5.10.8 Asserted, not inferred: the `List` array primitives, `traverseAt`, `List.focus`, `Dict.focus` and §4.10's
-  `Dict` rows, the `Hosted` and inline send positions, the entry protocols, schema runs (§5.11). Everything else in
+  `Dict` rows, `Send.to`'s consumed word [O 2026-10-25; R-5.9.9], the entry protocols, schema runs (§5.11). Everything else in
   `core/` is inferred from its body. (oc §16.8, §24.5)
 - R-5.10.9 The words must express at least v1's annotated surface (`Js.*`, `String.*`, `Schema.print*`, `Debug.*`,
   `Hosted.keyOf`, `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
@@ -900,7 +908,10 @@ Not writes (they read their operands):
   are one diagnostic listing every base. (oc §28.5; bbi/OwnershipGrouped)
 - R-6.11 `ownership_limit`: one per declaration and limit, naming the declaration, the limit and the measured value;
   every refusal following from it has cause `limit` and is not reported apart; an exact refusal still wins; a
-  function value's own *pending* line is never hidden. (oc §16.7, §28.6; cbi/OwnershipLimitPessimistic)
+  function value's own *pending* line is never hidden. [O 2026-10-25] Complete-summary exhaustion stops the
+  affected computation immediately; do not manufacture downstream verdicts from a pessimistic limit class.
+  Print the next attempted record count and the restructure/raise fixes of R-7.4, not an automatic copy.
+  (oc §16.7, §28.6; cbi/OwnershipLimitPessimistic)
 - R-6.12 Messages print model paths in source terms, not as the report does (`model#Article.0.errors`).
   [G, oc §28.11 item 5]
 
@@ -911,38 +922,65 @@ Not writes (they read their operands):
   dependencies < 25 ms. oc §28.8's target: ≤ +10 % on `check` (Conduit, corpus pages), the 100k-line throughput
   unchanged, is the bar [G #975: Conduit +41 %, Bike Wars +11 %; accepted for O4]. A miss is reported, never
   answered by turning the pass off. (oc §28.8, §30.6)
-- R-7.2 **Linear.** Time and memory are linear in the program (its IR, and the declarations, fields, arms and
-  callbacks written), never in the size of the values it describes:
+- R-7.2 **Proved fragments and a bounded general analysis.** [O 2026-10-25] Preserve linear place-graph
+  construction and the O(E+P) fresh-result template/selected-path fragment (P counts traversed path steps,
+  not queries); include deterministic lookup costs where needed. State total costs over the whole module,
+  including persistent unions, holder/index maintenance, κ/cell sets, recursive propagation and zero-growth
+  inspections. Do not assert a general linear bound without proof. Work outside the proved fragments is
+  bounded by the one complete-summary resource of R-7.4, charged before expansion. The design must prove
+  the total resource-parameter bound, not only count labels or output facts. Existing practical acceptance
+  scenarios below still apply; their specified small instances must not hit the new default limit:
 
   | Scenario | Requirement | Reference |
   |---|---|---|
   | a 16-deep tuple holding `x` at 2¹⁶ places | no limit, checks within the hang guard | [G #856] p/DeepTupleDag |
   | a literal of n list parameters | not O(n⁴) | o/ListOfParams |
   | a TEA model of N parts and N arms | ×4 width costs ≤ ×4–5 | o/WideModelArms; N² arm copies and spine conditions open |
-  | the entry's model fixpoint | linear in model width [O 2026-10-25] | o/WideModel, o/EntryRelay, o/Conduit |
+  | the entry's model fixpoint | linear for the proved nested-set/single-bit fragment; other propagation charged to R-7.4 [O 2026-10-25] | o/WideModel, o/EntryRelay, o/Conduit |
   | 12 mutually naming types | < 1 s | o/MutualCycles |
   | routed-app at N = 128 | `check` finishes, linear in N | [G #964] |
   | a 256-widget application | builds with no coarsening | dr §3; #220 |
   | interface reads per build | O(modules), each costing what it holds | [G #848] |
   | `Schema.read` | does not pay for all of `Schema`'s facts | oc §28.4 #814 |
-  | wide values and conditions | no refusal from width | o/WideResult, o/WideFieldConditions, o/WideDeepCondition, o/HostValueOnePlace, o/ValueCellsGuards |
+  | wide values and conditions | listed fixtures get ordinary verdicts, no width-based coarsening; larger summaries obey R-7.4 | o/WideResult, o/WideFieldConditions, o/WideDeepCondition, o/HostValueOnePlace, o/ValueCellsGuards |
   | compile time | measured linear at N = 256 from the first slice | dr §3 |
 
-- R-7.3 **No caps.** No fact is cut, merged or made approximate to fit a size: no width, path-depth, field-index or
-  alias-hop cap. [O 2026-10-16/17, #220, #286, #289, #293] (mem; oc §16.7)
-- R-7.4 **Resource limits only.** [O 2026-10-25] No algorithmic cap: nothing bounds a callback chain, a fixpoint's
-  rounds, the width of what is known about a function, a path's depth, or any other precision of the analysis; the
-  analysis terminates by construction. The only limits allowed are resource limits on what a program writes (such
-  as record field count, tuple arity, nesting depth), sized so that no real program reaches them. Each one is
-  named with its value in v2's design; reaching it is a loud `ownership_limit` naming the limit and the measured
-  value, never a silent *unknown* or downgrade; and a gate test measures the largest value in the corpus, the
-  examples and the research applications and requires it to be at most a tenth of the limit.
+- R-7.3 **No silent coarsening.** [O 2026-10-25] No fact is cut, merged or made approximate to fit a
+  resource: no width, path-depth, field-index or alias-hop precision cap. **Precise ordinary per-call-site
+  callback labels stay distinct**, including forwarding wrappers. Only declared summary positions and genuine
+  recursive summary dependencies fold; ordinary invocation contexts never fold merely because their code
+  repeats. Keep captures' original identities on invocation, settle facts before judging a write, and never
+  let a recursive proof cycle discharge its own obligation. Cycles encode backreferences, not unfolded copies.
+  Exhaustion is the loud error in R-7.4, never an ownership verdict, copy or warning.
+- R-7.4 **One complete-summary resource.** [O 2026-10-25] `ownership_summary_size` defaults to **65,536**
+  constant-size records per owning declaration. It covers the entire analysis summary workspace: callback
+  labels, closure classes/environments, contexts, carried class tables, persistent sets and intermediate nodes,
+  membership/dependency edges, retained query/continuation records, holders/index maintenance and recursive
+  propagation. Charge once per owner (including logically used imported records), never restart the allowance
+  for a nested class, round, validation or serialization. Variable-width records are charged in bounded chunks.
+  Reserve before allocation or the work it pays for; reaching the limit stops compilation promptly with
+  `ownership_limit`, naming the owning function, limit, effective value and attempted count. No partial facts
+  authorise a write or a clean module. There is no separate round, callback-depth or instruction-fuel cap.
+  - Restructure suggestions: put repeated results in a list, make the wrapper chain recursive, or replace a
+    closure tower with data and one fold. The optional raise attribute is
+    `@ownership_summary_size(module, 131072)` in the leading module preamble, or
+    `@ownership_summary_size(131072)` immediately before a top-level function/value annotation or unannotated
+    definition. Function overrides may raise but not lower the inherited default; decimal literal only,
+    maximum 2³²−2. Full placement/validation/format rules: ownership-v2.md §4.4. User packages may use it.
+    It changes resources, never proof rules. Its implementation updates `language.md` and `skills/beni/`.
+  - The measured **structural callback-label** maximum is 10 (`o/LimitOwnedAtoms.beni:45`); this is not yet
+    a measurement of the complete new resource. Instrument full sizes on corpus, core, platforms, examples
+    and generator-deduplicated research apps from S2b; report any approaching one tenth of the default to
+    the owner, never silently raise it or weaken precision. The headroom gate uses the complete measurement.
+  - Huge named written-input/format limits remain as listed in ownership-v2.md §4.4, each loud and tested;
+    the raise attribute changes only this summary allowance. No other analysis limit is introduced.
 - R-7.5 v1's caps are therefore not allowed [G]: entries 262 144, path-entries 4 096, conditions 2²⁰, owned-atoms 8,
   rounds 32, fixpoint 32, callbacks 4, type walk depth 16, supply probed per cell up to 8, codec evidence nesting 8,
   alias chains of 8. (oc §16.7 cap table; fixtures in R-8.1)
 - R-7.6 **Determinism.** Diagnostics, dumps, interfaces, cache entries and the lowering channel are byte-identical
   at `--jobs=1` and `--jobs=8`, twice each, wherever the project lives, `node` included; nothing
-  printed is an internal id; ties go to source order; limits count distinct facts. [G #428: core's dump under load]
+  printed is an internal id; ties go to source order; the complete-summary limit counts distinct retained records, including semantic
+  operation keys, independent of thread timing [O 2026-10-25]. [G #428: core's dump under load]
   (oc §9.1, §16.9, §28.9; fc §10; CL rule 5)
 - R-7.7 Declaration order changes no verdict and no output except positions. (CL; ordering_test; o/RecordTopOrder)
 - R-7.8 **Parallel.** Each module is checked by its worker on the module DAG, after its type check and before its
