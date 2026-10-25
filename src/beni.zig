@@ -183,6 +183,14 @@ pub const own = struct {
     pub const Message = @import("own/Message.zig");
     pub const summary_bytes = @import("own/summary_bytes.zig");
 };
+/// The ownership checker v2 (`docs/design/ownership-v2.md` §5), behind the
+/// hidden `--ownership=v2` while v1 is frozen.
+pub const own2 = struct {
+    pub const Ids = @import("own2/Ids.zig");
+    pub const Place = @import("own2/Place.zig");
+    pub const Cell = @import("own2/Cell.zig");
+    pub const rules_test = @import("own2/rules_test.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
@@ -215,6 +223,7 @@ test {
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(writes);
     std.testing.refAllDecls(own);
+    std.testing.refAllDecls(own2);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
     std.testing.refAllDecls(build);
