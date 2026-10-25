@@ -151,3 +151,16 @@ tests/pending/ownership/DictTupleAlias.beni exit=0 node+everywhere.ownership-dif
 # new records, but `schemaRunRow` is never refined at the call; an
 # acceptance test for the checker's rewrite.
 tests/pending/ownership/RecordSchemaRun.beni exit=0 ownership-differs
+
+# CK-272 (#999): a record written before it is handed on and then returned is
+# refused, a false refusal #982 accepts on purpose; the keep edge does not know
+# the order of the write and the call.
+tests/pending/ownership/RecordWriteBeforeKeep.beni exit=0 ownership-differs
+
+# CK-273 (#1000): a record inside a fresh literal handed to a function that
+# keeps it, written after: a miscompile.
+tests/pending/ownership/RecordKeptInLiteral.beni exit=0 ownership-differs
+
+# CK-274 (#1001): a nested record written through a local after a function
+# kept its parent: a miscompile.
+tests/pending/ownership/RecordInnerKept.beni exit=0 ownership-differs

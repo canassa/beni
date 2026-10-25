@@ -1,0 +1,10 @@
+module RecordInnerKept
+  29:10 update i: accepted param
+  34:9 update <record>.inner: accepted fresh (RecordInnerKept.split writes it)
+  34:15 value BoxO: rejected supply: RecordInnerKept.split changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx) [copy]
+  summary split: π1 R, π2 R, π2.inner RW{x}; res .0 cb1r{excl cb1}, .1 π2.inner◦, condition(fresh1)r{sep π2.inner cb1}; π1 calls ≤1, supply 1 π2 ownedr{excl π2}
+  summary use: res .1 fresh501◦, condition(fresh1)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 2, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 3: accepted 2, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

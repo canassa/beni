@@ -1,0 +1,34 @@
+-- CK-274: #1001, a miscompile (`ownership-checker.md` §16.4's keep edge,
+-- §31.4 item 5, §31.5). `split` hands `f` the record `o`, then writes the
+-- record at `o.inner` in place through a local: `BoxO` keeps `o`, so the
+-- box would see the write. The call should be refused `supply`, as the
+-- whole-path form `{ o | inner = { i | x = 1 } }` is. Red: the probe at
+-- the supply of `o` sees no later use of `o` (the write is to `i`, a local
+-- bound to `o.inner`, no holder of `o`), so the supply counts as owned and
+-- the keep edge is never asked. On browser-inline the page that reads
+-- `old.inner.x * 10 + new.x` showed 11 where value semantics gives 1
+-- (master after #983). The golden claims the verdict lines and the
+-- totals; its summary lines are master's, to be blessed again with the fix.
+type alias R =
+    x : Int
+
+
+type alias O =
+    inner : R
+    y : Int
+
+
+type BoxO
+    = BoxO O
+
+
+split : (O → BoxO), O → BoxO × R
+split f o =
+    b = f o
+    i = o.inner
+    i2 = { i | x = 1 }
+    ( b, i2 )
+
+
+pub use : ⊤ → BoxO × R
+use ⊤ = split BoxO { inner = { x = 0 }, y = 2 }
