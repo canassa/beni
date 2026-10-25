@@ -7380,6 +7380,21 @@ fn birMayHold(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: I
     }
 }
 
+/// `argsMayAgree` for a type argument written in a declaration against a
+/// store type: a written `⊤` agrees with `⊤`, and a written record with
+/// `{}`, though neither is an object (#952).
+fn birArgsMayAgree(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: Inst.Index, t: Var, depth: u32) Allocator.Error!bool {
+    switch (store.resolvedContent(t)) {
+        .structure => |s| switch (bir.instTag(inst)) {
+            .type_unit => if (s == .unit) return true,
+            .type_record, .type_record_ext => if (s == .empty_record) return true,
+            else => {},
+        },
+        else => {},
+    }
+    return o.birMayShare(store, m, bir, inst, t, depth);
+}
+
 /// `mayShare` for a type written in a declaration's body (§30.9): whether a
 /// value of it may be the same object as a value of type `t`.
 fn birMayShare(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: Inst.Index, t: Var, depth: u32) Allocator.Error!bool {
@@ -7410,7 +7425,7 @@ fn birMayShare(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: 
             const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
             const ys = store.vars(st.app.args);
             if (args.len != ys.len) return true;
-            for (args, ys) |p, q| if (!try o.birMayShare(store, m, bir, p, q, depth + 1)) return false;
+            for (args, ys) |p, q| if (!try o.birArgsMayAgree(store, m, bir, p, q, depth + 1)) return false;
             return true;
         },
         else => return true,
