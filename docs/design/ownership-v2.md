@@ -2049,6 +2049,54 @@ allow **22–25 calendar weeks**, excluding owner/review wait time. These are es
 rates. S3b no longer promises S6's core dump; S8 waits for S5's record facts; S9 waits for list lowering.
 S9 may uncover v1 defects needing requirement decisions; report those as issues, never weaken parity.
 
+*As built (2026-10-25, S0, #1011).* Nothing in `src/own/` changed; everything is behind hidden flags, and a
+build without them is byte for byte what it was (the run hashes of the whole `run/` and `browser/` corpus hold).
+
+- **`--ownership=v1|v2`** is on every command. `v1` is the default. `v2` prints `beni: --ownership=v2: the
+  ownership checker v2 is not built yet; run v1, the default` and exits 2 (`main.zig`), until S3a builds it.
+- **`--records-in-place`** (build only) makes the build enforce on any chain, as `"lists": "in-place"` does,
+  so every clean module writes its records in place. Until O4a parts the two, it enforces lists too. The
+  `.in-place` fixtures and `test-records-in-place` use it instead of `--ownership-everywhere`; their run hashes
+  did not move. Its cache entries are `--ownership-everywhere`'s (`ownership-everywhere/`).
+- **`--sanitize-lists`** (build only, development only, exit 2 in a build that does not enforce). In a module
+  whose demands were all accepted (`Hoists.Table.clean` under enforcement), every call of a core `List`
+  writer — `set`, `update`, `push`, `pop`, `swap`, `insertAt`, `removeAt`, `append`, so every construction with
+  an item after a spread and every `++` on lists, as a call or a dot-call — is `_sanitize$list(site, writer,
+  base, …)` from `_core/_sanitize.mjs` (`src/js/sanitize_runtime.mjs`, written only when imported). The writer
+  runs on a fresh plain copy of its base; when it returns, the base is poisoned. The other operands and the
+  callback run first, as they run before an in-place store. A plain array's elements become holes read through
+  a prototype that throws, a view's own keys throw and its base array is poisoned, a trie header's own keys
+  throw. A call into a function that writes its parameter is covered where that function writes.
+- **`--sanitize-records` and `browser-inline`.** The `inline` lowering drops an update's value when the update
+  is written in place, since the model object is its base. Under the sanitiser the update answers a copy, so
+  under `--sanitize-records` the write-set pass is told no module writes in place (`Emit`'s `in_place`), and
+  the program assigns the model the update's value; the stores as shipped are still `out-stores`' pass.
+- **`zig build test-records-in-place`** runs every `run/` program and every `browser/inline/` page in its
+  three record passes; **`zig build test-lists-in-place`**, its twin, every `run/` program (under
+  `--ownership-everywhere`) and every `browser/inline/` page under `--sanitize-lists`. The gates run the
+  `.in-place` and `.sanitize-lists` fixtures (`run/ListSanitiserValues`, every writer on every base form;
+  `run/ListSanitiserHiddenHolder`, a holder a platform keeps out of the checker's sight, which must trap).
+- **`bench/ownership-everywhere.mjs --diff=<a>,<b>`** dumps every root of O1's audit
+  (`bench/ownership-roots.mjs`, ported from #210's driver: 1 617 roots on 7013ed4ac, where §7.2 counted 1 505)
+  under both and prints the three lists. `--diff=v1,v1` on 7013ed4ac: 8 436 positions the same, 0 and 0.
+
+Where it departs from §7.3, and why:
+
+1. **A plain array's `length` does not throw.** JavaScript makes an array's `length` non-configurable, so no
+   accessor can replace it. The poisoned array keeps its old length, and its elements and every method trap.
+   A stale read of `length` alone, with no element read after it, is not caught.
+2. **`Dict` storage is not sanitised.** v1 makes no demand of a `Dict` write: `Dict` is a persistent tree
+   until #961. Poisoning a write v1 does not judge would trap reads v1 rightly accepts. It comes with #961, in
+   S8.
+3. **What is not sanitised:** core's and the platforms' own modules (only an application module is clean in
+   v1's table), a writer called through a function value (none in the corpus), and the `browser`,
+   `browser-tea` and test-platform pages, whose runtimes keep identity skips (#966).
+4. **Findings.** Under v1 on 7013ed4ac every `run/` program runs clean under both sanitisers, and every
+   `browser/inline/` page under the record one. One page traps under the list one: #1028,
+   `browser/inline/TotalCallBranchOwnership`, where the `inline` lowering evaluates both arms of a branch and
+   writes one list twice that v1 accepted once per arm. So `test-lists-in-place` is red on master until it is
+   fixed.
+
 ### 8.1 Risks and what de-risks each
 
 | Risk | De-risked by |
