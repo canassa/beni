@@ -7206,6 +7206,21 @@ fn sameRepresentation(o: *Ownership, x: TypeId, y: TypeId) bool {
     return (x == list or x == builder) and (y == list or y == builder);
 }
 
+/// Whether two type arguments may be the same type, so that the two
+/// applications may be one object: `mayShare`, except that two `⊤` (or two
+/// `{}`) agree although neither is an object (#952). `List ⊤` and `List ⊤`
+/// are lists, and one list may be both.
+fn argsMayAgree(o: *Ownership, store: *TypeStore, p: Var, q: Var, depth: u32) Allocator.Error!bool {
+    const cp = store.resolvedContent(p);
+    const cq = store.resolvedContent(q);
+    if (cp == .structure and cq == .structure) {
+        const sp = cp.structure;
+        const sq = cq.structure;
+        if ((sp == .unit and sq == .unit) or (sp == .empty_record and sq == .empty_record)) return true;
+    }
+    return o.mayShare(store, p, q, depth);
+}
+
 /// Whether a value of type `a` may be the same run-time object as one of
 /// type `b` (§6.1).
 fn mayShare(o: *Ownership, store: *TypeStore, a: Var, b: Var, depth: u32) Allocator.Error!bool {
@@ -7232,7 +7247,7 @@ fn mayShare(o: *Ownership, store: *TypeStore, a: Var, b: Var, depth: u32) Alloca
                     const xs = store.vars(x.args);
                     const ys = store.vars(y.args);
                     if (xs.len != ys.len) return true;
-                    for (xs, ys) |p, q| if (!try o.mayShare(store, p, q, depth + 1)) return false;
+                    for (xs, ys) |p, q| if (!try o.argsMayAgree(store, p, q, depth + 1)) return false;
                     return true;
                 },
                 else => return false,

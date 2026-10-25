@@ -1,0 +1,21 @@
+module FoldUnitTopLevel
+  8:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  8:36 List.push d: accepted callback-param (List.foldl supplies it owned)
+  12:15 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  12:39 List.push d: accepted callback-param (List.foldl supplies it owned)
+  24:13 List.push FoldUnitTopLevel.top: rejected top-level: FoldUnitTopLevel.top is a top-level value
+  28:16 List.push FoldUnitTopLevel.topInt: rejected top-level: FoldUnitTopLevel.topInt is a top-level value
+  36:15 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  36:39 List.push d: accepted callback-param (List.foldl supplies it owned)
+  47:13 List.push xs: rejected top-level: FoldUnitTopLevel.boxed is a top-level value
+  51:15 List.push <call FoldUnitTopLevel.lfold>: accepted call
+  summary lfold: π1 R; res ~fresh1
+  summary lfoldInt: π1 R; res ~fresh1
+  summary pushTop: res ~shared(FoldUnitTopLevel.top)
+  summary pushTopInt: res ~shared(FoldUnitTopLevel.topInt)
+  summary box: π1 R; res #Box.0 ~fresh1
+  summary wrapped: res ~shared(FoldUnitTopLevel.boxed)#Box.0
+  summary pushLocal: res [*] ~fresh2, ~fresh1
+  demands 10: accepted 7 (fresh 3, call 1, param 0, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 3, call 1, param 0, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause top-level 3
