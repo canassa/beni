@@ -16125,16 +16125,31 @@ const Walker = struct {
     /// the caller's own function parameter is asked to return owned, which
     /// no function that keeps a borrowed supply does.
     fn callbackKeeps(w: *Walker, inst: Inst.Index, callee: Callee, s: *const Summary, args: []const Inst.Index, avs: []const AV, j: u32) Allocator.Error!void {
-        for (s.supply, 0..) |e, ei| {
+        // #982: the records it supplies too (`rsupply`, after `supply`),
+        // whose change is a record write of the callee (`W{F}`, `bit_f`) at
+        // or below the record supplied, or above it.
+        const n_list = s.supply.len;
+        for (0..n_list + s.rsupply.len) |ei| {
+            const record = ei >= n_list;
+            const e = if (record) s.rsupply[ei - n_list] else s.supply[ei];
             if (e.fun != j or e.owned or e.prov.kind != .param) continue;
             var writers: std.ArrayList(u32) = .empty;
-            const written = for (s.uses) |u| {
+            var rwritten = false;
+            for (s.uses) |u| {
+                if (u.param == e.prov.a and u.bits & bit_f != 0 and w.o.overlap(u.path, e.prov.path)) rwritten = true;
+            }
+            const lwritten = !record and for (s.uses) |u| {
                 if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.writeOverlap(u.path, e.prov.path, u.extent)) break true;
             } else try w.writtenByCallback(s, avs, e, ei, &writers);
+            const written = lwritten or rwritten;
             if (!written and writers.items.len == 0) continue;
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
-                if (written) {
+                // What it returns may be the record the callee then writes:
+                // it must return one it owns (§31.5).
+                if (rwritten) w.fn_state.items[jj].rneed = true;
+                if (!lwritten and writers.items.len == 0) continue;
+                if (lwritten) {
                     w.fn_state.items[jj].need = true;
                     w.fn_state.items[jj].need_edit = true;
                 } else for (writers.items) |writer| {
@@ -16159,6 +16174,15 @@ const Walker = struct {
                     .cb, .top => keeps = true,
                     else => {},
                 };
+                // #982: a record it answers that no list's fact reads, as
+                // `Box` (a constructor value) or `λq → Box q` answers `q`.
+                if (rwritten) for (c.objs) |r| switch (r.prov.kind) {
+                    .param => if (r.prov.a == e.k) {
+                        keeps = true;
+                    },
+                    .cb, .top => keeps = true,
+                    else => {},
+                };
             }
             if (!keeps) continue;
             const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} changes what it hands this function ({s}) after the call, itself or through another function, and the function's result may keep it", .{ callee.name, try w.o.provText(e.prov) });
@@ -16180,6 +16204,8 @@ const Walker = struct {
                 // The summary does not say that the change comes after the
                 // call, only that `πᵢ` is used after it: approximate.
                 .prelim = .{ .cause = .supply, .detail = why, .approx = true },
+                // A record's change alone is a record line.
+                .fields = if (lwritten or writers.items.len != 0) null else &.{},
             });
             // One line per callback, as the supply edge reports.
             return;
@@ -17675,7 +17701,7 @@ const Walker = struct {
             // A lambda's own function parameter is called many times and
             // its calls are not otherwise seen by the declaration.
             if (ctx.effects) if (ctx.s.funOf(j)) |facts| if (facts.calls == .many and !facts.seen) {
-                try w.passOn(ctx.inst, ctx.s, ctx.avs, j, facts, jj);
+                try w.passOn(ctx.inst, ctx.s, ctx.avs, ctx.closure, j, facts, jj);
             };
             return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
         }
@@ -18626,7 +18652,7 @@ const Walker = struct {
         // The caller's own function parameter or slot, passed on — inside a
         // lambda too, where the callee's facts are the declaration's
         // wherever the lambda runs (§30.9).
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, callee.closure, j, ff, jj);
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 };
         const classes = try w.classesOf(actual);
         try w.checkClasses(inst, callee, args, avs, j, try w.resolveNeed(s, avs, ff), actual, ictx, classes);
@@ -18640,7 +18666,7 @@ const Walker = struct {
     fn checkSlot(w: *Walker, inst: Inst.Index, slot_callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, facts: FunFacts, actual: AV) Allocator.Error!void {
         const s = slot_callee.sum;
         const callee = slot_callee.name;
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, facts, jj);
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, slot_callee.closure, j, facts, jj);
         const ff = try w.resolveNeed(s, avs, facts);
         if (!ff.need) return;
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
@@ -18760,7 +18786,7 @@ const Walker = struct {
     /// The caller's own function parameter or slot `jj`, handed to the
     /// callee's function parameter or slot `j`: it takes the callee's facts
     /// (§16.4 item 4).
-    fn passOn(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, facts: FunFacts, jj: u32) Allocator.Error!void {
+    fn passOn(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, lambda: u32, j: u32, facts: FunFacts, jj: u32) Allocator.Error!void {
         var ff = facts;
         var deps: std.ArrayList(u32) = .empty;
         for (facts.need_if) |writer| {
@@ -18791,7 +18817,7 @@ const Walker = struct {
             st.rneed = st.rneed or ff.rneed;
             if (ff.need and !ff.sends) st.need_edit = true;
             st.seen = st.seen and ff.seen;
-            const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
+            const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .closure = lambda, .depth = 0 };
             // §31.5: what the callee hands it of records, handed on as the
             // callee hands it — owned only where the records are this
             // body's to give at the call (`recordProbe`).
@@ -21570,7 +21596,11 @@ const Walker = struct {
                 // (`others`), which the callee cannot order: it does not
                 // know its parameters alias.
                 if (rec.kind == .callsite and rec.fields != null and u.point == rec.point and u.call != 0 and u.token == rec.token) continue;
-                if (rec.fields) |fs| switch (w.recordUse(u, h.path, fs)) {
+                // #982: a probe asks whether what the call hands on is used
+                // after it, and an update that replaces every field writes
+                // the very object a callback may have kept: it is a use of
+                // the record whole, though it reads none of its fields.
+                if (rec.fields) |fs| switch (if (rec.kind == .probe and u.reads_none and w.o.isPrefix(u.path, h.path)) .whole else w.recordUse(u, h.path, fs)) {
                     .none => continue,
                     // §31.14: a read of a written field, which the lowering
                     // reads before the write.
