@@ -332,11 +332,14 @@ pub const Table = struct {
     /// to nothing; a recast stays a recast (approximate); a union projects
     /// both sides. Null when the place has no such step.
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
-        const got = try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() });
-        if (got.found_existing) return if (got.value_ptr.* == Ids.none_int) null else NodeId.from(got.value_ptr.*);
-        got.value_ptr.* = Ids.none_int;
+        // The memo is written only once the answer exists: a refusal in the
+        // middle leaves no "no such step" for another owner to read.
+        if (t.memo_proj.get(.{ n.int(), s.word() })) |hit| return if (hit == Ids.none_int) null else NodeId.from(hit);
         const d = t.get(n);
-        const child_place = places.child(d.place, s) orelse return null;
+        const child_place = places.child(d.place, s) orelse {
+            (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = Ids.none_int;
+            return null;
+        };
         try account.reserve(.memo, 1);
         const out: NodeId = switch (d.kind) {
             .leaf => try t.projectLeaf(gpa, account, places, cellt, d.cells, child_place, s),
@@ -345,7 +348,6 @@ pub const Table = struct {
             .recast => try t.recast(gpa, account, child_place, .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?, (try t.proj(gpa, account, places, cellt, .from(d.b), s)).?),
         };
-        // The memo slot may have moved: look it up again.
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
         return out;
     }
@@ -688,6 +690,14 @@ pub const Table = struct {
         const outermost = t.leq_depth == 0;
         t.leq_depth += 1;
         defer t.leq_depth -= 1;
+        // A query refused in the middle forgets every provisional answer it
+        // made, so no `assumed` is left for another owner to read as true.
+        errdefer if (outermost) {
+            for (t.leq_provisional.items) |pair| if (t.memo_leq.get(pair)) |v| if (v == leq_assumed) {
+                (t.memo_leq.getOrPut(gpa, pair) catch unreachable).value_ptr.* = leq_unknown;
+            };
+            t.leq_provisional.clearRetainingCapacity();
+        };
         const got = try t.memo_leq.getOrPut(gpa, .{ n.int(), m.int() });
         if (got.found_existing and got.value_ptr.* != leq_unknown) return got.value_ptr.* != leq_false;
         // The coinductive assumption: the pair holds while it is being
@@ -1607,4 +1617,31 @@ test "a refused reservation leaves the shape tables whole" {
     try testing.expectEqual(@as(usize, 0), f.shapes.overs.len);
     const m = try f.shapes.overPut(gpa, &f.account, Table.over_none, Place.Step.elem, l);
     try testing.expectEqual(l, f.shapes.overGet(m, Place.Step.elem).?);
+}
+
+test "a refused projection or inclusion leaves no answer behind for the next owner" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const list = try f.placeOf(1);
+    const r = try f.shapes.leaf(gpa, &f.account, rec, try f.param(1, rec));
+    const x = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    const y = try f.shapes.leaf(gpa, &f.account, list, try f.site(2, list, .list));
+    const fa = try Place.Step.field(&f.account, 10);
+    // Owner A is refused projecting `.a`; owner B gets the projection, not
+    // "no such step".
+    var broke: Account = .{ .allowance = 0 };
+    defer broke.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, f.shapes.proj(gpa, &broke, &f.places, &f.cells, r, fa));
+    const a = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, r, fa)).?;
+    try testing.expectEqual(@as(u32, 1), f.cells.sets.count(f.shapes.cells(a)));
+    // Owner A is refused in the middle of `leq(x, y)` — after the pair was
+    // assumed — and owner B must still get `false`.
+    var tight: Account = .{ .allowance = 1 };
+    defer tight.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, f.shapes.leq(gpa, &tight, &f.places, &f.cells, x, y));
+    try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, y));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, x));
 }
