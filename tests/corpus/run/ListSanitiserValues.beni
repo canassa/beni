@@ -1,0 +1,62 @@
+-- Every list writer, each on a list nothing reads again, built once more
+-- under the list stale-read sanitiser (`ownership-v2.md` §7.3): each
+-- accepted write runs on a copy and poisons the list it wrote, so the
+-- program prints the same only if no holder older than a write reads it.
+-- The bases take every form a list has: a literal, a view (a pattern's
+-- rest), a long list, a list built in a loop, and a list a function was
+-- handed; and a writer called as a method.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+grown : Int, List Int → List Int
+grown n acc =
+    if n == 0 then
+        acc
+    else
+        grown (n - 1) (List.push acc n)
+
+
+bump : List Int → List Int
+bump xs = List.push xs 0
+
+
+dotted : List Int → List Int
+dotted xs = xs.push 1
+
+
+rest : List Int → List Int
+rest xs =
+    case xs of
+        [ _, …tail ] →
+            List.push tail 9
+
+        [] →
+            []
+
+
+main : Program
+main =
+    long = List.range 1 40
+    Node.printLines
+        [ show (List.push [ 1, 2 ] 3)
+        , show (List.set [ 1, 2, 3 ] 1 7)
+        , show (List.update [ 1, 2, 3 ] 2 λx → x * 10)
+        , show (List.swap [ 1, 2, 3 ] 0 2)
+        , show (List.pop [ 1, 2, 3 ])
+        , show (List.insertAt [ 1, 2, 3 ] 1 5)
+        , show (List.removeAt [ 1, 2, 3 ] 0)
+        , show (List.append [ 1 ] [ 2, 3 ])
+        , show ([ 4, 5 ] ++ [ 6 ])
+        , show [ …[ 7, 8 ], 9 ]
+        , show (grown 5 [])
+        , show (bump [ 3 ])
+        , show (rest [ 1, 2, 3 ])
+        , show (dotted [ 5 ])
+        , String.fromInt (List.length (List.push long 41))
+        ]

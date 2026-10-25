@@ -882,11 +882,17 @@ const Config = struct {
     /// for `zig build fuzz`; such a run is never skipped for a record.
     fuzz_seeds: ?[]const u8 = null,
     fuzz_steps: ?u32 = null,
-    /// `BENI_IN_PLACE=all` (`zig build test-records-in-place`): every
-    /// `run/` fixture gets the in-place pass a `.in-place` fixture has,
-    /// those the ownership checker refuses under `--ownership-everywhere`
-    /// skipped (`ownership-checker.md` §31.12 slice 3).
-    in_place_all: bool = false,
+    /// `BENI_IN_PLACE`: the differential passes every `run/` fixture and
+    /// every `browser/inline/` page gets, whatever its tokens say; those
+    /// the ownership checker refuses under the pass's flags are skipped.
+    /// `all` (`zig build test-records-in-place`): the three passes a
+    /// `.in-place` fixture has, records written in place
+    /// (`ownership-checker.md` §31.12 slice 3). `lists`
+    /// (`zig build test-lists-in-place`): the pass a `.sanitize-lists`
+    /// fixture has, under the list sanitiser (`ownership-v2.md` §7.3).
+    in_place: InPlace = .none,
+
+    const InPlace = enum { none, records, lists };
 
     const RunHashes = enum {
         /// Unset: a build whose digest is recorded is not run under Node.
@@ -973,16 +979,15 @@ const Config = struct {
             }
         else
             null;
-        const in_place_all = if (envOr(arena, "BENI_IN_PLACE")) |text| blk: {
-            if (!std.mem.eql(u8, text, "all")) {
-                std.debug.print("BENI_IN_PLACE must be `all` (or unset), not `{s}`\n", .{text});
-                return error.BadInPlace;
-            }
-            break :blk true;
-        } else false;
+        const in_place: InPlace = if (envOr(arena, "BENI_IN_PLACE")) |text| blk: {
+            if (std.mem.eql(u8, text, "all")) break :blk .records;
+            if (std.mem.eql(u8, text, "lists")) break :blk .lists;
+            std.debug.print("BENI_IN_PLACE must be `all` or `lists` (or unset), not `{s}`\n", .{text});
+            return error.BadInPlace;
+        } else .none;
         var cfg: Config = .{
             .fuzz_seeds = envOr(arena, "BENI_FUZZ_SEEDS"),
-            .in_place_all = in_place_all,
+            .in_place = in_place,
             .fuzz_steps = fuzz_steps,
             .chrome = chrome,
             .run_hashes = run_hashes,
@@ -1922,6 +1927,17 @@ const Case = struct {
 
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
+    /// Whether the ownership checker refuses the fixture's program when it
+    /// is built with `flag`, which makes the build enforce, and for nothing
+    /// else: a differential pass has then nothing to run.
+    fn ownershipRefuses(c: Case, platform_arg: []const u8, flag: []const u8, sources: []const []const u8) !bool {
+        var probe: std.ArrayList([]const u8) = .empty;
+        try probe.appendSlice(c.arena, &.{ "build", platform_arg, flag, "--diagnostics=json", "--out=out-probe" });
+        try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
+        const tried = try c.inProject(probe.items);
+        return tried.exit_code == 1 and ownershipOnly(tried.stderr);
+    }
+
     fn ownershipOnly(stderr: []const u8) bool {
         const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit" };
         var any = false;
@@ -2078,7 +2094,7 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [7]?[]const u8 = .{ null, null, null, null, null, null, null };
+        var verified: [8]?[]const u8 = @splat(null);
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
@@ -2100,29 +2116,26 @@ const Case = struct {
             if (first_error == null) try c.checkCompiledSchemas("out");
             // A fixture of the records' differential corpus (`.in-place`,
             // its reason; `ownership-checker.md` §31.12 slice 3) is built
-            // three times more with its records written in place — under the
-            // hidden stale-read sanitiser, then the stores as they ship, then
-            // as a release ships them (§31.10, *The form*) — and
-            // each must print the same golden, which was recorded under
-            // spreads. Their run hashes are the fixture's, as its other
-            // passes' are; `BENI_IN_PLACE=all` records none and runs every one.
-            if (c.cfg.in_place_all or c.goldenExists("in-place")) in_place: {
-                const in_place_record = if (c.cfg.in_place_all) "" else record;
-                var in_place: std.ArrayList([]const u8) = .empty;
-                try in_place.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--sanitize-records", "--out=out-in-place" });
-                if (c.cfg.mode == .pending) try in_place.append(c.arena, "--diagnostics=json");
-                try in_place.appendSlice(c.arena, try buildPaths(c.arena, sources));
+            // three times more with its records written in place
+            // (`--records-in-place`) — under the hidden stale-read
+            // sanitiser, then the stores as they ship, then as a release
+            // ships them (§31.10, *The form*) — and each must print the same
+            // golden, which was recorded under spreads. Their run hashes are
+            // the fixture's, as its other passes' are; `BENI_IN_PLACE=all`
+            // records none and runs every one.
+            if (c.cfg.in_place == .records or c.goldenExists("in-place")) in_place: {
+                const in_place_record = if (c.cfg.in_place == .records) "" else record;
                 // Every fixture, under `BENI_IN_PLACE=all`: one the ownership
                 // checker refuses under the flag has nothing to run in place.
-                if (c.cfg.in_place_all and !c.goldenExists("in-place")) {
-                    var probe: std.ArrayList([]const u8) = .empty;
-                    try probe.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--diagnostics=json", "--out=out-in-place-probe" });
-                    try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
-                    const tried = try c.inProject(probe.items);
-                    if (tried.exit_code == 1 and ownershipOnly(tried.stderr)) break :in_place;
+                if (c.cfg.in_place == .records and !c.goldenExists("in-place")) {
+                    if (try c.ownershipRefuses(platform_arg, "--records-in-place", sources)) break :in_place;
                 }
+                var in_place: std.ArrayList([]const u8) = .empty;
+                try in_place.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--sanitize-records", "--out=out-in-place" });
+                if (c.cfg.mode == .pending) try in_place.append(c.arena, "--diagnostics=json");
+                try in_place.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 var stores: std.ArrayList([]const u8) = .empty;
-                try stores.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--out=out-stores" });
+                try stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--out=out-stores" });
                 if (c.cfg.mode == .pending) try stores.append(c.arena, "--diagnostics=json");
                 try stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 // The sanitiser first: a stale read traps there, naming its field.
@@ -2142,10 +2155,36 @@ const Case = struct {
                 // optimiser over records written in place (`backend.md` §9;
                 // `ownership-checker.md` §31.10, *The optimiser barrier*).
                 var release_stores: std.ArrayList([]const u8) = .empty;
-                try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
+                try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
                 if (c.cfg.mode == .pending) try release_stores.append(c.arena, "--diagnostics=json");
                 try release_stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 verified[6] = c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false, in_place_record) catch |err| blk: {
+                    if (!recording) return err;
+                    RunCounts.add(&run_counts.refused);
+                    if (first_error == null) first_error = err;
+                    break :blk null;
+                };
+            }
+            // A fixture of the lists' differential corpus (`.sanitize-lists`,
+            // its reason; `ownership-v2.md` §7.3) is built once more under
+            // the list sanitiser, with the ownership check enforced as an
+            // in-place platform enforces it: every accepted list write runs
+            // on a copy and poisons the list it wrote, so a holder older
+            // than the write traps. It must print the same golden, or crash
+            // as its `.sanitize-lists-crash` says. Lists are not written in
+            // place yet, so this is the one list pass (§8, S8b adds the
+            // stores). `BENI_IN_PLACE=lists` records none and runs every one.
+            if (c.cfg.in_place == .lists or c.goldenExists("sanitize-lists")) lists: {
+                const lists_record = if (c.cfg.in_place == .lists) "" else record;
+                if (c.cfg.in_place == .lists and !c.goldenExists("sanitize-lists")) {
+                    if (try c.ownershipRefuses(platform_arg, "--ownership-everywhere", sources)) break :lists;
+                }
+                var lists: std.ArrayList([]const u8) = .empty;
+                try lists.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--sanitize-lists", "--out=out-lists" });
+                if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
+                try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                const crash = if (c.goldenExists("sanitize-lists-crash")) "sanitize-lists-crash" else "crash";
+                verified[7] = c.runOnceCrash("out-lists", .dev, lists.items, "expected", false, lists_record, crash) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
@@ -2539,6 +2578,9 @@ const Case = struct {
             };
         }
         if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
+        // `BENI_IN_PLACE`'s pages, for a page of `browser-inline`.
+        const in_browser_inline = !platform and c.fixture.platform != null and std.mem.eql(u8, c.fixture.platform.?, "browser-inline");
+        const differential: [4]?PagePlan = if (pages[0] != null and in_browser_inline) try c.differentialPages(platform_arg, sources) else @splat(null);
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
@@ -2546,6 +2588,7 @@ const Case = struct {
         const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
+        for (differential) |plan| if (plan) |p| try entries.append(c.arena, .{ .path = p.entry });
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
@@ -2567,6 +2610,12 @@ const Case = struct {
                 if (first_error == null) first_error = err;
                 break :blk null;
             };
+        }
+        for (differential) |plan| {
+            const p = plan orelse continue;
+            const page = shown.pages[next];
+            next += 1;
+            _ = try c.pageVerdict(p, shown.run, page, h, script);
         }
         if (release_error) |err| return err;
         if (fuzz_plan) |f| {
@@ -2619,6 +2668,13 @@ const Case = struct {
     /// `.chrome-expected` when it has one. The page is skipped when
     /// `record` lists this build.
     fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
+        const plan = try c.builtPage(pass, pageOut(pass), args);
+        return c.checkedPlan(plan, h, script, record);
+    }
+
+    /// `pagePlan`'s build, written to `out`, and its page's golden: the
+    /// plan before its run hash is looked for.
+    fn builtPage(c: Case, pass: RunPass, out: []const u8, args: []const []const u8) !PagePlan {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
@@ -2643,15 +2699,52 @@ const Case = struct {
         // golden is blessed by it.
         const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
-        const out = pageOut(pass);
-        return c.checkedPlan(.{
+        return .{
             .pass = pass,
             .golden = golden,
             .bless = bless,
             .out = out,
             .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out}),
             .skip = false,
-        }, h, script, record);
+        };
+    }
+
+    /// The differential pages of `BENI_IN_PLACE` (`Config.in_place`) for a
+    /// page built for `browser-inline`, the one browser platform whose
+    /// records and lists are judged in place (`ownership-v2.md` §8, S0):
+    /// the records written in place under the record sanitiser, as they
+    /// ship and as a release ships them, or the lists under the list
+    /// sanitiser. Each is a build of its own directory, run whatever the
+    /// fixture's run hashes say, and never blessed. None when the ownership
+    /// checker refuses the program under the pass's flags.
+    fn differentialPages(c: Case, platform_arg: []const u8, sources: []const []const u8) ![4]?PagePlan {
+        var plans: [4]?PagePlan = @splat(null);
+        const Pass = struct { pass: RunPass, out: []const u8, flags: []const []const u8 };
+        const passes: []const Pass = switch (c.cfg.in_place) {
+            .none => return plans,
+            .records => blk: {
+                if (try c.ownershipRefuses(platform_arg, "--records-in-place", sources)) return plans;
+                break :blk &.{
+                    .{ .pass = .dev, .out = "out-in-place", .flags = &.{ "--records-in-place", "--sanitize-records" } },
+                    .{ .pass = .dev, .out = "out-stores", .flags = &.{"--records-in-place"} },
+                    .{ .pass = .release, .out = "release-stores", .flags = &.{ "--records-in-place", "--release", "--allow-debug", "--check-call-graph" } },
+                };
+            },
+            // `browser-inline` enforces as an in-place platform: no flag
+            // makes it.
+            .lists => &.{.{ .pass = .dev, .out = "out-lists", .flags = &.{"--sanitize-lists"} }},
+        };
+        for (passes, 0..) |d, i| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(c.arena, &.{ "build", platform_arg });
+            try args.appendSlice(c.arena, d.flags);
+            try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{d.out}));
+            try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
+            var plan = try c.builtPage(d.pass, d.out, args.items);
+            plan.bless = false;
+            plans[i] = plan;
+        }
+        return plans;
     }
 
     /// The development build's page again, its test hook set so every
@@ -2916,6 +3009,13 @@ const Case = struct {
     /// line. Recording, it returns the line of a build that Node ran and
     /// that matched; otherwise null.
     fn runOnce(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, record: []const u8) !?[]const u8 {
+        return c.runOnceCrash(out_dir, pass, args, golden, bless, record, "crash");
+    }
+
+    /// `runOnce`, the program's crash text read from the golden `crash_golden`
+    /// names: a pass that must crash where the others do not has one of its
+    /// own (`.sanitize-lists-crash`).
+    fn runOnceCrash(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, record: []const u8, crash_golden: []const u8) !?[]const u8 {
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
@@ -2933,7 +3033,7 @@ const Case = struct {
         // A defect the program must die of (`tests/corpus/README.md`, *A
         // program that must crash*): exit 1 and this text on stderr. Never
         // blessed: a crash is written down by hand, never recorded.
-        const crash: ?[]const u8 = if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("crash"), c.arena, .limited(world.max_stream_bytes))) |bytes|
+        const crash: ?[]const u8 = if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(crash_golden), c.arena, .limited(world.max_stream_bytes))) |bytes|
             std.mem.trimEnd(u8, bytes, "\n")
         else |err| switch (err) {
             error.FileNotFound => null,

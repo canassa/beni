@@ -110,6 +110,9 @@ pub const Result = struct {
     /// Whether the module imports the engine from `Input.derived_runtime`,
     /// which the build then has to write (`derivedRuntime`).
     uses_runtime: bool = false,
+    /// Whether the module imports the list sanitiser from
+    /// `Input.sanitize_runtime`, which the build then has to write.
+    uses_sanitizer: bool = false,
     /// Whether the module imports the markup runtime (`boundary.md` §9.4.5).
     uses_markup_runtime: bool = false,
     /// The markup runtime's exports the module imports, by name, in the
@@ -345,6 +348,16 @@ pub const Input = struct {
     /// before it. Test-only, development builds only, and only in a module
     /// whose records are written in place.
     sanitize_records: bool = false,
+    /// The hidden `--sanitize-lists` (`ownership-v2.md` §7.3): in a module
+    /// whose demands were all accepted under enforcement, each call of a
+    /// list writer runs on a fresh copy of its base, and the old base is
+    /// then poisoned, so that a holder older than the write traps where it
+    /// reads it (`sanitize_runtime.mjs`). Test-only, development builds
+    /// only.
+    sanitize_lists: bool = false,
+    /// The specifier of `_core/_sanitize.mjs`, relative to this module's
+    /// output file: what `sanitize_lists` imports.
+    sanitize_runtime: []const u8 = "./_core/_sanitize.mjs",
     /// Per module, whether its record updates are written in place: its
     /// hoist table is clean and the build enforces (§31.10). Read where a
     /// call into another module answers its argument's object
@@ -964,6 +977,7 @@ pub fn lower(
         .ir = ir,
         .diagnostics = diagnostics,
         .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
+        .uses_sanitizer = l.needs.sanitize,
         .comparators = (@as(u8, @intFromBool(l.needs.eq_prim))) |
             (@as(u8, @intFromBool(l.needs.compare_prim)) << 1) |
             (@as(u8, @intFromBool(l.needs.compare_char)) << 2) |
@@ -1556,6 +1570,8 @@ pub const Lowerer = struct {
         deep: bool = false,
         list_eq: bool = false,
         list_compare: bool = false,
+        /// `_core/_sanitize.mjs`'s `list` (`Input.sanitize_lists`).
+        sanitize: bool = false,
     };
 
     /// One derived function being lowered (`derivedArrow`).
@@ -3800,6 +3816,11 @@ pub const Lowerer = struct {
         }
         // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
+        // The list sanitiser, when a list write of this module is sanitised.
+        if (l.needs.sanitize) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{.{
+            .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "list"), .tag = JsIr.Name.no_tag }),
+            .local = try l.sanitizerLocal(),
+        }}));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
         if (l.markup_imports.items.len != 0) if (l.in.markup) |mk| {
@@ -5068,6 +5089,63 @@ pub const Lowerer = struct {
             else => return false,
         };
         return base == InternPool.WellKnown.cons.symbol();
+    }
+
+    /// Whether this module's list writes go through the sanitiser
+    /// (`Input.sanitize_lists`): only a module whose every demand was
+    /// accepted by a build that enforces, so that every write it lowers is
+    /// an accepted one (`ownership-v2.md` §7.3, R-8.9). Core and the
+    /// platforms are not such modules.
+    fn sanitizesLists(l: *const Lowerer) bool {
+        return l.in.sanitize_lists and l.in.ownership.clean;
+    }
+
+    /// The writer of core's `List` that `callee` names — `set`, `update`,
+    /// `push`, `pop`, `swap`, `insertAt`, `removeAt` or `append`, the named
+    /// writers whose call is a demand on their first argument
+    /// (`ownership-checker.md` §3.1) — or null. Keyed on the core package
+    /// and the module, as `isListCons` is.
+    fn listWriterOf(l: *Lowerer, callee: Inst.Index) ?[]const u8 {
+        const d = l.bir.instData(callee);
+        if (l.bir.instTag(callee) != .ext_value) return null;
+        return l.listWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+    }
+
+    /// `listWriterOf` for value `value` of module `module`'s interface.
+    fn listWriterAt(l: *Lowerer, module: Graph.Index, value: u32) ?[]const u8 {
+        if (module.int() >= l.in.interfaces.len) return null;
+        if (l.in.graph.modulePackage(module) != .core) return null;
+        if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return null;
+        const iface = &l.in.interfaces[module.int()];
+        if (value >= iface.values.len) return null;
+        const spelling = l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]);
+        const writers = [_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" };
+        for (writers) |w| if (std.mem.eql(u8, w, spelling)) return w;
+        return null;
+    }
+
+    /// `_sanitize$list("List.<writer> in M (at byte p)", writer, base, …)`:
+    /// a write of a list under the sanitiser (`sanitize_runtime.mjs`). The
+    /// callee and the operands are evaluated in the order the plain call
+    /// evaluates them, and only then is the base copied and poisoned.
+    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and args.len != 0);
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const all = try l.scratch.alloc(Node.Index, args.len + 2);
+        all[0] = try l.stringNode(site, p);
+        all[1] = writer;
+        @memcpy(all[2..], args);
+        return l.call(try l.ident(try l.sanitizerLocal(), p), all, p);
+    }
+
+    /// `_sanitize$list`, the sanitiser's one export as this module names it.
+    fn sanitizerLocal(l: *Lowerer) !JsIr.NameIndex {
+        return l.name(.{
+            .module = (try l.interner.getOrPut(l.gpa, "_sanitize")).toOptional(),
+            .base = try l.interner.getOrPut(l.gpa, "list"),
+            .tag = JsIr.Name.no_tag,
+        });
     }
 
     /// Whether a tail self-call is reachable through `inst`'s tail
@@ -9668,6 +9746,11 @@ pub const Lowerer = struct {
                 const evidence = (try l.namedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
+                // `xs.push x` is `List.push xs x`, a write of its receiver.
+                if (target == .ext and evidence.len == 0 and l.sanitizesLists()) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
+                    const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
+                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p));
+                };
                 const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 const value = try l.suspension(out, inst, called);
                 // An ordering operator against a non-primitive target is
@@ -10223,7 +10306,9 @@ pub const Lowerer = struct {
         // order.
         if (arg_insts.len == 2 and roots.len == 0 and l.in.dispatch.isListAppend(inst)) {
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
-            return l.suspension(out, inst, try l.call(try l.coreValue(.List, .append, p), values, p));
+            const append = try l.coreValue(.List, .append, p);
+            if (l.sanitizesLists()) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
+            return l.suspension(out, inst, try l.call(append, values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
         // a literal, an interpolation, or another such `++` — is on
@@ -10349,7 +10434,11 @@ pub const Lowerer = struct {
         l.term_choice = l.in.dispatch.evidenceChoice(l.bir, inst);
         const evidence = try l.evidenceArguments(roots, p);
         l.term_choice = saved_choice;
-        if (evidence.len == 0) return l.suspension(out, inst, try l.call(callee, written, p));
+        if (evidence.len == 0) {
+            if (l.sanitizesLists()) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
+                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p));
+            return l.suspension(out, inst, try l.call(callee, written, p));
+        }
         // How the evidence is passed is the callee's convention
         // (checker-v2.md §12.5), the answer its definition was built from.
         switch (Convention.call(l.referenceUse(callee_inst).convention)) {

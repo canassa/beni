@@ -19,6 +19,22 @@
 // exits with neither 0 nor 1; it is counted apart from the rejections.
 //
 // About a minute on a quiet 16-core machine, most of it the cost table.
+//
+// `--diff=<a>,<b>` (`ownership-v2.md` §7.2) is the whole-corpus verdict diff
+// instead: every root above, core and every platform surface is dumped under
+// `--ownership=<a>` and `--ownership=<b>` (`v1` or `v2`, hidden flags), with
+// the same rows as the tables, and the verdict lines are compared per
+// `(root, module, line:col)`. It prints three lists: the lines with the same
+// verdict, those `<b>` accepts where `<a>` refused, and those `<b>` refuses
+// where `<a>` accepted. A position one side reports and the other does not is
+// an acceptance on the silent side, since a dump reports no line where it
+// demands nothing. `--diff=v1,v1` is the diff's own control: every line the
+// same. A side whose checker is not built stops the diff with exit 2.
+//
+//     node bench/ownership-everywhere.mjs --diff=v1,v2 [--beni=…] [--jobs=N] [--same]
+//
+// `--same` lists the lines of the first list as well; by default it is
+// counted.
 
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -173,6 +189,116 @@ async function worker() {
     await measure(all[i], i);
   }
 }
+// ---- the whole-corpus verdict diff (`ownership-v2.md` §7.2) -----------------
+
+/// One dump's verdict lines, by `module\tline:col`: whether any line at the
+/// position refused (rejected or pending), and the lines themselves.
+function verdicts(out) {
+  const at = new Map();
+  let module = "";
+  for (const line of out.split("\n")) {
+    const header = line.match(/^module (\S+)/);
+    if (header) {
+      module = header[1];
+      continue;
+    }
+    const m = line.match(/^\s+(\d+:\d+) (.*?): (accepted|rejected|pending)\b(.*)$/);
+    if (!m) continue;
+    const key = `${module}\t${m[1]}`;
+    const v = at.get(key) ?? { refused: false, lines: [] };
+    v.refused ||= m[3] !== "accepted";
+    v.lines.push(line.trim());
+    at.set(key, v);
+  }
+  return at;
+}
+
+/// Every root the diff dumps: the programs of the tables, then core and every
+/// platform surface, each with the arguments of its dump.
+function diffRoots() {
+  const roots = all.map((p) => ({ name: p.name, argv: [`--platform=${p.platform}`, ...p.root, p.dir ?? p.paths[0]] }));
+  roots.push({ name: "core", argv: ["core"] });
+  for (const p of ["node", "html", "browser", "browser-tea", "browser-inline"]) roots.push({ name: `platforms/${p}`, argv: [`--platform=${p}`, `platforms/${p}`] });
+  return roots;
+}
+
+async function diff(sides) {
+  const roots = diffRoots();
+  const dumped = sides.map(() => new Array(roots.length));
+  let at = 0;
+  const work = async () => {
+    while (at < roots.length) {
+      const i = at++;
+      for (const [s, side] of sides.entries()) {
+        dumped[s][i] = await run(["dump", "--stage=ownership", "--ownership-everywhere", `--ownership=${side}`, ...roots[i].argv]);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: jobs }, work));
+
+  // A side whose checker is not built has nothing to compare.
+  for (const [s, side] of sides.entries()) {
+    const unbuilt = dumped[s].find((r) => r.code === 2 && /is not built yet/.test(r.err));
+    if (unbuilt) {
+      console.error(`--ownership=${side}: ${unbuilt.err.trim()}`);
+      process.exit(2);
+    }
+  }
+  const failed = [];
+  const same = [];
+  const accepts = [];
+  const refuses = [];
+  for (const [i, root] of roots.entries()) {
+    const [a, b] = dumped.map((d) => d[i]);
+    const bad = [a, b].map((r, s) => (r.code === 0 ? null : `${sides[s]}: ${r.signal ?? `exit ${r.code}`} ${r.err.split("\n")[0]}`)).filter(Boolean);
+    if (bad.length) {
+      failed.push(`${root.name}: ${bad.join("; ")}`);
+      continue;
+    }
+    const va = verdicts(a.out);
+    const vb = verdicts(b.out);
+    for (const key of [...new Set([...va.keys(), ...vb.keys()])].sort()) {
+      const x = va.get(key) ?? { refused: false, lines: [] };
+      const y = vb.get(key) ?? { refused: false, lines: [] };
+      const [module, pos] = key.split("\t");
+      const row = { where: `${root.name} ${module} ${pos}`, a: x.lines, b: y.lines };
+      if (x.refused === y.refused) same.push(row);
+      else if (x.refused) accepts.push(row);
+      else refuses.push(row);
+    }
+  }
+  const [a, b] = sides;
+  const show = (rows, title, lines) => {
+    console.log(`\n## ${title}: ${rows.length}\n`);
+    if (!lines) return;
+    for (const r of rows) {
+      console.log(`- ${r.where}`);
+      for (const l of r.a) console.log(`    ${a}: ${l}`);
+      for (const l of r.b) console.log(`    ${b}: ${l}`);
+      if (r.a.length === 0) console.log(`    ${a}: (no demand)`);
+      if (r.b.length === 0) console.log(`    ${b}: (no demand)`);
+    }
+  };
+  console.log(`# Ownership verdicts, --ownership=${a} against --ownership=${b}: ${roots.length} roots`);
+  show(same, "The same verdict", !!args.same);
+  show(accepts, `${b} accepts where ${a} refused`, true);
+  show(refuses, `${b} refuses where ${a} accepted`, true);
+  if (failed.length) {
+    console.log(`\n## Roots not dumped: ${failed.length}\n`);
+    for (const f of failed) console.log(`- ${f}`);
+  }
+  return failed.length ? 1 : 0;
+}
+
+if (args.diff) {
+  const sides = String(args.diff).split(",");
+  if (sides.length !== 2 || !sides.every((s) => s === "v1" || s === "v2")) {
+    console.error("--diff takes two checkers, each v1 or v2: --diff=v1,v2");
+    process.exit(2);
+  }
+  process.exit(await diff(sides));
+}
+
 if (!args["cost-only"]) {
   await Promise.all(Array.from({ length: jobs }, worker));
 

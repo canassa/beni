@@ -258,6 +258,30 @@ never blessed. It costs no build of its own, because it reads the output of the
 development build the case already makes. Conduit's pages and the schema
 fixtures that build only compiled schemas carry one.
 
+### The ownership differentials: records and lists in place
+
+A `run/` fixture with a `<name>.in-place` file (`_expected.in-place` in a
+project) is built three more times with its records written in place
+(`--records-in-place`): under the record stale-read sanitiser
+(`--sanitize-records`), as shipped, and under `--release` against
+`.release-expected` when it has one. Each must print `.expected`, which was
+recorded under spreads (`ownership-checker.md` §31.12).
+
+A `run/` fixture with a `<name>.sanitize-lists` file is built once more with the
+ownership check enforced (`--ownership-everywhere`) and under the list
+stale-read sanitiser (`--sanitize-lists`, `ownership-v2.md` §7.3): every
+accepted list write runs on a copy and poisons the list it wrote, so a holder
+older than the write traps where it reads it. It must print `.expected`, or,
+with a `<name>.sanitize-lists-crash` file, crash as `.crash` says a program
+must, with that file's text: a crash only this pass makes.
+
+Both files hold their reason, are written by hand and never blessed, and their
+passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build
+test-records-in-place`) gives every `run/` fixture and every
+`browser/inline/` page the record passes, and `BENI_IN_PLACE=lists` (`zig
+build test-lists-in-place`) the list pass; there a program the ownership
+checker refuses under the pass's flags is skipped, and nothing is recorded.
+
 ### A Worker
 
 A `workers/` fixture is a project built for the `cloudflare` platform

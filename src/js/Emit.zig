@@ -269,6 +269,11 @@ pub const core_dir = "_core/";
 pub const derived_runtime_path = core_dir ++ "_derived.mjs";
 const derived_runtime_source = @embedFile("derived_runtime.mjs");
 const derived_runtime_compact = @embedFile("derived_runtime.min.mjs");
+/// `_core/_sanitize.mjs`: the list sanitiser (`src/js/sanitize_runtime.mjs`,
+/// `ownership-v2.md` §7.3), written only under `--sanitize-lists` and only
+/// when a module written imports it.
+pub const sanitize_runtime_path = core_dir ++ "_sanitize.mjs";
+const sanitize_runtime_source = @embedFile("sanitize_runtime.mjs");
 
 /// Output directory of the platform package, its siblings and its runtime.
 /// Reserved for `core_dir`'s reason: `Platform.Node` is a legal module name.
@@ -314,6 +319,9 @@ pub const Options = struct {
     /// `--sanitize-records`, the hidden test-only flag (`src/Cli.zig`,
     /// `Lower.Input.sanitize_records`).
     sanitize_records: bool = false,
+    /// `--sanitize-lists`, the hidden test-only flag (`src/Cli.zig`,
+    /// `Lower.Input.sanitize_lists`, `ownership-v2.md` §7.3).
+    sanitize_lists: bool = false,
     /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
     /// schema declaration's `parse` and `print` run its description through
     /// the library interpreter, and no worker is written — the forced
@@ -2835,7 +2843,7 @@ const Emitter = struct {
         // (`ownership-checker.md` §31.10), for a lowering that holds a root's
         // slice (`browser-inline.md` §8.4, amended 2026-10-22).
         const in_place = try a.alloc(bool, n);
-        for (in_place, 0..) |*x, i| x.* = arm_fields and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
+        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -4932,6 +4940,7 @@ const Emitter = struct {
         var todo: std.ArrayList(u32) = .empty;
         var insts: usize = 0;
         var uses_runtime = false;
+        var uses_sanitizer = false;
         var lowered_clean = true;
         // §9, *Item 4, taken up*: closed on the first, coarser elimination,
         // so a second lowering below reads the same answer — a superset of
@@ -4976,6 +4985,7 @@ const Emitter = struct {
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
+                if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
                 // With no runtime file the module supplies every export, and
                 // nothing is imported from the file's specifier.
@@ -5024,6 +5034,7 @@ const Emitter = struct {
             // What the lowerings report beyond their trees, in module order,
             // whatever order the workers finished in.
             uses_runtime = false;
+            uses_sanitizer = false;
             lowered_clean = true;
             e.uses_markup_runtime = false;
             e.markup_exports.clearRetainingCapacity();
@@ -5036,6 +5047,7 @@ const Emitter = struct {
                     continue;
                 };
                 uses_runtime = uses_runtime or slot.uses_runtime;
+                uses_sanitizer = uses_sanitizer or slot.uses_sanitizer;
                 e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
                 try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
                 for (slot.markup_module_uses) |name| {
@@ -5173,6 +5185,9 @@ const Emitter = struct {
         if (hoist) |*h| {
             if (!e.hasErrors()) try e.linkHoisted(slots, h);
         } else if (uses_runtime) try e.emitDerivedRuntime();
+        // `--sanitize-lists` is refused with `--release` (`Cli`), so its
+        // build is never one hoisted file.
+        if (uses_sanitizer) try e.produce(sanitize_runtime_path, sanitize_runtime_source, sanitize_runtime_path);
     }
 
     /// One module's way from `Bir` to bytes. Written by the one worker that
@@ -5181,6 +5196,9 @@ const Emitter = struct {
         specifiers: []const []const u8 = &.{},
         sibling: []const u8 = "",
         derived_runtime: []const u8 = "",
+        /// `_core/_sanitize.mjs`, relative to this module's output file,
+        /// under `--sanitize-lists`.
+        sanitize_runtime: []const u8 = "",
         /// What the build's markup lowering needs of this module, when it
         /// has one (`boundary.md` §9.4).
         markup: ?Lower.Markup = null,
@@ -5194,6 +5212,8 @@ const Emitter = struct {
         /// the markup runtime.
         uses_runtime: bool = false,
         uses_markup_runtime: bool = false,
+        /// Whether the module imports the list sanitiser.
+        uses_sanitizer: bool = false,
         /// The markup runtime's exports it imports, by name, in the
         /// lowering worker's `kept` arena.
         markup_exports: []const []const u8 = &.{},
@@ -5256,6 +5276,7 @@ const Emitter = struct {
             slot.overlay = from.overlay;
             slot.lowered = from.lowered;
             slot.uses_runtime = from.uses_runtime;
+            slot.uses_sanitizer = from.uses_sanitizer;
             slot.uses_markup_runtime = from.uses_markup_runtime;
             slot.markup_exports = from.markup_exports;
             slot.markup_module_uses = from.markup_module_uses;
@@ -5396,6 +5417,7 @@ const Emitter = struct {
             slot.embedded_units = lowered.embedded_units;
             slot.lowered_units = lowered.lowered_units;
             slot.uses_runtime = lowered.uses_runtime;
+            slot.uses_sanitizer = lowered.uses_sanitizer;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
             for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
@@ -5454,6 +5476,7 @@ const Emitter = struct {
             const same = again.diagnostics.len == 0 and kept.diagnostics.len == 0 and
                 sameIr(&kept.ir, &slot.overlay, &again.ir, &overlay) and
                 again.uses_runtime == slot.uses_runtime and
+                again.uses_sanitizer == slot.uses_sanitizer and
                 again.uses_markup_runtime == slot.uses_markup_runtime and
                 sameStrings(again.markup_exports, slot.markup_exports) and
                 sameStrings(again.markup_module_uses, slot.markup_module_uses) and
@@ -5527,6 +5550,8 @@ const Emitter = struct {
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
                 .sanitize_records = e.options.sanitize_records,
+                .sanitize_lists = e.options.sanitize_lists,
+                .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
