@@ -4769,7 +4769,11 @@ a fiber: the child copies its parent's context (`internal/effect.ts:5463`).
   `Cmd.perform` gives its body to `Task.keepLogContext` too, and the write-set pass reads an
   `update` arm's model and command through `Log.annotate`, `span`, `minimum` and `withSink` (a
   core row, `src/writes/Core.zig`), where it refused the arm before (a limit of the compiler).
-  `browser/inline/LogCommandContext` prints what browser-tea prints for the same program.
+  `browser/inline/LogCommandContext` prints what browser-tea prints for the same program. One gap is
+  the ownership checker's, not this one's: a record update written inside the scope's lambda
+  (`Log.annotate "k" "v" λ⊤ → ( { model | n = … }, … )`) is refused as shared on every platform,
+  because it does not know that the four scopes call `work` once (#996); a record update made
+  before the scope is accepted.
 
 *Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`): a message's `update` has the
 program's log context, whoever sends the message.* A context stops at the body. This decides the
