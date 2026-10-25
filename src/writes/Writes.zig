@@ -3959,6 +3959,10 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .dict_insert, .dict_remove, .dict_update, .dict_swap, .dict_insert_at, .dict_sort_by, .dict_filter, .dict_map, .dict_get, .dict_empty => return a.applyDictRow(row, m, site, args, g),
         .fresh => return a.freshCall(args),
         .debug_todo => return a.freshEmpty(),
+        .log_scope => {
+            if (args.len < 2) return a.freshCall(args);
+            return a.apply(args[args.len - 1], &.{try a.mkLit(lit_unit, 0, 0)}, g);
+        },
         .debug_log => {
             if (args.len != 2) return a.freshCall(args);
             // Logged whole, a message is a value (browser-direct.md §11).

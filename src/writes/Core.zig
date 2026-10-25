@@ -100,6 +100,13 @@ pub const Row = enum {
     dict_map,
     dict_get,
     dict_empty,
+    /// `Log.annotate key value work`, `Log.span label work`, `Log.minimum
+    /// level work`, `Log.withSink f work`: `work ⊤` itself — each runs its
+    /// last argument once, in a log context, and returns what it returns
+    /// (`core/Log.beni`, `within`). So an `update` arm written inside one
+    /// has its model and its command read through it (`boundary.md`
+    /// §9.8.16 (b), #751). Pinned: `browser/inline/LogCommandContext`.
+    log_scope,
     /// A value nothing relates to the old model: the scalars and the other
     /// folds of `List`, every other `Dict` and every `Set` function,
     /// `Basics`, `Int`, `Float`, `String`, `Char`, `Cmd`, `Sub`, `Task`, `Js`.
@@ -180,6 +187,10 @@ pub fn row(module: []const u8, name: []const u8) ?Row {
         if (std.mem.eql(u8, name, "todo")) return .debug_todo;
         return .fresh;
     }
+    if (std.mem.eql(u8, module, "Log")) {
+        for ([_][]const u8{ "annotate", "span", "minimum", "withSink" }) |n| if (std.mem.eql(u8, n, name)) return .log_scope;
+        return null;
+    }
     for (bodied) |b| if (std.mem.eql(u8, b[0], module) and std.mem.eql(u8, b[1], name)) return null;
     for (fresh_modules) |m| if (std.mem.eql(u8, m, module)) return .fresh;
     return null;
@@ -190,6 +201,8 @@ test "rows" {
     try std.testing.expectEqual(Row.fold, row("List", "foldl").?);
     try std.testing.expectEqual(Row.fresh, row("List", "length").?);
     try std.testing.expectEqual(Row.debug_log, row("Debug", "log").?);
+    try std.testing.expectEqual(Row.log_scope, row("Log", "annotate").?);
+    try std.testing.expectEqual(@as(?Row, null), row("Log", "info"));
     try std.testing.expectEqual(@as(?Row, null), row("Basics", "identity"));
     try std.testing.expectEqual(@as(?Row, null), row("Maybe", "map"));
     try std.testing.expectEqual(Row.dict_insert, row("Dict", "insert").?);
