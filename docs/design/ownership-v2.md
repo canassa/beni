@@ -668,11 +668,20 @@ one allowlisted name comparison of the fence in §5.
     maps**, not a view, `drop` or copy of it, else a take from `xs` lands at another offset in `List.drop xs 1` —
     used in exactly one arm; and the
     guard indices `{eₖ}` and the take indices `{e'ₖ}` are the same set (locals by identity, literals by value).
-    Then position `eₖ` receives exactly the take whose index is another guard, every other position keeps its own
-    row, and the rows are permuted — also when two guard locals are equal at run time, since the first matching
-    arm decides and the positions coincide (so every taken row's own position is overwritten: the swap `i == a → rowB; i == b → rowA` with `rowA =
-    get a`, `rowB = get b`). A take whose index is not a guard (`dup`'s `i == a → rowB`) puts one row at two
-    positions and is refused `exclusive`, as is one cell in two arms, an unguarded arm, or a take nested under
+    **And the chain must stay a permutation under every equality partition of its indices**, which holds in
+    exactly two shapes: (a) every index is an integer literal and the literals are pairwise distinct — no two
+    positions can coincide, so the chain places the row of `e'_{σ(k)}` at `eₖ` for a bijection σ and every other
+    position keeps its row; (b) exactly two guards on locals, `if i == a then rowB else if i == b then rowA else r`
+    with `rowA = get a`, `rowB = get b` (the one swap): with `a ≠ b` it exchanges the two rows; with `a = b` the first
+    arm fires at the one position and places `rowB = xs[a]`, its own row, so the result is `xs`. A chain of three or
+    more guards on locals is refused even when flat and with guard set = take set: with `a = 0, b = 1, c = 1`,
+    `if i == a then rowB else if i == b then rowC else if i == c then rowA else r` puts `xs[1]` at positions 0 and 1
+    — the arm for `c` is dead and `rowA` is never placed — and so does a product of two swaps whose locals coincide
+    across the swaps (`a = c`: position `a` gets `rowB`, position `d` gets `rowC = xs[a]`, and `rowD` is lost);
+    only the trivial partition keeps a k-cycle a bijection, and locals cannot prove it. The 3-cycle is a red twin of
+    `p/RecordIndexExchange` beside `dup2`. A take whose index is not a guard (`dup`'s `i == a → rowB`) puts one row at two
+    positions and is refused `exclusive`, as is one cell in two arms, an unguarded arm, three or more guards on
+    locals, a literal repeated, or a take nested under
     another guard (`dup2`'s `if i == a then (if i == b then rowA else (if i == a then rowB else r)) else r`, whose
     guard and take sets agree yet position `b` keeps `rowB` beside position `a`'s `rowB`: a red twin of
     `p/RecordIndexExchange`). `swapAt` and `List.drop`
@@ -1178,9 +1187,10 @@ header pointing here (never renumbered: rule 2).
    be reversed.
 2. **The four row words versus a row file.** Recommended: words, because the parser, `misplaced_ownership_word`
    and the pinning discipline exist; a row that cannot be written stops the slice and is reported.
-3. **Index exchange as an exact permutation only.** Recommended: exactly §2.13.15's shape (guard locals = take
-   locals, same source), since it covers #869's fixtures and anything wider needs index arithmetic; outside it the
-   message names `List.swap`.
+3. **Index exchange as an exact permutation only.** Recommended: exactly §2.13.15's two shapes (distinct literal
+   indices with any permutation; one swap on two locals), since they cover #869's fixtures (`exchange` on literals
+   1 and 3, `swapAt` on two locals) and any wider shape needs index arithmetic the checker does not do; outside
+   them the message names `List.swap`.
 4. **The `level (a)` cause.** Kept only for a `below` written while a `level` or another `below` of the same split
    is read later (§2.9); nothing else prints it.
 5. **Two amendments the requirements need** (not open, but the requirements win and must say it): R-3.6 and
