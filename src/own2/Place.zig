@@ -704,7 +704,10 @@ pub const Table = struct {
             const h = if (k == .tuple or k == .record) t.head(p) else names.head(names.ctx, t.head(p));
             try out.appendSlice(gpa, &.{ @backingInt(k), h, t.holds(p).bits(), r.len });
             for (t.step_tab.items(.step)[r.start..][0..r.len], t.step_tab.items(.child)[r.start..][0..r.len]) |s, c| {
-                const w = if (s.kind == .field) (Step{ .kind = .field, .payload = 0 }).word() else s.word();
+                // A field's rank and a `C#i`'s intern index are this table's: the
+                // word carries the kind alone and the name or pair follows, so
+                // two tables write one type identically.
+                const w = if (s.kind == .field or s.kind == .ctor_arg) (Step{ .kind = s.kind, .payload = 0 }).word() else s.word();
                 try out.appendSlice(gpa, &.{ w, ordinal.get(c).? });
                 // A field's name follows its step, through the string table.
                 if (s.kind == .field) try out.append(gpa, names.field(names.ctx, s.payload));
@@ -1216,4 +1219,32 @@ test "a refused walk leaves no placeholder: the next owner gets the real place" 
     const rec2 = try g.table.of(testing.allocator, &b, g.graph.source(), 0);
     try testing.expectEqual(@as(u32, 4), g.table.count());
     try testing.expectEqual(Kind.ctor, g.table.kind(g.table.child(rec2, try Step.field(&b, 11)).?));
+}
+
+test "two tables that intern one type in different orders write identical bytes" {
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    f.init(&record_nodes);
+    defer f.deinit();
+    var g: Fixture = .{};
+    g.init(&record_nodes);
+    defer g.deinit();
+    // `g` interns the Tree's constructor steps in another order first.
+    _ = try g.ctor(0, 2);
+    _ = try g.ctor(0, 1);
+    _ = try g.ctor(0, 0);
+    const rf = try f.of(0);
+    const rg = try g.of(0);
+    var wf: std.ArrayList(u32) = .empty;
+    defer wf.deinit(gpa);
+    var wg: std.ArrayList(u32) = .empty;
+    defer wg.deinit(gpa);
+    try f.table.encode(gpa, rf, Names.identity, &wf);
+    try g.table.encode(gpa, rg, Names.identity, &wg);
+    try testing.expectEqualSlices(u32, wf.items, wg.items);
+    // And both decode to a graph equal to either.
+    var decoded = (try Table.decode(gpa, &f.account, wg.items, Names.identity)).?;
+    defer decoded.deinit(gpa);
+    try testing.expect(try Table.equals(&f.table, rf, &decoded, .from(0), gpa, .growth(&f.account)));
+    try testing.expect(try Table.equals(&g.table, rg, &decoded, .from(0), gpa, .growth(&g.account)));
 }
