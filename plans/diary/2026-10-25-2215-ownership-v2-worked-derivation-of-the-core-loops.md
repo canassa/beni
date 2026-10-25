@@ -36,3 +36,17 @@ folded split are apart" is sound only between this call's own element and the el
 through the feedback. Two values that came back through the feedback may come from one earlier call.
 
 Gaps 2 and 3 are the owner's.
+
+**Second review round**
+
+The re-review found a hole in §2.2 as merged (#1029). Two `taken` elements of one container from distinct
+splits were apart under the container's κ, but the index obligation covers only one traversal. In
+`List.push (List.map xs λl → l) (List.foldl xs [] λx _ → x)`, `xs`'s last list sits at two positions.
+
+§2.2 now defines a traversal by the label's entry prefix into the pinned loop group, with recursive folds in
+the prefix excluded. My verifier then broke the prefix-only rule with `each ws xs f = List.map ws (λ_ → List.map xs f)`, where an ordinary fold hides one traversal per callback activation. So splits now carry a `single` bit, which is cleared when an actual's own splits leave through a folded callback label. Two traversals give `lost`. Gap 3's (a) depends on that fix. Four red twins went into
+Appendix B.
+
+v1 refuses both counterexamples on `browser-inline` (no live miscompile; comment on #1029). A label already
+carries a call chain, so the traversal identity costs no new representation, only a bit per fold saying
+which trigger made it.
