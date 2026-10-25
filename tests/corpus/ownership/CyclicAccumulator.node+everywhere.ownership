@@ -6,6 +6,7 @@ module CyclicAccumulator
   summary once: π2 RA; res [*] π2, fresh1{excl π2}r{excl π2}
   summary twice: π2 RA; res [*] condition(fresh2) π2, fresh1{shared}r{shared}
   summary pushHead: π1 R, π1[*] RW[storage], π2 R; xreq excl π1
+  summary share: π1 RA, π2 R, π3 R; res [*] ~cb2{excl cb2}r{excl cb2} ~condition(fresh2) π1, fresh1{lost}r{lost}; π2 calls many, supply 1 π3[*] owned taken{excl π3}r{excl π3}, supply 2 cb2 owned{excl cb2}r{excl cb2}, supply 2 π1 borrowed{excl π1}r{excl π1}
   demands 4: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 4: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause exclusive 1

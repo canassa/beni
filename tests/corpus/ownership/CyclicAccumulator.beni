@@ -7,7 +7,7 @@
 -- limit line. Lists built so are still judged: `freshPush` writes the fold's
 -- fresh answer, accepted; `sharedHead` hands `pushHead` one list at two
 -- positions (`twice`), refused; `singleHead` hands it one list per position
--- (`once`).
+-- (`once`). `borrowedStart` folds from a start its caller still reads.
 count : Int
 count = List.length (List.foldr [] [] List.intersperse)
 
@@ -40,3 +40,14 @@ sharedHead = pushHead (List.foldl [ 1, 2 ] [] twice) []
 
 singleHead : Int
 singleHead = pushHead (List.foldl [ 1, 2 ] [] once) []
+
+
+-- A fold that does not own its start, because its caller reads the start
+-- again, settles too: its callback's fixpoint is the general one (the
+-- review of #972).
+share : a, (b, a → a), List b → List a
+share init f xs = [ List.foldl xs init f, init ]
+
+
+borrowedStart : Int
+borrowedStart = List.length (share [] once [ 1, 2 ])

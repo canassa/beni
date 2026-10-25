@@ -2994,10 +2994,10 @@ checker unifies coinductively (checker-v2.md §7.3) can be a cycle of the unifie
 for. `List.foldr [] [] List.intersperse` instantiates `intersperse : List a, a → List a` as `List.foldr`'s callback,
 so its accumulator is `List (List …)`. No binder can hold such a value (the checker refuses one as `INFINITE TYPE`),
 but an expression can make one, and none of §16.7's folds saw it: a region marker needs a constructor of a named
-recursive type (`regionOf`), and F3's fold needs a call inside the recursive group being solved. The growth was in
-`instFold`, the fixpoint of a callback whose answer is its next accumulator. Each round put the accumulator one `[*]`
-deeper (`[*]`, `[*][*]`, …), and the fixpoint reached the round limit: `check/good/CyclicArgumentsUnify` was `limit
-n: fixpoint, unsettled after 32`.
+recursive type (`regionOf`), and F3's fold needs a call inside the recursive group being solved. The growth was in a
+callback's fixpoint, where its answer is its next accumulator: `instFold` for a fold that owns its start, and
+`instCb` for any other. Each round put the accumulator one `[*]` deeper (`[*]`, `[*][*]`, …), and the fixpoint
+reached the round limit: `check/good/CyclicArgumentsUnify` was `limit n: fixpoint, unsettled after 32`.
 
 - **The rule.** When the callback's answer has a type that reaches itself through the unifier's graph alone
   (`cyclicVar`), each round of the accumulator fixpoint is folded on the composed path (`foldNesting`). An entry new
@@ -3013,7 +3013,8 @@ n: fixpoint, unsettled after 32`.
   - a write of the fold's fresh answer is accepted;
   - `twice`, which nests one list at two positions, is refused `exclusive` at a callee that needs the elements
     apart;
-  - `once`, which nests one list per position, is accepted.
+  - `once`, which nests one list per position, is accepted;
+  - `borrowedStart`, a fold whose start its caller still reads, settles in `instCb`'s fixpoint.
 
   No other verdict or summary line in `tests/corpus/ownership/` changes.
 

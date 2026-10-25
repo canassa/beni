@@ -17597,13 +17597,16 @@ const Walker = struct {
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
         var x: AV = &.{};
         var rounds: u32 = 0;
+        // §16.7, the amendment of 2026-10-25 (#955), as in `instFold`.
+        const cyclic = try w.cyclicAccumulator(j, ctx);
         while (rounds < round_cap) : (rounds += 1) {
             var inner = ctx;
             inner.self_j = j;
             inner.self_av = x;
             const grew = w.carry_grew;
             const y = try w.instCbOnce(j, classes, inner);
-            const next = try w.unionOf(&.{ x, y });
+            var next = try w.unionOf(&.{ x, y });
+            if (cyclic) next = try w.foldNesting(x, next);
             if (next.len == x.len and w.carry_grew == grew) return x;
             x = next;
         }
