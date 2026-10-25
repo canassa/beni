@@ -1,0 +1,93 @@
+-- A command's body has the log context of the `update` arm that made it
+-- (boundary.md §9.8.16 (b), amended 2026-10-22; #751): the arm's
+-- annotations and spans, the minimum `Log.minimum` set and the sink
+-- `Log.withSink` set. A command made outside any context has the default
+-- one, and a message a body sends runs its `update` with the program's
+-- context (amended 2026-10-23), as do that `update`'s commands. Until
+-- #751, `browser-inline` refused an arm written inside `Log.annotate`
+-- (a limit of the compiler: its command could not be read). The
+-- transcript is browser-tea's for the same program.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log exposing (Entry)
+import Ref exposing (Ref)
+import Sub
+import Tea
+
+
+type Msg
+    = Perform
+    | Spanned
+    | Sink
+    | Show
+    | Plain
+    | Done
+
+
+type alias Model =
+    n : Int
+    kept : Ref (List String)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    next = { model | n = model.n + 1 }
+    case msg of
+        Perform →
+            Log.annotate "request" "p1" λ⊤ →
+                Log.minimum Log.Debug λ⊤ →
+                    ( next
+                    , Cmd.perform λsend →
+                        Log.debug "a body"
+                        send Done
+                    )
+
+        Spanned →
+            Log.span "save" λ⊤ → ( next, Cmd.perform λ_ → Log.info "a body in a span" )
+
+        Sink →
+            Log.withSink (keep model.kept _) λ⊤ →
+                ( next, Cmd.perform λ_ → Log.info "to update's sink" )
+
+        Show →
+            kept = String.join (Ref.get model.kept) ", "
+            Log.info "the sink kept: ${kept}"
+            ( next, Cmd.none )
+
+        Plain →
+            ( next
+            , Cmd.perform λ_ → Log.info "a body made outside any context"
+            )
+
+        Done →
+            Log.info "Done's update: the program's context"
+            Log.debug "Done's update: below the program's minimum"
+            ( next
+            , Cmd.perform λ_ → Log.info "Done's command: the program's context"
+            )
+
+
+keep : Ref (List String), Entry → ⊤
+keep kept entry = Ref.update kept λlines → [ …List.copy lines, entry.message ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="perform" onClick={Perform}>perform</button>
+        <button id="spanned" onClick={Spanned}>spanned</button>
+        <button id="sink" onClick={Sink}>sink</button>
+        <button id="plain" onClick={Plain}>plain</button>
+        <button id="show" onClick={Show}>show</button>
+        <p>{model.n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0, kept = Ref.make [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

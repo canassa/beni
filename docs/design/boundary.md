@@ -4765,7 +4765,11 @@ a fiber: the child copies its parent's context (`internal/effect.ts:5463`).
   it is made. The command is still a value that does nothing until the page runs it. Proposal
   §6.6 has a note.
 - **Not covered:** `browser-inline`'s `Cmd.perform`, which runs its body in the same dispatch after
-  `update` returns. #751 tracks it.
+  `update` returns. #751 tracks it. *Amended 2026-10-25 (#751):* covered. `browser-inline`'s
+  `Cmd.perform` gives its body to `Task.keepLogContext` too, and the write-set pass reads an
+  `update` arm's model and command through `Log.annotate`, `span`, `minimum` and `withSink` (a
+  core row, `src/writes/Core.zig`), where it refused the arm before (a limit of the compiler).
+  `browser/inline/LogCommandContext` prints what browser-tea prints for the same program.
 
 *Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`): a message's `update` has the
 program's log context, whoever sends the message.* A context stops at the body. This decides the
@@ -4806,7 +4810,9 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   page ships the check and the run. Measured on 624 builds of the `browser/tea` and `browser/dom`
   fixtures and the page examples: in release, only the 5 pages that set a slot change, by +335 to
   +337 raw bytes; in development, a page grows by 1 344 to 1 748 raw bytes.
-- **Not covered:** `browser-inline` (#751).
+- **Not covered:** `browser-inline` (#751). *Amended 2026-10-25 (#751):* it needs nothing: a
+  message a body sends there is queued, and its `update` runs after the body has returned, outside
+  the body's context, with the program's (`browser/inline/LogCommandContext`).
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
