@@ -64,6 +64,7 @@ const EmitPack = @import("EmitPack.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
+const Token = @import("../lex/Token.zig");
 const stamped = @import("../stamped.zig");
 const Types = @import("../check/Types.zig");
 const MarkupTree = @import("MarkupTree.zig");
@@ -245,6 +246,10 @@ pub const Input = struct {
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
+    /// The module's token tags: what tells a list's spread (`…`) from a
+    /// call of `List.append` written out, for the list sanitiser
+    /// (`sanitize_lists`). Empty: no call is a spread.
+    token_tags: []const Token.Tag = &.{},
     module: Graph.Index,
     graph: *const Graph,
     interfaces: []const Interface,
@@ -1267,6 +1272,12 @@ pub const Lowerer = struct {
     /// not an operator (§8.2), so the module emits the two-or-three-line
     /// `const` once and every use names it.
     needs: Primitives = .{},
+    /// The list sanitiser's chain members (`Input.sanitize_lists`): the
+    /// spread or `++` calls that are the rest of an enclosing one, whose
+    /// operand is not written (`[ …a, …b, x ]` writes `a` only, and
+    /// `a ++ b ++ c` likewise), so they are not sanitised. A column by
+    /// instruction, made on the first mark.
+    sanitize_chain: []bool = &.{},
     /// The padded nullary constructors this module has written in value
     /// position, each one module-level constant (`backend.md` §4, *A
     /// nullary constructor is one object*). Discovered like `needs`, so
@@ -3817,10 +3828,16 @@ pub const Lowerer = struct {
         // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
         // The list sanitiser, when a list write of this module is sanitised.
-        if (l.needs.sanitize) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{.{
-            .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "list"), .tag = JsIr.Name.no_tag }),
-            .local = try l.sanitizerLocal(),
-        }}));
+        if (l.needs.sanitize) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "list"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("list"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "writer"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("writer"),
+            },
+        }));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
         if (l.markup_imports.items.len != 0) if (l.in.markup) |mk| {
@@ -5105,10 +5122,50 @@ pub const Lowerer = struct {
     /// writers whose call is a demand on their first argument
     /// (`ownership-checker.md` §3.1) — or null. Keyed on the core package
     /// and the module, as `isListCons` is.
+    /// A local bound by a `let` to such a writer, through a chain of such
+    /// locals (`p = List.set`, `q = p`), names it too: v1 judges a call
+    /// through it as the writer's demand (its alias chains).
     fn listWriterOf(l: *Lowerer, callee: Inst.Index) ?[]const u8 {
-        const d = l.bir.instData(callee);
-        if (l.bir.instTag(callee) != .ext_value) return null;
+        var at = callee;
+        var depth: u32 = 0;
+        while (l.bir.instTag(at) == .local and depth < 8) : (depth += 1) at = l.letValueOf(at) orelse return null;
+        const d = l.bir.instData(at);
+        if (l.bir.instTag(at) != .ext_value) return null;
         return l.listWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+    }
+
+    /// Whether `inst` is a call a list's spread made (`[ …a, …b ]`): a call
+    /// of `List.append` stamped with the `…` it belongs to.
+    fn isSpreadAppend(l: *Lowerer, inst: Inst.Index) bool {
+        if (l.bir.instTag(inst) != .call) return false;
+        const token = l.bir.insts.items(.main_token)[inst.int()];
+        if (token >= l.in.token_tags.len) return false;
+        const tag = l.in.token_tags[token];
+        if (tag != .ellipsis and tag != .ascii_ellipsis) return false;
+        const writer = l.listWriterOf(@fromBackingInt(@intCast(l.bir.instData(inst).lhs))) orelse return false;
+        return std.mem.eql(u8, writer, "append");
+    }
+
+    /// Under the sanitiser, the rest of the spread or `++` chain whose head
+    /// is the call `inst`: its second operand, when that is the next link
+    /// of the same chain (`sanitize_chain`). v1 makes one demand of a chain,
+    /// on its first operand.
+    fn markSanitizeChain(l: *Lowerer, inst: Inst.Index, arg_insts: []const Inst.Index) Allocator.Error!void {
+        if (!l.sanitizesLists() or arg_insts.len != 2) return;
+        const rest = arg_insts[1];
+        const spread = l.isSpreadAppend(inst) and l.isSpreadAppend(rest);
+        const plus = l.in.dispatch.isListAppend(inst) and l.bir.instTag(rest) == .call and l.in.dispatch.isListAppend(rest);
+        if (!spread and !plus) return;
+        if (l.sanitize_chain.len == 0) {
+            l.sanitize_chain = try l.scratch.alloc(bool, l.bir.insts.len);
+            @memset(l.sanitize_chain, false);
+        }
+        if (rest.int() < l.sanitize_chain.len) l.sanitize_chain[rest.int()] = true;
+    }
+
+    /// Whether `inst` is the rest of a chain (`markSanitizeChain`).
+    fn inSanitizeChain(l: *const Lowerer, inst: Inst.Index) bool {
+        return inst.int() < l.sanitize_chain.len and l.sanitize_chain[inst.int()];
     }
 
     /// `listWriterOf` for value `value` of module `module`'s interface.
@@ -5136,14 +5193,26 @@ pub const Lowerer = struct {
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
         @memcpy(all[2..], args);
-        return l.call(try l.ident(try l.sanitizerLocal(), p), all, p);
+        return l.call(try l.ident(try l.sanitizerLocal("list"), p), all, p);
     }
 
-    /// `_sanitize$list`, the sanitiser's one export as this module names it.
-    fn sanitizerLocal(l: *Lowerer) !JsIr.NameIndex {
+    /// `_sanitize$writer("List.<writer> value in M (at byte p)", value)`: a
+    /// list writer handed to a call as a value (`apply List.push xs`, v1's
+    /// `value` demand), as a function that writes under the sanitiser
+    /// wherever it is called. `p` is the call's, where v1 reports the demand.
+    fn sanitizedWriterValue(l: *Lowerer, value: Node.Index, writer_name: []const u8, p: u32) Allocator.Error!Node.Index {
+        if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists());
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        return l.call(try l.ident(try l.sanitizerLocal("writer"), p), &.{ try l.stringNode(site, p), value }, p);
+    }
+
+    /// `_sanitize$<export>`, one of the sanitiser's two exports (`list`,
+    /// `writer`) as this module names it.
+    fn sanitizerLocal(l: *Lowerer, comptime export_name: []const u8) !JsIr.NameIndex {
         return l.name(.{
             .module = (try l.interner.getOrPut(l.gpa, "_sanitize")).toOptional(),
-            .base = try l.interner.getOrPut(l.gpa, "list"),
+            .base = try l.interner.getOrPut(l.gpa, export_name),
             .tag = JsIr.Name.no_tag,
         });
     }
@@ -10305,9 +10374,10 @@ pub const Lowerer = struct {
         // reference with nothing to evaluate, so dropping it changes no
         // order.
         if (arg_insts.len == 2 and roots.len == 0 and l.in.dispatch.isListAppend(inst)) {
+            try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesLists()) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
+            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
             return l.suspension(out, inst, try l.call(append, values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -10423,11 +10493,17 @@ pub const Lowerer = struct {
         // The evidence arguments (§8.2) go in front of the written ones.
         // They are names and closures with no statements of their own, so
         // building them after the sequence changes no evaluation order.
+        try l.markSanitizeChain(inst, arg_insts);
         const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
         const written = values[1 .. values.len - l.unwrittenArgs(callee_inst, arg_insts)];
+        // A list writer handed to the callee as a value writes wherever the
+        // callee calls it (v1's `value` demand at this call).
+        if (l.sanitizesLists()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
+            w.* = try l.sanitizedWriterValue(w.*, writer, p);
+        };
         l.region = inst;
         // The evidence takes the body its callee takes (§16.2).
         const saved_choice = l.term_choice;
@@ -10435,7 +10511,7 @@ pub const Lowerer = struct {
         const evidence = try l.evidenceArguments(roots, p);
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
-            if (l.sanitizesLists()) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
+            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
                 return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p));
             return l.suspension(out, inst, try l.call(callee, written, p));
         }

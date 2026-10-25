@@ -21,8 +21,12 @@
 //   iterator).
 // - A view's own properties throw, `length` included, and its base array is
 //   poisoned as well: a view aliases its base's cells.
-// - A trie header's own properties throw. Its inner arrays are not poisoned:
-//   another list may share them, so a trap there would not be a stale read.
+// - A trie header's own properties throw, and so does every array of its
+//   storage: the head, the tail, the plain copy `p` and each node and leaf of
+//   its tree, down to the elements, which are left alone. Another list over
+//   those arrays — `List.drop` of a trie is a header over the same ones, and a
+//   loop holds `p` — aliases the trie, so its read after the write is stale.
+//   A writer's result never shares them: it is built from the copy.
 
 const stale = (site, what) => {
   throw new Error(`beni: a stale read of a list (${what}), which ${site} changed in place`);
@@ -47,17 +51,37 @@ const poisonObject = (o, site) => {
   }
 };
 
+// A tree node at shift `s` (`core/List.beni`'s `leafAt`): above 0 its
+// children are nodes, at 0 it is a leaf of elements.
+const poisonNode = (node, s, site) => {
+  if (!Array.isArray(node)) return;
+  if (s > 0) for (const child of node) poisonNode(child, s - 5, site);
+  poisonArray(node, site);
+};
+
 const poison = (xs, site) => {
   if (Array.isArray(xs)) return poisonArray(xs, site);
-  const base = xs.o === undefined ? undefined : xs.b;
+  // Every part is read before any is poisoned.
+  const view = xs.o !== undefined;
+  const { b, p, h, t, T } = xs;
   poisonObject(xs, site);
-  if (Array.isArray(base)) poisonArray(base, site);
+  for (const a of view ? [b, p] : [h, t, p]) if (Array.isArray(a)) poisonArray(a, site);
+  if (!view && T !== undefined) {
+    const { r, s } = T;
+    poisonObject(T, site);
+    poisonNode(r, s, site);
+  }
 };
 
 // `List.<writer>(base, …rest)` under the sanitiser: `site` names the write.
+// A base already poisoned traps here, where the copy reads it.
 export const list = (site, writer, base, ...rest) => {
   const copy = (Array.isArray(base) ? base : base.$plain()).slice();
   const result = writer(copy, ...rest);
   poison(base, site);
   return result;
 };
+
+// A writer handed on as a value (`apply List.push xs`): each call of it is a
+// write under the sanitiser.
+export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...rest);

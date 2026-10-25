@@ -1938,6 +1938,126 @@ const Case = struct {
         return tried.exit_code == 1 and ownershipOnly(tried.stderr);
     }
 
+    /// The list sanitiser's coverage, checked against v1 (`ownership-v2.md`
+    /// §7.3): in every module the sanitised build in `out` wrote, every list
+    /// write v1 accepted — a `List.<writer>`, `construction` or `++` line of
+    /// the ownership dump whose base is the operand itself, or a
+    /// `value List.<writer>` one — must be a site the build wraps, at the
+    /// same position and for the same writer, and every wrapped site must be
+    /// such a line. A construct the sanitiser misses is then a mismatch here,
+    /// never silence. A line whose base is a path into the elements
+    /// (`rows[*].1`) is a write the callback or callee makes at its own site,
+    /// which this module's other lines cover. `flags` are the build's own, so
+    /// the dump reports under its rows. A module the build did not write is
+    /// not compared.
+    fn checkSanitisedSites(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8, out: []const u8) !void {
+        // The program's own modules, alone in a directory: the project's
+        // may hold an earlier fixture's files, which a dump of it would read.
+        const dir = "sanitised-sites";
+        try c.w.tmp.dir.deleteTree(c.w.io, dir);
+        for (sources) |source| if (std.mem.endsWith(u8, source, ".beni"))
+            try c.w.write(try std.fs.path.join(c.arena, &.{ dir, source }), try c.w.read(source));
+        var dump: std.ArrayList([]const u8) = .empty;
+        try dump.appendSlice(c.arena, &.{ "dump", "--stage=ownership", platform_arg });
+        try dump.appendSlice(c.arena, flags);
+        try dump.appendSlice(c.arena, &.{ "--root=" ++ dir, dir });
+        const dumped = try c.inProject(dump.items);
+        if (dumped.exit_code != 0) {
+            detail("{s}: dump --stage=ownership failed\n{s}", .{ c.fixture.name, dumped.stderr });
+            return error.SanitisedSitesUnchecked;
+        }
+        var failed = false;
+        // The dump's modules: each `module <Name>` line and the lines up to
+        // the next.
+        var starts: std.ArrayList(usize) = .empty;
+        var at_line: usize = 0;
+        while (at_line < dumped.stdout.len) {
+            if (std.mem.startsWith(u8, dumped.stdout[at_line..], "module ")) try starts.append(c.arena, at_line + "module ".len);
+            at_line = if (std.mem.indexOfScalarPos(u8, dumped.stdout, at_line, '\n')) |nl| nl + 1 else dumped.stdout.len;
+        }
+        for (starts.items, 0..) |start, si| {
+            const end = if (si + 1 < starts.items.len) starts.items[si + 1] - "module ".len else dumped.stdout.len;
+            const section = dumped.stdout[start..end];
+            const header_end = std.mem.indexOfScalar(u8, section, '\n') orelse continue;
+            const module = section[0..header_end];
+            if (std.mem.indexOfScalar(u8, module, ' ') != null) continue; // "(not checked)"
+            // Module `A.B` is `A/B.beni`, written as `<out>/A/B.mjs`.
+            const path = try c.arena.dupe(u8, module);
+            std.mem.replaceScalar(u8, path, '.', '/');
+            const source = try std.fmt.allocPrint(c.arena, "{s}.beni", .{path});
+            const bytes = c.w.read(source) catch continue;
+            const written = c.w.read(try std.fmt.allocPrint(c.arena, "{s}/{s}.mjs", .{ out, path })) catch continue;
+            // v1's accepted list writes, by "line:col [value ]List.<writer>".
+            var wanted: std.StringArrayHashMapUnmanaged(u32) = .empty;
+            var lines = std.mem.splitScalar(u8, section[header_end + 1 ..], '\n');
+            while (lines.next()) |raw| {
+                const line = std.mem.trimStart(u8, raw, " ");
+                const space = std.mem.indexOfScalar(u8, line, ' ') orelse continue;
+                const at = line[0..space];
+                const colon = std.mem.indexOfScalar(u8, at, ':') orelse continue;
+                _ = std.fmt.parseUnsigned(u32, at[0..colon], 10) catch continue;
+                _ = std.fmt.parseUnsigned(u32, at[colon + 1 ..], 10) catch continue;
+                const verdict = std.mem.indexOf(u8, line, ": accepted") orelse continue;
+                var rest = line[space + 1 .. verdict];
+                var value = false;
+                if (std.mem.startsWith(u8, rest, "value ")) {
+                    value = true;
+                    rest = rest["value ".len..];
+                }
+                const op_end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
+                const op = rest[0..op_end];
+                if (std.mem.indexOf(u8, rest[op_end..], "[*]") != null) continue;
+                const writer: []const u8 = if (std.mem.startsWith(u8, op, "List."))
+                    op["List.".len..]
+                else if (!value and (std.mem.eql(u8, op, "construction") or std.mem.eql(u8, op, "++")))
+                    "append"
+                else
+                    continue;
+                const k = try std.fmt.allocPrint(c.arena, "{s} {s}List.{s}", .{ at, if (value) "value " else "", writer });
+                const slot = try wanted.getOrPut(c.arena, k);
+                slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
+            }
+            // The build's sites: "`List.<w>`[ value] in M (at byte N)".
+            var got: std.StringArrayHashMapUnmanaged(u32) = .empty;
+            var it = std.mem.splitSequence(u8, written, "(\"`List.");
+            _ = it.next();
+            while (it.next()) |piece| {
+                const tick = std.mem.indexOfScalar(u8, piece, '`') orelse continue;
+                const value = std.mem.startsWith(u8, piece[tick + 1 ..], " value in ");
+                const at = std.mem.indexOf(u8, piece, "(at byte ") orelse continue;
+                const digits = piece[at + "(at byte ".len ..];
+                const offset = std.fmt.parseUnsigned(u32, digits[0 .. std.mem.indexOfScalar(u8, digits, ')') orelse continue], 10) catch continue;
+                // Line and column as a diagnostic counts them: from 1, a
+                // column in code points.
+                var l_no: u32 = 1;
+                var c_no: u32 = 1;
+                for (bytes[0..@min(offset, bytes.len)]) |b| {
+                    if (b == '\n') {
+                        l_no += 1;
+                        c_no = 1;
+                    } else if (b & 0xC0 != 0x80) c_no += 1;
+                }
+                const k = try std.fmt.allocPrint(c.arena, "{d}:{d} {s}List.{s}", .{ l_no, c_no, if (value) "value " else "", piece[0..tick] });
+                const slot = try got.getOrPut(c.arena, k);
+                slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
+            }
+            // As sets: a lowering may write one site twice (a `browser-inline`
+            // arm is also its lifted piece), each a wrap of the one write.
+            for (wanted.keys(), wanted.values()) |k, n| if (!got.contains(k)) {
+                detail("{s}: {s}: v1 accepts the list write {s} ({d}), which the sanitised build does not wrap\n", .{ c.fixture.name, source, k, n });
+                failed = true;
+            };
+            for (got.keys(), got.values()) |k, n| if (!wanted.contains(k)) {
+                detail("{s}: {s}: the sanitised build wraps {s} ({d}), which is no list write v1 accepted\n", .{ c.fixture.name, source, k, n });
+                failed = true;
+            };
+        }
+        if (failed) {
+            because("[{s}] the sanitised sites are not v1's accepted list writes", .{out});
+            return error.SanitisedSitesMismatch;
+        }
+    }
+
     fn ownershipOnly(stderr: []const u8) bool {
         const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit" };
         var any = false;
@@ -2190,6 +2310,8 @@ const Case = struct {
                     if (first_error == null) first_error = err;
                     break :blk null;
                 };
+                // And it wrapped exactly the writes v1 accepted.
+                if (!recording or verified[7] != null) try c.checkSanitisedSites(platform_arg, &.{"--ownership-everywhere"}, sources, "out-lists");
             }
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
@@ -2742,6 +2864,7 @@ const Case = struct {
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
             var plan = try c.builtPage(d.pass, d.out, args.items);
             plan.bless = false;
+            if (c.cfg.in_place == .lists) try c.checkSanitisedSites(platform_arg, &.{}, sources, d.out);
             plans[i] = plan;
         }
         return plans;
