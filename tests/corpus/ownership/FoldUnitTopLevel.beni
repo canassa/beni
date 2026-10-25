@@ -1,0 +1,51 @@
+-- ownership: a fold whose accumulator is a `List ⊤` returns it (#952).
+-- `List ⊤` and `List ⊤` may be one list although `⊤` is not an object, so
+-- `lfold`'s summary keeps its result. `pushTop` pushes onto the top-level
+-- `top`, which `lfold` made: rejected `top-level`, as the `List Int` twin
+-- `pushTopInt` is. `wrapped` does the same through a custom type around a
+-- `List ⊤`. `pushLocal` pushes onto a list a fold made here: accepted.
+lfold : List ⊤ → List ⊤
+lfold xs = List.foldl xs [] λx d → List.push d x
+
+
+lfoldInt : List Int → List Int
+lfoldInt xs = List.foldl xs [] λx d → List.push d x
+
+
+top : List ⊤
+top = lfold [ ⊤ ]
+
+
+topInt : List Int
+topInt = lfoldInt [ 1 ]
+
+
+pub pushTop : ⊤ → List ⊤
+pushTop ⊤ = List.push top ⊤
+
+
+pub pushTopInt : ⊤ → List Int
+pushTopInt ⊤ = List.push topInt 2
+
+
+type Box
+    = Box (List ⊤)
+
+
+box : List ⊤ → Box
+box xs = Box (List.foldl xs [] λx d → List.push d x)
+
+
+boxed : Box
+boxed = box [ ⊤ ]
+
+
+pub wrapped : ⊤ → List ⊤
+wrapped ⊤ =
+    case boxed of
+        Box xs →
+            List.push xs ⊤
+
+
+pub pushLocal : ⊤ → List ⊤
+pushLocal ⊤ = List.push (lfold [ ⊤ ]) ⊤
