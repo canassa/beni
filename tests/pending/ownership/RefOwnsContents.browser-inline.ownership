@@ -1,0 +1,8 @@
+module RefOwnsContents
+  18:58 construction members: accepted callback-param (Ref.update supplies it owned)
+  summary join: π1.members R, π1.members#Ref.0 RE
+  summary leave: π1.members R, π1.members#Ref.0 RE
+  summary tellOthers: π1.members R, π1.members#Ref.0 RE
+  summary tellEach: π1 R
+  demands 1: accepted 1 (fresh 0, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 0, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0

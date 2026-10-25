@@ -1,0 +1,14 @@
+-- CK-285: R-5.10.12. `Task.callback`'s `Resume` gives up what it is
+-- handed, as a send does: `xs` read after `Task.resume r xs` is refused
+-- `later-use` at the resume (`list_still_used`). Red: v1 reads
+-- `Task.resume` from its body over `Js`, which writes nothing, so it
+-- reports no line and `check` exits 0. Edited in place, the fiber that
+-- `r` wakes holds the array this function still reads.
+import Task exposing (Resume)
+
+
+pub hand : Resume (List Int) → Int
+hand r =
+    xs = [ 1, 2 ]
+    Task.resume r xs
+    List.length xs

@@ -1,0 +1,38 @@
+-- CK-308: R-5.12.2 (#996). `Log.annotate` calls `work` once, so a record
+-- update inside its lambda writes `model` once, with nothing reading it
+-- after: accepted, as the same update bound before the annotate is
+-- (browser/inline/LogScopeInUpdate). Red: v1 does not know `annotate`
+-- calls `work` once and reads the lambda's capture as a second use,
+-- `rejected later-use`, and its message claims visible sharing (#996).
+-- Only the verdict line and the totals are required; the rest is master's.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Bump
+
+
+type alias Model =
+    n : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model = Log.annotate "k" "v" λ⊤ → ( { model | n = model.n + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <button onClick={Bump}>{model.n}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,52 @@
+-- CK-310: #996 (R-6.3, R-6.2: a refusal resting on an approximation says
+-- "This is a limit of the checker", never "sharing the checker can see").
+-- `scope` comes out of a list, so the checker cannot see how often it calls
+-- the lambda that updates `model`: a second call would see the first's
+-- write, so the refusal stands, but it is a limit (`record_may_be_shared`).
+-- Red: v1 refuses it exact, `record_still_used`, "This is sharing the
+-- checker can see: model is read again at 34:21" (the lambda's `next.n`),
+-- as it does #996's `Log.annotate` program, which R-5.12.2 accepts (CK-308).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+
+
+type alias Model =
+    n : Int
+
+
+scopes : List ((⊤ → Int) → Int)
+scopes = [ Log.annotate "k" "v" _ ]
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model =
+    case scopes of
+        [ scope, …_ ] →
+            n = scope λ⊤ →
+                next = { model | n = model.n + 1 }
+                next.n
+            ( { n = n }, Cmd.none )
+
+        [] →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <button onClick={Go}>{model.n}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,2 @@
+# The loan's refusal, on the line that takes it; the column is open.
+list_still_used 24:* contains "List.copy (Ref.get room.members)"

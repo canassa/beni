@@ -1,0 +1,7 @@
+-- CK-311: #954 (R-7.12: no input crashes the pass; it ends in a report).
+-- A lambda applied directly to a function parameter, as in
+-- `parse/good/Lambdas.beni`, overflows the stack of `dump
+-- --stage=ownership` (`instCb` → `passOn` without end); `check` passes.
+-- Red: crash. The golden is the report of the same program with the lambda
+-- named (`twice f x`); the slice that turns it green blesses the real one.
+applyTwice f x = (λg y → g (g y)) f x

@@ -192,6 +192,10 @@ tests/pending/ownership/MutualListField.beni exit=0 ownership-differs
 # exclusive; R-4.7.8.
 tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 
+# CK-281: a write in a type's `eq` is accepted as a write of its own
+# parameter; `comparison_changes_value` does not exist yet; R-5.13.1.
+tests/pending/check/bad/inline/ComparisonWrites.beni exit=0 codes=none
+
 # CK-282: a prepend whose front item is a fresh constructor value or record
 # literal is taken as maybe its base; R-4.4.3.
 tests/pending/ownership/PrependFreshRecord.beni exit=0 ownership-differs
@@ -204,6 +208,26 @@ tests/pending/ownership/RecordIndexExchange.beni exit=0 ownership-differs
 # CK-284: a top-level alias of a writer is called as the writer, through any
 # number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
 tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
+
+# CK-285: `Task.resume` is read from its body over `Js`, so the list it
+# hands on is not given up and a later read is silent; R-5.10.12.
+tests/pending/check/bad/inline/ResumeGivesUp.beni exit=0 codes=none
+
+# CK-286 (#981): a `Ref` owns its contents; the chat server's join without
+# `List.copy` is rejected `supply` (Ref.update supplies it borrowed); R-5.12.3.
+tests/pending/ownership/RefOwnsContents.beni exit=0 browser-inline.ownership-differs
+
+# CK-287 (#981): a loan of `Ref.get` alive across a suspension is not
+# refused; the join that must edit in place is refused instead; R-5.12.3.
+tests/pending/check/bad/inline/RefLoanSuspends.beni exit=1 codes=list_may_be_shared×1 why=code
+
+# CK-288 (#981): a loan of `Ref.get` stored in a model is not refused; R-5.12.3.
+tests/pending/check/bad/inline/RefLoanEscapes.beni exit=0 codes=none
+
+# CK-289 (#981): a `Ref` operation inside `Ref.update`'s callback is not
+# refused; the callback's push is refused as a borrowed supply instead;
+# R-5.12.3.
+tests/pending/check/bad/inline/RefReentrant.beni exit=1 codes=list_may_be_shared×2 why=code
 
 # CK-290 (#394): an old field read through a wrapper (`Just p`, `( p, 1 )`)
 # then a pattern is taken as a whole use; it should be hoisted; R-4.8.12.
@@ -284,6 +308,19 @@ tests/pending/ownership/ListenTopLevelStart.beni exit=0 browser-inline.ownership
 # answered unknown (or lost), so updating them is refused; R-5.11.5.
 tests/pending/ownership/SchemaIssuesFresh.beni exit=0 ownership-differs
 
+# CK-308 (#996): a record update inside a `Log.annotate` lambda is rejected
+# `later-use`; `annotate` is not known to call `work` once; R-5.12.2.
+tests/pending/ownership/LogAnnotateUpdate.beni exit=0 browser-inline.ownership-differs
+
 # CK-309 (#871): Record.copy of an open record type keeps the original's
 # object, so an update of the copy is refused alias; R-4.10.4.
 tests/pending/ownership/RecordCopyOpen.beni exit=0 ownership-differs
+
+# CK-310 (#996): a record update inside a lambda handed to a scope the
+# checker cannot identify is refused as visible sharing (`record_still_used`,
+# "sharing the checker can see"); it is a limit of the checker; R-6.3.
+tests/pending/check/bad/inline/LogScopeUnknownLimit.beni exit=1 codes=record_still_used×1 why=code
+
+# CK-311 (#954): a lambda applied directly to a function parameter overflows
+# the stack of `dump --stage=ownership`; R-7.12.
+tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT

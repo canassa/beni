@@ -1,0 +1,4 @@
+module AppliedLambdaRecursion
+  summary applyTwice: π1 R, π2 R; res cb1{excl cb1}r{excl cb1}; π1 calls many, supply 1 cb1 owned{excl cb1}r{excl cb1}, supply 1 π2 owned{excl π2}r{excl π2}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
