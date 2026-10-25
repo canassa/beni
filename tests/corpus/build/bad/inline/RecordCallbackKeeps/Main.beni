@@ -1,0 +1,94 @@
+-- A function a callee is handed may keep the record it hands that function
+-- (`ownership-checker.md` §16.4's keep edge, §31.5; #982). Each `split`
+-- below hands `r` to a function — a parameter, one read out of a record,
+-- out of a tuple, or out of a list inside a lambda — and then writes `r` in
+-- place. `Box` keeps `r`, so the box would see the write: each call of a
+-- `split` is refused, cause `supply`. Before #982 the record supply counted
+-- as owned (`{ r | x = 1 }` replaces every field, so it read none) and no
+-- record twin of the keep edge existed, and the build wrote `r.x = 1` under
+-- every box: the page showed 44 where value semantics shows 4.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias R =
+    x : Int
+
+
+type Box
+    = Box R
+
+
+viaParam : (R → Box), R → Box × R
+viaParam f r =
+    b = f r
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+viaField : { mk : R → Box }, R → Box × R
+viaField k r =
+    b = k.mk r
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+viaTuple : (R → Box) × Int, R → Box × R
+viaTuple k r =
+    b = k.0 r
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+viaList : List (R → Box), R → List Box × R
+viaList fs r =
+    b = List.map fs λf → f r
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+score : Box × R → Int
+score pair =
+    case pair of
+        ( Box old, new ) →
+            old.x * 10 + new.x
+
+
+scoreList : List Box × R → Int
+scoreList pair =
+    case pair of
+        ( [ Box old ], new ) →
+            old.x * 10 + new.x
+
+        _ →
+            0
+
+
+type alias Model =
+    n : Int
+
+
+type Msg
+    = Go
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            { model
+                | n =
+                    score (viaParam Box { x = 0 })
+                        + score (viaField { mk = Box } { x = 0 })
+                        + score (viaTuple ( Box, 0 ) { x = 0 })
+                        + scoreList (viaList [ Box ] { x = 0 })
+            }
+
+
+view : Model → Html Msg
+view model = <button data-role="go" onClick={Go}>{model.n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { n = 5 }, update = update, view = view }) "root"

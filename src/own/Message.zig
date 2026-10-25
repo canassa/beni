@@ -459,6 +459,10 @@ fn buildRecord(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.
     // ---- the sentence ----------------------------------------------------
     if (entry) {
         try w(&out, a, "`{s}` changes the record at {s} in place", .{ entry_fn, base_name });
+    } else if (std.mem.eql(u8, d.op, "value")) {
+        // #982: a function that may keep the record it is handed, which
+        // the function it is handed to then changes in place.
+        try w(&out, a, "`{s}` may keep a record it is handed, which is then changed in place", .{d.base});
     } else if (writer) |f| {
         try w(&out, a, "`{s}` changes {s} in place", .{ f, base_name });
     } else if (edit_text) |t| {

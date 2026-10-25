@@ -7255,6 +7255,22 @@ about records, and does not let a list's fact read them:
   empty" refinement of §31.4 item 6 no longer holds for it (`build/bad/inline/RecordConversionAnswer`).
 No list line of the corpus moves.
 
+*Revised 2026-10-25 (#982): §16.4's keep edge has a record twin.* Suppose a callee hands a function a record
+and writes that record after the call. Then a function that keeps what it is handed, such as `Box` or
+`λq → Box q`, holds a record that changes. Two things let that through, and both are fixed:
+- **The supply was taken for owned.** The probe at the supply asks whether what the call hands on is used
+  after it. An update that replaces every field of the record reads none of them (§31.4 item 5), so it was
+  no use. To a probe it is now a use of the record whole: it writes the very object the function may have
+  kept.
+- **The keep edge read lists only.** `callbackKeeps` now also reads the callee's record writes (`W{F}`) at
+  the supplied record, at a path at or below it or above it. It reads the callee's `rsupply` beside its
+  `supply`, and an actual that answers the record from its `objs`. A function parameter of the caller that
+  is passed on gets `need owned record`.
+A function read out of a parameter's list inside a lambda (`List.map fs λf → f r`) is passed on (`passOn`)
+with the lambda's closure. So the record the lambda captured is named, not `⊤`
+(`build/bad/inline/RecordCallbackKeeps`). The same naming lets a list's keep edge see the list twin. That
+gives `check/bad/inline/FunctionElementBorrowed` a more precise message, with the same verdicts.
+
 ### 31.9 The errors
 
 Lines with the same position, verdict, cause and detail are one diagnostic (§28.5). The codes follow §28.6's
