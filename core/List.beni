@@ -246,8 +246,8 @@ compareFrom a i b j =
         EQ
 
 
---| Replace the element at an index. Out of range — a negative index, or one
---| not less than the length — the result is the list itself, and so it is
+--| Replace the element at an index. Out of range — a negative index, one
+--| not less than the length, or one that is not a whole number — the result is the list itself, and so it is
 --| when the element there is already `value` (the same value, not an equal
 --| one).
 --|
@@ -259,7 +259,7 @@ compareFrom a i b j =
 pub set : List a, Int, a → List a
 set xs i v = Js.pure λ⊤ →
     n = length xs
-    if i < 0 || i ≥ n then
+    if outside i n then
         xs
     else if isTrie (Js.from xs) then
         Js.to (trieSet (Js.from xs) i (Js.from v))
@@ -322,7 +322,8 @@ pop xs = Js.pure λ⊤ →
 
 --| The elements from index `from` up to but not including `to`, as Elm's
 --| `Array.slice`: a negative index counts from the end, both are clamped to
---| the list, and `from` at or past `to` is `[]`. A slice of the whole list
+--| the list, and `from` at or past `to` is `[]`. A fraction is cut toward
+--| zero first, as `Array.slice` does: `slice xs 0.5 2 == slice xs 0 2`. A slice of the whole list
 --| is a copy of it.
 --|
 --|     slice [ 0, 1, 2, 3, 4 ] 1 3 == [ 1, 2 ]
@@ -341,14 +342,17 @@ slice xs from to =
         sliceOf xs f t
 
 
---| An index of Elm's `Array.slice` clamped to a list of `n`: a negative one
---| counts from the end.
+--| An index of Elm's `Array.slice` clamped to a list of `n`: a fraction is cut
+--| toward zero first, then a negative one counts from the end. NaN is 0.
 clampIndex : Int, Int → Int
-clampIndex i n =
-    if i < 0 then
-        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
+clampIndex i n = Js.pure λ⊤ →
+    j = Js.call (Js.global "Math") "trunc" [ Js.from i ]
+    if Js.to j ≥ 0 then
+        Js.to (Js.call (Js.global "Math") "min" [ j, Js.from n ])
+    else if Js.to j < 0 then
+        Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + Js.to j) ])
     else
-        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
+        0
 
 
 --| A new list with the same elements, in the same order: the explicit copy.
@@ -376,7 +380,7 @@ sliceOf xs from to =
 
 --| Insert an element before an index, so that it is at that index in the
 --| result. At the length it is added at the end; out of range — negative,
---| or past the length — the result is the list itself.
+--| past the length, or not a whole number — the result is the list itself.
 --|
 --|     insertAt [ 1, 2, 3 ] 1 9 == [ 1, 9, 2, 3 ]
 --|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
@@ -385,7 +389,7 @@ sliceOf xs from to =
 pub insertAt : List a, Int, a → List a
 insertAt xs i v =
     n = length xs
-    if i < 0 || i > n then
+    if outside i (n + 1) then
         xs
     else
         b = Js.from (base xs)
@@ -399,8 +403,8 @@ insertAt xs i v =
                 )
 
 
---| Remove the element at an index. Out of range the result is the list
---| itself.
+--| Remove the element at an index. Out of range — as for `set` — the result
+--| is the list itself.
 --|
 --|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
 --|
@@ -408,7 +412,7 @@ insertAt xs i v =
 pub removeAt : List a, Int → List a
 removeAt xs i =
     n = length xs
-    if i < 0 || i ≥ n then
+    if outside i n then
         xs
     else
         b = Js.from (base xs)
@@ -420,8 +424,8 @@ removeAt xs i =
                 )
 
 
---| Exchange the elements at two indexes. When either is out of range, or
---| they are the same index, the result is the list itself.
+--| Exchange the elements at two indexes. When either is out of range (as
+--| for `set`), or they are the same index, the result is the list itself.
 --|
 --|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
 --|
@@ -429,7 +433,7 @@ removeAt xs i =
 pub swap : List a, Int, Int → List a
 swap xs i j =
     n = length xs
-    if i < 0 || j < 0 || i ≥ n || j ≥ n || i == j then
+    if outside i n || outside j n || i == j then
         xs
     else
         x = unsafeGet xs i
@@ -450,6 +454,14 @@ unsafeGet xs i = Js.pure λ⊤ →
         Js.to (trieGet v i)
     else
         Js.to (Js.at (Js.get v "b") (Js.to (Js.get v "o") + i))
+
+
+-- Whether `i` is no index below `n`: negative, not less than `n`, a fraction
+-- or NaN (an `Int` is a double, and `2 ^ (0 - 1)` is `0.5`). `i >>> 0` is `i`
+-- exactly when `i` is a whole number from 0 to 4294967295, which holds every
+-- length, so one test covers each of those.
+outside : Int, Int → Bool
+outside i n = Js.shiftRightZero i 0 ≠ i || i ≥ n
 
 
 --| The list without its first `k` elements, `0 ≤ k ≤ length`: the list
@@ -1669,7 +1681,7 @@ tail xs =
         Just (view xs 1)
 
 
---| Take the first `n` members of a list.
+--| Take the first `n` members of a list. A fraction is cut toward zero.
 --|
 --|     take [ 1, 2, 3 ] 2 == [ 1, 2 ]
 --|
@@ -1687,17 +1699,18 @@ take xs n =
 --|
 --|     drop [ 1, 2, 3 ] 2 == [ 3 ]
 --|
---| O(1), as `tail` is, and `drop xs 0` is `xs` itself.
+--| O(1), as `tail` is, and `drop xs 0` is `xs` itself. A fraction is cut toward
+--| zero: `drop xs 1.5 == drop xs 1`.
 pub drop : List a, Int → List a
 drop xs n =
     if n ≤ 0 then
         xs
     else
-        view xs (min n (length xs))
+        view xs (clampIndex n (length xs))
 
 
 --| The element at an index, counting from 0, or `Nothing` when the index is
---| negative or not less than the length.
+--| negative, not less than the length, or not a whole number.
 --|
 --|     get [ 10, 20, 30 ] 1 == Just 20
 --|     get [ 10, 20, 30 ] 3 == Nothing
@@ -1705,10 +1718,10 @@ drop xs n =
 --| Near O(1).
 pub get : List a, Int → Maybe a
 get xs i =
-    if 0 ≤ i && i < length xs then
-        Just (unsafeGet xs i)
-    else
+    if outside i (length xs) then
         Nothing
+    else
+        Just (unsafeGet xs i)
 
 
 --| Extract the last element of a list.
@@ -1739,10 +1752,10 @@ update xs i func = focus xs i func
 --| unique, exclusive and dead after the call. `update` is this.
 focus : List a, Int, (a → a) → List a
 focus xs i func =
-    if 0 ≤ i && i < length xs then
-        set xs i (func (unsafeGet xs i))
-    else
+    if outside i (length xs) then
         xs
+    else
+        set xs i (func (unsafeGet xs i))
 
 
 --| Partition a list based on some test. The first list contains all values

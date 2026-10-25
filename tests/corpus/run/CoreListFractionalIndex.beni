@@ -1,0 +1,97 @@
+-- An `Int` is a double, so `2 ^ (0 - 1)` is `0.5` and `2 ^ 1024 - 2 ^ 1024`
+-- is NaN. A function that reads or edits a list by position must not read
+-- `xs[0.5]`: an index that is not a whole number is out of range, so `get`
+-- is `Nothing` and `set`, `update`, `insertAt`, `removeAt` and `swap` give
+-- the list back. `slice`, `take`, `drop` and the `String` family cut a
+-- fraction toward zero first, as `Array.slice` does, and read NaN as 0.
+-- Whole numbers keep their old answers: the last block.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+shown : Maybe Int → String
+shown m =
+    case m of
+        Just x →
+            "Just " ++ String.fromInt x
+
+        Nothing →
+            "Nothing"
+
+
+half : Int
+half = 2 ^ (0 - 1)
+
+
+nan : Int
+nan = 2 ^ 1024 - 2 ^ 1024
+
+
+huge : Int
+huge = 2 ^ 32
+
+
+abc : List Int
+abc = [ 10, 20, 30 ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ shown (List.get abc half)
+        , shown (List.get abc (1 + half))
+        , shown (List.get abc (negate half))
+        , shown (List.get abc nan)
+        , ints (List.set abc half 9)
+        , ints (List.set abc (1 + half) 9)
+        , ints (List.set abc nan 9)
+        , ints (List.update abc half λx → x + 1)
+        , ints (List.update abc (2 + half) λx → x + 1)
+        , ints (List.insertAt abc half 9)
+        , ints (List.insertAt abc (2 + half) 9)
+        , ints (List.insertAt abc nan 9)
+        , ints (List.removeAt abc half)
+        , ints (List.removeAt abc (1 + half))
+        , ints (List.removeAt abc nan)
+        , ints (List.swap abc 0 half)
+        , ints (List.swap abc (1 + half) 2)
+        , ints (List.swap abc nan 1)
+        , ints (List.slice abc half 2)
+        , ints (List.slice abc 0 (1 + half))
+        , ints (List.slice abc (negate half) 2)
+        , ints (List.slice abc (0 - 1 - half) 3)
+        , ints (List.slice abc nan 2)
+        , ints (List.slice abc 0 nan)
+        , ints (List.take abc (1 + half))
+        , ints (List.take abc half)
+        , ints (List.take abc nan)
+        , ints (List.drop abc (1 + half))
+        , ints (List.drop abc half)
+        , ints (List.drop abc nan)
+        , String.slice "abcd" half 2
+        , String.slice "abcd" (0 - 1 - half) 4
+        , String.left "abcd" (1 + half)
+        , String.right "abcd" (1 + half)
+        , String.dropLeft "abcd" (1 + half)
+        , String.dropRight "abcd" (1 + half)
+        , shown (List.get abc 0)
+        , shown (List.get abc 2)
+        , shown (List.get abc 3)
+        , shown (List.get abc (negate 1))
+        , shown (List.get abc huge)
+        , ints (List.set abc 2 9)
+        , ints (List.set abc 3 9)
+        , ints (List.set abc (negate 1) 9)
+        , ints (List.insertAt abc 3 9)
+        , ints (List.insertAt abc 4 9)
+        , ints (List.removeAt abc 2)
+        , ints (List.removeAt abc 3)
+        , ints (List.swap abc 0 2)
+        , ints (List.slice abc 1 (negate 1))
+        , ints (List.drop abc 2)
+        ]

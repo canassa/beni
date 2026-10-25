@@ -60,7 +60,7 @@ length s = Js.pure λ⊤ → Js.to (Js.get (Js.call (Js.global "Array") "from" [
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
---| starting from the *end* of the string.
+--| starting from the *end* of the string. A fraction is cut toward zero.
 --|
 --|     slice "snakes on a plane!" 7 9 == "on"
 --|     slice "snakes on a plane!" 0 (-7) == "snakes on a"
@@ -80,14 +80,17 @@ slice s start end = Js.pure λ⊤ →
             )
 
 
--- An index into `n` code points: a negative one counts from the end, and
--- either is kept within 0…n.
+-- An index into `n` code points: a fraction is cut toward zero first, then a
+-- negative one counts from the end, and either is kept within 0…n. NaN is 0.
 clamp : Int, Int → Int
 clamp i n =
-    if i < 0 then
-        Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
+    j = Js.call (Js.global "Math") "trunc" [ Js.from i ]
+    if Js.to j ≥ 0 then
+        Js.to (Js.call (Js.global "Math") "min" [ j, Js.from n ])
+    else if Js.to j < 0 then
+        Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + Js.to j) ])
     else
-        Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
+        0
 
 
 --| Append two strings. `++` does the same thing.
