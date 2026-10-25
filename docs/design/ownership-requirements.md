@@ -732,7 +732,9 @@ Not writes (they read their operands):
 - R-5.9.9 Send positions come from the nominal `Send msg` operation's word:
   `Send.to : Send msg, consumed msg → ⊤`, written as `send.to message` or `Send.to send message`.
   No named `Hosted`, `Cmd` or `Sub` row supplies send positions; forwarding is inferred through their bodies.
-  A top-level start handing its Send to `Listen.on` must be accepted. [O 2026-10-25; G #440]
+  A top-level start handing its Send to `Listen.on` must be accepted. During implementation, v2 also
+  accepts the existing callable alias through pinned protocol provenance (§2.13.5); S9's whole-corpus diff
+  keeps that API unchanged. Only S10 migrates to nominal Send.to. No adapter/edit in frozen `src/own/`. [O 2026-10-25; G #440]
   (ownership-v2.md §2.13.5; replaces oc §23.3's named positions)
 
 ### 5.10 `foreign`, ownership words and the trusted surface
@@ -750,7 +752,7 @@ Not writes (they read their operands):
   its body is still checked for its own writes. (oc §24.2, §24.5)
 - R-5.10.4 Words may stand in any annotated top-level signature of a core or platform package. User packages may
   not write them. [O 2026-10-25] Type/constructor ownership words may also stand at the explicit
-  declaration positions specified in ownership-v2.md §2.13.6, still only in core/platform packages.
+  declaration positions specified in ownership-v2.md §2.13.5–§2.13.6, still only in core/platform packages.
   [O 2026-10-12, Change 5(b) refused] (oc §24.1, §24.4)
 - R-5.10.5 Words do not change runtime types or emitted code. [O 2026-10-25] Ownership type/value metadata
   remains in typed interfaces and ownership blocks for checking; erase it only from runtime representation,
@@ -763,8 +765,8 @@ Not writes (they read their operands):
   with `returned`; `once` with `many`; `owned` without `once`/`many`; two of `fresh`/`escaped`/`unknown`;
   `exclusive` without `fresh`; `consumed` on a function or a `List` of functions). (oc §24.4, §30.3;
   cb/OwnershipWordOutsidePlatform, cb/core/MisplacedOwnershipWord)
-  [O 2026-10-25] The new sequence/cell/failure and slot-protocol words use their separately validated
-  type/constructor/parameter/result placements in ownership-v2.md §2.13.6; these are explicit exceptions
+  [O 2026-10-25] The new sender/sequence/cell/failure and slot-protocol words use their separately validated
+  type/constructor/parameter/result placements in ownership-v2.md §2.13.5–§2.13.6; these are explicit exceptions
   to the old signature-only placement list, never permission for arbitrary nested words.
 - R-5.10.7 The trusted surface is everything the guarantee assumes. Each worded or asserted declaration has a pinning
   fixture, a report change for each unsafe-direction flip, and a pinned hash of the source it was justified against
@@ -821,9 +823,15 @@ Not writes (they read their operands):
 - R-5.12.3 **A `Ref` owns its contents.** [O 2026-10-25, #981; supersedes #219's borrowed callback] (R-8.2)
   - `Ref.get r` returns a *loan*, not an independent value. A loan is a holder: it may be read, passed to callees
     that only read it, and used to build new values (`List.filter`, `List.map`).
+  - Ordinary `stored` carries loan tags/lifetimes into the built collection; it is not itself escape.
+    A callee may return an incoming loan-bearing value to its still-live caller region. Stores into ◆,
+    consumed demands and actual escapes still require deep no-loan checks. [O 2026-10-25]
   - A loan alive across a point where the fiber may suspend (as the effect checker infers it), or a loan that
-    escapes (stored, captured, sent, given to JavaScript, returned out of its scope), is refused; the fix named is
-    `List.copy (Ref.get r)`, `Dict.copy` or `Record.copy`.
+    escapes (stored beyond its region/behind ◆, captured beyond its region, sent, given to JavaScript, returned out of its scope), is refused; the fix named is
+    `List.copy (Ref.get r)`, `Dict.copy` or `Record.copy` only when that copies every borrowed storage
+    path needing to leave the region. These are shallow: descendant loans remain. For List(List Int),
+    `List.map (Ref.get r) List.copy` makes independent outer/inner storage; deeper structures need
+    corresponding reconstruction. Diagnostics name remaining paths, never propose an insufficient automatic edit.
   - `Ref.update` and `Ref.modify` edit the contents in place when no loan of that cell is alive (across fibers this
     follows from the suspension rule; within one fiber it is ordinary liveness).
   - A `Ref` operation inside another `Ref` operation's callback, while that callback holds the moved-out contents,
@@ -939,7 +947,7 @@ Not writes (they read their operands):
   inspections. Do not assert a general linear bound without proof. Work outside the proved fragments is
   bounded by the one summary-growth resource of R-7.4, charged before expansion. Source-proportional
   analysis and unchanged imported-table reads are exempt only through the proved nonfungible lanes in
-  ownership-v2.md §4.1: B_f≤8,192 S_f, G_f≤R_f, N_f=B_f+G_f; total module time
+  ownership-v2.md §4.1: B_f≤16,384 S_f, G_f≤R_f, N_f=B_f+G_f; total module time
   O(E+Σ N_f log(N_f+2)), storage O(E+Σ N_f). Length alone cannot spend G_f. Import credit cannot
   finance new invocation labels/contexts; renamed/repeated imports never renew a lane. The design must prove
   the total resource-parameter bound, not only count labels or output facts. Existing practical acceptance
@@ -971,11 +979,18 @@ Not writes (they read their operands):
   record belongs either to a proved, nonfungible source/import lane B_f or to G_f; the complete total N_f is
   still measured. The lanes and their constructive constant are specified in ownership-v2.md §4.1. Ordinary
   direct construction/scalar/control-flow/graft kernels of arbitrary length and unchanged imported tables
-  stay in B_f. Ordinary labels never merge; derived call-label pairs, class/environment/context products,
-  general set/query work and recursive reprocessing outside the lanes reserve G_f before their work.
+  stay in B_f. One final source validation, direct per-demand queries, singleton/direct call obligations,
+  static transfer settlement and identity/delta entry work have separate bounded lanes (§4.1).
+  **Qualification:** the no-length-cap proof covers fixed-topology/single-bit recursive functions and
+  local groups, same-field identity-or-fresh record-update arms with direct holder proofs, and their wide-model
+  main. It is not proved for arbitrary members of any of those three families: K changes×N transfers,
+  D demands×H holders, N calls×M obligations and cross-field feedback products may exhaust growth even in
+  safe applications. Only such work outside the stated source-linear kernels spends G_f; initial/final walks
+  and another written direct query/call are not growth just because the body is longer. Ordinary labels never
+  merge; multi-label/context expansion and general product work reserve G_f before their work.
   Nested classes, rounds, validation and serialization share the owner's account, with no refunds or renewed
   credit. Variable-width data stream in bounded chunks. Callee raises do not infect a caller merely reading
-  the unchanged table; re-instantiation remains caller growth. Exhaustion obeys R-6.11 and authorises no write
+  the unchanged table; re-instantiation outside the direct-call lanes remains caller growth. Exhaustion obeys R-6.11 and authorises no write
   or clean output. No separate round, callback-depth or instruction-fuel cap exists.
   - Restructure suggestions: put repeated results in a list, make the wrapper chain recursive, or replace a
     closure tower with data and one fold. The optional raise attribute is
@@ -987,7 +1002,8 @@ Not writes (they read their operands):
   - The measured **structural callback-label** maximum is 10 (`o/LimitOwnedAtoms.beni:45`); this is not yet
     a measurement of the complete new resource. Instrument B_f/G_f/S_f/N_f on corpus, core, platforms, examples
     and generator-deduplicated research apps from S2b; report G_f approaching one tenth of the default growth allowance to
-    the owner, never silently raise it or weaken precision. The headroom gate uses measured G_f; baseline size is reported separately.
+    the owner, never silently raise it or weaken precision. A bounded-kernel lane overflow is a checked internal
+    `ownership_accounting_invariant` defect, never automatic growth spill or a user resource refusal. The headroom gate uses measured G_f; baseline size is reported separately.
   - Huge named written-input/format limits remain as listed in ownership-v2.md §4.4, each loud and tested;
     the raise attribute changes only this summary allowance. No other analysis limit is introduced.
 - R-7.5 v1's caps are therefore not allowed [G]: entries 262 144, path-entries 4 096, conditions 2²⁰, owned-atoms 8,
