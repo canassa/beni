@@ -1,0 +1,48 @@
+-- writes: what a `Dict` edit keeps beside its tag (`write-sets.md`, amended
+-- 2026-10-25; corrected the same day, the review of #986). `Bump` inserts
+-- key 1 and then updates key 2: the sequence is `at 1`, and the write at
+-- `{2}` stays, so the hole that reads key 2 is reached. The holes that read a
+-- dictionary made in `view` read what made it: the stored value, and the list
+-- a fold walks.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : Dict Int Int
+    ids : List Int
+    x : Int
+
+
+type Msg
+    = Bump
+    | More Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model
+                | rows =
+                    Dict.update (Dict.insert model.rows 1 7) 2 λslot → Maybe.map slot λn → n + 1
+            }
+
+        More n →
+            { model | ids = [ …model.ids, n ], x = n }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <p>{Maybe.withDefault (Dict.get model.rows 2) 0}</p>
+        <p>{Maybe.withDefault (Dict.get (Dict.insert model.rows 1 model.x) 1) 0}</p>
+        <p>{Dict.size (List.foldl model.ids model.rows λid acc → Dict.insert acc id 0)}</p>
+    </div>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = λ⊤ → { rows = Dict.empty, ids = [], x = 0 }, update = update, view = view }

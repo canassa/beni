@@ -3730,6 +3730,18 @@ fn dictStep(a: *Writes, b: DictBase, e: Edit, s1: u32, s2: u32, elems: []const E
     return a.mkLst(b.path, r[0], r[1], t2, all.items);
 }
 
+/// An element that writes nothing and carries what a `Dict` edit read: the
+/// value it stored, the callback's results, a fold's list (corrected
+/// 2026-10-25, the review of #986: a term made from them read them).
+fn dictReads(a: *Writes, p: u32, xs: []const u32) Error![]const Elem {
+    var read: u32 = 0;
+    for (xs) |x| read = try a.depsUnion(read, try a.deps(x));
+    if (a.deps_t.len(read) == 0) return &.{};
+    const out = try a.arena().alloc(Elem, 1);
+    out[0] = .{ .index = none, .eps = try a.mintEpsDict(p), .term = try a.mkFresh(read) };
+    return out;
+}
+
 /// A callback's value root, anchored to the dictionary's `{*}`.
 fn mintEpsDict(a: *Writes, p: u32) Error!u32 {
     const star = (try a.extend(p, .star, 0, 1)) orelse p;
@@ -3821,8 +3833,9 @@ fn applyDictRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []con
             if (row == .dict_remove and args.len != 2) return a.freshCall(args);
             const k = try a.argSym(m, site, 1, args[1]);
             const e: Edit = if (row == .dict_insert) .d_at_ins else .d_at_del;
-            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, &.{});
-            return a.dictStep(b, e, k, none, &.{});
+            const reads = try a.dictReads(b.path, args[1..]);
+            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, reads);
+            return a.dictStep(b, e, k, none, reads);
         },
         .dict_update => {
             if (args.len != 3 or a.ctor_just == none or a.ctor_nothing == none) return a.freshCall(args);
@@ -3840,17 +3853,19 @@ fn applyDictRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []con
                 return a.dictStep(b, .d_kept, none, none, &.{.{ .index = k, .eps = eps, .term = v }});
             }
             const e: Edit = if (p1.other or p0.other) .d_at_any else if (!p1.nothing) .d_at_ins else if (!p1.just and !p0.just) .d_at_del else .d_at_any;
-            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, &.{});
-            return a.dictStep(b, e, k, none, &.{});
+            const reads = try a.dictReads(b.path, &.{ args[1], present, absent });
+            if (k == sym_unknown) return a.dictStep(b, atUnknown(e), none, none, reads);
+            return a.dictStep(b, e, k, none, reads);
         },
         .dict_swap => {
             if (args.len != 3) return a.freshCall(args);
             const s1 = try a.argSym(m, site, 1, args[1]);
             const s2 = try a.argSym(m, site, 2, args[2]);
-            if (s1 == sym_unknown or s2 == sym_unknown) return a.dictStep(b, .d_permute, none, none, &.{});
-            return a.dictStep(b, .d_swap, s1, s2, &.{});
+            const reads = try a.dictReads(b.path, args[1..]);
+            if (s1 == sym_unknown or s2 == sym_unknown) return a.dictStep(b, .d_permute, none, none, reads);
+            return a.dictStep(b, .d_swap, s1, s2, reads);
         },
-        .dict_insert_at => return a.dictStep(b, .d_replaced, none, none, &.{}),
+        .dict_insert_at => return a.dictStep(b, .d_replaced, none, none, try a.dictReads(b.path, args[1..])),
         .dict_sort_by, .dict_filter => {
             // What decides the order or the kept keys is read (as `List`'s rows).
             if (args.len != 2) return a.freshCall(args);
@@ -3861,7 +3876,7 @@ fn applyDictRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []con
                 const r = try a.apply(args[1], &.{ key, try a.mkSame(eps) }, g);
                 read = try a.deps(r);
             } else read = try a.deps(args[1]);
-            const elems: []const Elem = if (a.deps_t.len(read) == 0) &.{} else &.{.{ .index = sym_star, .eps = eps, .term = try a.mkFresh(read) }};
+            const elems: []const Elem = if (a.deps_t.len(read) == 0) &.{} else &.{.{ .index = none, .eps = eps, .term = try a.mkFresh(read) }};
             return a.dictStep(b, if (row == .dict_sort_by) .d_permute else .d_prune, none, none, elems);
         },
         .dict_map => {
@@ -3915,10 +3930,11 @@ fn applyFold(a: *Writes, args: []const u32, g: u32) Error!u32 {
         edit = joinEdit(edit, e2);
         for (0..a.lstElems(x)) |j| {
             var el = a.lstElem(x, @intCast(j));
-            el.index = sym_star;
+            if (el.index != none) el.index = sym_star;
             try elems.append(a.gpa, el);
         }
     }
+    try elems.appendSlice(a.gpa, try a.dictReads(p, &.{args[0]}));
     // Sequenced with itself: `kept`, `grow` and `prune` repeat to themselves.
     if (edit != .d_kept and edit != .d_grow and edit != .d_prune) edit = .d_replaced;
     return a.mkLst(p, edit, none, none, elems.items);
@@ -4246,7 +4262,7 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
             }
             e.edit = j;
         } else if (e.s1 != w.s1 or e.s2 != w.s2) {
-            e.edit = if (e.edit.isDict()) .d_replaced else .replaced;
+            e.edit = if (e.edit == .d_swap) .d_permute else if (e.edit.isDict()) .d_replaced else .replaced;
             e.s1 = none;
             e.s2 = none;
         }
@@ -4353,18 +4369,20 @@ fn diffDict(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
     switch (edit) {
         .d_at_ins, .d_at_del, .d_at_any => {
             const at = (try a.extend(p, .index, s1, 1)) orelse return a.wsAdd(ws, try a.lost(p, t));
-            return a.wsAdd(ws, value(at));
+            try a.wsAdd(ws, value(at));
         },
         .d_grow, .d_prune => {
             const at = (try a.extend(p, .star, 0, 1)) orelse return a.wsAdd(ws, try a.lost(p, t));
             try a.wsAdd(ws, value(at));
         },
-        .d_swap, .d_permute => return,
         else => {},
     }
-    if (edit != .d_kept and edit != .d_grow) return;
+    // Every step's writes below the dictionary stay beside the tag, whatever
+    // a sequence made of it (corrected 2026-10-25, the review of #986). An
+    // element with no index only carries what the edit read.
     for (0..a.lstElems(t)) |i| {
         const e = a.lstElem(t, @intCast(i));
+        if (e.index == none) continue;
         const at: u32 = (if (e.index == sym_star) try a.extend(p, .star, 0, 1) else try a.extend(p, .index, e.index, 1)) orelse {
             try a.wsAdd(ws, try a.lost(p, t));
             continue;
