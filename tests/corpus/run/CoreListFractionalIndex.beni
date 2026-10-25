@@ -79,6 +79,10 @@ main =
         , String.right "abcd" (1 + half)
         , String.dropLeft "abcd" (1 + half)
         , String.dropRight "abcd" (1 + half)
+        , String.right "abcd" nan
+        , String.dropRight "abcd" nan
+        , String.left "abcd" nan
+        , String.dropLeft "abcd" nan
         , shown (List.get abc 0)
         , shown (List.get abc 2)
         , shown (List.get abc 3)

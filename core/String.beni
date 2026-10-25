@@ -494,10 +494,10 @@ left str n =
 --|     right "Scully" 2 == "ly"
 pub right : String, Int → String
 right str n =
-    if n < 1 then
-        ""
-    else
+    if n ≥ 1 then
         slice str (negate n) (length str)
+    else
+        ""
 
 
 --| Drop `n` characters from the left side of a string.
@@ -516,10 +516,10 @@ dropLeft str n =
 --|     dropRight "Cigarette Smoking Man" 2 == "Cigarette Smoking M"
 pub dropRight : String, Int → String
 dropRight str n =
-    if n < 1 then
-        str
-    else
+    if n ≥ 1 then
         slice str 0 (negate n)
+    else
+        str
 
 
 --| See if a string contains a substring. The string being searched comes
