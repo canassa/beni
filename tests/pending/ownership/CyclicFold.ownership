@@ -1,0 +1,5 @@
+module CyclicFold
+  14:18 call List.foldr <literal>[*]: accepted fresh (List.push writes what List.foldr supplies it)
+  14:18 value List.push: accepted callback-param (List.foldr supplies it owned)
+  demands 2: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0

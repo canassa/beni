@@ -1,0 +1,48 @@
+-- CK-297: R-5.4.3, #382: a once closure that writes a captured list while
+-- another holder still reads it is refused, as the same body with `xs` in
+-- both places is (`later-use`). Five shapes, each read after the push
+-- inside the closure: an alias `ys`, a second closure `g`, two fields of
+-- one record, a closure in a record field, and a closure destructured out
+-- of a captured tuple. Red: v1 decides the capture write from the closure's
+-- creation and its one call without checking the closure's body against
+-- the other holders, and accepts all five `once`. Required: `alias` where
+-- another binding holds the list, `captured` where a closure does (R-4.3.1,
+-- R-5.4.1). The golden claims the verdict lines and the totals; its summary
+-- lines are master's.
+pub aliased : List Int → List Int × Int
+aliased xs =
+    ys = xs
+    f = λ⊤ → ( List.push xs 1, List.length ys )
+    f ⊤
+
+
+pub closure : List Int → List Int × Int
+closure xs =
+    g = λ⊤ → List.length xs
+    f = λ⊤ → ( List.push xs 1, g ⊤ )
+    f ⊤
+
+
+pub fields : List Int → List Int × Int
+fields xs =
+    s = { a = xs, b = xs }
+    f = λ⊤ → ( List.push s.b 1, List.length s.a )
+    f ⊤
+
+
+pub fieldClosure : List Int → List Int × Int
+fieldClosure xs =
+    g = λ⊤ → List.length xs
+    s = { a = g, b = xs }
+    f = λ⊤ → ( List.push s.b 1, s.a ⊤ )
+    f ⊤
+
+
+pub tuple : List Int → List Int × Int
+tuple xs =
+    t = ( λ⊤ → List.length xs, xs )
+    f =
+        λ⊤ →
+            ( h, ys ) = t
+            ( List.push ys 1, h ⊤ )
+    f ⊤

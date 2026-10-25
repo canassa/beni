@@ -1,0 +1,26 @@
+module CopyApart
+  13:5 List.update <literal>: accepted fresh
+  13:5 List.update <literal>[*]: accepted call (<lambda> writes what List.update supplies it)
+  13:45 List.push v: accepted callback-param (List.update supplies it owned)
+  19:5 List.update <call List.push>: accepted fresh
+  19:5 List.update <call List.push>[*]: accepted call (<lambda> writes what List.update supplies it)
+  19:18 List.push <call List.push>: accepted fresh
+  19:29 List.push <literal>: accepted fresh
+  19:69 List.push v: accepted callback-param (List.update supplies it owned)
+  25:5 List.update <literal>: accepted fresh
+  25:5 List.update <literal>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  25:35 List.push v: rejected exclusive: List.update hands its parameter 1 an element of <literal>, whose elements may share one list
+  32:5 call Dict.update d#Dict.0#Node.2: accepted call (<lambda> writes what Dict.update supplies it)
+  32:26 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
+  32:43 List.push p: accepted callback-param (Maybe.map supplies it owned)
+  39:5 call Dict.update d#Dict.0#Node.2: accepted fresh (<lambda> writes what Dict.update supplies it)
+  39:26 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  39:43 List.push p: accepted callback-param (Maybe.map supplies it owned)
+  summary apart: res [*] fresh1{lost}, [*][*] ~fresh2{lost}, fresh3{lost}
+  summary pushed: res [*] ~condition(fresh1) ~fresh1{lost}, [*][*] ~fresh3{lost}, fresh2{lost}
+  summary twice: res [*] condition(fresh1) fresh1, fresh2{shared}r{shared}
+  summary grow: res #Dict.0#Node.1 ~condition(fresh2){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh1){lost}r{lost} ~condition(fresh4){lost}r{lost} ~fresh1{lost}r{lost}, #Dict.0#Node.2[*] ~fresh5{lost}r{lost}, #Dict.0#Node.3 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}
+  summary growTwice: res #Dict.0#Node.1 ~condition(fresh2){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh1){lost}r{lost} ~condition(fresh4){lost}r{lost} ~fresh1{lost}r{lost}, #Dict.0#Node.3 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}
+  demands 17: accepted 15 (fresh 7, call 3, param 0, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 17: accepted 15 (fresh 7, call 3, param 0, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2

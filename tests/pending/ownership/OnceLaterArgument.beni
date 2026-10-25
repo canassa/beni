@@ -1,0 +1,31 @@
+-- CK-299: R-5.4.5, #416: a lambda written as a call's argument cannot run
+-- before that call, so a read in a later argument of the same call happens
+-- before any write: `rev p = g2 (bump p _) p.x` and its list form
+-- `revL xs = g2 (push xs _) (List.length xs)` are accepted `once`. Red: v1
+-- starts the once closure's liveness at its creation and refuses both
+-- `later-use` (o/RecordOnce `readAfter` pins the record form as an
+-- over-refusal). The golden claims the verdict lines and the totals; its
+-- summary lines are master's.
+type alias P =
+    x : Int
+    y : Int
+
+
+bump : P, Int → P
+bump p n = { p | x = p.x + n }
+
+
+push : List Int, Int → List Int
+push xs n = List.push xs n
+
+
+g2 : (Int → a), Int → a
+g2 h a = h a
+
+
+pub rev : P → P
+rev p = g2 (bump p _) p.x
+
+
+pub revL : List Int → List Int
+revL xs = g2 (push xs _) (List.length xs)

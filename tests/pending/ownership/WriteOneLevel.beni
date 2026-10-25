@@ -1,0 +1,53 @@
+-- CK-280: R-4.7.8, #400 (the Lean bridge's `Case5230` shape). `f` writes one
+-- list of the left child and returns the right subtree; `run` and `runFresh`
+-- hand it a tree holding one list at three levels, none of them in the right
+-- subtree, so the write is safe: accept. Red: master refuses both calls
+-- `exclusive`, since a write under a marker needs the whole region
+-- exclusive. `c1`/`c2` write every level (`incAll2`) and stay `exclusive`.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+f : Tree → List Int × Tree
+f t =
+    case t of
+        Node l _ r →
+            case l of
+                Node _ ys _ →
+                    ( List.push ys 1, r )
+
+                Leaf →
+                    ( [], r )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub run : List Int → List Int × Tree
+run xs = f (Node (Node (Node Leaf xs Leaf) xs Leaf) xs (Node Leaf [ 0 ] Leaf))
+
+
+pub runFresh : ⊤ → List Int × Tree
+runFresh ⊤ =
+    xs = [ 1 ]
+    f (Node (Node (Node Leaf xs Leaf) xs Leaf) xs (Node Leaf [ 0 ] Leaf))
+
+
+incAll2 : Tree → Tree
+incAll2 t =
+    case t of
+        Node l xs r →
+            ys = List.push xs 1
+            Node (incAll2 l) ys (incAll2 r)
+
+        Leaf →
+            Leaf
+
+
+pub c1 : List Int → Tree
+c1 xs = incAll2 (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub c2 : List Int → Tree
+c2 xs = incAll2 (Node (Node Leaf xs Leaf) xs Leaf)

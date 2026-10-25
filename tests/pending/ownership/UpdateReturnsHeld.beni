@@ -1,0 +1,32 @@
+-- CK-277: R-4.6.10, #971. A `List.update` callback answering `xs`, which
+-- position 1 still holds, leaves one list at two positions; editing position
+-- 0 then must be refused `exclusive`, as `viaSet`'s `List.set` is. Red:
+-- master accepts `direct` and the helper form `helper` (the focus row does
+-- not separate the callback's answer from the other positions). `fresh`
+-- (`λ_ → [ 2 ]`) stays accepted.
+updH : List (List Int), List Int → List (List Int)
+updH l xs = List.update l 0 λ_ → xs
+
+
+pub direct : ⊤ → List (List Int)
+direct ⊤ =
+    xs = [ 1 ]
+    List.update (List.update [ [ 0 ], xs ] 0 λ_ → xs) 0 λv → List.push v 9
+
+
+pub helper : ⊤ → List (List Int)
+helper ⊤ =
+    xs = [ 1 ]
+    List.update (updH [ [ 0 ], xs ] xs) 0 λv → List.push v 9
+
+
+pub viaSet : ⊤ → List (List Int)
+viaSet ⊤ =
+    xs = [ 1 ]
+    List.update (List.set [ [ 0 ], xs ] 0 xs) 0 λv → List.push v 9
+
+
+pub fresh : ⊤ → List (List Int)
+fresh ⊤ =
+    xs = [ 1 ]
+    List.update (List.update [ [ 0 ], xs ] 0 λ_ → [ 2 ]) 0 λv → List.push v 9

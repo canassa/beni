@@ -1,0 +1,32 @@
+module PatternStoredBack
+  11:15 construction l: accepted param
+  21:13 List.push l: accepted param
+  31:13 List.push l: accepted param
+  41:15 construction rest: accepted param
+  48:10 List.update <call PatternStoredBack.dupL>: accepted fresh
+  48:10 List.update <call PatternStoredBack.dupL>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  48:23 call PatternStoredBack.dupL <literal>: accepted fresh (PatternStoredBack.dupL writes π1)
+  48:46 List.push v: rejected exclusive: List.update hands its parameter 1 an element of <call PatternStoredBack.dupL>, whose elements may share one list (approx)
+  52:13 List.update <call PatternStoredBack.dupPush>: accepted fresh
+  52:13 List.update <call PatternStoredBack.dupPush>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  52:26 call PatternStoredBack.dupPush <literal>: accepted fresh (PatternStoredBack.dupPush writes π1)
+  52:52 List.push v: rejected exclusive: List.update hands its parameter 1 an element of <call PatternStoredBack.dupPush>, whose elements may share one list (approx)
+  56:14 List.update <call PatternStoredBack.dupTuple>: accepted fresh
+  56:14 List.update <call PatternStoredBack.dupTuple>[*].0: accepted fresh (<lambda> writes what List.update supplies it)
+  56:27 call PatternStoredBack.dupTuple <literal>: accepted fresh (PatternStoredBack.dupTuple writes π1)
+  56:70 List.push v: rejected exclusive: List.update hands its parameter 1 an element of <call PatternStoredBack.dupTuple>, whose elements may share one list (approx)
+  60:15 List.update <call PatternStoredBack.rotate>: accepted fresh
+  60:15 List.update <call PatternStoredBack.rotate>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  60:28 call PatternStoredBack.rotate <literal>: accepted fresh (PatternStoredBack.rotate writes π1)
+  60:60 List.push v: accepted callback-param (List.update supplies it owned)
+  summary dupL: π1 RAW, π1[*] RA; res [*] condition(fresh1) π1[*]{excl π1}, π1
+  summary dupPush: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*]{excl π1}, π1
+  summary dupTuple: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*]{excl π1}, π1
+  summary rotate: π1 RAW, π1[*] RA; res [*] condition(fresh1) π1[*]{excl π1}, π1
+  summary viaL: res [*] condition(fresh1) fresh1, fresh2
+  summary viaPush: res [*] fresh1 ~condition(fresh3), fresh2
+  summary viaTuple: res [*] ~condition(fresh3), [*].0 fresh1 ~condition(fresh4), fresh2
+  summary viaRotate: res [*] condition(fresh1) fresh1, fresh2
+  demands 20: accepted 17 (fresh 12, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 20: accepted 17 (fresh 12, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause exclusive 3

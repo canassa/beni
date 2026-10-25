@@ -1,0 +1,14 @@
+module EditAnsweredList
+  11:16 call List.map rows[*]: accepted param (<lambda> writes what List.map supplies it)
+  11:35 List.push r: accepted callback-param (List.map supplies it owned)
+  19:16 call EditAnsweredList.bumpAll <call EditAnsweredList.editL>[*]: accepted param (EditAnsweredList.bumpAll writes π1[*])
+  19:25 call EditAnsweredList.editL rows[*]: accepted param (<lambda> writes what EditAnsweredList.editL supplies it)
+  19:41 List.push r: accepted callback-param (EditAnsweredList.editL supplies it owned)
+  23:19 call EditAnsweredList.bumpAll <call EditAnsweredList.editL>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (EditAnsweredList.bumpAll writes π1[*]) (approx)
+  summary bumpAll: π1 R, π1[*] AW[storage], π1[*][*] A; res [*] ~condition(fresh2) ~fresh2{excl π1} ~π1[*], [*][*] ~condition(fresh3) ~π1[*][*], fresh1{excl π1}; xreq spine π1[*]
+  summary editL: π1 R, π1[*] A, π2 R; res [*] ~cb2{excl cb2}r{excl cb2} ~condition(fresh2) ~fresh2{lost} ~π1[*], fresh1{lost}; π2 calls many, supply 1 π1[*] owned taken{excl π1[*]}r{excl π1[*]}
+  summary patched: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~π1[*], [*][*] ~condition(fresh2) ~fresh2{lost} ~π1[*][*], fresh3{lost}; xreq spine π1[*]
+  summary shared: π1 R, π1[*] RAw[storage], π1[*][*] A, π2 RAw[storage], π2[*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~π1[*] ~π2, [*][*] ~condition(fresh2) ~fresh2{lost} ~π1[*][*] ~π2[*], fresh3{lost}
+  demands 6: accepted 5 (fresh 0, call 0, param 3, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 6: accepted 5 (fresh 0, call 0, param 3, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1
