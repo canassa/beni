@@ -1798,6 +1798,7 @@ Existing huge **input/format** limits remain; these are not extra inference budg
 | `record_fields`, `tuple_arity`, `constructor_args` | 65,536 each | written fields/components/arguments, dense source/type runs |
 | `type_places` | 2²⁴ | places in one module's source-derived table |
 | `path_steps` | 65,536 | canonical path length, in addition to charged derived path records |
+| `ctor_steps` | 2²⁸ | distinct `(constructor, argument)` steps in one module's place table (a step is one 28-bit word); checked at interning, named `ctor_steps` |
 | `declaration_insts` | 2³¹ | written BIR instructions of one declaration |
 | `block_bytes` | 2³¹ | bytes in one module's encoded block |
 
