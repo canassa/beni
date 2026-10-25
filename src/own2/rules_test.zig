@@ -5,22 +5,24 @@
 //!
 //! 1. **Layering.** Every `@import("X.zig")` of an `own2/` file names a file
 //!    on a strictly lower layer of §5's table; a same-layer or higher import,
-//!    an import of anything under `src/own/` (the frozen v1), or a file §5
-//!    does not list, fails naming both files. Later slices cannot introduce
-//!    a cycle without editing this table, which the design owns.
-//! 2. **Sizes.** Each file's production lines — up to its in-source tests,
-//!    which begin at `const testing = std.testing;` by the repository's
-//!    convention — are within §5's line target.
-//! 3. **Fences.** Only `Place` reads type children (imports the checker's
-//!    type modules); only `Cell` defines `alias`; `Transfer`, `Calls`,
+//!    or a file §5 does not list, fails naming both files. Every import
+//!    outside `own2/` must be on §5's base-layer list (`base_imports`): the
+//!    type modules for `Place` alone, `src/own/` never, `../beni.zig` never.
+//!    A file's tests (after `const testing = std.testing;`) may also import
+//!    the front end to lower source in-process (`test_imports`). Later
+//!    slices cannot introduce a cycle or a back door without editing these
+//!    tables, which the design owns.
+//! 2. **Sizes.** Each file's production lines — up to its in-source tests —
+//!    are within §5's line target.
+//! 3. **Fences.** Only `Cell` defines `alias`; `Transfer`, `Calls`,
 //!    `Demands` and `Rows` compare no name to a string literal unless the
-//!    line is allowlisted with a reason; `Facts.Cause` is in R-6.3's order.
+//!    line is allowlisted with a reason; `Facts.Cause` declares exactly
+//!    R-6.3's causes in its order.
 //! 4. **Records.** Every `MultiArrayList(T)` in `own2/` has its `T` under
 //!    `Ids.assertRecord`, so no table's record can pass 16 words (§4.1).
-//!
-//! Every file names the obligations of §2.14 it keeps in its header; the
-//! gate checks that each production file has an obligation note or says it
-//! keeps none.
+//! 5. **Obligations.** Every production file's header says which of §2.14's
+//!    obligations it keeps (`Obligations kept here:`), or that it keeps
+//!    none.
 
 const std = @import("std");
 const testing = std.testing;
@@ -29,7 +31,10 @@ const Entry = struct { file: []const u8, layer: u8, max_lines: u32 };
 
 /// §5's table. A new file is added here by the slice that adds it.
 const layers = [_]Entry{
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 600 },
+    // §5 says 600; the lane-charging forms, named limits and charge targets
+    // the first review asked for live here and push it past that, so the
+    // table is amended to 700 with the slice's design commit.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 700 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
     .{ .file = "Cell.zig", .layer = 2, .max_lines = 800 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 300 },
@@ -55,9 +60,35 @@ const layers = [_]Entry{
     .{ .file = "Enforce.zig", .layer = 13, .max_lines = 450 },
 };
 
-/// The checker's type modules: only `Place` may import one (§5's fence,
-/// "only `Place` reads type children").
-const type_modules = [_][]const u8{ "check/TypeStore.zig", "check/Types.zig", "check/Walk.zig" };
+/// §5's base layer, the only files outside `own2/` a production line may
+/// import: `bir/Bir`, `check/{TypeStore,Types,Walk,Dispatch,SchemaPlan,
+/// EffectPlan,Scc}`, `resolve/{Interface,Graph}`, `parse/Ast`, `InternPool`,
+/// `stamped`, plus the build's option modules. `only` names the one file
+/// allowed to import it (the type modules: "only `Place` reads type
+/// children").
+const BaseImport = struct { path: []const u8, only: ?[]const u8 = null };
+const base_imports = [_]BaseImport{
+    .{ .path = "../bir/Bir.zig" },
+    .{ .path = "../check/TypeStore.zig", .only = "Place.zig" },
+    .{ .path = "../check/Types.zig", .only = "Place.zig" },
+    .{ .path = "../check/Walk.zig", .only = "Place.zig" },
+    .{ .path = "../check/Dispatch.zig" },
+    .{ .path = "../check/SchemaPlan.zig" },
+    .{ .path = "../check/EffectPlan.zig" },
+    .{ .path = "../check/Scc.zig" },
+    .{ .path = "../resolve/Interface.zig" },
+    .{ .path = "../resolve/Graph.zig" },
+    .{ .path = "../parse/Ast.zig" },
+    .{ .path = "../InternPool.zig" },
+    .{ .path = "../stamped.zig" },
+    .{ .path = "std" },
+    .{ .path = "ownership_options" },
+    .{ .path = "diagnostic" },
+};
+
+/// What a file's TESTS may import besides the above: the front end, to
+/// lower a source text to BIR in-process.
+const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
 const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Rows.zig" };
@@ -73,6 +104,8 @@ const causes = [_][]const u8{
     "alias",     "captured", "element",   "call",          "supply",   "need",         "limit",
     "exclusive", "once",     "payload",   "read_only",     "level",
 };
+
+const test_marker = "\nconst testing = std.testing;";
 
 const Source = struct { name: []const u8, text: []const u8 };
 
@@ -98,9 +131,13 @@ fn readSources(gpa: std.mem.Allocator, io: std.Io, out: *std.ArrayList(Source)) 
     }.lessThan);
 }
 
-/// The production lines of a file: everything before its tests.
+/// The production part of a file: everything before its tests.
+fn production(text: []const u8) []const u8 {
+    return if (std.mem.indexOf(u8, text, test_marker)) |at| text[0..at] else text;
+}
+
 fn lineCount(text: []const u8) u32 {
-    const prod = if (std.mem.indexOf(u8, text, "\nconst testing = std.testing;")) |at| text[0..at] else text;
+    const prod = production(text);
     return @intCast(std.mem.count(u8, prod, "\n") + @intFromBool(prod.len > 0 and prod[prod.len - 1] != '\n'));
 }
 
@@ -121,12 +158,50 @@ fn imports(gpa: std.mem.Allocator, text: []const u8, out: *std.ArrayList([]const
     }
 }
 
+/// Why `file` may not import `target` (from its production lines, or its
+/// tests when `in_tests`), or null when it may.
+fn importVerdict(file: []const u8, target: []const u8, in_tests: bool) ?[]const u8 {
+    const me = layerOf(file) orelse return "not in §5's table";
+    if (std.mem.indexOf(u8, target, "own/") != null) return "v1 (src/own/) is frozen and no v2 file reads it";
+    if (std.mem.indexOfScalar(u8, target, '/') == null and std.mem.endsWith(u8, target, ".zig")) {
+        const other = layerOf(target) orelse return "not in §5's table";
+        if (other.layer >= me.layer) return "imports go to strictly lower layers (§5)";
+        return null;
+    }
+    for (base_imports) |b| {
+        if (!std.mem.eql(u8, b.path, target)) continue;
+        if (b.only) |only| if (!std.mem.eql(u8, only, file)) return "only Place reads type children (§5)";
+        return null;
+    }
+    if (in_tests) {
+        for (test_imports) |t| if (std.mem.eql(u8, t, target)) return null;
+    }
+    return "not on §5's base layer (own2/rules_test.zig `base_imports`)";
+}
+
+/// The identifiers declared by an `enum` body, in order.
+fn enumMembers(gpa: std.mem.Allocator, text: []const u8, decl: []const u8, out: *std.ArrayList([]const u8)) !bool {
+    const start = std.mem.indexOf(u8, text, decl) orelse return false;
+    const open = std.mem.indexOfScalarPos(u8, text, start, '{') orelse return false;
+    const close = std.mem.indexOfPos(u8, text, open, "\n};") orelse return false;
+    var lines = std.mem.splitScalar(u8, text[open + 1 .. close], '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " ");
+        if (line.len == 0 or isComment(line) or std.mem.startsWith(u8, line, "pub ") or std.mem.startsWith(u8, line, "fn ") or std.mem.startsWith(u8, line, "const ")) continue;
+        if (!std.mem.endsWith(u8, line, ",")) continue;
+        const name = line[0 .. line.len - 1];
+        for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+        try out.append(gpa, name);
+    }
+    return true;
+}
+
 fn fail(bad: *usize, comptime fmt: []const u8, args: anytype) void {
     std.debug.print("src/own2/" ++ fmt ++ "\n", args);
     bad.* += 1;
 }
 
-test "own2 layering: every import points strictly down §5's table, and never into src/own/" {
+test "own2 layering: every import points strictly down §5's table or onto its base layer" {
     const gpa = testing.allocator;
     var sources: std.ArrayList(Source) = .empty;
     defer {
@@ -148,29 +223,14 @@ test "own2 layering: every import points strictly down §5's table, and never in
             continue;
         };
         if (lineCount(s.text) > me.max_lines) fail(&bad, "{s}: {d} lines, over §5's target of {d}", .{ s.name, lineCount(s.text), me.max_lines });
+        const prod = production(s.text);
         targets.clearRetainingCapacity();
-        try imports(gpa, s.text, &targets);
-        for (targets.items) |t| {
-            if (std.mem.indexOf(u8, t, "/own/") != null or std.mem.startsWith(u8, t, "../own/")) {
-                fail(&bad, "{s} imports {s}: v1 (src/own/) is frozen and no v2 file reads it", .{ s.name, t });
-                continue;
-            }
-            if (std.mem.startsWith(u8, t, "../")) {
-                for (type_modules) |m| {
-                    if (std.mem.eql(u8, t["../".len..], m) and !std.mem.eql(u8, s.name, "Place.zig")) {
-                        fail(&bad, "{s} imports {s}: only Place reads type children (§5)", .{ s.name, t });
-                    }
-                }
-                continue;
-            }
-            if (std.mem.eql(u8, t, "std")) continue;
-            if (std.mem.indexOfScalar(u8, t, '/') != null) continue;
-            const other = layerOf(t) orelse {
-                fail(&bad, "{s} imports {s}, which §5's table does not list", .{ s.name, t });
-                continue;
-            };
-            if (other.layer >= me.layer) fail(&bad, "{s} (L{d}) imports {s} (L{d}): imports go to strictly lower layers (§5)", .{ s.name, me.layer, t, other.layer });
-        }
+        try imports(gpa, prod, &targets);
+        for (targets.items) |t| if (importVerdict(s.name, t, false)) |why| fail(&bad, "{s} imports {s}: {s}", .{ s.name, t, why });
+        targets.clearRetainingCapacity();
+        try imports(gpa, s.text[prod.len..], &targets);
+        for (targets.items) |t| if (importVerdict(s.name, t, true)) |why| fail(&bad, "{s} (tests) imports {s}: {s}", .{ s.name, t, why });
+        if (std.mem.indexOf(u8, prod, "Obligations kept here:") == null) fail(&bad, "{s}: the header names no §2.14 obligation (`Obligations kept here:` …, or `none`)", .{s.name});
     }
     try testing.expectEqual(@as(usize, 0), bad);
 }
@@ -188,6 +248,8 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     try readSources(gpa, testing.io, &sources);
     var bad: usize = 0;
     var used: [literal_allowlist.len]bool = @splat(false);
+    var members: std.ArrayList([]const u8) = .empty;
+    defer members.deinit(gpa);
     for (sources.items) |s| {
         if (std.mem.eql(u8, s.name, "rules_test.zig")) continue;
         // Only `Cell` defines `alias`.
@@ -214,21 +276,16 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 if (!allowed) fail(&bad, "{s}:{d}: a name compared to a string literal in a fenced file (§5)", .{ s.name, n });
             }
         }
-        // `Facts.Cause` in R-6.3's order.
+        // `Facts.Cause` is exactly R-6.3's list, in its order.
         if (std.mem.eql(u8, s.name, "Facts.zig")) {
-            const start = std.mem.indexOf(u8, s.text, "pub const Cause = enum") orelse {
-                fail(&bad, "Facts.zig: no `pub const Cause = enum`", .{});
-                continue;
+            members.clearRetainingCapacity();
+            if (!try enumMembers(gpa, s.text, "pub const Cause = enum", &members)) {
+                fail(&bad, "Facts.zig: `pub const Cause = enum` not found or not a plain member list", .{});
+            } else if (members.items.len != causes.len) {
+                fail(&bad, "Facts.zig: `Cause` has {d} members, R-6.3 has {d}", .{ members.items.len, causes.len });
+            } else for (members.items, causes) |m, c| if (!std.mem.eql(u8, m, c)) {
+                fail(&bad, "Facts.zig: `Cause` has `{s}` where R-6.3's order has `{s}`", .{ m, c });
             };
-            const body_start = std.mem.indexOfScalarPos(u8, s.text, start, '{').? + 1;
-            var at = body_start;
-            for (causes) |c| {
-                const found = std.mem.indexOfPos(u8, s.text, at, c) orelse {
-                    fail(&bad, "Facts.zig: `Cause` lacks `{s}` in R-6.3's order", .{c});
-                    break;
-                };
-                at = found + c.len;
-            }
         }
         // Every table's record type is asserted.
         var from: usize = 0;
@@ -258,4 +315,40 @@ test "the layering table has each file once and every layer below the next" {
     }
     try testing.expectEqual(@as(usize, 24), layers.len);
     try testing.expectEqual(@as(usize, 19), causes.len);
+}
+
+test "the import verdict refuses back doors and accepts the base layer" {
+    try testing.expect(importVerdict("Cell.zig", "../beni.zig", false) != null);
+    try testing.expect(importVerdict("Cell.zig", "../beni.zig", true) != null);
+    try testing.expect(importVerdict("Cell.zig", "../own/Ownership.zig", false) != null);
+    try testing.expect(importVerdict("Prepass.zig", "../check/TypeKeys.zig", false) != null);
+    try testing.expect(importVerdict("Prepass.zig", "../check/Module.zig", false) != null);
+    try testing.expect(importVerdict("Cell.zig", "../check/TypeStore.zig", false) != null);
+    try testing.expect(importVerdict("Place.zig", "../check/TypeStore.zig", false) == null);
+    try testing.expect(importVerdict("Prepass.zig", "../check/Scc.zig", false) == null);
+    try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", false) != null);
+    try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", true) == null);
+    try testing.expect(importVerdict("Cell.zig", "Ids.zig", false) == null);
+    try testing.expect(importVerdict("Ids.zig", "Cell.zig", false) != null);
+    try testing.expect(importVerdict("Cell.zig", "Facts.zig", false) != null);
+    try testing.expect(importVerdict("Shape.zig", "Nowhere.zig", false) != null);
+}
+
+test "the enum member reader is exact: extras, order and words inside words fail" {
+    const gpa = testing.allocator;
+    var members: std.ArrayList([]const u8) = .empty;
+    defer members.deinit(gpa);
+    const text =
+        \\pub const Cause = enum(u8) {
+        \\    unknown,
+        \\    // a comment
+        \\    escaped,
+        \\    pub fn x() void {}
+        \\    unknown_extra,
+        \\};
+        \\const other = 1;
+    ;
+    try testing.expect(try enumMembers(gpa, text, "pub const Cause = enum", &members));
+    try testing.expectEqual(@as(usize, 3), members.items.len);
+    try testing.expectEqualStrings("unknown_extra", members.items[2]);
 }
