@@ -7064,6 +7064,15 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    1–3. Still refused, each its own limit: `List.sortWith` (`big-table`'s sorts), a run-time schema's run
    (`big-table`'s `Schema.read (Schema.list …)`), and a base no provenance names (#870, `routed-app`).
 
+   *Revised 2026-10-25 (#879): `List.sortWith` is a row.* Its merge sort is a permutation of π₁ whatever its
+   comparator answers. `merge` puts index `i + j` once per step, `putAll` puts a range after it, and the
+   halves of `sortRange` do not overlap. So the row states `rexcl π₁`, as `List.copy`'s does: the answer holds
+   no record twice when π₁ holds none, and `sortWith [ r, r ]` still holds `r` twice. Its elements are π₁'s.
+   It hands the comparator two of them, borrowed, so a comparator that writes one is refused (`supply`). The
+   walk could not state it: the merge reads an element again on `GT`, and both halves are slices of one π₁.
+   `sortBy` stays lost. It decorates each element with its key, which may be the element itself, and its
+   `map` back cannot show that the answer keeps only the elements (`ownership/RecordSortWith`).
+
    *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
    `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
    instead of dropping it, a list's demand reading the list atoms, a record's reading both.
