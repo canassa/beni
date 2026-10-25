@@ -40,6 +40,7 @@ const stamped = @import("../stamped.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const OverId = Ids.OverId;
+pub const PathId = Ids.PathId;
 pub const SetId = Ids.SetId;
 pub const PlaceId = Ids.PlaceId;
 pub const CellId = Ids.CellId;
@@ -132,9 +133,9 @@ pub const Table = struct {
     }
 
     fn makeOver(t: *Table, gpa: Allocator, account: *Account, n: OverNode) Error!u32 {
+        try account.reserve(.shape, 1);
         const got = try t.over_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
         if (got.found_existing) return got.value_ptr.*;
-        try account.reserve(.shape, 1);
         got.value_ptr.* = @intCast(t.overs.len);
         try t.overs.append(gpa, n);
         return got.value_ptr.*;
@@ -219,10 +220,12 @@ pub const Table = struct {
 
     // ---- construction -------------------------------------------------------------
 
+    /// Reserved BEFORE the dictionary is touched, on a hit as on a miss
+    /// (§4.1), so a refusal leaves no half-written entry.
     fn make(t: *Table, gpa: Allocator, account: *Account, n: Node) Error!NodeId {
+        try account.reserve(.shape, 1);
         const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), n.cells.int(), n.a, n.b });
         if (got.found_existing) return .from(got.value_ptr.*);
-        try account.reserve(.shape, 1);
         got.value_ptr.* = @intCast(t.nodes.len);
         try t.nodes.append(gpa, n);
         return .from(got.value_ptr.*);
@@ -735,20 +738,22 @@ pub const Table = struct {
 
     // ---- widen ------------------------------------------------------------------------------------
 
-    /// The place-graph quotient (§2.3): along every chain of explicit
-    /// children, a descendant at a place already on the chain is joined into
-    /// that ancestor and the edge tied back to it, so the result has at most
-    /// one node per canonical path of its place graph; over a non-recursive
-    /// type nothing re-enters and the DAG is returned as it is, sharing
-    /// kept. Leaves, recasts, the sides of a union and a delta's base that
-    /// is not a node are kept as they are (never expanded) beside the
-    /// explicit image, as a union. A congruence closure over the explicit
-    /// edges: union–find by rank with path halving, member lists with tail
-    /// pointers, an O(1) place → chain-position index for re-entry, a class
-    /// whose members grew re-reading its steps before the walk leaves it;
-    /// every edge read, merge and pass is a charged record. A pass that
-    /// merged two classes already left behind is followed by another, so
-    /// passes ≤ merges + 1.
+    /// The place-graph quotient (§2.3): the result has at most one node per
+    /// canonical path of its place graph, a descendant along a re-entering
+    /// step joined into the ancestor it re-enters and the edge tied back to
+    /// it; over a non-recursive type nothing re-enters and the DAG is
+    /// returned as it is, sharing kept. Leaves, recasts, the sides of a
+    /// union and a delta's base that is not a node are kept as they are
+    /// (never expanded) beside the explicit image, as a union.
+    ///
+    /// Two phases, O((n + e) log n), no outer loop. First a walk over the
+    /// explicit edges carrying each node's canonical path (`Place.extend`
+    /// encodes re-entry: a step back onto a place on the path is `⟲`, whose
+    /// class is its parent's), uniting the nodes that land on one path and
+    /// recording every edge in its class's step map. Then congruence
+    /// closure from a pending queue: a merge folds the smaller step map into
+    /// the larger and queues the children that now share a step. Every node
+    /// and edge read, every merge and every moved entry is a charged record.
     pub fn widen(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId) Error!NodeId {
         var w: Widen = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt };
         defer w.deinit();
@@ -761,35 +766,48 @@ pub const Table = struct {
         account: *Account,
         places: *Place.Table,
         cellt: *Cell.Table,
-        /// Union–find over node ids, grown on first touch.
+        /// Union–find over node ids, grown on first touch; the member list
+        /// of a class, head to tail; its step-map entries, head to tail,
+        /// counted.
         parent: std.ArrayList(u32) = .empty,
-        rank: std.ArrayList(u8) = .empty,
-        /// Per class representative: its member list, head to tail.
         head: std.ArrayList(u32) = .empty,
         tail: std.ArrayList(u32) = .empty,
         next_member: std.ArrayList(u32) = .empty,
+        edge_head: std.ArrayList(u32) = .empty,
+        edge_tail: std.ArrayList(u32) = .empty,
+        edge_count: std.ArrayList(u32) = .empty,
+        /// The step-map entries: `(step word, child node, next in class)`.
+        entries: std.MultiArrayList(Entry) = .empty,
+        /// `(class, step word)` → child node, for the live classes.
+        edges: Ids.FixedDict(2) = .{},
+        /// Canonical path → the class at it.
+        by_path: stamped.Column(PathId, u32) = .{},
+        visited: stamped.Column(NodeId, void) = .{},
+        pending: std.ArrayList([2]u32) = .empty,
         image: stamped.Column(NodeId, NodeId) = .{},
-        /// place → its position on the chain + 1 (0: not on the chain).
-        on_chain: stamped.Column(PlaceId, u32) = .{},
-        chain: std.ArrayList(u32) = .empty,
-        /// A chain slot whose class gained members below it: re-read.
-        chain_dirty: std.ArrayList(bool) = .empty,
-        seen: stamped.Column(u32, void) = .{},
         kids: std.ArrayList(NodeId) = .empty,
-        merged: bool = false,
         any_merge: bool = false,
+
+        pub const Entry = struct { step: u32, child: u32, next: u32 };
+        comptime {
+            Ids.assertRecord(Entry);
+        }
+        const none = Ids.none_int;
 
         fn deinit(w: *Widen) void {
             w.parent.deinit(w.gpa);
-            w.rank.deinit(w.gpa);
             w.head.deinit(w.gpa);
             w.tail.deinit(w.gpa);
             w.next_member.deinit(w.gpa);
+            w.edge_head.deinit(w.gpa);
+            w.edge_tail.deinit(w.gpa);
+            w.edge_count.deinit(w.gpa);
+            w.entries.deinit(w.gpa);
+            w.edges.deinit(w.gpa);
+            w.by_path.deinit(w.gpa);
+            w.visited.deinit(w.gpa);
+            w.pending.deinit(w.gpa);
             w.image.deinit(w.gpa);
-            w.on_chain.deinit(w.gpa);
-            w.chain.deinit(w.gpa);
-            w.chain_dirty.deinit(w.gpa);
-            w.seen.deinit(w.gpa);
             w.kids.deinit(w.gpa);
         }
 
@@ -797,10 +815,12 @@ pub const Table = struct {
             while (w.parent.items.len <= n.int()) {
                 const i: u32 = @intCast(w.parent.items.len);
                 try w.parent.append(w.gpa, i);
-                try w.rank.append(w.gpa, 0);
                 try w.head.append(w.gpa, i);
                 try w.tail.append(w.gpa, i);
-                try w.next_member.append(w.gpa, Ids.none_int);
+                try w.next_member.append(w.gpa, none);
+                try w.edge_head.append(w.gpa, none);
+                try w.edge_tail.append(w.gpa, none);
+                try w.edge_count.append(w.gpa, 0);
             }
         }
 
@@ -815,96 +835,117 @@ pub const Table = struct {
             return x;
         }
 
-        /// By rank; member lists spliced in O(1). One charged record.
-        fn unite(w: *Widen, a: u32, b: u32) Error!u32 {
-            var ra = w.find(a);
-            var rb = w.find(b);
-            if (ra == rb) return ra;
-            try w.account.reserve(.memo, 1);
-            if (w.rank.items[ra] < w.rank.items[rb]) std.mem.swap(u32, &ra, &rb);
-            if (w.rank.items[ra] == w.rank.items[rb]) w.rank.items[ra] += 1;
-            w.parent.items[rb] = ra;
-            w.next_member.items[w.tail.items[ra]] = w.head.items[rb];
-            w.tail.items[ra] = w.tail.items[rb];
-            w.merged = true;
-            w.any_merge = true;
-            return ra;
+        /// Record `rep —s→ child`: a second child at one step of a class is
+        /// a congruence to settle (queued), never two entries.
+        fn addEdge(w: *Widen, rep: u32, step: u32, child: u32) Error!void {
+            try w.account.reserve(.edge, 1);
+            const got = try w.edges.getOrPut(w.gpa, .{ rep, step });
+            if (got.found_existing) {
+                if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                return;
+            }
+            got.value_ptr.* = child;
+            const e: u32 = @intCast(w.entries.len);
+            try w.entries.append(w.gpa, .{ .step = step, .child = child, .next = none });
+            if (w.edge_tail.items[rep] == none) w.edge_head.items[rep] = e else w.entries.items(.next)[w.edge_tail.items[rep]] = e;
+            w.edge_tail.items[rep] = e;
+            w.edge_count.items[rep] += 1;
         }
 
-        /// A class's explicit children at `s`; one inspection per member.
-        fn childrenAt(w: *Widen, rep: u32, s: Step) Error!void {
-            w.kids.clearRetainingCapacity();
-            var m = w.head.items[rep];
-            while (m != Ids.none_int) : (m = w.next_member.items[m]) {
+        /// Unite two classes: members spliced in O(1), the smaller step map
+        /// folded into the larger, each moved entry one record, a step both
+        /// have queuing its two children.
+        fn unite(w: *Widen, a: u32, b: u32) Error!u32 {
+            var big = w.find(a);
+            var small = w.find(b);
+            if (big == small) return big;
+            try w.account.reserve(.memo, 1);
+            w.any_merge = true;
+            if (w.edge_count.items[big] < w.edge_count.items[small]) std.mem.swap(u32, &big, &small);
+            w.parent.items[small] = big;
+            w.next_member.items[w.tail.items[big]] = w.head.items[small];
+            w.tail.items[big] = w.tail.items[small];
+            var e = w.edge_head.items[small];
+            while (e != none) {
+                const next = w.entries.items(.next)[e];
                 try w.account.reserve(.inspection, 1);
-                const d = w.t.get(.from(m));
-                switch (d.kind) {
-                    .node => if (w.t.overGet(d.a, s)) |c| try w.kids.append(w.gpa, c),
-                    .delta => if (w.t.overGet(d.b, s)) |c| try w.kids.append(w.gpa, c) else if (w.t.kind(.from(d.a)) == .node) {
-                        if (w.t.overGet(w.t.nodes.items(.a)[d.a], s)) |c| try w.kids.append(w.gpa, c);
-                    },
-                    .leaf, .recast, .@"union" => {},
+                const step = w.entries.items(.step)[e];
+                const child = w.entries.items(.child)[e];
+                const got = try w.edges.getOrPut(w.gpa, .{ big, step });
+                if (got.found_existing) {
+                    if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                } else {
+                    got.value_ptr.* = child;
+                    w.entries.items(.next)[e] = none;
+                    if (w.edge_tail.items[big] == none) w.edge_head.items[big] = e else w.entries.items(.next)[w.edge_tail.items[big]] = e;
+                    w.edge_tail.items[big] = e;
+                    w.edge_count.items[big] += 1;
                 }
+                e = next;
+            }
+            w.edge_head.items[small] = none;
+            w.edge_tail.items[small] = none;
+            return big;
+        }
+
+        /// The explicit children of one node: a node's map, a delta's
+        /// overrides and, where not overridden, its node base's children.
+        fn explicitEdges(w: *Widen, n: NodeId) Error!void {
+            w.kids.clearRetainingCapacity();
+            const d = w.t.get(n);
+            switch (d.kind) {
+                .node => {
+                    var it = w.t.overEntries(d.a);
+                    while (it.next()) |e| try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
+                },
+                .delta => {
+                    var it = w.t.overEntries(d.b);
+                    while (it.next()) |e| try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
+                    if (w.t.kind(.from(d.a)) == .node) {
+                        var bt = w.t.overEntries(w.t.nodes.items(.a)[d.a]);
+                        while (bt.next()) |e| if (w.t.overGet(d.b, e.step) == null) try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
+                    }
+                },
+                .leaf, .recast, .@"union" => {},
             }
         }
 
         fn run(w: *Widen, root: NodeId) Error!NodeId {
-            try w.touch(root);
-            while (true) {
-                w.merged = false;
-                try w.account.reserve(.memo, 1);
-                w.seen.clear();
-                try w.visit(w.find(root.int()));
-                if (!w.merged) break;
+            // Phase 1: the walk with canonical paths.
+            const Frame = struct { node: NodeId, path: PathId };
+            var stack: std.ArrayList(Frame) = .empty;
+            defer stack.deinit(w.gpa);
+            try stack.append(w.gpa, .{ .node = root, .path = try w.places.rootPath(w.gpa, w.t.place(root)) });
+            while (stack.pop()) |f| {
+                try w.touch(f.node);
+                try w.account.reserve(.edge, 1);
+                // `⟲` is its ancestor's class: the re-entered place's node.
+                const key = if (w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level) w.places.pathParent(f.path) else f.path;
+                if (w.by_path.get(key)) |cls| {
+                    _ = try w.unite(cls, f.node.int());
+                } else {
+                    try w.by_path.put(w.gpa, key, w.find(f.node.int()));
+                }
+                if (w.visited.contains(f.node)) continue;
+                try w.visited.put(w.gpa, f.node, {});
+                try w.explicitEdges(f.node);
+                // `kids` holds (step word, child) pairs; copy out before the
+                // recursion below reuses it.
+                var i: usize = 0;
+                while (i < w.kids.items.len) : (i += 2) {
+                    const step = Step.fromWord(w.kids.items[i].int());
+                    const child = w.kids.items[i + 1];
+                    try w.touch(child);
+                    const rep = w.find(f.node.int());
+                    try w.addEdge(rep, step.word(), child.int());
+                    const cp = (try w.places.extend(w.gpa, .growth(w.account), f.path, step)) orelse continue;
+                    try stack.append(w.gpa, .{ .node = child, .path = cp });
+                }
             }
+            // Phase 2: congruence closure.
+            while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
             return w.emit(root);
-        }
-
-        fn visit(w: *Widen, rep0: u32) Error!void {
-            var rep = w.find(rep0);
-            if (w.seen.contains(rep)) return;
-            try w.seen.put(w.gpa, rep, {});
-            const at = w.t.place(.from(rep));
-            const my_slot: u32 = @intCast(w.chain.items.len);
-            try w.chain.append(w.gpa, rep);
-            try w.chain_dirty.append(w.gpa, false);
-            try w.on_chain.put(w.gpa, at, my_slot + 1);
-            defer {
-                _ = w.chain.pop();
-                _ = w.chain_dirty.pop();
-                w.on_chain.remove(at);
-            }
-            const steps = w.places.steps(at);
-            while (true) {
-                w.chain_dirty.items[my_slot] = false;
-                for (steps.steps) |s| {
-                    rep = w.find(rep);
-                    try w.childrenAt(rep, s);
-                    if (w.kids.items.len == 0) continue;
-                    try w.account.reserve(.edge, 1);
-                    for (w.kids.items) |k| try w.touch(k);
-                    var child = w.find(w.kids.items[0].int());
-                    for (w.kids.items[1..]) |k| child = try w.unite(child, k.int());
-                    const child_place = w.t.place(.from(child));
-                    if (w.on_chain.get(child_place)) |slot_plus_one| {
-                        // Re-entry: tie the child to the ancestor at its place.
-                        const slot = slot_plus_one - 1;
-                        const anc = w.chain.items[slot];
-                        const grew = w.find(anc) != w.find(child);
-                        const joined = try w.unite(anc, child);
-                        w.chain.items[slot] = joined;
-                        // That class grew: it re-reads its steps before the
-                        // walk leaves it (now, if it is this one). A child
-                        // already in the class (the knot) changes nothing.
-                        if (grew) w.chain_dirty.items[slot] = true;
-                        if (slot == my_slot) rep = joined;
-                    } else {
-                        try w.visit(child);
-                    }
-                }
-                if (!w.chain_dirty.items[my_slot]) break;
-            }
         }
 
         /// Emit one node per class reachable from `root`, ids first so a
@@ -923,46 +964,69 @@ pub const Table = struct {
                 try w.t.nodes.append(w.gpa, .{ .kind = .node, .place = w.t.place(.from(rep)), .cells = .none, .a = over_none, .b = 0, .reach = .none });
                 try w.image.put(w.gpa, .from(rep), id);
                 try order.append(w.gpa, rep);
-                const steps = w.places.steps(w.t.place(.from(rep)));
-                for (steps.steps) |s| {
-                    try w.childrenAt(rep, s);
-                    if (w.kids.items.len > 0) try stack.append(w.gpa, w.find(w.kids.items[0].int()));
-                }
+                var e = w.edge_head.items[rep];
+                while (e != none) : (e = w.entries.items(.next)[e]) try stack.append(w.gpa, w.find(w.entries.items(.child)[e]));
             }
             var extra: std.ArrayList(NodeId) = .empty;
             defer extra.deinit(w.gpa);
             for (order.items) |rep| {
                 const id = w.image.get(.from(rep)).?;
                 // ε cells: the union over members. A member that is not
-                // explicit structure — a leaf, a recast, a union, a delta's
-                // base that is not a node — rides beside the image.
+                // explicit structure rides beside the image: every leaf (and
+                // a delta's leaf base) folded into ONE leaf — the class's
+                // symbolic projections — and a recast or a union as a side.
                 var c: SetId = .none;
+                var leaf_cells: SetId = .none;
+                var has_leaf = false;
+                var explicit = false;
                 extra.clearRetainingCapacity();
                 var m = w.head.items[rep];
-                while (m != Ids.none_int) : (m = w.next_member.items[m]) {
+                while (m != none) : (m = w.next_member.items[m]) {
+                    try w.account.reserve(.inspection, 1);
                     const d = w.t.get(.from(m));
                     c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, d.cells);
                     switch (d.kind) {
-                        .leaf, .recast, .@"union" => try extra.append(w.gpa, .from(m)),
-                        .delta => if (w.t.kind(.from(d.a)) != .node) try extra.append(w.gpa, .from(d.a)),
-                        .node => {},
+                        .leaf => {
+                            has_leaf = true;
+                            leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, d.cells);
+                        },
+                        .recast, .@"union" => try extra.append(w.gpa, .from(m)),
+                        .delta => {
+                            explicit = true;
+                            const base: NodeId = .from(d.a);
+                            switch (w.t.kind(base)) {
+                                .leaf => {
+                                    has_leaf = true;
+                                    leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, w.t.cells(base));
+                                },
+                                .node => {},
+                                .recast, .@"union", .delta => try extra.append(w.gpa, base),
+                            }
+                        },
+                        .node => explicit = true,
                     }
                 }
                 var children: u32 = over_none;
-                const steps = w.places.steps(w.t.place(.from(rep)));
-                for (steps.steps) |s| {
-                    try w.childrenAt(rep, s);
-                    if (w.kids.items.len == 0) continue;
-                    children = try w.t.overPut(w.gpa, w.account, children, s, w.image.get(.from(w.find(w.kids.items[0].int()))).?);
+                var e = w.edge_head.items[rep];
+                while (e != none) : (e = w.entries.items(.next)[e]) {
+                    try w.account.reserve(.inspection, 1);
+                    children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.entries.items(.step)[e]), w.image.get(.from(w.find(w.entries.items(.child)[e]))).?);
+                }
+                const at = w.t.place(id);
+                var side: ?NodeId = if (has_leaf) try w.t.leaf(w.gpa, w.account, at, leaf_cells) else null;
+                for (extra.items) |x| side = if (side) |s| try w.t.@"union"(w.gpa, w.account, &w.cellt.sets, s, x) else x;
+                if (!explicit and children == over_none and side != null) {
+                    // Nothing explicit at all: the class IS its side. Parents
+                    // name `id`, so `id`'s record becomes a copy of it.
+                    w.t.nodes.set(id.int(), w.t.nodes.get(side.?.int()));
+                    continue;
                 }
                 w.t.nodes.items(.cells)[id.int()] = c;
                 w.t.nodes.items(.a)[id.int()] = children;
-                if (extra.items.len > 0) {
-                    var side = extra.items[0];
-                    for (extra.items[1..]) |e| side = try w.t.@"union"(w.gpa, w.account, &w.cellt.sets, side, e);
+                if (side) |s| {
                     try w.account.reserve(.shape, 1);
                     const u: NodeId = .from(w.t.count());
-                    try w.t.nodes.append(w.gpa, .{ .kind = .@"union", .place = w.t.place(id), .cells = c, .a = id.int(), .b = side.int(), .reach = .none });
+                    try w.t.nodes.append(w.gpa, .{ .kind = .@"union", .place = at, .cells = c, .a = id.int(), .b = s.int(), .reach = .none });
                     // Every parent's map names `id`; the union is what the
                     // class means, so the two records swap places.
                     const img = w.t.nodes.get(id.int());
@@ -1041,6 +1105,7 @@ const full_cross_check = @import("ownership_options").full_cross_check;
 comptime {
     Ids.assertRecord(Node);
     Ids.assertRecord(OverNode);
+
     std.debug.assert(@sizeOf(Node) == 24);
     std.debug.assert(@sizeOf(OverNode) == 16);
 }
@@ -1469,4 +1534,77 @@ test "a union absorbs a member anywhere in its DAG, and reach is one set per cyc
     // The knot's node (the union's explicit side, which points back at it) shares the set.
     const w_node: NodeId = .from(f.shapes.nodes.items(.a)[w.int()]);
     try testing.expectEqual(r1, try f.shapes.reach(gpa, &f.account, &f.cells.sets, w_node));
+}
+
+/// `go`'s shape before widening, `k` levels deep: `Node(t, [site], t)`
+/// grafted over a parameter leaf.
+fn tower(f: *Fixture, k: u32) !NodeId {
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    var n = try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree));
+    var i: u32 = 0;
+    while (i < k) : (i += 1) {
+        var kids = try f.one(s0, n);
+        kids = try f.shapes.overPut(gpa, &f.account, kids, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(i + 1, list, .list)));
+        kids = try f.shapes.overPut(gpa, &f.account, kids, s2, n);
+        n = try f.shapes.node(gpa, &f.account, tree, .none, kids);
+    }
+    return n;
+}
+
+test "widen is linearithmic on a grafted tower: k = 1000, 2000, 4000" {
+    const gpa = testing.allocator;
+    var costs: [3]u64 = undefined;
+    const depths = [_]u32{ 1000, 2000, 4000 };
+    for (depths, 0..) |k, idx| {
+        var f: Fixture = .{};
+        f.init();
+        defer f.deinit();
+        f.account.allowance = 1 << 30;
+        const n = try tower(&f, k);
+        const before = f.account.growth;
+        const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, n);
+        costs[idx] = f.account.growth - before;
+        // One class for every level, the lists joined: the knot.
+        const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+        const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+        const below = try f.proj(w, s0);
+        try testing.expect(below == w or (f.shapes.kind(below) == .@"union" and f.shapes.nodes.items(.a)[below.int()] == w.int()));
+        try testing.expectEqual(k + 1, f.cells.sets.count(f.shapes.cells(try f.proj(w, s1))));
+        // Within c·k·log₂k records, with c small; k² would be a million at k = 1000.
+        const log2k: u64 = std.math.log2_int(u32, k) + 1;
+        try testing.expect(costs[idx] <= 60 * @as(u64, k) * log2k);
+    }
+    // Doubling k less than triples the cost: no quadratic term.
+    try testing.expect(costs[1] * 10 < costs[0] * 25);
+    try testing.expect(costs[2] * 10 < costs[1] * 25);
+}
+
+test "a refused reservation leaves the shape tables whole" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const cells = try f.site(1, list, .list);
+    var broke: Account = .{ .allowance = 0 };
+    defer broke.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, f.shapes.leaf(gpa, &broke, list, cells));
+    try testing.expectEqual(@as(u32, 0), f.shapes.count());
+    const l = try f.shapes.leaf(gpa, &f.account, list, cells);
+    try testing.expectEqual(@as(u32, 0), l.int());
+    try testing.expectEqual(Kind.leaf, f.shapes.kind(l));
+    // A hit is charged like a miss.
+    const before = f.account.growth;
+    try testing.expectEqual(l, try f.shapes.leaf(gpa, &f.account, list, cells));
+    try testing.expectEqual(before + 1, f.account.growth);
+    // The same for the step maps.
+    try testing.expectError(error.OwnershipLimit, f.shapes.overPut(gpa, &broke, Table.over_none, Place.Step.elem, l));
+    try testing.expectEqual(@as(usize, 0), f.shapes.overs.len);
+    const m = try f.shapes.overPut(gpa, &f.account, Table.over_none, Place.Step.elem, l);
+    try testing.expectEqual(l, f.shapes.overGet(m, Place.Step.elem).?);
 }
