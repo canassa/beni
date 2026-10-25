@@ -3731,7 +3731,19 @@ fn alphaRoot(a: *Writes, al: *Alpha, r1: u32, r2: u32) Allocator.Error!bool {
         if (q[1] == r2) return false;
     }
     try al.pairs.append(a.gpa, .{ r1, r2 });
-    return true;
+    // Two names for one root: what it stands for must agree too, under the
+    // same renaming (the review of #1002). A base is minted before its root.
+    const x1 = a.pathA(r1);
+    const x2 = a.pathA(r2);
+    if (a.root_base_is_deps.items[x1] != a.root_base_is_deps.items[x2] or
+        a.root_row.items[x1] != a.root_row.items[x2] or
+        a.root_control.items[x1] != a.root_control.items[x2]) return false;
+    const b1 = a.root_base.items[x1];
+    const b2 = a.root_base.items[x2];
+    if (a.root_base_is_deps.items[x1]) return a.alphaDeps(al, b1, b2);
+    if (b1 == b2) return true;
+    if (b1 == none or b2 == none) return false;
+    return a.alphaPath(al, b1, b2);
 }
 
 fn alphaPath(a: *Writes, al: *Alpha, p1: u32, p2: u32) Allocator.Error!bool {
@@ -3875,11 +3887,12 @@ fn sameElem(a: *Writes, x: Elem, y: Elem) Allocator.Error!bool {
     const r1 = a.rootOf(x.eps);
     const r2 = a.rootOf(y.eps);
     if (a.pathKind(r1) != a.pathKind(r2)) return false;
-    if (a.root_base.items[a.pathA(r1)] != a.root_base.items[a.pathA(r2)] or
-        a.root_base_is_deps.items[a.pathA(r1)] != a.root_base_is_deps.items[a.pathA(r2)]) return false;
-    var al: Alpha = .{ .floor = std.math.maxInt(u32), .pair = .{ r1, r2 } };
+    // The roots minted from the first of the two on — the elements' own, and
+    // those their callbacks minted inside them — are renamed (the review of
+    // #1002: a nested callback's root differs in every round too).
+    var al: Alpha = .{ .floor = @min(a.pathA(r1), a.pathA(r2)), .pair = .{ r1, r2 } };
     defer al.deinit(a.gpa);
-    try al.pairs.append(a.gpa, .{ r1, r2 });
+    if (!try a.alphaRoot(&al, r1, r2)) return false;
     return try a.alphaSym(&al, x.index, y.index) and try a.alphaPath(&al, x.eps, y.eps) and try a.alphaTerm(&al, x.term, y.term);
 }
 
