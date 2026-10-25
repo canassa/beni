@@ -474,6 +474,13 @@ fields. A handler value that is not a constructor whose key the lowering can nam
 value) is a limit of the compiler. `preventDefault` and `stopPropagation` run in the DOM listener,
 before the guard.
 
+*Amended 2026-10-25 (#559): an event with an extractor is `on(E[n], f, type, extract)`.* `f` takes
+the payload, and the runtime's `send` calls the extractor first, inside the dispatch guard and while
+the event is dispatched, even when the send waits for a running dispatch: then only `f` and what the
+extractor read are queued (`boundary.md` §9.8.20 (d)). Before, the extractor ran inside `f`, so a
+queued send read its event after the dispatch: a `Pointer` threw `TypeError`, and an input gave the
+value written after its event (`browser/inline/PointerInSend`, `InputInSend`).
+
 ### 8.4 Pieces: another module's view and arms
 
 The program site (§7) is written in the module that calls the program's constructor; another
@@ -1368,6 +1375,9 @@ is still handed to `on`, so the arm runs inside the dispatch guard as before. A 
 keeps one named handler both listeners call, and a handler the program hands in is untouched
 (`emit/release/inline/WidgetListeners`, `browser/inline/WidgetListeners`). When the arm reads the
 payload once, folding the binding into its use is the release optimiser's (`backend.md` §9 item 1).
+*Amended 2026-10-25 (#559):* the listener of a payload event with an extractor takes the payload,
+which `on` reads through the extractor it is handed (§8.3): `a=>{b.a=a;p(d[0])}`, with `t` the
+last argument of `on`.
 
 ### 8.5 Per-path passes
 
