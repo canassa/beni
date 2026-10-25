@@ -1,0 +1,34 @@
+-- ownership: `List.sortWith` answers a permutation of its list
+-- (`ownership-checker.md` §31.4 item 6; #879). Its merge puts each index
+-- once, over halves that do not overlap, whatever the comparator answers,
+-- so the sorted rows hold no record twice when the rows do not, and
+-- `toggle`'s in-place write of each row is accepted in `byWith`. A list
+-- that holds one record twice still does after the sort: `twice` is
+-- refused, exactly. `byKey` stays refused, approximately: `sortBy`
+-- decorates each row with its key, which may be the row itself, and the
+-- walk cannot see that the answer keeps only the rows. A comparator is
+-- handed the rows borrowed, so `writing`, whose comparator writes one, is
+-- refused.
+type alias Row =
+    id : Int
+    on : Bool
+
+
+toggle : List Row → List Row
+toggle rows = List.map rows λr → { r | on = not r.on }
+
+
+pub byWith : List Row → List Row
+byWith rows = toggle (List.sortWith rows λa b → compare a.id b.id)
+
+
+pub twice : Row → List Row
+twice r = toggle (List.sortWith [ r, r ] λa b → compare a.id b.id)
+
+
+pub byKey : List Row → List Row
+byKey rows = toggle (List.sortBy rows .id)
+
+
+pub writing : List Row → List Row
+writing rows = List.sortWith rows λa b → compare { a | id = 0 }.id b.id

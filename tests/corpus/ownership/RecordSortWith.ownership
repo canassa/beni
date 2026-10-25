@@ -1,0 +1,16 @@
+module RecordSortWith
+  18:15 update rows[*]: accepted param (List.map writes it)
+  18:34 update r: accepted callback-param (List.map supplies it owned)
+  22:15 update <call List.sortWith>[*]: accepted param (RecordSortWith.toggle writes it)
+  26:11 update <call List.sortWith>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordSortWith.toggle writes it) [copy]
+  30:14 update <call List.sortBy>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordSortWith.toggle writes it) (approx) [copy]
+  34:50 update a: rejected supply: List.sortWith supplies its parameter 1 borrowed (π1[*]) [copy]
+  summary toggle: π1 R, π1[*] W{on}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary byWith: π1 R, π1[*] RW{on}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary twice: π1 RW{on}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
+  summary byKey: π1 R, π1[*] RW{on}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦, fresh1r{lost}
+  summary writing: π1 R, π1[*] R; res [*] π1[*], fresh1{lost}r{excl π1}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 3, pending 0, rejected 3 (copy 3, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 3, pending 0, rejected 3 (copy 3, restructure 0); hoisted 0, eager reads 0

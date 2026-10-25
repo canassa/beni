@@ -3884,6 +3884,22 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         // Its records (#420): each position is one of π₁'s, at most once.
         const rwhole = try keep.dupe(XAtom, &.{.{ .kind = .excl, .a = p(0, eps) }});
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = lost, .rxc = .{ .atoms = rwhole } }, .{ .path = elem, .prov = p(0, elem) } });
+    } else if (std.mem.eql(u8, name, "sortWith")) {
+        // A merge sort (#879): `merge` puts index `i + j` once per step and
+        // `putAll` a range after it, over halves of π₁ that do not overlap,
+        // so the answer is a permutation of π₁ whatever `cmp` answers. It
+        // holds no record twice when π₁ does not (`sortWith [ r, r ]` holds
+        // `r` twice). The walk cannot see it: the merge reads an element
+        // again on `GT`, and both halves are slices of one π₁. `cmp` is
+        // handed π₁'s elements, borrowed, and answers an `Order`.
+        uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A }, .{ .param = 1, .path = eps, .bits = R } };
+        const rwhole = try keep.dupe(XAtom, &.{.{ .kind = .excl, .a = p(0, eps) }});
+        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = lost, .rxc = .{ .atoms = rwhole } }, .{ .path = elem, .prov = p(0, elem) } });
+        supply = try keep.dupe(SupplyEntry, &.{
+            .{ .fun = 1, .k = 0, .path = eps, .prov = p(0, elem), .owned = false },
+            .{ .fun = 1, .k = 1, .path = eps, .prov = p(0, elem), .owned = false },
+        });
+        funs = try keep.dupe(FunFacts, &.{.{ .param = 1, .calls = .many }});
     } else if (eqlAny(name, &.{ "length", "offset" })) {
         uses = &.{.{ .param = 0, .path = eps, .bits = R }};
     } else if (eqlAny(name, &.{ "at", "unsafeGet" })) {
