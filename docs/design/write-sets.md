@@ -2482,8 +2482,12 @@ its inner callback against the outer one's facts and drop a write. Instead, two 
 - two elements of a composed update that write the same, each against its own root (`sameElem`),
   are one element.
 
-A comparison that cannot decide, for example deps whose order the names change, answers "differs",
-which costs precision and never soundness. No cap moved. Such a recursion is now `kept`, with writes
+A renamed root must stand for the same thing as its partner: the same kind, row and control, and a
+base equal under the same renaming. Two elements are compared with every root minted from the
+earlier one on renamed, so a callback nested inside an element (a map inside a map) settles too.
+A comparison that cannot decide answers "differs", which costs precision and never soundness. One
+such case remains: a deps set is compared by position, and a renaming can reorder it, so a map
+whose callback folds into the element still reaches the cap (#1004). No cap moved. Such a recursion is now `kept`, with writes
 at the indices or keys it names, and `?` where a later round computes them
 (`writes/UpdateRecursion`). `writes/NestedFoldValue` and `browser/inline/NestedFoldValue` pin the
 fold the review found.

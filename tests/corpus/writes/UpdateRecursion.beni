@@ -1,7 +1,8 @@
 -- writes: a recursion that edits the list or the dictionary it threads
--- (#998). A core row's callback root is one per row site in a summary, and a
--- composed update keeps each element once, so §4.3's rounds meet: `bump`,
--- `touch` and `inc` settle as `kept` with their element writes, not a cap.
+-- (#998). Rounds are compared up to the renaming of the element roots they
+-- mint, and a composed update keeps one copy of elements that write the
+-- same, so §4.3's rounds meet: `bump`, `touch`, `inc` and `deep` (a map
+-- inside a map) settle as `kept` with their element writes, not a cap.
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Html)
@@ -11,12 +12,14 @@ import Tea
 type alias Model =
     rows : Dict Int Int
     xs : List Int
+    grid : List (List Int)
 
 
 type Msg
     = Bump Int
     | Touch Int
     | Inc Int
+    | Deep Int
 
 
 bump : Dict Int Int, Int → Dict Int Int
@@ -31,6 +34,10 @@ inc : List Int, Int → List Int
 inc xs n = if n ≤ 0 then xs else inc (List.map xs λv → v + 1) (n - 1)
 
 
+deep : List (List Int), Int → List (List Int)
+deep grid n = if n ≤ 0 then grid else deep (List.map grid λr → List.map r λc → c + 1) (n - 1)
+
+
 update : Msg, Model → Model
 update msg model =
     case msg of
@@ -43,10 +50,15 @@ update msg model =
         Inc n →
             { model | xs = inc model.xs n }
 
+        Deep n →
+            { model | grid = deep model.grid n }
+
 
 view : Model → Html Msg
 view model = <p>{Dict.size model.rows} {List.length model.xs}</p>
 
 
 main : Browser.Program
-main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty, xs = [] }, update = update, view = view }
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = Dict.empty, xs = [], grid = [] }, update = update, view = view }
