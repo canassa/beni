@@ -1034,7 +1034,7 @@ received response text =
 -- twice its values joined with ", ".
 -- It is a fold, not a loop over a `Js.ref`: the ownership checker cannot
 -- prove a `Js.ref`'s contents owned, so it would refuse the in-place
--- `Dict.update` (#969). Move it to `Js.Cell`, an owned cell, once that exists.
+-- `Dict.update` (#969).
 headersFrom : Js.Value → Dict String String
 headersFrom headers =
     pairs : List Js.Value
