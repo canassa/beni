@@ -2235,6 +2235,14 @@ selector when all of this holds:
 the row, or `model.selected` also shown in the row, is not. A row has at most one selector, its
 first such input; the others are compared as the table above says.
 
+*Amended 2026-10-25 (the owner, #298; specified, not built):* **`For` over a `Dict`.** `each` may
+also be a `Dict k v` (§6.8). Its row function is then `k, v → Html msg`, the row's key and its
+value, and its rows are keyed by the dictionary's keys, in its order; a dictionary holds each key
+once, so no rank among equal keys arises. `keyed` on a dictionary is `invalid_keyed` (*"a `Dict`'s
+rows are keyed by its keys"*); `fallback` keeps its meaning. A row may be skipped as above, its
+item being the value and its key fixed for its life. `browser-inline.md` §9 is the lowering;
+slice S2b builds the type rule and `browser-tea`'s rendering.
+
 ### 11.10 Fragments
 
 `<>…</>` is markup with no element of its own: its children, in order, where it stands. A fragment

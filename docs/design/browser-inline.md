@@ -1474,9 +1474,8 @@ goldens cannot show: the target output, priced; which facts the lowering takes; 
 `Dict` becomes a row edit; and what S2 refuses. It rests on the owner's decisions of 2026-10-17
 (`plans/direct-rewrite.md` §9, D2 and D4: **`Dict` is the keyed collection**, ordered by insertion,
 `Int` or `String` keys; no idiom recogniser) and on the root closures of §8.4 (amended 2026-10-22,
-built 2026-10-23). Four questions need the owner first (§9.10, asked on #298): §9.1's `For` over a `Dict`,
-§9.8's `Dict.keyAt`, §9.7's representation finding, and how §9.7's numbers meet the bar. What
-they name is marked *proposed*.*
+built 2026-10-23). Its four questions (§9.10) were decided by the owner on 2026-10-25, each as recommended: `For` over
+a `Dict`, `Dict.keyAt`, the index from key to entry pair, and how the bar is read.*
 
 ### 9.1 What S2 compiles
 
@@ -1486,15 +1485,14 @@ which is the **only child** of its parent element. Its rows keep their DOM node 
 their key: across every insert, remove, update, swap, sort, filter and replacement of the
 dictionary, which is `For`'s keying by key (`language.md` §11.9) with the dictionary's own key.
 
-*Proposed (the owner's question 1):* `For`'s `each` accepts a `Dict k v` as well as a `List a`. Its
+*Decided 2026-10-25 (the owner, §9.10 question 1):* `For`'s `each` accepts a `Dict k v` as well as a `List a`. Its
 row function is then `k, v → Html msg`: the row's key and its value. `keyed` is refused on a
 dictionary (`invalid_keyed`, *"a `Dict`'s rows are keyed by its keys"*), because the key is
 already the dictionary's, and two equal keys cannot occur. `fallback` keeps its meaning.
 `browser-tea` renders it as it renders a `List` keyed by the key, from the dictionary's
-entries in order, so one source builds on both platforms and `browser-tea` stays the oracle. Until
-the owner decides, a `For` over a `Dict` does not type-check, and §9.6's refusal of a keyed `For`
-over a `List` would leave the generators no way to write a keyed list; S2's slices order this
-first (§9.9).
+entries in order, so one source builds on both platforms and `browser-tea` stays the oracle. `language.md` §11.9
+records it (amended 2026-10-25); S2b (§9.9) builds the type rule, and until then a `For` over a
+`Dict` does not type-check.
 
 ```text
 <tbody>
@@ -1575,12 +1573,11 @@ order. The edits are runtime functions of `Inline.beni`, each shipped only when 
 | `swap(L, a, b)` | exchanges the rows and nodes of `a` and `b` | after `Dict.swap d a b` |
 | `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, otherwise only rows whose value is another object | after a write the lowering cannot follow key by key (§9.4), and for a load that replaces the dictionary |
 
-**The key → row lookup follows the dictionary's index.** With the index as decided (key →
-position, `backend.md` §4), the list keeps its rows parallel to the entries and finds a key's row
-at the key's position: no map at all. A removed key's row is found by a search of the rows, which
-costs what `remove`'s own reindex costs. With the pair index of §9.7 (key → entry, the owner's
-question 3) a position is not free, so the list keeps a `Map` from key to row, which `at`, `swap`
-and `sync` update as they change the rows. Neither is "built lazily", as the plan said: a map
+**The key → row lookup.** The dictionary's index maps a key to its entry pair (`backend.md` §4,
+amended 2026-10-25: the owner's decision of §9.10 question 3), so a position is not free, and the
+list keeps a `Map` from key to row, which `at`, `swap` and `sync` update as they change the rows.
+(With the earlier index from key to position, rows parallel to the entries needed no map; that
+variant is measured in §9.7 for the record.) The map is not "built lazily", as the plan said: a map
 rebuilt after each change to the set of rows costs O(n) at the next lookup, and an append in a
 loop makes that O(n²); measured, the lazy map was also 22 B larger than parallel rows.
 
@@ -1726,7 +1723,7 @@ the row above it.
 | + typed pushes (each table decodes its rows: one shape row per table, one shared reader) | 2 928 | 45 031 | 4 895 | 157.9 |
 | + code-point `len` | 2 928 | 45 084 | 4 892 | 158.1 |
 | + edits at the write, `Select` checks its row (**the target, decided index**) | **2 984** | **45 384** | 4 981 | **158.9** |
-| the same with the pair index and a key → row `Map` (**the target, question 3**) | **2 879** | **45 270** | 4 876 | **158.9** |
+| the same with the pair index and a key → row `Map` (**the target**, decided 2026-10-25) | **2 879** | **45 270** | 4 876 | **158.9** |
 | target ÷ tea-inline (pair index; decided index) | 1.29; 1.34 | 1.09; 1.09 | 1.22; 1.24 | 1.08; 1.08 |
 
 **unique-components with its list widgets** (its keyed-row parts only; the rest is S1's):
@@ -1787,10 +1784,10 @@ slice's bar is measured again by the full method on a quiet machine (§9.9).
   then writes the position of every later key into the index — about 10 µs at 1 000 rows and
   130 µs at 10 000, against about 0.7 µs when the index maps a key to its entry pair and a removal
   finds the pair with a native `indexOf`. The pair index is also 100 B smaller at N = 1 (its
-  `sortBy` and `swap` write no index). It changes `backend.md` §4's *Ordered dictionaries*, which the
-  owner decided, so it is the owner's question 3; the numbers above are given for both.
+  `sortBy` and `swap` write no index). The owner took it on 2026-10-25 (§9.10 question 3; `backend.md` §4, amended); the numbers above
+  are given for both.
 - `updateEvery` misses 1.2× vanilla for tea-inline too (2.2×): vanilla writes the label in its
-  loop, tea-inline schedules each row. The bar for that operation is the owner's to read.
+  loop, tea-inline schedules each row. The owner's reading of the bar (§9.10 question 4) holds S2 to tea-inline there.
 
 ### 9.8 The research generators
 
@@ -1810,7 +1807,7 @@ for `scenarios/unique-components/shared/beni.js`, `big-component/shared/beni.js`
   | `List.filter model.files λitem → item.id ≠ id` | `Dict.remove model.files id` |
   | `List.map model.f λitem → if item.id == id then { item \| done = not item.done } else item` | `Dict.update model.f id (Maybe.map λitem → { item \| done = not item.done })` |
   | `[ …model.f, { id = nextId model.f, … } ]` | `Dict.insert model.f k { id = k, … }`, `k = nextId model.f` |
-  | `List.pop model.f`, `List.drop model.f 1` | remove the last or the first key: `Dict.keyAt model.f (Dict.size model.f - 1)`, `Dict.keyAt model.f 0` (*proposed*, question 2), then `Dict.remove` |
+  | `List.pop model.f`, `List.drop model.f 1` | remove the last or the first key: `Dict.keyAt model.f (Dict.size model.f - 1)`, `Dict.keyAt model.f 0` (decided 2026-10-25, §9.10 question 2), then `Dict.remove` |
   | `[]` | `Dict.empty ⊤` |
   | `List.filter model.f λitem → not item.done` | `Dict.filter model.f λ_ item → not item.done` |
   | `List.length (List.filter …)` | `Dict.size (Dict.filter …)`, or a `Dict.foldl` count |
@@ -1842,10 +1839,10 @@ Each a pull request with its goldens and its measurement, in this order:
 | Step | What lands | Goldens and measurement | Depends on |
 |---|---|---|---|
 | S2a | write-set positions in `Dict` (`write-sets.md`, amended 2026-10-25): steps, tags, core rows, the fold row | `writes/` dump goldens: one per tag, a fold of updates, a `For` row's bound prefix; dump time at N = 256 | nothing: the rows describe the ordered API, and may land before the storage |
-| S2b | `For` over a `Dict` in the language and on `browser-tea` | `check/` and `build/bad/` fixtures (`invalid_keyed`, the row function's type), a `browser/tea` page | the owner's question 1; #294's ordered storage (#681, waiting on #320), since `browser-tea` iterates the entries |
+| S2b | `For` over a `Dict` in the language and on `browser-tea` | `check/` and `build/bad/` fixtures (`invalid_keyed`, the row function's type), a `browser/tea` page | #294's ordered storage (#681, waiting on #320), since `browser-tea` iterates the entries |
 | S2c | `browser-inline`: the row unit — row template, builder, `set`, row handlers with the key in scope, the first render's appends and `sync` (LIS) after any write of the dictionary; §9.6's class 1 refusals | `emit/release/inline/RowsReplace`, `browser/inline/RowsReplace`; the runtime's bytes against §9.7, by a hand-minify pass before it lands | S2b, §8.4's root plan |
 | S2d | edits: from the tag (§9.4's table), then at the write (writer functions handed the root's list), the selector; the class 3 refusal | `emit/release/inline/TodoRows` (a unique-components list widget), `JfbTable` (js-framework-benchmark's table); a page each, transcripts against `browser-tea` | S2a, S2c |
-| S2e | the measurement: the generators changed (§9.8), big-table, unique-components and big-component at sizes 1–256, seeds 1–3, 1 000 and 10 000 rows; `./rr check`, `./rr work` (locality), `./rr measure`, `./rr bench` by the full method | the bar of `plans/direct-rewrite.md` §4 and S2's own (every table operation ≤ 1.2× vanilla, swap ≤ 1.0×) | S2d; the owner's research session; #879's schema-run cause; questions 2 and 3 |
+| S2e | the measurement: the generators changed (§9.8), big-table, unique-components and big-component at sizes 1–256, seeds 1–3, 1 000 and 10 000 rows; `./rr check`, `./rr work` (locality), `./rr measure`, `./rr bench` by the full method | the bar of `plans/direct-rewrite.md` §4 and S2's own (every table operation ≤ 1.2× vanilla, swap ≤ 1.0×) | S2d; the owner's research session; #879's schema-run cause; the pair index (#961) and `Dict.keyAt` in `core/Dict` |
 
 All of S2c–S2e also depend on O5 (#321: `List` as a plain array, every accepted write lowered in
 place), which the owner's comment on #298 names, as the root plan of §8.4 depends on #315.
@@ -1856,8 +1853,11 @@ key set in the write-set pass (`{e(x) ∀x ∈ ℓ}`, `ℓ` handler-evaluable), 
 
 ### 9.10 Questions for the owner
 
-Asked on #298 on 2026-10-25, each with its recommendation. Until they are answered, the items they
-name stay *proposed*; every other rule of this section is the design.
+Asked on #298 on 2026-10-25, each with its recommendation. *Decided 2026-10-25 (the owner): yes to
+all four, as recommended.* `For` takes a `Dict` with a row function `k, v → Html msg`, and `keyed`
+is refused on it; `core/Dict` gets `Dict.keyAt`; the index maps a key to its entry pair
+(`backend.md` §4, amended); and the bar is read as question 4 proposes (`plans/direct-rewrite.md`
+§5 S2, amended). The questions are kept as asked.
 
 1. **May `For` take a `Dict`?** I recommend that `For`'s `each` accept a `Dict k v`, with a row
    function `k, v → Html msg`, and that `keyed` be refused on a dictionary, since its key is

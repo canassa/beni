@@ -607,6 +607,24 @@ prefix range used by `cancelAll`. W47's type identities and comparison evidence
 remain unchanged. Dict and Set themselves no longer have `compare` and are
 refused as keys with the reason named in the diagnostic.
 
+*Amended 2026-10-25 (the owner, #298; measured in `browser-inline.md` §9.7):* the
+`index` maps each key to **its entry pair**, not to the pair's position. The
+bijection becomes: `index.size === entries.length`, each key occurs once, and
+`index.get(entries[i][0]) === entries[i]`. A lookup, `member`, `insert` and
+`update` stay expected O(1) and need no position. `remove` finds the pair's
+position with the array's own `indexOf` of the pair and splices it; it writes
+no other index entry. `swap` exchanges two pairs in `entries` and writes no index
+entry; `sortBy` writes the permuted `entries` and no index; `insertAt` removes
+the old pair and splices the new one in at the clamped index. A position, where
+an operation needs one, is that `indexOf`, O(n) and native. The reason is the
+removal: with positions in the index, every removal rewrote the position of
+every later key, about 10 µs at 1 000 entries and 130 µs at 10 000, against
+about 0.7 µs with pairs, and big-table's removal missed its bar. Everything
+else above is unchanged: insertion order, `Int` and `String` keys, in-place
+edits under ownership, no copying fallback, `copy` allocating fresh pairs.
+The costs paragraph above reads, for removal and `swap`: O(n) by one native
+scan, no index writes.
+
 ### Corrections to the representation
 
 Three rows of that table did not survive contact with the code. Each is a
