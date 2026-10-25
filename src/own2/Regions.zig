@@ -138,14 +138,56 @@ pub const Tree = struct {
         out.clearRetainingCapacity();
         var r = t.regionOf(p);
         var from = p + 1;
+        var skips: std.ArrayList(Range) = .empty;
+        defer skips.deinit(gpa);
         while (r != .none) {
             const reg = t.get(r);
-            if (from <= reg.end) try out.append(gpa, .{ .start = from, .end = reg.end });
-            // Past this region: its siblings (other arms) are incompatible;
-            // the case instruction itself comes after them.
-            from = if (reg.kind == .arm or reg.kind == .virtual_arm) reg.case_inst + 1 else reg.end + 1;
+            // The other arms of this region's case that lie ahead are
+            // incompatible and cut out of the parent's range: for a `case`
+            // they fill the gap up to the case instruction, for a virtual
+            // case (`withDefault (map m f) d`) the inner call sits between.
+            if (from <= reg.end) try t.appendMinus(gpa, from, reg.end, skips.items, out);
+            skips.clearRetainingCapacity();
+            if (reg.kind == .arm or reg.kind == .virtual_arm) try t.siblingArms(gpa, r, reg, &skips);
+            from = reg.end + 1;
             r = reg.parent;
         }
+    }
+
+    /// `[from, end]` with `skips` (sorted, disjoint) cut out, appended.
+    fn appendMinus(t: *const Tree, gpa: Allocator, from: u32, end: u32, skips: []const Range, out: *std.ArrayList(Range)) Allocator.Error!void {
+        _ = t;
+        var at = from;
+        for (skips) |s| {
+            if (s.end < at) continue;
+            if (s.start > end) break;
+            if (s.start > at) try out.append(gpa, .{ .start = at, .end = s.start - 1 });
+            at = s.end + 1;
+        }
+        if (at <= end) try out.append(gpa, .{ .start = at, .end = end });
+    }
+
+    /// The other arms of `arm`'s case, sorted by start. Arms of one case
+    /// are created consecutively, so they are the neighbouring ids with the
+    /// same case instruction.
+    fn siblingArms(t: *const Tree, gpa: Allocator, arm: RegionId, reg: Region, out: *std.ArrayList(Range)) Allocator.Error!void {
+        const cases = t.regions.items(.case_inst);
+        const starts = t.regions.items(.start);
+        const ends = t.regions.items(.end);
+        var lo = arm.int();
+        while (lo > 0 and cases[lo - 1] == reg.case_inst) lo -= 1;
+        var hi = arm.int();
+        while (hi + 1 < t.regions.len and cases[hi + 1] == reg.case_inst) hi += 1;
+        var i = lo;
+        while (i <= hi) : (i += 1) {
+            if (i == arm.int()) continue;
+            try out.append(gpa, .{ .start = starts[i], .end = ends[i] });
+        }
+        std.mem.sort(Range, out.items, {}, struct {
+            fn lessThan(_: void, a: Range, b: Range) bool {
+                return a.start < b.start;
+            }
+        }.lessThan);
     }
 
     /// Whether point `q` lies in `[p + 1, ∞)` compatibly with `p`.
@@ -395,4 +437,44 @@ test "withDefault (map m f) d is two virtual arms of one case" {
     try testing.expectEqual(Kind.virtual_arm, t.get(rf.parent).kind);
     // `m` and the outer call are in neither arm.
     try testing.expect(t.compatible(j.m, j.d) and t.compatible(j.m, f_body) and t.compatible(j.outer, j.d));
+}
+
+test "rangesAfter agrees with compatible around a virtual case" {
+    var l = try Prepass.lowerSource(
+        \\module Main exposing (j)
+        \\
+        \\j mm dd =
+        \\    Maybe.withDefault (Maybe.map mm (λx → x)) dd
+    );
+    defer l.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const targets = [_]Prepass.JoinTargets{.{
+        .with_default = l.qualifiedTarget("Maybe", "withDefault"),
+        .map = l.qualifiedTarget("Maybe", "map"),
+    }};
+    const pp = try Prepass.run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .joins = &targets });
+    const d = l.bir.decls[l.declNamed("j")];
+    var t = try build(testing.allocator, &l.bir, d, &pp);
+    defer t.deinit(testing.allocator);
+    const j = pp.joins[0];
+    const f_body = l.bir.instData(@fromBackingInt(j.f)).rhs;
+    var ranges: std.ArrayList(Tree.Range) = .empty;
+    defer ranges.deinit(testing.allocator);
+    try t.rangesAfter(testing.allocator, f_body, &ranges);
+    // Every instruction after `f`'s body is in the ranges exactly when it
+    // is compatible: the inner call is, `d` is not, the outer call is.
+    var q = f_body + 1;
+    while (q < d.inst_end.int()) : (q += 1) {
+        var covered = false;
+        for (ranges.items) |r| if (r.start <= q and q <= r.end) {
+            covered = true;
+        };
+        try testing.expectEqual(t.afterCompatible(f_body, q), covered);
+    }
+    var inner_covered = false;
+    for (ranges.items) |r| if (r.start <= j.inner and j.inner <= r.end) {
+        inner_covered = true;
+    };
+    try testing.expect(inner_covered);
 }

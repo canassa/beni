@@ -220,6 +220,9 @@ pub const Place = struct {
     holds: Holds,
     /// A declared class for a `closure` place (#587's slot); `.none` today.
     class: ClassId,
+    /// The strongly connected component of the place graph this place is
+    /// in (`settleCycles`): what `sameCycle` reads for §2.2's `⟲` matching.
+    scc: u32,
 };
 
 pub const StepEntry = struct { step: Step, child: PlaceId };
@@ -382,6 +385,7 @@ pub const Table = struct {
             t.step_tab.items(.child)[slot] = made;
         }
         try t.settleHolds(gpa, first_new);
+        try t.settleCycles(gpa, first_new);
         return top;
     }
 
@@ -415,7 +419,7 @@ pub const Table = struct {
         }.lessThan);
         try t.step_tab.ensureUnusedCapacity(gpa, len);
         for (scratch.items[first..]) |c| t.step_tab.appendAssumeCapacity(.{ .step = c.step, .child = .none });
-        try t.places.append(gpa, .{ .kind = d.kind, .head = d.head, .steps = .{ .start = start, .len = len }, .holds = d.kind.own(), .class = .none });
+        try t.places.append(gpa, .{ .kind = d.kind, .head = d.head, .steps = .{ .start = start, .len = len }, .holds = d.kind.own(), .class = .none, .scc = 0 });
         try stack.append(gpa, .{ .place = id, .first = first, .len = len, .cursor = 0 });
         return id;
     }
@@ -487,6 +491,89 @@ pub const Table = struct {
                 ranges[i].len = 0;
             }
         }
+    }
+
+    /// The strongly connected components of the places from `first` on:
+    /// an iterative Tarjan over the child edges, O(E), numbering each
+    /// component after the table's count so ids never collide across
+    /// builds. Edges into older places are followed for membership but
+    /// those places keep their own component.
+    fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
+        const n = t.count() - first;
+        if (n == 0) return;
+        const ranges = t.places.items(.steps);
+        const children = t.step_tab.items(.child);
+        const sccs = t.places.items(.scc);
+        const none = Ids.none_int;
+        const index = try gpa.alloc(u32, n);
+        defer gpa.free(index);
+        @memset(index, none);
+        const low = try gpa.alloc(u32, n);
+        defer gpa.free(low);
+        const on_stack = try gpa.alloc(bool, n);
+        defer gpa.free(on_stack);
+        @memset(on_stack, false);
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        const Visit = struct { place: u32, cursor: u32 };
+        var frames: std.ArrayList(Visit) = .empty;
+        defer frames.deinit(gpa);
+        var next: u32 = 0;
+        var component: u32 = t.count(); // ids past every place id
+        var root: u32 = first;
+        while (root < t.count()) : (root += 1) {
+            if (index[root - first] != none) continue;
+            index[root - first] = next;
+            low[root - first] = next;
+            next += 1;
+            on_stack[root - first] = true;
+            try stack.append(gpa, root);
+            try frames.append(gpa, .{ .place = root, .cursor = 0 });
+            while (frames.items.len > 0) {
+                const f = &frames.items[frames.items.len - 1];
+                const r = ranges[f.place];
+                if (f.cursor < r.len) {
+                    const c = children[r.start + f.cursor].int();
+                    f.cursor += 1;
+                    if (c < first) continue;
+                    if (index[c - first] == none) {
+                        index[c - first] = next;
+                        low[c - first] = next;
+                        next += 1;
+                        on_stack[c - first] = true;
+                        try stack.append(gpa, c);
+                        try frames.append(gpa, .{ .place = c, .cursor = 0 });
+                    } else if (on_stack[c - first]) {
+                        low[f.place - first] = @min(low[f.place - first], index[c - first]);
+                    }
+                    continue;
+                }
+                const p = f.place;
+                _ = frames.pop();
+                if (frames.items.len > 0) {
+                    const parent = frames.items[frames.items.len - 1].place;
+                    low[parent - first] = @min(low[parent - first], low[p - first]);
+                }
+                if (low[p - first] != index[p - first]) continue;
+                while (true) {
+                    const m = stack.pop().?;
+                    on_stack[m - first] = false;
+                    sccs[m] = component;
+                    if (m == p) break;
+                }
+                component += 1;
+            }
+        }
+    }
+
+    /// Whether a step from `p` to `q` is on a cycle of `p`: `q` can reach
+    /// `p` again (§2.2's `⟲` matching). O(1): a column compare, plus a
+    /// child scan for the self-loop.
+    pub fn sameCycle(t: *const Table, p: PlaceId, q: PlaceId) bool {
+        if (p != q) return t.places.items(.scc)[p.int()] == t.places.items(.scc)[q.int()];
+        const s = t.steps(p);
+        for (s.children) |c| if (c == p) return true;
+        return false;
     }
 
     // ---- canonical paths ------------------------------------------------
@@ -668,7 +755,7 @@ pub const Table = struct {
                 last = s.word();
                 try t.step_tab.append(gpa, .{ .step = s, .child = .from(c) });
             }
-            try t.places.append(gpa, .{ .kind = kd, .head = h, .steps = .{ .start = start, .len = len }, .holds = @bitCast(@as(u8, @intCast(hb))), .class = .none });
+            try t.places.append(gpa, .{ .kind = kd, .head = h, .steps = .{ .start = start, .len = len }, .holds = @bitCast(@as(u8, @intCast(hb))), .class = .none, .scc = 0 });
         }
         if (at != words.len) return error.Malformed;
     }
@@ -707,7 +794,7 @@ comptime {
     Ids.assertRecord(Place);
     Ids.assertRecord(StepEntry);
     Ids.assertRecord(PathNode);
-    std.debug.assert(@sizeOf(Place) == 20);
+    std.debug.assert(@sizeOf(Place) == 24);
     std.debug.assert(@sizeOf(StepEntry) == 8);
     std.debug.assert(@sizeOf(PathNode) == 20);
 }
