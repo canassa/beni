@@ -1,0 +1,16 @@
+module CallbackComponentGuard
+  14:13 List.push x: accepted param
+  51:10 call CallbackComponentGuard.selfStep <literal>: accepted fresh (CallbackComponentGuard.selfStep writes what its callback returns, and the callback returns this argument)
+  51:10 value CallbackComponentGuard.pushOne: rejected supply: CallbackComponentGuard.selfStep hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  55:11 call CallbackComponentGuard.cycleStep <literal>: accepted fresh (CallbackComponentGuard.cycleStep writes what its callback returns, and the callback returns this argument)
+  55:11 value CallbackComponentGuard.pushOne: rejected supply: CallbackComponentGuard.cycleStep hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  summary pushOne: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary split: π1 RA; res .0 shared(CallbackComponentGuard.shared), .1 π1
+  summary pass: π1 RA; res π1
+  summary selfStep: π1 R, π2 R, π3 R, π4 R; res cb1{excl cb1}; π1 calls ≤1, supply 1 cb3 owned{excl cb3}; π2 calls many, supply 1 cb2.0 owned{excl cb2.0}, supply 1 π4 owned{excl π4}; π3 calls ≤1, supply 1 cb2.1 owned{excl cb2.1}
+  summary cycleStep: π1 R, π2 R, π3 R, π4 R, π5 R; res cb1{excl cb1}; π1 calls ≤1, supply 1 cb4 owned{excl cb4}; π2 calls many, supply 1 cb3 owned{excl cb3}, supply 1 π5 owned{excl π5}; π3 calls ≤1, supply 1 cb2.0 owned{excl cb2.0}; π4 calls ≤1, supply 1 cb2.1 owned{excl cb2.1}
+  summary self: res [*] ~shared(CallbackComponentGuard.shared)[*], fresh1 shared(CallbackComponentGuard.shared)
+  summary cycle: res [*] ~shared(CallbackComponentGuard.shared)[*], fresh1 shared(CallbackComponentGuard.shared)
+  demands 5: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 5: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause supply 2
