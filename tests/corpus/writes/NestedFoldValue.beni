@@ -1,0 +1,56 @@
+-- writes: two folds through one function value, one inside the other
+-- (the review of #1002). A callback's element root is minted afresh at each
+-- evaluation, so the inner fold's `case y` is not read against the outer
+-- fold's facts on `x`: the inner `Dict.insert` stays, and `Go` grows `d`.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type Item
+    = A
+    | B
+
+
+type alias Model =
+    items : List Item
+    d : Dict Int Int
+
+
+type Msg
+    = Go
+
+
+f : List Item, Dict Int Int → Dict Int Int
+f items d =
+    fl = List.foldl
+    fl items d λx acc →
+        case x of
+            A →
+                fl items acc λy acc2 →
+                    case y of
+                        A →
+                            acc2
+
+                        B →
+                            Dict.insert acc2 1 1
+
+            B →
+                acc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            { model | d = f model.items model.d }
+
+
+view : Model → Html Msg
+view model = <p onClick={Go}>{Maybe.withDefault (Dict.get model.d 1) 0}</p>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = λ⊤ → { items = [ A, B ], d = Dict.empty }, update = update, view = view }
