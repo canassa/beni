@@ -1,0 +1,2 @@
+The list stale-read sanitiser (ownership-v2.md §7.3) poisons a trie's storage, so a header another list
+shares it through (here `List.drop`, kept by a platform) traps after an accepted write.

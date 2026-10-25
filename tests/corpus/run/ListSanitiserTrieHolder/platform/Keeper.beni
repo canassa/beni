@@ -1,0 +1,7 @@
+--| Keeps the list it is lent: a holder the ownership checker cannot see,
+--| because a platform's words are trusted.
+pub foreign pure keep : borrowed List Int → fresh List Int
+
+
+--| Reads the list `keep` kept, and returns nothing to print.
+pub foreign pure audit : List Int → List String

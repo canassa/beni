@@ -273,7 +273,10 @@ stale-read sanitiser (`--sanitize-lists`, `ownership-v2.md` §7.3): every
 accepted list write runs on a copy and poisons the list it wrote, so a holder
 older than the write traps where it reads it. It must print `.expected`, or,
 with a `<name>.sanitize-lists-crash` file, crash as `.crash` says a program
-must, with that file's text: a crash only this pass makes.
+must, with that file's text: a crash only this pass makes. Then each module it
+wrote is checked against its `dump --stage=ownership`: the sites the build
+wraps must be exactly the `List.<writer>`, `construction`, `++` and
+`value List.<writer>` lines v1 accepts, by position and writer.
 
 Both files hold their reason, are written by hand and never blessed, and their
 passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build

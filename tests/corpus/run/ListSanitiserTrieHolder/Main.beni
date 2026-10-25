@@ -1,0 +1,17 @@
+-- A platform keeps `List.drop long 1` behind the checker's back. `long` is a
+-- trie, so the drop is a header over `long`'s own arrays. The write v1 then
+-- accepts on `long` would, in place, change what the platform reads. Under
+-- the list stale-read sanitiser (`ownership-v2.md` §7.3) the write poisons
+-- the trie's storage as well as its header, so the platform's read traps.
+-- The plain build prints nothing.
+import Keeper
+import List
+import Node
+
+
+main : Node.Program
+main =
+    long = List.push (List.range 1 40) 41
+    _ = Keeper.keep (List.drop long 1)
+    written = List.push long 42
+    Node.printLines (Keeper.audit written)

@@ -4,7 +4,11 @@
 -- program prints the same only if no holder older than a write reads it.
 -- The bases take every form a list has: a literal, a view (a pattern's
 -- rest), a long list, a list built in a loop, and a list a function was
--- handed; and a writer called as a method.
+-- handed; and a writer called as a method, through a name, and handed to
+-- a function as a value. A spread or `++` chain writes its first operand
+-- only, so the lists after it are read again. The harness checks that the
+-- sanitised build wraps exactly the list writes v1 accepts, so a form left
+-- unwrapped fails here.
 import List
 import Node exposing (Program)
 import String
@@ -30,6 +34,10 @@ dotted : List Int → List Int
 dotted xs = xs.push 1
 
 
+apply : (List Int, Int → List Int), List Int → List Int
+apply f xs = f xs 4
+
+
 rest : List Int → List Int
 rest xs =
     case xs of
@@ -43,6 +51,9 @@ rest xs =
 main : Program
 main =
     long = List.range 1 40
+    p = List.set
+    middle = [ 2 ]
+    after = [ 5 ]
     Node.printLines
         [ show (List.push [ 1, 2 ] 3)
         , show (List.set [ 1, 2, 3 ] 1 7)
@@ -54,9 +65,15 @@ main =
         , show (List.append [ 1 ] [ 2, 3 ])
         , show ([ 4, 5 ] ++ [ 6 ])
         , show [ …[ 7, 8 ], 9 ]
+        , show [ …[ 1 ], …middle, 3 ]
+        , show ([ 4 ] ++ after ++ [ 6 ])
+        , show middle
+        , show after
         , show (grown 5 [])
         , show (bump [ 3 ])
         , show (rest [ 1, 2, 3 ])
         , show (dotted [ 5 ])
+        , show (p [ 1, 2 ] 0 8)
+        , show (apply List.push [ 3 ])
         , String.fromInt (List.length (List.push long 41))
         ]

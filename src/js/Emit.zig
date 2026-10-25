@@ -5525,6 +5525,7 @@ const Emitter = struct {
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
+                .token_tags = if (e.options.sanitize_lists) e.session.artifacts.spans(file).tags else &.{},
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
