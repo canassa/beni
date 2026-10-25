@@ -1,0 +1,39 @@
+-- CK-276: R-4.6.8, #987. `xs` and `List.copy xs` stored at two positions or
+-- keys are apart, so editing one in place is safe: `pushed` and `grow` must
+-- be accepted. Red: master refuses both `exclusive` (approx); `apart` (a
+-- literal) is accepted already. Master's `Dict` is the tree (#961 not
+-- landed): `grow` uses `Dict.empty` as a value and the row's `focus` path.
+-- The twins storing `xs` twice stay refused.
+import Dict exposing (Dict)
+
+
+pub apart : ⊤ → List (List Int)
+apart ⊤ =
+    xs = [ 1 ]
+    List.update [ xs, List.copy xs ] 0 λv → List.push v 9
+
+
+pub pushed : ⊤ → List (List Int)
+pushed ⊤ =
+    xs = [ 1 ]
+    List.update (List.push (List.push [] xs) (List.copy xs)) 0 λv → List.push v 9
+
+
+pub twice : ⊤ → List (List Int)
+twice ⊤ =
+    xs = [ 1 ]
+    List.update [ xs, xs ] 0 λv → List.push v 9
+
+
+pub grow : ⊤ → Dict Int (List Int)
+grow ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert (Dict.insert Dict.empty 1 xs) 2 (List.copy xs)
+    Dict.update d 1 λm → Maybe.map m λp → List.push p 9
+
+
+pub growTwice : ⊤ → Dict Int (List Int)
+growTwice ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert (Dict.insert Dict.empty 1 xs) 2 xs
+    Dict.update d 1 λm → Maybe.map m λp → List.push p 9

@@ -164,3 +164,72 @@ tests/pending/ownership/RecordKeptInLiteral.beni exit=0 ownership-differs
 # CK-274 (#1001): a nested record written through a local after a function
 # kept its parent: a miscompile.
 tests/pending/ownership/RecordInnerKept.beni exit=0 ownership-differs
+
+# The ownership checker v2's acceptance gaps (ownership-requirements.md
+# R-8.2, #1006), one per row of its table that v1 does not meet.
+
+# CK-275 (#977): a helper editing one element of a list of distinct fresh
+# lists built by List.push is refused exclusive (approx); R-4.6.7.
+tests/pending/ownership/ExclusiveFreshHelper.beni exit=0 ownership-differs
+
+# CK-276 (#987): xs and List.copy xs stored at two positions or keys are not
+# told apart; R-4.6.8.
+tests/pending/ownership/CopyApart.beni exit=0 ownership-differs
+
+# CK-277 (#971): a List.update callback answering a list another position
+# holds is accepted, then that position edited in place; R-4.6.10.
+tests/pending/ownership/UpdateReturnsHeld.beni exit=0 ownership-differs
+
+# CK-278 (#970): a list-pattern element stored back into its own list is
+# taken as apart; R-4.6.9.
+tests/pending/ownership/PatternStoredBack.beni exit=0 ownership-differs
+
+# CK-279 (#395): with mutually recursive types, a List Int field is taken to
+# reach the other type; R-4.7.4.
+tests/pending/ownership/MutualListField.beni exit=0 ownership-differs
+
+# CK-280 (#400): a write to one list under a marker needs the whole region
+# exclusive; R-4.7.8.
+tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
+
+# CK-282: a prepend whose front item is a fresh constructor value or record
+# literal is taken as maybe its base; R-4.4.3.
+tests/pending/ownership/PrependFreshRecord.beni exit=0 ownership-differs
+
+# CK-284: a top-level alias of a writer is called as the writer, through any
+# number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
+tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
+
+# CK-294 (#188): a callee that only pushes onto the list its callback
+# returns is refused `need` when the items are shared; `need` has no path;
+# R-5.2.8.
+tests/pending/ownership/NeedOuterOnly.beni exit=0 ownership-differs
+
+# CK-295 (#868): the list twin of RecordContentsAnswered; `freshAcross`
+# loses the condition of a function parameter answered through a lambda;
+# R-5.2.9.
+tests/pending/ownership/EditAnsweredList.beni exit=0 ownership-differs
+
+# CK-296 (#955): a fold whose accumulator has an unnamed cyclic type never
+# settles (`limit … fixpoint, unsettled after 32`); blocks O4a; R-5.3.7.
+tests/pending/ownership/CyclicFold.beni exit=0 ownership-differs
+
+# CK-297 (#382): a once closure that writes a list another holder reads is
+# accepted `once`, in five shapes; R-5.4.3.
+tests/pending/ownership/OnceOtherHolder.beni exit=0 ownership-differs
+
+# CK-298 (#383): a pushing closure called twice, `( w 1, w 2 )`, is
+# accepted at its creation; R-5.4.4.
+tests/pending/ownership/CalledTwicePusher.beni exit=0 ownership-differs
+
+# CK-299 (#416): a read in a later argument of the call a once lambda is
+# handed to is refused `later-use`, an over-refusal; R-5.4.5.
+tests/pending/ownership/OnceLaterArgument.beni exit=0 ownership-differs
+
+# CK-300 (#956): a returned lambda that updates its parameter is pending
+# "it is returned", though both calls are judged at the caller; R-5.4.9.
+tests/pending/ownership/ReturnedLambdaWrite.beni exit=0 ownership-differs
+
+# CK-301 (#278): a function value of several known classes is not joined,
+# so it answers `⊤call` and is refused `unknown`; R-5.5.5.
+tests/pending/ownership/JoinedFunctionValue.beni exit=0 ownership-differs

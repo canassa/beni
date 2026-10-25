@@ -1,0 +1,60 @@
+-- CK-278: R-4.6.9, #970. An element a list pattern binds is still in the
+-- list, so storing it back (`[ …l, p ]`, `List.push l p`, a tuple payload)
+-- puts one list at two positions; editing position 0 must be refused
+-- `exclusive`. Red: master accepts all three (the taken element is taken as
+-- apart from its container). `rotate` (`[ …rest, p ]`) is sound and stays
+-- accepted. The record twin is CK-264 (RecordSplitPushBack).
+dupL : List (List Int) → List (List Int)
+dupL l =
+    case l of
+        [ p, …_ ] →
+            [ …l, p ]
+
+        _ →
+            l
+
+
+dupPush : List (List Int) → List (List Int)
+dupPush l =
+    case l of
+        [ p, …_ ] →
+            List.push l p
+
+        _ →
+            l
+
+
+dupTuple : List (List Int × Int) → List (List Int × Int)
+dupTuple l =
+    case l of
+        [ p, …_ ] →
+            List.push l p
+
+        _ →
+            l
+
+
+rotate : List (List Int) → List (List Int)
+rotate l =
+    case l of
+        [ p, …rest ] →
+            [ …rest, p ]
+
+        _ →
+            l
+
+
+pub viaL : ⊤ → List (List Int)
+viaL ⊤ = List.update (dupL [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+pub viaPush : ⊤ → List (List Int)
+viaPush ⊤ = List.update (dupPush [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+pub viaTuple : ⊤ → List (List Int × Int)
+viaTuple ⊤ = List.update (dupTuple [ ( [ 1 ], 0 ) ]) 0 λ( v, n ) → ( List.push v 9, n )
+
+
+pub viaRotate : ⊤ → List (List Int)
+viaRotate ⊤ = List.update (rotate [ [ 1 ], [ 2 ] ]) 0 λv → List.push v 9

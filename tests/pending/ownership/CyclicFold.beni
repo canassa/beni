@@ -1,0 +1,14 @@
+-- CK-296: R-5.3.7, #955 (blocks O4a): a fold whose accumulator has an
+-- unnamed cyclic type (`List (List (List …))`, checker-v2.md §7.3) checks
+-- clean with no limit. `n` writes nothing; `m`, the twin, folds with
+-- `List.push`, which edits the item `List.foldr` hands it, and keeps its two
+-- accepted lines. Red: each round of v1's callback fixpoint adds one `[*]`
+-- step that nothing folds, so both declarations print `limit …: fixpoint,
+-- unsettled after 32` (`ownership_limit` under enforcement). The golden
+-- claims the verdict lines and the totals.
+n : Int
+n = List.length (List.foldr [] [] List.intersperse)
+
+
+m : Int
+m = List.length (List.foldr [] [] List.push)

@@ -1,0 +1,20 @@
+-- CK-275: R-4.6.7, #977. `want` edits one element of a list of lists; `two`
+-- hands it two distinct fresh lists built by `List.push`, so the call is safe
+-- and must be accepted. Red: master refuses the call `exclusive` (approx), as
+-- if the elements might share; the same edit written inline is accepted.
+-- `twice` pushes one list twice and stays refused `exclusive`.
+want : List (List Int) → List (List Int)
+want xs = List.update xs 0 λl → List.push l 9
+
+
+pub two : ⊤ → List (List Int)
+two ⊤ =
+    old = List.push (List.push [] [ 1 ]) [ 2 ]
+    want old
+
+
+pub twice : ⊤ → List (List Int)
+twice ⊤ =
+    ys = [ 1 ]
+    old = List.push (List.push [] ys) ys
+    want old

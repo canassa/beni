@@ -1,0 +1,15 @@
+-- CK-298: R-5.4.4, #383: a closure that pushes its capture, returned by
+-- `mkPusher` and called twice, `( w 1, w 2 )`, is refused `once`: the
+-- creation `w = mkPusher xs` is the write on `xs` (R-2.8), and `w` runs
+-- twice. The returned lambda's write is carried to this call, not pending
+-- (R-5.4.9, #956). Red: v1 makes the push `pending: it is returned` and
+-- accepts the call `param`, so nothing refuses the pair itself. The golden
+-- claims the verdict lines and the totals; its summary lines are master's.
+mkPusher : List Int → (Int → List Int)
+mkPusher xs = λn → List.push xs n
+
+
+pub twice : List Int → List Int × List Int
+twice xs =
+    w = mkPusher xs
+    ( w 1, w 2 )

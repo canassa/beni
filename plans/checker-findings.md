@@ -6381,3 +6381,156 @@ refused.
 { i | x = 1 }`, with `f = BoxO` keeping `o`, is accepted on master and miscompiled: 11 for 1. The probe
 at the supply of `o` sees no later use of `o`, because `i` is no holder of `o`. The whole-path form is
 refused, and so is the local form with no callback.
+
+## The ownership checker v2's acceptance gaps (2026-10-25)
+
+`docs/design/ownership-requirements.md` R-8.2 lists every requirement v1 (`src/own/`, frozen on
+2026-10-25) does not meet. CK-275 onward are the red fixtures for the rows of its table that had none
+(#1006). Each golden is master's report with only the verdict lines the requirement names changed to
+the required verdict, and the counts with them; summary lines are master's, and an accept kind the
+requirement does not name is v1's nearest (`fresh`, `param`, `call`, `entry`), to be blessed again by
+the slice that turns it green. Rows not written, because master meets them or the requirement does
+not fix a verdict: R-4.7.7 (#396, `rt1` accepted on master), R-4.7.9 (#509, every shape refused
+`alias` on master), R-4.8.7 (accepted and refused as required on master), R-4.8.13 (#414, not
+reproduced), R-5.5.6's `where` alias (#279, met on master), R-5.12.3's `RefUpdateImpure` (green,
+gated), R-5.11.6 (#228, schema defaults are not built: `default` does not parse), R-6.6 (the
+diagnostic schema has no field for a fix edit; its shape is a design choice), and R-7.6 (#428, did
+not reproduce in 12 dumps under load; a load scenario belongs in `pending_test.zig`). Within R-4.8.14,
+`writes/TagHeader`'s `SignIn` and `writes/B3HelperRecord` have no fixture: the requirements fix no
+verdict for them.
+
+## CK-275 — a helper editing one element of distinct fresh lists is refused exclusive (2026-10-25)
+
+**Issue:** #977. **Fixture:** `tests/pending/ownership/ExclusiveFreshHelper.beni`. `want xs =
+List.update xs 0 λl → List.push l 9`, called on `List.push (List.push [] [ 1 ]) [ 2 ]`, is refused
+`exclusive` (approx) at the call: "the callee needs the list's elements not to share, and they may".
+The two elements are distinct fresh literals, and the same edit written inline is accepted. R-4.6.7
+requires the call accepted. The twin `twice` pushes one list twice and stays refused `exclusive`.
+
+## CK-276 — a list and its List.copy stored in one collection are taken to share (2026-10-25)
+
+**Issue:** #987. **Fixture:** `tests/pending/ownership/CopyApart.beni`. Two forms are refused
+`exclusive` (approx), and R-4.6.8 requires both accepted: `pushed`, `List.update (List.push (List.push
+[] xs) (List.copy xs)) 0 λv → List.push v 9`; and `grow`, the Dict form `Dict.insert (Dict.insert
+Dict.empty 1 xs) 2 (List.copy xs)` then `Dict.update d 1 …`, written for master's tree `Dict`, before
+#961. `List.copy` is the fix the language names for a list stored twice, so these safe programs had no
+accepted spelling. `apart`, the literal `[ xs, List.copy xs ]`, is accepted on master already and is a
+control. The twins `twice` and `growTwice` store `xs` twice and stay refused.
+
+## CK-277 — a List.update callback answering a list another position holds is accepted (2026-10-25)
+
+**Issue:** #971. **Fixture:** `tests/pending/ownership/UpdateReturnsHeld.beni`. `List.update
+(List.update [ [ 0 ], xs ] 0 λ_ → xs) 0 λv → List.push v 9` is accepted on master, and so is the helper
+form `updH l xs = List.update l 0 λ_ → xs`, though one list is at positions 0 and 1 when position 0 is
+edited in place. The focus row does not separate the callback's answer from the other positions, as
+`List.set`'s row does: `viaSet` is refused `exclusive`. R-4.6.10 requires `direct` and `helper`
+refused `exclusive`; the fresh control `λ_ → [ 2 ]` stays accepted. #970 has the same root cause; the
+design on record is "the other positions" cell (#970's comment).
+
+## CK-278 — a list-pattern element stored back into its own list is taken as apart (2026-10-25)
+
+**Issue:** #970. **Fixture:** `tests/pending/ownership/PatternStoredBack.beni`. `dupL` (`[ …l, p ]`),
+`dupPush` (`List.push l p`) and `dupTuple` (a tuple payload) store the element `[ p, …_ ]` binds back
+into `l`, so each returns one list at two positions. `List.update (dup… [ … ]) 0 λv → List.push v 9` is
+accepted on master, because the taken element is taken as apart from its container (`res [*]
+condition(fresh1) π1[*]{excl π1}`). R-4.6.9 requires all three refused `exclusive`. `rotate`
+(`[ …rest, p ]`) is sound and stays accepted. The record twin is CK-264.
+
+## CK-279 — a List Int field of a mutually recursive type is taken to reach the other type (2026-10-25)
+
+**Issue:** #395. **Fixture:** `tests/pending/ownership/MutualListField.beni`. With `type A = A (List
+Int) B` and `type B = B (List Int) (Maybe A)`, `ab2` pushes the inner `A`'s list while it returns the
+outer `B`'s list `ys`. It is refused `element: ys⋆ holds it` (approx), because a below marker's
+expansion may begin with any step, so `#B.0` counts as reaching `A`. A `List Int` reaches no other
+type, so R-4.7.4 requires it accepted.
+
+## CK-280 — a write to one list of a recursive part needs the whole region exclusive (2026-10-25)
+
+**Issue:** #400 (the Lean bridge's `Case5230`). **Fixture:** `tests/pending/ownership/WriteOneLevel.beni`.
+`f` pushes the left child's list and returns the right subtree. `run` and `runFresh` hand it a tree that
+holds one list at three levels, none of them in the right subtree, and both calls are refused
+`exclusive`: the checker cannot tell a write to one of the region's lists from a write to every one.
+R-4.7.8 requires both accepted. `c1` and `c2` (`incAll2` writes every level) stay `exclusive`.
+
+## CK-282 — a prepend in front of a fresh constructor value or record is taken as maybe its base (2026-10-25)
+
+**Issue:** none (R-4.4.3, owner 2026-10-25). **Fixture:** `tests/pending/ownership/PrependFreshRecord.beni`.
+`ys = [ Box n, …xs ]` (and `[ { n = n }, …xs ]`), then `List.push ys …` while `xs` is read later, is
+refused `call` (approx): only a fresh `List` front item is narrowed today (`ownership/PrependFresh`). A
+fresh record or constructor value as the front item is new, so R-4.4.3 requires both accepted.
+`intFront` puts a scalar in front and stays refused `call`.
+
+## CK-284 — a top-level alias of a writer is pending, and past eight names it is lost (2026-10-25)
+
+**Requirement:** R-5.5.6 (owner, 2026-10-25). **Fixture:** `tests/pending/ownership/AliasWriterCall.beni`.
+`writer = List.push`, then `ys = writer xs 1` with `xs` read after, is refused `later-use` at the call,
+as `List.push` is, but v1 also marks the alias itself `pending: it is returned`, and so `a1 = w1`.
+Through nine names (`nine xs = ( a9 xs, xs )`) v1 calls a function it cannot identify and prints no
+line, because alias chains stop at eight (R-7.5). Required: no pending line, and `later-use` at every
+call through any chain. o/AliasWriter pins v1's opposite and changes with the fix.
+
+## CK-294 — `need` demands a callback answer's items when the callee writes only the outer list (2026-10-25)
+
+**Issue:** #188. **Fixture:** `tests/pending/ownership/NeedOuterOnly.beni`. `pushOuter f = List.push (f
+⊤) [ 0 ]` and `pushOuter λ⊤ → [ xs, xs ]`, with `xs` read after, is safe: only the fresh outer list is
+written. `need` records no written path, so the call-site demand is deep and the lambda is refused
+`need`. R-5.2.8 accepts it. A fresh control stays accepted; a callback that answers the caller's own
+live outer list stays refused.
+
+## CK-295 — a list answered through a lambda over a function parameter loses its exclusivity (2026-10-25)
+
+**Issue:** #868. **Fixture:** `tests/pending/ownership/EditAnsweredList.beni`. `editL list f = List.map
+list λrow → if … then f row else row` over `List (List Int)` answers `fresh1{lost}`, because
+`freshAcross` reads `f`'s call inside the lambda as `cond_lost`, so `bumpAll (editL rows λr → List.push
+r 1)` is refused `exclusive` (approx). #878 fixed the record twin only (o/RecordContentsAnswered).
+R-5.2.9 accepts it; a lambda that answers one captured list at every position stays refused.
+
+## CK-296 — a fold whose accumulator has a cyclic type never settles (2026-10-25)
+
+**Issue:** #955 (blocks O4a). **Fixture:** `tests/pending/ownership/CyclicFold.beni`. `n = List.length
+(List.foldr [] [] List.intersperse)` has the unnamed cyclic type `List (List …)`. Each fixpoint round
+adds one `[*]` step that nothing folds, so v1 prints `limit n: fixpoint, unsettled after 32`, which is
+`ownership_limit` under enforcement. R-5.3.7: no limit, clean. The twin `m` folds with `List.push`,
+which writes the item it is handed (a lambda or named function writing the accumulator gets INFINITE
+TYPE, so only a point-free core function gives the cyclic type); it hits the same limit, and its two
+accepted lines must stay as they are.
+
+## CK-297 — a once closure writes a list that another holder still reads (2026-10-25)
+
+**Issue:** #382. **Fixture:** `tests/pending/ownership/OnceOtherHolder.beni`. Five shapes, all accepted
+`once`: an alias `ys = xs`; a second closure `g` over `xs`; `s = { a = xs, b = xs }`; a closure in a
+record field; a closure destructured from a captured tuple. The `.env` capture-write case decides from
+the creation and the one call, without checking the closure's body against the other holders.
+Required (R-5.4.3): refused, `alias` where a binding or field holds the list and `captured` where a
+closure does (R-4.3.1, R-5.4.1).
+
+## CK-298 — a closure that pushes its capture is called twice (2026-10-25)
+
+**Issue:** #383. **Fixture:** `tests/pending/ownership/CalledTwicePusher.beni`. `w = mkPusher xs;
+( w 1, w 2 )`: v1 accepts the call `param` and marks the push in `mkPusher` `pending: it is returned`.
+Required (R-5.4.4): the returned lambda's write is carried to the caller (R-5.4.9), and the creation is
+refused `once`.
+
+## CK-299 — a read in a later argument of a once lambda's call is a later use (2026-10-25)
+
+**Issue:** #416. **Fixture:** `tests/pending/ownership/OnceLaterArgument.beni`. `rev p = g2 (bump p _)
+p.x` and `revL xs = g2 (push xs _) (List.length xs)` are refused `later-use`, but the lambda cannot run
+before `g2` is called, so the read comes before any write. Required (R-5.4.5): both accepted `once`.
+o/RecordOnce `readAfter` pins v1's over-refusal and changes with the fix.
+
+## CK-300 — a returned lambda's write is pending even though its caller is judged (2026-10-25)
+
+**Issue:** #956. **Fixture:** `tests/pending/ownership/ReturnedLambdaWrite.beni`. With `flatten _ = λp →
+{ p | y = 0 }`, v1 already accepts `f { x = 1, y = 2 }` and refuses `f origin` with `origin` read
+after, but still marks the lambda's write `pending: it is returned`, which is `record_may_be_shared`
+under enforcement and breaks typekeys/Records and repkeys TopLevel and Unboxed. Required (R-5.4.9): no
+pending line.
+
+## CK-301 — a function value with several known classes answers `⊤call` (2026-10-25)
+
+**Issue:** #278. **Fixture:** `tests/pending/ownership/JoinedFunctionValue.beni`. `callValue` applies a
+class only when there is exactly one, so `if flag then λs → Ok { text = [ s ] } else λs → Ok { text =
+[ s, s ] }`, and the mixed form `parse`/lambda, are refused `unknown` (approx), though every class makes
+the list it returns. `if flag then parse else parse` is one class and already accepted. R-5.5.5
+accepts them; the twin `if flag then λ⊤ → shared else λ⊤ → []` stays refused `top-level`, exactly.
+

@@ -1,0 +1,29 @@
+-- CK-294: R-5.2.8, #188: a callee that only pushes onto the list its
+-- callback returns demands that outer list, not its items. `shared`'s
+-- callback answers a fresh outer list whose two items are one list `xs`,
+-- which the caller reads after: `pushOuter` never writes an item, so it is
+-- accepted and makes no line. `fresh` is the control, accepted; `outer`,
+-- whose callback answers the caller's own outer list, stays refused `need`.
+-- Red: v1's `need` records no path, so the call-site demand is deep, and
+-- `shared`'s lambda is refused `need`. The golden claims the verdict lines
+-- and the totals; its summary lines are master's.
+pushOuter : (⊤ → List (List Int)) → List (List Int)
+pushOuter f = List.push (f ⊤) [ 0 ]
+
+
+pub shared : ⊤ → List (List Int) × List Int
+shared ⊤ =
+    xs = [ 1 ]
+    out = pushOuter λ⊤ → [ xs, xs ]
+    ( out, xs )
+
+
+pub fresh : ⊤ → List (List Int)
+fresh ⊤ = pushOuter λ⊤ → [ [ 1 ], [ 2 ] ]
+
+
+pub outer : ⊤ → List (List Int) × List (List Int)
+outer ⊤ =
+    ys = [ [ 1 ] ]
+    out = pushOuter λ⊤ → ys
+    ( out, ys )

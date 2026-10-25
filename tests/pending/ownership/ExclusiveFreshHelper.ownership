@@ -1,0 +1,18 @@
+module ExclusiveFreshHelper
+  7:11 List.update xs: accepted param
+  7:11 List.update xs[*]: accepted param (<lambda> writes what List.update supplies it)
+  7:33 List.push l: accepted callback-param (List.update supplies it owned)
+  12:11 List.push <call List.push>: accepted fresh
+  12:22 List.push <literal>: accepted fresh
+  13:5 call ExclusiveFreshHelper.want old: accepted fresh (ExclusiveFreshHelper.want writes π1)
+  13:5 call ExclusiveFreshHelper.want old[*]: accepted fresh (ExclusiveFreshHelper.want writes π1[*])
+  19:11 List.push <call List.push>: accepted fresh
+  19:22 List.push <literal>: accepted fresh
+  20:5 call ExclusiveFreshHelper.want old: rejected exclusive: the callee needs the list's elements not to share, and they may (ExclusiveFreshHelper.want writes π1) (approx)
+  20:5 call ExclusiveFreshHelper.want old[*]: accepted fresh (ExclusiveFreshHelper.want writes π1[*])
+  summary want: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq spine π1[*]
+  summary two: res [*] ~condition(fresh2) ~fresh2, fresh1
+  summary twice: res [*] ~condition(fresh1) ~fresh1, fresh2{lost}r{lost}
+  demands 11: accepted 10 (fresh 7, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 11: accepted 10 (fresh 7, call 0, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

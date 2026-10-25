@@ -1,0 +1,13 @@
+module JoinedFunctionValue
+  24:13 List.push r.text: accepted call
+  35:13 List.push r.text: accepted call
+  46:13 List.push r.text: accepted call
+  59:5 List.push <call>: rejected top-level: JoinedFunctionValue.shared is a top-level value
+  summary parse: res #Ok.0 fresh501◦, #Ok.0.text fresh1
+  summary lambdas: res [*] ~⊤call{lost}r{lost}, fresh1 ⊤call{lost}r{lost}
+  summary mixed: res [*] ~⊤call{lost}r{lost}, fresh1 ⊤call{lost}r{lost}
+  summary same: res [*] ~fresh2, fresh1
+  summary sharedOrNew: res [*] ~⊤call{lost}r{lost}, ⊤call{lost}r{lost}
+  demands 4: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 4: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause top-level 1

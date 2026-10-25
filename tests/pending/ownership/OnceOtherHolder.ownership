@@ -1,0 +1,20 @@
+module OnceOtherHolder
+  15:16 List.push xs: rejected alias: ys holds it and is read at 15:44
+  22:16 List.push xs: rejected captured: g, a closure holding it, is used at 22:32
+  29:16 List.push s.b: rejected alias: s.a holds it and is read at 29:46
+  37:16 List.push s.b: rejected captured: s.a, a closure holding it, is used at 37:34
+  47:15 List.push ys: rejected captured: h, a closure holding it, is used at 47:31
+  capture s.b: read 29:27; before 29:9
+  capture s.a: read 29:46; before 29:9
+  capture s.b: read 37:27; before 37:9
+  summary aliased: π1 RAW[storage], π1[*] A; res .0 π1, .0[*] ~π1[*]
+  summary closure: π1 RAW[storage], π1[*] A; res .0 π1, .0[*] ~π1[*]
+  summary fields: π1 RAW[storage], π1[*] A; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary fieldClosure: π1 RAW[storage], π1[*] A; res .0 π1, .0[*] ~π1[*]
+  summary tuple: π1 RAW[storage], π1[*] A; res .0 π1, .0[*] ~π1[*]
+  demands 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+  records 0: accepted 0, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 3
+total 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+records 0: accepted 0, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 3
+cause alias 2
+cause captured 3

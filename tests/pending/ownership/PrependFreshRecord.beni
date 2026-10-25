@@ -1,0 +1,32 @@
+-- CK-282: R-4.4.3 (owner 2026-10-25). A prepend whose front item is a fresh
+-- constructor value (`Box n`) or record literal is not its base, so pushing
+-- onto the result while `xs` is read later is safe: accept. Red: master
+-- refuses both `call` (approx); only a fresh `List` front item is narrowed
+-- (ownership/PrependFresh). `intFront`, a scalar front item, stays refused.
+type Box
+    = Box Int
+
+
+type alias Cell =
+    n : Int
+
+
+pub boxFront : Int, List Box → Int
+boxFront n xs =
+    ys = [ Box n, …xs ]
+    zs = List.push ys (Box 1)
+    List.length zs + List.length xs
+
+
+pub recordFront : Int, List Cell → Int
+recordFront n xs =
+    ys = [ { n = n }, …xs ]
+    zs = List.push ys { n = 1 }
+    List.length zs + List.length xs
+
+
+pub intFront : Int, List Int → Int
+intFront n xs =
+    ys = [ n, …xs ]
+    zs = List.push ys 1
+    List.length zs + List.length xs

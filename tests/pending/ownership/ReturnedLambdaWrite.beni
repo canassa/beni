@@ -1,0 +1,30 @@
+-- CK-300: R-5.4.9, #956 (typekeys/Records, repkeys TopLevel and Unboxed
+-- under enforcement): `flatten _ = λp → { p | y = 0 }` hands back a lambda
+-- that writes the point it is given. The write is carried to the caller as
+-- an obligation and discharged at its call: `fresh` calls it on a fresh
+-- literal and is accepted; `held` calls it on `origin` and then reads
+-- `origin`, and is refused `later-use`. Red: v1 judges both calls so, but
+-- also makes every writing lambda in a declaration's result `pending: it
+-- is returned` (an error under enforcement). The golden claims the
+-- verdict lines and the totals; its summary lines are master's.
+type alias Point =
+    x : Int
+    y : Int
+
+
+flatten : ⊤ → (Point → Point)
+flatten _ = λp → { p | y = 0 }
+
+
+pub fresh : ⊤ → Int
+fresh ⊤ =
+    f = flatten ⊤
+    q = f { x = 1, y = 2 }
+    q.y
+
+
+pub held : Point → Point × Point
+held origin =
+    f = flatten ⊤
+    q = f origin
+    ( q, origin )

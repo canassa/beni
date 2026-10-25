@@ -1,0 +1,59 @@
+-- CK-301: R-5.5.5, #278: a function value that may be one of several known
+-- functions is applied as each and the results joined. In #278's three
+-- programs every class makes the list it returns, so the push onto the
+-- answer's `text` is accepted (`lambdas`, `mixed`, `same`). `sharedOrNew`,
+-- `if flag then λ⊤ → shared else λ⊤ → []` pushed, stays refused, exactly
+-- `top-level`. Red: v1 applies a function value's class only when it has
+-- exactly one, so `lambdas`, `mixed` and `sharedOrNew` answer `⊤call` and
+-- are refused `unknown` (approx); `same` is one class and accepted. The
+-- golden claims the verdict lines and the totals; its summary lines are
+-- master's.
+type alias Sentence =
+    text : List String
+
+
+parse : String → Result String Sentence
+parse s = Ok { text = [ s ] }
+
+
+pub lambdas : Bool → List String
+lambdas flag =
+    p = if flag then λs → Ok { text = [ s ] } else λs → Ok { text = [ s, s ] }
+    case p "a" of
+        Ok r →
+            List.push r.text "b"
+
+        Err _ →
+            []
+
+
+pub mixed : Bool → List String
+mixed flag =
+    p = if flag then parse else λs → Ok { text = [ s ] }
+    case p "a" of
+        Ok r →
+            List.push r.text "b"
+
+        Err _ →
+            []
+
+
+pub same : Bool → List String
+same flag =
+    p = if flag then parse else parse
+    case p "a" of
+        Ok r →
+            List.push r.text "b"
+
+        Err _ →
+            []
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+pub sharedOrNew : Bool → List Int
+sharedOrNew flag =
+    f = if flag then λ⊤ → shared else λ⊤ → []
+    List.push (f ⊤) 2

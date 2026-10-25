@@ -1,0 +1,23 @@
+-- CK-295: R-5.2.9, #868, the list twin of o/RecordContentsAnswered:
+-- `editL` hands its function parameter `f` each row through a lambda that
+-- answers `f row` or the row itself, so the answer holds each list once and
+-- `bumpAll`'s in-place push of every row is accepted in `patched`. `shared`,
+-- whose `f` answers one captured list at every position, stays refused
+-- `exclusive`. Red: v1's `freshAcross` reads the lambda's call of `f` as
+-- `cond_lost` (#878 fixed only the record twin), so `editL` answers
+-- `fresh1{lost}` and `patched` is refused `exclusive` (approx). The golden
+-- claims the verdict lines and the totals; its summary lines are master's.
+bumpAll : List (List Int) → List (List Int)
+bumpAll rows = List.map rows λr → List.push r 9
+
+
+editL : List (List Int), (List Int → List Int) → List (List Int)
+editL list f = List.map list λrow → if List.length row > 1 then f row else row
+
+
+pub patched : List (List Int) → List (List Int)
+patched rows = bumpAll (editL rows λr → List.push r 1)
+
+
+pub shared : List (List Int), List Int → List (List Int)
+shared rows one = bumpAll (editL rows λ_ → one)
