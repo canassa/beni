@@ -1,0 +1,14 @@
+module SchemaIssuesExclusive
+  18:26 update found[*]: accepted param (List.map writes it)
+  18:46 update i: accepted callback-param (List.map supplies it owned)
+  22:13 update <call Schema.decodeWith>#Err.0[*]: accepted call (SchemaIssuesExclusive.issues writes it)
+  26:12 update <call Schema.parse>#Err.0[*]: accepted call (SchemaIssuesExclusive.issues writes it)
+  30:18 update <call Schema.decode>#Err.0[*]: accepted call (SchemaIssuesExclusive.issues writes it)
+  summary issues: π1 R, π1#Err.0 R, π1#Err.0[*] W{path}; rxreq excl π1#Err.0
+  summary decoded: unused
+  summary parsed: unused
+  summary decodedPlain: unused
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

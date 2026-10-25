@@ -1,0 +1,19 @@
+module RecordVariantMove
+  41:21 update model: accepted param
+  49:21 update model: accepted param
+  49:50 update form: accepted param
+  52:21 update model: accepted param
+  52:47 update form: accepted param
+  55:13 update model: accepted param
+  59:13 update model: accepted param
+  59:27 update a: accepted param
+  68:5 update entry RecordVariantMove.update model: accepted entry
+  68:5 update entry RecordVariantMove.update model.a: rejected disjoint: another operand of the same operation reaches it [copy]
+  68:5 update entry RecordVariantMove.update model.status#Editing.1: accepted entry
+  68:5 update entry RecordVariantMove.update model.status#Saving.0: accepted entry
+  summary update: π2 RW{a, b, status}, π2.a RW{title}, π2.b R, π2.status R, π2.status#Editing.1 RW{title}, π2.status#Saving.0 W{title}; res .a π2.a π2.a◦, .b π2.a π2.b, .status π2.status, .status#Editing.1 π2.status#Editing.1◦, .status#Saving.0 π2.status#Editing.1 π2.status#Saving.0◦, π2 π2◦
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 12: accepted 11, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 12: accepted 11, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

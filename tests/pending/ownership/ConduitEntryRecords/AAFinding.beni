@@ -1,0 +1,12 @@
+-- CK-303: R-5.8.9 (#957) and, as CK-304, R-5.8.10 (#412): Conduit's entry,
+-- unchanged (`_expected.sources`), on browser-tea with enforcement.
+-- R-5.8.9: `update`'s arms are told apart, and Conduit's view events carry
+-- only `Cred` and strings, so the four model records at `Main.beni:254`
+-- (`model#Article.0.article#Loaded.0`, the two `feed#Loaded.0#Model.0`,
+-- `model#Settings.0.status#Loaded.0`) are accepted `entry`. v1 refuses them
+-- `payload` (approx): it joins the arms (§20.5, §23.6).
+-- R-5.8.10: the `ChangedUrl` address is a new record at every event and
+-- `update` does not keep it, so `msg#ChangedUrl.0` is accepted `entry`. v1
+-- refuses it `escaped` (approx).
+-- The golden is `ownership/Conduit`'s with those five lines and the counts
+-- changed; the four `status` `disjoint` lines (#410, R-4.8.15) stay as v1.

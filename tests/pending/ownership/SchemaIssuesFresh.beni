@@ -1,0 +1,41 @@
+-- CK-307: R-5.11.5, #413 (`run/SchemaDepth`'s `Show.issue { i | path = [] }`).
+-- The issues of an `Err` from `parseWith`, `encodeWith` and `printWith` are
+-- fresh, built by the engine, so `issues`' update of each is accepted at
+-- all three calls. Red: master answers the record schema's run `unknown`
+-- (its conversions are not followed) and refuses `parsed` and `encoded`
+-- `unknown (a)`, and refuses `printed` `exclusive (a)`.
+import Schema exposing (Schema)
+
+
+type alias Point =
+    x : Int
+
+
+point : Schema Point Point
+point =
+    Schema.record
+        (Schema.fields ▷ Schema.field "x" Schema.int)
+        (Schema.mapping (λ( ⊤, x ) → { x = x }) λp → ( ⊤, p.x ))
+        (Schema.mapping (λ( ⊤, x ) → { x = x }) λp → ( ⊤, p.x ))
+
+
+issues : Result (List Schema.Issue) a → Int
+issues r =
+    case r of
+        Ok _ →
+            0
+
+        Err found →
+            List.length (List.map found λi → { i | path = [] })
+
+
+pub parsed : ⊤ → Int
+parsed ⊤ = issues (Schema.parseWith point (Schema.defaultOptions ⊤) "{}")
+
+
+pub encoded : ⊤ → Int
+encoded ⊤ = issues (Schema.encodeWith point (Schema.defaultOptions ⊤) { x = 1 })
+
+
+pub printed : ⊤ → Int
+printed ⊤ = issues (Schema.printWith point (Schema.defaultOptions ⊤) { x = 1 })

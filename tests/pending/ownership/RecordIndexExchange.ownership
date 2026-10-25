@@ -1,0 +1,21 @@
+module RecordIndexExchange
+  24:13 update rows[*]: accepted param (List.map writes it)
+  24:32 update r: accepted callback-param (List.map supplies it owned)
+  48:15 update <call RecordIndexExchange.exchange>[*]: accepted call (RecordIndexExchange.mark writes it)
+  52:13 update <call RecordIndexExchange.swapAt>[*]: accepted call (RecordIndexExchange.mark writes it)
+  56:17 update <call List.drop>[*]: accepted param (List.indexedMap writes it)
+  58:9 update r: accepted callback-param (List.indexedMap supplies it owned)
+  74:13 update <call RecordIndexExchange.twice>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordIndexExchange.mark writes it) (approx) [copy]
+  summary rows4: res [*] fresh501◦ fresh502◦ fresh503◦ fresh504◦, fresh1
+  summary mark: π1 R, π1[*] W{label}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary exchange: π1 RA, π1[*] R; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*], fresh1r{lost} π1
+  summary swapAt: π1 RA, π1[*] R; res [*] ~condition(fresh2) ~fresh2{lost}r{lost} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*], fresh1{lost}r{lost} π1
+  summary exchanged: res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦ ~fresh502◦ ~fresh503◦ ~fresh504◦ ~fresh505◦r{lost} ~fresh506◦ ~fresh507◦r{lost}, fresh1r{lost}
+  summary swapped: res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦ ~fresh502◦ ~fresh503◦ ~fresh504◦ ~fresh505◦ ~fresh506◦ ~fresh507◦r{lost} ~fresh508◦ ~fresh509◦r{lost}, fresh1r{lost}
+  summary dropEdit: π1 R, π1[*] RW{label}; res [*] ~condition(fresh2) ~fresh2{lost}r{excl π1} ~fresh501◦r{excl π1} ~π1[*] ~π1[*]◦, fresh1{lost}r{excl π1}; rxreq excl π1
+  summary twice: π1 RA, π1[*] R; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*], fresh1r{lost} π1
+  summary doubled: res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦ ~fresh502◦ ~fresh503◦ ~fresh504◦ ~fresh505◦r{lost} ~fresh506◦ ~fresh507◦r{lost}, fresh1r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 6, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 6, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

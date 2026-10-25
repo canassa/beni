@@ -1,0 +1,9 @@
+module ListenTopLevelStart
+  32:15 List.push xs: accepted param
+  41:5 entry ListenTopLevelStart.update msg#Got.0: accepted entry
+  45:32 send ListenTopLevelStart.start: accepted call
+  summary start: π1 RAE; res λ?r{lost}, ◇ ⊤{lost}r{lost}, ◇⟨◇⟩◇ ~π1; π1 calls 0, unseen
+  summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A, π2 R; res .0 π1#Got.0, .0[*] ~π1#Got.0[*]
+  summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
+  demands 3: accepted 3 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0

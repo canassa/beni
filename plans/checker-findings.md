@@ -6460,6 +6460,16 @@ refused `call` (approx): only a fresh `List` front item is narrowed today (`owne
 fresh record or constructor value as the front item is new, so R-4.4.3 requires both accepted.
 `intFront` puts a scalar in front and stays refused `call`.
 
+## CK-283 — rows exchanged by index are taken to share (2026-10-25)
+
+**Issue:** #869. **Fixture:** `tests/pending/ownership/RecordIndexExchange.beni`. `List.indexedMap
+rows λi row → if i == 1 then b else if i == 3 then a else row` (with `a` and `b` read from `rows`), and
+`KeyedEnds`' `swapAt`, leave every row at one position, but the checker cannot see indexes, so the
+answer's record condition is lost and `mark`'s write of each row is refused `exclusive (a)`.
+`KeyedEnds`' edit through `List.indexedMap (List.drop rows 1) …`, whose callback reads only
+`List.length rows`, is refused `disjoint`. R-4.8.17 asks for a precise rule that accepts these. The
+twin `twice` puts row 3 at index 1 too, and must stay `exclusive`.
+
 ## CK-284 — a top-level alias of a writer is pending, and past eight names it is lost (2026-10-25)
 
 **Requirement:** R-5.5.6 (owner, 2026-10-25). **Fixture:** `tests/pending/ownership/AliasWriterCall.beni`.
@@ -6468,6 +6478,43 @@ as `List.push` is, but v1 also marks the alias itself `pending: it is returned`,
 Through nine names (`nine xs = ( a9 xs, xs )`) v1 calls a function it cannot identify and prints no
 line, because alias chains stop at eight (R-7.5). Required: no pending line, and `later-use` at every
 call through any chain. o/AliasWriter pins v1's opposite and changes with the fix.
+
+## CK-290 — an old field read through a wrapper is a whole use (2026-10-25)
+
+**Issue:** #394. **Fixture:** `tests/pending/ownership/RecordWrapperRead.beni`. `w = Just p` (or
+`t = ( p, 1 )`), then `q = { p | x = 1 }`, then a pattern that reads only `r.x`: master takes the use
+of the scrutinee at ε as a whole use of `p` and refuses each update `alias` ("w#Just.0 holds it",
+"t.0 holds it"). R-4.8.12 makes it a field read, hoisted before the update. The golden states the
+verdicts and counts; the fix blesses the hoist lines.
+
+## CK-291 — record bases no provenance names are pending (2026-10-25)
+
+**Issue:** #870. **Fixtures:** `tests/pending/ownership/RecordProvenance{EntryPage,CtorValue,SameVariant,
+TopLevelOk,CallbackResult}.beni`, one per program of #870 whose verdict the requirements fix (R-4.8.14):
+`writes/A1Fallthrough`, `writes/ConstructorAsValue` and `writes/SameVariant` on `browser-inline` (the
+entry paths `model.page#Home.0`, `model#Pair.1` and `model.status#Loaded.0` only ever hold records a
+previous model held there, or records rebuilt from them, so `accepted entry`); `run/JsonDerivedValues`
+reduced (an update of the `Ok` payload of a decoded top-level value is `top-level`, R-4.9.1); and
+`repkeys/HostParam`'s `c` reduced (the callback's answer is the fresh literal it was handed, so
+`accepted fresh`). Master prints "pending: no provenance names where its base's object comes from" for
+each.
+
+## CK-292 — a record moved between variants of one model field is a second holder (2026-10-25)
+
+**Issue:** #410. **Fixture:** `tests/pending/ownership/RecordVariantMove.beni` (`browser-inline`).
+`Save` moves the form from `Editing n form` to `Saving form`. One value of `status` is one variant at a
+time, so the form is never reachable twice, yet the entry's record demand counts the other variant's
+path as another operand and refuses `model.status#Editing.1` and `#Saving.0` `disjoint`. R-4.8.15
+accepts them `entry`. In the same program `Dup` stores `model.a` at `b` too, and `Rename`'s write of
+`a` must stay `disjoint`.
+
+## CK-293 — a schema decoder's issue list loses its record condition (2026-10-25)
+
+**Issue:** #420. **Fixture:** `tests/pending/ownership/SchemaIssuesExclusive.beni`. The issue list a
+decoder builds holds records it made, but its row is `fresh1{lost}r{lost}`: the record condition is
+lost with the list's, so `{ i | path = [] }` after `Schema.decodeWith`, `parse` and `decode` is refused
+`exclusive (a)`. R-4.10.8 accepts it. `List.append`'s and `List.filter`'s rows state their record
+conditions on master already, so that half of the row has no red fixture.
 
 ## CK-294 — `need` demands a callback answer's items when the callee writes only the outer list (2026-10-25)
 
@@ -6533,4 +6580,62 @@ class only when there is exactly one, so `if flag then λs → Ok { text = [ s ]
 [ s, s ] }`, and the mixed form `parse`/lambda, are refused `unknown` (approx), though every class makes
 the list it returns. `if flag then parse else parse` is one class and already accepted. R-5.5.5
 accepts them; the twin `if flag then λ⊤ → shared else λ⊤ → []` stays refused `top-level`, exactly.
+
+## CK-302 — a tagger lambda over a host `Value` is refused as a shared list (2026-10-25)
+
+**Issue:** #963. **Fixture:** `tests/pending/ownership/PushTagger/`, a project with the research
+generators' `Push` layer as `platform/` (its `_expected.platform` names the pending path, to change on
+promotion). `Push.onPush (λv → Pushed v)` with `Pushed : Value → Msg` is refused `need`, while
+`Push.onPush Other` is accepted: `ctorClass` drops fields that cannot hold a list, but the lambda's
+summary keeps `#Pushed.0 π1`, and a foreign `Value` is read as possibly a list. Required (R-5.5.12):
+the lambda gets the bare constructor's verdict.
+
+## CK-303 — Conduit's entry refuses four model records as view-event payload (2026-10-25)
+
+**Issue:** #957. **Fixture:** `tests/pending/ownership/ConduitEntryRecords/` (unchanged
+`examples/conduit/src`, `browser-tea+everywhere`). R-5.8.9: `update`'s arms are told apart, and
+Conduit's view events carry only `Cred` and strings, so `model#Article.0.article#Loaded.0`, the two
+`feed#Loaded.0#Model.0` and `model#Settings.0.status#Loaded.0` at `Main.beni:254` are accepted
+`entry`. v1 refuses them `payload` (approx): it joins the arms (§20.5, §23.6), and `viewPage`'s
+`Html.map` leaves the events approximate. The golden is `ownership/Conduit`'s with those lines and the
+counts changed; #410's four `status` lines stay refused.
+
+## CK-304 — Conduit's ChangedUrl address is refused escaped at the entry (2026-10-25)
+
+**Issue:** #412. **Fixture:** `tests/pending/ownership/ConduitEntryRecords/`, shared with CK-303.
+R-5.8.10: `onUrlChange`'s address is a new record at every event (`Navigation.follow` →
+`Url.fromString`), and `update` does not keep it, so `msg#ChangedUrl.0` is accepted `entry`. v1
+refuses it `escaped` (approx): the entry's escape of a message's records is approximate.
+
+## CK-305 — a send gives up its record objects unchecked (2026-10-25)
+
+**Issue:** #976. **Fixture:** `tests/pending/ownership/SendRecordObjects.beni` (browser-inline,
+browser-tea+everywhere). R-5.9.3: `fire send = send (Got origin)` and `λsend → send (Got origin)` with
+top-level `origin` are refused `top-level` at the send (`top_level_record_changed`), and `send (Saved
+model.form)` from an arm that keeps `model` is refused `later-use`. v1 accepts all three, and the arms
+that write the payload are accepted `entry`: the send's demand reads `listView` only, and
+`checkSender` returns when the message holds no list.
+
+## CK-306 — a top-level start handing its send to Listen.on is refused (2026-10-25)
+
+**Issue:** #440. **Fixture:** `tests/pending/ownership/ListenTopLevelStart.beni` (browser-inline).
+R-5.9.9: `start send = Listen.on "window" "resize" read send`, handed to `Sub.on`, is accepted. v1 has
+no send row for `Listen.on` (§23.3, amended 2026-10-19), so the send is refused `supply` (approx),
+"hands its send where the checker cannot see its calls". The golden's accept kind is provisional.
+
+## CK-307 — the issues of a `…With` run are unknown (2026-10-25)
+
+**Issue:** #413. **Fixture:** `tests/pending/ownership/SchemaIssuesFresh.beni`. A failed `parseWith`,
+`encodeWith` or `printWith` of a record schema answers issues the engine built new, but master answers
+the run `unknown` (its conversions are not followed) and refuses the update of each issue `unknown
+(a)`, or `exclusive (a)` for `printWith`. R-5.11.5 makes them fresh: all three are accepted
+(run/SchemaDepth's `Show.issue { i | path = [] }`).
+
+## CK-309 — `Record.copy` of an open record type keeps the original's object (2026-10-25)
+
+**Issue:** #871. **Fixture:** `tests/pending/ownership/RecordCopyOpen.beni`. `copied = Record.copy r`
+with `r : { r | cups : Int }`, then `{ copied | cups = 13 }` while `r` is returned beside it, is refused
+`alias: r holds it`, because `copiedRecord` gives a new object only for a closed type
+(run/FieldColouring). R-4.10.4: the copy is a new object for an open type too. The inline form
+`{ Record.copy r | … }` is the control, accepted on master.
 

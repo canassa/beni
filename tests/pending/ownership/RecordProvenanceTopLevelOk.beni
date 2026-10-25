@@ -1,0 +1,29 @@
+-- CK-291: R-4.8.14, #870 (`run/JsonDerivedValues`' `Main.sample#Ok.0`).
+-- `renamed` writes the record in the `Ok` of `sample`, a top-level value
+-- whose definition makes it by decoding, so the write is refused
+-- `top-level` (R-4.9.1, `top_level_record_changed`); `fresh`, the same
+-- decode called in the body, stays accepted. Red: master prints "pending:
+-- no provenance names where its base's object comes from" for `renamed`.
+import Json
+import Schema exposing (Issue)
+
+
+type alias Doc =
+    name : String
+    level : Int
+
+
+fromValue : String → Result (List Issue) Doc
+fromValue text = Result.andThen (Schema.parse Schema.value text) λv → Json.decodeValue v
+
+
+sample : Result (List Issue) Doc
+sample = fromValue "{\"name\":\"n\",\"level\":3}"
+
+
+pub renamed : ⊤ → Result (List Issue) Doc
+renamed ⊤ = Result.andThen sample λd → Ok { d | name = "m" }
+
+
+pub fresh : ⊤ → Result (List Issue) Doc
+fresh ⊤ = Result.andThen (fromValue "{\"name\":\"n\",\"level\":3}") λd → Ok { d | name = "m" }

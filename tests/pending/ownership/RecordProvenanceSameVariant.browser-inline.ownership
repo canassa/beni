@@ -1,0 +1,14 @@
+module RecordProvenanceSameVariant
+  51:21 update model: accepted param
+  51:47 update form: accepted param
+  59:21 update model: accepted param
+  70:21 update model: accepted param
+  75:21 update model: accepted param
+  96:5 update entry RecordProvenanceSameVariant.update model: accepted entry
+  96:5 update entry RecordProvenanceSameVariant.update model.status#Loaded.0: accepted entry
+  summary update: π2 RW{box, phase, status}, π2.box R, π2.phase R, π2.status R, π2.status#Loaded.0 W{title}; res .status π2.status, .status#Loaded.0 π2.status#Loaded.0◦, π2 π2◦
+  summary view: π1.status R, π1.status#Loaded.0.body R; res ⟨render⟩ fresh2{lost}r{lost}, ⟨render⟩⋆ ~fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

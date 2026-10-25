@@ -1,0 +1,29 @@
+-- CK-290: R-4.8.12, #394. A read of an old field through a wrapper of the
+-- record (`w = Just p`, `t = ( p, 1 )`, then a pattern) is a field read,
+-- hoisted before the update: both updates are accepted `[hoisted 1]`. Red:
+-- master takes the pattern's use of the wrapper as a whole use of `p` and
+-- refuses each `alias` ("w#Just.0 holds it", "t.0 holds it"). The hoist
+-- lines the fix prints are left to its blessing.
+type alias P =
+    x : Int
+    y : Int
+
+
+pub caseAlias : P → Int
+caseAlias p =
+    w = Just p
+    q = { p | x = 1 }
+    case w of
+        Just r →
+            q.x + r.x
+
+        Nothing →
+            q.x
+
+
+pub tupleDestr : P → Int
+tupleDestr p =
+    t = ( p, 1 )
+    q = { p | x = 1 }
+    ( a, _ ) = t
+    q.x + a.x

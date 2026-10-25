@@ -1,0 +1,12 @@
+module RecordProvenanceTopLevelOk
+  25:13 update RecordProvenanceTopLevelOk.sample#Ok.0: rejected top-level: RecordProvenanceTopLevelOk.sample is a top-level value [restructure]
+  25:43 update d: accepted callback-param (Result.andThen supplies it owned)
+  29:11 update <call RecordProvenanceTopLevelOk.fromValue>#Ok.0: accepted call (Result.andThen writes it)
+  29:77 update d: accepted callback-param (Result.andThen supplies it owned)
+  summary fromValue: res #Err.0 fresh1{lost}r{lost}, fresh2{lost}
+  summary renamed: res #Err.0 shared(RecordProvenanceTopLevelOk.sample)#Err.0
+  summary fresh: res #Err.0 fresh1{lost}r{lost}, #Ok.0 fresh501◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 3, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 3, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0

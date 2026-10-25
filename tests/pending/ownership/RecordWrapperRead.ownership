@@ -1,0 +1,9 @@
+module RecordWrapperRead
+  15:9 update p: accepted param [hoisted 1]
+  27:9 update p: accepted param [hoisted 1]
+  summary caseAlias: π1 RW{x}, π1.x R
+  summary tupleDestr: π1 RW{x}, π1.x R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0

@@ -1,0 +1,11 @@
+module RecordProvenanceCallbackResult
+  16:9 update <record>: accepted fresh (RecordProvenanceCallbackResult.pick writes it)
+  16:20 update m: accepted callback-param (RecordProvenanceCallbackResult.pick supplies it owned)
+  17:5 update b: accepted fresh (RecordProvenanceCallbackResult.pick writes it)
+  17:16 update m: accepted callback-param (RecordProvenanceCallbackResult.pick supplies it owned)
+  summary pick: π1 R, π2 R; res cb1r{excl cb1}; π1 calls many, supply 1 cb1 ownedr{excl cb1}, supply 1 π2 ownedr{excl π2}
+  summary run: unused
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

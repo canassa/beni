@@ -1,0 +1,46 @@
+-- CK-306: R-5.9.9 (#440): a start written as a top-level function that hands
+-- its send to `Listen.on`, on browser-inline, is accepted: `Listen.on` gets
+-- a send row as `Cmd.perform`'s and `Sub.on`'s (`ownership-checker.md` §23.3
+-- amended 2026-10-19). v1 has no row for it, so the send handed to `start`
+-- is refused `supply` (approx): "hands its send where the checker cannot see
+-- its calls". The tagger answers a fresh list, so nothing else is refused.
+-- The golden's accept kind (`call`) is a guess for the rewrite to bless;
+-- its summary lines are master's.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Listen
+import Sub exposing (Sub)
+import Tea
+
+
+type Key
+    = Sizes
+
+
+type Msg
+    = Got (List Int)
+
+
+start : (List Int → ⊤) → (⊤ → ⊤)
+start send = Listen.on "window" "resize" (λ_ → [ 1, 2 ]) send
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Got xs →
+            ( List.push xs (List.length model), Cmd.none )
+
+
+view : List Int → Html Msg
+view model = <p>{String.fromInt (List.length model)}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on Sizes start λxs → Got [ List.length xs ]
+        }

@@ -1,0 +1,35 @@
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pushed Value
+    | Other Value
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ = ( {}, Cmd.none )
+
+
+update : Msg, {} → {} × Cmd Msg
+update msg model = ( model, Cmd.none )
+
+
+subscriptions : {} → Sub Msg
+subscriptions _ = Sub.batch [ Push.onPush λv → Pushed v, Push.onPush Other ]
+
+
+view : {} → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
