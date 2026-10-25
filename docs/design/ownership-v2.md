@@ -2061,12 +2061,25 @@ build without them is byte for byte what it was (the run hashes of the whole `ru
 - **`--sanitize-lists`** (build only, development only, exit 2 in a build that does not enforce). In a module
   whose demands were all accepted (`Hoists.Table.clean` under enforcement), every call of a core `List`
   writer — `set`, `update`, `push`, `pop`, `swap`, `insertAt`, `removeAt`, `append`, so every construction with
-  an item after a spread and every `++` on lists, as a call or a dot-call — is `_sanitize$list(site, writer,
-  base, …)` from `_core/_sanitize.mjs` (`src/js/sanitize_runtime.mjs`, written only when imported). The writer
-  runs on a fresh plain copy of its base; when it returns, the base is poisoned. The other operands and the
-  callback run first, as they run before an in-place store. A plain array's elements become holes read through
-  a prototype that throws, a view's own keys throw and its base array is poisoned, a trie header's own keys
-  throw. A call into a function that writes its parameter is covered where that function writes.
+  an item after a spread and every `++` on lists, as a call, a dot-call or a call through a local a `let` binds
+  to the writer — is `_sanitize$list(site, writer, base, …)` from `_core/_sanitize.mjs`
+  (`src/js/sanitize_runtime.mjs`, written only when imported). A writer handed to a call as an argument (v1's
+  `value` demand) is `_sanitize$writer(site, writer)`, which writes so wherever it is called. The writer runs
+  on a fresh plain copy of its base; when it returns, the base is poisoned. The other operands and the callback
+  run first, as they run before an in-place store. A plain array's elements become holes read through a
+  prototype that throws; a view's own keys throw and its base and plain copy are poisoned; a trie header's own
+  keys throw and so does every array of its storage (head, tail, plain copy, each node and leaf), since a list
+  that shares it (`List.drop` of a trie) aliases the trie. A spread or `++` chain is one demand, on its first
+  operand (`[ …a, …b, x ]` writes `a` and reads `b`), so the calls that build the rest of the chain are not
+  wrapped. A call into a function that writes its parameter is covered where that function writes.
+- **Coverage is checked against v1.** For every `.sanitize-lists` fixture, and every program
+  `test-lists-in-place` builds, the corpus walker compares the sites the sanitised build wraps, by position
+  and writer, with the `List.<writer>`, `construction`, `++` and `value List.<writer>` lines v1's dump
+  accepts, module by module (`checkSanitisedSites`), as sets: a lowering may write one site twice. A demand
+  left unwrapped, or a wrap with no demand, fails the case. A line whose base is a path into the elements
+  (`rows[*].1`) is the write a callback makes at its own site, and is not compared. A module the build did not
+  write is not compared. v1's report reaches no part of the compiler
+  but `src/own/`'s, so the check is the harness's.
 - **`--sanitize-records` and `browser-inline`.** The `inline` lowering drops an update's value when the update
   is written in place, since the model object is its base. Under the sanitiser the update answers a copy, so
   under `--sanitize-records` the write-set pass is told no module writes in place (`Emit`'s `in_place`), and
@@ -2074,11 +2087,15 @@ build without them is byte for byte what it was (the run hashes of the whole `ru
 - **`zig build test-records-in-place`** runs every `run/` program and every `browser/inline/` page in its
   three record passes; **`zig build test-lists-in-place`**, its twin, every `run/` program (under
   `--ownership-everywhere`) and every `browser/inline/` page under `--sanitize-lists`. The gates run the
-  `.in-place` and `.sanitize-lists` fixtures (`run/ListSanitiserValues`, every writer on every base form;
-  `run/ListSanitiserHiddenHolder`, a holder a platform keeps out of the checker's sight, which must trap).
+  `.in-place` and `.sanitize-lists` fixtures (`run/ListSanitiserValues`, every writer form on every base form,
+  each of which fails the coverage check unwrapped; `run/ListSanitiserHiddenHolder`, a holder a platform keeps
+  out of the checker's sight, and `run/ListSanitiserTrieHolder`, one that shares a trie's storage through
+  `List.drop`, each of which must trap).
 - **`bench/ownership-everywhere.mjs --diff=<a>,<b>`** dumps every root of O1's audit
   (`bench/ownership-roots.mjs`, ported from #210's driver: 1 617 roots on 7013ed4ac, where §7.2 counted 1 505)
-  under both and prints the three lists. `--diff=v1,v1` on 7013ed4ac: 8 436 positions the same, 0 and 0.
+  under both, compares them per demand (position, operation and base, a repeat counted apart), and prints the
+  three lists and a fourth, the demands only one side reports. `--diff=v1,v1` on e5421ac3d: 1 621 roots,
+  10 937 demands the same, 0, 0 and 0.
 
 Where it departs from §7.3, and why:
 
@@ -2089,7 +2106,8 @@ Where it departs from §7.3, and why:
    until #961. Poisoning a write v1 does not judge would trap reads v1 rightly accepts. It comes with #961, in
    S8.
 3. **What is not sanitised:** core's and the platforms' own modules (only an application module is clean in
-   v1's table), a writer called through a function value (none in the corpus), and the `browser`,
+   v1's table), a writer that leaves the module's sight some other way than as an argument or a `let` (in a
+   record, a list or a constructor; the coverage check reports any v1 judges), and the `browser`,
    `browser-tea` and test-platform pages, whose runtimes keep identity skips (#966).
 4. **Findings.** Under v1 on 7013ed4ac every `run/` program runs clean under both sanitisers, and every
    `browser/inline/` page under the record one. One page traps under the list one: #1028,
