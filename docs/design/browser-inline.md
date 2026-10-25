@@ -378,7 +378,8 @@ beni over `Js` in `Inline.beni`:
   eager; the classification is an uncapped iterative walk, so an expression's size alone never
   makes it guarded.
   *Amended 2026-10-25 (#1028):* a call of core's `List.set`, `update`, `push`, `pop`, `swap`,
-  `insertAt`, `removeAt` or `append`, or of a declaration that calls one, is not total: it edits its
+  `insertAt`, `removeAt` or `append` — `xs ++ ys` on lists is `List.append` (`Dispatch.appends`), `Lower.callsTotal` and
+  `Totality` both treat it so — or of a declaration that calls one, is not total: it edits its
   first argument in place once the ownership checker accepts the call, so two arms' writes would
   meet in one array if either ran ahead of the branch. It stays inside its arm, guarded like an
   impure call (`Totality.zig`; core's own callers are exempt).

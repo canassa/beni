@@ -1622,3 +1622,63 @@ test "growing full cast types settle on the composed path" {
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }
+
+// A `pub` core function that writes a parameter must be one of `List`'s eight
+// writers: `Totality` keys its exemption of core's own callers on those names
+// (`writes/Core.zig` `listWriter`), so a new wrapper that edits its argument
+// would be total, and browser-inline would run it ahead of its branch.
+/// The eight, as `writes/Core.zig` `listWriter` names them; a black-box test does not import the compiler.
+fn isListWriter(name: []const u8) bool {
+    for ([_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" }) |x| if (std.mem.eql(u8, x, name)) return true;
+    return false;
+}
+
+test "ownership: only List's eight writers are pub core functions that write a parameter" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+
+    var found: usize = 0;
+    var module: []const u8 = "";
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "module ")) module = line["module ".len..];
+        if (!std.mem.startsWith(u8, line, "  summary ")) continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const name = line["  summary ".len..colon];
+        // The parameters' words, before any `res`: `π1 RAW[storage]`.
+        const words = line[colon..];
+        var writes = false;
+        var toks = std.mem.tokenizeAny(u8, words, " ,;");
+        while (toks.next()) |tok| {
+            if (std.mem.eql(u8, tok, "res")) break;
+            if (!std.mem.startsWith(u8, tok, "π")) continue;
+            const word = toks.next() orelse break;
+            if (std.mem.indexOfScalar(u8, word, 'W') != null) writes = true;
+        }
+        if (!writes) continue;
+
+        const path = try std.fmt.allocPrint(arena, "core/{s}.beni", .{try std.mem.replaceOwned(u8, arena, module, ".", "/")});
+        const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 22));
+        var is_pub = false;
+        var rows = std.mem.splitScalar(u8, text, '\n');
+        while (rows.next()) |row| {
+            if (!std.mem.startsWith(u8, row, "pub ")) continue;
+            var toks2 = std.mem.tokenizeScalar(u8, row, ' ');
+            while (toks2.next()) |t| {
+                if (std.mem.eql(u8, t, "foreign") or std.mem.eql(u8, t, "pure") or std.mem.eql(u8, t, "impure") or std.mem.eql(u8, t, "suspends") or std.mem.eql(u8, t, "pub")) continue;
+                if (std.mem.eql(u8, t, name) and std.mem.eql(u8, toks2.next() orelse "", ":")) is_pub = true;
+                break;
+            }
+        }
+        if (!is_pub) continue;
+        found += 1;
+        if (!std.mem.eql(u8, module, "List") or !isListWriter(name)) {
+            std.debug.print("core's pub {s}.{s} writes a parameter and is not one of List's writers (writes/Core.zig `listWriter`)\n", .{ module, name });
+            return error.UnlistedCoreWriter;
+        }
+    }
+    try testing.expectEqual(@as(usize, 8), found);
+}

@@ -11039,6 +11039,8 @@ pub const Lowerer = struct {
             else => false,
         };
         if (!total or l.rootsOf(site).len != 0) return false;
+        // `xs ++ ys` on lists is `List.append`, a writer: `Basics.append`'s own bit is for strings too (`Dispatch.appends`).
+        if (l.in.dispatch.isListAppend(site) or l.in.dispatch.isListAppend(callee)) return false;
         const use = l.referenceUse(callee);
         return use.evidence == 0 and use.arity != 0 and use.arity == l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len();
     }
