@@ -1,0 +1,16 @@
+program NestedFoldValue.main : Tea.sandbox
+  model NestedFoldValue.Model
+  init
+    literal ρ
+  key (any)                                       structural node ρ; node ρ.d ⟨grow⟩; value ρ.d{*}
+  keys 1: bounded 1 (100%), exact 0, indexed 0, structural 1, * 0; capped 0
+  hole NestedFoldValue.beni:51:30                 dynamic    reads ρ.d{1}
+  holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site NestedFoldValue.beni:51:14                 unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 1 over 1 keys and 1 groups (1.00 per key); every key calls 1 of 1 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

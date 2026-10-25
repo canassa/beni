@@ -1,0 +1,52 @@
+-- writes: a recursion that edits the list or the dictionary it threads
+-- (#998). A core row's callback root is one per row site in a summary, and a
+-- composed update keeps each element once, so §4.3's rounds meet: `bump`,
+-- `touch` and `inc` settle as `kept` with their element writes, not a cap.
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : Dict Int Int
+    xs : List Int
+
+
+type Msg
+    = Bump Int
+    | Touch Int
+    | Inc Int
+
+
+bump : Dict Int Int, Int → Dict Int Int
+bump rows n = if n ≤ 0 then rows else bump (Dict.update rows n λm → Maybe.map m λv → v + 1) (n - 1)
+
+
+touch : List Int, Int → List Int
+touch xs n = if n ≤ 0 then xs else touch (List.update xs n λv → v + 1) (n - 1)
+
+
+inc : List Int, Int → List Int
+inc xs n = if n ≤ 0 then xs else inc (List.map xs λv → v + 1) (n - 1)
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump n →
+            { model | rows = bump model.rows n }
+
+        Touch n →
+            { model | xs = touch model.xs n }
+
+        Inc n →
+            { model | xs = inc model.xs n }
+
+
+view : Model → Html Msg
+view model = <p>{Dict.size model.rows} {List.length model.xs}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty, xs = [] }, update = update, view = view }

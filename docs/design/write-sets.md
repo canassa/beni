@@ -2465,3 +2465,25 @@ The amendment above, built in the pass (`Writes.zig`'s `applyDictRow`, `applyFol
   order of the alternatives). A recursion of `Dict.insert` or `Dict.remove` is `grow` or `prune`
   (`writes/DictRecursion`). A recursion through `Dict.update` (or `List.update`) still reaches the
   instruction cap: its value element needs a root, minted at each evaluation (#998).
+
+### *Amended 2026-10-25 (#998):* a recursion through an update settles
+
+A recursion that threads a list or a dictionary through `List.update`, `List.map` or `Dict.update`
+reached the round cap (`cap I`) and was `Fresh`. Two things kept §4.3's rounds from meeting:
+- each round minted the callback's element root afresh, so its term was new even when its value was
+  not;
+- a composed `kept` update appended its elements again in every round.
+
+An element root is a bound name, and it stays minted afresh at each evaluation, as N5 asks: the
+review of #1002 found that sharing one root per row site lets a fold through a function value read
+its inner callback against the outer one's facts and drop a write. Instead, two terms are compared
+**up to the renaming of the element roots minted since the recursion began** (`alphaTerm`):
+- a round that equals the last one up to such names is the fixpoint;
+- two elements of a composed update that write the same, each against its own root (`sameElem`),
+  are one element.
+
+A comparison that cannot decide, for example deps whose order the names change, answers "differs",
+which costs precision and never soundness. No cap moved. Such a recursion is now `kept`, with writes
+at the indices or keys it names, and `?` where a later round computes them
+(`writes/UpdateRecursion`). `writes/NestedFoldValue` and `browser/inline/NestedFoldValue` pin the
+fold the review found.

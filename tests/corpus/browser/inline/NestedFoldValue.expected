@@ -1,0 +1,13 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <p data-role="d">"0"</p>
+  </div>
+</body>
+-- click [data-role=d]
+<body>
+  <div id="root">
+    <p data-role="d">"1"</p>
+  </div>
+</body>

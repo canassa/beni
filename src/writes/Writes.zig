@@ -886,6 +886,7 @@ resolve_view_controls: bool = false,
 /// Caller instruction identity; nested markup holes save/replace their own collector.
 entry_call: ?struct { module: u32, inst: u32 } = null,
 view_args: std.HashMapUnmanaged(VHoleKey, ViewArg, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+
 /// Each `Html.map` of a constructor the view walk evaluated, by its call
 /// path, in the order met (`Program.map_ctors`).
 map_ctor_acc: std.ArrayList([2]u32) = .empty,
@@ -3335,6 +3336,9 @@ fn summary(a: *Writes, m: u32, d: u32) Error!u32 {
     try a.summary_stack.append(a.gpa, .{ .fn_id = id, .low = depth });
     var approx = try a.bottom();
     a.summaries[id] = .{ .active = .{ .depth = depth, .approx = approx } };
+    // Roots minted from here on are this recursion's own, compared up to
+    // their names (#998).
+    const floor = a.next_root;
     var round: u32 = 0;
     var result: u32 = undefined;
     var caps: Caps = .{};
@@ -3357,6 +3361,11 @@ fn summary(a: *Writes, m: u32, d: u32) Error!u32 {
         a.ctx = saved;
         a.inst_depth = saved_depth;
         if (!a.summary_stack.items[depth].hit or result == approx) break;
+        if (blk: {
+            var al: Alpha = .{ .floor = floor };
+            defer al.deinit(a.gpa);
+            break :blk try a.alphaTerm(&al, result, approx);
+        }) break;
         if (round >= cap_rounds) {
             caps.i = true;
             result = try a.mkFresh(try a.paramDeps(m, d));
@@ -3606,10 +3615,16 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
             switch (a.termTag(bv)) {
                 .same => return a.mkLst(a.termWord(bv, 1), edit, s1, s2, elems),
                 .lst => if (edit == .kept and @as(Edit, @fromBackingInt(a.termWord(bv, 2))) == .kept) {
+                    // Each element once (#998): a recursion that repeats an
+                    // update then reaches its fixpoint (§4.3).
                     var all: std.ArrayList(Elem) = .empty;
                     defer all.deinit(a.gpa);
                     for (0..a.lstElems(bv)) |i| try all.append(a.gpa, a.lstElem(bv, @intCast(i)));
-                    try all.appendSlice(a.gpa, elems);
+                    for (elems) |el| {
+                        for (all.items) |x| {
+                            if (try a.sameElem(x, el)) break;
+                        } else try all.append(a.gpa, el);
+                    }
                     return a.mkLst(a.termWord(bv, 1), .kept, none, none, all.items);
                 },
                 else => {},
@@ -3670,6 +3685,202 @@ fn mintEps(a: *Writes, xs: u32) Error!u32 {
 fn mintIota(a: *Writes, xs: u32) Error!u32 {
     if (a.listBase(xs)) |p| return a.mintRoot(.iota, p, false);
     return a.mintRoot(.iota, try a.deps(xs), true);
+}
+
+// ---------------------------------------------------------------------------
+// Equality up to the renaming of minted roots (#998)
+// ---------------------------------------------------------------------------
+//
+// A callback's element root (ε, ι) is a bound name: minted afresh at each
+// evaluation, so that two evaluations never share one (N5). Two terms that
+// differ only in the names of such roots minted since `floor` mean the same,
+// and a recursion's rounds (§4.3) are compared so, as are two elements of a
+// composed update (each element's writes are its term's against its own root).
+// A comparison that cannot decide is `false`: the cost is precision, never
+// soundness.
+
+const Alpha = struct {
+    floor: u32,
+    /// Two roots renamed into each other whatever the floor: two elements' own.
+    pair: [2]u32 = .{ none, none },
+    /// The renaming so far, as pairs: a recursion mints few roots.
+    pairs: std.ArrayList([2]u32) = .empty,
+    work: u32 = 0,
+
+    fn deinit(al: *Alpha, gpa: Allocator) void {
+        al.pairs.deinit(gpa);
+    }
+};
+
+const alpha_work: u32 = 1 << 16;
+
+fn renamable(a: *const Writes, al: *const Alpha, root: u32) bool {
+    if (root == al.pair[0] or root == al.pair[1]) return true;
+    const k = a.pathKind(root);
+    return (k == .eps or k == .iota) and a.pathA(root) >= al.floor;
+}
+
+fn alphaRoot(a: *Writes, al: *Alpha, r1: u32, r2: u32) Allocator.Error!bool {
+    const x = a.renamable(al, r1);
+    const y = a.renamable(al, r2);
+    if (x != y) return false;
+    if (!x) return r1 == r2;
+    if (a.pathKind(r1) != a.pathKind(r2)) return false;
+    for (al.pairs.items) |q| {
+        if (q[0] == r1) return q[1] == r2;
+        if (q[1] == r2) return false;
+    }
+    try al.pairs.append(a.gpa, .{ r1, r2 });
+    return true;
+}
+
+fn alphaPath(a: *Writes, al: *Alpha, p1: u32, p2: u32) Allocator.Error!bool {
+    if (p1 == none or p2 == none) return p1 == p2;
+    if (a.pathLen(p1) != a.pathLen(p2)) return false;
+    var b1: [k_limit + 1]u32 = undefined;
+    var b2: [k_limit + 1]u32 = undefined;
+    // A tag read is a step of its own, not counted by `steps`.
+    if (a.isTagRead(p1) != a.isTagRead(p2)) return false;
+    const q1 = if (a.isTagRead(p1)) a.pathParent(p1) else p1;
+    const q2 = if (a.isTagRead(p2)) a.pathParent(p2) else p2;
+    if (!try a.alphaRoot(al, a.rootOf(q1), a.rootOf(q2))) return false;
+    const s1 = a.steps(q1, &b1);
+    const s2 = a.steps(q2, &b2);
+    if (s1.len != s2.len) return false;
+    for (s1, s2) |x, y| {
+        if (a.pathKind(x) != a.pathKind(y) or a.pathB(x) != a.pathB(y)) return false;
+        if (a.pathKind(x) == .index) {
+            if (!try a.alphaSym(al, a.pathA(x), a.pathA(y))) return false;
+        } else if (a.pathA(x) != a.pathA(y)) return false;
+    }
+    return true;
+}
+
+fn alphaSym(a: *Writes, al: *Alpha, s1: u32, s2: u32) Allocator.Error!bool {
+    if (s1 == none or s2 == none) return s1 == s2;
+    if (a.symKind(s1) != a.symKind(s2)) return false;
+    if (a.symKind(s1) != .expr) return s1 == s2;
+    if (a.symWord(s1, 1) != a.symWord(s2, 1) or a.symWord(s1, 2) != a.symWord(s2, 2)) return false;
+    return a.alphaTerm(al, a.symWord(s1, 3), a.symWord(s2, 3));
+}
+
+fn alphaDeps(a: *Writes, al: *Alpha, d1: u32, d2: u32) Allocator.Error!bool {
+    if (d1 == none or d2 == none) return d1 == d2;
+    const x = a.deps_t.get(d1);
+    const y = a.deps_t.get(d2);
+    if (x.len != y.len) return false;
+    for (x, y) |p, q| if (!try a.alphaPath(al, p, q)) return false;
+    return true;
+}
+
+fn alphaGamma(a: *Writes, al: *Alpha, g1: u32, g2: u32) Allocator.Error!bool {
+    const x = a.gammaFacts(g1);
+    const y = a.gammaFacts(g2);
+    if (x.len != y.len) return false;
+    var i: usize = 0;
+    while (i < x.len) : (i += 3) {
+        if (x[i] != y[i]) return false;
+        const kind: FactKind = @fromBackingInt(x[i]);
+        if (!try a.alphaPath(al, x[i + 1], y[i + 1])) return false;
+        switch (kind) {
+            .pos, .neg => if (x[i + 2] != y[i + 2]) return false,
+            .ieq, .ineq => if (!try a.alphaSym(al, x[i + 2], y[i + 2])) return false,
+        }
+    }
+    return true;
+}
+
+fn alphaTerm(a: *Writes, al: *Alpha, t1: u32, t2: u32) Allocator.Error!bool {
+    if (t1 == none or t2 == none) return t1 == t2;
+    al.work += 1;
+    if (al.work > alpha_work) return false;
+    const tag = a.termTag(t1);
+    if (tag != a.termTag(t2) or a.termLen(t1) != a.termLen(t2)) return false;
+    const n = a.termLen(t1);
+    const w = struct {
+        fn at(aa: *const Writes, t: u32, k: usize) u32 {
+            return aa.termWord(t, k);
+        }
+    }.at;
+    switch (tag) {
+        .same => return try a.alphaPath(al, w(a, t1, 1), w(a, t2, 1)) and try a.alphaDeps(al, w(a, t1, 2), w(a, t2, 2)),
+        .lit => {
+            for (1..n) |k| if (w(a, t1, k) != w(a, t2, k)) return false;
+            return true;
+        },
+        .rec => {
+            if (!try a.alphaPath(al, w(a, t1, 1), w(a, t2, 1))) return false;
+            const r1 = w(a, t1, 2);
+            const r2 = w(a, t2, 2);
+            if ((r1 < 2) != (r2 < 2)) return false;
+            if (r1 < 2) {
+                if (r1 != r2) return false;
+            } else if (!try a.alphaDeps(al, r1 - 2, r2 - 2)) return false;
+            var k: usize = 3;
+            while (k < n) : (k += 2) {
+                if (w(a, t1, k) != w(a, t2, k)) return false;
+                if (!try a.alphaTerm(al, w(a, t1, k + 1), w(a, t2, k + 1))) return false;
+            }
+            return true;
+        },
+        .con => {
+            if (w(a, t1, 1) != w(a, t2, 1)) return false;
+            for (2..n) |k| if (!try a.alphaTerm(al, w(a, t1, k), w(a, t2, k))) return false;
+            return true;
+        },
+        .tup, .lst_lit, .app => {
+            for (1..n) |k| if (!try a.alphaTerm(al, w(a, t1, k), w(a, t2, k))) return false;
+            return true;
+        },
+        .lst => {
+            if (!try a.alphaPath(al, w(a, t1, 1), w(a, t2, 1))) return false;
+            if (w(a, t1, 2) != w(a, t2, 2)) return false;
+            if (!try a.alphaSym(al, w(a, t1, 3), w(a, t2, 3))) return false;
+            if (!try a.alphaSym(al, w(a, t1, 4), w(a, t2, 4))) return false;
+            var k: usize = 5;
+            while (k < n) : (k += 3) {
+                if (!try a.alphaSym(al, w(a, t1, k), w(a, t2, k))) return false;
+                if (!try a.alphaPath(al, w(a, t1, k + 1), w(a, t2, k + 1))) return false;
+                if (!try a.alphaTerm(al, w(a, t1, k + 2), w(a, t2, k + 2))) return false;
+            }
+            return true;
+        },
+        .fresh => return a.alphaDeps(al, w(a, t1, 1), w(a, t2, 1)),
+        .fun => {
+            for (1..5) |k| if (w(a, t1, k) != w(a, t2, k)) return false;
+            for (5..n) |k| if (!try a.alphaTerm(al, w(a, t1, k), w(a, t2, k))) return false;
+            return true;
+        },
+        .alt => {
+            if (!try a.alphaTerm(al, w(a, t1, 1), w(a, t2, 1))) return false;
+            if (w(a, t1, 2) != w(a, t2, 2)) return false;
+            if (!try a.alphaDeps(al, w(a, t1, 3), w(a, t2, 3))) return false;
+            var k: usize = 4;
+            while (k < n) : (k += 2) {
+                if (!try a.alphaGamma(al, w(a, t1, k), w(a, t2, k))) return false;
+                if (!try a.alphaTerm(al, w(a, t1, k + 1), w(a, t2, k + 1))) return false;
+            }
+            return true;
+        },
+        .ixeq => return try a.alphaPath(al, w(a, t1, 1), w(a, t2, 1)) and try a.alphaSym(al, w(a, t1, 2), w(a, t2, 2)) and try a.alphaDeps(al, w(a, t1, 3), w(a, t2, 3)),
+    }
+}
+
+/// Whether two elements of a list or dictionary edit write the same: the
+/// same index, and terms equal once each element's own root is the other's.
+fn sameElem(a: *Writes, x: Elem, y: Elem) Allocator.Error!bool {
+    if (x.index == y.index and x.eps == y.eps and x.term == y.term) return true;
+    if (x.eps == none or y.eps == none) return false;
+    // Only the two elements' own roots are renamed, and only into each other.
+    const r1 = a.rootOf(x.eps);
+    const r2 = a.rootOf(y.eps);
+    if (a.pathKind(r1) != a.pathKind(r2)) return false;
+    if (a.root_base.items[a.pathA(r1)] != a.root_base.items[a.pathA(r2)] or
+        a.root_base_is_deps.items[a.pathA(r1)] != a.root_base_is_deps.items[a.pathA(r2)]) return false;
+    var al: Alpha = .{ .floor = std.math.maxInt(u32), .pair = .{ r1, r2 } };
+    defer al.deinit(a.gpa);
+    try al.pairs.append(a.gpa, .{ r1, r2 });
+    return try a.alphaSym(&al, x.index, y.index) and try a.alphaPath(&al, x.eps, y.eps) and try a.alphaTerm(&al, x.term, y.term);
 }
 
 /// Whether every alternative of `r` is the element itself.
@@ -3734,7 +3945,7 @@ fn dictStep(a: *Writes, b: DictBase, e: Edit, s1: u32, s2: u32, elems: []const E
             continue;
         }
         for (all.items) |x| {
-            if (x.index == el.index and x.eps == el.eps and x.term == el.term) break;
+            if (try a.sameElem(x, el)) break;
         } else try all.append(a.gpa, el);
     };
     if (a.deps_t.len(read) != 0) try all.append(a.gpa, .{ .index = none, .eps = none, .term = try a.mkFresh(read) });
