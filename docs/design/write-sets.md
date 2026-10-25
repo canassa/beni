@@ -2424,11 +2424,19 @@ The amendment above, built in the pass (`Writes.zig`'s `applyDictRow`, `applyFol
   is `Fresh`, as before, and its callback is not walked, so no fold of a `List` moves.
 - **`Dict.empty`**, a value today, is the empty storage (`clear`), and `init`'s literal check reads it
   as the empty literal it was. `Dict.empty ⊤` gets the same row when #961 makes it a function.
+- **Corrected the same day (the review of #986).** Two things the first build lost, each a stale
+  hole in emitted code: a sequence kept only the last step's writes below the path (`insert 1`
+  then an update of key 2 dropped `{2}`), and a `Dict` term made in `view` forgot what it read
+  (the stored value, the callbacks' results, a fold's list). Every step's writes now stay beside
+  the tag, whatever the tag but `clear` and `replaced`, and an element with no index carries
+  what an edit read without writing (`writes/DictSequence`).
+- **Coarser than the text, and sound:** `Dict.swap` with a `?` key is `permute`; `Dict.get` of a
+  dictionary an edit in the same expression made is `Fresh` of it (it reads the whole path).
 - **Not yet pinned:** `swap`, `sortBy` and `insertAt` have rows, but `core/Dict` has none of the three
   until #294's ordered storage (#681, #961); their fixtures come with them. `Set` keeps `Fresh`,
   since no consumer reads it. The `For` row's value root (*Reads*) waits for `For` over a `Dict`
   (S2b).
-- **Fixtures:** `writes/DictEdits` (every tag `core/Dict` has today, a sequence, an identity update,
+- **Fixtures:** `writes/DictSequence` (the correction above), `writes/DictEdits` (every tag `core/Dict` has today, a sequence, an identity update,
   two choices), `writes/DictFold` (a fold of updates, removals and insertions, through a helper's
   annotated parameter, and a `List` fold that stays `Fresh`), `writes/DictReads` (a one-key read that
   a write at another literal key does not reach). Red against the previous pass, which wrote every
