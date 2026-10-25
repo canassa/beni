@@ -1,69 +1,73 @@
 // Ordered storage, private to core/Dict (backend.md §4, Ordered dictionaries).
-// Map holds positions; iteration reads the key/value entry pairs directly.
+// `entries` holds the [key, value] pairs in insertion order; `index` maps a
+// key to its pair, so a lookup and a replacement touch no position and a
+// removal rewrites no later one. Iteration walks `entries` directly.
 export const empty = () => ({ entries: [], index: new Map() });
-export const singleton = (k, v) => ({ entries: [[k, v]], index: new Map([[k, 0]]) });
-export const size = (d) => d.entries.length;
-export const position = (d, k) => {
-  const i = d.index.get(k);
-  return i === undefined ? -1 : i;
+export const singleton = (k, v) => {
+  const pair = [k, v];
+  return { entries: [pair], index: new Map([[k, pair]]) };
 };
-export const keyAt = (d, i) => d.entries[i][0];
+export const size = (d) => d.entries.length;
+export const has = (d, k) => d.index.has(k);
+export const valueFor = (d, k) => d.index.get(k)[1];
+export const keyIndex = (d, i) => d.entries[i][0];
 export const valueAt = (d, i) => d.entries[i][1];
 export const traverseAt = (d, i) => d.entries[i][1];
 export const keySame = (a, b) => a === b;
 export const same = (a, b) => a === b;
 export const insert = (d, k, v) => {
-  const i = d.index.get(k);
-  if (i === undefined) {
-    d.index.set(k, d.entries.length);
-    d.entries.push([k, v]);
+  const pair = d.index.get(k);
+  if (pair === undefined) {
+    const fresh = [k, v];
+    d.index.set(k, fresh);
+    d.entries.push(fresh);
   } else {
-    d.entries[i][1] = v;
+    pair[1] = v;
   }
   return d;
 };
 export const remove = (d, k) => {
-  const i = d.index.get(k);
-  if (i !== undefined) {
-    d.entries.splice(i, 1);
+  const pair = d.index.get(k);
+  if (pair !== undefined) {
+    d.entries.splice(d.entries.indexOf(pair), 1);
     d.index.delete(k);
-    for (let j = i; j < d.entries.length; j++) d.index.set(d.entries[j][0], j);
   }
   return d;
 };
 export const copy = (d) => {
   const entries = [];
-  for (let i = 0; i < d.entries.length; i++) entries.push([d.entries[i][0], d.entries[i][1]]);
-  return { entries, index: new Map(d.index) };
+  const index = new Map();
+  for (let i = 0; i < d.entries.length; i++) {
+    const pair = [d.entries[i][0], d.entries[i][1]];
+    entries.push(pair);
+    index.set(pair[0], pair);
+  }
+  return { entries, index };
 };
 export const swap = (d, a, b) => {
-  const i = d.index.get(a), j = d.index.get(b);
-  if (i !== undefined && j !== undefined && i !== j) {
-    const entry = d.entries[i];
-    d.entries[i] = d.entries[j];
-    d.entries[j] = entry;
-    d.index.set(a, j);
-    d.index.set(b, i);
+  const p = d.index.get(a);
+  const q = d.index.get(b);
+  if (p !== undefined && q !== undefined && p !== q) {
+    const i = d.entries.indexOf(p);
+    const j = d.entries.indexOf(q);
+    d.entries[i] = q;
+    d.entries[j] = p;
   }
   return d;
 };
 export const insertAt = (d, at, k, v) => {
   const old = d.index.get(k);
-  if (old !== undefined) d.entries.splice(old, 1);
+  if (old !== undefined) d.entries.splice(d.entries.indexOf(old), 1);
   // `at > 0` is false for NaN, which an Int can be: it clamps to 0.
   const i = at > 0 ? Math.min(at, d.entries.length) : 0;
-  d.entries.splice(i, 0, [k, v]);
-  for (let j = old === undefined ? i : Math.min(old, i); j < d.entries.length; j++) d.index.set(d.entries[j][0], j);
+  const pair = [k, v];
+  d.entries.splice(i, 0, pair);
+  d.index.set(k, pair);
   return d;
 };
 export const permute = (d, keys) => {
   // sortBy supplies a complete permutation; read through Lists protocol.
   const ks = Array.isArray(keys) ? keys : keys.$plain();
-  const entries = [];
-  for (let i = 0; i < ks.length; i++) entries.push(d.entries[d.index.get(ks[i])]);
-  for (let i = 0; i < entries.length; i++) {
-    d.entries[i] = entries[i];
-    d.index.set(entries[i][0], i);
-  }
+  for (let i = 0; i < ks.length; i++) d.entries[i] = d.index.get(ks[i]);
   return d;
 };

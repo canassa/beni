@@ -32,12 +32,17 @@ pub isEmpty : Dict k v → Bool
 isEmpty d = size d == 0
 
 
---| Index of a key, or -1. Ownership: π1 ε R; keys cross.
-foreign pure position : borrowed Dict k v, k → Int
+--| Whether a key is present. Ownership: π1 ε R; keys cross.
+foreign pure has : borrowed Dict k v, k → Bool
+
+
+--| Read the value of a key that is present. Private: the caller checks `has`.
+--| Ownership: result aliases π1[*], borrowed.
+foreign pure valueFor : aliased Dict k v, k → v
 
 
 --| Read a key by index. Private: the caller checks the bounds.
-foreign pure keyAt : borrowed Dict k v, Int → k
+foreign pure keyIndex : borrowed Dict k v, Int → k
 
 
 --| Read a value by index. Ownership: result aliases π1[*], borrowed.
@@ -59,14 +64,21 @@ foreign pure same : borrowed Dict k v, borrowed Dict k v → Bool
 
 --| Find a value, or Nothing. The result borrows the stored value.
 pub get : Dict k v, k → Maybe v
-get d k =
-    i = position d k
-    if i < 0 then Nothing else Just (valueAt d i)
+get d k = if has d k then Just (valueFor d k) else Nothing
 
 
 --| Whether a key is present.
 pub member : Dict k v, k → Bool
-member d k = position d k ≥ 0
+member d k = has d k
+
+
+--| The key at a zero-based position in insertion order, or Nothing when the
+--| position is outside the dictionary.
+--|
+--|     keyAt (fromList [ ( "Tom", 1 ), ( "Ann", 2 ) ]) 1 == Just "Ann"
+--|     keyAt (fromList [ ( "Tom", 1 ) ]) 3 == Nothing
+pub keyAt : Dict k v, Int → Maybe k
+keyAt d i = if i ≥ 0 && i < size d then Just (keyIndex d i) else Nothing
 
 
 --| Replace a value at its current position, or append a new key.
@@ -126,7 +138,7 @@ foldl d initial f = foldlFrom d 0 initial f
 foldlFrom : Dict k v, Int, b, (k, v, b → b) → b
 foldlFrom d i acc f =
     if i < size d then
-        next = f (keyAt d i) (valueAt d i) acc
+        next = f (keyIndex d i) (valueAt d i) acc
         foldlFrom d (i + 1) next f
     else
         acc
@@ -140,7 +152,7 @@ foldr d initial f = foldrFrom d (size d - 1) initial f
 foldrFrom : Dict k v, Int, b, (k, v, b → b) → b
 foldrFrom d i acc f =
     if i ≥ 0 then
-        next = f (keyAt d i) (valueAt d i) acc
+        next = f (keyIndex d i) (valueAt d i) acc
         foldrFrom d (i - 1) next f
     else
         acc
@@ -154,7 +166,7 @@ map d f = mapFrom d 0 (empty ⊤) f
 mapFrom : Dict k a, Int, Dict k b, (k, a → b) → Dict k b
 mapFrom d i out f =
     if i < size d then
-        k = keyAt d i
+        k = keyIndex d i
         v = f k (traverseAt d i)
         mapFrom d (i + 1) (insert out k v) f
     else
@@ -216,17 +228,16 @@ mergeFrom :
 mergeFrom left right i acc leftStep bothStep rightStep =
     n = size left
     if i < n then
-        k = keyAt left i
-        j = position right k
+        k = keyIndex left i
         next =
-            if j < 0 then
-                leftStep k (valueAt left i) acc
+            if has right k then
+                bothStep k (valueAt left i) (valueFor right k) acc
             else
-                bothStep k (valueAt left i) (valueAt right j) acc
+                leftStep k (valueAt left i) acc
         mergeFrom left right (i + 1) next leftStep bothStep rightStep
     else if i < n + size right then
-        k = keyAt right (i - n)
-        next = if position left k < 0 then rightStep k (valueAt right (i - n)) acc else acc
+        k = keyIndex right (i - n)
+        next = if has left k then acc else rightStep k (valueAt right (i - n)) acc
         mergeFrom left right (i + 1) next leftStep bothStep rightStep
     else
         acc
@@ -272,7 +283,7 @@ eqFrom : Dict k v, Dict k v, Int → Bool
     where v.eq : v, v → Bool
 eqFrom left right i =
     if i < size left then
-        keySame (keyAt left i) (keyAt right i)
+        keySame (keyIndex left i) (keyIndex right i)
             && valueAt left i == valueAt right i
             && eqFrom left right (i + 1)
     else

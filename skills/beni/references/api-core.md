@@ -115,6 +115,7 @@ module Dict
   value insertAt : Dict key v, Int, key, v → Dict key v
   value intersect : Dict key v, Dict key v → Dict key v
   value isEmpty : Dict key v → Bool
+  value keyAt : Dict key v, Int → Maybe key
   value keys : Dict key v → List key
   value map : Dict key a, (key, a → b) → Dict key b
   value member : Dict key v, key → Bool

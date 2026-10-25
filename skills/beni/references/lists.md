@@ -128,8 +128,8 @@ snapshot xs =
 order. Insert of a key that is there already keeps its position; remove and insert again puts it
 at the end. Equality includes order: `Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]` is not equal to
 `Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ]`. Sort explicitly when you need key order:
-`Dict.sortBy d λk _ → k`. `Dict.swap` and `Dict.insertAt` change positions. `Dict.empty ⊤` and
-`Set.empty ⊤` make new empty storage at each call.
+`Dict.sortBy d λk _ → k`. `Dict.swap` and `Dict.insertAt` change positions; `Dict.keyAt d i` is
+the key at position `i`, or `Nothing`. `Dict.empty ⊤` and `Set.empty ⊤` make new storage per call.
 
 `insert`, `remove`, `update`, `swap`, `insertAt` and `sortBy` edit the collection in place. The
 ownership checker applies the same rules as for a list. The fix for a write to a collection that

@@ -1429,6 +1429,7 @@ are:
 | `Dict.sortBy : Dict k v, (k, v → a) → Dict k v where a.compare : a, a → Order` | stable ascending sort by the callback result; evaluate it once per entry, in current order |
 | `Dict.swap : Dict k v, k, k → Dict k v` | exchange the positions of two keys; if either is absent, or the keys are equal, leave it unchanged |
 | `Dict.insertAt : Dict k v, Int, k, v → Dict k v` | remove any old occurrence of the key, then insert the new pair at the index clamped to `0..size` of the remaining entries |
+| `Dict.keyAt : Dict k v, Int → Maybe k` | *Added 2026-10-25 (the owner, #294):* the key at a zero-based position in insertion order; `Nothing` outside `0..size - 1`, so it is total |
 | `Set.copy : Set t → Set t` | copy its dictionary storage |
 | `Set.sortBy : Set t, (t → a) → Set t where a.compare : a, a → Order` | the same stable sort on members |
 | `Set.swap : Set t, t, t → Set t` | exchange two members' positions |

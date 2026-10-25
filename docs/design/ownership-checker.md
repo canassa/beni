@@ -7881,6 +7881,7 @@ conditions; fresh storage never implies exclusive values.
 | `singleton k v` | read/alias argument 2 at result `[*]`; fresh root | exclusivity is that of `v`, with no other entry |
 | `get d k` | read `ε` and `V`; result `#Just.0` aliases `V`, or Nothing | borrowed; result is not fresh value storage |
 | `member d k`, `size d`, `isEmpty d` | read `ε`; scalar result | no value read or write |
+| `keyAt d i` | read `ε`; `Maybe` of a scalar key (*added 2026-10-25*) | no value read or write |
 | `insert d k v`, `insertAt d i k v` | read and `W ε`; return root `D`; retain old values plus supplied value | result exclusivity requires exclusive stored values and separation of the arrival from retained values; no value write |
 | `remove d k` | read and `W ε`; return `D` and retained values | preserves their exclusivity; conservative value provenance may retain the removed value |
 | `swap d a b` | read and `W ε`; return `D` with the same values | permutation preserves both value and spine conditions |
@@ -7968,7 +7969,8 @@ budget failure is a stop condition, not a reason to weaken the rows or tests.
 This section adds no keyed For, Dict write-set positions (O3), or recogniser
 for List.map keyed updates. Those belong to the rendering work.
 
-*As built, 2026-10-25 (#294, draft):* `core/Dict` is `{ entries, index }` with
+*As built, 2026-10-25 (#294, draft; the index amended the same day by the owner, #973):* `core/Dict` is
+`{ entries, index }`, the index a `Map` from key to its entry pair, with
 its rows in `Ownership.dictRow`. `dictTree`, `dictTreePath`, `inCoreDict`, the
 `unmarked` projection branch, the tree's representative and root-separation
 cases, the call-site other-place skip and the focus supply's tree scope are

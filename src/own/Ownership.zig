@@ -3987,9 +3987,9 @@ fn dictRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
             .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .atoms = owned } },
             .{ .path = elem, .prov = p(0, elem) },
         });
-    } else if (eqlAny(name, &.{ "size", "position", "keyAt" })) {
+    } else if (eqlAny(name, &.{ "size", "has", "keyIndex" })) {
         uses = &.{.{ .param = 0, .path = eps, .bits = R }};
-    } else if (eqlAny(name, &.{ "valueAt", "traverseAt" })) {
+    } else if (eqlAny(name, &.{ "valueAt", "valueFor", "traverseAt" })) {
         uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
         var value = p(0, elem);
         value.taken = std.mem.eql(u8, name, "traverseAt");
