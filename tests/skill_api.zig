@@ -114,7 +114,13 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
 
 /// One dump line in beni's notation (§12.1).
 pub fn surface(arena: Allocator, line: []const u8) ![]const u8 {
+    // The ownership checker v2's type words and `failure` mark
+    // (ownership-v2.md §2.13.6) are metadata no program writes outside core
+    // and the platforms: they go.
     var s = line;
+    for ([_][]const u8{ " (failure)", " (sequence)", " (cell)", " (sender)" }) |mark| {
+        if (std.mem.endsWith(u8, s, mark)) s = s[0 .. s.len - mark.len];
+    }
     const indent = s.len - std.mem.trimStart(u8, s, " ").len;
     const body = s[indent..];
     var out: std.ArrayList(u8) = .empty;
@@ -223,6 +229,9 @@ test "a dump line becomes beni's notation" {
         .{ "  value compare : List a, List a → Order !e1 where a.compare : a, a → Order !(e1 | sync)", "  value compare : List a, List a → Order where a.compare : a, a → Order" },
         .{ "  value bracket : (⊤ → r !e1), (r, Exit a → ⊤ !e2), (r → a !e3) → a !(impure | e1 | e2 | e3)", "  value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure" },
         .{ "  foreign type List a (equatable)", "  type List a" },
+        .{ "  foreign type List a (equatable) (sequence)", "  type List a" },
+        .{ "  opaque type Ref a (cell)", "  opaque type Ref a" },
+        .{ "    Err/1 (failure)", "    Err" },
         .{ "  markup value text : String → Html msg", "  value text : String → Html msg" },
         .{ "    Just/1", "    Just" },
         .{ "    Nothing", "    Nothing" },

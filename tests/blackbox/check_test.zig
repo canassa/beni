@@ -1156,6 +1156,89 @@ test "ownership words: the bodies they describe have not changed" {
     if (!ok) return error.WordedBodyChanged;
 }
 
+/// The core files that hold the ownership checker v2's words.
+const v2_worded_files = [_][]const u8{ "core/List.beni", "core/Ref.beni", "core/Deferred.beni", "core/Result.beni" };
+
+/// The declarations of `file` whose BIR dump prints a v2 column (`own2`),
+/// and of those the ones whose result is `taken`, by name.
+fn v2Worded(w: *World, file: []const u8, all: *std.ArrayList([]const u8), taken: *std.ArrayList([]const u8)) !void {
+    const arena = w.arena.allocator();
+    const r = try w.runWith(&.{ "dump", "--stage=bir", "--core", file }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    var name: []const u8 = "";
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "decl ")) {
+            const head = if (std.mem.endsWith(u8, line, " (annotated)")) line[0 .. line.len - " (annotated)".len] else line;
+            name = head[(std.mem.lastIndexOfScalar(u8, head, ' ') orelse continue) + 1 ..];
+            continue;
+        }
+        if (!std.mem.startsWith(u8, line, "  own2 ")) continue;
+        try all.append(arena, name);
+        if (std.mem.indexOf(u8, line, "res taken") != null) try taken.append(arena, name);
+    }
+}
+
+test "ownership words v2: every worded declaration and every reader of a taken result has a pinned body" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20));
+    var pinned: std.ArrayList([]const u8) = .empty;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        _ = fields.next() orelse continue;
+        try pinned.append(arena, fields.next() orelse continue);
+    }
+    var ok = true;
+    for (v2_worded_files) |file| {
+        const module = std.fs.path.stem(file);
+        var all: std.ArrayList([]const u8) = .empty;
+        var taken: std.ArrayList([]const u8) = .empty;
+        try v2Worded(&w, file, &all, &taken);
+        // The words are a trusted row (R-5.10.7): each is pinned.
+        for (all.items) |name| {
+            const decl = try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, name });
+            for (pinned.items) |p| {
+                if (std.mem.eql(u8, p, decl)) break;
+            } else {
+                std.debug.print("{s} carries the ownership checker v2's words and {s} pins no body for it\n", .{ decl, bodies_list });
+                ok = false;
+            }
+        }
+        // The index obligation (ownership-v2.md §2.13.6): a body that
+        // calls a `taken`-result primitive is pinned beside it. The call
+        // is found in the source text, which over-includes (a mention in a
+        // comment of the body counts), never misses one.
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, arena, .limited(1 << 24));
+        var src_lines = std.mem.splitScalar(u8, source, '\n');
+        var current: []const u8 = "";
+        while (src_lines.next()) |line| {
+            if (line.len != 0 and line[0] != ' ' and line[0] != '-') {
+                const head = if (std.mem.startsWith(u8, line, "pub ")) line[4..] else line;
+                const end = std.mem.indexOfAny(u8, head, " :") orelse head.len;
+                current = head[0..end];
+                continue;
+            }
+            for (taken.items) |t| {
+                if (std.mem.eql(u8, current, t)) continue;
+                const call = try std.fmt.allocPrint(arena, "{s} ", .{t});
+                if (std.mem.indexOf(u8, line, call) == null) continue;
+                const decl = try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, current });
+                for (pinned.items) |p| {
+                    if (std.mem.eql(u8, p, decl)) break;
+                } else {
+                    std.debug.print("{s} reads a container through {s}, a `taken` result, and {s} pins no body for it\n", .{ decl, t, bodies_list });
+                    ok = false;
+                }
+            }
+        }
+    }
+    if (!ok) return error.WordedBodyUnpinned;
+}
+
 fn expectCoreSurface() !void {
     try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
 }

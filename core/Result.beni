@@ -25,7 +25,7 @@ import List
 --|             Err "months must be between 1 and 12"
 pub type Result e a
     = Ok a
-    | Err e
+    | failure Err e
 
 
 --| If the result is `Ok`, return the value, but if the result is an `Err`,
