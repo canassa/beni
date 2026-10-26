@@ -291,6 +291,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // order, each headed `module M` (the ownership words' gate reads a
         // whole package this way, check_test.zig).
         if (dump.stage == .bir) return dumpExit(summary, dumpProjectBir(&session, stdout, stderr, dump.file));
+        if (dump.stage == .types) return dumpExit(summary, dumpProjectTypes(gpa, &session, stdout, stderr, dump.file));
         if (dump.stage != .interface and dump.stage != .raw) return fail(stderr, "beni: dump needs exactly one file", .{});
         return dumpExit(summary, dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw));
     };
@@ -475,6 +476,32 @@ fn dumpProjectBir(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg
         if (session.store.isEmbedded(f) and std.mem.eql(u8, dir, ".")) continue;
         stdout.print("module {s}\n", .{session.store.moduleName(f)}) catch return 2;
         beni.dump.bir.write(stdout, session.store.bytes(f), session.artifacts.comments(f), session.artifacts.bir(f), .fromGlobal(&session.interner)) catch return 2;
+        printed += 1;
+    }
+    if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    return 0;
+}
+
+/// Every project module under `arg`, in path order, with its inferred
+/// declaration and local types (frontend.md §7, playground.md §4.2).
+fn dumpProjectTypes(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const dir = storePath(&buffer, arg);
+    var printed: u32 = 0;
+    for (session.store.byPath()) |f| {
+        const p = session.store.path(f);
+        if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
+        const m = moduleOf(session, f) orelse continue;
+        if (m.int() >= session.checked.modules.len) continue;
+        beni.dump.types.write(
+            stdout,
+            gpa,
+            session.store.moduleName(f),
+            session.artifacts.bir(f),
+            &session.checked.modules[m.int()],
+            &session.checked.types,
+            &session.interner,
+        ) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
