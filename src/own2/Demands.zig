@@ -439,6 +439,29 @@ const Resolver = struct {
         return r.env.shapes.reach(r.gpa, r.env.account(), &r.env.cells.sets, n);
     }
 
+    /// A holder's registration and expiry kernel (§4.1's holder index): its
+    /// local's lane, or its instruction's for a pending operand, when its
+    /// value holds at most `holder_kernel_cells` cells (a one-key update of
+    /// the index per cell); a wider value's is a general task, growth until
+    /// the index is updated per written atom (#1098). Chosen before the
+    /// work, on a bounded count charged to the lane.
+    fn holderLane(r: *Resolver, h: Holder, root: SetId) Error!?Ids.Lane {
+        const atom = if (h.kind == .binding) Ids.atom_local_bit | h.who else h.who;
+        const lane: Ids.Lane = .{ .atom = atom, .role = .holder_index };
+        const kernel = try r.env.account().enter(r.gpa, lane);
+        defer r.env.account().leave(kernel);
+        var it = r.env.cells.sets.iterate(root);
+        var n: u32 = 0;
+        while (it.next()) |_| {
+            try r.env.charge.reserve(r.gpa, .inspection, 1);
+            n += 1;
+            if (n > holder_kernel_cells) return null;
+        }
+        return lane;
+    }
+
+    const holder_kernel_cells = 32;
+
     fn compatible(r: *Resolver, a: u32, b: u32) bool {
         return r.frame.regions.compatible(a, b);
     }
@@ -1039,6 +1062,9 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
         if (si < n) p = @min(p, frame.holders[by_start[si]].start);
         if (ei < n) p = @min(p, frame.holders[by_end[ei]].end);
         while (di < order.len and frame.demands[order[di]].point == p) : (di += 1) {
+            // §4.1: a written demand's query is its own kernel.
+            const kernel = try env.account().enter(gpa, .{ .atom = p, .role = .direct_demand_query });
+            defer env.account().leave(kernel);
             out[order[di]] = try r.resolve(frame.demands[order[di]]);
         }
         while (si < n and frame.holders[by_start[si]].start == p) : (si += 1) {
@@ -1046,6 +1072,8 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
             if (frame.holders[h].value.node == .none) continue;
             const root = try r.reach(frame.holders[h].value.node);
             if (root == .none) continue;
+            const kernel = try env.account().enter(gpa, try r.holderLane(frame.holders[h], root));
+            defer env.account().leave(kernel);
             try r.live.register(h, root);
             r.on[h] = true;
         }
@@ -1054,7 +1082,10 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
             if (!r.on[h]) continue;
             // A holder that ends where it starts expires once registered.
             if (frame.holders[h].start > p) continue;
-            try r.live.expire(h, try r.reach(frame.holders[h].value.node));
+            const root = try r.reach(frame.holders[h].value.node);
+            const kernel = try env.account().enter(gpa, try r.holderLane(frame.holders[h], root));
+            defer env.account().leave(kernel);
+            try r.live.expire(h, root);
             r.on[h] = false;
         }
     }

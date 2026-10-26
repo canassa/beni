@@ -187,6 +187,11 @@ pub const Frame = struct {
         return f.vals[f.rel(i)];
     }
 
+    /// Enter instruction `i`'s settlement kernel (§4.1), to `leave` after.
+    fn lane(f: *Frame, i: u32) Error!Ids.Account.Kernel {
+        return f.account().enter(f.gpa, .{ .atom = i, .role = .transfer_settlement });
+    }
+
     fn markUnbuilt(f: *Frame, i: u32) void {
         if (f.unbuilt == none) f.unbuilt = i;
     }
@@ -367,6 +372,9 @@ pub const Frame = struct {
         defer stack.deinit(f.gpa);
         try stack.append(f.gpa, .{ .pat = p, .value = v });
         while (stack.pop()) |it| {
+            // §4.1: each written pattern's binding is its own atom's kernel.
+            const kernel = try f.lane(it.pat);
+            defer f.account().leave(kernel);
             const d = f.data(it.pat);
             switch (f.tag(it.pat)) {
                 .pat_var => try f.bindLocal(d.lhs, it.value, point),
@@ -533,6 +541,8 @@ pub const Frame = struct {
         const explicit_rest = try shapes.without(f.gpa, f.account(), &cells.sets, contents, drop, false);
         var position: u32 = 0;
         for (items) |item| {
+            const kernel = try f.lane(item.int());
+            defer f.account().leave(kernel);
             const spread = f.tag(item.int()) == .pat_spread;
             var refined: SetId = .none;
             for (containers.items) |e| {
@@ -587,12 +597,19 @@ pub const Frame = struct {
             defer members.deinit(f.gpa);
             var ctxs: std.ArrayList(Cond.Kappas) = .empty;
             defer ctxs.deinit(f.gpa);
+            // §4.1: each item's part of a wide run is in its own atom's lane.
             for (items) |item| {
+                const kernel = try f.lane(item);
+                defer f.account().leave(kernel);
                 const v = try f.fit(f.val(item).value, elem_place);
                 try members.append(f.gpa, v.node);
                 try ctxs.append(f.gpa, v.kappa);
                 kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
             }
+            // The positions DAG and the run's condition: a general task over
+            // the whole run, growth until its work is split by item (#1098).
+            const task = try f.account().enter(f.gpa, null);
+            defer f.account().leave(task);
             const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
             kappa = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), kappa, elems, members.items, ctxs.items, .together, true, false, null);
             // Each element at the literal's `[*]`: its own κ there (§2.9: the
@@ -621,6 +638,9 @@ pub const Frame = struct {
         var kids: u32 = Ids.none_int;
         var kappa: Cond.Kappas = .none;
         for (parts, steps) |p, s| {
+            // §4.1: each part is in its own atom's lane.
+            const kernel = try f.lane(p);
+            defer f.account().leave(kernel);
             const child_place = f.env.places.child(at, s) orelse continue;
             const v = try f.fit(f.val(p).value, child_place);
             kids = try shapes.overPut(f.gpa, f.account(), kids, s, v.node);
@@ -787,6 +807,9 @@ pub const Frame = struct {
     // ---- calls -------------------------------------------------------------------
 
     fn call(f: *Frame, i: u32, callee_inst: u32, arg_insts: []const Inst.Index) Error!Value {
+        // §4.1's call view: the callee's class at this call and its graft.
+        const kernel = try f.account().enter(f.gpa, .{ .atom = i, .role = .call_view });
+        defer f.account().leave(kernel);
         const at = try f.placeOf(i);
         switch (try f.ctx.callee(f.ctx.ctx, i)) {
             .unbuilt => {
@@ -817,7 +840,14 @@ pub const Frame = struct {
                     try f.consume(a.int(), i, .call, if (k < uses.len) uses[k] else .none);
                     try argv.append(f.gpa, f.val(a.int()).value);
                 }
-                const applied = try Calls.apply(f.env, f.sums, class, argv.items, i, &f.calls);
+                // The graft copies the callee's class over the arguments' structure:
+                // named growth until §4.1's call view by reference (#1097, S3b).
+                const graft = try f.account().enter(f.gpa, null);
+                const applied = Calls.apply(f.env, f.sums, class, argv.items, i, &f.calls) catch |e| {
+                    f.account().leave(graft);
+                    return e;
+                };
+                f.account().leave(graft);
                 f.xreq = try f.env.conds.@"and"(f.gpa, f.env.charge, f.xreq, applied.xreq);
                 for (applied.escapes) |e| {
                     if (e.param >= arg_insts.len) continue;
@@ -987,6 +1017,10 @@ pub const Frame = struct {
                     try ctxs.append(f.gpa, v.kappa);
                 }
                 if (members.items.len == 0) return .{ .value = try f.nothing(at) };
+                // The join walks the arms' values whole: a general task, named
+                // growth until it is charged by position (#1098).
+                const task = try f.account().enter(f.gpa, null);
+                defer f.account().leave(task);
                 const copy = try f.gpa.dupe(NodeId, members.items);
                 defer f.gpa.free(copy);
                 const joined = try f.env.shapes.join(f.gpa, f.account(), f.env.places, f.env.cells, copy);
@@ -1015,6 +1049,8 @@ pub const Frame = struct {
         try f.prepare();
         const params = f.bir.extraSlice(.{ .start = f.decl.params_start, .end = f.decl.params_end }, Inst.Index);
         for (params, 0..) |p, k| {
+            const kernel = try f.account().enter(f.gpa, .{ .atom = p.int(), .role = .direct_data });
+            defer f.account().leave(kernel);
             // A pattern has no type of its own; a variable has its local's.
             const at = if (k < f.param_places.len) f.param_places[k] else if (f.tag(p.int()) == .pat_var) try f.ctx.placeOfLocal(f.ctx.ctx, f.data(p.int()).lhs) else try f.placeOf(p.int());
             const root = try f.env.places.rootPath(f.gpa, at);
@@ -1026,6 +1062,9 @@ pub const Frame = struct {
         var i = f.decl.inst_start.int();
         while (i < f.decl.inst_end.int()) : (i += 1) {
             if (f.unbuilt != none) return;
+            // §4.1: an instruction's transfer is its own settlement kernel.
+            const kernel = try f.account().enter(f.gpa, .{ .atom = i, .role = .transfer_settlement });
+            defer f.account().leave(kernel);
             const r = f.rel(i);
             const t = f.tag(i);
             if (f.matches[r] != none) {
