@@ -169,7 +169,7 @@ pub const Tree = struct {
         const cases = t.regions.items(.case_inst);
         const base2 = t.regions.items(.base2);
         for (0..t.regions.len) |i| {
-            const lane: Ids.Charge = .in(account, .{ .atom = @intCast(i), .role = .transfer_settlement, .phase = phase });
+            const lane: Ids.Charge = .in(account, .{ .atom = Ids.atom_region_bit | @as(u32, @intCast(i)), .role = .transfer_settlement, .phase = phase });
             try lane.reserve(gpa, .region, 1);
         }
         base2[0] = starts[0];
@@ -360,7 +360,7 @@ test "arms of one case are incompatible, everything else compatible; guards and 
     var t = try build(testing.allocator, &account, .inference, &l.bir, d, null);
     defer t.deinit(testing.allocator);
     // `base₂` is one record per region in the region's source-settlement lane.
-    try testing.expectEqual(@as(u32, 1), account.laneUsed(.{ .atom = 0, .role = .transfer_settlement }));
+    try testing.expectEqual(@as(u32, 1), account.laneUsed(.{ .atom = Ids.atom_region_bit, .role = .transfer_settlement }));
     try testing.expectEqual(@as(u64, t.count()), account.baseline);
     var arms: std.ArrayList(u32) = .empty;
     defer arms.deinit(testing.allocator);

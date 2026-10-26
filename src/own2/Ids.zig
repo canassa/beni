@@ -237,13 +237,12 @@ pub const Phase = enum(u8) { inference, validation };
 /// `atom_path_bit` so it never meets an instruction in one role.
 pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference };
 
-/// The high bit of a lane atom that is a canonical path node (a `PathId`),
-/// not an instruction: the two kinds share a role without colliding.
+/// The atom kinds beside an instruction, each its own bit so no two share a
+/// role's counter: a canonical path node (a `PathId`), a local (a binding,
+/// a pattern variable), a region (its settlement slots).
 pub const atom_path_bit: u32 = 1 << 31;
-
-/// The bit of a lane atom that is a local (a binding, a pattern variable),
-/// not an instruction.
 pub const atom_local_bit: u32 = 1 << 30;
+pub const atom_region_bit: u32 = 1 << 29;
 
 /// §4.4's input and format limits, each its own named `ownership_limit`.
 pub const Limit = enum(u8) {

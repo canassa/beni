@@ -526,7 +526,7 @@ pub const Ancestry = struct {
         a.levels = std.math.log2_int_ceil(u32, max_depth + 2);
         a.up = try gpa.alloc(RegionId, n * a.levels);
         for (0..n) |i| {
-            const charge: Charge = .in(account, .{ .atom = @intCast(i), .role = .transfer_settlement, .phase = phase });
+            const charge: Charge = .in(account, .{ .atom = Ids.atom_region_bit | @as(u32, @intCast(i)), .role = .transfer_settlement, .phase = phase });
             try charge.reserve(gpa, .region, a.levels);
             a.up[i * a.levels] = regions.get(.from(@intCast(i))).parent;
         }
@@ -963,7 +963,7 @@ test "ancestry: binary lifting agrees with the region tree's climb on a lowered 
     defer anc.deinit(gpa);
     try testing.expect(tree.count() >= 5);
     // The region's source-settlement lane: `base₂` and the ancestor slots.
-    try testing.expectEqual(anc.levels + 1, account.laneUsed(.{ .atom = 0, .role = .transfer_settlement }));
+    try testing.expectEqual(anc.levels + 1, account.laneUsed(.{ .atom = Ids.atom_region_bit, .role = .transfer_settlement }));
     try testing.expectEqual(@as(u32, 0), account.laneUsed(.{ .atom = 0, .role = .direct_demand_query }));
     var p = d.inst_start.int();
     while (p < d.inst_end.int()) : (p += 1) {

@@ -187,6 +187,12 @@ pub const Frame = struct {
         return f.vals[f.rel(i)];
     }
 
+    /// Whether a cell set has two members or more.
+    fn several(cellt: *const Cell.Table, s: SetId) bool {
+        var it = cellt.sets.iterate(s);
+        return it.next() != null and it.next() != null;
+    }
+
     /// Enter instruction `i`'s settlement kernel (§4.1), to `leave` after.
     fn lane(f: *Frame, i: u32) Error!Ids.Account.Kernel {
         return f.account().enter(f.gpa, .{ .atom = i, .role = .transfer_settlement });
@@ -383,10 +389,17 @@ pub const Frame = struct {
                     try stack.append(f.gpa, .{ .pat = d.lhs, .value = it.value });
                 },
                 .pat_wild, .pat_int, .pat_char, .pat_string, .pat_unit => {},
+                // Each part of a wide pattern is its own atom's (§4.1: wide runs
+                // supply their own written atoms): a component's pattern, a field's
+                // local, an argument's pattern.
                 .pat_tuple => for (f.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |e, k| {
+                    const part = try f.lane(e.int());
+                    defer f.account().leave(part);
                     try stack.append(f.gpa, .{ .pat = e.int(), .value = try f.project(it.value, try Step.index(f.account(), @intCast(k)), e.int()) });
                 },
                 .pat_record => for (f.bir.extraSlice(Bir.inlineRange(d), u32)) |local| {
+                    const part = try f.account().enter(f.gpa, .{ .atom = Ids.atom_local_bit | local, .role = .transfer_settlement });
+                    defer f.account().leave(part);
                     const name = f.bir.locals[f.decl.locals_start + local].name;
                     const step = try Step.field(f.account(), f.ctx.fieldRank(f.ctx.ctx, name));
                     const at = try f.ctx.placeOfLocal(f.ctx.ctx, local);
@@ -400,6 +413,8 @@ pub const Frame = struct {
                     };
                     const arg_pats = f.bir.extraSlice(f.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
                     for (arg_pats, 0..) |a, k| {
+                        const part = try f.lane(a.int());
+                        defer f.account().leave(part);
                         const step = try f.env.places.ctorStep(f.gpa, f.account(), ord[0], @intCast(k));
                         const value = try f.project(it.value, step, a.int());
                         try stack.append(f.gpa, .{ .pat = a.int(), .value = try f.below(it.pat, it.value, step, value) });
@@ -423,6 +438,9 @@ pub const Frame = struct {
         const cells = f.env.cells;
         const places = f.env.places;
         if (v.node == .none or projected.node == .none) return projected;
+        // Over several alternative cells: a product, growth (see `bindList`).
+        const task: ?Ids.Account.Kernel = if (several(cells, shapes.cells(v.node))) try f.account().enter(f.gpa, null) else null;
+        defer if (task) |t| f.account().leave(t);
         const at = shapes.place(v.node);
         const child = places.child(at, s) orelse return projected;
         if (shapes.place(projected.node) != child) return projected;
@@ -486,6 +504,12 @@ pub const Frame = struct {
     fn bindList(f: *Frame, p: u32, v: Value, point: u32) Error!void {
         const items = f.bir.extraSlice(Bir.inlineRange(f.data(p)), Inst.Index);
         if (items.len == 0) return;
+        // Several container cells are inferred alternatives: their per-cell
+        // work is a product with the items, growth chosen before the work
+        // (§4.1), never an item's baseline.
+        const product = several(f.env.cells, f.env.shapes.cells(v.node));
+        const task: ?Ids.Account.Kernel = if (product) try f.account().enter(f.gpa, null) else null;
+        defer if (task) |t| f.account().leave(t);
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const list_place = shapes.place(v.node);
@@ -541,7 +565,9 @@ pub const Frame = struct {
         const explicit_rest = try shapes.without(f.gpa, f.account(), &cells.sets, contents, drop, false);
         var position: u32 = 0;
         for (items) |item| {
-            const kernel = try f.lane(item.int());
+            // An item's work over several containers is a product (items ×
+            // inferred alternatives): the growth task entered above.
+            const kernel = if (product) try f.account().enter(f.gpa, null) else try f.lane(item.int());
             defer f.account().leave(kernel);
             const spread = f.tag(item.int()) == .pat_spread;
             var refined: SetId = .none;

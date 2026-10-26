@@ -8126,3 +8126,157 @@ test "the checker v2 charges an instruction's records to its source lanes" {
     }
     try testing.expect(growth[1] <= 2 * growth[0] + 40);
 }
+
+test "the checker v2 gives each demand of one call its own query lane" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1, *direct demand query*: ≤ 512 records per
+    // written demand. `Ref.set` writes its cell and stores its value: two
+    // demands at one call, two lanes, never one shared by the call point.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\pub put : Ref (List Int), List Int → ⊤
+        \\put r xs =
+        \\    Ref.set r xs
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, dump.stdout, ": accepted param\n"));
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "direct_demand_query lanes 2,") != null);
+}
+
+test "the checker v2's lanes do not depend on where a declaration sits in its module" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 (no lane aliases accidentally) and the
+    // declaration-order guarantee: a region's slots, an instruction's
+    // transfer and a local's binding are three key spaces, so moving a
+    // declaration (its instructions renumber) leaves its account the same.
+    const first =
+        \\pub g : List (List Int) → List Int
+        \\g xss =
+        \\    case xss of
+        \\        [ a, …_ ] →
+        \\            if List.length a > 1 then List.push a 1 else a
+        \\
+        \\        _ →
+        \\            []
+        \\
+    ;
+    const other =
+        \\pub h : List Int → List Int
+        \\h xs =
+        \\    List.push xs 2
+        \\
+    ;
+    var accounts: [2][]const u8 = undefined;
+    for (0..2) |run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const src = try std.mem.concat(w.arena.allocator(), u8, if (run == 0) &.{ first, "\n\n", other } else &.{ other, "\n\n", first });
+        try w.write("Main.beni", src);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        // The lanes by role (which source atoms each kernel used). The
+        // records a shared table's first miss costs still go to whichever
+        // declaration meets it first (#1104).
+        const at = std.mem.indexOf(u8, dump.stdout, "  account g:") orelse return error.NoAccount;
+        const end = std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n') orelse dump.stdout.len;
+        const lanes = std.mem.indexOf(u8, dump.stdout[at..end], ", direct_data lanes") orelse return error.NoLanes;
+        accounts[run] = try testing.allocator.dupe(u8, dump.stdout[at + lanes .. end]);
+    }
+    defer for (accounts) |a| testing.allocator.free(a);
+    try testing.expectEqualStrings(accounts[0], accounts[1]);
+}
+
+/// `ownership-v2.md` §4.1: a wide run supplies its own written atoms, and a
+/// product is growth chosen before the work, so no kernel's width is an
+/// `ownership_accounting_invariant`. `kind` 0 a record pattern, 1 a list
+/// literal, 2 a call's literal argument, 3 a record update; width 1 000.
+fn expectWideKernel(kind: u32) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    const a = testing.allocator;
+    const n = 1000;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    switch (kind) {
+        0, 3 => {
+            try src.appendSlice(a, "type alias R =\n");
+            for (1..n + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+            if (kind == 0) {
+                try src.appendSlice(a, "\n\npub g : R → List Int\ng {");
+                for (1..n + 1) |i| try src.print(a, "{s} f{d}", .{ if (i == 1) "" else ",", i });
+                try src.appendSlice(a, " } =\n    List.push f1 1\n");
+            } else {
+                try src.appendSlice(a, "\n\npub g : R → R\ng r =\n    { r");
+                for (1..n + 1) |i| try src.print(a, "{s} f{d} = List.push r.f{d} 1", .{ if (i == 1) " |" else ",", i, i });
+                try src.appendSlice(a, " }\n");
+            }
+        },
+        1 => {
+            try src.appendSlice(a, "pub g : ⊤ → List (List Int)\ng ⊤ =\n    [ ");
+            for (1..n + 1) |i| try src.print(a, "{s}[ {d} ]", .{ if (i == 1) "" else ", ", i });
+            try src.appendSlice(a, " ]\n");
+        },
+        else => {
+            try src.appendSlice(a, "pub g : List (List Int) → List (List Int)\ng xss =\n    List.push xss [ ");
+            for (1..n + 1) |i| try src.print(a, "{s}{d}", .{ if (i == 1) "" else ", ", i });
+            try src.appendSlice(a, " ]\n");
+        },
+    }
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "ownership_accounting_invariant") == null);
+}
+
+test "the checker v2 never reaches a lane's ceiling on a 1 000-field record pattern" {
+    try expectWideKernel(0);
+}
+
+test "the checker v2 never reaches a lane's ceiling on a 1 000-item literal" {
+    try expectWideKernel(1);
+}
+
+test "the checker v2 never reaches a lane's ceiling on a call with a 1 000-item argument" {
+    try expectWideKernel(2);
+}
+
+test "the checker v2 never reaches a lane's ceiling on a 1 000-field record update" {
+    try expectWideKernel(3);
+}
