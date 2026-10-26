@@ -52,6 +52,7 @@ pub type alias Ball =
     waitFrom : Float
     arrivedAt : Int
     alpha : Float
+    trail : List (Float × Float)
 
 
 --| A spark from the trapdoor.
@@ -296,10 +297,16 @@ step w0 dt now =
     balls =
         List.filter
             (List.map w2.balls λb →
-                if b.stage == Done && b.y > floorY + 10 then
-                    { b | alpha = b.alpha - dt * 2.5 }
+                faded =
+                    if b.stage == Done && b.y > floorY + 10 then
+                        { b | alpha = b.alpha - dt * 2.5 }
+                    else
+                        b
+                if faded.stage == Done then
+                    trail = List.push faded.trail ( faded.x, faded.y )
+                    { faded | trail = List.drop trail (max 0 (List.length trail - 7)) }
                 else
-                    b
+                    faded
             )
             λb → b.alpha > 0 && b.y < 600
     sparks =
@@ -349,6 +356,7 @@ spawn w =
             , waitFrom = 0
             , arrivedAt = 0
             , alpha = 1
+            , trail = []
             }
         { w | seed = s3, next = w.next + 1, balls = List.push w.balls ball }
 

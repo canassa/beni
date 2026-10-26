@@ -301,6 +301,13 @@ counters and control fibers, keeping the selected slider values. The previous
 command is cancelled with `Cmd.Restart` before its replacement runs. These
 controls and their state belong to the beni sample, as on `beni-logo/flow.html`.
 
+*Amended 2026-10-26, the owner's updated flow-page drawing.* The SVG follows
+the reference's continuous metal cabinet around the bucket, pipe and check:
+inset window and side panels, vents, return-tube clamps, permit sockets,
+vertical bucket indicators and a lit exit mouth. Finished balls keep up to
+seven frame positions for short fading trails. This is drawing state; it does
+not alter collisions, admission, batching, semaphore ownership or retry timing.
+
 ### 4.4 The tabs (second pull request)
 
 The emitted JavaScript, `beni dump --stage=types` and `beni dump --stage=ownership`, each from
