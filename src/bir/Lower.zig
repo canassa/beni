@@ -2314,6 +2314,12 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
                 s.bits &= ~w.bit();
             }
         }
+        // A `taken` function parameter is handed an element of the first
+        // container argument: one must stand before it, and be read.
+        if (s.bits & W.taken.bit() != 0 and (s.slot == 0 or first & W.unused.bit() != 0)) {
+            try l.reportOwn(s.firsts[@backingInt(W.taken)], .own_companion);
+            s.bits &= ~W.taken.bit();
+        }
     }
     for (slots) |*s| {
         if (s.slot != 0) continue;
@@ -2336,9 +2342,11 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
             .{ .w = .cellempty, .ok = first & W.unused.bit() != 0 },
             .{ .w = .lent, .ok = first & W.cellread.bit() != 0 },
             .{ .w = .lentoptional, .ok = first & W.cellread.bit() != 0 },
-            .{ .w = .builderdone, .ok = first & (W.written.bit() | W.returned.bit()) == (W.written.bit() | W.returned.bit()) },
-            .{ .w = .concatenated, .ok = first & W.written.bit() != 0 and arity >= 2 },
-            .{ .w = .taken, .ok = arity >= 1 },
+            // `builderdone`: the builder and its length, read only.
+            .{ .w = .builderdone, .ok = first & (W.written.bit() | W.returned.bit()) == (W.written.bit() | W.returned.bit()) and arity == 2 and S.at(slots, 1) & ~W.borrowed.bit() == 0 },
+            .{ .w = .concatenated, .ok = first & W.written.bit() != 0 and arity == 2 },
+            // A `taken` result is an element of parameter 1, which it reads.
+            .{ .w = .taken, .ok = arity >= 1 and first & W.unused.bit() == 0 },
         };
         for (needs) |n| {
             if (s.bits & n.w.bit() != 0 and !n.ok) {
