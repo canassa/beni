@@ -988,8 +988,8 @@ pub fn ownSlotsV2(b: *const Bir, d: Decl) []const [2]u32 {
 }
 
 /// A spread literal `[ x, …xs, y ]` as one fact (ownership-v2.md §2.13.2):
-/// `root` is the instruction the literal lowered to (the outermost
-/// `List.cons`/`List.append` call, or the operand itself for `[ …xs ]`),
+/// `root` is the outermost `List.cons`/`List.append` call the literal
+/// lowered to, one per fact (`[ …xs ]` is `xs` and records none),
 /// and `items_start..items_end` its items in source order as pairs in
 /// `extra`, `(instruction, 1 when spread)`. Lowering also emits the calls,
 /// which the checker and the emitter read; only the ownership checker v2
@@ -1375,6 +1375,19 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         if (!inRange(d.type_params_start, d.type_params_end, bir.symbols.len)) return false;
         if (!inRange(@backingInt(d.params_start), @backingInt(d.params_end), bir.extra.len)) return false;
         if (!inRange(@backingInt(d.where_start), @backingInt(d.where_end), bir.extra.len)) return false;
+        // The ownership columns: pairs, and the spread chains' records
+        // (three words) whose item pairs name instructions of this
+        // declaration.
+        if (!inRange(d.own_start, d.own_end, bir.extra.len) or (d.own_end - d.own_start) % 2 != 0) return false;
+        if (!inRange(d.own2_start, d.own2_end, bir.extra.len) or (d.own2_end - d.own2_start) % 2 != 0) return false;
+        if (!inRange(d.spreads_start, d.spreads_end, bir.extra.len) or (d.spreads_end - d.spreads_start) % 3 != 0) return false;
+        for (bir.spreads(d)) |s| {
+            if (s.root < d.inst_start.int() or s.root >= d.inst_end.int()) return false;
+            if (!inRange(s.items_start, s.items_end, bir.extra.len) or (s.items_end - s.items_start) % 2 != 0) return false;
+            for (bir.spreadItems(s)) |it| {
+                if (it[0] < d.inst_start.int() or it[0] >= d.inst_end.int() or it[1] > 1) return false;
+            }
+        }
         if (!validSymbol(d.name, symbols_len)) return false;
         if (!validOptionalInst(d.annotation, insts_len)) return false;
         if (!validOptionalInst(d.body, insts_len)) return false;

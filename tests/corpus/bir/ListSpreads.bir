@@ -94,7 +94,6 @@ decl 4: value between
 decl 5: value whole
   %0 = pat_var local 0 (xs)
   %1 = local 0 (xs)
-  spread %1: …%1
   params [%0]
   body %1
   locals

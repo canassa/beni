@@ -1432,6 +1432,22 @@ test "verify refuses the structural faults a well-typed record can still have" {
                 d.refs_end = 99;
             }
         }.go },
+        .{ .what = "a spread chains range past `extra`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.spreads_end = 99;
+            }
+        }.go },
+        .{ .what = "a spread chains range that is not whole records", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.spreads_start = 0;
+                d.spreads_end = 1;
+            }
+        }.go },
+        .{ .what = "a v2 words range past `extra`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.own2_end = 99;
+            }
+        }.go },
         .{ .what = "a ctors range past the table", .apply = struct {
             fn go(d: *Bir.Decl) void {
                 d.ctors_end = 99;

@@ -9,3 +9,14 @@ nested xs ys = [ 0, …xs, …[ 1, …ys, 2 ] ]
 
 inLambda : List (List Int) → List (List Int)
 inLambda rows = List.map rows λrow → [ …row, 9 ]
+
+
+-- A literal that is one spread is its operand (§2.13.2: `[ …xs ]` is
+-- `xs`) and records no fact: `[ …[ 1, …ys ] ]` has only the inner chain,
+-- and `[ …[ …xs ] ]` none.
+alone : List Int → List Int
+alone ys = [ …[ 1, …ys ] ]
+
+
+twice : List Int → List Int
+twice xs = [ …[ …xs ] ]

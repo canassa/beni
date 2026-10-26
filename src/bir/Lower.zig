@@ -2813,7 +2813,10 @@ fn lowerSpreadList(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     }
     // The chain as one fact (ownership-v2.md §2.13.2): its root and its
     // items in source order, each marked when it is spread. The calls above
-    // stay what the checker and the emitter read.
+    // stay what the checker and the emitter read. `[ …xs ]` is `xs`, no call
+    // and no chain: it records nothing, so every root is a call this
+    // literal made, and no two facts share one.
+    if (items.len == 1) return built.?;
     const at: u32 = @intCast(l.extra.items.len);
     for (items, lowered) |item, inst| {
         try l.extra.appendSlice(l.gpa, &.{ inst.int(), @intFromBool(l.tree.nodeTag(item) == .spread) });
