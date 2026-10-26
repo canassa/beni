@@ -769,6 +769,11 @@ own snapshot and retains every reachable constraint in the new interpretation. E
 empty shapes still matter to the read rule. A finite worklist over `(node, position class, interpretation)`
 and reachable map/trie entries closes the frontier; recursive paths use canonical place backreferences,
 not path-string enumeration. A trie transition must migrate all of these readers and the codec together.
+A position is a path, so the frontier's transitions are the projections along the place's steps and nothing
+else: a delta's base and a recast's inner are not projections, and a constraint stored for one of them alone
+is observable nowhere (a built node's read is the walk's certificate, a recast's is derived), while a union's
+and a positions node's sides are read by the read of the node itself, above. `Cond.frontier` is that one
+transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing else.
 
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
