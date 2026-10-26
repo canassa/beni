@@ -4,7 +4,9 @@
 -- `dropping`, which keeps 1 and 2; and True three times on `sliding`, which
 -- keeps 2 and 3. `offerAll` answers the values a `dropping` queue refused
 -- and nothing for `sliding`. An offer to an empty queue with a taker
--- waiting goes to the taker. A capacity below 1 is 1.
+-- waiting goes to the taker. An `offerAll` with a taker waiting serves
+-- the taker before it drops or refuses a value: the taker gets 9, and
+-- both kinds then hold 10 and 11. A capacity below 1 is 1.
 import Io
 import Node exposing (Program)
 import Queue exposing (Queue)
@@ -23,6 +25,11 @@ offers q name =
     Task.yieldNow ⊤
     _ = Debug.log "${name} offer to a taker" (Queue.offer q 8)
     _ = Debug.log "${name} taker got" (Task.join taker)
+    again = Task.spawn λ⊤ → Queue.take q
+    Task.yieldNow ⊤
+    _ = Debug.log "${name} offerAll to a taker left" (Queue.offerAll q [ 9, 10, 11 ])
+    _ = Debug.log "${name} taker got" (Task.join again)
+    _ = Debug.log "${name} holds" (Queue.takeAll q)
     ⊤
 
 

@@ -3,4 +3,7 @@ poll: Nothing
 takeN took: [1,2,3]
 take still waits: True
 take took: Just 4
+takeAll waits: True
+takeN again took: [1,2,3]
+takeAll took: [4]
 done

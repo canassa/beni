@@ -1,0 +1,34 @@
+-- run: cancelling many waiting takers at once costs time linear in their
+-- number (transparent-effects-proposal.md §17.9, §17.1 item 1). 400 000
+-- fibers wait to take from one queue; closing their scope cancels them
+-- all, front first, and each cancel looks at the head of the line again.
+-- Then the queue still works: an offer is taken at once, and a taker that
+-- waits gets the next one.
+import Io
+import List
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+count : Int
+count = 400000
+
+
+main : Program
+main = Io.run λ⊤ →
+    q : Queue Int
+    q = Queue.unbounded ⊤
+    Task.scope λscope →
+        _ = List.foldl (List.range 1 count) 0 λi n →
+            _ = Task.spawnIn scope λ⊤ → Queue.take q
+            n + i
+        Task.yieldNow ⊤
+    _ = Queue.offer q 7
+    _ = Debug.log "size after the offer" (Queue.size q)
+    _ = Debug.log "take" (Queue.take q)
+    late = Task.spawn λ⊤ → Queue.take q
+    Task.yieldNow ⊤
+    _ = Queue.offer q 8
+    _ = Debug.log "late took" (Task.join late)
+    Node.print "done"

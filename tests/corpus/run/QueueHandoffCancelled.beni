@@ -6,7 +6,8 @@
 -- after see 1, then 2. When another taker waits behind the cancelled one,
 -- the value given back goes straight to it: `next` gets 3, not 4. A
 -- `takeAll` and a `takeN` handed several values give them back in their
--- order.
+-- order. A give-back can leave a `sliding 1` queue holding 2 values; the
+-- next offer drops the oldest until it fits, so the queue holds only it.
 import Io
 import Node exposing (Program)
 import Queue
@@ -46,4 +47,15 @@ main = Io.run λ⊤ →
     _ = Queue.offerAll q [ 8, 9, 10 ]
     Task.cancel some
     _ = Debug.log "after takeN's cancel" (Queue.takeAll q)
+
+    s = Queue.sliding 1
+    late = Task.spawn λ⊤ → Debug.log "late took" (Queue.take s)
+    Task.yieldNow ⊤
+    _ = Queue.offer s 1
+    _ = Queue.offer s 2
+    _ = Queue.offer s 3
+    Task.cancel late
+    _ = Debug.log "sliding 1 holds after the give-back" (Queue.size s)
+    _ = Queue.offer s 4
+    _ = Debug.log "sliding 1 after one more offer" (Queue.takeAll s)
     Node.print "done"

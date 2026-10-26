@@ -1,0 +1,64 @@
+-- run: a value given back by a taker cancelled after the hand-off is not
+-- lost when the queue has ended meanwhile (transparent-effects-proposal.md
+-- §17.9, amended 2026-10-26, points 2 and 7). While a hand-off is neither
+-- run nor given back, an ended queue does not answer `Nothing`: the takers
+-- that would get it wait, and are served when the hand-off settles.
+-- Workers w1 and w2 wait to take; 1 is handed to w1; the queue ends; w1 is
+-- cancelled before it runs. w2 gets 1, then sees the end. Then a `takeN 3`
+-- waits behind one value with a `take` behind it; at the `end` the `takeN`
+-- is handed [ 20 ] and the `take` waits; the `takeN` is cancelled, and the
+-- `take` gets 20. When the hand-off is not cancelled but runs, the takers
+-- held back are served then: w3 handles 5, and both see the end.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task exposing (Fiber)
+
+
+work : Queue Int, String → ⊤
+work q name =
+    case Queue.take q of
+        Just v →
+            _ = Debug.log "${name} handled" v
+            work q name
+
+        Nothing →
+            Debug.log "${name} saw the end" ⊤
+
+
+worker : Queue Int, String → Fiber ⊤
+worker q name = Task.spawn λ⊤ → work q name
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    w1 = worker q "w1"
+    w2 = worker q "w2"
+    Task.yieldNow ⊤
+    _ = Queue.offer q 1
+    Queue.end q
+    Task.cancel w1
+    Task.join w2
+    _ = Debug.log "size" (Queue.size q)
+
+    r : Queue Int
+    r = Queue.unbounded ⊤
+    _ = Queue.offer r 20
+    three = Task.spawn λ⊤ → Debug.log "takeN took" (Queue.takeN r 3)
+    one = Task.spawn λ⊤ → Debug.log "take took" (Queue.take r)
+    Task.yieldNow ⊤
+    Queue.end r
+    Task.cancel three
+    _ = Task.join one
+    _ = Debug.log "size" (Queue.size r)
+    _ = Debug.log "take after" (Queue.take r)
+
+    s = Queue.unbounded ⊤
+    w3 = worker s "w3"
+    w4 = worker s "w4"
+    Task.yieldNow ⊤
+    _ = Queue.offer s 5
+    Queue.end s
+    _ = Task.joinAll [ w3, w4 ]
+    Node.print "done"

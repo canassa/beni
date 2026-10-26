@@ -1155,8 +1155,15 @@ never ⊤ = callback λ_ → λ⊤ → ⊤
 --| Effect's `forever`.
 --|
 --|     _ = Task.spawn λ⊤ → Task.forever λ⊤ →
---|         job = Queue.take jobs
---|         handle job
+--|         Latch.wait ready
+--|         tick ⊤
+--|
+--| A loop that should stop is not a `forever`. A loop over a `Queue`
+--| that can end is a recursive function that stops on `Nothing`:
+--|
+--|     work jobs = case Queue.take jobs of
+--|         Just job → handle job; work jobs
+--|         Nothing → ⊤
 pub forever : (⊤ → a) → b
 forever work =
     _ = work ⊤

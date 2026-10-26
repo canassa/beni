@@ -1,0 +1,10 @@
+w2 handled: 1
+w2 saw the end: ⊤
+size: 0
+take took: Just 20
+size: 0
+take after: Nothing
+w3 handled: 5
+w3 saw the end: ⊤
+w4 saw the end: ⊤
+done
