@@ -32,7 +32,7 @@ A fiber is one line of execution; many fibers take turns on one thread. `Task` i
 | `Task.bracket acquire release use` | `release` runs when `use` ends, also on cancellation; it gets the resource and an `Exit a`, which is `Done value` or `Cancelled` |
 | `Task.sleep duration` | waits |
 | `Task.timeout duration (λ⊤ → work)` | `Just` the value, or `Nothing` after the duration |
-| `Task.race left right` | the first of two to finish; the other is cancelled |
+| `Task.race left right` | the first of two to finish; the other is cancelled at once and does not run again |
 | `Task.retry schedule (λ⊤ → attempt)` | repeats a `Result` attempt as a `Schedule` says |
 
 Nothing a fiber starts outlives what started it, unless it is joined first. Cancellation is
@@ -105,8 +105,9 @@ A `Semaphore` limits how many fibers do one thing at the same time. `Semaphore.m
   `n` as taken, so give back the same `n`. A request for 0 or fewer does not wait.
 - `Semaphore.acquire s n` and `Semaphore.release s n` are the manual pair. One fiber can take a
   permit and a different fiber can give it back. Nothing gives back a permit that you `acquire`:
-  if you do not `release` it, it is lost. Inside `Task.race` or `Task.timeout`, use
-  `withPermits`, not `acquire`.
+  if you do not `release` it, it is lost. After `acquire` returns, the permits are yours. If your
+  fiber can be cancelled before it calls `release`, give them back in `Task.onExit`, or use
+  `withPermits`, which does that for you. A cancelled `acquire` that is still waiting takes nothing.
 - `Semaphore.available s` is the number of free permits. `Semaphore.resize s n` changes the
   number of permits.
 
@@ -182,4 +183,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5, §17.7, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Log.beni`; `platforms/node/Io.beni`.

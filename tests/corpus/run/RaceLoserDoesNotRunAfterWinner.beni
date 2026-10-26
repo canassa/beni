@@ -1,0 +1,27 @@
+-- run: once `Task.race` has its winner, no loser runs again
+-- (transparent-effects-proposal.md §17.7, amended 2026-10-26). Both
+-- branches join the same fiber, so its end answers both waits on one turn.
+-- The first branch runs first and wins; the second is cancelled from the
+-- winner's end, before its resumption runs, so its step after the wait
+-- never prints.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        "open"
+
+    winner =
+        Task.race
+            (λ⊤ →
+                v = Task.join gate
+                Debug.log "first after its wait" v
+            )
+            λ⊤ →
+                v = Task.join gate
+                Debug.log "second after its wait" v
+    Node.print "winner: ${winner}"

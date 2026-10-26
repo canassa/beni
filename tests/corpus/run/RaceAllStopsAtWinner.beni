@@ -1,0 +1,33 @@
+-- run: `Task.raceAll` over three branches (transparent-effects-proposal.md
+-- §17.7, amended 2026-10-26).
+--
+--   - All three join one fiber, so its end answers every wait on one turn.
+--     The first wins, and neither of the other two runs again.
+--   - The second returns at once, while the first waits: it wins, the
+--     first is cancelled, and the third is never started.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        "open"
+
+    after : String → (⊤ → String)
+    after name =
+        λ⊤ →
+            v = Task.join gate
+            Debug.log "${name} after its wait" v
+
+    one = Task.raceAll (after "first") [ after "second", after "third" ]
+    _ = Debug.log "one turn" one
+
+    two =
+        Task.raceAll (λ⊤ → Task.never ⊤)
+            [ λ⊤ → "second, at once"
+            , λ⊤ → Debug.log "third started" "third"
+            ]
+    Node.print "at once: ${two}"

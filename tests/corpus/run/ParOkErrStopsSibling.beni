@@ -1,0 +1,45 @@
+-- run: once a fail-fast combinator has its first `Err`, no sibling runs
+-- again, and none starts (transparent-effects-proposal.md §17.7, amended
+-- 2026-10-26).
+--
+--   - `parOk`, one turn: both branches join one fiber, so its end answers
+--     both waits on one turn. The first answers `Err`; the second is
+--     cancelled from the first's end, before its resumption runs.
+--   - `parOk`, at once: the first answers `Err` without waiting, so the
+--     second is never started.
+--   - `forEachOk`, one turn: three calls join one fiber; the first answers
+--     `Err`, and the other two never run again.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        "open"
+
+    one =
+        Task.parOk
+            (λ⊤ →
+                v = Task.join gate
+                Debug.log "first after its wait" (Err v)
+            )
+            λ⊤ →
+                v = Task.join gate
+                Debug.log "second after its wait" (Ok v)
+    _ = Debug.log "parOk, one turn" one
+
+    two = Task.parOk (λ⊤ → Err "at once") λ⊤ → Debug.log "second started" (Ok ⊤)
+    _ = Debug.log "parOk, at once" two
+
+    gate2 = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        "open"
+
+    three = Task.forEachOk [ 1, 2, 3 ] 3 λi →
+        v = Task.join gate2
+        _ = Debug.log "call ${String.fromInt i} after its wait" v
+        if i == 1 then Err i else Ok i
+    Node.print (Debug.toString three)

@@ -1,0 +1,5 @@
+first after its wait: Err "open"
+parOk, one turn: Err "open"
+parOk, at once: Err "at once"
+call 1 after its wait: "open"
+Err 1

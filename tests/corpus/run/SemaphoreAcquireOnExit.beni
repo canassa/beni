@@ -1,0 +1,33 @@
+-- run: once `Semaphore.acquire` returns, the permit belongs to the fiber
+-- that took it; a fiber that may be cancelled before its `release` gives
+-- it back in `Task.onExit` (transparent-effects-proposal.md §17.7 and
+-- §17.9, amended 2026-10-26). The race's first branch takes its permit
+-- inside a `timeout`, and then uses it, with its release in `onExit`. The
+-- second branch's `acquire` returns on the same turn and wins. The first
+-- branch is cancelled during its use, and `onExit` gives the permit back:
+-- one permit stays taken, by the winner.
+import Duration
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    Semaphore.acquire s 2
+
+    racer = Task.spawn λ⊤ →
+        Task.race
+            (λ⊤ →
+                _ = Task.timeout (Duration.seconds 5) λ⊤ →
+                    Semaphore.acquire s 1
+                    Task.onExit (λ⊤ → Task.sleep (Duration.seconds 1)) λ_ → Semaphore.release s 1
+                ⊤
+            )
+            λ⊤ → Semaphore.acquire s 1
+    Task.yieldNow ⊤
+    Semaphore.release s 2
+    Task.join racer
+    Node.print "available: ${String.fromInt (Semaphore.available s)}"

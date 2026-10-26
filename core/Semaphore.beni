@@ -88,11 +88,13 @@ tryWithPermits (Semaphore s) n work =
 --| takes nothing.
 --|
 --| Give the permits back with `release`, from this fiber or another. A
---| permit you `acquire` and never `release` is lost. Prefer `withPermits`
---| when the permits are given back where they were taken. Inside
---| `Task.race` or `Task.timeout`, use `withPermits` and not `acquire`: a
---| losing branch can still take the permits as it is cancelled, and then
---| nothing gives them back.
+--| permit you `acquire` and never `release` is lost. After `acquire`
+--| returns, the permits are yours: if your fiber can be cancelled before
+--| it calls `release`, give them back in `Task.onExit`, or use
+--| `withPermits`, which does that for you.
+--|
+--|     Semaphore.acquire s 1
+--|     Task.onExit (λ⊤ → work ⊤) λ_ → Semaphore.release s 1
 --|
 --| A request for more permits than there are counts all `n` as taken, so
 --| `release` the same `n`.

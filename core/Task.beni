@@ -2871,16 +2871,28 @@ clockMillis ⊤ =
 -- `stop` holds of, and answer it; or until every one has ended, and answer
 -- null. At once when that is already so; the fibers are looked at in array
 -- order.
-firstOf : V, (V → Bool) → V
-firstOf fibers stop =
+--
+-- When `kill` holds of that outcome too, the combinator has its answer, and
+-- every other fiber is interrupted there and then: from the ended fiber's
+-- observer, inside its end, before anything else on the queue runs — so a
+-- loser whose wait was answered on the same turn never runs again, and its
+-- wait's canceller sees the answer and gives back what it was handed
+-- (§17.7, amended 2026-10-26). The combinator still waits for them, as its
+-- scope closes. The fiber whose end did that is the answer, even when
+-- `stop` held first of another: those interrupted may end before the
+-- combinator runs again, and none of them is the one that decided.
+firstOf : V, (V → Bool), (V → Bool) → V
+firstOf fibers stop kill =
     found = endedWith fibers stop 0
 
     if not (Js.isNull found) then
+        if kill (Js.get found "outcome") then haltOthers fibers found
         found
     else if allDone fibers 0 then
         Js.null
     else
         each = Js.ref Js.null
+        decided = Js.ref Js.null
 
         got = suspend λwake →
             left = Js.ref 0
@@ -2889,8 +2901,12 @@ firstOf fibers stop =
 
             observer = Js.from λf →
                 Js.write left (Js.read left - 1)
+                o = Js.get f "outcome"
 
-                if stop (Js.get f "outcome") then
+                if stop o then
+                    if kill o && Js.isNull (Js.read decided) then
+                        Js.write decided f
+                        haltOthers fibers f
                     Js.to (Js.apply wake [ f ])
                 else if Js.read left == 0 then
                     Js.to (Js.apply wake [ Js.null ])
@@ -2898,7 +2914,13 @@ firstOf fibers stop =
             Js.each fibers λf → if Js.isNull (Js.get f "outcome") then observe f observer
             Js.from λ_ → Js.each fibers λf → unobserve f observer
         Js.each fibers λf → unobserve f (Js.read each)
-        got
+        if Js.isNull (Js.read decided) then got else Js.read decided
+
+
+-- Interrupt every fiber of `fibers` but `winner`; those that have ended are
+-- left as they are.
+haltOthers : V, V → ⊤
+haltOthers fibers winner = Js.each fibers λg → if not (Js.same g winner) then halt g
 
 
 endedWith : V, (V → Bool), Int → V
@@ -2978,7 +3000,7 @@ valueOf f =
 -- the caller is cancelled too, and the scope cancels and awaits the rest.
 allOrCancel : V → ⊤
 allOrCancel fibers =
-    stopped = firstOf fibers wasCancelled
+    stopped = firstOf fibers wasCancelled wasCancelled
     if Js.isNull stopped then ⊤ else selfCancel ⊤
 
 
@@ -3003,32 +3025,46 @@ par3 a b c = within λs →
     ( valueOf fa, valueOf fb, valueOf fc )
 
 
---| Run both concurrently; the first `Err` to arrive cancels the other,
---| waits for its cleanup, and is the answer. `Ok` of both values, in
+--| Run both concurrently; the first `Err` to arrive cancels the other as
+--| it arrives, waits for its cleanup, and is the answer. When the first
+--| answers `Err` without waiting, the second is never started. `Ok` of both values, in
 --| argument order, otherwise. Effect's `all`, which fails fast.
 pub parOk : (⊤ → Result e a), (⊤ → Result e b) → Result e (a × b)
 parOk a b = within λs →
     fa = startIn s a
-    fb = startIn s b
-    stopped = firstOf (Js.array [ fa, fb ]) failedOrCancelled
+    early = Js.get fa "outcome"
 
-    if Js.isNull stopped then
-        case ( valueOf fa, valueOf fb ) of
-            ( Ok x, Ok y ) →
-                Ok ( x, y )
-
-            ( Err why, _ ) →
-                Err why
-
-            ( _, Err why ) →
-                Err why
+    -- An `Err` at once is the answer: the other branch is never started.
+    if not (Js.isNull early) && failedOrCancelled early then
+        failedWith fa
     else
-        case valueOf stopped of
-            Err why →
-                Err why
+        fb = startIn s b
+        stopped = firstOf (Js.array [ fa, fb ]) failedOrCancelled failedOrCancelled
 
-            Ok _ →
-                selfCancel ⊤
+        if Js.isNull stopped then
+            case ( valueOf fa, valueOf fb ) of
+                ( Ok x, Ok y ) →
+                    Ok ( x, y )
+
+                ( Err why, _ ) →
+                    Err why
+
+                ( _, Err why ) →
+                    Err why
+        else
+            failedWith stopped
+
+
+-- The answer of a fail-fast combinator stopped by `fiber`: its `Err`, or the
+-- caller cancelled when it was.
+failedWith : V → Result e a
+failedWith fiber =
+    case valueOf fiber of
+        Err why →
+            Err why
+
+        Ok _ →
+            selfCancel ⊤
 
 
 -- The elements of a list, as a JavaScript array.
@@ -3059,7 +3095,8 @@ forEach xs bound f =
 
 
 --| `forEach` for a function that answers a `Result`: on the first `Err`,
---| no more calls are started, those running are cancelled and waited for,
+--| no more calls are started, those running are cancelled as it arrives
+--| and waited for,
 --| and that `Err` is the answer. `Ok` of every result, in list order,
 --| otherwise.
 pub forEachOk : List a, Int, (a → Result e b) → Result e (List b)
@@ -3132,12 +3169,18 @@ boundedFrom h items results bound call stopsAt ends next inFlight slots =
     else if Js.to (Js.get inFlight "length") == 0 then
         Js.null
     else
-        _ = firstOf inFlight λ_ → True
-        stop = harvest inFlight slots results ends 0
-        if Js.isNull stop then
-            boundedFrom h items results bound call stopsAt ends next inFlight slots
+        found = firstOf inFlight (λ_ → True) ends
+
+        -- The call that ended the run, when one did: those it cancelled may
+        -- have ended too, and come before it in `inFlight`.
+        if not (Js.isNull found) && ends (Js.get found "outcome") then
+            found
         else
-            stop
+            stop = harvest inFlight slots results ends 0
+            if Js.isNull stop then
+                boundedFrom h items results bound call stopsAt ends next inFlight slots
+            else
+                stop
 
 
 -- Take the fibers of `inFlight` that have ended out of it, their values into
@@ -3173,26 +3216,48 @@ doneValue o =
             Js.null
 
 
---| Run both concurrently; the first to return is the answer, and the other
---| is cancelled and waited for — its cleanup has run — before it is
---| returned. A branch cancelled by itself never wins; if both are, the
---| caller is cancelled. Effect's `raceFirst`.
+--| Run both concurrently; the first to return is the answer. The other is
+--| cancelled as the first returns, so it runs again only where it cannot
+--| be interrupted, and is waited for — its cleanup has run — before the
+--| answer is returned. When the first returns without waiting, the second
+--| is never started. A branch cancelled by itself never wins; if both are,
+--| the caller is cancelled. Effect's `raceFirst`.
 pub race : (⊤ → a), (⊤ → a) → a
 race a b = raceAll a [ b ]
 
 
 --| `race` of any number of branches, `first` and then `rest`: the first to
---| return wins, and every other branch is cancelled and waited for before
---| the answer is returned. Effect's `raceAllFirst`.
+--| return wins. Every other branch is cancelled as it returns, so none runs
+--| again where it can be interrupted, and is waited for before the answer
+--| is returned; a branch after one that returned without waiting is never
+--| started. Effect's `raceAllFirst`.
 pub raceAll : (⊤ → a), List (⊤ → a) → a
 raceAll first rest = within λs →
-    fibers = arrayOf (List.map [ first, …rest ] λt → startIn s t)
-    winner = firstOf fibers wasDone
+    fibers = startRacers s [ first, …rest ] (Js.array []) wasDone
+    winner = firstOf fibers wasDone wasDone
     if Js.isNull winner then selfCancel ⊤ else valueOf winner
 
 
---| The first branch to answer `Ok` wins, and the rest are cancelled and
---| waited for; an `Err` does not end the race. When no branch answers
+-- Start the branches of a race in order, into `fibers`, a JavaScript array,
+-- and answer it; stop at the first that ends at once with an outcome `wins`
+-- holds of, so no branch starts once the race has its winner (§17.7,
+-- amended 2026-10-26).
+startRacers : V, List (⊤ → a), V, (V → Bool) → V
+startRacers h thunks fibers wins =
+    case thunks of
+        [] →
+            fibers
+
+        [ t, …more ] →
+            f = startIn h t
+            _ = Js.call fibers "push" [ f ]
+            o = Js.get f "outcome"
+            if not (Js.isNull o) && wins o then fibers else startRacers h more fibers wins
+
+
+--| The first branch to answer `Ok` wins, and the rest are cancelled as it
+--| answers, and waited for; an `Err` does not end the race. A branch after
+--| one that answered `Ok` without waiting is never started. When no branch answers
 --| `Ok`, the answer is `Err` of every branch's error, in argument order —
 --| a branch cancelled by itself gives none, and if every branch was, the
 --| caller is cancelled. No branches at all is `Err []`. Effect's `race`.
@@ -3202,11 +3267,13 @@ raceOk thunks =
         Err []
     else
         within λs →
-            fibers = List.map thunks λt → startIn s t
-            winner = firstOf (arrayOf fibers) succeeded
+            fibers = startRacers s thunks (Js.array []) succeeded
+            winner = firstOf fibers succeeded succeeded
 
             if Js.isNull winner then
-                errors = List.filterMap fibers λf → errorOf (Js.get (Js.from f) "outcome")
+                count = Js.to (Js.get fibers "length")
+                errors = List.filterMap (List.range 0 (count - 1)) λi →
+                    errorOf (Js.get (Js.at fibers i) "outcome")
                 if List.isEmpty errors then selfCancel ⊤ else Err errors
             else
                 case valueOf winner of
@@ -3228,11 +3295,11 @@ errorOf o =
 
 
 --| Run `work`; if it returns before `duration` has passed on the calling
---| fiber's clock, `Just` its value. Otherwise `work` is cancelled, its
---| cleanup waited for, and the answer is `Nothing` — so `timeout` may take
---| longer than `duration`, by as long as that cleanup takes, and `work`
---| that cannot be interrupted when the time passes runs to its next point
---| of suspension first. A `zero` duration answers `Nothing` without
+--| fiber's clock, `Just` its value. Otherwise `work` is cancelled as the
+--| time passes, its cleanup waited for, and the answer is `Nothing` — so
+--| `timeout` may take longer than `duration`, by as long as that cleanup
+--| takes, and `work` that cannot be interrupted when the time passes runs
+--| to its next point of suspension first. A `zero` duration answers `Nothing` without
 --| starting `work`. Effect's `timeoutOption`.
 --|
 --|     Task.timeout (Duration.seconds 5) (λ⊤ → Http.get url)
@@ -3250,7 +3317,7 @@ timeout duration work =
                 Just (valueOf child)
             else
                 timer = startIn s λ⊤ → sleep duration
-                first = firstOf (Js.array [ child, timer ]) λ_ → True
+                first = firstOf (Js.array [ child, timer ]) (λ_ → True) λ_ → True
                 if Js.same first child then Just (valueOf child) else Nothing
 
 

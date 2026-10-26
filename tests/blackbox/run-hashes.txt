@@ -39,7 +39,7 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 715e46af8ce1e6db25a7209904a46b7777aed328a80dd2dc4598d55fa420a5c9
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 8c86fb3142e7c58678fb77b43a1dc571020f1a457de98cb20df2003182644f91
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 feca90cf59550eec8cf452cb66b22476cbaa0fbab6199610d1f4d87f05ba6a69
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 0920ec49ef71fdfea9e7d7b3310353df763b7a93cd5a09672c5f9fc3dfdc48e4
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ab66fa8d0a82c2517a68e5595e41e0168fb9c7d40802dd3f5678ab2131e125fd
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 54b595b95d9252095165897c34c17171c98e6568dc6475ebc55111180cdaaa33
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dfc36b2c18b6b109587cca1f27d7fad84ba5b81a2926ee12615804b00176330e
@@ -54,7 +54,7 @@ build_test.test.a development build copies hand-written JavaScript byte for byte
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 2f95b3c4275e673205374ba208d776f269004fcd6357175a0a01a02b1baf4384
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 bdb45053d72c73e435c747cb7c315a1b8a2ece431f710ce4e072bf78c1a68343
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 be409ae04c1c931d0eef3ec59f4ac209d9dc8c2d8571c07c08f42190ae0a857f
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 0163bb6755df532ea8df952096d0d553cba9fcf1362f46e416eb43c8578b0d33
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 a16e0a79d4837d150f0adcd9ad71a83334545fffcc44789675cbd8ebd81b990c
 build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 7e72c78745b14b0967f5e7cee65ec7a4b851b7d2cb8c08e73e44433969c88152
 build_test.test.a non-zero exit code from the platform reaches the process #0 7839e111324769dcb8ed2c068542fbc64385245f63347934c3db4ec28682263b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
@@ -64,7 +64,7 @@ build_test.test.a platform that declares exports gets an entry file that exports
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #1 3ba1fe19ce10eb75bf1245700c570da39147951bfcd5dc77667060fd8a65262c
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #2 c0a4c377b0770e255b520ef57b83968cbc7866c69e7b781adbfcd89b968cefe1
 build_test.test.a program computes something and prints the right answer #0 295cf87342971b091c0507699a34d168b890b785193fe8ddd0c77a8b2cc63fcd
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 31d21b9befc59833d1aed0dd8af3f842e21f36d9c7201ab1a03656334e4f49d3
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 8558e97a2644ea9fbf921696d1aace57ebb93d9ec52af81645a30374111279e4
 build_test.test.a project that lists exports for a platform without the key gets a warning and a build #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 b7350c41206ccdd903daa449a4dc8f1fed403e6d4a468542c737f0df96cc0529
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
@@ -133,7 +133,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 2a6f4f18a5706d24f36a5ac5704daadbd54d35c6aa8b473465735af08945c5bc
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 646231362ec315aadda92901e33db688af2442ac337c1935c57bcc731fa17ad8
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 06da8dcb5cd255b94b685daf33702d99bac5d39ae0bca2d75a0a721504114b08
@@ -145,12 +145,12 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 76bd02aa4473b86c846515ead4fc065ad99b4dcf0783d38d5fc0c33e4033a3b0
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 c45779584d5e6837d460cc11d5bfc4d4c34464e257f2f1f818e0bdb4ef8cc1a4
 ordering_test.test.nullary methods and record defaults print the same reversed #0 f5f9cd7fa1ef66347be47c2f7dd6e5697309f32e39dfdaf3fc5ebeb173d1109a
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 6527dbcf0d264f206963121bb2c25a63cbf3ccc47da162d9caab13010cce9224
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 7c75405e06f931096af4aebe85e2068a0a0b49be2addafb6704802c037ae44e0
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 169d729750c84cbb3b2656746293258bcfc40490423b1d7a3da3851c1bf1f55e
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 f5f971e9f7d4fd40a2ace18a5fe0b01dfb08f487798ab6a4e1a1831921b9ac73
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 8ef9afbcd61eca2f50b29ef6463bcbe3c48b0de42a37eabce98dcd106560d5b4
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 33b9c9b96c2098afaca24e4dc777639b016add3f5e13a276d96d510e5b5c0850
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 928fc47c0545e0669cbc6465b5ca4347904b771aa57bdb4f87ac2ac52ae11548
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 98e5ca7aa41d50ba52c1a181ec7d6cd9c6d039a78bdc8948ef551a8441624cd6
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 8b8b1f2402f9950e044cfbf54c4d7f63953767a927e190909304435671e88fc1
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 05a6a1faa28689d8ad4e079ee209975584ac81313930d0abaa49fe48ae967d08
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 1cb7474854b2a953c0dfb432d934108a94914ea9a10c0d553b1cc3b2234c2b8c
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 b7e16fdec6a296b5231b788a38f76adcde2bb265cf254d499cb2ba6b5fbe2d58
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 2c65f4b0167084b47db4a5e5191df2a0d036701aa0eca6a4dd020195e5edf96d
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 e4fc41d0256f607e6b54db9d69353d84773b99d160007fe6f77fc0f693a97bd9
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 9af95a9f799d3525ff70a625e89dbf464edc5c7a70520179c5c35f4ab043b00d
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 0847368855fae393db2c641907a95c61d6f0e692ce522fb9e4c6af393e3c917e
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
