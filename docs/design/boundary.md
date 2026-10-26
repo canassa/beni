@@ -632,8 +632,11 @@ decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`,
 `a >= b`, each written in place as its operator, as `same` is `===`: `lt : unused a, unused a →
 fresh bool`, both arguments one type variable and the answer a `bool` variable, since this module
 names no core type. Unchecked, as every `Js` declaration is: JavaScript orders two numbers by value
-and two strings by their UTF-16 code units, and coerces anything else, so a caller hands them two
-values of one kind. They exist for `Hosted`'s keys, which order two keys of different types by the
+and two strings by their UTF-16 code units, and nothing else by anything a caller wants: two
+records, two list views or two `Maybe`s are the one text `[object Object]`, so `le` and `ge` are
+both true of them, two arrays compare by their joined text, and a null-prototype object (the kind
+`core/Schema` makes) or a `Symbol` throws `TypeError`. So a caller hands them two numbers or two
+strings (*amended 2026-10-26, the review of #1110*). They exist for `Hosted`'s keys, which order two keys of different types by the
 text of their type identities (§9.8.3): the identities are ASCII, where `<` and `String.compare`
 agree, and beni's `<` on two `String`s would ship `String.compare`'s code-point walk to a page that
 compares no other string. Passed as a value, each is the sibling's function (`backend.md` §4, *The
