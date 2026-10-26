@@ -430,16 +430,20 @@ fn storedInto(env: Env, sig: Signature, r: u32, stored: []const u32) Error!Built
     const base_elem = try paramCellAtIndex(env, r, list);
     var cells = try env.cells.sets.insert(gpa, env.charge, .none, base_elem.int(), 0);
     var k = try env.conds.kappaOf(gpa, env.charge, env.view(), .none, try env.shapes.leaf(gpa, env.account(), at, cells), true);
+    var excls = Cond.yes;
     for (stored) |s| {
         if (crosses(env, sig.params[s].place)) continue;
         const v = try paramCell(env, s, sig.params[s].place);
         const v_leaf = try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, v.int(), 0));
         k = try env.conds.lower(gpa, env.charge, env.view(), .none, k, cells, v_leaf, true, null);
         // The stored value's own condition as a position (C.10 item 5):
-        // what the caller's argument is at that path, its `excl`.
-        k = try env.conds.@"and"(gpa, env.charge, k, try env.conds.excl(gpa, env.charge, v));
+        // what the caller's argument is at that path, its `excl`, added
+        // once the stores are done so the arrivals' group stays on top of
+        // κ for the next store to grow (`Cond.lower`).
+        excls = try env.conds.@"and"(gpa, env.charge, excls, try env.conds.excl(gpa, env.charge, v));
         cells = try env.cells.sets.insert(gpa, env.charge, cells, v.int(), 0);
     }
+    k = try env.conds.@"and"(gpa, env.charge, k, excls);
     const elems = try env.shapes.leaf(gpa, env.account(), at, cells);
     const node = try env.shapes.node(gpa, env.account(), list, try env.cells.sets.insert(gpa, env.charge, .none, base.int(), 0), try env.shapes.overPut(gpa, env.account(), Ids.none_int, Step.elem, elems));
     const res = if (list == sig.result) node else try env.shapes.recast(gpa, env.account(), sig.result, node);
