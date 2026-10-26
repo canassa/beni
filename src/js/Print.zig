@@ -2346,11 +2346,18 @@ const Printer = struct {
     /// of single-use aliases outran it, print the name it stopped at — whose
     /// binding the plan had dropped — and a `--release` build printed an
     /// unrelated top-level's value.
+    ///
+    /// An `arrow` §9 item 6 reduces (`Opt.eta`) resolves to its callee's
+    /// `ident`, itself resolved already; an `ident` whose binding was an
+    /// arrow made once and used once resolves to that arrow, and then one
+    /// step further if the arrow reduces. Two steps at most, each total.
     fn resolve(p: *Printer, node: Index) Index {
-        if (p.ir.tag(node) != .ident) return node;
-        const target = p.plan.replacement(node) orelse return node;
-        std.debug.assert(p.ir.tag(target) != .ident or p.plan.replacement(target) == null);
-        return target;
+        var n = node;
+        if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;
+        if (p.ir.tag(n) == .arrow) n = p.plan.replacement(n) orelse return n;
+        std.debug.assert(p.ir.tag(n) != .ident or p.plan.replacement(n) == null);
+        std.debug.assert(p.ir.tag(n) != .arrow or p.plan.replacement(n) == null);
+        return n;
     }
 
     /// Compact printing writes `x["key"]` as `x.key` where `key` is an
