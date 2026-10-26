@@ -337,6 +337,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             },
             ',' => break :state t.take(1, .comma),
             '?' => break :state t.take(1, .question),
+            '@' => break :state t.take(1, .at_sign),
             '!' => {
                 // `!=`, another notation's not-equal: one lookalike of `≠`
                 // (language.md §12.7). A lone `!` is punctuation the
@@ -2472,9 +2473,9 @@ test "markup: `<` at the start of the file opens markup; `<` then a digit or spa
 
 test "markup: a comparison after an invalid token stays a comparison" {
     // Conservatively: the `invalid` might have been an operand (§9.3).
-    try expectLex("@ <b", .{
+    try expectLex("$ <b", .{
         .tokens = &.{
-            .{ .tag = .invalid, .start = 0, .text = "@" },
+            .{ .tag = .invalid, .start = 0, .text = "$" },
             .{ .tag = .op_lt, .start = 2, .text = "<" },
             .{ .tag = .lower_ident, .start = 3, .text = "b" },
             .{ .tag = .eof, .start = 4, .text = "" },

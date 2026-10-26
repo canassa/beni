@@ -1,0 +1,24 @@
+--! BIR: `@ownership_summary_size` (`ownership-v2.md` §4.4) raises the
+--! ownership checker's growth allowance: the module's, in the preamble
+--! before the first import, and a top-level value's, on the line right
+--! before its annotation or its unannotated definition, comments between.
+--! Lowering keeps each on the module and the declaration, and nothing else
+--! moves: no type, no instruction and no emitted byte reads it.
+
+@ownership_summary_size(module, 262144)
+
+import Debug
+
+
+@ownership_summary_size(300000)
+large : ⊤ → List Int
+large ⊤ = [ 1, 2 ]
+
+
+@ownership_summary_size(262144)
+-- the module's allowance, written again: at least the inherited
+small = [ 3 ]
+
+
+plain : Int
+plain = 4

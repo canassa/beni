@@ -178,6 +178,9 @@ pub const Tag = enum(u8) {
     /// §5.2).
     dot_dot,
     question,
+    /// `@`, which begins an attribute line: `@ownership_summary_size(…)`
+    /// (ownership-v2.md §4.4).
+    at_sign,
 
     op_plus,
     op_minus,
@@ -355,6 +358,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .pipe => "|",
         .underscore => "_",
         .question => "?",
+        .at_sign => "@",
         .dot_dot => "..",
 
         .op_plus => "+",
@@ -532,7 +536,7 @@ test "every operator and symbol has a lexeme; no variable-text tag does" {
     inline for (@typeInfo(Tag).@"enum".field_values) |field_value| {
         const tag: Tag = @fromBackingInt(@intCast(field_value));
         const fixed = tag.isKeyword() or tag.isOperator() or
-            (@backingInt(tag) >= @backingInt(Tag.l_paren) and @backingInt(tag) <= @backingInt(Tag.question)) or
+            (@backingInt(tag) >= @backingInt(Tag.l_paren) and @backingInt(tag) <= @backingInt(Tag.at_sign)) or
             (@backingInt(tag) >= @backingInt(Tag.markup_open) and @backingInt(tag) <= @backingInt(Tag.markup_self_close)) or
             tag == .ellipsis or tag == .ascii_ellipsis;
         try std.testing.expectEqual(fixed, lexeme(tag) != null);

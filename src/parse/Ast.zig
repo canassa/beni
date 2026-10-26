@@ -160,6 +160,12 @@ pub const Node = struct {
         /// (lower or upper); `lhs` is the `(` of Elm's `T(..)` written after
         /// it (reported as `expected_token`), or 0; `rhs` unused.
         exposed,
+        /// `@ownership_summary_size(module, 262144)` or `…(131072)`, a line of
+        /// its own at column 1 (ownership-v2.md §4.4). `main_token` is the
+        /// `@`, the name the token after it; `lhs` is the integer's token, or
+        /// 0 when it is missing (reported); `rhs` is 1 when `module` is
+        /// written. Whether it may stand where it does is lowering's.
+        attribute,
 
         // ---- Declarations ----------------------------------------------
         //

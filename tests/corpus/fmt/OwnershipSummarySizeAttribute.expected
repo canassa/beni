@@ -1,0 +1,17 @@
+-- fmt: an `@ownership_summary_size` line (`ownership-v2.md` §4.4) keeps
+-- its spelling, `(module, n)` or `(n)` with no space inside: the module's
+-- before the imports, then one blank line; a declaration's directly above
+-- it, a comment between kept.
+@ownership_summary_size(module, 262144)
+
+import Debug
+
+
+@ownership_summary_size(300000)
+large : ⊤ → List Int
+large ⊤ = [ 1 ]
+
+
+@ownership_summary_size(300000)
+-- a comment between
+small = [ 2 ]

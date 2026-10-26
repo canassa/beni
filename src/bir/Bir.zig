@@ -91,6 +91,9 @@ module_doc_end: u32,
 /// module of whatever platform the build names, which the module graph
 /// turns into an import (§9.8). A fact of the file's bytes, like the rest.
 uses_markup: bool = false,
+/// `@ownership_summary_size(module, n)` (ownership-v2.md §4.4): the
+/// module's growth allowance per owner, raised; 0 when it is the default.
+summary_size: u32 = 0,
 
 pub const InstList = std.MultiArrayList(Inst);
 
@@ -1077,6 +1080,9 @@ pub const Decl = struct {
     own2_end: u32 = 0,
     /// `sequence`, `cell` or `sender` (`OwnKind`), else `none`.
     own_kind: OwnKind = .none,
+    /// `@ownership_summary_size(n)` on this declaration (§4.4): its growth
+    /// allowance, raised; 0 when it inherits the module's.
+    summary_size: u32 = 0,
     /// The declaration's spread chains (`Spread`, ownership-v2.md §2.13.2):
     /// `Spread` records in `extra[spreads_start..spreads_end]`, one per
     /// spread literal in source order of completion (inner chains first).
