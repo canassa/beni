@@ -1,4 +1,4 @@
-JsWords returnsFromFunctions: lines 26-39 (not built: lambda)
-JsWords returnsSuspending: lines 42-46 (not built: lambda)
-JsWords calls: lines 75-83 (not built: lambda)
-JsWords eachMany: lines 107-111 (not built: lambda)
+JsWords returnsFromFunctions: lines 27-40 (not built: lambda)
+JsWords returnsSuspending: lines 43-47 (not built: lambda)
+JsWords calls: lines 77-85 (not built: lambda)
+JsWords eachMany: lines 109-113 (not built: lambda)
