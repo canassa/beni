@@ -309,6 +309,14 @@ pub const Table = struct {
         return t.node(gpa, account, t.place(n), fresh, try t.overPut(gpa, account, children, s, m));
     }
 
+    /// `n` with its `ε` cells replaced by `c` and its children as they are:
+    /// a leaf stays a leaf, anything else becomes a `node` over its
+    /// materialised children (what a use shape's builder needs, §2.10).
+    pub fn withCells(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, c: SetId) Error!NodeId {
+        if (t.kind(n) == .leaf) return t.leaf(gpa, account, t.place(n), c);
+        return t.node(gpa, account, t.place(n), c, try t.materialize(gpa, account, places, cellt, n));
+    }
+
     /// Every child of `n` as one map, each step of its place projected
     /// (`proj`): a node's children as they are, and for a leaf, a delta over
     /// one, a recast or a union the projections a copy would otherwise
@@ -353,14 +361,15 @@ pub const Table = struct {
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`
-    /// (`⊤` to itself), concrete cells to nothing, approximation kept.
+    /// (`⊤` to itself, and a use mark likewise: a leaf of marks is a deep
+    /// use, §2.10), concrete cells to nothing, approximation kept.
     fn projectLeaf(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, c: SetId, child_place: PlaceId, s: Step) Error!NodeId {
         var out: SetId = .none;
         var it = cellt.sets.iterate(c);
         while (it.next()) |e| {
             const cell: CellId = .from(e.key);
             const o = cellt.origin(cell);
-            if (o == .top) {
+            if (o == .top or o == .mark) {
                 out = try cellt.sets.insert(gpa, .growth(account), out, e.key, e.value);
                 continue;
             }
