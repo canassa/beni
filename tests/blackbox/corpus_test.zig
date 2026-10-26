@@ -435,22 +435,26 @@ fn knownDifferences() !*const Known {
     return &known_state.?;
 }
 
+/// `dump --stage=ownership --ownership-both`'s two reports: v1's, then v2's.
+fn splitBoth(out: []const u8) ![2][]const u8 {
+    const marker = "== ownership v2\n";
+    const at = std.mem.indexOf(u8, out, marker) orelse return error.NoV2Report;
+    return .{ out[0..at], out[at + marker.len ..] };
+}
+
 /// Core's own verdicts, v1 against v2 (§7.2), keyed `core …` as
 /// `bench/ownership-everywhere.mjs --diff=v1,v2` keys them: run once with
 /// the ownership kind, before its stale-entry check.
 fn coreParity(arena: std.mem.Allocator) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    var dumps: [2][]const u8 = undefined;
-    for ([_][]const u8{ "--ownership=v1", "--ownership=v2" }, &dumps) |side, *out| {
-        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-everywhere", side, "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
-        if (r.exit_code != 0) {
-            std.debug.print("core: dump {s} exited {d}\n{s}\n", .{ side, r.exit_code, r.stderr });
-            return error.CoreDumpFailed;
-        }
-        out.* = try arena.dupe(u8, r.stdout);
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    if (r.exit_code != 0) {
+        std.debug.print("core: dump exited {d}\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.CoreDumpFailed;
     }
-    try Case.parityOf(arena, "core", "core", dumps[0], dumps[1]);
+    const both = try splitBoth(try arena.dupe(u8, r.stdout));
+    try Case.parityOf(arena, "core", "core", both[0], both[1]);
 }
 
 /// The known differences of `kind`'s fixtures (and, with the ownership
@@ -2283,12 +2287,12 @@ const Case = struct {
             _ = try c.writeSources();
         }
         const paths: []const []const u8 = if (sources.len == 1) try buildPaths(c.arena, sources) else &.{ "--root=.", "." };
-        const v1 = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-everywhere", platform_arg }, paths }));
-        try expectExit(0, v1);
-        const v2 = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-everywhere", "--ownership=v2", platform_arg }, paths }));
-        try expectExit(0, v2);
-        try c.v2Unchecked("v2.unchecked", v2.stdout, false);
-        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name }), v1.stdout, v2.stdout);
+        // Both reports from one check (`--ownership-both`).
+        const r = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", platform_arg }, paths }));
+        try expectExit(0, r);
+        const both = try splitBoth(r.stdout);
+        try c.v2Unchecked("v2.unchecked", both[1], false);
+        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name }), both[0], both[1]);
     }
 
     fn runProgram(case: Case) !void {
