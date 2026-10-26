@@ -1658,6 +1658,52 @@ test "a cyclic type is one place, and widen ties go's grafted levels back" {
     try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, w, w2));
 }
 
+test "rank falls along every projection, and a knot or a recast has none; named steps are a union's sides'" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    const t_param = try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree));
+    var inner_children = try f.one(s0, t_param);
+    inner_children = try f.shapes.overPut(gpa, &f.account, inner_children, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list)));
+    const inner = try f.shapes.node(gpa, &f.account, tree, .none, inner_children);
+    var outer_children = try f.one(s0, inner);
+    outer_children = try f.shapes.overPut(gpa, &f.account, outer_children, s2, inner);
+    const outer = try f.shapes.node(gpa, &f.account, tree, .none, outer_children);
+    try testing.expectEqual(@as(u32, 0), try f.shapes.rank(gpa, &f.account, t_param));
+    try testing.expectEqual(@as(u32, 1), try f.shapes.rank(gpa, &f.account, inner));
+    try testing.expectEqual(@as(u32, 2), try f.shapes.rank(gpa, &f.account, outer));
+    // A union is its sides' larger, and every projection of a rank ≥ 1
+    // node is below it, at a named step or not.
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, inner, outer);
+    try testing.expectEqual(@as(u32, 2), try f.shapes.rank(gpa, &f.account, u));
+    for ([_]Step{ s0, s1, s2 }) |s| {
+        const c = (try f.proj(u, s));
+        try testing.expect(try f.shapes.rank(gpa, &f.account, c) < 2);
+    }
+    // A recast, and a widened knot, have no finite rank.
+    const r = try f.shapes.recast(gpa, &f.account, tree, inner);
+    try testing.expectEqual(Table.rank_unbounded, try f.shapes.rank(gpa, &f.account, r));
+    var go_children = try f.one(s0, t_param);
+    go_children = try f.shapes.overPut(gpa, &f.account, go_children, s2, outer);
+    const go = try f.shapes.node(gpa, &f.account, tree, .none, go_children);
+    const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, go);
+    try testing.expect(w != go);
+    try testing.expectEqual(Table.rank_unbounded, try f.shapes.rank(gpa, &f.account, w));
+    // The steps named: a node's own, a union's both sides', sorted, once.
+    try testing.expectEqualSlices(u32, &.{ @min(s0.word(), s1.word()), @max(s0.word(), s1.word()) }, try f.shapes.namedSteps(gpa, &f.account, inner));
+    const named_u = try gpa.dupe(u32, try f.shapes.namedSteps(gpa, &f.account, u));
+    defer gpa.free(named_u);
+    try testing.expectEqual(@as(usize, 3), named_u.len);
+    try testing.expect(std.sort.isSorted(u32, named_u, {}, std.sort.asc(u32)));
+    try testing.expectEqual(@as(usize, 0), (try f.shapes.namedSteps(gpa, &f.account, t_param)).len);
+}
+
 test "a chain of k deltas costs O(k log F) and reach shares the base" {
     var f: Fixture = .{};
     f.init();

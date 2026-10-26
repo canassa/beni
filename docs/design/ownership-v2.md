@@ -902,6 +902,20 @@ Where κ is set, always **at the selected path p**:
   only for those two towers: a join whose alternatives are the same value at two depths
   (`if c then Rose [ r ] else r`, #1119), a literal of two elements (`Rose [ r, Rose [] ]`, #1120), and a
   new object per level (#1121) are not linear yet.
+- *The join memo* (#1119). A `propagate` state is `(joined node, class, mode, whether it is the call's root,
+  run)`, and the run is interned across calls. The walk from a state depends only on the state, except for one
+  thing: a fold happens where a projection meets a node on the state's way. The **projection rank** of a node
+  (`Shape.rank`) is 0 for a leaf; one more than its children's for a node; for a delta, the larger of one more
+  than its overrides' and its base's; for a union or a positions node, the larger of its sides'. A recast, and a
+  node on or above a cycle, have no finite rank. Every `proj` of a node of finite rank r ≥ 1 has a rank below r,
+  and a node of rank 0 projects to rank 0. So when every joined node on a state's way has a finite rank ≥ 1 (the
+  state is **clean**), no node below the state equals a node on its way or the state's own node, and the walk
+  from it is the same wherever it is met. Such a state, if it is the only state at its output position, is
+  memoised when the call finishes, to the snapshot made at that position. A hit links that snapshot in place of
+  the walk. Because a clean state's way holds no fold, the linked snapshot is never folded into an ancestor.
+  The memo is charged before each read and written only after the call has succeeded. It removes repeated walks,
+  but not the snapshots' size: an eager merge of one value's snapshot at two depths makes a new position at every
+  depth where they overlap. The lazy merge removes that.
 - A construction lowers the base's condition at `[*].p` by the stored value's condition at p and
   `apart{cellsAt(stored,p), cellsAt(base,[*].p)}`, compared by position as for a literal. A later spread of a variable loses the relevant condition.
 - A call instantiates κ(res): `excl πᵢ·q` asks the argument's condition **at q**; `sep` and `within`

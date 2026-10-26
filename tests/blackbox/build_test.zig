@@ -8305,6 +8305,48 @@ test "the checker v2's growth is linear in a recursive tower's height: a one-mem
     try testing.expect(growth[2] <= 14 * growth[1] + 200);
 }
 
+test "the checker v2's growth in a tower of joins of one value at two depths is at most quadratic" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1119: `r_k = if c then Rose [ r_{k-1} ] else r_{k-1}` re-walked the
+    // whole tower at every level (cubic: 18 364 / 114 123 at N = 10 / 20).
+    // The join memo (§2.9) walks each state once across calls, so the
+    // states are linear. What remains quadratic is the snapshots' eager
+    // merge of the two depths (2k + 2 new positions per level), which the
+    // lazy merge removes; this bound then tightens to linear.
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 20, 40 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 262144)\n\n\ntype Rose =\n    Rose (List Rose)\n\n\npub tower : Bool → Rose\ntower c =\n    r0 = Rose []\n");
+        for (1..n + 1) |i| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ i, i - 1, i - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+    }
+    // Twice the levels, at most four times the growth (quadratic); the
+    // re-walk of union DAGs was about six times. And each state walked
+    // once: 79 788 at N = 40 with the memo, 126 033 without it.
+    try testing.expect(growth[1] <= 4 * growth[0]);
+    try testing.expect(growth[2] <= 4 * growth[1]);
+    try testing.expect(growth[2] <= 100_000);
+}
+
 test "a one-element literal's [*] compares the objects its element holds at every path" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
