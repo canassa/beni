@@ -1,0 +1,5 @@
+make -3: try 1: Nothing
+make -3: available: 0
+resize -2: try 1: Nothing
+resize -2: available: 0
+done

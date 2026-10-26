@@ -1,0 +1,31 @@
+-- run: a waiter cancelled in the middle of the queue leaves it, and the
+-- waiters on either side keep their order (transparent-effects-proposal.md
+-- §17.9, §17.1 item 1). On 1 permit, held, a, b and c wait in that order.
+-- b is cancelled. One permit given back serves a; when a ends, c.
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+waiter : Semaphore, String → Fiber ⊤
+waiter s name = Task.spawn λ⊤ →
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "${name} ended" ⊤) λ_ →
+        Semaphore.withPermit s λ⊤ →
+            Debug.log "${name} in" ⊤
+            Task.yieldNow ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 1
+    Semaphore.acquire s 1
+    a = waiter s "a"
+    b = waiter s "b"
+    c = waiter s "c"
+    Task.yieldNow ⊤
+    Task.cancel b
+    Semaphore.release s 1
+    _ = Task.joinAll [ a, c ]
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

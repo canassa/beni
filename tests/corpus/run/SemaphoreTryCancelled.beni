@@ -1,0 +1,24 @@
+-- run: a fiber cancelled inside `tryWithPermits`'s work gives its permits
+-- back (transparent-effects-proposal.md §17.9). On 2 permits a try for 2
+-- runs work that waits forever; the fiber is cancelled while it waits, its
+-- release runs, and both permits are free again.
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+
+    holder = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "holder released" ⊤) λ_ →
+            Semaphore.tryWithPermits s 2 λ⊤ →
+                Debug.log "holder in" ⊤
+                Task.never ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "available while held" (Semaphore.available s)
+    Task.cancel holder
+    _ = Debug.log "available after the cancel" (Semaphore.available s)
+    Node.print "done"

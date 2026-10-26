@@ -1,0 +1,23 @@
+-- run: a try on a semaphore of no permits, with nobody waiting
+-- (transparent-effects-proposal.md §17.9 and its 2026-10-26 amendment). A
+-- semaphore made with -3 permits, and one resized to -2, has 0: a try for
+-- 1 answers `Nothing`, runs nothing, and leaves 0 free.
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+
+
+try : Semaphore, String → ⊤
+try s name =
+    _ = Debug.log "${name}: try 1" (Semaphore.tryWithPermits s 1 λ⊤ → Debug.log "ran" name)
+    _ = Debug.log "${name}: available" (Semaphore.available s)
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    try (Semaphore.make (-3)) "make -3"
+    resized = Semaphore.make 1
+    Semaphore.resize resized (-2)
+    try resized "resize -2"
+    Node.print "done"
