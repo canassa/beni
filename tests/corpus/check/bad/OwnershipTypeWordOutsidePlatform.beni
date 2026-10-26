@@ -1,0 +1,22 @@
+-- check/bad: `misplaced_ownership_word` for the ownership checker v2's words
+-- (`ownership-v2.md` §2.13.6) in a package that may not write `foreign`:
+-- core's and the platforms' alone, as v1's words are. A type word is
+-- reported at the word (`cell` 8:12, `sender` 17:5) and so is `failure`
+-- (14:7); a value word only v2 reads is one message per signature, at its
+-- first word (21:14). Each is dropped, and the module still checks.
+
+pub opaque cell type Box a
+    = Box a
+
+
+pub type Outcome e a
+    = Good a
+    | failure Bad e
+
+
+pub sender type alias Sender msg =
+    msg → ⊤
+
+
+pub keepIt : stored Int → List Int
+keepIt n = [ n ]

@@ -145,6 +145,7 @@ const Dumper = struct {
         if (header.opaque_token != .none) try d.w.writeAll(" opaque");
         if (header.crossing_token != .none) try d.w.writeAll(" crossing");
         if (header.equatable_token != .none) try d.w.writeAll(" equatable");
+        if (header.own_type_token.unwrap()) |t| try d.w.print(" {s}", .{d.text(t)});
     }
 
     fn tokenList(d: *Dumper, tokens: []const Ast.TokenIndex) !void {
@@ -266,6 +267,8 @@ const Dumper = struct {
             .schema_decl, .schema_operand, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable => unreachable,
             .constructor, .type_con, .pat_ctor => {
                 try d.openTag(tag, main);
+                // `failure` before a constructor (ownership-v2.md §2.13.6).
+                if (tag == .constructor and d.tags[main - 1] == .lower_ident) try d.w.print(" {s}", .{d.text(main - 1)});
                 try d.w.print(" {s}", .{d.text(main)});
                 try d.children(tree.children(n), inner);
             },

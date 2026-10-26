@@ -652,6 +652,24 @@ pub const OwnWord = enum(u5) {
     unknown,
     crossing,
     entry,
+    // The words only the ownership checker v2 reads (ownership-v2.md
+    // §2.13.6), after every word v1 reads: lowering keeps a signature
+    // that carries one in a column of its own (`Bir.Decl.own2_start`).
+    written,
+    stored,
+    taken,
+    lent,
+    lentoptional,
+    cellnew,
+    cellempty,
+    cellread,
+    cellwrite,
+    cellstored,
+    cellupdate,
+    cellmodify,
+    cellcomplete,
+    builderdone,
+    concatenated,
 
     /// The word a signature's identifier is, `crossing` excepted: that one
     /// is read only in front of `foreign`.
@@ -662,6 +680,33 @@ pub const OwnWord = enum(u5) {
 
     pub fn bit(w: OwnWord) u32 {
         return @as(u32, 1) << @backingInt(w);
+    }
+
+    /// The words the ownership checker v1 reads, `unused` through `entry`.
+    /// Every other bit is v2's alone (ownership-v2.md §8: v1 is frozen).
+    pub const v1_mask: u32 = (@as(u32, 1) << (@as(u5, @backingInt(OwnWord.entry)) + 1)) - 1;
+
+    /// Whether `w` is read only by the ownership checker v2.
+    pub fn isV2(w: OwnWord) bool {
+        return w.bit() & v1_mask == 0;
+    }
+};
+
+/// The ownership words in front of a type declaration (ownership-v2.md
+/// §2.13.5, §2.13.6), contextual and core's and the platforms' alone:
+/// `sequence` before `foreign type` (storage of kind list, one `[*]` child
+/// of the parameter), `cell` before `type` after `pub opaque`, or before
+/// `foreign type` (a stable handle, one barrier `◆` child), `sender`
+/// before `type alias` (the temporary alias form of `Send`'s protocol).
+/// `failure` stands before a constructor instead: the token before a
+/// `constructor` node's name.
+pub const OwnTypeWord = enum(u8) {
+    sequence,
+    cell,
+    sender,
+
+    pub fn fromText(text: []const u8) ?OwnTypeWord {
+        return std.meta.stringToEnum(OwnTypeWord, text);
     }
 };
 
@@ -681,6 +726,10 @@ pub const DeclHeader = struct {
     /// before `foreign type` or `equatable foreign type`; whether the file
     /// may write it is a package fact lowering decides.
     crossing_token: OptionalTokenIndex = .none,
+    /// The type word, if any (`OwnTypeWord`): after `equatable`, directly
+    /// before `foreign`, `type` or `type alias`. Whether it may stand on
+    /// this declaration, and in this package, is lowering's to decide.
+    own_type_token: OptionalTokenIndex = .none,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block.
     doc_start: u32,
     doc_end: u32,
@@ -1562,13 +1611,13 @@ pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
 const testing = std.testing;
 
 test "extraData flattens nested headers and extraLen agrees" {
-    try testing.expectEqual(@as(u32, 8), extraLen(DeclHeader));
-    try testing.expectEqual(@as(u32, 10), extraLen(Definition));
-    try testing.expectEqual(@as(u32, 12), extraLen(TypeDecl));
+    try testing.expectEqual(@as(u32, 9), extraLen(DeclHeader));
+    try testing.expectEqual(@as(u32, 11), extraLen(Definition));
+    try testing.expectEqual(@as(u32, 13), extraLen(TypeDecl));
     try testing.expectEqual(@as(u32, 5), extraLen(Import));
 
     const none_token = std.math.maxInt(u32);
-    const words = [_]u32{ 7, none_token, 3, none_token, 2, 5, 0, 0, 10, 12 };
+    const words = [_]u32{ 7, none_token, 3, none_token, 6, 2, 5, 0, 0, 10, 12 };
     var tree: Ast = empty;
     tree.extra = &words;
     const d = tree.extraData(@fromBackingInt(@intCast(0)), Definition);
@@ -1576,6 +1625,7 @@ test "extraData flattens nested headers and extraLen agrees" {
     try testing.expectEqual(@as(?TokenIndex, null), d.header.opaque_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, 3), d.header.equatable_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, null), d.header.crossing_token.unwrap());
+    try testing.expectEqual(@as(?TokenIndex, 6), d.header.own_type_token.unwrap());
     try testing.expectEqual(@as(u32, 2), d.header.doc_start);
     try testing.expectEqual(@as(u32, 5), d.header.doc_end);
     try testing.expectEqual(@as(u32, 10), @backingInt(d.params_start));

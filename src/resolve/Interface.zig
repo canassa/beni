@@ -527,6 +527,10 @@ pub const Type = struct {
     /// everything else. Written by the new checker; the old one writes
     /// `false`, and an importer reads its table bit instead.
     no_function: bool = false,
+    /// The type word (ownership-v2.md §2.13.6): `sequence`, `cell` or
+    /// `sender`, else `none` (interface v18). Ownership metadata, which no
+    /// type rule reads.
+    own_kind: Bir.OwnKind = .none,
     ctors_start: u32,
     ctors_end: u32,
     /// The parameters that occur in a constructor payload, as a bitset: an
@@ -577,6 +581,8 @@ pub const HiddenType = struct {
     is_equatable: bool,
     /// As `Type.no_function`.
     no_function: bool = false,
+    /// As `Type.own_kind`.
+    own_kind: Bir.OwnKind = .none,
     payload_params: u32 = no_terms,
     /// Closed key domain per parameter, an extra range of arity words.
     key_kinds: u32 = no_terms,
@@ -593,6 +599,8 @@ pub const TypeFacts = struct {
     is_equatable: bool,
     /// The row's §11.4 gate for an `adt` (`Type.no_function`).
     no_function: bool,
+    /// The row's type word (`Type.own_kind`).
+    own_kind: Bir.OwnKind = .none,
     payload_params: u32,
     key_kinds: u32,
     eq: Derived,
@@ -614,11 +622,11 @@ pub const TypeFacts = struct {
 pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
     if (find(iface, interner, Type, iface.types, name)) |i| {
         const t = iface.types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .own_kind = t.own_kind, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
     }
     if (find(iface, interner, HiddenType, iface.hidden_types, name)) |i| {
         const t = iface.hidden_types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .own_kind = t.own_kind, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
     }
     return null;
 }
@@ -785,6 +793,9 @@ pub const Ctor = struct {
     /// imported alias's constructor as the record, and reads its pattern's
     /// arguments, by these names.
     fields: u32 = no_terms,
+    /// `failure` (ownership-v2.md §2.13.6): the failure constructor of a
+    /// two-constructor type (interface v18). Ownership metadata.
+    failure: bool = false,
 };
 
 pub const Schema = struct {
@@ -1244,6 +1255,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
             },
             .is_opaque = d.is_opaque,
             .is_equatable = d.is_equatable,
+            .own_kind = d.own_kind,
             .ctors_start = 0,
             .ctors_end = 0,
         });
@@ -1273,6 +1285,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
                     .arity = @backingInt(c.args_end) - @backingInt(c.args_start),
                     .result = result,
                     .fields = fields,
+                    .failure = c.failure,
                 });
                 try ctor_indices.append(gpa, @intCast(bir_index));
             }

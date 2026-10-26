@@ -98,6 +98,16 @@ pub const Item = struct {
         own_parameter_word,
         own_impossible,
         own_not_entry_record,
+        /// v2's words (ownership-v2.md §2.13.6): a callback word on a
+        /// function not marked `sync`; a cell word on the wrong parameter;
+        /// a word whose companion is missing; two words that cannot both
+        /// hold; a type word, or `failure`, where it cannot stand.
+        own_needs_sync,
+        own_position,
+        own_companion,
+        own_conflict,
+        own_type_word,
+        own_failure,
     };
 };
 
@@ -232,6 +242,59 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\the result is one of the parameters, write `returned` in front of that
                 \\parameter.
             , .{text}),
+            .own_needs_sync => try w.print(
+                \\`{s}` describes a callback that runs between a read and a write of a cell,
+                \\and this function type is not marked `sync`.
+                \\
+                \\No other fiber may run while the callback holds the cell's contents. Mark the
+                \\function type itself: `cellupdate sync (a → a)`.
+            , .{text}),
+            .own_position => try w.print(
+                \\`{s}` stands in front of the wrong parameter.
+                \\
+                \\A cell operation names its cell first: `cellread`, `cellwrite` and
+                \\`cellcomplete` go in front of the first parameter. What the operation stores,
+                \\or the callback it runs, comes second: `cellstored`, `cellupdate` and
+                \\`cellmodify` go in front of the second parameter.
+            , .{text}),
+            .own_companion => try w.print(
+                \\`{s}` needs another word beside it, and that word is missing.
+                \\
+                \\These words name the roles of several parameters together: `cellnew` needs a
+                \\`consumed` first parameter, `cellempty` an `unused` one, `lent` and
+                \\`lentoptional` a `cellread` one; `cellwrite` needs a second parameter that is
+                \\`cellstored`, `cellupdate` or `cellmodify`, and `cellcomplete` one that is
+                \\`cellstored`; `cellstored` is `consumed` and follows `cellwrite` or
+                \\`cellcomplete`; `builderdone` needs a `written returned` first parameter,
+                \\`concatenated` a `written` first parameter and a second one, and a `taken`
+                \\result a parameter to take it from. Write the missing word, or remove this one.
+            , .{text}),
+            .own_conflict => try w.print(
+                \\The ownership word `{s}` cannot hold together with another word written here.
+                \\
+                \\A result is one of `fresh`, `escaped`, `unknown`, `taken`, `lent`,
+                \\`lentoptional`, `cellnew`, `cellempty`, `builderdone` and `concatenated`. A
+                \\parameter does one thing to a cell: `cellread`, `cellwrite` or `cellcomplete`.
+                \\`cellupdate` and `cellmodify` say already that the callback is called once and
+                \\is handed the contents owned, so they stand without `once`, `many`, `taken`,
+                \\`owned` and each other.
+            , .{text}),
+            .own_type_word => try w.print(
+                \\`{s}` cannot stand in front of this declaration.
+                \\
+                \\`sequence` stands before the `foreign type` of a type with one parameter:
+                \\`sequence foreign type Builder a`. `cell` stands before an opaque type, or a
+                \\`foreign type`, with one parameter: `pub opaque cell type Ref a = Ref Js.Value`.
+                \\`sender` stands before an alias of a function of one argument that returns
+                \\`⊤`: `pub sender type alias Send msg = msg → ⊤`.
+            , .{text}),
+            .own_failure => try w.writeAll(
+                \\`failure` marks the failure constructor of a type with two constructors, and it
+                \\cannot stand here.
+                \\
+                \\The type has exactly two constructors, each with one argument, and `failure`
+                \\stands before one of them: `type Result e a = Ok a | failure Err e`.
+            ),
             else => try w.print(
                 \\The ownership word `{s}` cannot hold together with another word written here.
                 \\

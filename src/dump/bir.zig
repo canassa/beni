@@ -42,6 +42,7 @@
 //! positions, so a reformatted input leaves a golden untouched.
 
 const std = @import("std");
+const Ast = @import("../parse/Ast.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Token = @import("../lex/Token.zig");
@@ -250,6 +251,7 @@ const Dumper = struct {
         try d.header(decl_);
         try d.w.writeByte('\n');
         try d.docs(decl_.doc_start, decl_.doc_end);
+        try d.own2Row(decl_);
 
         var i = decl_.inst_start.int();
         while (i < decl_.inst_end.int()) : (i += 1) {
@@ -362,6 +364,7 @@ const Dumper = struct {
     fn ctorRows(d: *Dumper, decl_: Bir.Decl) !void {
         for (d.bir.declCtors(decl_), decl_.ctors_start..) |c, ci| {
             try d.w.print("  ctor {d} {s} ", .{ ci, d.sym(c.name) });
+            if (c.failure) try d.w.writeAll("(failure) ");
             try d.refList(.{ .start = c.args_start, .end = c.args_end });
             try d.w.writeByte('\n');
         }
@@ -374,11 +377,31 @@ const Dumper = struct {
         try d.w.writeByte('\n');
     }
 
+    /// `  own2 π1 written returned, π3 stored, res builderdone`: the v2
+    /// column (ownership-v2.md §2.13.6), when the signature has one. v1's
+    /// column is not printed: the ownership dump is its window.
+    fn own2Row(d: *Dumper, decl_: Bir.Decl) !void {
+        if (decl_.own2_end == decl_.own2_start) return;
+        try d.w.writeAll("  own2");
+        const words = d.bir.extra[decl_.own2_start..decl_.own2_end];
+        var at: usize = 0;
+        while (at + 1 < words.len) : (at += 2) {
+            try d.w.writeAll(if (at == 0) " " else ", ");
+            if (words[at] == Bir.own_result) try d.w.writeAll("res") else try d.w.print("π{d}", .{words[at] + 1});
+            for (std.enums.values(Ast.OwnWord)) |w| {
+                if (words[at + 1] & w.bit() != 0) try d.w.print(" {t}", .{w});
+            }
+        }
+        try d.w.writeByte('\n');
+    }
+
     /// `pub opaque type Token (foreign)` — the declaration's own line.
     fn header(d: *Dumper, decl_: Bir.Decl) !void {
         if (decl_.is_pub) try d.w.writeAll("pub ");
         if (decl_.is_opaque) try d.w.writeAll("opaque ");
         if (decl_.is_equatable) try d.w.writeAll("equatable ");
+        // The type word (ownership-v2.md §2.13.6).
+        if (decl_.own_kind != .none) try d.w.print("{t} ", .{decl_.own_kind});
         try d.w.print("{s} ", .{kindText(decl_.kind)});
         // The rung a `foreign` value declares (transparent-effects-proposal.md §14.1).
         if (decl_.kind == .foreign_value) try d.w.print("{t} ", .{decl_.rung});

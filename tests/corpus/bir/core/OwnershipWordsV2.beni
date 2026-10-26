@@ -1,0 +1,77 @@
+-- BIR (core): the ownership checker v2's words (`ownership-v2.md` §2.13.5,
+-- §2.13.6), checked by lowering and erased from the types. A type word is
+-- the declaration's `own_kind`: `sequence` on a unary `foreign type`, after
+-- `equatable`; `cell` on a unary opaque `type`; `sender` on an alias of a
+-- function of one argument returning `⊤`. `failure` marks one of the two
+-- unary constructors of a type. A signature that carries a value word only
+-- v2 reads keeps all its words in the v2 column (`own2`), and the BIR dump
+-- prints that column; `onlyOld`, with v1's words alone, keeps them in v1's
+-- column, which the dump does not print.
+import Js
+
+
+pub equatable sequence foreign type Seq a
+
+
+sequence foreign type Builder a
+
+
+pub opaque cell type Box a
+    = Box Js.Value
+
+
+pub type Outcome e a
+    = Good a
+    | failure Bad e
+
+
+pub sender type alias Sender msg =
+    msg → ⊤
+
+
+pub foreign pure traverseAt : borrowed Seq a, borrowed Int → taken a
+
+
+pub foreign pure focus : written returned Seq a, borrowed Int, once taken (a → a) → Seq a
+
+
+pub foreign pure builder : unused Int → fresh exclusive Builder a
+
+
+pub foreign pure put : written returned Builder a, borrowed Int, stored a → Builder a
+
+
+pub foreign pure done : written returned Builder a, borrowed Int → builderdone Seq a
+
+
+pub foreign pure append : written returned Seq a, borrowed Seq a → concatenated Seq a
+
+
+pub foreign pure make : consumed a → cellnew Box a
+
+
+pub foreign pure empty : unused ⊤ → cellempty Box a
+
+
+pub foreign pure get : cellread Box a → lent a
+
+
+pub foreign pure poll : cellread Box a → lentoptional Maybe a
+
+
+pub foreign pure isSet : cellread Box a → Bool
+
+
+pub foreign pure set : cellwrite Box a, consumed cellstored a → ⊤
+
+
+pub foreign pure update : cellwrite Box a, cellupdate sync (a → a) → ⊤
+
+
+pub foreign pure modify : cellwrite Box a, cellmodify sync (a → b × a) → b
+
+
+pub foreign pure complete : cellcomplete Box a, consumed cellstored a → Bool
+
+
+pub foreign pure onlyOld : borrowed Seq a → Int

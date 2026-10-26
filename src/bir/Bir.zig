@@ -976,6 +976,24 @@ pub fn ownSlots(b: *const Bir, d: Decl) []const [2]u32 {
     return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
 }
 
+/// The ownership words of declaration `d` as the ownership checker v2
+/// reads them (ownership-v2.md §2.13.6, §8): a signature that carries a word
+/// only v2 reads keeps ALL its words in the v2 column, and v1's column is
+/// then empty, so v1 sees exactly what it saw before the word existed; any
+/// other signature keeps its words in v1's column alone, read here.
+pub fn ownSlotsV2(b: *const Bir, d: Decl) []const [2]u32 {
+    if (d.own2_end == d.own2_start) return b.ownSlots(d);
+    const words = b.extra[d.own2_start..d.own2_end];
+    return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
+}
+
+/// The type word a declaration carries (ownership-v2.md §2.13.5, §2.13.6),
+/// checked by lowering: `sequence` on a unary `foreign type`, `cell` on a
+/// unary opaque `type` or `foreign type`, `sender` on a one-argument
+/// function alias returning `⊤`. Metadata of the ownership checker v2: no
+/// type, no interface entry v1 reads and no emitted byte depends on it.
+pub const OwnKind = enum(u8) { none, sequence, cell, sender };
+
 pub const Decl = struct {
     kind: Kind,
     name: SymbolIndex,
@@ -1031,6 +1049,13 @@ pub const Decl = struct {
     /// none, which is every declaration outside core and the platforms.
     own_start: u32 = 0,
     own_end: u32 = 0,
+    /// The v2 column (`ownSlotsV2`): `OwnSlot` pairs in
+    /// `extra[own2_start..own2_end]`, every word of a signature that carries
+    /// one only the ownership checker v2 reads. Empty otherwise.
+    own2_start: u32 = 0,
+    own2_end: u32 = 0,
+    /// `sequence`, `cell` or `sender` (`OwnKind`), else `none`.
+    own_kind: OwnKind = .none,
     /// `value`: the body expression. Else none.
     body: Inst.OptionalIndex,
     /// `schema`: root of the unresolved schema instruction graph. Else none.
@@ -1151,6 +1176,10 @@ pub const Ctor = struct {
     /// `SubRange` of argument type instructions; its length is the arity.
     args_start: ExtraIndex,
     args_end: ExtraIndex,
+    /// `failure Err e` (ownership-v2.md §2.13.6): the failure constructor of
+    /// a two-constructor type whose other constructor is unary success,
+    /// checked by lowering. v2 metadata, as `Decl.own_kind` is.
+    failure: bool = false,
 };
 
 pub const Local = struct {

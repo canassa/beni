@@ -403,6 +403,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
             // §11.4's gate, which an importer cannot compute (a
             // tagged schema endpoint's among them, §11.5).
             .no_function = entry.kind == .adt and ((try Marker.functionFree(cx, contexts, null, id)) orelse true),
+            .own_kind = cx.bir.decls[entry.decl.int()].own_kind,
             .payload_params = try facts.payloadParams(entry.decl, entry.kind, entry.arity),
             .key_kinds = try facts.keyKinds(id),
             .eq = try facts.derived(id, .eq),

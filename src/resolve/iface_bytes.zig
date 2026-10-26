@@ -95,7 +95,9 @@ pub const magic = "BENIIFC\x00";
 /// 16: public ownership summary rows and opaque slots (ownership-checker.md §16.10).
 /// 17: the ownership block's paths have no length limit (summary format 37,
 /// ownership-checker.md §16.7 (c)).
-pub const format_version: u32 = 17;
+/// 18: a type row's byte 30 and a hidden row's byte 22 carry the type word,
+/// a constructor row's byte 25 its `failure` mark (ownership-v2.md §2.13.6).
+pub const format_version: u32 = 18;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -389,6 +391,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[24..28], t.compare.context, .little);
             row[28] = @backingInt(t.eq.status);
             row[29] = @backingInt(t.compare.status);
+            row[30] = @backingInt(t.own_kind);
         }
     }
     {
@@ -402,6 +405,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[16..20], c.quantified_start, .little);
             std.mem.writeInt(u32, row[20..24], c.fields, .little);
             row[24] = @backingInt(c.result);
+            row[25] = @intFromBool(c.failure);
         }
     }
     {
@@ -449,6 +453,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[16..20], t.compare.context, .little);
             row[20] = @backingInt(t.eq.status);
             row[21] = @backingInt(t.compare.status);
+            row[22] = @backingInt(t.own_kind);
         }
     }
     {
@@ -687,7 +692,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
             const row = in[i * 36 ..][0..36];
             // Flags past bit 1 and the padding are zero in every record a
             // writer produced (`checker.md` §7: padding is not a field).
-            if (row[15] & ~@as(u8, 7) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
+            if (row[15] & ~@as(u8, 7) != 0 or row[31] != 0) return error.BadRecord;
             t.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .ctors_start = std.mem.readInt(u32, row[4..8], .little),
@@ -697,6 +702,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .is_opaque = row[15] & 1 == 1,
                 .is_equatable = (row[15] >> 1) & 1 == 1,
                 .no_function = (row[15] >> 2) & 1 == 1,
+                .own_kind = std.enums.fromInt(Bir.OwnKind, row[30]) orelse return error.BadRecord,
                 .payload_params = std.mem.readInt(u32, row[16..20], .little),
                 .key_kinds = std.mem.readInt(u32, row[32..36], .little),
                 .eq = .{
@@ -716,7 +722,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         iface.ctors = ctors;
         for (ctors, 0..) |*c, i| {
             const row = in[i * 28 ..][0..28];
-            if (row[25] != 0 or row[26] != 0 or row[27] != 0) return error.BadRecord;
+            if (row[25] > 1 or row[26] != 0 or row[27] != 0) return error.BadRecord;
             c.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .type = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
@@ -725,6 +731,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .quantified_start = std.mem.readInt(u32, row[16..20], .little),
                 .fields = std.mem.readInt(u32, row[20..24], .little),
                 .result = std.enums.fromInt(Interface.CtorResult, row[24]) orelse return error.BadRecord,
+                .failure = row[25] == 1,
             };
         }
     }
@@ -787,13 +794,14 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         iface.hidden_types = hidden;
         for (hidden, 0..) |*t, i| {
             const row = in[i * 28 ..][0..28];
-            if (row[7] & ~@as(u8, 3) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
+            if (row[7] & ~@as(u8, 3) != 0 or row[23] != 0) return error.BadRecord;
             t.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .arity = std.mem.readInt(u16, row[4..6], .little),
                 .kind = std.enums.fromInt(Interface.TypeKind, row[6]) orelse return error.BadRecord,
                 .is_equatable = row[7] & 1 == 1,
                 .no_function = (row[7] >> 1) & 1 == 1,
+                .own_kind = std.enums.fromInt(Bir.OwnKind, row[22]) orelse return error.BadRecord,
                 .payload_params = std.mem.readInt(u32, row[8..12], .little),
                 .key_kinds = std.mem.readInt(u32, row[24..28], .little),
                 .eq = .{
@@ -1515,6 +1523,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
         .is_equatable = false,
         .ctors_start = 0,
         .ctors_end = 0,
+        .own_kind = .cell,
         .payload_params = 3,
         .eq = .{ .status = .present, .context = 14 },
         .compare = .{ .status = .function },
@@ -1529,7 +1538,9 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
         .eq = .{ .status = .alias },
         .compare = .{ .status = .alias },
     } };
-    const good_ctors = [_]Interface.Ctor{.{ .name = @fromBackingInt(@intCast(0)), .type = @fromBackingInt(@intCast(1)), .arity = 2, .result = .record_alias, .fields = 0 }};
+    // The type word and the `failure` mark ride along (format 18); no
+    // check reads them, so any row may carry them here.
+    const good_ctors = [_]Interface.Ctor{.{ .name = @fromBackingInt(@intCast(0)), .type = @fromBackingInt(@intCast(1)), .arity = 2, .result = .record_alias, .fields = 0, .failure = true }};
     const record = struct {
         fn of(types: []const Interface.Type, ctors: []const Interface.Ctor, words: []const u32, symbols: []const Symbol) Interface {
             return .{
@@ -1603,7 +1614,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     // same rules; hidden rows are sorted by name text.
     const hidden = [_]Interface.HiddenType{
         .{ .name = @fromBackingInt(@intCast(3)), .arity = 300, .kind = .adt, .is_equatable = false, .payload_params = 3, .eq = .{ .status = .present, .context = 14 }, .compare = .{ .status = .function } },
-        .{ .name = @fromBackingInt(@intCast(2)), .arity = 0, .kind = .foreign, .is_equatable = true, .eq = .{ .status = .foreign }, .compare = .{ .status = .foreign } },
+        .{ .name = @fromBackingInt(@intCast(2)), .arity = 0, .kind = .foreign, .is_equatable = true, .own_kind = .sequence, .eq = .{ .status = .foreign }, .compare = .{ .status = .foreign } },
     };
     var with_hidden = good;
     with_hidden.hidden_types = &hidden;
@@ -1777,11 +1788,13 @@ test "each check the reader makes refuses the one mutation aimed at it" {
         .{ .what = "a term_lhs column shorter than the term tags", .column = .term_lhs, .table = .one_short },
         .{ .what = "a term_rhs column shorter than the term tags", .column = .term_rhs, .table = .one_short },
         .{ .what = "a type's flags past bit 2", .column = .types, .byte = 15, .value = 0x08 },
-        .{ .what = "a type's padding", .column = .types, .byte = 30, .value = 1 },
+        .{ .what = "a type's padding", .column = .types, .byte = 31, .value = 1 },
+        .{ .what = "a type word no version defines", .column = .types, .byte = 30, .value = 0xff },
         .{ .what = "a type kind no version defines", .column = .types, .byte = 14, .value = 0xff },
         .{ .what = "an eq status no version defines", .column = .types, .byte = 28, .value = 0xff },
         .{ .what = "a compare status no version defines", .column = .types, .byte = 29, .value = 0xff },
-        .{ .what = "a constructor's padding", .column = .ctors, .byte = 25, .value = 1 },
+        .{ .what = "a constructor's padding", .column = .ctors, .byte = 26, .value = 1 },
+        .{ .what = "a failure mark that is not a bool", .column = .ctors, .byte = 25, .value = 2 },
         .{ .what = "a constructor result no version defines", .column = .ctors, .byte = 24, .value = 0xff },
         .{ .what = "a term tag no version defines", .column = .term_tags, .byte = 0, .value = 0xff },
         .{ .what = "a type reference's package no version defines", .column = .type_refs, .byte = 12, .value = 0xff },
