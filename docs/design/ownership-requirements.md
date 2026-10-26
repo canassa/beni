@@ -807,7 +807,7 @@ requirement or section number.
   elements, list condition `lost`, record condition preserved, comparator many with borrowed supplies
   (ownership-v2.md Appendix C.9; #1014). Everything else in `core/` is inferred from its body. (oc §16.8, §24.5)
 - R-5.10.9 The words must express at least v1's annotated surface (`Js.*`, `String.*`, `Schema.print*`, `Debug.*`,
-  `Hosted.keyOf`, `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
+  `Hosted.keyOf` (beni and inferred since 2026-10-26, #877), `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
   (oc §24.8, §30.9; o/Words, o/WordsBrowser, o/JsPure, o/TaskWords, o/core/JsWords)
 - R-5.10.10 Test platforms' foreigns that take lists carry words, like shipped platforms' (`refEq`, `Page.element`'s
   children). (oc §30.5)
