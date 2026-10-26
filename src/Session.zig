@@ -85,6 +85,7 @@ const platform_chain = @import("platform.zig");
 const Manifest = @import("js/Manifest.zig");
 const artifact_bytes = @import("frontend/artifact_bytes.zig");
 const Enforce = @import("own/Enforce.zig");
+const Enforce2 = @import("own2/Enforce.zig");
 
 const Session = @This();
 
@@ -379,6 +380,9 @@ pub const Options = struct {
     /// `--ownership-records-lost` (`Cli.Common`, `ownership-checker.md`
     /// §31.4 item 6): every record condition fails. Hidden and test-only.
     ownership_records_lost: bool = false,
+    /// `--ownership=v2` (`Cli.Common.ownership`, `ownership-v2.md` §8): the
+    /// checker v2 runs in place of v1. Hidden and test-only.
+    ownership_v2: bool = false,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and
@@ -580,6 +584,10 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     };
     errdefer session.interner.deinit(gpa);
     session.build_id_bytes = keyBuildId(options);
+    // The checker v2 writes no cache section yet (ownership-v2.md §8, S6):
+    // a run under `--ownership=v2` reads and writes no cache, so it never
+    // installs an entry v1 checked.
+    if (options.ownership_v2) session.options.cache = null;
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
     if (options.ownership) if (options.chain) |c| {
@@ -2540,12 +2548,17 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         @memset(session.ownership_sites, null);
     }
     const ownership: Enforce.Context = .{ .session = session, .ins = &ins };
+    // The checker v2's inputs, under `--ownership=v2` (`ownership-v2.md` §8).
+    var ins2: Enforce2.Inputs = if (session.options.ownership_v2) try Enforce2.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
+    defer if (session.options.ownership_v2) ins2.deinit(session.gpa);
+    const ownership2: Enforce2.Context = .{ .session = session, .ins = &ins2 };
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
         cached: []?CacheEntry.Loaded,
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
+        ownership2: *const Enforce2.Context,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2559,7 +2572,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 r.session.resolution.provenance,
                 &r.session.interner,
                 .{
-                    .ownership = r.ownership,
+                    .ownership = if (r.session.options.ownership_v2) null else r.ownership,
+                    .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
@@ -2577,7 +2591,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership };
+    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

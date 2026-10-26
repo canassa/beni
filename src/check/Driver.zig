@@ -441,6 +441,7 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
         // independent verdict. Taint was settled by checkInner, before this.
         if (!hit and !d.tainted[m.int()]) {
             if (d.options.ownership) |ctx| try @import("../own/Enforce.zig").checkModule(ctx, d, m, tid);
+            if (d.options.ownership2) |ctx| try @import("../own2/Enforce.zig").checkModule(ctx, d, m, tid);
         }
         try d.verifyReads(m, recorder);
     }
