@@ -1,0 +1,1 @@
+S3a (ownership-v2.md §2.8, Holders across a cycle; Appendix B): the cycle's anchor finds the holder, and the holder above every level holds the write exactly, so the cause is alias and the holder its own name; v1 names a level of it (element, approx, or a longer path).

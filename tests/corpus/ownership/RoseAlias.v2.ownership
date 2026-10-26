@@ -1,0 +1,6 @@
+module RoseAlias
+  23:31 List.push subkids: rejected alias: kids holds it and is read at 23:29
+  35:23 List.push kids: accepted param
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

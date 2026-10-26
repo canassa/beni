@@ -1,0 +1,8 @@
+module MutualAlias
+  24:23 List.push deeper: rejected element: items⋆ holds it and is read at 24:21 (approx)
+  39:23 List.push items: accepted param
+  summary writeBelow: π1 R, π1#A.0#B.0 RA, π1⟨A⟩⁺#A.0#B.0 RAW[storage], π1⟨A⟩⁺#A.0#B.0[*] A; res .0 condition(fresh2) fresh2 π1⟨A⟩⁺#A.0#B.0{excl π1#A.0#B.0}r{excl π1#A.0#B.0}, .0[*] ~condition(fresh3) ~π1⟨A⟩⁺#A.0#B.0[*]{excl π1#A.0#B.0}r{excl π1#A.0#B.0}, .1 fresh5 ~condition(fresh4) π1#A.0#B.0, condition(fresh1){lost}r{lost}; xreq excl π1#A.0#B.0
+  summary writeShallow: π1 RA, π1#A.0#B.0 RAW[storage], π1#A.0#B.0[*] RA; res .0 condition(fresh2) fresh2 π1#A.0#B.0, .0[*] ~condition(fresh3) ~π1#A.0#B.0[*], .1 condition(fresh5) ~condition(fresh4) π1 π1#A.0#B.0[*]{excl π1#A.0#B.0}r{excl π1#A.0#B.0}, condition(fresh1){shared}r{shared}
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause element 1
