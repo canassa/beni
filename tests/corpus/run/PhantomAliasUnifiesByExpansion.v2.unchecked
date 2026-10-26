@@ -1,0 +1,4 @@
+PhantomAliasUnifiesByExpansion f: lines 32-36 (not built: call)
+PhantomAliasUnifiesByExpansion g: lines 39-43 (not built: call)
+PhantomAliasUnifiesByExpansion k: lines 50-50 (not built: call)
+PhantomAliasUnifiesByExpansion main: lines 56-57 (not built: ext_value)

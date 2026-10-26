@@ -1,0 +1,4 @@
+SpecializeCalledWhereMade wrap: lines 14-15 (not built: call)
+SpecializeCalledWhereMade frame: lines 18-21 (not built: call)
+SpecializeCalledWhereMade twice: lines 24-25 (not built: call)
+SpecializeCalledWhereMade show: lines 28-45 (not built: ext_value)

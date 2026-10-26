@@ -1,0 +1,7 @@
+EntryView update: lines 19-20 (not built: record_update)
+EntryView row: lines 23-24 (not built: markup)
+EntryView extends: lines 27-30 (not built: top)
+EntryView concatenates: lines 33-36 (not built: call)
+EntryView extended: lines 39-40 (not built: lambda)
+EntryView concatenated: lines 43-45 (not built: lambda)
+EntryView main: lines 48-49 (not built: call)

@@ -1,0 +1,7 @@
+Binders statement: lines 36-40 (not built: call)
+Binders placeholder: lines 53-56 (not built: local)
+Binders accessor: lines 59-62 (not built: local)
+Binders section: lines 65-69 (not built: local)
+Binders localGroup: lines 72-79 (not built: let_def)
+Binders update: lines 88-91 (not built: record_update)
+Binders bind: lines 94-97 (not built: local)

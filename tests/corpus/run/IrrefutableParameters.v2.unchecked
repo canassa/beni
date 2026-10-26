@@ -1,0 +1,5 @@
+IrrefutableParameters letBoundFn: lines 103-106 (not built: let_def)
+IrrefutableParameters withBox: lines 109-110 (not built: call)
+IrrefutableParameters bound: lines 113-116 (not built: local)
+IrrefutableParameters lambdas: lines 119-120 (not built: local)
+IrrefutableParameters main: lines 123-142 (not built: call)

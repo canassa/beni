@@ -1,0 +1,6 @@
+NominalHolds andMap: lines 24-37 (not built: call)
+NominalHolds firstOf: lines 48-61 (not built: local)
+NominalHolds check: lines 64-69 (not built: local)
+NominalHolds twice: lines 72-75 (not built: call)
+NominalHolds held: lines 78-82 (not built: top)
+NominalHolds heldLists: lines 85-93 (not built: call)

@@ -395,6 +395,87 @@ test "corpus: regress" {
     try walk(.regress);
 }
 
+/// `tests/blackbox/ownership-v2-known.txt`, the justified v1/v2 differences,
+/// read once per process: each entry's key (`<root> <module> <line:col> ::
+/// <demand> :: <v1> :: <v2>`) and whether a case used it, for `walk`'s
+/// stale check.
+const Known = struct {
+    keys: []const []const u8,
+    used: []std.atomic.Value(bool),
+
+    fn use(k: *const Known, key: []const u8) bool {
+        for (k.keys, k.used) |e, *u| if (std.mem.eql(u8, e, key)) {
+            u.store(true, .monotonic);
+            return true;
+        };
+        return false;
+    }
+};
+var known_state: ?Known = null;
+var known_mutex: std.Io.Mutex = .init;
+
+fn knownDifferences() !*const Known {
+    known_mutex.lockUncancelable(testing.io);
+    defer known_mutex.unlock(testing.io);
+    if (known_state == null) {
+        const gpa = std.heap.page_allocator;
+        const text = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", gpa, .limited(1 << 20)) catch "";
+        var keys: std.ArrayList([]const u8) = .empty;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |l| {
+            const t = std.mem.trim(u8, l, " ");
+            if (t.len == 0 or t[0] == '#') continue;
+            const end = std.mem.indexOf(u8, t, "  ") orelse t.len;
+            try keys.append(gpa, t[0..end]);
+        }
+        const used = try gpa.alloc(std.atomic.Value(bool), keys.items.len);
+        for (used) |*u| u.* = .init(false);
+        known_state = .{ .keys = keys.items, .used = used };
+    }
+    return &known_state.?;
+}
+
+/// Core's own verdicts, v1 against v2 (§7.2), keyed `core …` as
+/// `bench/ownership-everywhere.mjs --diff=v1,v2` keys them: run once with
+/// the ownership kind, before its stale-entry check.
+fn coreParity(arena: std.mem.Allocator) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var dumps: [2][]const u8 = undefined;
+    for ([_][]const u8{ "--ownership=v1", "--ownership=v2" }, &dumps) |side, *out| {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-everywhere", side, "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        if (r.exit_code != 0) {
+            std.debug.print("core: dump {s} exited {d}\n{s}\n", .{ side, r.exit_code, r.stderr });
+            return error.CoreDumpFailed;
+        }
+        out.* = try arena.dupe(u8, r.stdout);
+    }
+    try Case.parityOf(arena, "core", "core", dumps[0], dumps[1]);
+}
+
+/// The known differences of `kind`'s fixtures (and, with the ownership
+/// kind, core's) that no case of a whole walk used: stale, a failure (the
+/// list never outlives what it excuses).
+fn staleKnown(kind: Kind, cfg: *const Config) !void {
+    if (kind != .ownership and kind != .run) return;
+    if (cfg.only != null) return;
+    if (kind == .ownership) {
+        var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        try coreParity(arena.allocator());
+    }
+    const k = try knownDifferences();
+    const prefix = try std.fmt.allocPrint(testing.allocator, "{s}/{s}/", .{ cfg.root, kind.sub() });
+    defer testing.allocator.free(prefix);
+    var stale: usize = 0;
+    for (k.keys, k.used) |key, *u| {
+        const mine = std.mem.startsWith(u8, key, prefix) or (kind == .ownership and std.mem.startsWith(u8, key, "core "));
+        if (!mine or u.load(.monotonic)) continue;
+        std.debug.print("STALE ownership-v2-known.txt: {s}\n", .{key});
+        stale += 1;
+    }
+    if (stale != 0) return error.StaleKnownDifferences;
+}
 /// Run every `.beni` directly under `kind.dir()` and under its `core/`
 /// subdirectory (both sorted). The kind directory must exist; `core/` is
 /// optional; an empty kind is reported, not failed.
@@ -479,6 +560,8 @@ fn walk(kind: Kind) !void {
         std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind_dir, fixtures.len, failures });
         return error.CorpusFailures;
     }
+    // A justified difference no case of the whole kind used is stale.
+    if (cfg.mode != .pending and cfg.runs(kind.partOf(.dev))) try staleKnown(kind, &cfg);
 }
 
 /// The Chrome `BENI_BROWSER=chrome` runs every page in, while a walk of
@@ -2184,6 +2267,30 @@ const Case = struct {
     /// digest means Node already ran exactly this JavaScript and it printed
     /// exactly this golden. Anything else — a changed emitter, runtime or
     /// golden, another Node — runs the program as if there were no record.
+    /// A `run/` program checked by both checkers with the check enforced
+    /// everywhere (§7.2's differential, in the gates): v2's demands against
+    /// v1's, fail-closed, and its unchecked declarations against the
+    /// fixture's `.v2.unchecked`.
+    fn runV2Parity(case: Case, platform_arg: []const u8, sources: anytype) !void {
+        // One file is dumped as that file, a project as its directory, in a
+        // world of its own (no other fixture's files in it).
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        if (sources.len > 1 and !std.mem.eql(u8, platform_arg, "--platform=platform")) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            _ = try c.writeSources();
+        }
+        const paths: []const []const u8 = if (sources.len == 1) try buildPaths(c.arena, sources) else &.{ "--root=.", "." };
+        const v1 = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-everywhere", platform_arg }, paths }));
+        try expectExit(0, v1);
+        const v2 = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-everywhere", "--ownership=v2", platform_arg }, paths }));
+        try expectExit(0, v2);
+        try c.v2Unchecked("v2.unchecked", v2.stdout, false);
+        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name }), v1.stdout, v2.stdout);
+    }
+
     fn runProgram(case: Case) !void {
         // A project with a `platform/` directory builds for that platform,
         // as a `build/bad/` fixture does: a test platform layered on `node`
@@ -2201,6 +2308,7 @@ const Case = struct {
         }
         const platform_arg = if (platform) "--platform=platform" else "--platform=node";
         const sources = try c.writeSources();
+        if (c.cfg.mode != .pending and c.cfg.runs(Kind.run.partOf(.dev))) try c.runV2Parity(platform_arg, sources);
 
         var dev: std.ArrayList([]const u8) = .empty;
         try dev.appendSlice(c.arena, &.{ "build", platform_arg, "--out=out" });
@@ -3537,6 +3645,7 @@ const Case = struct {
         if (!c.goldenExists("v2")) return c.ownershipParity(flags, path, golden, token);
         const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
         try expectExit(0, r);
+        try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, true);
         // `check --ownership=v2` agrees with v2's own report as v1's does with
         // v1's: on an enforcing chain it fails exactly when the report has a
         // rejected or pending list line or a limit, with ownership codes only.
@@ -3558,6 +3667,12 @@ const Case = struct {
         // precisely), the `.v2` file saying why.
         const own = c.goldenExists("v2.ownership");
         const expected = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(if (own) "v2.ownership" else golden), c.arena, .limited(world.max_stream_bytes));
+        // Where v2's verdicts differ from v1's on purpose, each difference
+        // is still one the known list names.
+        if (own) {
+            const v1 = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes));
+            try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s} [{s}]", .{ c.fixture.dir, c.fixture.name, token }), v1, r.stdout);
+        }
         const want = try verdictLines(c.arena, expected);
         const got = try verdictLines(c.arena, r.stdout);
         if (!std.mem.eql(u8, want, got)) {
@@ -3567,41 +3682,75 @@ const Case = struct {
     }
 
     /// An ownership fixture with no `.v2` is still checked by v2 (§7.2's
-    /// whole-corpus parity, fail-closed): every demand v1's golden names and
-    /// v2's dump names alike, accepted by both or refused by both, except in
-    /// a declaration v2 says it did not check (`unchecked … lines a-b`) and
-    /// the justified differences of `tests/blackbox/ownership-v2-known.txt`,
-    /// keyed as `bench/ownership-everywhere.mjs --diff=v1,v2` keys them.
+    /// whole-corpus parity, fail-closed): v2's dump against v1's golden.
     fn ownershipParity(c: Case, flags: []const []const u8, path: []const u8, golden: []const u8, token: []const u8) !void {
         const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
         try expectExit(0, r);
         const v1 = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes));
-        const known = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", c.arena, .limited(world.max_stream_bytes)) catch "";
-        const root = try std.fmt.allocPrint(c.arena, "{s}/{s} [{s}]", .{ c.fixture.dir, c.fixture.name, token });
-        const a = try parityVerdicts(c.arena, v1);
-        const b = try parityVerdicts(c.arena, r.stdout);
+        try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, false);
+        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s} [{s}]", .{ c.fixture.dir, c.fixture.name, token }), v1, r.stdout);
+    }
+
+    /// The declarations v2 says it does not check (`unchecked …`), against
+    /// the fixture's committed `.v2.unchecked` (none when there are none):
+    /// a construct marked not built, or no longer, changes the golden, so
+    /// the parity never passes on an over-reported "not built". A limit is
+    /// a failure, never an exemption, unless the fixture is about limits.
+    fn v2Unchecked(c: Case, ext: []const u8, dump: []const u8, limits_allowed: bool) !void {
+        var text: std.ArrayList(u8) = .empty;
+        var lines = std.mem.splitScalar(u8, dump, '\n');
+        var module: []const u8 = "";
+        while (lines.next()) |l| {
+            if (std.mem.startsWith(u8, l, "module ")) module = l["module ".len..];
+            const t = std.mem.trim(u8, l, " ");
+            if (!std.mem.startsWith(u8, t, "unchecked ")) continue;
+            if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) {
+                detail("{s}: the checker v2 reached a limit: {s}\n", .{ c.fixture.name, t });
+                return error.OwnershipV2Limit;
+            }
+            try text.print(c.arena, "{s} {s}\n", .{ module, t["unchecked ".len..] });
+        }
+        // Nothing unchecked is no golden at all: blessing removes one that
+        // empties.
+        if (text.items.len == 0 and c.bless and c.goldenExists(ext)) try Io.Dir.cwd().deleteFile(testing.io, try c.goldenPath(ext));
+        if (text.items.len == 0 and !c.goldenExists(ext)) return;
+        try c.expectGolden(ext, text.items);
+    }
+
+    /// v2's demands against v1's, demand by demand (§7.2, fail-closed):
+    /// each alike in a declaration both check, or a justified difference of
+    /// `tests/blackbox/ownership-v2-known.txt`, keyed by position, demand
+    /// and both verdicts as `bench/ownership-everywhere.mjs --diff=v1,v2`
+    /// keys them. An entry no fixture uses is stale (`walk`).
+    fn v2Parity(c: Case, root: []const u8, v1: []const u8, v2: []const u8) !void {
+        return parityOf(c.arena, c.fixture.name, root, v1, v2);
+    }
+
+    fn parityOf(arena: std.mem.Allocator, name: []const u8, root: []const u8, v1: []const u8, v2: []const u8) !void {
+        const known = try knownDifferences();
+        const a = try parityVerdicts(arena, v1);
+        const b = try parityVerdicts(arena, v2);
         var wrong: std.ArrayList(u8) = .empty;
         for ([_]ParityDump{ a, b }, [_]ParityDump{ b, a }, 0..) |x, y, side| {
             for (x.demands.items) |d| {
                 const other = y.find(d);
-                // A demand the other side reports alike, or in a declaration it
-                // did not check, is settled; the v1-side pass decides pairs once.
                 if (other) |o| {
                     if (side == 1 or o.refused == d.refused) continue;
                 } else if (y.unchecked(d.module, d.line)) continue;
-                const key = try std.fmt.allocPrint(c.arena, "{s} {s} {s}", .{ root, d.module, d.pos });
-                if (knownDifference(known, key)) continue;
-                try wrong.print(c.arena, "{s}: {s}: {s}\n", .{ key, if (side == 0) "v1" else "v2", d.text });
-                if (other) |o| try wrong.print(c.arena, "    {s}: {s}\n", .{ if (side == 0) "v2" else "v1", o.text }) else try wrong.print(c.arena, "    {s}: (no demand)\n", .{if (side == 0) "v2" else "v1"});
+                const v1_verdict = if (side == 0) d.verdict else if (other) |o| o.verdict else "absent";
+                const v2_verdict = if (side == 1) d.verdict else if (other) |o| o.verdict else "absent";
+                const key = try std.fmt.allocPrint(arena, "{s} {s} {s} :: {s} :: {s} :: {s}", .{ root, d.module, d.pos, d.demand, v1_verdict, v2_verdict });
+                if (known.use(key)) continue;
+                try wrong.print(arena, "{s}\n", .{key});
             }
         }
         if (wrong.items.len != 0) {
-            detail("{s}: the checker v2 disagrees with v1's golden, outside what v2 does not check and tests/blackbox/ownership-v2-known.txt:\n{s}", .{ c.fixture.name, wrong.items });
+            detail("{s}: the checker v2 disagrees with v1, outside what v2 does not check and tests/blackbox/ownership-v2-known.txt:\n{s}", .{ name, wrong.items });
             return error.OwnershipV2Differs;
         }
     }
 
-    const ParityDemand = struct { module: []const u8, pos: []const u8, line: u32, demand: []const u8, k: u32, refused: bool, text: []const u8 };
+    const ParityDemand = struct { module: []const u8, pos: []const u8, line: u32, demand: []const u8, k: u32, refused: bool, verdict: []const u8, text: []const u8 };
     const ParityDump = struct {
         demands: std.ArrayList(ParityDemand) = .empty,
         spans: std.ArrayList(struct { module: []const u8, from: u32, to: u32 }) = .empty,
@@ -3658,26 +3807,11 @@ const Case = struct {
                     i += 1;
                 }
             }
-            var k: u32 = 0;
-            const d: ParityDemand = .{ .module = module, .pos = pos, .line = try std.fmt.parseInt(u32, pos[0 .. std.mem.indexOfScalar(u8, pos, ':') orelse pos.len], 10), .demand = demand.items, .k = 0, .refused = !std.mem.eql(u8, verdict[1], ": accepted"), .text = t };
-            while (p.find(.{ .module = d.module, .pos = d.pos, .line = d.line, .demand = d.demand, .k = k, .refused = false, .text = "" }) != null) k += 1;
-            var e = d;
-            e.k = k;
+            var e: ParityDemand = .{ .module = module, .pos = pos, .line = try std.fmt.parseInt(u32, pos[0 .. std.mem.indexOfScalar(u8, pos, ':') orelse pos.len], 10), .demand = demand.items, .k = 0, .refused = !std.mem.eql(u8, verdict[1], ": accepted"), .verdict = verdict[1][2..], .text = t };
+            while (p.find(e) != null) e.k += 1;
             try p.demands.append(arena, e);
         }
         return p;
-    }
-
-    /// Whether `key` (`<root> <module> <line:col>`) is a justified difference.
-    fn knownDifference(known: []const u8, key: []const u8) bool {
-        var lines = std.mem.splitScalar(u8, known, '\n');
-        while (lines.next()) |l| {
-            const t = std.mem.trim(u8, l, " ");
-            if (t.len == 0 or t[0] == '#') continue;
-            const end = std.mem.indexOf(u8, t, "  ") orelse t.len;
-            if (std.mem.eql(u8, t[0..end], key)) return true;
-        }
-        return false;
     }
 
     /// The lines of a report R-7.15 requires of every checker.

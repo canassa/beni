@@ -88,7 +88,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             // did not check from one it missed (`bench/ownership-everywhere.mjs`).
             if (in.format_summaries and (dr.failure != null or dr.unbuilt != Ids.none_int)) {
                 const span = declLines(in.names, mi, d);
-                try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s})", .{ name, span[0], span[1], if (dr.failure != null) "limit" else "not built" }));
+                const why = if (dr.failure != null) "limit" else try std.fmt.allocPrint(arena, "not built: {t}", .{mi.bir.instTag(@fromBackingInt(dr.unbuilt))});
+                try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s})", .{ name, span[0], span[1], why }));
             }
             if (dr.failure) |f| {
                 limits += 1;

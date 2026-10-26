@@ -1,0 +1,5 @@
+MutualDispatchMethods am: lines 27-27 (not built: local)
+MutualDispatchMethods bm: lines 30-32 (not built: lambda)
+MutualDispatchMethods size: lines 35-37 (not built: method_call)
+MutualDispatchMethods weight: lines 40-42 (not built: let_def)
+MutualDispatchMethods main: lines 45-51 (not built: call)

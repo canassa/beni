@@ -1,0 +1,7 @@
+module OpaqueUseShape
+  15:10 List.push xs: rejected alias: ys[*] holds it and is read at 16:5
+  summary keep: π1 R, π2 RA; res π2
+  summary heldIntoPoly: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

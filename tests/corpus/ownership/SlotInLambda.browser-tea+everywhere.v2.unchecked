@@ -1,0 +1,6 @@
+SlotInLambda send: lines 38-39 (not built: call)
+SlotInLambda run: lines 42-43 (not built: call)
+SlotInLambda handOn: lines 46-47 (not built: ctor)
+SlotInLambda update: lines 50-66 (not built: lambda)
+SlotInLambda view: lines 69-70 (not built: markup)
+SlotInLambda main: lines 73-79 (not built: lambda)

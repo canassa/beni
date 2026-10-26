@@ -1,0 +1,3 @@
+DotCallDerivedThroughHelper before: lines 20-20 (not built: method_call)
+DotCallDerivedThroughHelper same: lines 23-23 (not built: method_call)
+DotCallDerivedThroughHelper main: lines 34-44 (not built: call)

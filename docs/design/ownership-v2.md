@@ -2517,6 +2517,18 @@ are identical and nothing is written (R-7.11).
    list exits nonzero; every difference needs a requirement or a pinned v1-defect explanation before switch-over.
    The reference v1/v1 measurement at `e5421ac3d` is 1,621 roots, 10,937 equal demands, zero differences;
    enumerate roots on every run rather than freezing that count as coverage.
+
+   **The gates carry the same net** (#1103), so it never depends on someone running the bench. The corpus
+   harness compares v2's demands with v1's for every `ownership/` fixture (against its v1 golden), every
+   `run/` program and core, under the same rule. Justified differences are
+   `tests/blackbox/ownership-v2-known.txt`, keyed by root, module, position, demand text and **both
+   verdicts** (`absent` for a one-sided demand), so an entry excuses that one difference and nothing else at
+   its position; an entry no case of a whole walk uses is stale and fails. A difference inside a declaration
+   v2 does not check is excused only because the declaration is listed: each fixture and program commits a
+   `.v2.unchecked` golden naming every such declaration with its reason and construct (`not built: call`),
+   so marking a construct not built, or building one, changes a golden and fails the gate, and the parity
+   can never pass vacuously. A v2 limit (§4.4) is a failure, not an exemption, except in a fixture with a
+   `.v2` golden of its own, whose limits that golden pins.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when

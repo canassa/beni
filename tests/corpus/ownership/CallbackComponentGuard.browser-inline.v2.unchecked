@@ -1,0 +1,4 @@
+CallbackComponentGuard selfStep: lines 26-34 (not built: call)
+CallbackComponentGuard cycleStep: lines 38-47 (not built: call)
+CallbackComponentGuard self: lines 50-51 (not built: top)
+CallbackComponentGuard cycle: lines 54-55 (not built: top)

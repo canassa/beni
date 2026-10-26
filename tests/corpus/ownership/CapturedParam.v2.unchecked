@@ -1,0 +1,5 @@
+CapturedParam sumBy: lines 12-13 (not built: local)
+CapturedParam collect: lines 16-17 (not built: local)
+CapturedParam collectSet: lines 20-21 (not built: call)
+CapturedParam stored: lines 24-25 (not built: local)
+CapturedParam usesStored: lines 28-29 (not built: local)

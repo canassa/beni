@@ -1,0 +1,5 @@
+RecordCallbackEntry setName: lines 34-35 (not built: record_update)
+RecordCallbackEntry onForm: lines 38-39 (not built: call)
+RecordCallbackEntry update: lines 42-62 (not built: call)
+RecordCallbackEntry view: lines 65-68 (not built: markup)
+RecordCallbackEntry main: lines 72-78 (not built: lambda)

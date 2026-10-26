@@ -1,0 +1,6 @@
+TrailingLambdas kept: lines 12-17 (not built: local)
+TrailingLambdas addEach: lines 20-23 (not built: local)
+TrailingLambdas withBoth: lines 26-27 (not built: call)
+TrailingLambdas bound: lines 30-33 (not built: local)
+TrailingLambdas squares: lines 36-39 (not built: local)
+TrailingLambdas main: lines 42-48 (not built: call)

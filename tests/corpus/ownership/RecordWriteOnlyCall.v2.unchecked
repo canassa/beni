@@ -1,0 +1,6 @@
+RecordWriteOnlyCall changed: lines 20-21 (not built: record_update)
+RecordWriteOnlyCall toggle: lines 24-25 (not built: local)
+RecordWriteOnlyCall both: lines 28-29 (not built: record_update)
+RecordWriteOnlyCall toggleBoth: lines 32-33 (not built: local)
+RecordWriteOnlyCall firstDone: lines 36-42 (not built: record_update)
+RecordWriteOnlyCall toggleFirst: lines 45-46 (not built: local)

@@ -1,0 +1,6 @@
+BranchEscapes choose: lines 11-18 (not built: lambda)
+BranchEscapes unsafe: lines 21-25 (not built: lambda)
+BranchEscapes joined: lines 29-38 (not built: lambda)
+BranchEscapes repeat: lines 42-48 (not built: lambda)
+BranchEscapes fork: lines 52-58 (not built: lambda)
+BranchEscapes afterCall: lines 61-65 (not built: lambda)

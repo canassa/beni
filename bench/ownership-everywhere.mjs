@@ -215,7 +215,7 @@ function verdicts(out) {
     const demand = m[2].replace(/^call /, "").replace(/<call[^>]*>/g, "<call>");
     let k = 0;
     while (at.has(`${module}\t${m[1]}\t${demand}\t#${k}`)) k++;
-    at.set(`${module}\t${m[1]}\t${demand}\t#${k}`, { refused: m[3] !== "accepted", line: line.trim() });
+    at.set(`${module}\t${m[1]}\t${demand}\t#${k}`, { refused: m[3] !== "accepted", verdict: m[3], demand, line: line.trim() });
   }
   return at;
 }
@@ -319,9 +319,12 @@ async function diff(sides) {
         }
       }
       const differs = missing >= 0 || x.refused !== y.refused;
-      if (differs && allowed.has(where)) {
-        used.add(where);
-        explained.push({ ...row, why: allowed.get(where) });
+      // A known difference names the demand and both verdicts, so it
+      // excuses that one difference and no other at the position.
+      const full = `${where} :: ${(x ?? y).demand} :: ${x ? x.verdict : "absent"} :: ${y ? y.verdict : "absent"}`;
+      if (differs && allowed.has(full)) {
+        used.add(full);
+        explained.push({ ...row, why: allowed.get(full) });
         continue;
       }
       if (missing >= 0) oneSided.push(row);

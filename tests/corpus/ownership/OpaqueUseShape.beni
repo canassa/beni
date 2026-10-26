@@ -1,0 +1,16 @@
+-- ownership: a later `call` use whose callee's use shape the held path
+-- cannot be followed through (`ownership-v2.md` §2.7). `ys` holds `xs` at
+-- `ys[*]`; `keep` takes `ys` as an `a`, whose place has no `[*]`, so its use
+-- is read as far as anyone knows, and the edit of `xs` before it is
+-- refused. Read as "no mark there", it would be accepted.
+keep : a, b → b
+keep x y =
+    _ = x
+    y
+
+
+heldIntoPoly : List Int → List Int
+heldIntoPoly xs =
+    ys = [ xs ]
+    zs = List.push xs 1
+    keep ys zs
