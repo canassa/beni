@@ -1,5 +1,6 @@
 [
   { "name": "Counter", "platform": "browser-tea", "path": "samples/browser-tea/Counter.beni", "css": "samples/browser-tea/Counter.css" },
   { "name": "TodoMVC", "platform": "browser-tea", "path": "samples/browser-tea/TodoMVC.beni", "css": "samples/browser-tea/TodoMVC.css" },
+  { "name": "Ball machine", "platform": "browser-tea", "path": "samples/browser-tea/BallMachine.beni", "css": "samples/browser-tea/BallMachine.css" },
   { "name": "Fibonacci (prints)", "platform": "node", "path": "samples/node/Print.beni" }
 ]

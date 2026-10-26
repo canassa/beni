@@ -1,0 +1,20 @@
+# The playground's ball machine (`playground.md` §4.3), the sample itself,
+# on the page's virtual clock. With `?debug` the machine logs each ball it
+# lets in, each batch it drops and each retry, with times on that clock;
+# the lines are the evidence for the control program's three rules:
+#
+# - "At once": never more balls in the machine than it allows. Each `in:`
+#   line counts the balls that hold room once a ball came in.
+# - "Per batch": a batch drops when the bucket holds the batch, or 500 ms
+#   after its first ball landed. Each `drop:` line is the balls in the
+#   bucket as the trapdoor opens, the batch asked for, and how long the
+#   first ball waited.
+# - A retry waits 200 × 2ⁿ ms, n the times the ball went round before. Each
+#   `retry:` line is how long `retry` slept before the bay gate opened.
+#
+# The frames are 33 ms apart, the longest step the physics takes, so 340
+# frames are 11 s of the machine: drops of both kinds, and ball 3 failing
+# twice, waiting 200 ms and then 400 ms.
+url "?debug"
+input #at-once "6"
+frame 340 33

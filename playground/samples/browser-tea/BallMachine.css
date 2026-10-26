@@ -1,0 +1,144 @@
+/* The ball machine's look (docs/design/playground.md §4.6): the beni
+   site's flow page. The machine is always dark metal on a dark backdrop;
+   in the light scheme it sits on the page as a dark panel. */
+
+:root {
+  color-scheme: light;
+  --page: #f5f5f5;
+  --text: #111111;
+  --body: #3d3a44;
+  --muted: #55505f;
+  --accent: #a64b00;
+  --panel: #040205;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #040205;
+    --text: #f1edf7;
+    --body: #b5adc4;
+    --muted: #8f87a1;
+    --accent: #ff9a3c;
+  }
+}
+
+html {
+  background: var(--page);
+  color: var(--text);
+  font: 16px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+}
+
+.machine {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.machine svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 412 / 560;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+/* The words on the machine, on its dark backdrop in both schemes. */
+.machine .caption {
+  fill: #8f87a1;
+  font: 500 7px var(--mono);
+}
+
+.machine .value {
+  font: 600 11.5px var(--sans);
+}
+
+.machine .display {
+  font: 600 8px var(--mono);
+}
+
+/* Air in the return tube and light in the pipe run with the flow. */
+.machine .air {
+  animation: air 0.346s linear infinite;
+}
+
+.machine .flow {
+  animation: flow 0.35s linear infinite;
+}
+
+@keyframes air {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -21;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .machine .air,
+  .machine .flow {
+    animation: none;
+  }
+}
+
+.machine .pools {
+  mix-blend-mode: screen;
+}
+
+.tally {
+  margin: 0;
+  min-height: 1.6em;
+  color: var(--body);
+  font: 14px var(--mono);
+  text-align: center;
+}
+
+.tally b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px 28px;
+}
+
+.knob {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--muted);
+  font: 12px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.knob output {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.knob input[type="range"] {
+  flex-basis: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}

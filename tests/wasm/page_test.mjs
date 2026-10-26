@@ -294,10 +294,12 @@ if (mode === "positions") {
 } else if (mode === "samples") {
   // Paths are the repository's, as for `vendor`. A sample's files are next
   // to each other (playground.md §4.3, §4.6); TodoMVC's `.beni` is the
-  // benchmark's, which `zig build playground` copies in.
+  // benchmark's and the ball machine's is its fixture's, which `zig build
+  // playground` copies in.
   const samples = JSON.parse(readFileSync("playground/samples/index.json", "utf8"));
+  const copied = { TodoMVC: "bench/todomvc/apps/beni/Sandbox.beni", "Ball machine": "tests/corpus/browser/tea/BallMachine.beni" };
   for (const sample of samples) {
-    const beni = sample.name === "TodoMVC" ? "bench/todomvc/apps/beni/Sandbox.beni" : `playground/${sample.path}`;
+    const beni = copied[sample.name] ?? `playground/${sample.path}`;
     check(existsSync(beni), `${sample.name}: ${beni} exists`);
     if (sample.css === undefined) continue;
     check(existsSync(`playground/${sample.css}`), `${sample.name}: playground/${sample.css} exists`);

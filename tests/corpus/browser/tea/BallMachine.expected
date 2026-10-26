@@ -1,0 +1,1533 @@
+-- url "?debug"
+-- load
+<body>
+  <main class="machine">
+    <svg:svg viewBox="-12 0 412 560" role="img" aria-label="A ball machine: balls wait for room to enter, fill a bucket that a trapdoor drops down a pipe, and are checked at the bottom; failed ones are blown back up a tube to try again.">
+      <svg:defs>
+        <svg:linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#2C2438"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="bucketSteel" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#17121F"></svg:stop>
+          <svg:stop offset="0.32" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11"></svg:stop>
+          <svg:stop offset="0.1" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#0A0610" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="0.9" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperGlass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"></svg:stop>
+          <svg:stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.02"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperShade" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#17121F" stop-opacity="0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F" stop-opacity="0.45"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="chip" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#D8C9FF"></svg:stop>
+          <svg:stop offset="1" stop-color="#8E6BEA"></svg:stop>
+        </svg:linearGradient>
+        <svg:radialGradient id="bolt" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.35">
+          <svg:stop offset="0" stop-color="#9A8EB0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballOrange" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFE3BF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#C9631A"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballRed" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFC4BE"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#B32E36"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballDone" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#F1EDF7"></svg:stop>
+          <svg:stop offset="1" stop-color="#9F97AF"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolViolet">
+          <svg:stop offset="0" stop-color="#B79CFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#B79CFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolRed">
+          <svg:stop offset="0" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF5C5C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolOrange">
+          <svg:stop offset="0" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF9A3C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="backGlow" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="255">
+          <svg:stop offset="0" stop-color="#8B5CF6" stop-opacity="0.1"></svg:stop>
+          <svg:stop offset="1" stop-color="#8B5CF6" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="fadeOut" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="280">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:mask id="fade">
+          <svg:rect x="-200" y="0" width="800" height="560" fill="url(#fadeOut)"></svg:rect>
+        </svg:mask>
+        <svg:pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+          <svg:rect x="7" y="7" width="0.8" height="0.8" fill="#B79CFF" fill-opacity="0.1"></svg:rect>
+        </svg:pattern>
+        <svg:clipPath id="pipeClip">
+          <svg:rect x="124" y="220" width="52" height="220"></svg:rect>
+        </svg:clipPath>
+        <svg:filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="4"></svg:feGaussianBlur>
+          <svg:feOffset dy="3" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
+          <svg:feMerge>
+            <svg:feMergeNode in="blur"></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+      </svg:defs>
+      <!---->
+      <svg:g>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#backGlow)"></svg:rect>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#dots)" mask="url(#fade)"></svg:rect>
+      </svg:g>
+      <svg:g class="tube">
+        <svg:path fill="none" stroke-width="26" stroke-linejoin="round" filter="url(#shadow)" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#2C2438"></svg:path>
+        <svg:path fill="none" stroke-width="19" stroke-linejoin="round" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#17121F"></svg:path>
+        <svg:path class="air" fill="none" stroke="rgba(255, 92, 92, 0.3)" stroke-width="0.8" stroke-dasharray="2 7" d="M141.5 483 L14 483 L14 126 L136 126"></svg:path>
+        <svg:text class="caption" x="0" y="0" transform="translate(-4 305.5) rotate(-90)" text-anchor="middle" dominant-baseline="middle" letter-spacing="1.8">"RETRY"</svg:text>
+      </svg:g>
+      <svg:g>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperGlass)"></svg:path>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperShade)"></svg:path>
+        <svg:line x1="68" y1="21" x2="129" y2="84" stroke="rgba(255, 255, 255, 0.13)" stroke-width="1.2"></svg:line>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="51.0" y="10.0" width="198.0" height="5.0" rx="2.5"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="53.5" y1="10.5" x2="246.5" y2="10.5"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="139.0" y="94.0" width="22.0" height="78.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="139.6" y="96.0" height="74.0"></svg:rect>
+      </svg:g>
+      <svg:path d="M104 176 L196 176 L174 216 L126 216 Z" fill="url(#bucketSteel)" filter="url(#shadow)"></svg:path>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="101.0" y="173.0" width="98.0" height="4.5" rx="2.2"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="103.2" y1="173.5" x2="196.8" y2="173.5"></svg:line>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="124.0" y="220.0" width="52.0" height="220.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="128.2" y="222.0" height="216.0"></svg:rect>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="94.0" y="434.0" width="112.0" height="66.0" rx="4.0"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="98.0" y1="434.5" x2="202.0" y2="434.5"></svg:line>
+      </svg:g>
+      <svg:path d="M108 440 L192 440 L158.5 474 L141.5 474 Z" fill="rgba(11, 8, 16, 0.75)"></svg:path>
+      <svg:rect x="141.5" y="474" width="17" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:rect x="158.5" y="474" width="35.5" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:g fill="rgba(0, 0, 0, 0.45)">
+        <svg:rect x="95.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="450" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="450" width="7" height="1"></svg:rect>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="436.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="436.9" x2="179.2" y2="436.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="439.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="439.0"></svg:circle>
+      </svg:g>
+      <svg:rect x="128" y="498" width="44" height="12" rx="2" fill="#0B0810" stroke="rgba(255, 154, 60, 0.25)" stroke-width="0.6"></svg:rect>
+      <svg:text class="display" x="150" y="504.5" text-anchor="middle" dominant-baseline="middle" fill="#FF9A3C">
+        "–"
+        "/s"
+      </svg:text>
+      <svg:circle cx="180" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:circle cx="186" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:g class="pools">
+        <svg:circle cx="150" cy="94" r="34" fill="url(#poolViolet)" opacity="0.16"></svg:circle>
+        <svg:circle cx="150" cy="172" r="28" fill="url(#poolOrange)" opacity="0.1"></svg:circle>
+        <svg:circle cx="150" fill="url(#poolOrange)" cy="216" r="36" opacity="0.12"></svg:circle>
+        <svg:circle cx="136" cy="126" r="24" fill="url(#poolRed)" opacity="0.12"></svg:circle>
+      </svg:g>
+      <svg:g clip-path="url(#pipeClip)" stroke="rgba(255, 154, 60, 0.16)" stroke-width="0.9" stroke-dasharray="5 16">
+        <svg:line class="flow" x1="135.7" y1="220" x2="135.7" y2="440"></svg:line>
+        <svg:line class="flow" x1="150" y1="220" x2="150" y2="440"></svg:line>
+        <svg:line class="flow" x1="164.3" y1="220" x2="164.3" y2="440"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="218.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="218.9" x2="179.2" y2="218.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="221.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="221.0"></svg:circle>
+      </svg:g>
+      <svg:g>
+        <svg:circle cy="185" r="1.4" cx="180.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="185.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="190.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <svg:g fill="#5E5272">
+        <svg:circle cx="97.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="97.5" cy="496.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="496.5" r="1.1"></svg:circle>
+      </svg:g>
+      <svg:g stroke-linecap="round">
+        <svg:g stroke-width="3.4" filter="url(#rodShadow)" stroke="#2C2438">
+          <svg:line x1="55.0" y1="14.0" x2="139.0" y2="92.0"></svg:line>
+          <svg:line x1="245.0" y1="14.0" x2="161.0" y2="92.0"></svg:line>
+          <svg:line x1="139.0" y1="92.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="139.0" y1="137.0" x2="139.0" y2="172.0"></svg:line>
+          <svg:line x1="161.0" y1="92.0" x2="161.0" y2="172.0"></svg:line>
+          <svg:line x1="139.0" y1="172.0" x2="104.0" y2="176.0"></svg:line>
+          <svg:line x1="161.0" y1="172.0" x2="196.0" y2="176.0"></svg:line>
+          <svg:line x1="104.0" y1="176.0" x2="126.0" y2="216.0"></svg:line>
+          <svg:line x1="196.0" y1="176.0" x2="174.0" y2="216.0"></svg:line>
+          <svg:line x1="126.0" y1="216.0" x2="124.0" y2="220.0"></svg:line>
+          <svg:line x1="174.0" y1="216.0" x2="176.0" y2="220.0"></svg:line>
+          <svg:line x1="124.0" y1="220.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="220.0" x2="176.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="440.0" x2="192.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="192.0" y1="440.0" x2="158.5" y2="474.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="158.5" y1="474.0" x2="194.0" y2="474.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="194.0" y2="492.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="3.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="25.0" y2="137.0"></svg:line>
+          <svg:line x1="3.0" y1="115.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="137.0" x2="139.0" y2="137.0"></svg:line>
+        </svg:g>
+        <svg:g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
+          <svg:line x1="55.0" y1="13.1" x2="139.0" y2="91.1"></svg:line>
+          <svg:line x1="245.0" y1="13.1" x2="161.0" y2="91.1"></svg:line>
+          <svg:line x1="139.0" y1="91.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="139.0" y1="136.1" x2="139.0" y2="171.1"></svg:line>
+          <svg:line x1="161.0" y1="91.1" x2="161.0" y2="171.1"></svg:line>
+          <svg:line x1="139.0" y1="171.1" x2="104.0" y2="175.1"></svg:line>
+          <svg:line x1="161.0" y1="171.1" x2="196.0" y2="175.1"></svg:line>
+          <svg:line x1="104.0" y1="175.1" x2="126.0" y2="215.1"></svg:line>
+          <svg:line x1="196.0" y1="175.1" x2="174.0" y2="215.1"></svg:line>
+          <svg:line x1="126.0" y1="215.1" x2="124.0" y2="219.1"></svg:line>
+          <svg:line x1="174.0" y1="215.1" x2="176.0" y2="219.1"></svg:line>
+          <svg:line x1="124.0" y1="219.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="219.1" x2="176.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="439.1" x2="192.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="192.0" y1="439.1" x2="158.5" y2="473.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="158.5" y1="473.1" x2="194.0" y2="473.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="194.0" y2="491.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="3.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="25.0" y2="136.1"></svg:line>
+          <svg:line x1="3.0" y1="114.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g filter="url(#glow)" stroke-linecap="round">
+        <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="126.0" y1="216.0" x2="174.0" y2="216.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="136.0" y1="115.0" x2="136.0" y2="137.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+      </svg:g>
+      <svg:g stroke-width="2.2" stroke-linecap="round" stroke="#4D4260">
+        <svg:line x1="141.5" y1="474" x2="141.5" y2="492" visibility="visible"></svg:line>
+        <svg:line x1="158.5" y1="474" x2="158.5" y2="492" visibility="visible"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="167.0" y="79.0" width="37.0" height="2.6" rx="1.3"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="168.3" y1="79.5" x2="202.7" y2="79.5"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="168.8" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="177.3" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="185.8" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="194.3" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+      </svg:g>
+      <svg:text class="caption" x="200" y="495" dominant-baseline="middle" letter-spacing="1.4">"DONE ↓"</svg:text>
+      <svg:g filter="url(#ballShadow)"></svg:g>
+      <svg:g style="mix-blend-mode: screen" fill="#FF9A3C"></svg:g>
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="93.0" fill="#8F87A1">"IN THE MACHINE"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="107.0" fill="#F1EDF7">"0 of 4"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="100.0" y2="100.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="100.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="189.0" fill="#8F87A1">"PER BATCH"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="203.0" fill="#F1EDF7">"bucket 0 of 3"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="196.0" y2="196.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="196.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="449.0" fill="#8F87A1">"CHECK"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="463.0" fill="#F1EDF7">"some balls fail"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="456.0" y2="456.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="456.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+    </svg:svg>
+    <p class="tally">
+      <b>"–"</b>
+      " balls/s · last "
+      "0"
+      <!---->
+      " s: "
+      "0"
+      <!---->
+      " done · "
+      "0"
+      <!---->
+      " failed"
+    </p>
+    <div class="knobs">
+      <label class="knob">
+        "At once "
+        <output>"4"</output>
+        <input id="at-once" type="range" min="1" max="8" .value="4">
+      </label>
+      <label class="knob">
+        "Per batch "
+        <output>"3"</output>
+        <input id="per-batch" type="range" min="1" max="5" .value="3">
+      </label>
+    </div>
+  </main>
+</body>
+-- input #at-once "6"
+<body>
+  <main class="machine">
+    <svg:svg viewBox="-12 0 412 560" role="img" aria-label="A ball machine: balls wait for room to enter, fill a bucket that a trapdoor drops down a pipe, and are checked at the bottom; failed ones are blown back up a tube to try again.">
+      <svg:defs>
+        <svg:linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#2C2438"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="bucketSteel" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#17121F"></svg:stop>
+          <svg:stop offset="0.32" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11"></svg:stop>
+          <svg:stop offset="0.1" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#0A0610" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="0.9" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperGlass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"></svg:stop>
+          <svg:stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.02"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperShade" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#17121F" stop-opacity="0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F" stop-opacity="0.45"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="chip" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#D8C9FF"></svg:stop>
+          <svg:stop offset="1" stop-color="#8E6BEA"></svg:stop>
+        </svg:linearGradient>
+        <svg:radialGradient id="bolt" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.35">
+          <svg:stop offset="0" stop-color="#9A8EB0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballOrange" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFE3BF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#C9631A"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballRed" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFC4BE"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#B32E36"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballDone" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#F1EDF7"></svg:stop>
+          <svg:stop offset="1" stop-color="#9F97AF"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolViolet">
+          <svg:stop offset="0" stop-color="#B79CFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#B79CFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolRed">
+          <svg:stop offset="0" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF5C5C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolOrange">
+          <svg:stop offset="0" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF9A3C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="backGlow" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="255">
+          <svg:stop offset="0" stop-color="#8B5CF6" stop-opacity="0.1"></svg:stop>
+          <svg:stop offset="1" stop-color="#8B5CF6" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="fadeOut" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="280">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:mask id="fade">
+          <svg:rect x="-200" y="0" width="800" height="560" fill="url(#fadeOut)"></svg:rect>
+        </svg:mask>
+        <svg:pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+          <svg:rect x="7" y="7" width="0.8" height="0.8" fill="#B79CFF" fill-opacity="0.1"></svg:rect>
+        </svg:pattern>
+        <svg:clipPath id="pipeClip">
+          <svg:rect x="124" y="220" width="52" height="220"></svg:rect>
+        </svg:clipPath>
+        <svg:filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="4"></svg:feGaussianBlur>
+          <svg:feOffset dy="3" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
+          <svg:feMerge>
+            <svg:feMergeNode in="blur"></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+      </svg:defs>
+      <!---->
+      <svg:g>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#backGlow)"></svg:rect>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#dots)" mask="url(#fade)"></svg:rect>
+      </svg:g>
+      <svg:g class="tube">
+        <svg:path fill="none" stroke-width="26" stroke-linejoin="round" filter="url(#shadow)" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#2C2438"></svg:path>
+        <svg:path fill="none" stroke-width="19" stroke-linejoin="round" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#17121F"></svg:path>
+        <svg:path class="air" fill="none" stroke="rgba(255, 92, 92, 0.3)" stroke-width="0.8" stroke-dasharray="2 7" d="M141.5 483 L14 483 L14 126 L136 126"></svg:path>
+        <svg:text class="caption" x="0" y="0" transform="translate(-4 305.5) rotate(-90)" text-anchor="middle" dominant-baseline="middle" letter-spacing="1.8">"RETRY"</svg:text>
+      </svg:g>
+      <svg:g>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperGlass)"></svg:path>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperShade)"></svg:path>
+        <svg:line x1="68" y1="21" x2="129" y2="84" stroke="rgba(255, 255, 255, 0.13)" stroke-width="1.2"></svg:line>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="51.0" y="10.0" width="198.0" height="5.0" rx="2.5"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="53.5" y1="10.5" x2="246.5" y2="10.5"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="139.0" y="94.0" width="22.0" height="78.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="139.6" y="96.0" height="74.0"></svg:rect>
+      </svg:g>
+      <svg:path d="M104 176 L196 176 L174 216 L126 216 Z" fill="url(#bucketSteel)" filter="url(#shadow)"></svg:path>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="101.0" y="173.0" width="98.0" height="4.5" rx="2.2"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="103.2" y1="173.5" x2="196.8" y2="173.5"></svg:line>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="124.0" y="220.0" width="52.0" height="220.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="128.2" y="222.0" height="216.0"></svg:rect>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="94.0" y="434.0" width="112.0" height="66.0" rx="4.0"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="98.0" y1="434.5" x2="202.0" y2="434.5"></svg:line>
+      </svg:g>
+      <svg:path d="M108 440 L192 440 L158.5 474 L141.5 474 Z" fill="rgba(11, 8, 16, 0.75)"></svg:path>
+      <svg:rect x="141.5" y="474" width="17" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:rect x="158.5" y="474" width="35.5" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:g fill="rgba(0, 0, 0, 0.45)">
+        <svg:rect x="95.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="450" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="450" width="7" height="1"></svg:rect>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="436.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="436.9" x2="179.2" y2="436.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="439.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="439.0"></svg:circle>
+      </svg:g>
+      <svg:rect x="128" y="498" width="44" height="12" rx="2" fill="#0B0810" stroke="rgba(255, 154, 60, 0.25)" stroke-width="0.6"></svg:rect>
+      <svg:text class="display" x="150" y="504.5" text-anchor="middle" dominant-baseline="middle" fill="#FF9A3C">
+        "–"
+        "/s"
+      </svg:text>
+      <svg:circle cx="180" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:circle cx="186" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:g class="pools">
+        <svg:circle cx="150" cy="94" r="34" fill="url(#poolViolet)" opacity="0.16"></svg:circle>
+        <svg:circle cx="150" cy="172" r="28" fill="url(#poolOrange)" opacity="0.1"></svg:circle>
+        <svg:circle cx="150" fill="url(#poolOrange)" cy="216" r="36" opacity="0.12"></svg:circle>
+        <svg:circle cx="136" cy="126" r="24" fill="url(#poolRed)" opacity="0.12"></svg:circle>
+      </svg:g>
+      <svg:g clip-path="url(#pipeClip)" stroke="rgba(255, 154, 60, 0.16)" stroke-width="0.9" stroke-dasharray="5 16">
+        <svg:line class="flow" x1="135.7" y1="220" x2="135.7" y2="440"></svg:line>
+        <svg:line class="flow" x1="150" y1="220" x2="150" y2="440"></svg:line>
+        <svg:line class="flow" x1="164.3" y1="220" x2="164.3" y2="440"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="218.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="218.9" x2="179.2" y2="218.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="221.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="221.0"></svg:circle>
+      </svg:g>
+      <svg:g>
+        <svg:circle cy="185" r="1.4" cx="180.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="185.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="190.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <svg:g fill="#5E5272">
+        <svg:circle cx="97.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="97.5" cy="496.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="496.5" r="1.1"></svg:circle>
+      </svg:g>
+      <svg:g stroke-linecap="round">
+        <svg:g stroke-width="3.4" filter="url(#rodShadow)" stroke="#2C2438">
+          <svg:line x1="55.0" y1="14.0" x2="139.0" y2="92.0"></svg:line>
+          <svg:line x1="245.0" y1="14.0" x2="161.0" y2="92.0"></svg:line>
+          <svg:line x1="139.0" y1="92.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="139.0" y1="137.0" x2="139.0" y2="172.0"></svg:line>
+          <svg:line x1="161.0" y1="92.0" x2="161.0" y2="172.0"></svg:line>
+          <svg:line x1="139.0" y1="172.0" x2="104.0" y2="176.0"></svg:line>
+          <svg:line x1="161.0" y1="172.0" x2="196.0" y2="176.0"></svg:line>
+          <svg:line x1="104.0" y1="176.0" x2="126.0" y2="216.0"></svg:line>
+          <svg:line x1="196.0" y1="176.0" x2="174.0" y2="216.0"></svg:line>
+          <svg:line x1="126.0" y1="216.0" x2="124.0" y2="220.0"></svg:line>
+          <svg:line x1="174.0" y1="216.0" x2="176.0" y2="220.0"></svg:line>
+          <svg:line x1="124.0" y1="220.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="220.0" x2="176.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="440.0" x2="192.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="192.0" y1="440.0" x2="158.5" y2="474.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="158.5" y1="474.0" x2="194.0" y2="474.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="194.0" y2="492.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="3.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="25.0" y2="137.0"></svg:line>
+          <svg:line x1="3.0" y1="115.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="137.0" x2="139.0" y2="137.0"></svg:line>
+        </svg:g>
+        <svg:g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
+          <svg:line x1="55.0" y1="13.1" x2="139.0" y2="91.1"></svg:line>
+          <svg:line x1="245.0" y1="13.1" x2="161.0" y2="91.1"></svg:line>
+          <svg:line x1="139.0" y1="91.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="139.0" y1="136.1" x2="139.0" y2="171.1"></svg:line>
+          <svg:line x1="161.0" y1="91.1" x2="161.0" y2="171.1"></svg:line>
+          <svg:line x1="139.0" y1="171.1" x2="104.0" y2="175.1"></svg:line>
+          <svg:line x1="161.0" y1="171.1" x2="196.0" y2="175.1"></svg:line>
+          <svg:line x1="104.0" y1="175.1" x2="126.0" y2="215.1"></svg:line>
+          <svg:line x1="196.0" y1="175.1" x2="174.0" y2="215.1"></svg:line>
+          <svg:line x1="126.0" y1="215.1" x2="124.0" y2="219.1"></svg:line>
+          <svg:line x1="174.0" y1="215.1" x2="176.0" y2="219.1"></svg:line>
+          <svg:line x1="124.0" y1="219.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="219.1" x2="176.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="439.1" x2="192.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="192.0" y1="439.1" x2="158.5" y2="473.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="158.5" y1="473.1" x2="194.0" y2="473.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="194.0" y2="491.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="3.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="25.0" y2="136.1"></svg:line>
+          <svg:line x1="3.0" y1="114.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g filter="url(#glow)" stroke-linecap="round">
+        <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="126.0" y1="216.0" x2="174.0" y2="216.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="136.0" y1="115.0" x2="136.0" y2="137.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+      </svg:g>
+      <svg:g stroke-width="2.2" stroke-linecap="round" stroke="#4D4260">
+        <svg:line x1="141.5" y1="474" x2="141.5" y2="492" visibility="visible"></svg:line>
+        <svg:line x1="158.5" y1="474" x2="158.5" y2="492" visibility="visible"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="167.0" y="79.0" width="37.0" height="2.6" rx="1.3"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="168.3" y1="79.5" x2="202.7" y2="79.5"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="168.8" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="177.3" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="185.8" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="194.3" y="82.5" fill="url(#chip)" stroke="none" stroke-dasharray="none"></svg:rect>
+      </svg:g>
+      <svg:text class="caption" x="200" y="495" dominant-baseline="middle" letter-spacing="1.4">"DONE ↓"</svg:text>
+      <svg:g filter="url(#ballShadow)"></svg:g>
+      <svg:g style="mix-blend-mode: screen" fill="#FF9A3C"></svg:g>
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="93.0" fill="#8F87A1">"IN THE MACHINE"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="107.0" fill="#F1EDF7">"0 of 4"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="100.0" y2="100.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="100.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="189.0" fill="#8F87A1">"PER BATCH"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="203.0" fill="#F1EDF7">"bucket 0 of 3"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="196.0" y2="196.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="196.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="449.0" fill="#8F87A1">"CHECK"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="463.0" fill="#F1EDF7">"some balls fail"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="456.0" y2="456.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="456.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+    </svg:svg>
+    <p class="tally">
+      <b>"–"</b>
+      " balls/s · last "
+      "0"
+      <!---->
+      " s: "
+      "0"
+      <!---->
+      " done · "
+      "0"
+      <!---->
+      " failed"
+    </p>
+    <div class="knobs">
+      <label class="knob">
+        "At once "
+        <output>"6"</output>
+        <input id="at-once" type="range" min="1" max="8" .value="6">
+      </label>
+      <label class="knob">
+        "Per batch "
+        <output>"3"</output>
+        <input id="per-batch" type="range" min="1" max="5" .value="3">
+      </label>
+    </div>
+  </main>
+</body>
+-- frame 340 33
+(frame at 33 ms: 1 callback)
+(frame at 66 ms: 1 callback)
+(frame at 99 ms: 1 callback)
+(frame at 132 ms: 1 callback)
+(frame at 165 ms: 1 callback)
+(frame at 198 ms: 1 callback)
+(frame at 231 ms: 1 callback)
+(frame at 264 ms: 1 callback)
+(frame at 297 ms: 1 callback)
+(frame at 330 ms: 1 callback)
+(frame at 363 ms: 1 callback)
+(frame at 396 ms: 1 callback)
+(frame at 429 ms: 1 callback)
+(frame at 462 ms: 1 callback)
+(frame at 495 ms: 1 callback)
+(frame at 528 ms: 1 callback)
+(frame at 561 ms: 1 callback)
+console.debug: in: 1 of 6 in the machine
+(frame at 594 ms: 1 callback)
+(frame at 627 ms: 1 callback)
+(frame at 660 ms: 1 callback)
+(frame at 693 ms: 1 callback)
+console.debug: in: 2 of 6 in the machine
+(frame at 726 ms: 1 callback)
+(frame at 759 ms: 1 callback)
+console.debug: in: 3 of 6 in the machine
+(frame at 792 ms: 1 callback)
+(frame at 825 ms: 1 callback)
+console.debug: in: 4 of 6 in the machine
+(frame at 858 ms: 1 callback)
+(frame at 891 ms: 1 callback)
+console.debug: in: 5 of 6 in the machine
+(frame at 924 ms: 1 callback)
+(frame at 957 ms: 1 callback)
+(frame at 990 ms: 1 callback)
+console.debug: drop: 3 of 3, the first in for 231 ms
+(frame at 1023 ms: 1 callback)
+(frame at 1056 ms: 1 callback)
+(frame at 1089 ms: 1 callback)
+(frame at 1122 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 1155 ms: 1 callback)
+(frame at 1188 ms: 1 callback)
+(frame at 1221 ms: 1 callback)
+(frame at 1254 ms: 1 callback)
+(frame at 1287 ms: 1 callback)
+(frame at 1320 ms: 1 callback)
+(frame at 1353 ms: 1 callback)
+(frame at 1386 ms: 1 callback)
+(frame at 1419 ms: 1 callback)
+(frame at 1452 ms: 1 callback)
+(frame at 1485 ms: 1 callback)
+(frame at 1518 ms: 1 callback)
+(frame at 1551 ms: 1 callback)
+console.debug: drop: 3 of 3, the first in for 198 ms
+(frame at 1584 ms: 1 callback)
+(frame at 1617 ms: 1 callback)
+(frame at 1650 ms: 1 callback)
+(frame at 1683 ms: 1 callback)
+(frame at 1716 ms: 1 callback)
+(frame at 1749 ms: 1 callback)
+(frame at 1782 ms: 1 callback)
+(frame at 1815 ms: 1 callback)
+(frame at 1848 ms: 1 callback)
+(frame at 1881 ms: 1 callback)
+(frame at 1914 ms: 1 callback)
+(frame at 1947 ms: 1 callback)
+(frame at 1980 ms: 1 callback)
+(frame at 2013 ms: 1 callback)
+(frame at 2046 ms: 1 callback)
+(frame at 2079 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 2112 ms: 1 callback)
+(frame at 2145 ms: 1 callback)
+(frame at 2178 ms: 1 callback)
+(frame at 2211 ms: 1 callback)
+(frame at 2244 ms: 1 callback)
+(frame at 2277 ms: 1 callback)
+(frame at 2310 ms: 1 callback)
+(frame at 2343 ms: 1 callback)
+(frame at 2376 ms: 1 callback)
+(frame at 2409 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 2442 ms: 1 callback)
+(frame at 2475 ms: 1 callback)
+(frame at 2508 ms: 1 callback)
+(frame at 2541 ms: 1 callback)
+(frame at 2574 ms: 1 callback)
+(frame at 2607 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 2640 ms: 1 callback)
+(frame at 2673 ms: 1 callback)
+(frame at 2706 ms: 1 callback)
+(frame at 2739 ms: 1 callback)
+(frame at 2772 ms: 1 callback)
+(frame at 2805 ms: 1 callback)
+(frame at 2838 ms: 1 callback)
+(frame at 2871 ms: 1 callback)
+(frame at 2904 ms: 1 callback)
+(frame at 2937 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+console.debug: drop: 3 of 3, the first in for 462 ms
+(frame at 2970 ms: 1 callback)
+(frame at 3003 ms: 1 callback)
+(frame at 3036 ms: 1 callback)
+(frame at 3069 ms: 1 callback)
+(frame at 3102 ms: 1 callback)
+(frame at 3135 ms: 1 callback)
+(frame at 3168 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 3201 ms: 1 callback)
+(frame at 3234 ms: 1 callback)
+(frame at 3267 ms: 1 callback)
+(frame at 3300 ms: 1 callback)
+(frame at 3333 ms: 1 callback)
+(frame at 3366 ms: 1 callback)
+(frame at 3399 ms: 1 callback)
+(frame at 3432 ms: 1 callback)
+(frame at 3465 ms: 1 callback)
+(frame at 3498 ms: 1 callback)
+(frame at 3531 ms: 1 callback)
+(frame at 3564 ms: 1 callback)
+(frame at 3597 ms: 1 callback)
+(frame at 3630 ms: 1 callback)
+(frame at 3663 ms: 1 callback)
+(frame at 3696 ms: 1 callback)
+(frame at 3729 ms: 1 callback)
+(frame at 3762 ms: 1 callback)
+(frame at 3795 ms: 1 callback)
+(frame at 3828 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 3861 ms: 1 callback)
+(frame at 3894 ms: 1 callback)
+(frame at 3927 ms: 1 callback)
+(frame at 3960 ms: 1 callback)
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 3993 ms: 1 callback)
+(frame at 4026 ms: 1 callback)
+(frame at 4059 ms: 1 callback)
+(frame at 4092 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 4125 ms: 1 callback)
+(frame at 4158 ms: 1 callback)
+(frame at 4191 ms: 1 callback)
+(frame at 4224 ms: 1 callback)
+(frame at 4257 ms: 1 callback)
+(frame at 4290 ms: 1 callback)
+(frame at 4323 ms: 1 callback)
+(frame at 4356 ms: 1 callback)
+(frame at 4389 ms: 1 callback)
+(frame at 4422 ms: 1 callback)
+(frame at 4455 ms: 1 callback)
+(frame at 4488 ms: 1 callback)
+(frame at 4521 ms: 1 callback)
+(frame at 4554 ms: 1 callback)
+(frame at 4587 ms: 1 callback)
+(frame at 4620 ms: 1 callback)
+(frame at 4653 ms: 1 callback)
+(frame at 4686 ms: 1 callback)
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 4719 ms: 1 callback)
+(frame at 4752 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 4785 ms: 1 callback)
+(frame at 4818 ms: 1 callback)
+(frame at 4851 ms: 1 callback)
+(frame at 4884 ms: 1 callback)
+(frame at 4917 ms: 1 callback)
+(frame at 4950 ms: 1 callback)
+(frame at 4983 ms: 1 callback)
+(frame at 5016 ms: 1 callback)
+(frame at 5049 ms: 1 callback)
+(frame at 5082 ms: 1 callback)
+(frame at 5115 ms: 1 callback)
+console.debug: retry: ball 3 went round 0 times before and waited 200 ms
+(frame at 5148 ms: 1 callback)
+(frame at 5181 ms: 1 callback)
+(frame at 5214 ms: 1 callback)
+(frame at 5247 ms: 1 callback)
+(frame at 5280 ms: 1 callback)
+(frame at 5313 ms: 1 callback)
+(frame at 5346 ms: 1 callback)
+(frame at 5379 ms: 1 callback)
+(frame at 5412 ms: 1 callback)
+(frame at 5445 ms: 1 callback)
+console.debug: in: 5 of 6 in the machine
+(frame at 5478 ms: 1 callback)
+(frame at 5511 ms: 1 callback)
+(frame at 5544 ms: 1 callback)
+(frame at 5577 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+console.debug: drop: 1 of 3, the first in for 500 ms
+(frame at 5610 ms: 1 callback)
+(frame at 5643 ms: 1 callback)
+(frame at 5676 ms: 1 callback)
+(frame at 5709 ms: 1 callback)
+(frame at 5742 ms: 1 callback)
+(frame at 5775 ms: 1 callback)
+(frame at 5808 ms: 1 callback)
+(frame at 5841 ms: 1 callback)
+(frame at 5874 ms: 1 callback)
+(frame at 5907 ms: 1 callback)
+(frame at 5940 ms: 1 callback)
+(frame at 5973 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+console.debug: drop: 3 of 3, the first in for 132 ms
+(frame at 6006 ms: 1 callback)
+(frame at 6039 ms: 1 callback)
+(frame at 6072 ms: 1 callback)
+(frame at 6105 ms: 1 callback)
+(frame at 6138 ms: 1 callback)
+(frame at 6171 ms: 1 callback)
+(frame at 6204 ms: 1 callback)
+(frame at 6237 ms: 1 callback)
+(frame at 6270 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 6303 ms: 1 callback)
+(frame at 6336 ms: 1 callback)
+(frame at 6369 ms: 1 callback)
+(frame at 6402 ms: 1 callback)
+(frame at 6435 ms: 1 callback)
+(frame at 6468 ms: 1 callback)
+(frame at 6501 ms: 1 callback)
+(frame at 6534 ms: 1 callback)
+(frame at 6567 ms: 1 callback)
+(frame at 6600 ms: 1 callback)
+(frame at 6633 ms: 1 callback)
+(frame at 6666 ms: 1 callback)
+(frame at 6699 ms: 1 callback)
+(frame at 6732 ms: 1 callback)
+(frame at 6765 ms: 1 callback)
+(frame at 6798 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 6831 ms: 1 callback)
+(frame at 6864 ms: 1 callback)
+(frame at 6897 ms: 1 callback)
+(frame at 6930 ms: 1 callback)
+(frame at 6963 ms: 1 callback)
+(frame at 6996 ms: 1 callback)
+(frame at 7029 ms: 1 callback)
+(frame at 7062 ms: 1 callback)
+(frame at 7095 ms: 1 callback)
+(frame at 7128 ms: 1 callback)
+(frame at 7161 ms: 1 callback)
+(frame at 7194 ms: 1 callback)
+(frame at 7227 ms: 1 callback)
+(frame at 7260 ms: 1 callback)
+(frame at 7293 ms: 1 callback)
+(frame at 7326 ms: 1 callback)
+(frame at 7359 ms: 1 callback)
+(frame at 7392 ms: 1 callback)
+(frame at 7425 ms: 1 callback)
+(frame at 7458 ms: 1 callback)
+(frame at 7491 ms: 1 callback)
+(frame at 7524 ms: 1 callback)
+(frame at 7557 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 7590 ms: 1 callback)
+(frame at 7623 ms: 1 callback)
+(frame at 7656 ms: 1 callback)
+console.debug: drop: 1 of 3, the first in for 500 ms
+(frame at 7689 ms: 1 callback)
+(frame at 7722 ms: 1 callback)
+(frame at 7755 ms: 1 callback)
+(frame at 7788 ms: 1 callback)
+(frame at 7821 ms: 1 callback)
+(frame at 7854 ms: 1 callback)
+(frame at 7887 ms: 1 callback)
+(frame at 7920 ms: 1 callback)
+(frame at 7953 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 7986 ms: 1 callback)
+(frame at 8019 ms: 1 callback)
+(frame at 8052 ms: 1 callback)
+(frame at 8085 ms: 1 callback)
+(frame at 8118 ms: 1 callback)
+(frame at 8151 ms: 1 callback)
+(frame at 8184 ms: 1 callback)
+(frame at 8217 ms: 1 callback)
+(frame at 8250 ms: 1 callback)
+(frame at 8283 ms: 1 callback)
+(frame at 8316 ms: 1 callback)
+(frame at 8349 ms: 1 callback)
+(frame at 8382 ms: 1 callback)
+(frame at 8415 ms: 1 callback)
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 8448 ms: 1 callback)
+(frame at 8481 ms: 1 callback)
+(frame at 8514 ms: 1 callback)
+(frame at 8547 ms: 1 callback)
+(frame at 8580 ms: 1 callback)
+(frame at 8613 ms: 1 callback)
+(frame at 8646 ms: 1 callback)
+(frame at 8679 ms: 1 callback)
+(frame at 8712 ms: 1 callback)
+(frame at 8745 ms: 1 callback)
+(frame at 8778 ms: 1 callback)
+(frame at 8811 ms: 1 callback)
+(frame at 8844 ms: 1 callback)
+(frame at 8877 ms: 1 callback)
+(frame at 8910 ms: 1 callback)
+(frame at 8943 ms: 1 callback)
+(frame at 8976 ms: 1 callback)
+(frame at 9009 ms: 1 callback)
+(frame at 9042 ms: 1 callback)
+(frame at 9075 ms: 1 callback)
+(frame at 9108 ms: 1 callback)
+(frame at 9141 ms: 1 callback)
+(frame at 9174 ms: 1 callback)
+(frame at 9207 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 9240 ms: 1 callback)
+(frame at 9273 ms: 1 callback)
+(frame at 9306 ms: 1 callback)
+(frame at 9339 ms: 1 callback)
+(frame at 9372 ms: 1 callback)
+(frame at 9405 ms: 1 callback)
+(frame at 9438 ms: 1 callback)
+(frame at 9471 ms: 1 callback)
+(frame at 9504 ms: 1 callback)
+(frame at 9537 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 9570 ms: 1 callback)
+(frame at 9603 ms: 1 callback)
+(frame at 9636 ms: 1 callback)
+(frame at 9669 ms: 1 callback)
+(frame at 9702 ms: 1 callback)
+(frame at 9735 ms: 1 callback)
+(frame at 9768 ms: 1 callback)
+(frame at 9801 ms: 1 callback)
+(frame at 9834 ms: 1 callback)
+(frame at 9867 ms: 1 callback)
+(frame at 9900 ms: 1 callback)
+(frame at 9933 ms: 1 callback)
+(frame at 9966 ms: 1 callback)
+(frame at 9999 ms: 1 callback)
+console.debug: in: 6 of 6 in the machine
+(frame at 10032 ms: 1 callback)
+(frame at 10065 ms: 1 callback)
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 10098 ms: 1 callback)
+(frame at 10131 ms: 1 callback)
+(frame at 10164 ms: 1 callback)
+(frame at 10197 ms: 1 callback)
+(frame at 10230 ms: 1 callback)
+(frame at 10263 ms: 1 callback)
+(frame at 10296 ms: 1 callback)
+(frame at 10329 ms: 1 callback)
+(frame at 10362 ms: 1 callback)
+(frame at 10395 ms: 1 callback)
+(frame at 10428 ms: 1 callback)
+(frame at 10461 ms: 1 callback)
+(frame at 10494 ms: 1 callback)
+console.debug: retry: ball 16 went round 0 times before and waited 200 ms
+(frame at 10527 ms: 1 callback)
+(frame at 10560 ms: 1 callback)
+(frame at 10593 ms: 1 callback)
+(frame at 10626 ms: 1 callback)
+(frame at 10659 ms: 1 callback)
+(frame at 10692 ms: 1 callback)
+(frame at 10725 ms: 1 callback)
+(frame at 10758 ms: 1 callback)
+(frame at 10791 ms: 1 callback)
+(frame at 10824 ms: 1 callback)
+(frame at 10857 ms: 1 callback)
+(frame at 10890 ms: 1 callback)
+(frame at 10923 ms: 1 callback)
+(frame at 10956 ms: 1 callback)
+(frame at 10989 ms: 1 callback)
+(frame at 11022 ms: 1 callback)
+(frame at 11055 ms: 1 callback)
+console.debug: retry: ball 3 went round 1 times before and waited 400 ms
+(frame at 11088 ms: 1 callback)
+console.debug: drop: 2 of 3, the first in for 500 ms
+(frame at 11121 ms: 1 callback)
+(frame at 11154 ms: 1 callback)
+(frame at 11187 ms: 1 callback)
+(frame at 11220 ms: 1 callback)
+<body>
+  <main class="machine">
+    <svg:svg viewBox="-12 0 412 560" role="img" aria-label="A ball machine: balls wait for room to enter, fill a bucket that a trapdoor drops down a pipe, and are checked at the bottom; failed ones are blown back up a tube to try again.">
+      <svg:defs>
+        <svg:linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#2C2438"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="bucketSteel" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#17121F"></svg:stop>
+          <svg:stop offset="0.32" stop-color="#4D4260"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11"></svg:stop>
+          <svg:stop offset="0.1" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#0A0610" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="0.9" stop-color="#FFFFFF" stop-opacity="0.025"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.12"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperGlass" x1="0" y1="0" x2="1" y2="0">
+          <svg:stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"></svg:stop>
+          <svg:stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.02"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="hopperShade" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#17121F" stop-opacity="0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F" stop-opacity="0.45"></svg:stop>
+        </svg:linearGradient>
+        <svg:linearGradient id="chip" x1="0" y1="0" x2="0" y2="1">
+          <svg:stop offset="0" stop-color="#D8C9FF"></svg:stop>
+          <svg:stop offset="1" stop-color="#8E6BEA"></svg:stop>
+        </svg:linearGradient>
+        <svg:radialGradient id="bolt" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.35">
+          <svg:stop offset="0" stop-color="#9A8EB0"></svg:stop>
+          <svg:stop offset="1" stop-color="#17121F"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballOrange" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFE3BF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#C9631A"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballRed" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFC4BE"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#B32E36"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="ballDone" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="0.5" stop-color="#F1EDF7"></svg:stop>
+          <svg:stop offset="1" stop-color="#9F97AF"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolViolet">
+          <svg:stop offset="0" stop-color="#B79CFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#B79CFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolRed">
+          <svg:stop offset="0" stop-color="#FF5C5C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF5C5C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="poolOrange">
+          <svg:stop offset="0" stop-color="#FF9A3C"></svg:stop>
+          <svg:stop offset="1" stop-color="#FF9A3C" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="backGlow" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="255">
+          <svg:stop offset="0" stop-color="#8B5CF6" stop-opacity="0.1"></svg:stop>
+          <svg:stop offset="1" stop-color="#8B5CF6" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:radialGradient id="fadeOut" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="280">
+          <svg:stop offset="0" stop-color="#FFFFFF"></svg:stop>
+          <svg:stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></svg:stop>
+        </svg:radialGradient>
+        <svg:mask id="fade">
+          <svg:rect x="-200" y="0" width="800" height="560" fill="url(#fadeOut)"></svg:rect>
+        </svg:mask>
+        <svg:pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+          <svg:rect x="7" y="7" width="0.8" height="0.8" fill="#B79CFF" fill-opacity="0.1"></svg:rect>
+        </svg:pattern>
+        <svg:clipPath id="pipeClip">
+          <svg:rect x="124" y="220" width="52" height="220"></svg:rect>
+        </svg:clipPath>
+        <svg:filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="4"></svg:feGaussianBlur>
+          <svg:feOffset dy="3" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
+          <svg:feMerge>
+            <svg:feMergeNode in="blur"></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
+          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
+          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
+          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
+          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
+          <svg:feMerge>
+            <svg:feMergeNode></svg:feMergeNode>
+            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
+          </svg:feMerge>
+        </svg:filter>
+      </svg:defs>
+      <!---->
+      <svg:g>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#backGlow)"></svg:rect>
+        <svg:rect x="-200" y="0" width="800" height="560" fill="url(#dots)" mask="url(#fade)"></svg:rect>
+      </svg:g>
+      <svg:g class="tube">
+        <svg:path fill="none" stroke-width="26" stroke-linejoin="round" filter="url(#shadow)" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#2C2438"></svg:path>
+        <svg:path fill="none" stroke-width="19" stroke-linejoin="round" d="M141.5 483 L14 483 L14 126 L136 126" stroke="#17121F"></svg:path>
+        <svg:path class="air" fill="none" stroke="rgba(255, 92, 92, 0.3)" stroke-width="0.8" stroke-dasharray="2 7" d="M141.5 483 L14 483 L14 126 L136 126"></svg:path>
+        <svg:text class="caption" x="0" y="0" transform="translate(-4 305.5) rotate(-90)" text-anchor="middle" dominant-baseline="middle" letter-spacing="1.8">"RETRY"</svg:text>
+      </svg:g>
+      <svg:g>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperGlass)"></svg:path>
+        <svg:path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperShade)"></svg:path>
+        <svg:line x1="68" y1="21" x2="129" y2="84" stroke="rgba(255, 255, 255, 0.13)" stroke-width="1.2"></svg:line>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="51.0" y="10.0" width="198.0" height="5.0" rx="2.5"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="53.5" y1="10.5" x2="246.5" y2="10.5"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="139.0" y="94.0" width="22.0" height="78.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="139.6" y="96.0" height="74.0"></svg:rect>
+      </svg:g>
+      <svg:path d="M104 176 L196 176 L174 216 L126 216 Z" fill="url(#bucketSteel)" filter="url(#shadow)"></svg:path>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="101.0" y="173.0" width="98.0" height="4.5" rx="2.2"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="103.2" y1="173.5" x2="196.8" y2="173.5"></svg:line>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#glass)" x="124.0" y="220.0" width="52.0" height="220.0"></svg:rect>
+        <svg:rect width="4" fill="url(#sheen)" x="128.2" y="222.0" height="216.0"></svg:rect>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="94.0" y="434.0" width="112.0" height="66.0" rx="4.0"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="98.0" y1="434.5" x2="202.0" y2="434.5"></svg:line>
+      </svg:g>
+      <svg:path d="M108 440 L192 440 L158.5 474 L141.5 474 Z" fill="rgba(11, 8, 16, 0.75)"></svg:path>
+      <svg:rect x="141.5" y="474" width="17" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:rect x="158.5" y="474" width="35.5" height="18" fill="rgba(11, 8, 16, 0.8)"></svg:rect>
+      <svg:g fill="rgba(0, 0, 0, 0.45)">
+        <svg:rect x="95.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="95.5" y="450" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="444" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="447" width="7" height="1"></svg:rect>
+        <svg:rect x="197.5" y="450" width="7" height="1"></svg:rect>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="436.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="436.9" x2="179.2" y2="436.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="439.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="439.0"></svg:circle>
+      </svg:g>
+      <svg:rect x="128" y="498" width="44" height="12" rx="2" fill="#0B0810" stroke="rgba(255, 154, 60, 0.25)" stroke-width="0.6"></svg:rect>
+      <svg:text class="display" x="150" y="504.5" text-anchor="middle" dominant-baseline="middle" fill="#FF9A3C">
+        "1.8"
+        "/s"
+      </svg:text>
+      <svg:circle cx="180" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:circle cx="186" cy="504" r="1.6" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      <svg:g class="pools">
+        <svg:circle cx="150" cy="94" r="34" fill="url(#poolRed)" opacity="0.16"></svg:circle>
+        <svg:circle cx="150" cy="172" r="28" fill="url(#poolOrange)" opacity="0.1"></svg:circle>
+        <svg:circle cx="150" fill="url(#poolOrange)" cy="226" r="46" opacity="0.22"></svg:circle>
+        <svg:circle cx="136" cy="126" r="24" fill="url(#poolRed)" opacity="0.12"></svg:circle>
+      </svg:g>
+      <svg:g clip-path="url(#pipeClip)" stroke="rgba(255, 154, 60, 0.16)" stroke-width="0.9" stroke-dasharray="5 16">
+        <svg:line class="flow" x1="135.7" y1="220" x2="135.7" y2="440"></svg:line>
+        <svg:line class="flow" x1="150" y1="220" x2="150" y2="440"></svg:line>
+        <svg:line class="flow" x1="164.3" y1="220" x2="164.3" y2="440"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:g>
+          <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="119.0" y="218.4" width="62.0" height="5.2" rx="1.8"></svg:rect>
+          <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="120.8" y1="218.9" x2="179.2" y2="218.9"></svg:line>
+        </svg:g>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="122.2" cy="221.0"></svg:circle>
+        <svg:circle r="1.4" fill="url(#bolt)" cx="177.8" cy="221.0"></svg:circle>
+      </svg:g>
+      <svg:g>
+        <svg:circle cy="185" r="1.4" cx="180.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="185.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+        <svg:circle cy="185" r="1.4" cx="190.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <svg:g fill="#5E5272">
+        <svg:circle cx="97.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="437.5" r="1.1"></svg:circle>
+        <svg:circle cx="97.5" cy="496.5" r="1.1"></svg:circle>
+        <svg:circle cx="202.5" cy="496.5" r="1.1"></svg:circle>
+      </svg:g>
+      <svg:g stroke-linecap="round">
+        <svg:g stroke-width="3.4" filter="url(#rodShadow)" stroke="#2C2438">
+          <svg:line x1="55.0" y1="14.0" x2="139.0" y2="92.0"></svg:line>
+          <svg:line x1="245.0" y1="14.0" x2="161.0" y2="92.0"></svg:line>
+          <svg:line x1="139.0" y1="92.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="139.0" y1="137.0" x2="139.0" y2="172.0"></svg:line>
+          <svg:line x1="161.0" y1="92.0" x2="161.0" y2="172.0"></svg:line>
+          <svg:line x1="139.0" y1="172.0" x2="104.0" y2="176.0"></svg:line>
+          <svg:line x1="161.0" y1="172.0" x2="196.0" y2="176.0"></svg:line>
+          <svg:line x1="104.0" y1="176.0" x2="126.0" y2="216.0"></svg:line>
+          <svg:line x1="196.0" y1="176.0" x2="174.0" y2="216.0"></svg:line>
+          <svg:line x1="126.0" y1="216.0" x2="124.0" y2="220.0"></svg:line>
+          <svg:line x1="174.0" y1="216.0" x2="176.0" y2="220.0"></svg:line>
+          <svg:line x1="124.0" y1="220.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="220.0" x2="176.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="124.0" y2="440.0"></svg:line>
+          <svg:line x1="176.0" y1="440.0" x2="192.0" y2="440.0"></svg:line>
+          <svg:line x1="108.0" y1="440.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="192.0" y1="440.0" x2="158.5" y2="474.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="141.5" y2="474.0"></svg:line>
+          <svg:line x1="158.5" y1="474.0" x2="194.0" y2="474.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="194.0" y2="492.0"></svg:line>
+          <svg:line x1="3.0" y1="492.0" x2="3.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="474.0" x2="25.0" y2="137.0"></svg:line>
+          <svg:line x1="3.0" y1="115.0" x2="139.0" y2="115.0"></svg:line>
+          <svg:line x1="25.0" y1="137.0" x2="139.0" y2="137.0"></svg:line>
+        </svg:g>
+        <svg:g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
+          <svg:line x1="55.0" y1="13.1" x2="139.0" y2="91.1"></svg:line>
+          <svg:line x1="245.0" y1="13.1" x2="161.0" y2="91.1"></svg:line>
+          <svg:line x1="139.0" y1="91.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="139.0" y1="136.1" x2="139.0" y2="171.1"></svg:line>
+          <svg:line x1="161.0" y1="91.1" x2="161.0" y2="171.1"></svg:line>
+          <svg:line x1="139.0" y1="171.1" x2="104.0" y2="175.1"></svg:line>
+          <svg:line x1="161.0" y1="171.1" x2="196.0" y2="175.1"></svg:line>
+          <svg:line x1="104.0" y1="175.1" x2="126.0" y2="215.1"></svg:line>
+          <svg:line x1="196.0" y1="175.1" x2="174.0" y2="215.1"></svg:line>
+          <svg:line x1="126.0" y1="215.1" x2="124.0" y2="219.1"></svg:line>
+          <svg:line x1="174.0" y1="215.1" x2="176.0" y2="219.1"></svg:line>
+          <svg:line x1="124.0" y1="219.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="219.1" x2="176.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="124.0" y2="439.1"></svg:line>
+          <svg:line x1="176.0" y1="439.1" x2="192.0" y2="439.1"></svg:line>
+          <svg:line x1="108.0" y1="439.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="192.0" y1="439.1" x2="158.5" y2="473.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="141.5" y2="473.1"></svg:line>
+          <svg:line x1="158.5" y1="473.1" x2="194.0" y2="473.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="194.0" y2="491.1"></svg:line>
+          <svg:line x1="3.0" y1="491.1" x2="3.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="473.1" x2="25.0" y2="136.1"></svg:line>
+          <svg:line x1="3.0" y1="114.1" x2="139.0" y2="114.1"></svg:line>
+          <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
+        </svg:g>
+      </svg:g>
+      <svg:g filter="url(#glow)" stroke-linecap="round">
+        <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+        <svg:line x1="126.0" y1="216.0" x2="174.0" y2="216.0" stroke="#FF9A3C" stroke-width="1.4" opacity="0.25" stroke-dasharray="1.5 3"></svg:line>
+        <!---->
+        <svg:line x1="136.0" y1="115.0" x2="136.0" y2="137.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
+        <!---->
+      </svg:g>
+      <svg:g stroke-width="2.2" stroke-linecap="round" stroke="#4D4260">
+        <svg:line x1="141.5" y1="474" x2="141.5" y2="492" visibility="visible"></svg:line>
+        <svg:line x1="158.5" y1="474" x2="158.5" y2="492" visibility="visible"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect fill="url(#steel)" stroke="rgba(255, 255, 255, 0.06)" stroke-width="0.6" filter="url(#shadow)" x="167.0" y="79.0" width="54.0" height="2.6" rx="1.3"></svg:rect>
+        <svg:line stroke="rgba(255, 255, 255, 0.16)" stroke-width="0.7" x1="168.3" y1="79.5" x2="219.7" y2="79.5"></svg:line>
+      </svg:g>
+      <svg:g>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="168.8" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="177.3" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="185.8" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="194.3" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="202.8" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+        <svg:rect width="6.4" height="9" rx="1.6" stroke-width="0.6" x="211.3" y="82.5" fill="none" stroke="rgba(183, 156, 255, 0.3)" stroke-dasharray="1.2 1.2"></svg:rect>
+      </svg:g>
+      <svg:text class="caption" x="200" y="495" dominant-baseline="middle" letter-spacing="1.4">"DONE ↓"</svg:text>
+      <svg:g filter="url(#ballShadow)">
+        <svg:g transform="translate(146.2 123.6)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(147.3 216.3)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(144.5 87.7)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(159.7 462.1)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(123.9 67.8)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(15.2 126.0)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(149.7 474.0)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(146.9 234.8)" opacity="1.0">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(113.2 57.8)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(178.7 65.3)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(168.1 75.3)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(149.4 72.6)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(138.1 62.8)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(158.0 85.6)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(134.6 77.7)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+        <svg:g transform="translate(160.3 62.5)" opacity="0.8">
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
+        </svg:g>
+      </svg:g>
+      <svg:g style="mix-blend-mode: screen" fill="#FF9A3C">
+        <svg:circle r="0.9" cx="149.4" cy="226.1" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="155.4" cy="222.2" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="129.2" cy="219.7" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="131.5" cy="223.8" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="140.6" cy="230.8" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="150.9" cy="222.0" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="163.4" cy="218.2" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="126.2" cy="218.8" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="134.0" cy="225.3" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="173.4" cy="225.2" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="163.1" cy="226.0" opacity="0.8"></svg:circle>
+        <svg:circle r="0.9" cx="173.1" cy="229.4" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="160.0" cy="220.4" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="136.2" cy="219.4" opacity="1.0"></svg:circle>
+        <svg:circle r="0.9" cx="143.6" cy="224.7" opacity="0.8"></svg:circle>
+        <svg:circle r="0.9" cx="164.3" cy="220.8" opacity="1.0"></svg:circle>
+      </svg:g>
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="93.0" fill="#FF5C5C">"IN THE MACHINE"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="107.0" fill="#FF5C5C">"6 of 6"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="100.0" y2="100.0" stroke="rgba(255, 92, 92, 0.45)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="100.0" fill="rgba(255, 92, 92, 0.45)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="189.0" fill="#8F87A1">"PER BATCH"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="203.0" fill="#F1EDF7">"bucket 0 of 3"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="196.0" y2="196.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="196.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+      <svg:g>
+        <svg:text class="caption" x="284" dominant-baseline="middle" letter-spacing="1.3" y="449.0" fill="#8F87A1">"CHECK"</svg:text>
+        <svg:text class="value" x="284" dominant-baseline="middle" y="463.0" fill="#F1EDF7">"some balls fail"</svg:text>
+        <svg:line x1="278" x2="262" stroke-width="0.7" y1="456.0" y2="456.0" stroke="rgba(143, 135, 161, 0.3)"></svg:line>
+        <svg:circle cx="262" r="1.2" cy="456.0" fill="rgba(143, 135, 161, 0.3)"></svg:circle>
+      </svg:g>
+      <!---->
+    </svg:svg>
+    <p class="tally">
+      <b>"1.8"</b>
+      " balls/s · last "
+      "10"
+      <!---->
+      " s: "
+      "18"
+      <!---->
+      " done · "
+      "4"
+      <!---->
+      " failed"
+    </p>
+    <div class="knobs">
+      <label class="knob">
+        "At once "
+        <output>"6"</output>
+        <input id="at-once" type="range" min="1" max="8" .value="6">
+      </label>
+      <label class="knob">
+        "Per batch "
+        <output>"3"</output>
+        <input id="per-batch" type="range" min="1" max="5" .value="3">
+      </label>
+    </div>
+  </main>
+</body>

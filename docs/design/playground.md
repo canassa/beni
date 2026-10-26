@@ -260,6 +260,15 @@ for `browser-tea` do not build for it yet.
 *Amended 2026-10-15, issue #143:* a sample can have a CSS file next to its `.beni`, which opens in
 the CSS pane with it (§4.6, *The samples' CSS*).
 
+*Amended 2026-10-26, issue #1041:* a fourth sample, the ball machine of the beni site's flow page,
+on `browser-tea`: four fibers run the control program the page shows, a fifth steps the physics,
+and `view` draws the machine as one SVG scene. Its `.beni` is the fixture
+`tests/corpus/browser/tea/BallMachine.beni`, which drives the sample itself on the page's
+virtual clock, and `zig build playground` copies it into the site as
+`samples/browser-tea/BallMachine.beni`, as it copies TodoMVC; its CSS is
+`playground/samples/browser-tea/BallMachine.css`. The machine is dark in both schemes: in the
+light one it is a dark panel on a light page (§4.6, *The samples' look*).
+
 ### 4.4 The tabs (second pull request)
 
 The emitted JavaScript, `beni dump --stage=types` and `beni dump --stage=ownership`, each from

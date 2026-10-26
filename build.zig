@@ -839,6 +839,12 @@ pub fn build(b: *std.Build) void {
         .{ .custom = playground_dir ++ "/samples/browser-tea" },
         "TodoMVC.beni",
     ).step);
+    // So is the ball machine, kept once, where its fixture keeps it.
+    playground_step.dependOn(&b.addInstallFileWithDir(
+        b.path("tests/corpus/browser/tea/BallMachine.beni"),
+        .{ .custom = playground_dir ++ "/samples/browser-tea" },
+        "BallMachine.beni",
+    ).step);
     // That compiler against the native one, on every `run/` and
     // `browser/tea/` and `browser/inline/` program and on TodoMVC (§6). Not a gate: the LLVM
     // compile of the `.wasm` is about a minute and a half on one thread.
