@@ -93,7 +93,7 @@ core/List.beni                List.base           f7b4ab9953b93387b3b97c7a208e8e
 core/List.beni                List.offset         5948d15f79c5fcf2e08b0551efa79a14e510ec0f2692d484eb87af0031b2be42
 core/List.beni                List.builder        645a748dd8bcb4c54c0ca308e90a5dedc3eee2dbc75853b3f06dfc88fdbb1457
 core/List.beni                List.done           8de0b0d2c17f15f08179cbffbf02c3d0d1919f43051421bc7906293d01106e56
-core/List.beni                List.sortWith       90c95d87855f2cbdeb2597e9aea6eb1dac01d74efb53bd7b69cccb7dc385607f
+core/List.beni                List.sortWith       b7ab5497f8a3445190b8f8991206e5a404f9c6958952bd9cd71b42a736149f13
 core/List.beni                List.sortRange      0134063b20980d610914834d38143a1b4228099b304f737e9855d3e55b26da76
 core/List.beni                List.merge          0da98002cbed9a8d853f8e63667c3e92b9936c31bebaff553292a0e76575eac9
 core/List.js                  List.length         d29c060851c95a74574b0b333e8a30676150e7f03f8914826cb37d5e931beaa4
@@ -109,6 +109,9 @@ core/Deferred.beni            Deferred.wait       0fd1fc2cab0c05d7c85a302622b729
 core/Deferred.beni            Deferred.complete   5240fc4c43112afc24e2da942985a7e844c2f8bde0ed346e5d968b0917f8a8cd
 core/Deferred.beni            Deferred.poll       9286e70f17e95d2be61f79072690c0746ca29c891569dbdbd8b9c9162c079d46
 core/Deferred.beni            Deferred.isDone     d9cfc7ce6721be29aa4de6e445f580e49b777719476070be540a97483bfa3963
+core/List.beni                List.cons           41d3cb1371fbae9bb627a157b538207990d21f197cfaffe36f110636d5694e05
+core/List.beni                List.sliceOf        6885afa24a036f93011b1e76cf30bf6901ba4888ca9e270845d4cdee8271e50a
+core/List.beni                List.focus          6a24ae82b9f8399007a33a8a228f5b75772d7804d66bcac4f945c887179ef524
 #
 # The index obligation (ownership-v2.md §2.13.6, R-5.10.7): every body that
 # reads a container through a `taken` result — `traverseAt` — reads it only
@@ -138,7 +141,7 @@ core/List.beni                List.flatHead       d0492c898af706767bf565e1b2e5c6
 core/List.beni                List.flatTree       f6830376677670d5e6fc72ed46ce281c703176d2d516c455b970f643c3b765a1
 core/List.beni                List.copyTo         705002e88d04202788e469f625722809c16800c026a533f615797359d4e3a0b6
 core/List.beni                List.outside        0594d03e19da6c6293ae524e0143cf29eafd9a36a0d7bcde586add1e96ba3ee5
-core/List.beni                List.unsafeGet      64231f61fabf7d24627e28578bc55ca100b99443a283bbd34c09bd2dfc5b41b4
+core/List.beni                List.unsafeGet      6408f56503e532c9cc8dbc5d5be617c6662b82ec60cdb90addcc7ca3eae68149
 core/List.beni                List.trieSet        4cd662e6be3cbc64a1218ff95e1001b411315599be9fc06c32e8751ec12fd13f
 core/List.js                  List.at             718de89caa80d73751fbec4b523d6a71a63100d7a8f1a7c7aded3796c827c80a
 core/List.beni                List.fromPlain      530f3b09f32cd999fdec18f474cf5420d60edef5c307504ca98847aa95053292
@@ -157,11 +160,17 @@ core/List.beni                List.triePush       f13a52d28c228f55a932610f31c2ab
 core/List.beni                List.claim          30f7105393dd3ad36e5b1c79bbdaabab4db2b234f38c33e2d1c763ab3bdb9b7d
 core/List.beni                List.treeRight      b2e19afd38f659ab811b1b8903cb67d18348e5227f50296d6824a345c7d07f98
 core/List.beni                List.rightGrow      af6f3773f17db453c90ec40d4525a0bbb41d92e7b0dbc22d7fe95923c9321267
-core/List.beni                List.copy           4c1dfa4ab911c8c1115159b2667f28bdb29395c996928ac51a3eeacb90bd1f32
+core/List.beni                List.copy           783a7a1af5d026d8926ea60a6993dfee60244e28035de7953215f5f28bb5f5a2
 core/List.beni                List.plainOf        50e673fd3a34d122bc7cac5c74b2b2354526df336e4b3f8999c686e561df2948
 core/List.beni                List.triePushed     51f692fddaff6c37093d4082c76d0a07fb581c90892adba38777315c5d1f89d7
 core/List.beni                List.fillTail       4324642e605f5505f297b954e5a623ce16b4bcc6da49a83dbbc1f40ff9d84793
 core/List.beni                List.pushedLeaves   dc5114a9a53b06743a6e2ccbacab71ccb110879b0a6526be39e754f305705b44
+core/List.beni                List.slice          d4c5f6ef37f9523702b6d92b6e63b8131782d34bbe2f4a9b75cde5ca78c560ae
+core/List.js                  List.half           848d765d16275cad92806425a08879f9c96ac9a6bb984528df138aa05ca82c40
+core/List.beni                List.putAll         e6c37945fa31366e41a1cda5cd2f29241628bbac6143444353a4f29333f3d8d3
+core/List.beni                List.clampIndex     097faaf7e66db482209cb80344bc2fe323f23fb5655451e8f51927b630e9cff4
+core/List.beni                List.reconsed       d32dd348086989ff56d0e0b952435571293f9882d198b44f3c242a966c62d769
+core/List.beni                List.pushFrom       387a6efcfeba6d91aedf21c990dcb3346007792d88bb4830c08fb5f6c6445304
 tests/platforms/entry/Start.beni   Start.launch        d4fe8e66cf4e5382f6e3612c4cbc2092d3d329438f676650e05eb04cb6309bf3
 tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89dda71eea5a8bc22eee381899554e3dac145e946e4fc87
 # The code generator's inlined forms of List's `at`, `traverseAt`, `put`,
