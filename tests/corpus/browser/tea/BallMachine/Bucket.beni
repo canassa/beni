@@ -1,0 +1,39 @@
+--! Fill the bucket, with a deadline after the first ball lands.
+
+import Duration exposing (Duration)
+import Physics exposing (Ball)
+import Queue exposing (Queue)
+import Sensor
+import Task
+
+
+--| The bucket under the chute: its gate lets in up to `n` balls.
+pub type alias Bucket =
+    open : Int → ⊤
+    close : ⊤ → ⊤
+    landed : Queue Ball
+    settled : Queue ⊤
+
+
+--| Let balls into the bucket until it holds `n`, or until `window` after
+--| the first one landed, then shut its gate and wait until they lie still.
+pub fill : Bucket, Int, Duration → ⊤
+fill bucket n window =
+    bucket.open n
+    _ = Sensor.waitBall bucket.landed
+    _ = Task.timeout window λ⊤ → List.map (List.range 2 n) λ_ → Sensor.waitBall bucket.landed
+    bucket.close ⊤
+    drain bucket.landed
+    _ = Queue.take bucket.settled
+    ⊤
+
+
+-- What a wait cut short by its timeout left behind.
+drain : Queue a → ⊤
+drain q =
+    case Queue.poll q of
+        Just _ →
+            drain q
+
+        Nothing →
+            ⊤

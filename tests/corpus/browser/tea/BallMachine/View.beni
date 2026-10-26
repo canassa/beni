@@ -1,0 +1,702 @@
+--! Draw the machine and its controls.
+
+import Html exposing (Html)
+import Machine exposing (Machine)
+import Physics exposing (Ball, World, r, cx, hopTop, gateA, bayTop, bayBottom, gateB, bucketTop, trap, intake, exitY, floorY, half, door, pipe, funnel, box, out, Stage, Pool, Inside, Done, Returning, Route, ToLeft, ToRight, held, inBucket, walls, Fixed)
+
+
+--| The page's model: the last picture of the world, and the machine once
+--| it runs.
+pub type alias Model =
+    world : World
+    machine : Maybe Machine
+    atOnce : Int
+    perBatch : Int
+
+
+pub type Msg
+    = Built Machine
+    | Stepped World
+    | SetAtOnce String
+    | SetPerBatch String
+    | Reset
+
+
+steelHi : String
+steelHi = "#4D4260"
+
+
+steel : String
+steel = "#2C2438"
+
+
+steelLo : String
+steelLo = "#17121F"
+
+
+orange : String
+orange = "#FF9A3C"
+
+
+red : String
+red = "#FF5C5C"
+
+
+violet : String
+violet = "#B79CFF"
+
+
+muted : String
+muted = "#8F87A1"
+
+
+ink : String
+ink = "#F1EDF7"
+
+
+dim : String
+dim = "rgba(143, 135, 161, 0.3)"
+
+
+-- A number for an attribute, to a tenth.
+n1 : Float → String
+n1 x = String.fromFloat (toFloat (round (x * 10)) / 10)
+
+
+score : World → String
+score w =
+    span = min w.t 10
+    if span > 1 then
+        tenths = round (toFloat (List.length (List.filter w.events λev → ev.1)) / span * 10)
+        "${tenths // 10}.${Int.mod tenths 10}"
+    else
+        "–"
+
+
+tally : World → Html Msg
+tally w =
+    span = round (min w.t 10)
+    done = List.length (List.filter w.events λev → ev.1)
+    failed = List.length (List.filter w.events λev → not ev.1)
+    <p class="tally"><b>{score w}</b> balls/s · last {span} s: {done} done · {failed} failed</p>
+
+
+pub view : Model → Html Msg
+view model =
+    w = model.world
+    free = w.atOnce - held w
+    sleeper =
+        Maybe.map
+            (List.head
+                (List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+                    b.arrivedAt
+                )
+            )
+            λb → b.id
+    <main class="machine">
+        <section class="controls" aria-label="Machine controls">
+            <div class="knobs">
+                <label class="knob">
+                    At once <output>{model.atOnce}</output>
+                    <input
+                        id="at-once"
+                        type="range"
+                        min="1"
+                        max="8"
+                        value={String.fromInt model.atOnce}
+                        onInput={SetAtOnce}
+                    />
+                </label>
+                <label class="knob">
+                    Per batch <output>{model.perBatch}</output>
+                    <input
+                        id="per-batch"
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={String.fromInt model.perBatch}
+                        onInput={SetPerBatch}
+                    />
+                </label>
+            </div>
+            <p id="cap-note" class="cap-note" hidden={model.perBatch ≤ model.atOnce}>
+                The bucket can't hold more balls than are allowed in at once: raise “At once” to fill it.
+            </p>
+            <div class="machine-status">
+                {tally w}
+                <button id="again" type="button" onClick={Reset}>Reset the counts</button>
+            </div>
+        </section>
+        <svg
+            viewBox="-12 0 412 560"
+            role="img"
+            aria-label="A ball machine: balls wait for room to enter, fill a bucket that a trapdoor drops down a pipe, and are checked at the bottom; failed ones are blown back up a tube to try again."
+        >
+            {defs}
+            {backdrop}
+            {
+                -- The return tube, its air running toward the chute.
+            }
+            <g class="tube">
+                <path
+                    d={tubePath}
+                    fill="none"
+                    stroke={steel}
+                    stroke-width="26"
+                    stroke-linejoin="round"
+                    filter="url(#shadow)"
+                />
+                <path
+                    d={tubePath}
+                    fill="none"
+                    stroke={steelLo}
+                    stroke-width="19"
+                    stroke-linejoin="round"
+                />
+                <path
+                    class="air"
+                    d={tubePath}
+                    fill="none"
+                    stroke="rgba(255, 92, 92, 0.3)"
+                    stroke-width="0.8"
+                    stroke-dasharray="2 7"
+                />
+                <text
+                    class="caption"
+                    fill={muted}
+                    x="0"
+                    y="0"
+                    transform="translate(-4 305.5) rotate(-90)"
+                    text-anchor="middle"
+                    dominant-baseline="middle"
+                    letter-spacing="1.8"
+                >
+                    RETRY
+                </text>
+            </g>
+            {
+                -- The hopper: glass with a rim.
+            }
+            <g>
+                <path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperGlass)" />
+                <path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperShade)" />
+                <line
+                    x1="68"
+                    y1="21"
+                    x2="129"
+                    y2="84"
+                    stroke="rgba(255, 255, 255, 0.13)"
+                    stroke-width="1.2"
+                />
+                {plate 51 10 198 5 2.5}
+            </g>
+            {glass (cx - half) gateA (half * 2) (gateB - gateA)}
+            {
+                -- The bucket: a metal body with a rim.
+            }
+            <path
+                d="M104 176 L196 176 L174 216 L126 216 Z"
+                fill="url(#bucketSteel)"
+                filter="url(#shadow)"
+            />
+            {plate 101 173 98 4.5 2.2}
+            {glass (cx - pipe) (trap + 4) (pipe * 2) (intake - trap - 4)}
+            {
+                -- The check: a housing around the funnel, with vents and a display.
+            }
+            {plate 94 434 112 66 4}
+            <path d="M108 440 L192 440 L158.5 474 L141.5 474 Z" fill="rgba(11, 8, 16, 0.75)" />
+            <rect x="141.5" y="474" width="17" height="18" fill="rgba(11, 8, 16, 0.8)" />
+            <rect x="158.5" y="474" width="35.5" height="18" fill="rgba(11, 8, 16, 0.8)" />
+            <g fill="rgba(0, 0, 0, 0.45)">
+                <rect x="95.5" y="444" width="7" height="1" />
+                <rect x="95.5" y="447" width="7" height="1" />
+                <rect x="95.5" y="450" width="7" height="1" />
+                <rect x="197.5" y="444" width="7" height="1" />
+                <rect x="197.5" y="447" width="7" height="1" />
+                <rect x="197.5" y="450" width="7" height="1" />
+            </g>
+            {flange cx (intake - 1) (pipe * 2 + 10)}
+            <rect
+                x="128"
+                y="498"
+                width="44"
+                height="12"
+                rx="2"
+                fill="#0B0810"
+                stroke="rgba(255, 154, 60, 0.25)"
+                stroke-width="0.6"
+            />
+            <text
+                class="display"
+                x="150"
+                y="504.5"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill={orange}
+            >
+                {score w}/s
+            </text>
+            <circle cx="180" cy="504" r="1.6" fill={if w.t - w.passAt < 0.4 then orange else dim} />
+            <circle cx="186" cy="504" r="1.6" fill={if w.t - w.failAt < 0.5 then red else dim} />
+            {
+                -- Light pools: each shut gate lights what is around it.
+            }
+            <g class="pools">
+                <circle
+                    cx="150"
+                    cy="94"
+                    r="34"
+                    fill={if free ≤ 0 then "url(#poolRed)" else "url(#poolViolet)"}
+                    opacity={if w.entry ≤ 0 then "0.16" else "0"}
+                />
+                <circle
+                    cx="150"
+                    cy="172"
+                    r="28"
+                    fill="url(#poolOrange)"
+                    opacity={if w.bucketDoor ≤ 0 then "0.1" else "0"}
+                />
+                <circle
+                    cx="150"
+                    cy={if w.trapOpen then "226" else "216"}
+                    r={if w.trapOpen then "46" else "36"}
+                    fill="url(#poolOrange)"
+                    opacity={if w.trapOpen then "0.22" else "0.12"}
+                />
+                <circle
+                    cx="136"
+                    cy="126"
+                    r="24"
+                    fill="url(#poolRed)"
+                    opacity={if w.bayDoor ≤ 0 then "0.12" else "0"}
+                />
+            </g>
+            {
+                -- The pipe's light, running down with the flow.
+            }
+            <g
+                clip-path="url(#pipeClip)"
+                stroke="rgba(255, 154, 60, 0.16)"
+                stroke-width="0.9"
+                stroke-dasharray="5 16"
+            >
+                <line class="flow" x1="135.7" y1="220" x2="135.7" y2="440" />
+                <line class="flow" x1="150" y1="220" x2="150" y2="440" />
+                <line class="flow" x1="164.3" y1="220" x2="164.3" y2="440" />
+            </g>
+            {flange cx (trap + 5) (pipe * 2 + 10)}
+            {
+                -- The bucket's lights: how full it is.
+            }
+            <g>
+                <For each={List.range 0 (w.perBatch - 1)} keyed={False}>
+                    {λk →
+                        <circle
+                            cx={n1 (cx + 30 + toFloat k * 5)}
+                            cy="185"
+                            r="1.4"
+                            fill={if k < inBucket w then orange else dim}
+                        />
+                    }
+                </For>
+            </g>
+            <g fill="#5E5272">
+                <circle cx="97.5" cy="437.5" r="1.1" />
+                <circle cx="202.5" cy="437.5" r="1.1" />
+                <circle cx="97.5" cy="496.5" r="1.1" />
+                <circle cx="202.5" cy="496.5" r="1.1" />
+            </g>
+            {rods}
+            {
+                -- The gates the program works: glowing while shut, a faint dashed line while open.
+            }
+            <g filter="url(#glow)" stroke-linecap="round">
+                {viewGate
+                    (cx - half)
+                    gateA
+                    (cx + half)
+                    gateA
+                    (w.entry ≤ 0)
+                    (if free ≤ 0 then red else violet)
+                }
+                {viewGate (cx - half) gateB (cx + half) gateB (w.bucketDoor ≤ 0) orange}
+                {viewGate (cx - door) trap (cx + door) trap (not w.trapOpen) orange}
+                {viewGate (cx - half - 3) bayTop (cx - half - 3) bayBottom (w.bayDoor ≤ 0) red}
+            </g>
+            <g stroke={steelHi} stroke-width="2.2" stroke-linecap="round">
+                <line
+                    x1="141.5"
+                    y1="474"
+                    x2="141.5"
+                    y2="492"
+                    visibility={if w.flap == Just ToLeft then "hidden" else "visible"}
+                />
+                <line
+                    x1="158.5"
+                    y1="474"
+                    x2="158.5"
+                    y2="492"
+                    visibility={if w.flap == Just ToRight then "hidden" else "visible"}
+                />
+            </g>
+            {
+                -- The room rack beside the entry gate.
+            }
+            {plate (cx + 17) (gateA - 15) (toFloat w.atOnce * 8.5 + 3) 2.6 1.3}
+            <g>
+                <For each={List.range 0 (w.atOnce - 1)} keyed={False}>
+                    {λk → viewChip (cx + 22 + toFloat k * 8.5) (gateA - 7) (k < free)}
+                </For>
+            </g>
+            <text
+                class="caption"
+                fill={muted}
+                x="200"
+                y="495"
+                dominant-baseline="middle"
+                letter-spacing="1.4"
+            >
+                DONE ↓
+            </text>
+            <g filter="url(#ballShadow)">
+                <For each={w.balls} keyed={.id}>
+                    {λb → viewBall w sleeper b}
+                </For>
+            </g>
+            <g fill={orange} style="mix-blend-mode: screen">
+                <For each={w.sparks} keyed={False}>
+                    {λs →
+                        <circle
+                            cx={n1 s.x}
+                            cy={n1 s.y}
+                            r="0.9"
+                            opacity={n1 (min 1 (s.life * 2.5))}
+                        />
+                    }
+                </For>
+            </g>
+            {viewLabel "IN THE MACHINE" "${w.atOnce - free} of ${w.atOnce}" (gateA + 6) (free ≤ 0)}
+            {viewLabel
+                "PER BATCH"
+                "bucket ${inBucket w} of ${w.perBatch}"
+                ((bucketTop + trap) / 2)
+                (w.perBatch > w.atOnce)
+            }
+            {viewLabel "CHECK" "some balls fail" (intake + 16) False}
+        </svg>
+    </main>
+
+
+tubePath : String
+tubePath = "M141.5 483 L14 483 L14 126 L136 126"
+
+
+viewBall : World, Maybe Int, Ball → Html Msg
+viewBall w sleeper b =
+    fillUrl =
+        if b.stage == Done then
+            "url(#ballDone)"
+        else if b.red then
+            "url(#ballRed)"
+        else
+            "url(#ballOrange)"
+    waiting = sleeper == Just b.id
+    wait = 0.2 * toFloat (2 ^ b.attempts)
+    rest = if waiting then clamp (1 - (w.t - max b.waitFrom w.bayFree) / wait) 0 1 else 0
+    opacity = max 0 b.alpha * (if b.stage == Pool then 0.8 else 1)
+    <g transform={"translate(${n1 b.x} ${n1 b.y})"} opacity={n1 opacity}>
+        <circle r="7.5" fill={fillUrl} />
+        <circle
+            r="9.1"
+            fill="none"
+            stroke="rgba(183, 156, 255, 0.95)"
+            stroke-width="0.9"
+            visibility={if b.token then "visible" else "hidden"}
+        />
+        <circle
+            r="11.3"
+            fill="none"
+            stroke={red}
+            stroke-width="1.2"
+            transform="rotate(-90)"
+            pathLength="1"
+            stroke-dasharray={"${n1 rest} 1"}
+            visibility={if waiting then "visible" else "hidden"}
+        />
+    </g>
+
+
+viewGate : Float, Float, Float, Float, Bool, String → Html Msg
+viewGate ax ay bx by shut colour =
+    <line
+        x1={n1 ax}
+        y1={n1 ay}
+        x2={n1 bx}
+        y2={n1 by}
+        stroke={colour}
+        stroke-width={if shut then "2.6" else "1.4"}
+        opacity={if shut then "1" else "0.25"}
+        stroke-dasharray={if shut then "none" else "1.5 3"}
+    />
+
+
+viewChip : Float, Float, Bool → Html Msg
+viewChip x y lit =
+    <rect
+        x={n1 (x - 3.2)}
+        y={n1 (y - 4.5)}
+        width="6.4"
+        height="9"
+        rx="1.6"
+        fill={if lit then "url(#chip)" else "none"}
+        stroke={if lit then "none" else "rgba(183, 156, 255, 0.3)"}
+        stroke-width="0.6"
+        stroke-dasharray={if lit then "none" else "1.2 1.2"}
+    />
+
+
+viewLabel : String, String, Float, Bool → Html Msg
+viewLabel title value y warn =
+    <g>
+        <text
+            class="caption"
+            x="284"
+            y={n1 (y - 7)}
+            dominant-baseline="middle"
+            letter-spacing="1.3"
+            fill={if warn then red else muted}
+        >
+            {title}
+        </text>
+        <text
+            class="value"
+            x="284"
+            y={n1 (y + 7)}
+            dominant-baseline="middle"
+            fill={if warn then red else ink}
+        >
+            {value}
+        </text>
+        <line
+            x1="278"
+            y1={n1 y}
+            x2="262"
+            y2={n1 y}
+            stroke={if warn then "rgba(255, 92, 92, 0.45)" else "rgba(143, 135, 161, 0.3)"}
+            stroke-width="0.7"
+        />
+        <circle
+            cx="262"
+            cy={n1 y}
+            r="1.2"
+            fill={if warn then "rgba(255, 92, 92, 0.45)" else "rgba(143, 135, 161, 0.3)"}
+        />
+    </g>
+
+
+-- A metal plate: a soft shadow under it, shaded top to bottom, a bright top edge.
+plate : Float, Float, Float, Float, Float → Html Msg
+plate x y width height radius =
+    <g>
+        <rect
+            x={n1 x}
+            y={n1 y}
+            width={n1 width}
+            height={n1 height}
+            rx={n1 radius}
+            fill="url(#steel)"
+            stroke="rgba(255, 255, 255, 0.06)"
+            stroke-width="0.6"
+            filter="url(#shadow)"
+        />
+        <line
+            x1={n1 (x + radius)}
+            y1={n1 (y + 0.5)}
+            x2={n1 (x + width - radius)}
+            y2={n1 (y + 0.5)}
+            stroke="rgba(255, 255, 255, 0.16)"
+            stroke-width="0.7"
+        />
+    </g>
+
+
+-- A flange where two parts join: a collar with a bolt at each end.
+flange : Float, Float, Float → Html Msg
+flange x y width =
+    <g>
+        {plate (x - width / 2) (y - 2.6) width 5.2 1.8}
+        <circle cx={n1 (x - width / 2 + 3.2)} cy={n1 y} r="1.4" fill="url(#bolt)" />
+        <circle cx={n1 (x + width / 2 - 3.2)} cy={n1 y} r="1.4" fill="url(#bolt)" />
+    </g>
+
+
+-- Glass: bright edges, a darker core, a specular band down the left.
+glass : Float, Float, Float, Float → Html Msg
+glass x y width height =
+    <g>
+        <rect x={n1 x} y={n1 y} width={n1 width} height={n1 height} fill="url(#glass)" />
+        <rect
+            x={n1 (x + width * 0.12 - 2)}
+            y={n1 (y + 2)}
+            width="4"
+            height={n1 (height - 4)}
+            fill="url(#sheen)"
+        />
+    </g>
+
+
+-- The walls: rounded metal rods with a highlight along their tops.
+rods : Html Msg
+rods =
+    fixed = List.filter walls λwl → wl.part == Fixed
+    <g stroke-linecap="round">
+        <g stroke={steel} stroke-width="3.4" filter="url(#rodShadow)">
+            <For each={fixed} keyed={False}>
+                {λwl → <line x1={n1 wl.ax} y1={n1 wl.ay} x2={n1 wl.bx} y2={n1 wl.by} />}
+            </For>
+        </g>
+        <g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
+            <For each={fixed} keyed={False}>
+                {λwl →
+                    <line x1={n1 wl.ax} y1={n1 (wl.ay - 0.9)} x2={n1 wl.bx} y2={n1 (wl.by - 0.9)} />
+                }
+            </For>
+        </g>
+    </g>
+
+
+-- The backdrop: a faint dot grid, like a blueprint, and a violet glow, both
+-- fading out toward the edges.
+backdrop : Html Msg
+backdrop =
+    <g>
+        <rect x="-200" y="0" width="800" height="560" fill="url(#backGlow)" />
+        <rect x="-200" y="0" width="800" height="560" fill="url(#dots)" mask="url(#fade)" />
+    </g>
+
+
+defs : Html Msg
+defs =
+    <defs>
+        <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4D4260" />
+            <stop offset="0.5" stop-color="#2C2438" />
+            <stop offset="1" stop-color="#17121F" />
+        </linearGradient>
+        <linearGradient id="bucketSteel" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#17121F" />
+            <stop offset="0.32" stop-color="#4D4260" />
+            <stop offset="1" stop-color="#17121F" />
+        </linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11" />
+            <stop offset="0.1" stop-color="#FFFFFF" stop-opacity="0.025" />
+            <stop offset="0.5" stop-color="#0A0610" stop-opacity="0.12" />
+            <stop offset="0.9" stop-color="#FFFFFF" stop-opacity="0.025" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08" />
+        </linearGradient>
+        <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0" />
+            <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.12" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="hopperGlass" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07" />
+            <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.02" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04" />
+        </linearGradient>
+        <linearGradient id="hopperShade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#17121F" stop-opacity="0" />
+            <stop offset="1" stop-color="#17121F" stop-opacity="0.45" />
+        </linearGradient>
+        <linearGradient id="chip" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#D8C9FF" />
+            <stop offset="1" stop-color="#8E6BEA" />
+        </linearGradient>
+        <radialGradient id="bolt" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.35">
+            <stop offset="0" stop-color="#9A8EB0" />
+            <stop offset="1" stop-color="#17121F" />
+        </radialGradient>
+        <radialGradient id="ballOrange" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFE3BF" />
+            <stop offset="0.5" stop-color="#FF9A3C" />
+            <stop offset="1" stop-color="#C9631A" />
+        </radialGradient>
+        <radialGradient id="ballRed" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFC4BE" />
+            <stop offset="0.5" stop-color="#FF5C5C" />
+            <stop offset="1" stop-color="#B32E36" />
+        </radialGradient>
+        <radialGradient id="ballDone" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFFFFF" />
+            <stop offset="0.5" stop-color="#F1EDF7" />
+            <stop offset="1" stop-color="#9F97AF" />
+        </radialGradient>
+        <radialGradient id="poolViolet">
+            <stop offset="0" stop-color="#B79CFF" />
+            <stop offset="1" stop-color="#B79CFF" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="poolRed">
+            <stop offset="0" stop-color="#FF5C5C" />
+            <stop offset="1" stop-color="#FF5C5C" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="poolOrange">
+            <stop offset="0" stop-color="#FF9A3C" />
+            <stop offset="1" stop-color="#FF9A3C" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="backGlow" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="255">
+            <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.1" />
+            <stop offset="1" stop-color="#8B5CF6" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="fadeOut" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="280">
+            <stop offset="0" stop-color="#FFFFFF" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+        </radialGradient>
+        <mask id="fade">
+            <rect x="-200" y="0" width="800" height="560" fill="url(#fadeOut)" />
+        </mask>
+        <pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+            <rect x="7" y="7" width="0.8" height="0.8" fill="#B79CFF" fill-opacity="0.1" />
+        </pattern>
+        <clipPath id="pipeClip">
+            <rect x="124" y="220" width="52" height="220" />
+        </clipPath>
+        <filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
+            <feOffset "dy"="3" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.55" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+            <feOffset "dy"="1.5" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.55" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" />
+            <feOffset "dy"="1.5" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.5" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>

@@ -3,7 +3,7 @@
 //
 // The worker compiles `beni.wasm` once to a `WebAssembly.Module` and runs
 // each command on a new instance with a new file system (§3, rule 1). A
-// request is `{ id, command, platform, source }`, where `command` is
+// request is `{ id, command, platform, files }`, where `command` is
 // `build`, `types` or `ownership` (§4.4); the answer is
 // `{ kind: "result", id, command, code, crash, crashKind, stdout, stderr,
 // files, ms }`, where `crashKind` is `stack` or `trap` (§3, rule 7),
@@ -36,15 +36,15 @@ const compiler = load();
 
 // The arguments of each command, after the platform flag.
 const commands = {
-  build: (platform) => ["beni", "build", platform, "--no-cache", "--no-source-maps", "--diagnostics=json", "Main.beni"],
-  types: (platform) => ["beni", "dump", "--stage=types", platform, "--diagnostics=json", "Main.beni"],
-  ownership: (platform) => ["beni", "dump", "--stage=ownership", platform, "--diagnostics=json", "Main.beni"],
+  build: (platform) => ["beni", "build", platform, "--no-cache", "--no-source-maps", "--diagnostics=json", "."],
+  types: (platform) => ["beni", "dump", "--stage=types", platform, "--diagnostics=json", "."],
+  ownership: (platform) => ["beni", "dump", "--stage=ownership", platform, "--diagnostics=json", "."],
 };
 
 self.addEventListener("message", async ({ data }) => {
   const module = await compiler;
   const started = performance.now();
-  const root = directoryOf({ "Main.beni": data.source });
+  const root = directoryOf(data.files);
   const args = commands[data.command](`--platform=${data.platform}`);
   const result = await run(module, args, root);
   const files = {};

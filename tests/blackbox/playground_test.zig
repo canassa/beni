@@ -213,3 +213,25 @@ test "the shipped compiler takes the points-to fixpoint in the native compiler's
         try testing.expectEqual(native, try wasm.profileCounter(&w, "other", "profile.json", "spec_points_to_sweeps"));
     }
 }
+
+test "the ball machine project is byte-identical on native and WebAssembly" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const other: wasm.Other = .{ .wasm = wasm.wasmPath(w.arena.allocator()) orelse return error.NoWasmCompiler };
+    const path = "tests/corpus/browser/tea/BallMachine";
+    var dir = try std.Io.Dir.cwd().openDir(testing.io, path, .{ .iterate = true });
+    defer dir.close(testing.io);
+    var it = dir.iterate();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        try wasm.writeRepoFile(&w, try std.fs.path.join(w.arena.allocator(), &.{ path, entry.name }));
+    }
+    for (try commands(w.arena.allocator(), .page_tea, ".")) |args| {
+        const r = try wasm.expectSame(&w, args, other);
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+    }
+    for ([_][]const u8{ "--stage=types", "--stage=ownership" }) |stage| {
+        const r = try wasm.expectSame(&w, &.{ "dump", stage, "--platform=browser-tea", "--diagnostics=json", "." }, other);
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+    }
+}

@@ -173,6 +173,18 @@ if (mode === "positions") {
   check((await decode(`#${plain}&css=AAAA`)) === null, "a css that is not deflate data is no program");
   const hugeCss = await encode("node", "main = 1\n", "x".repeat(maxSource + 1));
   check((await decode(hugeCss)) === null, "a css that inflates past maxSource is no program");
+  // Whole projects, including a nested module, Unicode and the selected file.
+  const files = { "Main.beni": "import Math.Value\nmain = Math.Value.answer\n", "Math/Value.beni": "-- 😀\npub answer = 42\n" };
+  const project = await decode(await encode("node", files["Main.beni"], "body{}", files, "Math/Value.beni"));
+  check(JSON.stringify(project) === JSON.stringify({ platform: "node", source: files["Main.beni"], css: "body{}", files, focus: "Math/Value.beni" }), "a project link restores every module and the selected file");
+  const invalid = [null, [], 42, { "../Escape.beni": "x" }, { "/Main.beni": "x" }, { "Main.beni": "duplicate" }, { "Bad.beni": 42 }];
+  for (const modules of invalid) {
+    const payload = new URLSearchParams(await encode("node", JSON.stringify(modules))).get("code");
+    check(await decode(`${plain}&files=${payload}`) === null, `invalid project ${JSON.stringify(modules)} is refused`);
+  }
+  const tooLarge = { "More.beni": "😀".repeat(maxSource / 4) };
+  check(await decode(await encode("node", "x", "", tooLarge)) === null, "total project size is bounded in UTF-8 bytes");
+  check(await decode(await encode("node", "x", "", { "Other.beni": "x" }, "Missing.beni")) === null, "a missing focused module is a damaged project");
 } else if (mode === "syntax") {
   // Lines, and the name the grammar gives each piece of them (null for
   // none), in order; a piece not listed is not checked.
@@ -297,13 +309,18 @@ if (mode === "positions") {
   // benchmark's and the ball machine's is its fixture's, which `zig build
   // playground` copies in.
   const samples = JSON.parse(readFileSync("playground/samples/index.json", "utf8"));
-  const copied = { TodoMVC: "bench/todomvc/apps/beni/Sandbox.beni", "Ball machine": "tests/corpus/browser/tea/BallMachine.beni" };
+  const copied = { TodoMVC: "bench/todomvc/apps/beni/Sandbox.beni" };
   for (const sample of samples) {
-    const beni = copied[sample.name] ?? `playground/${sample.path}`;
-    check(existsSync(beni), `${sample.name}: ${beni} exists`);
+    const files = sample.files ?? { "Main.beni": sample.path };
+    check(Object.hasOwn(files, "Main.beni"), `${sample.name}: has an entry module`);
+    check(sample.focus === undefined || Object.hasOwn(files, sample.focus), `${sample.name}: its focused module exists`);
+    for (const [path, url] of Object.entries(files)) {
+      const beni = sample.name === "Ball machine" ? `tests/corpus/browser/tea/BallMachine/${path}` : copied[sample.name] ?? `playground/${url}`;
+      check(existsSync(beni), `${sample.name}: ${beni} exists`);
+    }
     if (sample.css === undefined) continue;
     check(existsSync(`playground/${sample.css}`), `${sample.name}: playground/${sample.css} exists`);
-    check(dirname(sample.css) === dirname(sample.path) && sample.css.endsWith(".css"), `${sample.name}: its CSS is next to its .beni`);
+    check(Object.values(files).every((url) => url.startsWith(`${dirname(sample.css)}/`)) && sample.css.endsWith(".css"), `${sample.name}: its CSS is next to its .beni`);
     // No sample loads anything from another site: an image is a `data:` URL.
     const text = readFileSync(`playground/${sample.css}`, "utf8");
     check(!/@import/i.test(text), `${sample.name}: its CSS imports no style sheet`);

@@ -9,6 +9,7 @@
   --body: #3d3a44;
   --muted: #55505f;
   --accent: #a64b00;
+  --warning: #a32336;
   --panel: #040205;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -22,6 +23,7 @@
     --body: #b5adc4;
     --muted: #8f87a1;
     --accent: #ff9a3c;
+    --warning: #ff8a80;
   }
 }
 
@@ -53,6 +55,54 @@ body {
   overflow: hidden;
   border-radius: 12px;
   background: var(--panel);
+}
+
+.controls {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: 10px;
+  background: var(--page);
+}
+
+.machine-status {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.controls .tally {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.controls button {
+  padding: 8px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: var(--page);
+  color: var(--accent);
+  font: 12px var(--sans);
+  cursor: pointer;
+}
+
+.controls button:focus-visible,
+.knob input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.cap-note {
+  margin: 0;
+  color: var(--warning);
+  font: 12px/1.5 var(--sans);
 }
 
 /* The words on the machine, on its dark backdrop in both schemes; their
@@ -116,8 +166,8 @@ body {
 
 .knobs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 16px 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .knob {
@@ -139,6 +189,8 @@ body {
 
 .knob input[type="range"] {
   flex-basis: 100%;
+  width: 100%;
+  min-width: 0;
   margin: 0;
   accent-color: var(--accent);
 }

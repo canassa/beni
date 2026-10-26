@@ -1,0 +1,18 @@
+--! A sensor waits for the next ball that passes it.
+
+import Physics exposing (Ball)
+import Queue exposing (Queue)
+import Task
+
+
+pub type alias Sensor =
+    Queue Ball
+
+
+pub waitBall : Sensor → Ball
+waitBall sensor =
+    case Queue.take sensor of
+        Just ball →
+            ball
+        Nothing →
+            Task.never ⊤

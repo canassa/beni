@@ -54,6 +54,8 @@ let notice = "";
 // known.
 let editor = null;
 let cssEditor = null;
+const sourceEditors = new Map();
+let activeFile = "Main.beni";
 // The CSS the newest frame got in its document (§4.6).
 let srcdocCss = "";
 let timer = 0;
@@ -105,7 +107,7 @@ function pump() {
   if (command === null) return;
   running = command;
   runningVersion = version;
-  worker.postMessage({ id: version, command, platform: platform.value, source: textOf(editor) });
+  worker.postMessage({ id: version, command, platform: platform.value, files: sourceFiles() });
   if (command === "build") setStatus("Compiling…");
 }
 
@@ -170,7 +172,9 @@ function diagnosticsOf(result) {
 }
 
 function showDiagnostics(list) {
-  markDiagnostics(editor, list.filter((d) => d.span.file === "Main.beni"));
+  for (const [path, { view }] of sourceEditors) {
+    markDiagnostics(view, list.filter((d) => d.span.file === path));
+  }
   if (list.length === 0) {
     const none = document.createElement("p");
     none.textContent = "No problems.";
@@ -183,10 +187,11 @@ function showDiagnostics(list) {
       title.type = "button";
       title.className = `diagnostic ${d.severity}`;
       title.textContent = `${d.title} — ${d.span.file}:${d.span.start.line}:${d.span.start.col}`;
-      if (d.span.file === "Main.beni") {
+      const source = sourceEditors.get(d.span.file);
+      if (source !== undefined) {
         title.addEventListener("click", () => {
-          select(document.querySelector('[data-file="editor"]'));
-          reveal(editor, d.span);
+          openSource(d.span.file);
+          reveal(source.view, d.span);
         });
       }
       return [title, preOf(d.message)];
@@ -197,7 +202,7 @@ function showDiagnostics(list) {
 function showBuild(result) {
   if (result.crash !== null) {
     setStatus(result.crashKind === "stack" ? "The compiler ran out of stack" : "The compiler crashed", "error");
-    markDiagnostics(editor, []);
+    for (const { view } of sourceEditors.values()) markDiagnostics(view, []);
     diagnosticsView.replaceChildren(preOf(`${result.stderr}${result.crash}
 `));
     return;
@@ -205,7 +210,7 @@ function showBuild(result) {
   const ms = `${Math.round(result.ms)} ms`;
   if (result.code === 2) {
     setStatus(`beni exited 2 (${ms})`, "error");
-    markDiagnostics(editor, []);
+    for (const { view } of sourceEditors.values()) markDiagnostics(view, []);
     diagnosticsView.replaceChildren(preOf(result.stderr));
     return;
   }
@@ -309,9 +314,62 @@ for (const tab of document.querySelectorAll("[data-tab]")) {
   });
 }
 
-// The source's tabs (§4.6): `Main.beni` and `style.css`.
+// Source tabs preserve each editor's history and diagnostics. Switching
+// files does not edit the project or restart its running program.
+function sourceFiles() {
+  return Object.fromEntries([...sourceEditors].map(([path, { view }]) => [path, textOf(view)]));
+}
+
+function openSource(path) {
+  activeFile = path;
+  const { tab } = sourceEditors.get(path);
+  select(tab);
+  tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function setProject(files, focus = "Main.beni") {
+  for (const [path, source] of sourceEditors) {
+    if (path === "Main.beni") continue;
+    source.view.destroy();
+    source.tab.remove();
+    source.panel.remove();
+  }
+  sourceEditors.clear();
+  diagnosticsView.replaceChildren();
+  const mainTab = document.querySelector('[data-file="editor"]');
+  sourceEditors.set("Main.beni", { view: editor, tab: mainTab, panel: $("editor") });
+  replaceText(editor, files["Main.beni"]);
+  markDiagnostics(editor, []);
+  for (const [path, content] of Object.entries(files)) {
+    if (path === "Main.beni") continue;
+    const id = `source-${sourceEditors.size}`;
+    const panel = document.createElement("div");
+    panel.id = id;
+    panel.className = "editor";
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-label", path);
+    panel.hidden = true;
+    $("css-editor").before(panel);
+    const tab = document.createElement("button");
+    tab.setAttribute("role", "tab");
+    tab.dataset.file = id;
+    tab.setAttribute("aria-controls", id);
+    tab.setAttribute("aria-selected", "false");
+    tab.textContent = path;
+    document.querySelector('[data-file="css-editor"]').before(tab);
+    const view = createEditor(panel, content, edited);
+    sourceEditors.set(path, { view, tab, panel });
+    tab.addEventListener("click", () => openSource(path));
+  }
+  openSource(Object.hasOwn(files, focus) ? focus : "Main.beni");
+}
+
+// The static Main.beni and style.css tabs.
 for (const tab of document.querySelectorAll("[data-file]")) {
-  tab.addEventListener("click", () => select(tab));
+  tab.addEventListener("click", () => {
+    if (tab.dataset.file === "editor") openSource("Main.beni");
+    else select(tab);
+  });
 }
 
 fileList.addEventListener("change", () => {
@@ -320,8 +378,8 @@ fileList.addEventListener("change", () => {
 
 platform.addEventListener("change", () => edited(true));
 
-// The samples (§4.3, §4.6): `samples/index.json` lists each one's name,
-// platform and file, and its CSS file if it has one.
+// The samples (§4.3, §4.6): a single path or a map of module paths to
+// site URLs, an optional focused module, and the program's CSS.
 const samples = JSON.parse(await text("samples/index.json"));
 sampleList.replaceChildren(...samples.map((s, i) => new Option(s.name, String(i))), new Option("(shared)", "shared"));
 
@@ -331,10 +389,14 @@ let sampleAsked = 0;
 async function loadSample(index) {
   const asked = ++sampleAsked;
   const sample = samples[index];
-  const [source, css] = await Promise.all([text(sample.path), sample.css === undefined ? "" : text(sample.css)]);
+  const paths = sample.files ?? { "Main.beni": sample.path };
+  const [files, css] = await Promise.all([
+    Promise.all(Object.entries(paths).map(async ([path, url]) => [path, await text(url)])).then(Object.fromEntries),
+    sample.css === undefined ? "" : text(sample.css),
+  ]);
   if (asked !== sampleAsked) return;
   platform.value = sample.platform;
-  replaceText(editor, source);
+  setProject(files, sample.focus);
   replaceText(cssEditor, css);
   // Also when the text did not change: the platform may have. Choosing a
   // sample is a person's change.
@@ -347,7 +409,7 @@ sampleList.addEventListener("change", () => {
 
 // The shareable link (§4.5, §4.6): the source and the CSS in the fragment.
 $("share").addEventListener("click", async () => {
-  const fragment = await encode(platform.value, textOf(editor), textOf(cssEditor));
+  const fragment = await encode(platform.value, textOf(editor), textOf(cssEditor), sourceFiles(), activeFile);
   history.replaceState(null, "", `#${fragment}`);
   sampleList.value = "shared";
   // Only a secure page has a clipboard to write.
@@ -372,7 +434,7 @@ cssEditor = createEditor($("css-editor"), "", cssEdited, "css");
 if (shared !== null) {
   if ([...platform.options].some((o) => o.value === shared.platform)) platform.value = shared.platform;
   sampleList.value = "shared";
-  replaceText(editor, shared.source);
+  setProject(shared.files, shared.focus);
   replaceText(cssEditor, shared.css);
   // Also when the source is empty, which changes nothing in the editor. The
   // link stays in the address until a person changes the program or its

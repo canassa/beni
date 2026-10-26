@@ -12,14 +12,20 @@
 export const maxSource = 1024 * 1024;
 
 /// The fragment, without its `#`, for `platform`, `source` and `css`. An
-/// empty `css` adds nothing, so the link is the one made before the pane.
-export async function encode(platform, source, css = "") {
+/// empty `css` adds nothing. Additional modules and the selected file use
+/// `files` and `focus`; a single-file link keeps the original format.
+export async function encode(platform, source, css = "", files = {}, focus = "Main.beni") {
   const params = new URLSearchParams({ platform, code: await pack(source) });
   if (css !== "") params.set("css", await pack(css));
+  const modules = Object.fromEntries(Object.entries(files).filter(([path]) => path !== "Main.beni"));
+  if (Object.keys(modules).length !== 0) {
+    params.set("files", await pack(JSON.stringify(modules)));
+    params.set("focus", focus);
+  }
   return params.toString();
 }
 
-/// `{ platform, source, css }` from a fragment `encode` made (with or
+/// `{ platform, source, css, files, focus }` from a fragment `encode` made (with or
 /// without its `#`); `css` is empty when the fragment has none. Null when
 /// the fragment holds no source, and null when its source or its CSS is not
 /// base64url, not deflate data, not UTF-8, or longer than `maxSource`: a
@@ -32,7 +38,29 @@ export async function decode(fragment) {
   if (source === null) return null;
   const css = params.has("css") ? await unpack(params.get("css")) : "";
   if (css === null) return null;
-  return { platform: params.get("platform"), source, css };
+  const files = { "Main.beni": source };
+  if (params.has("files")) {
+    const json = await unpack(params.get("files"));
+    if (json === null) return null;
+    let modules;
+    try {
+      modules = JSON.parse(json);
+    } catch (e) {
+      if (e instanceof SyntaxError) return null;
+      throw e;
+    }
+    if (modules === null || Array.isArray(modules) || typeof modules !== "object") return null;
+    let size = new TextEncoder().encode(source).length;
+    for (const [path, content] of Object.entries(modules)) {
+      if (!/^(?:[A-Z][A-Za-z0-9_]*\/)*[A-Z][A-Za-z0-9_]*\.beni$/.test(path) || path === "Main.beni" || typeof content !== "string") return null;
+      size += new TextEncoder().encode(content).length;
+      if (size > maxSource) return null;
+      files[path] = content;
+    }
+  }
+  const focus = params.get("focus") ?? "Main.beni";
+  if (!Object.hasOwn(files, focus)) return null;
+  return { platform: params.get("platform"), source, css, files, focus };
 }
 
 /// `text`, compressed and encoded in base64url.
