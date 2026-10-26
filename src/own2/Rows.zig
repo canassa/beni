@@ -520,3 +520,355 @@ test "a constructor's class and a derived method's class" {
     try testing.expect(f.sums.get(eq3).writes);
     try testing.expectEqualStrings("summary eq3: π1 R, π2 R (asserted)", try f.text(eq3, "eq3"));
 }
+
+// ---------------------------------------------------------------------------
+// Appendix C's worked derivation, checked with the S1/S2 modules
+// ---------------------------------------------------------------------------
+//
+// `docs/design/ownership-v2.md` Appendix C derives `mapHelp`'s and
+// `foldlFrom`'s classes on paper. S2 has no walker, no `Calls` and no
+// read-off, so these tests do by hand what those will do — instantiate a
+// callee's atoms at the recursive call (the substitution C.2's table names)
+// and fold its labels (§2.2, §2.10's read-off: a label under `[*]` or of the
+// frame's own group folds, two different labels folding into one emit
+// `within`) — and let S2's own operations do the rest: §2.9's construction
+// rule (`Cond.lower`), the instantiation (`Cond.instantiate`), the joins of
+// the two arms (`Summary.Table.joinRes`), the order (`Cond.leq`) and the
+// class table. Each round's κ at `res[*]` is compared with the table's
+// row, and the fixpoint is the round whose κ the next round reproduces.
+
+/// The derivation's cells and labels: `π₁ a`, `π₄ acc`, `π₆ b` and the
+/// callback's results `cb₅@ℓ` at `res[*]` (mapHelp) or `res` (foldlFrom).
+const Derivation = struct {
+    f: *Fixture,
+    lists: PlaceId,
+    list: PlaceId,
+    elem_path: Ids.PathId,
+    root_path: Ids.PathId,
+    /// ι_f, ι_rec, ι_t, and the folded ι_f⋆ and ι_rec⋆.
+    l_f: Ids.LabelId,
+    l_f_star: Ids.LabelId,
+    l_rec_star: Ids.LabelId,
+    /// `ι_rec·ι_f⋆` and `ι_rec·ι_rec⋆`: the callee's labels prefixed with
+    /// the recursive call, before the read-off folds them.
+    l_rec_f_star: Ids.LabelId,
+    l_rec_rec_star: Ids.LabelId,
+
+    const i_f: u32 = 10;
+    const i_rec: u32 = 11;
+    const i_t: u32 = 12;
+
+    fn init(f: *Fixture) !Derivation {
+        const gpa = testing.allocator;
+        const lists = try f.placeOf(2);
+        const root = try f.places.rootPath(gpa, lists);
+        const f_star = try f.cells.label(gpa, &f.account, i_f, .none, true);
+        const rec_star = try f.cells.label(gpa, &f.account, i_rec, .none, true);
+        return .{
+            .f = f,
+            .lists = lists,
+            .list = try f.placeOf(0),
+            .root_path = root,
+            .elem_path = (try f.places.extend(gpa, f.env().charge, root, Step.elem)).?,
+            .l_f = try f.cells.label(gpa, &f.account, i_f, .none, false),
+            .l_f_star = f_star,
+            .l_rec_star = rec_star,
+            .l_rec_f_star = try f.cells.label(gpa, &f.account, i_rec, f_star, false),
+            .l_rec_rec_star = try f.cells.label(gpa, &f.account, i_rec, rec_star, false),
+        };
+    }
+
+    fn param(d: *Derivation, i: u32, at_elem: bool) !CellId {
+        return d.f.cells.symbolic(testing.allocator, &d.f.account, &d.f.places, .param, i, if (at_elem) d.elem_path else d.root_path, 0);
+    }
+
+    /// `cb₅@ℓ`: what the function parameter π₅ (j = 4) answered at `ℓ`.
+    fn cb(d: *Derivation, l: Ids.LabelId, at_elem: bool) !CellId {
+        return d.f.cells.symbolic(testing.allocator, &d.f.account, &d.f.places, .cb, l.int(), if (at_elem) d.elem_path else d.root_path, 4);
+    }
+
+    fn set(d: *Derivation, cs: []const CellId) !SetId {
+        var s: SetId = .none;
+        for (cs) |c| s = try d.f.cells.sets.insert(testing.allocator, d.f.env().charge, s, c.int(), 0);
+        return s;
+    }
+
+    fn excl(d: *Derivation, c: CellId) !Ids.CondId {
+        return d.f.conds.excl(testing.allocator, d.f.env().charge, c);
+    }
+
+    fn apart2(d: *Derivation, a: CellId, b: CellId) !Ids.CondId {
+        return d.f.conds.apartAtom(testing.allocator, d.f.env().charge, try d.set(&.{ a, b }));
+    }
+
+    fn all(d: *Derivation, ks: []const Ids.CondId) !Ids.CondId {
+        var acc = Cond.yes;
+        for (ks) |k| acc = try d.f.conds.@"and"(testing.allocator, d.f.env().charge, acc, k);
+        return acc;
+    }
+
+    /// Two conditions name the same atoms.
+    fn same(d: *Derivation, a: Ids.CondId, b: Ids.CondId) !bool {
+        const gpa = testing.allocator;
+        const charge = d.f.env().charge;
+        return try d.f.conds.leq(gpa, charge, a, b) and try d.f.conds.leq(gpa, charge, b, a);
+    }
+};
+
+/// The read-off's fold of one cell (§2.2): the labels the table folds, by
+/// the rule C.2 states.
+fn foldCell(d: *Derivation, c: CellId, fold_direct: bool) !CellId {
+    const cells = &d.f.cells;
+    if (cells.origin(c) != .cb) return c;
+    const l: Ids.LabelId = .from(cells.get(c).a);
+    if (l == d.l_rec_f_star or l == d.l_rec_rec_star) return d.cb(d.l_rec_star, cells.place(c) != d.lists and fold_direct);
+    if (l == d.l_f and fold_direct) return d.cb(d.l_f_star, true);
+    return c;
+}
+
+/// An instantiation at ι_rec, as `Calls` will do it (S3b): each callee atom
+/// mapped through the substitution, then folded. `excl π₆[*]` is the
+/// argument's condition at that path; a `sep`/`apart` between two cells is
+/// compared at the argument's cells; one that compares two cells folding
+/// into one label is that label's `within` (§2.10's read-off).
+const Instantiation = struct {
+    d: *Derivation,
+    /// π₆[*] ↦ these cells, and their condition at `[*]`.
+    p6e: CellId,
+    p6e_to: []const CellId,
+    p6e_kappa: Ids.CondId,
+    /// mapHelp folds a direct callback label (it is under `[*]`);
+    /// foldlFrom does not.
+    fold_direct: bool,
+    /// False: the read-off's fold alone, no call between (a store's own
+    /// κ, read off in its own frame).
+    prefix: bool = true,
+
+    fn image(in: *Instantiation, c: CellId) ![]const CellId {
+        if (!in.prefix) {
+            const out = try in.d.f.arena.allocator().alloc(CellId, 1);
+            out[0] = c;
+            return out;
+        }
+        if (c == in.p6e) return in.p6e_to;
+        const cells = &in.d.f.cells;
+        if (cells.origin(c) == .cb) {
+            const l: Ids.LabelId = .from(cells.get(c).a);
+            const prefixed = if (l == in.d.l_f_star) in.d.l_rec_f_star else if (l == in.d.l_rec_star) in.d.l_rec_rec_star else if (l == in.d.l_f) try in.d.f.cells.label(testing.allocator, &in.d.f.account, Derivation.i_rec, in.d.l_f, false) else l;
+            const out = try in.d.f.arena.allocator().alloc(CellId, 1);
+            out[0] = try in.d.cb(prefixed, cells.place(c) != in.d.lists);
+            return out;
+        }
+        const out = try in.d.f.arena.allocator().alloc(CellId, 1);
+        out[0] = c;
+        return out;
+    }
+
+    fn atom(ctx: *anyopaque, t: *Cond.Table, gpa: Allocator, charge: Ids.Charge, a: Cond.Cond) Error!Ids.CondId {
+        const in: *Instantiation = @ptrCast(@alignCast(ctx));
+        const d = in.d;
+        switch (a.atom) {
+            .excl => {
+                const c: CellId = .from(a.a);
+                if (c == in.p6e and in.prefix) return in.p6e_kappa;
+                var acc = Cond.yes;
+                for (try in.image(c)) |x| acc = try t.@"and"(gpa, charge, acc, try t.excl(gpa, charge, try foldCell(d, x, in.fold_direct)));
+                return acc;
+            },
+            .apart, .sep => {
+                // The two sides: a sep's cells, or a two-member group's.
+                var sides: [2]CellId = undefined;
+                if (a.atom == .sep) {
+                    sides = .{ .from(a.a), .from(a.b) };
+                } else {
+                    var it = d.f.cells.sets.iterate(.from(a.a));
+                    sides[0] = .from(it.next().?.key);
+                    sides[1] = .from(it.next().?.key);
+                    std.debug.assert(it.next() == null);
+                }
+                var acc = Cond.yes;
+                for (try in.image(sides[0])) |x| for (try in.image(sides[1])) |y| {
+                    const fx = try foldCell(d, x, in.fold_direct);
+                    const fy = try foldCell(d, y, in.fold_direct);
+                    const k = if (fx == fy) blk: {
+                        // Two labels folding into one: the read-off's `within`.
+                        std.debug.assert(x != y);
+                        break :blk try t.within(gpa, charge, .from(d.f.cells.get(fx).a));
+                    } else try t.apartAtom(gpa, charge, try d.set(&.{ fx, fy }));
+                    acc = try t.@"and"(gpa, charge, acc, k);
+                };
+                return acc;
+            },
+            .within => {
+                // within(ι_rec⋆) ↦ within(ι_rec·ι_rec⋆), which folds back.
+                std.debug.assert(@as(Ids.LabelId, .from(a.a)) == d.l_rec_star);
+                return t.within(gpa, charge, d.l_rec_star);
+            },
+            else => unreachable,
+        }
+    }
+};
+
+test "Appendix C.2: mapHelp's κ at res[*] reaches the table's row at round 4 and round 5 reproduces it" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    var d = try Derivation.init(&f);
+    const gpa = testing.allocator;
+    const env = f.env();
+    const v = env.view();
+    const p6e = try d.param(5, true);
+    const cb_f = try d.cb(d.l_f, true);
+    const cb_f_star = try d.cb(d.l_f_star, true);
+    const cb_rec_star = try d.cb(d.l_rec_star, true);
+
+    // Step 3: `put b i (func …)` stores cb₅@ι_f into π₆'s storage. §2.9's
+    // construction rule on the base π₆[*]: κ(N_p[*]) = κ(π₆[*]) ∧
+    // apart{π₆[*], cb₅@ι_f} ∧ excl(cb₅@ι_f), C.2's `excl π₆ ∧ sep(cb₅@ι_f,
+    // π₆[*]) ∧ excl(cb₅@ι_f)` (a two-member `apart` is v1's `sep`).
+    const base_kappa = try f.conds.kappaOf(gpa, env.charge, v, .none, try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{p6e})), true);
+    try testing.expect(try d.same(base_kappa, try d.excl(p6e)));
+    const stored = try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{cb_f}));
+    const k_np = try f.conds.lower(gpa, env.charge, v, .none, base_kappa, try d.set(&.{p6e}), stored, true, null);
+    try testing.expect(try d.same(k_np, try d.all(&.{ try d.excl(p6e), try d.excl(cb_f), try d.apart2(p6e, cb_f) })));
+
+    // The rounds, κ at res[*]: the else arm gives κ(π₆[*]); the then arm the
+    // callee's previous κ instantiated at ι_rec (π₆[*] ↦ N_p[*]'s cells,
+    // whose condition is k_np) and folded; the two arms join.
+    // k_np with its ι_f folded by the read-off, as C.2 round 3 reads it.
+    var fold_only: Instantiation = .{ .d = &d, .p6e = p6e, .p6e_to = &.{}, .p6e_kappa = .none, .fold_direct = true, .prefix = false };
+    const k_np_folded = try f.conds.instantiate(gpa, env.charge, k_np, .{ .ctx = &fold_only, .atom = Instantiation.atom });
+    try testing.expect(try d.same(k_np_folded, try d.all(&.{ try d.excl(p6e), try d.excl(cb_f_star), try d.apart2(p6e, cb_f_star) })));
+    var in: Instantiation = .{ .d = &d, .p6e = p6e, .p6e_to = &.{ p6e, cb_f }, .p6e_kappa = k_np_folded, .fold_direct = true };
+    const interp: Cond.Interp = .{ .ctx = &in, .atom = Instantiation.atom };
+    const else_arm = try d.excl(p6e);
+    // Round 1: A(ι_rec) = ∅, so the then arm adds nothing.
+    var rounds: [6]Ids.CondId = undefined;
+    rounds[1] = else_arm;
+    var k: usize = 2;
+    while (k <= 5) : (k += 1) {
+        // Round 2: the callee is round 1, whose κ excl π₆ instantiates to
+        // k_np, ι_f folded by the read-off (it occurs under `[*]`).
+        const then_arm = try f.conds.instantiate(gpa, env.charge, rounds[k - 1], interp);
+        rounds[k] = try f.conds.join(gpa, env.charge, else_arm, then_arm);
+    }
+    // Round 2's row: excl π₆ ∧ excl(ι_f⋆) ∧ sep(ι_f⋆, π₆[*]).
+    try testing.expect(try d.same(rounds[2], try d.all(&.{ try d.excl(p6e), try d.excl(cb_f_star), try d.apart2(p6e, cb_f_star) })));
+    // Round 3's row adds excl(ι_rec⋆), sep(ι_rec⋆, π₆[*]), sep(ι_f⋆, ι_rec⋆).
+    const round3 = try d.all(&.{
+        try d.excl(p6e),              try d.excl(cb_f_star),          try d.excl(cb_rec_star),
+        try d.apart2(p6e, cb_f_star), try d.apart2(p6e, cb_rec_star), try d.apart2(cb_f_star, cb_rec_star),
+    });
+    try testing.expect(try d.same(rounds[3], round3));
+    // Round 4's row: round 3 ∧ within(ι_rec⋆), the fold of sep((ι_rec·ι_f⋆),
+    // (ι_rec·ι_rec⋆)).
+    const round4 = try d.all(&.{ round3, try f.conds.within(gpa, env.charge, d.l_rec_star) });
+    try testing.expect(try d.same(rounds[4], round4));
+    // Round 5 reproduces round 4: the fixpoint, F(x) ⊑ x.
+    try testing.expect(try d.same(rounds[5], rounds[4]));
+    // The rounds climb: each is below (stronger than) the next.
+    for (1..5) |r| try testing.expect(try f.conds.leq(gpa, env.charge, rounds[r], rounds[r + 1]));
+    // Without the read-off's fold rule S2's `sep` answers the folded pair
+    // `lost` (one folded label twice, §2.9): `within` is the read-off's,
+    // owed by S3b (C.10).
+    try testing.expectEqual(Cond.lost, try f.conds.sep(gpa, env.charge, &f.cells, &f.places, cb_rec_star, cb_rec_star, false, null));
+
+    // The class C.2 reads off, through the class table: π₁ R, π₅ R called
+    // many times with one taken, owned supply per folded label, π₆ RAW at
+    // ε and A at `[*]`, res ε {π₆}, `[*]` {π₆[*], ι_f⋆, ι_rec⋆} with
+    // round 4's κ. It prints in v1's grammar, whose `sep cb5 cb5` is v2's
+    // `sep(ι_f⋆, ι_rec⋆) ∧ within(ι_rec⋆)`.
+    const p1 = try d.param(0, false);
+    const p6 = try d.param(5, false);
+    const l_t = try f.cells.label(gpa, &f.account, Derivation.i_t, .none, false);
+    _ = try f.cells.split(gpa, &f.account, p1, Derivation.i_t, l_t, try d.excl(p1));
+    const elem = try f.cells.refine(gpa, &f.account, .elem, p1, l_t, 0, d.list, .list);
+    const elem_leaf = try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{elem}));
+    const kappa_supply = (try f.conds.kappaSet(gpa, env.charge, .none, elem_leaf, false, try d.excl(p1))).ctx;
+    var use1 = try Summary.Table.markUse(env, .none, d.lists, &.{}, .{ .r = true }, &.{});
+    use1 = try Summary.Table.markUse(env, use1, d.lists, &.{Step.elem}, .{ .r = true }, &.{});
+    const use5 = try Summary.Table.markUse(env, .none, try f.placeOf(3), &.{}, .{ .r = true }, &.{});
+    var use6 = try Summary.Table.markUse(env, .none, d.lists, &.{}, .{ .r = true, .a = true, .w = true }, &.{});
+    use6 = try Summary.Table.markUse(env, use6, d.lists, &.{Step.elem}, .{ .a = true }, &.{});
+    const res_elem = try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{ p6e, cb_f_star, cb_rec_star }));
+    const res = try f.shapes.node(gpa, &f.account, d.lists, try d.set(&.{p6}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Step.elem, res_elem));
+    var kappas = (try f.conds.kappaSet(gpa, env.charge, .none, res_elem, true, rounds[4])).ctx;
+    kappas = (try f.conds.kappaSet(gpa, env.charge, kappas, res, false, try d.excl(p6))).ctx;
+    const supplies = [_]Summary.Supply{
+        .{ .j = 4, .k = 0, .node = elem_leaf, .label = d.l_f_star, .owned = true, .taken = true, .kappa = kappa_supply },
+        .{ .j = 4, .k = 0, .node = elem_leaf, .label = d.l_rec_star, .owned = true, .taken = true, .kappa = kappa_supply },
+    };
+    const c = try f.sums.add(env, .{
+        .params = &.{ use1, .none, .none, .none, use5, use6 },
+        .res = res,
+        .kappas = kappas,
+        .funs = &.{.{ .j = 4, .calls = .many, .supplies = &supplies }},
+        .writes = true,
+    });
+    const text = try f.text(c, "mapHelp");
+    // The same facts as v1's row (C.2's **v1** paragraph).
+    for ([_][]const u8{ "π1 R", "π5 R", "π6 RAW", "π6[*] A", "π5 calls many", "owned", "taken{excl π1}", "within" }) |want| {
+        if (std.mem.indexOf(u8, text, want) == null) {
+            std.debug.print("mapHelp's class lacks `{s}`: {s}\n", .{ want, text });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "Appendix C.4: foldlFrom's res and κ reach the table's row at round 3 and round 4 reproduces it" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    var d = try Derivation.init(&f);
+    const gpa = testing.allocator;
+    const env = f.env();
+    // foldlFrom's res is at ε: π₄ acc and the callback's answers, which a
+    // direct call not under `[*]` does not fold (C.4, round 2).
+    const p4 = try d.param(3, false);
+    const cb_f = try d.cb(d.l_f, false);
+    const cb_rec_star = try d.cb(d.l_rec_star, false);
+    const leafOf = struct {
+        fn of(dd: *Derivation, cs: []const CellId) !NodeId {
+            return dd.f.shapes.leaf(testing.allocator, &dd.f.account, dd.lists, try dd.set(cs));
+        }
+    }.of;
+    const withK = struct {
+        fn of(ff: *Fixture, n: NodeId, k: Ids.CondId) !Cond.Kappas {
+            return (try ff.conds.kappaSet(testing.allocator, ff.env().charge, .none, n, false, k)).ctx;
+        }
+    }.of;
+    // The else arm: res π₄, κ excl π₄.
+    const else_node = try leafOf(&d, &.{p4});
+    const else_k = try withK(&f, else_node, try d.excl(p4));
+    // Each round's then arm is the callee's previous res with π₄ ↦ cb₅@ι_f
+    // (the call's own answer handed back as the accumulator) and every
+    // callee label prefixed with ι_rec, then folded: ι_rec·ℓ is ι_rec⋆.
+    const Round = struct { node: NodeId, kappas: Cond.Kappas };
+    var rounds: [5]Round = undefined;
+    rounds[1] = .{ .node = else_node, .kappas = else_k };
+    var r: usize = 2;
+    while (r <= 4) : (r += 1) {
+        const prev = rounds[r - 1];
+        var cells: std.ArrayList(CellId) = .empty;
+        defer cells.deinit(gpa);
+        var it = f.cells.sets.iterate(f.shapes.cells(prev.node));
+        while (it.next()) |e| {
+            const c: CellId = .from(e.key);
+            try cells.append(gpa, if (c == p4) cb_f else cb_rec_star);
+        }
+        var k = Cond.yes;
+        for (cells.items) |c| k = try f.conds.@"and"(gpa, env.charge, k, try d.excl(c));
+        const then_node = try leafOf(&d, cells.items);
+        const joined = try Summary.Table.joinRes(env, else_node, else_k, then_node, try withK(&f, then_node, k));
+        rounds[r] = .{ .node = joined.node, .kappas = joined.kappas };
+    }
+    // Round 2: res {π₄, cb₅@ι_f} (approximate), κ excl π₄ ∧ excl(ι_f).
+    try testing.expectEqual(try d.set(&.{ p4, cb_f }), f.shapes.cells(rounds[2].node));
+    try testing.expect(try d.same(try env.kappa(rounds[2].kappas, rounds[2].node), try d.all(&.{ try d.excl(p4), try d.excl(cb_f) })));
+    // Round 3: res {π₄, ι_f, ι_rec⋆}, κ ∧ excl(ι_rec⋆).
+    try testing.expectEqual(try d.set(&.{ p4, cb_f, cb_rec_star }), f.shapes.cells(rounds[3].node));
+    try testing.expect(try d.same(try env.kappa(rounds[3].kappas, rounds[3].node), try d.all(&.{ try d.excl(p4), try d.excl(cb_f), try d.excl(cb_rec_star) })));
+    // Round 4: nothing new, the fixpoint.
+    try testing.expectEqual(rounds[3].node, rounds[4].node);
+    try testing.expect(try d.same(try env.kappa(rounds[4].kappas, rounds[4].node), try env.kappa(rounds[3].kappas, rounds[3].node)));
+}
