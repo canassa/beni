@@ -769,11 +769,15 @@ own snapshot and retains every reachable constraint in the new interpretation. E
 empty shapes still matter to the read rule. A finite worklist over `(node, position class, interpretation)`
 and reachable map/trie entries closes the frontier; recursive paths use canonical place backreferences,
 not path-string enumeration. A trie transition must migrate all of these readers and the codec together.
-A position is a path, so the frontier's transitions are the projections along the place's steps and nothing
-else: a delta's base and a recast's inner are not projections, and a constraint stored for one of them alone
-is observable nowhere (a built node's read is the walk's certificate, a recast's is derived), while a union's
-and a positions node's sides are read by the read of the node itself, above. `Cond.frontier` is that one
-transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing else.
+A position is a path, so the frontier's transitions are the projections along the place's steps. The other
+nodes at a position's path belong to it as follows. A union's and a positions node's sides are read by the read
+of the node itself, above. A recast changes the type, not the path, so a recast and its inner are **one
+position**: the read at the recast joins what is stored at either with the recast's derivation, and the inner's
+projections are the position's transitions too, read for what a snapshot stores there (an unstored inner adds
+nothing to the recast's derived read; §2.13.9's restoration reads the same entries). A delta's base is not a
+position: a built node's read is the walk's certificate, so a constraint stored for the base alone is observable
+nowhere. `Cond.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
+else.
 
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
@@ -1412,7 +1416,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    structurally identical to `inner`'s restores `inner` exactly; a projection of a recast is a recast over the same
    inner, approximate, never restored, so a child of a recast recursive value is not taken for its root
    (R-4.11.2). Retain the inner value interpretation, including its snapshot and loan overlay, not only its
-   shape: an unstepped restoration restores those facts together, while a stepped recast cannot recover
+   shape: an unstepped restoration restores those facts together (a recast and its inner are one position,
+   §2.9, so what the snapshot stores at the inner and below it is read at the recast), while a stepped recast cannot recover
    a stronger certificate by finding a structurally equal type later; `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.
 10. **Schemas** (R-4.7.10, R-5.11): a run is a call of a row derived from the resolved schema plan
     (`check/SchemaPlan.zig`): `res` fresh at every place the direction builds, holding conversions' captured or
@@ -1748,18 +1753,22 @@ and a separate non-value owner. A value owner names an immutable snapshot and al
 Equal snapshot roots share an owner and a decoded map; distinct values need not own distinct physical maps.
 Neither sharing a shape nor equal node ids permits sharing an interpretation with different facts.
 
-For each owner, close its roots under the transitions any κ reader uses: explicit parts, delta bases,
-recast inners, union/positions sides, and `proj` along every valid place step. This includes projections
-under a leaf, under a recast and to an empty shape. Reachable stored constraints and the routes to them
+For each owner, close its roots under the transitions any κ reader uses (§2.9's frontier): `proj` along
+every valid place step, a recast's inner's projections included (the two are one position), with
+union/positions sides read with their node. Explicit parts, a delta's base among them, may be walked as
+structure; a base alone holds nothing observable. This includes projections under a leaf, under a recast
+and to an empty shape. Reachable stored constraints and the routes to them
 must be represented even if no explicit child names their node. The finite worklist uses canonical place
 states and exact interpretation keys, not unfolded paths. An implementation may omit a state only when
 its reads are derived entirely from preserved structure and no reachable stored entry affects them;
 this criterion is shared with `propagate`, `kappaLeq`, `deep` and substitution. Adding a reader requires
 updating this closure contract and its tests.
 
-Each written position encodes κ **as read**, including `lost` for a built node lacking its construction
-certificate. For union/positions nodes it may encode the stored term plus references to the sides and
-multiplicity derivation, provided the reconstructed read is identical. Do not interpret absent stored κ
+Each written position encodes κ **as stored**: what the snapshot stores at that position and nothing
+derived (#1069). Every reader adds the derivation from the structure the block rebuilds, so the
+reconstructed read is identical, including `lost` for a built node with no certificate and the
+multiplicity a union/positions node derives from its sides; a reader that uses only what is stored at a
+position (`deep` below a leaf) reads the same after decoding as before. Do not interpret absent stored κ
 as a uniform bottom. Initial refinement colours include these read facts, place, kind, cells, step labels
 and position class: structurally equal knots with different κ are not the same semantic position.
 
