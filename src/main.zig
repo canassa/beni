@@ -210,12 +210,15 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // alongside the file (checker.md §4). The other three stages are a
     // function of the file's own bytes, and loading ~2,800 lines of core
     // into every one of them would be pure cost.
-    options.core_package = Cli.stageResolvesImports(dump.stage);
+    // `--stage=bir --platform=P <dir>` lowers a platform's own modules, which
+    // needs the platform, and core beside it, loaded as for a check.
+    const resolves = Cli.stageResolvesImports(dump.stage) or (dump.stage == .bir and dump.platform != null);
+    options.core_package = resolves;
     // A platform is the other package an import may resolve into
     // (boundary.md §5.3), so it is loaded for exactly the stages core is —
     // `parseDump` has already refused the flag on the others, so this is
     // never a silent drop.
-    options.platform = if (Cli.stageResolvesImports(dump.stage)) dump.platform else null;
+    options.platform = if (resolves) dump.platform else null;
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
     // `--msg-types` reads the checker's scheme of each program's `update`.
@@ -241,7 +244,9 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     defer session.deinit();
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
-        .bir => Session.lower_phases,
+        // With `--platform`, a platform's own modules are lowered as the
+        // session that checks them lowers them (the platform's rules).
+        .bir => if (dump.platform != null) Session.check_phases else Session.lower_phases,
         .interface, .raw, .types, .dispatch, .writes, .ownership, .typekeys => Session.check_phases,
         // The graph is what `resolve_phases` builds first, and nothing
         // after it changes an edge (`static-dispatch-spike.md` §6.8), so
@@ -282,6 +287,10 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // project's tables in path order are what a corpus golden is.
         if (dump.stage == .dispatch) return dumpExit(summary, dumpProjectDispatch(gpa, &session, stdout, stderr, dump.file));
         if (dump.stage == .typekeys) return dumpExit(summary, dumpProjectTypeKeys(&session, stdout, stderr, dump.file));
+        // `--stage=bir` over a directory: every module's lowering in path
+        // order, each headed `module M` (the ownership words' gate reads a
+        // whole package this way, check_test.zig).
+        if (dump.stage == .bir) return dumpExit(summary, dumpProjectBir(&session, stdout, stderr, dump.file));
         if (dump.stage != .interface and dump.stage != .raw) return fail(stderr, "beni: dump needs exactly one file", .{});
         return dumpExit(summary, dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw));
     };
@@ -446,6 +455,26 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
             beni.dump.interface.writeRaw(stdout, session.store.moduleName(f), iface, &session.interner) catch return 2
         else
             beni.dump.interface.write(stdout, gpa, session.store.moduleName(f), iface, session.checked.types.refIds(m), &session.checked.types, &session.interner) catch return 2;
+        printed += 1;
+    }
+    if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    return 0;
+}
+
+/// Every module under the directory `arg`, in path order: its BIR dump,
+/// headed by its name.
+fn dumpProjectBir(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const dir = storePath(&buffer, arg);
+    var printed: u32 = 0;
+    for (session.store.byPath()) |f| {
+        const p = session.store.path(f);
+        // An embedded module under the path is one of the platform's or core's
+        // the session loaded; the whole project (`.`) leaves them out.
+        if (!(std.mem.eql(u8, p, dir) or underDir(p, dir))) continue;
+        if (session.store.isEmbedded(f) and std.mem.eql(u8, dir, ".")) continue;
+        stdout.print("module {s}\n", .{session.store.moduleName(f)}) catch return 2;
+        beni.dump.bir.write(stdout, session.store.bytes(f), session.artifacts.comments(f), session.artifacts.bir(f), .fromGlobal(&session.interner)) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});

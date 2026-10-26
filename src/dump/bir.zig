@@ -390,17 +390,21 @@ const Dumper = struct {
         try d.w.writeByte('\n');
     }
 
-    /// `  own2 π1 written returned, π3 stored, res builderdone`: the v2
-    /// column (ownership-v2.md §2.13.6), when the signature has one. v1's
-    /// column is not printed: the ownership dump is its window.
+    /// `  own π1 borrowed` and `  own2 π1 written returned, π3 stored, res
+    /// builderdone`: v1's column and the v2 column (ownership-v2.md §2.13.6),
+    /// each when the signature has one.
     fn own2Row(d: *Dumper, decl_: Bir.Decl) !void {
-        if (decl_.own2_end == decl_.own2_start) return;
-        try d.w.writeAll("  own2");
-        const words = d.bir.extra[decl_.own2_start..decl_.own2_end];
+        try d.ownRow("own", d.bir.extra[decl_.own_start..decl_.own_end]);
+        try d.ownRow("own2", d.bir.extra[decl_.own2_start..decl_.own2_end]);
+    }
+
+    fn ownRow(d: *Dumper, comptime label: []const u8, words: []const u32) !void {
+        if (words.len == 0) return;
+        try d.w.writeAll("  " ++ label);
         var at: usize = 0;
         while (at + 1 < words.len) : (at += 2) {
             try d.w.writeAll(if (at == 0) " " else ", ");
-            if (words[at] == Bir.own_result) try d.w.writeAll("res") else try d.w.print("π{d}", .{words[at] + 1});
+            if (words[at] == Bir.own_result) try d.w.writeAll("res") else if (words[at] == Bir.own_type) try d.w.writeAll("type") else try d.w.print("π{d}", .{words[at] + 1});
             for (std.enums.values(Ast.OwnWord)) |w| {
                 if (words[at + 1] & w.bit() != 0) try d.w.print(" {t}", .{w});
             }
