@@ -835,7 +835,7 @@ pub const Table = struct {
                     try n.overs(d.b, at_summary);
                 },
                 .recast => try n.node(.from(d.a), at_summary),
-                .@"union" => {
+                .@"union", .positions => {
                     try n.node(.from(d.a), at_summary);
                     try n.node(.from(d.b), at_summary);
                 },
@@ -1198,7 +1198,7 @@ pub const Table = struct {
             const d = env.shapes.get(n);
             switch (d.kind) {
                 .leaf, .recast => return,
-                .@"union" => {
+                .@"union", .positions => {
                     try p.descend(.from(d.a), prefix, at_summary, out);
                     try p.descend(.from(d.b), prefix, at_summary, out);
                 },
@@ -1220,7 +1220,7 @@ pub const Table = struct {
         /// union's sides, `~` before an approximate pair or under a recast.
         fn gather(p: *Printer, n: NodeId, texts: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const d = p.env.shapes.get(n);
-            if (d.kind == .@"union") {
+            if (d.kind == .@"union" or d.kind == .positions) {
                 try p.gather(.from(d.a), texts);
                 try p.gather(.from(d.b), texts);
                 return;
