@@ -7,7 +7,15 @@
 //! | `node`   | a built value: `cells` at `ε`, explicit children by step     |
 //! | `delta`  | `base` written: `base`'s cells at `ε`, an override or the base's child at a step |
 //! | `recast` | `inner` read at another place: `inner`'s cells, approximate, at every path |
-//! | `union`  | the lazy join of two nodes, never flattened                  |
+//! | `union`  | the lazy join of two ALTERNATIVES, never flattened: a cell in both sides is one position |
+//! | `positions` | two POSITIONS that coexist (`collect`: a literal's elements under `[*]`, a spread's): a cell in both sides is two positions |
+//!
+//! A `union` and a `positions` node are read alike by `proj`, `reach`,
+//! `map` and `widen` (which keep the kind: `proj(positions(a, b), s) =
+//! positions(proj a, proj b)`, so a repeated element stays repeated);
+//! `leq` is γ-inclusion and kind-blind — the multiplicity is κ's business
+//! (`Cond`), where `positions(a, a)` reads `shared` and `union(a, a)` is `a`.
+//! `join` only ever makes a `union`; nothing turns a `positions` into one.
 //!
 //! Nodes are **structurally interned** per table — `(kind, place, cells,
 //! a, b)` through a fixed-key dictionary — and immutable, so every memo
@@ -49,14 +57,15 @@ pub const Account = Ids.Account;
 
 pub const Error = Ids.ChargeError;
 
-pub const Kind = enum(u8) { leaf, node, delta, recast, @"union" };
+pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions };
 
 /// One node (§3.3). `a`, `b` by kind: `node`: the children map; `delta`:
-/// base + the override map; `recast`: inner; `union`: left, right.
+/// base + the override map; `recast`: inner; `union`, `positions`: left, right.
 pub const Node = struct {
     kind: Kind,
     place: PlaceId,
-    /// The cells at `ε` (a delta's: its base's; a union's: both sides').
+    /// The cells at `ε` (a delta's: its base's; a union's or a positions
+    /// node's: both sides', as a set — the multiset is read by `Cond`).
     cells: SetId,
     a: u32,
     b: u32,
@@ -272,6 +281,23 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .@"union", .place = t.place(l), .cells = c, .a = x, .b = y, .reach = .none });
     }
 
+    /// `collect(n₁…nₖ)` (§2.3): a built value's elements under `[*]` as a
+    /// balanced `positions` DAG — never deduplicated or absorbed: the same
+    /// node on both sides is two positions, which κ reads as `shared`. One
+    /// element is itself, so `[ x ]` joined with `[ x ]` stays one position.
+    pub fn collect(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId) Error!NodeId {
+        std.debug.assert(members.len > 0);
+        if (members.len == 1) return members[0];
+        const mid = members.len / 2;
+        return t.positions(gpa, account, cellsets, try t.collect(gpa, account, cellsets, members[0..mid]), try t.collect(gpa, account, cellsets, members[mid..]));
+    }
+
+    /// Two positions at one place (`collect`'s node, `proj`'s image of one).
+    fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
+        return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
+    }
+
     /// Whether `x` is a member of the union DAG `u` (its sides, through
     /// nested unions only): a walk with a visited stamp, every union node
     /// once, one record reserved per node read. Never a silent `false`.
@@ -337,8 +363,9 @@ pub const Table = struct {
 
     /// `proj(n, s)` (§2.3), memoised per `(node, step)`. A symbolic leaf
     /// projects its cells one step down the trie; a concrete leaf projects
-    /// to nothing; a recast stays a recast (approximate); a union projects
-    /// both sides. Null when the place has no such step.
+    /// to nothing; a recast stays a recast (approximate); a union or a
+    /// positions node projects both sides, its kind kept. Null when the
+    /// place has no such step.
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
         // The memo is written only once the answer exists: a refusal in the
         // middle leaves no "no such step" for another owner to read.
@@ -355,6 +382,7 @@ pub const Table = struct {
             .delta => t.overGet(d.b, s) orelse (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?,
             .recast => try t.recast(gpa, account, child_place, .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?, (try t.proj(gpa, account, places, cellt, .from(d.b), s)).?),
+            .positions => try t.positions(gpa, account, &cellt.sets, (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?, (try t.proj(gpa, account, places, cellt, .from(d.b), s)).?),
         };
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
         return out;
@@ -446,7 +474,7 @@ pub const Table = struct {
                     while (it.next()) |e| try r.kids.append(r.gpa, e.node);
                 },
                 .recast => try r.kids.append(r.gpa, .from(d.a)),
-                .@"union" => try r.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
+                .@"union", .positions => try r.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
             }
         }
 
@@ -660,12 +688,12 @@ pub const Table = struct {
                 try t.memo_map.put(gpa, n, out);
                 return out;
             },
-            .@"union" => {
+            .@"union", .positions => {
                 const l = try t.mapWalk(gpa, account, .from(d.a), ctx, f);
                 const r = try t.mapWalk(gpa, account, .from(d.b), ctx, f);
                 try account.reserve(.shape, 1);
                 const out: NodeId = .from(t.count());
-                try t.nodes.append(gpa, .{ .kind = .@"union", .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
+                try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
                 try t.memo_map.put(gpa, n, out);
                 return out;
             },
@@ -693,7 +721,11 @@ pub const Table = struct {
 
     /// Coinductive lockstep inclusion (§2.3): `cells(n) ⊆ cells(m)` at every
     /// path, pairs assumed on re-entry, memoised per pair. O(|n|·|m|) pairs
-    /// at most; O(|n| + |m|) when shapes agree.
+    /// at most; O(|n| + |m|) when shapes agree. Kind-blind: a member is below
+    /// its `union` and a `union` is below `m` when both sides are (O4), and
+    /// two `positions` nodes compare by their cells per path whatever the
+    /// order and tree shape of their members — multiplicity is κ's
+    /// (`Cond.kappaLeq`), not γ's.
     pub fn leq(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, m: NodeId) Error!bool {
         if (n == m) return true;
         const outermost = t.leq_depth == 0;
@@ -925,7 +957,7 @@ pub const Table = struct {
                         while (bt.next()) |e| if (w.t.overGet(d.b, e.step) == null) try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
                     }
                 },
-                .leaf, .recast, .@"union" => {},
+                .leaf, .recast, .@"union", .positions => {},
             }
         }
 
@@ -1009,7 +1041,7 @@ pub const Table = struct {
                             has_leaf = true;
                             leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, d.cells);
                         },
-                        .recast, .@"union" => try extra.append(w.gpa, .from(m)),
+                        .recast, .@"union", .positions => try extra.append(w.gpa, .from(m)),
                         .delta => {
                             explicit = true;
                             const base: NodeId = .from(d.a);
@@ -1019,7 +1051,7 @@ pub const Table = struct {
                                     leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, w.t.cells(base));
                                 },
                                 .node => {},
-                                .recast, .@"union", .delta => try extra.append(w.gpa, base),
+                                .recast, .@"union", .positions, .delta => try extra.append(w.gpa, base),
                             }
                         },
                         .node => explicit = true,
@@ -1653,4 +1685,53 @@ test "a refused projection or inclusion leaves no answer behind for the next own
     try testing.expectError(error.OwnershipLimit, f.shapes.leq(gpa, &tight, &f.places, &f.cells, x, y));
     try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, y));
     try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, x));
+}
+
+test "collect keeps positions: a repeated member stays two, proj and map keep the kind, join makes only unions" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const fa = try Place.Step.field(&f.account, 10);
+    const x = try f.shapes.leaf(gpa, &f.account, rec, try f.param(1, rec));
+    const y = try f.shapes.leaf(gpa, &f.account, rec, try f.param(2, rec));
+    // One element is itself; two are a positions node, the same one twice
+    // too — where a union of the same node twice is the node.
+    try testing.expectEqual(x, try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{x}));
+    const xx = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x });
+    try testing.expect(xx != x);
+    try testing.expectEqual(Kind.positions, f.shapes.kind(xx));
+    try testing.expectEqual(x, try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, x, x));
+    const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y });
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(f.shapes.cells(xy)));
+    // proj keeps the kind and so the multiplicity: `[*].a` of `[ x, x ]` is
+    // `positions(x.a, x.a)`.
+    const pa = try f.proj(xx, fa);
+    try testing.expectEqual(Kind.positions, f.shapes.kind(pa));
+    try testing.expectEqual(f.shapes.nodes.items(.a)[pa.int()], f.shapes.nodes.items(.b)[pa.int()]);
+    try testing.expectEqual(try f.proj(x, fa), NodeId.from(f.shapes.nodes.items(.a)[pa.int()]));
+    // map keeps the kind, and two sides that become equal stay two.
+    const Relabel = struct {
+        fn relabel(fx: *Fixture, s: SetId) Error!SetId {
+            if (s == .none) return .none;
+            return fx.cells.sets.insert(testing.allocator, .growth(&fx.account), .none, 1_000, 0);
+        }
+    };
+    const mapped = try f.shapes.map(gpa, &f.account, xy, &f, Relabel.relabel);
+    try testing.expectEqual(Kind.positions, f.shapes.kind(mapped));
+    try testing.expectEqual(f.shapes.nodes.items(.a)[mapped.int()], f.shapes.nodes.items(.b)[mapped.int()]);
+    // join of two collections is a union over them, each keeping its kind;
+    // every member is below it (O4), and leq is γ-inclusion, kind-blind:
+    // the repeat in `[ x, x ]` is κ's to see, not the order's.
+    var members = [_]NodeId{ xx, xy };
+    const j = try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &members);
+    try testing.expectEqual(Kind.@"union", f.shapes.kind(j));
+    try testing.expectEqual(Kind.positions, f.shapes.kind(.from(f.shapes.get(j).a)));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, xx, j));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, xy, j));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, j, xy));
+    try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, xy, xx));
+    // reach sees through both kinds.
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(try f.shapes.reach(gpa, &f.account, &f.cells.sets, j)));
 }

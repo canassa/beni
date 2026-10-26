@@ -736,6 +736,32 @@ pub const Radix = struct {
         return it;
     }
 
+    /// `a ∩ b`, a key approximate when it is in either: one descent over the
+    /// two trees, a subtree the other has no prefix for skipped whole, every
+    /// node pair inspected one record (O(min(|a|, |b|)) nodes).
+    pub fn intersection(r: *Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!SetId {
+        if (a == .none or b == .none) return .none;
+        if (a == b) return a;
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0 or nb.mask == 0) {
+            const leaf = if (na.mask == 0) na else nb;
+            const v = r.get(if (na.mask == 0) b else a, leaf.prefix) orelse return .none;
+            return r.make(gpa, charge, .{ .prefix = leaf.prefix, .mask = 0, .left = .from(v | @as(u1, @intCast(leaf.left.int()))), .right = .none });
+        }
+        if (na.mask == nb.mask and na.prefix == nb.prefix) {
+            const l = try r.intersection(gpa, charge, na.left, nb.left);
+            const rt = try r.intersection(gpa, charge, na.right, nb.right);
+            if (l == .none) return rt;
+            if (rt == .none) return l;
+            return r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = rt });
+        }
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) return r.intersection(gpa, charge, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) return r.intersection(gpa, charge, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+        return .none;
+    }
+
     /// Every key of `root`, counted by walking it: a test instrument, not
     /// an operation an analysis may call (it is Θ(n)).
     pub fn count(r: *const Radix, root: SetId) u32 {
@@ -1198,4 +1224,33 @@ test "⟲ matches a step onto its cycle: Rose, Maybe T and mutual recursion" {
     const a_leaf = try cx.param(3, a, &.{leaf});
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, below_a));
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, b));
+}
+
+test "intersection is the common keys, approximate when either is, and skips what one side has no prefix for" {
+    var r: Radix = .{};
+    defer r.deinit(testing.allocator);
+    var a: Account = .{};
+    defer a.deinit(testing.allocator);
+    const gpa = testing.allocator;
+    const g: Charge = .growth(&a);
+    var s: SetId = .none;
+    for ([_]u32{ 1, 2, 3, 5, 1_000_000 }) |key| s = try r.insert(gpa, g, s, key, 0);
+    var t: SetId = .none;
+    for ([_]u32{ 2, 4, 1_000_000 }) |key| t = try r.insert(gpa, g, t, key, 0);
+    t = try r.insert(gpa, g, t, 3, 1);
+    const both = try r.intersection(gpa, g, s, t);
+    try testing.expectEqual(@as(u32, 3), r.count(both));
+    try testing.expectEqual(@as(?u1, 0), r.get(both, 2));
+    try testing.expectEqual(@as(?u1, 1), r.get(both, 3));
+    try testing.expectEqual(@as(?u1, 0), r.get(both, 1_000_000));
+    try testing.expect(!r.member(both, 1) and !r.member(both, 4) and !r.member(both, 5));
+    try testing.expectEqual(both, try r.intersection(gpa, g, t, s));
+    try testing.expectEqual(s, try r.intersection(gpa, g, s, s));
+    try testing.expectEqual(SetId.none, try r.intersection(gpa, g, s, .none));
+    var far: SetId = .none;
+    for ([_]u32{ 7, 8, 9 }) |key| far = try r.insert(gpa, g, far, key, 0);
+    // Disjoint sets whose prefixes part high up: a few nodes, no result.
+    const before = a.growth;
+    try testing.expectEqual(SetId.none, try r.intersection(gpa, g, s, far));
+    try testing.expect(a.growth - before <= 4);
 }
