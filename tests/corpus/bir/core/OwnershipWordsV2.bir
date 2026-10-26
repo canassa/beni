@@ -63,6 +63,7 @@ decl 6: pub foreign value pure focus
   interface foreign value focus
 
 decl 7: pub foreign value pure builder
+  own π1 unused, res fresh exclusive
   %0 = type_import Basics.Int
   %1 = type_top 1 (Builder)
   %2 = type_var a
@@ -249,6 +250,7 @@ decl 19: pub foreign value pure complete
   interface foreign value complete
 
 decl 20: pub foreign value pure onlyOld
+  own π1 borrowed
   %0 = type_top 0 (Seq)
   %1 = type_var a
   %2 = type_app %0 [%1]

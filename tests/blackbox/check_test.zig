@@ -502,7 +502,7 @@ test "--platform is refused where it would do nothing" {
     );
     try testing.expectEqual(@as(u8, 2), dumped.exit_code);
     try testing.expectEqualStrings(
-        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch, writes and ownership\n",
+        "beni: --platform has no effect on --stage=ast; it applies to bir, interface, raw, types, graph, dispatch, writes and ownership\n",
         dumped.stderr,
     );
 }
@@ -1156,84 +1156,197 @@ test "ownership words: the bodies they describe have not changed" {
     if (!ok) return error.WordedBodyChanged;
 }
 
-/// The core files that hold the ownership checker v2's words.
-const v2_worded_files = [_][]const u8{ "core/List.beni", "core/Ref.beni", "core/Deferred.beni", "core/Result.beni" };
+/// One declaration of a package's BIR dump, as the pin gate reads it.
+const DumpDecl = struct {
+    module: []const u8,
+    name: []const u8,
+    value: bool,
+    foreign: bool,
+    worded: bool = false,
+    /// Words in the v2 column.
+    v2: bool = false,
+    taken_result: bool = false,
+    /// `%K = top N (name)`: instruction K names declaration `name`.
+    tops: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// `%K = call %M …`: the callee instruction of call K.
+    calls: std.StringHashMapUnmanaged([]const u8) = .empty,
+    body: []const u8 = "",
+    /// The module's declarations this one names (`refs`, `top N (name)`).
+    refs: std.ArrayList([]const u8) = .empty,
+};
 
-/// The declarations of `file` whose BIR dump prints a v2 column (`own2`),
-/// and of those the ones whose result is `taken`, by name.
-fn v2Worded(w: *World, file: []const u8, all: *std.ArrayList([]const u8), taken: *std.ArrayList([]const u8)) !void {
+/// Every declaration of the package the dump `args` lowers, from the BIR
+/// dump of its directory: no list of files, and the words as lowering
+/// recorded them (v1's column and the v2 one alike).
+fn dumpDecls(w: *World, args: []const []const u8, out: *std.ArrayList(DumpDecl)) !void {
     const arena = w.arena.allocator();
-    const r = try w.runWith(&.{ "dump", "--stage=bir", "--core", file }, .{ .raw_diagnostics = true, .cwd = .inherit });
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    var name: []const u8 = "";
+    const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+    if (r.exit_code != 0) {
+        std.debug.print("{s} failed: {s}\n", .{ args[args.len - 1], r.stderr });
+        return error.DumpFailed;
+    }
+    var module: []const u8 = "";
+    var in_refs = false;
     var lines = std.mem.splitScalar(u8, r.stdout, '\n');
     while (lines.next()) |line| {
-        if (std.mem.startsWith(u8, line, "decl ")) {
-            const head = if (std.mem.endsWith(u8, line, " (annotated)")) line[0 .. line.len - " (annotated)".len] else line;
-            name = head[(std.mem.lastIndexOfScalar(u8, head, ' ') orelse continue) + 1 ..];
+        if (std.mem.startsWith(u8, line, "module ")) {
+            module = line["module ".len..];
             continue;
         }
-        if (!std.mem.startsWith(u8, line, "  own2 ")) continue;
-        try all.append(arena, name);
-        if (std.mem.indexOf(u8, line, "res taken") != null) try taken.append(arena, name);
+        if (std.mem.startsWith(u8, line, "decl ")) {
+            const head = if (std.mem.endsWith(u8, line, " (annotated)")) line[0 .. line.len - " (annotated)".len] else line;
+            const colon = std.mem.indexOf(u8, head, ": ").? + 2;
+            const header = head[colon..];
+            const is_value = std.mem.indexOf(u8, header, "value ") != null;
+            try out.append(arena, .{
+                .module = module,
+                .name = head[(std.mem.lastIndexOfScalar(u8, head, ' ') orelse continue) + 1 ..],
+                .value = is_value,
+                .foreign = std.mem.indexOf(u8, header, "foreign value ") != null,
+            });
+            in_refs = false;
+            continue;
+        }
+        if (out.items.len == 0) continue;
+        const d = &out.items[out.items.len - 1];
+        if (std.mem.startsWith(u8, line, "  own ") or std.mem.startsWith(u8, line, "  own2 ")) {
+            // A type's own word (`crossing`, slot `type`) words no value.
+            if (d.value) d.worded = true;
+            if (d.value and std.mem.startsWith(u8, line, "  own2 ")) d.v2 = true;
+            if (std.mem.indexOf(u8, line, "res taken") != null) d.taken_result = true;
+            continue;
+        }
+        if (std.mem.eql(u8, line, "  refs")) {
+            in_refs = true;
+            continue;
+        }
+        if (in_refs and std.mem.startsWith(u8, line, "    top ")) {
+            const open = std.mem.indexOfScalar(u8, line, '(') orelse continue;
+            try d.refs.append(arena, line[open + 1 .. line.len - 1]);
+            continue;
+        }
+        if (!std.mem.startsWith(u8, line, "    ")) in_refs = false;
+        if (std.mem.startsWith(u8, line, "  body ")) {
+            d.body = line["  body ".len..];
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "  %")) {
+            const eq = std.mem.indexOf(u8, line, " = ") orelse continue;
+            const inst = line[2..eq];
+            const rhs = line[eq + 3 ..];
+            if (std.mem.startsWith(u8, rhs, "top ")) {
+                const open = std.mem.indexOfScalar(u8, rhs, '(') orelse continue;
+                try d.tops.put(arena, inst, rhs[open + 1 .. rhs.len - 1]);
+            } else if (std.mem.startsWith(u8, rhs, "call ")) {
+                const callee = rhs["call ".len..];
+                try d.calls.put(arena, inst, callee[0 .. std.mem.indexOfScalar(u8, callee, ' ') orelse callee.len]);
+            }
+        }
     }
 }
 
-test "ownership words v2: every worded declaration and every reader of a taken result has a pinned body" {
+/// The packages that may write ownership words: core and every platform,
+/// shipped or a test's, found on disk.
+fn wordedPackages(w: *World, out: *std.ArrayList([]const []const u8)) !void {
+    const arena = w.arena.allocator();
+    try out.append(arena, &.{ "dump", "--stage=bir", "--core", "core" });
+    for ([_][]const u8{ "platforms", "tests/platforms" }) |root| {
+        var dir = try std.Io.Dir.cwd().openDir(testing.io, root, .{ .iterate = true });
+        defer dir.close(testing.io);
+        var names: std.ArrayList([]const u8) = .empty;
+        var it = dir.iterate();
+        while (try it.next(testing.io)) |entry| {
+            if (entry.kind != .directory) continue;
+            const manifest = try std.fs.path.join(arena, &.{ root, entry.name, "beni.json" });
+            _ = std.Io.Dir.cwd().statFile(testing.io, manifest, .{}) catch continue;
+            try names.append(arena, try arena.dupe(u8, entry.name));
+        }
+        std.mem.sort([]const u8, names.items, {}, struct {
+            fn less(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.less);
+        for (names.items) |name| {
+            const path = try std.fs.path.join(arena, &.{ root, name });
+            const platform = if (std.mem.eql(u8, root, "platforms")) name else path;
+            try out.append(arena, try arena.dupe([]const u8, &.{ "dump", "--stage=bir", try std.fmt.allocPrint(arena, "--platform={s}", .{platform}), path }));
+        }
+    }
+}
+
+test "ownership words: every worded declaration, the helpers its body runs and every reader of a taken result have pinned bodies" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20));
-    var pinned: std.ArrayList([]const u8) = .empty;
+    var pinned: std.StringHashMapUnmanaged(void) = .empty;
     var rows = std.mem.splitScalar(u8, list, '\n');
     while (rows.next()) |row| {
         if (row.len == 0 or row[0] == '#') continue;
         var fields = std.mem.tokenizeScalar(u8, row, ' ');
         _ = fields.next() orelse continue;
-        try pinned.append(arena, fields.next() orelse continue);
+        try pinned.put(arena, fields.next() orelse continue, {});
     }
+    var packages: std.ArrayList([]const []const u8) = .empty;
+    try wordedPackages(&w, &packages);
     var ok = true;
-    for (v2_worded_files) |file| {
-        const module = std.fs.path.stem(file);
-        var all: std.ArrayList([]const u8) = .empty;
-        var taken: std.ArrayList([]const u8) = .empty;
-        try v2Worded(&w, file, &all, &taken);
-        // The words are a trusted row (R-5.10.7): each is pinned.
-        for (all.items) |name| {
-            const decl = try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, name });
-            for (pinned.items) |p| {
-                if (std.mem.eql(u8, p, decl)) break;
-            } else {
-                std.debug.print("{s} carries the ownership checker v2's words and {s} pins no body for it\n", .{ decl, bodies_list });
-                ok = false;
+    for (packages.items) |args| {
+        var decls: std.ArrayList(DumpDecl) = .empty;
+        try dumpDecls(&w, args, &decls);
+        // Per module: a declaration by name.
+        var index: std.StringHashMapUnmanaged(usize) = .empty;
+        for (decls.items, 0..) |d, i| try index.put(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name }), i);
+        // What must be pinned, and why.
+        var need: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
+        // The taken results and the wrappers that return one (§2.13.6's
+        // index obligation): a declaration whose body is a call of either.
+        var taken: std.StringHashMapUnmanaged(void) = .empty;
+        for (decls.items) |d| if (d.taken_result) try taken.put(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name }), {});
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (decls.items) |d| {
+                const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
+                if (taken.contains(key) or d.body.len == 0) continue;
+                const callee = d.calls.get(d.body) orelse continue;
+                const target = d.tops.get(callee) orelse continue;
+                if (!taken.contains(try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, target }))) continue;
+                try taken.put(arena, key, {});
+                grew = true;
             }
         }
-        // The index obligation (ownership-v2.md §2.13.6): a body that
-        // calls a `taken`-result primitive is pinned beside it. The call
-        // is found in the source text, which over-includes (a mention in a
-        // comment of the body counts), never misses one.
-        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, arena, .limited(1 << 24));
-        var src_lines = std.mem.splitScalar(u8, source, '\n');
-        var current: []const u8 = "";
-        while (src_lines.next()) |line| {
-            if (line.len != 0 and line[0] != ' ' and line[0] != '-') {
-                const head = if (std.mem.startsWith(u8, line, "pub ")) line[4..] else line;
-                const end = std.mem.indexOfAny(u8, head, " :") orelse head.len;
-                current = head[0..end];
-                continue;
+        for (decls.items) |d| {
+            const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
+            if (d.worded) try need.put(arena, key, "carries ownership words");
+            for (d.refs.items) |r| {
+                const target = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r });
+                if (taken.contains(target) and !std.mem.eql(u8, target, key)) try need.put(arena, key, "reads a container through a `taken` result");
             }
-            for (taken.items) |t| {
-                if (std.mem.eql(u8, current, t)) continue;
-                const call = try std.fmt.allocPrint(arena, "{s} ", .{t});
-                if (std.mem.indexOf(u8, line, call) == null) continue;
-                const decl = try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, current });
-                for (pinned.items) |p| {
-                    if (std.mem.eql(u8, p, decl)) break;
-                } else {
-                    std.debug.print("{s} reads a container through {s}, a `taken` result, and {s} pins no body for it\n", .{ decl, t, bodies_list });
-                    ok = false;
-                }
+        }
+        // A worded beni body of a module with v2 rows (the asserted rows of
+        // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
+        // runs: every declaration of its module it reaches. v1's rows keep
+        // v1's rule, their own body (a `Task` row reaches the scheduler).
+        var v2_modules: std.StringHashMapUnmanaged(void) = .empty;
+        for (decls.items) |d| if (d.v2) try v2_modules.put(arena, d.module, {});
+        var stack: std.ArrayList(usize) = .empty;
+        for (decls.items, 0..) |d, i| if (d.worded and !d.foreign and v2_modules.contains(d.module)) try stack.append(arena, i);
+        var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
+        while (stack.pop()) |i| {
+            if ((try seen.getOrPut(arena, i)).found_existing) continue;
+            const d = decls.items[i];
+            for (d.refs.items) |r| {
+                const j = index.get(try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r })) orelse continue;
+                if (!decls.items[j].value) continue;
+                const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r });
+                if (!need.contains(key)) try need.put(arena, key, try std.fmt.allocPrint(arena, "is run by the worded {s}.{s}", .{ d.module, d.name }));
+                if (!decls.items[j].foreign) try stack.append(arena, j);
             }
+        }
+        for (need.keys(), need.values()) |key, why| {
+            if (pinned.contains(key)) continue;
+            std.debug.print("{s} {s}, and {s} pins no body for it\n", .{ key, why, bodies_list });
+            ok = false;
         }
     }
     if (!ok) return error.WordedBodyUnpinned;

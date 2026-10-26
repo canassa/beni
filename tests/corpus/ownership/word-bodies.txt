@@ -104,9 +104,9 @@ core/Ref.beni                 Ref.get             969b4f392da46ec630cc3122e1f1ef
 core/Ref.beni                 Ref.set             a233d3b602fda8b5d21391117431a4035df04f0802d201141aba7568ef998aec
 core/Ref.beni                 Ref.update          b01fd591216bd61aa5ca88b41e4ff47b1d74c242dcce5eeca68a17717326d14c
 core/Ref.beni                 Ref.modify          085a2c747f0e69bf3f4237dba18414fdb662c430b57dc727d814d8f887524ab0
-core/Deferred.beni            Deferred.make       502c3793684f61980f3cf8b57dbd7792682060759994464ac197ca8aa30ef812
-core/Deferred.beni            Deferred.wait       56b9952654de3f1197bd699c4cdd41cc368362cd1c1dfdde0b91c1697c2c5c23
-core/Deferred.beni            Deferred.complete   aa1d813a05ad61c8fe6c8775551d6e511085330046b95c08e13723ae9a4b1610
+core/Deferred.beni            Deferred.make       fd3ad4364257fdcd93473fcb9e3230d1f73c0f3c77c0d05c6b836172f0184574
+core/Deferred.beni            Deferred.wait       0fd1fc2cab0c05d7c85a302622b729a1b96c05f1129259338bd8ca200ef0daa1
+core/Deferred.beni            Deferred.complete   5240fc4c43112afc24e2da942985a7e844c2f8bde0ed346e5d968b0917f8a8cd
 core/Deferred.beni            Deferred.poll       9286e70f17e95d2be61f79072690c0746ca29c891569dbdbd8b9c9162c079d46
 core/Deferred.beni            Deferred.isDone     d9cfc7ce6721be29aa4de6e445f580e49b777719476070be540a97483bfa3963
 #
@@ -121,3 +121,46 @@ core/List.beni                List.indexedMapHelp d60439e211641fd2cd3d2e74adc335
 core/List.beni                List.filterHelp     b3c6634ee320ca247cc44ef2cf82e62578064cd9fa17605c88943c9f337e5649
 core/List.beni                List.filterMapHelp  4ad55f3b748451bd6f7db626320a64bfcba66a8ab67dbf3881c130b4e0d70438
 core/List.beni                List.reverseHelp    e3c86a01f586b5e0413bff340f6c7d7039b933dd00f2f5c55fac86d08b874df6
+#
+# The helpers the worded List primitives run (R-5.10.7: the body a row was
+# justified against includes the module's declarations it reaches), and
+# the test platforms' worded declarations.
+core/List.beni                List.isPlain        d917d4aad7bf5e0ff7342c22fcba21470f6c5b38f8d3e3e46338237427d8437f
+core/List.beni                List.isTrie         c50d0857a77d098dc5a10c917e5b05f295d4b5faa90a992242be66057adc714b
+core/List.beni                List.trieDrop       50a58635fdc5e0bc406764d65b22966f9edf3269362595ffb9581b292d9b045b
+core/List.beni                List.viewOf         c990bb42cb4e3ca2ab04dce577da82064ad4f58270cd9e7f418aea6f2d73b2f4
+core/List.beni                List.viewPlain      56a33bd500d13b889d8163e6f266b893ffa6a6f35be809f31d29d366d541ff9d
+core/List.beni                List.header         7fb144267951081de7c3a4b06f5e02158e5e72502b3b04452bb708e7499d9bc2
+core/List.beni                List.leafAt         7203f2498b194aa1d3291e537165296055e64e92fcdeaa725a3d8df0321db9b2
+core/List.beni                List.treeOf         01ccd5dae7b73bb7b214d2e25a365fc324d5cb44f30338202bab47ff2acfcfbf
+core/List.beni                List.triePlain      5574f18191c298f2a6c39053afbb07579af1a41b1969cad0face7b09ab0e92e6
+core/List.beni                List.flatHead       d0492c898af706767bf565e1b2e5c60674c2a9d9976c2c75601419ffc5c4dec1
+core/List.beni                List.flatTree       f6830376677670d5e6fc72ed46ce281c703176d2d516c455b970f643c3b765a1
+core/List.beni                List.copyTo         705002e88d04202788e469f625722809c16800c026a533f615797359d4e3a0b6
+core/List.beni                List.outside        0594d03e19da6c6293ae524e0143cf29eafd9a36a0d7bcde586add1e96ba3ee5
+core/List.beni                List.unsafeGet      64231f61fabf7d24627e28578bc55ca100b99443a283bbd34c09bd2dfc5b41b4
+core/List.beni                List.trieSet        4cd662e6be3cbc64a1218ff95e1001b411315599be9fc06c32e8751ec12fd13f
+core/List.js                  List.at             718de89caa80d73751fbec4b523d6a71a63100d7a8f1a7c7aded3796c827c80a
+core/List.beni                List.fromPlain      530f3b09f32cd999fdec18f474cf5420d60edef5c307504ca98847aa95053292
+core/List.beni                List.noTree         67aff8b6414b6fc6a2587af2d898aff48d703e63cf2b7c9d7f3aebc045210887
+core/List.beni                List.fromLevels     9efd0da9c6a0eb5f961d365b2c01f92eae93b9ebf696979154c9a964254eb927
+core/List.beni                List.chunks         e1ec78ee6b421c58b928468def66c85f37f67d2ee536cff6010e2698a395e8c9
+core/List.beni                List.trieGet        f14375d51380642cda654b9680863eb8d21ab81e609384bb7eed90e0be53277e
+core/List.beni                List.changed        9b96576b089b14506fceced20eed04b0ec5e8a21d99c10d74723512727f0dd09
+core/List.beni                List.putLeaf        8847ea6ba04352a50a6bc68926da3365c0a4121fb1f36f79c6d3715be575cba3
+core/List.beni                List.padNull        39a836f6465d0326cf54beeaf1bc83c3970c03946514c2e89786f09647ed3051
+core/List.beni                List.triePop        9e55139fa6ad9eeb4c8571834269e46030fa2166b5c65aa1f9a3d51f159de1b4
+core/List.beni                List.popLeaf        a31a18a5497214a95c7c29cdea691ce95b38a58684a4749a03f6d509da66d442
+core/List.beni                List.collapse       1a8f608fe0b4fff1aaa4e272e851abb0c5a7ebd06abc9a1dd543b6e90d78d765
+core/List.beni                List.prefixOrNull   e7dc789bab67b84705b7c13f3e2c3e61317415519026d9d554e277f31deb6276
+core/List.beni                List.triePush       f13a52d28c228f55a932610f31c2ab9fcd79cba0cf08af57e68d873683bb108d
+core/List.beni                List.claim          30f7105393dd3ad36e5b1c79bbdaabab4db2b234f38c33e2d1c763ab3bdb9b7d
+core/List.beni                List.treeRight      b2e19afd38f659ab811b1b8903cb67d18348e5227f50296d6824a345c7d07f98
+core/List.beni                List.rightGrow      af6f3773f17db453c90ec40d4525a0bbb41d92e7b0dbc22d7fe95923c9321267
+core/List.beni                List.copy           4c1dfa4ab911c8c1115159b2667f28bdb29395c996928ac51a3eeacb90bd1f32
+core/List.beni                List.plainOf        50e673fd3a34d122bc7cac5c74b2b2354526df336e4b3f8999c686e561df2948
+core/List.beni                List.triePushed     51f692fddaff6c37093d4082c76d0a07fb581c90892adba38777315c5d1f89d7
+core/List.beni                List.fillTail       4324642e605f5505f297b954e5a623ce16b4bcc6da49a83dbbc1f40ff9d84793
+core/List.beni                List.pushedLeaves   dc5114a9a53b06743a6e2ccbacab71ccb110879b0a6526be39e754f305705b44
+tests/platforms/entry/Start.beni   Start.launch        d4fe8e66cf4e5382f6e3612c4cbc2092d3d329438f676650e05eb04cb6309bf3
+tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89dda71eea5a8bc22eee381899554e3dac145e946e4fc87

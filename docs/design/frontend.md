@@ -269,7 +269,7 @@ no positions (so a formatting change to the input leaves an `.ast` golden unchan
 - `--stage=ast`: an S-expression tree, one node per line, two-space indentation, node tags as
   written in `Ast.Node.Tag`, identifier and literal text inline. Error placeholder nodes print
   as `(error <code>)`.
-- `--stage=bir`: one declaration per block, then its instructions, then its interface entry.
+- `--stage=bir`: one declaration per block, then its instructions, then its interface entry. *Amended 2026-10-26*: a directory dumps every module under it in path order, each headed `module M`; with `--platform=P` a platform's own modules are lowered as a check lowers them; each declaration prints its ownership words, `own` (v1's column) and `own2` (ownership-v2.md §2.13.6).
   The implementer designs it; it must show every desugaring in `language.md` §8 legibly. Static
   dispatch put two instruction tags into that dump, `method_call` and `type_dispatch`, and a
   `method_call` **prints the operator it was written as** — `%4 = method_call %2 .eq [%3] (==)` —

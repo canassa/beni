@@ -70,7 +70,7 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | `fmt --stdout` | print the formatted text instead of writing it |
 | `dump --stage=tokens\|ast\|bir\|interface\|raw\|types\|graph\|dispatch\|writes\|ownership` | which representation (required); `interface` prints a module's public signatures |
 | `dump --positions` | include source positions |
-| `dump --platform=<name>` | as `check`'s, for the stages that resolve imports |
+| `dump --platform=<name>` | as `check`'s, for the stages that resolve imports; with `--stage=bir` and a platform's directory, lowers that platform's modules |
 | `skill install --link` | write a symlink to the installed folder instead of a copy |
 | `skill install --force` | replace a beni skill that is already at `<dir>/beni`; anything else is refused |
 

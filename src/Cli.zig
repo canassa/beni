@@ -1395,9 +1395,9 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     // one file's own bytes, and accepting the flag there would be a flag
     // that does nothing — the mistake `--source-maps` is refused to avoid
     // (backend.md §2).
-    if (s.specific.platform != null and !stageResolvesImports(stage)) {
+    if (s.specific.platform != null and !stageResolvesImports(stage) and stage != .bir) {
         return .{ .usage = .init(
-            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph, dispatch, writes and ownership",
+            "beni: --platform has no effect on --stage={t}; it applies to bir, interface, raw, types, graph, dispatch, writes and ownership",
             .{stage},
         ) };
     }
@@ -1639,16 +1639,12 @@ test "check and dump take --platform; fmt does not, and neither does a per-file 
         }
     }
     try expectUsage(
-        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph, dispatch, writes and ownership",
+        "beni: --platform has no effect on --stage=ast; it applies to bir, interface, raw, types, graph, dispatch, writes and ownership",
         &.{ "dump", "--stage=ast", "--platform=node", "M.beni" },
     );
     try expectUsage(
-        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph, dispatch, writes and ownership",
+        "beni: --platform has no effect on --stage=tokens; it applies to bir, interface, raw, types, graph, dispatch, writes and ownership",
         &.{ "dump", "--platform=node", "--stage=tokens", "M.beni" },
-    );
-    try expectUsage(
-        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph, dispatch, writes and ownership",
-        &.{ "dump", "--stage=bir", "--platform=node", "M.beni" },
     );
     // `fmt` resolves nothing: formatting is per file.
     try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "fmt", "--platform=node", "a.beni" });
