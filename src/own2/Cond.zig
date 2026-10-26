@@ -690,11 +690,8 @@ pub const Table = struct {
         if (arrivals.items.len >= 2) {
             var group: SetId = .none;
             for (arrivals.items) |c| group = try cellt.sets.insert(gpa, charge, group, c.int(), 0);
-            // A taken element stored back beside the elements it was taken
-            // from (`elem(c·ι)` with `c[*]`, not `others(c·ι)`): one object at
-            // two positions, exactly (§2.9's `shared`, P5).
-            // The containers whose whole `[*]` arrived (a symbolic `c[*]`), then
-            // each taken position of one: one record per arrival.
+            // A taken element stored back beside its container's `c[*]` (not
+            // `others`): one object at two positions (§2.9's `shared`, P5).
             var whole: SetId = .none;
             for (arrivals.items) |c| {
                 const o = cellt.origin(c);
@@ -715,11 +712,8 @@ pub const Table = struct {
     /// The pairs of `arrivals` over one base that `alias` does not tell apart.
     fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
         var acc: CondId = yes;
-        // By base, then by split (a position's or a view's `(container,
-        // label)`): two members of one split answer `sep` alike — `under`
-        // that split — so a split's run is decided by one pair, and only
-        // pairs across runs are decided one by one (§2.9; linear in a
-        // literal of positions taken from one list).
+        // By base, then by split: one split's members answer `sep` alike
+        // (`under` it), so its run is one pair; runs pair across (linear).
         const Ctx = struct {
             cellt: *const Cell.Table,
             fn split(ctx: @This(), x: CellId) [2]u32 {
@@ -1057,15 +1051,12 @@ pub const Table = struct {
     /// members and snapshots)`, compared exactly and recorded before it is
     /// processed, so a cycle ends and two contexts at one node are two
     /// states (#1063, #1064). Members are read by index: the run they were
-    /// cut from grows as children are pushed. A record per state, member
-    /// projection and cell.
+    /// cut from grows as children are pushed. A record per state, projection, cell.
     pub fn propagate(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, traversal: ?Traversal) Error!Kappas {
         return t.propagateFrom(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, at_summary, traversal);
     }
 
-    /// `propagate` with the members read at their own position class:
-    /// a literal puts values rooted at a plain path under its `[*]`, and
-    /// §2.9 joins the conditions of each `vᵢ` at `p` relative to `vᵢ`.
+    /// `propagate`, the members read at their own class (a literal's `vᵢ`, §2.9).
     pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
         var ctx = out;

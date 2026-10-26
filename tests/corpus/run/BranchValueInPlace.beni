@@ -1,0 +1,51 @@
+-- A list read again as an arm's value after a push (ownership-v2.md §2.7;
+-- tests/corpus/ownership/BranchValueReads). Written in place, each line
+-- would print `2`: the push would change the list the arm returns. The
+-- answer, as built, is `1` each time; the checker refuses the writes.
+import List
+import Node exposing (Program)
+import String
+
+
+caseProjection : Maybe Int → List Int
+caseProjection flag =
+    state = { values = [ 1 ], count = 0 }
+    grown = List.push state.values 2
+    case flag of
+        Just _ →
+            state.values
+
+        Nothing →
+            grown
+
+
+plainLocal : Maybe Int → List Int
+plainLocal flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    case flag of
+        Just _ →
+            xs
+
+        Nothing →
+            grown
+
+
+paramField : { values : List Int }, Maybe Int → List Int
+paramField state flag =
+    grown = List.push state.values 2
+    case flag of
+        Just _ →
+            state.values
+
+        Nothing →
+            grown
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (List.length (caseProjection (Just 0)))
+        , String.fromInt (List.length (plainLocal (Just 0)))
+        , String.fromInt (List.length (paramField { values = [ 1 ] } (Just 0)))
+        ]

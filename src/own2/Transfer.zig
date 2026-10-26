@@ -968,7 +968,12 @@ pub const Frame = struct {
                 try f.consume(d.rhs, i, .whole, .none);
                 return .{};
             },
-            .branch => return f.val(d.rhs),
+            // A branch's value is read where the arm ends (§2.7: the join's
+            // uses): the value it evaluates to is used there, in its arm.
+            .branch => {
+                try f.consume(d.rhs, i, .whole, .none);
+                return f.val(d.rhs);
+            },
             .case => {
                 const branches = f.bir.extraSlice(f.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
                 var members: std.ArrayList(NodeId) = .empty;
