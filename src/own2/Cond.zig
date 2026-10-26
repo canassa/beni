@@ -274,6 +274,8 @@ pub const Table = struct {
     pub fn flat(t: *Table, gpa: Allocator, charge: Charge, c: CondId) Error!SetId {
         std.debug.assert(!fails(c));
         if (c == yes) return .none;
+        // Reserved before the memo is read, a hit too (§2.3 *Memo safety*, #1124).
+        try charge.reserve(gpa, .memo, 1);
         if (t.flat_memo.get(c)) |s| return s;
         var stack: std.ArrayList(CondId) = .empty;
         defer stack.deinit(gpa);
@@ -1478,20 +1480,22 @@ pub const Table = struct {
             // nothing below is walked, nothing is written.
             // An alternative that is nothing (an empty leaf with nothing
             // stored) adds nothing to a join, so it does not count.
-            if (f.len > 0 and (mode == .alternatives or f.len == 1)) {
+            // Together, an empty member is no object either, but two equal
+            // members are two positions, never one.
+            if (f.len > 0) {
                 var m0: NodeId = .none;
                 var c0: Kappas = .none;
                 var one = true;
                 for (0..f.len) |i| {
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
-                    if (mode == .alternatives and c == .none and nothingAt(v, m)) continue;
+                    if (c == .none and nothingAt(v, m)) continue;
                     if (m0 == .none) {
                         m0 = m;
                         c0 = c;
-                    } else one = one and m == m0 and c == c0;
+                    } else one = one and mode == .alternatives and m == m0 and c == c0;
                 }
-                one = one and m0 != .none and (f.node == m0 or (mode == .alternatives and try joinOfOne(gpa, charge, v, f.node, m0)));
+                one = one and m0 != .none and (f.node == m0 or try joinOfOne(gpa, charge, v, f.node, m0, if (mode == .alternatives) .@"union" else .positions));
                 if (one) {
                     try charge.reserve(gpa, .inspection, 1);
                     try linked.append(gpa, .{ .path = f.path, .at = c0 });
@@ -1693,26 +1697,29 @@ pub const Table = struct {
         return v.shapes.kind(n) == .leaf and v.shapes.cells(n) == .none;
     }
 
-    /// Whether `joined` is `m` joined with nothing but empty leaves: a union
-    /// DAG whose every other side is `m` or an empty leaf. A record per node.
-    fn joinOfOne(gpa: Allocator, charge: Charge, v: View, joined: NodeId, m: NodeId) Error!bool {
+    /// Whether `joined` is `m` with nothing but empty leaves: a `via` DAG
+    /// (`union` for alternatives, `positions` for elements) whose every
+    /// other side is an empty leaf. As elements `m` must stand once: twice
+    /// is two positions. A record per node.
+    fn joinOfOne(gpa: Allocator, charge: Charge, v: View, joined: NodeId, m: NodeId, via: Shape.Kind) Error!bool {
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, joined);
-        var found = false;
+        var found: u32 = 0;
         while (stack.pop()) |x| {
             try charge.reserve(gpa, .inspection, 1);
             if (x == m) {
-                found = true;
+                found += 1;
                 continue;
             }
             if (nothingAt(v, x)) continue;
-            if (v.shapes.kind(x) != .@"union") return false;
+            if (v.shapes.kind(x) != via) return false;
             const d = v.shapes.get(x);
             try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
         }
-        return found;
+        return found == 1 or (found > 1 and via == .@"union");
     }
+
     /// `κ_a(a) ⊑ κ_b(b)` at every position the two structures put at one
     /// path (§2.9's sparse frontier): a simulation over PAIRS, each once
     /// per pair of positions, `b` projected in lockstep along every step
@@ -2116,7 +2123,8 @@ test "a chain of W stores is W outer nodes, flattened once in O(W log W)" {
         last_cost = cost;
         const again = f.account.growth;
         try testing.expectEqual(s, try t.flat(gpa, f.charge(), acc));
-        try testing.expectEqual(again, f.account.growth);
+        // A hit is one memo record, reserved before the memo is read (#1124).
+        try testing.expectEqual(again + 1, f.account.growth);
     }
 }
 
@@ -2935,7 +2943,7 @@ test "a positions DAG reads in linear time: depth 250, 500, 1000" {
     }
 }
 
-test "the Rose fold: widen keeps a collection as a side of the image, its `[*]` reads lost and never shared, and `F(x) ⊑ x` holds" {
+test "the Rose fold: widen folds a collection on the cycle into its class, its `[*]` reads lost and never shared, and `F(x) ⊑ x` holds" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
@@ -2954,15 +2962,16 @@ test "the Rose fold: widen keeps a collection as a side of the image, its `[*]` 
     const s_root = try f.cells.site(gpa, &f.account, 1, rose, rk);
     const root = try f.shapes.node(gpa, &f.account, rose, try f.set(&.{s_root}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, arg, lit));
     // The children re-enter `Rose`: widening ties `[*]` back to the root's
-    // class. The collection is not expanded: it rides beside the image as
-    // a side of a `union`, its kind kept — never `positions(self, self)`.
+    // class. The collection is on the cycle, so its two children are
+    // members of that class too (§2.3, #1120): one knot, no side kept
+    // beside it, and its repeat is κ's business (`many`, below).
     const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, root);
     try testing.expect(w != root);
-    try testing.expectEqual(Shape.Kind.@"union", f.shapes.kind(w));
-    const side = f.shapes.get(w);
-    try testing.expectEqual(Shape.Kind.node, f.shapes.kind(.from(side.a)));
-    try testing.expectEqual(Shape.Kind.positions, f.shapes.kind(.from(side.b)));
-    try testing.expectEqual(w, try f.projOf(try f.projOf(.from(side.a), arg), Place.Step.elem));
+    try testing.expectEqual(Shape.Kind.node, f.shapes.kind(w));
+    // `[*]` leads back to the knot (joined with the empty list's nothing).
+    const back = try f.projOf(try f.projOf(w, arg), Place.Step.elem);
+    try testing.expect(back == w or (f.shapes.kind(back) == .@"union" and (f.shapes.get(back).a == w.int() or f.shapes.get(back).b == w.int())));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, root, w));
     // `[*]` of the widened children reads through the image, a built node
     // the fold gave no κ: `lost`, approximate — never exact `shared` for
     // the two distinct children the fold put in one class.
@@ -3682,6 +3691,40 @@ test "#1112: a one-element literal and a join with an empty alternative are link
     f.conds.trace = null;
     try testing.expectEqual(@as(usize, 1), trace.items.len);
     try testing.expectEqual(k, alt);
+}
+
+test "#1120: a literal's element that is nothing is no position: `[ x, ∅ ]` is a link to x, `[ x, x ]` is not" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const e = try f.leaf(6, &.{try f.param(0, 6, &.{})});
+    var node = e;
+    var k = try f.setK(.none, e, shared);
+    for (0..20) |i| {
+        const l = try listOver(&f, 7, @intCast(2 * i + 1), node, k);
+        const r = try roseOver(&f, @intCast(2 * i + 2), l.node, l.k);
+        node = r.node;
+        k = r.k;
+    }
+    const nothing = try f.shapes.nothing(gpa, &f.account, try f.placeOf(6));
+    // An empty side is no position: the collection is the element itself.
+    const with_nothing = try f.collect(&.{ node, nothing });
+    try testing.expectEqual(node, with_nothing);
+    var trace: std.ArrayList(u32) = .empty;
+    defer trace.deinit(gpa);
+    f.conds.trace = &trace;
+    const one = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, node, &.{node}, &.{k}, .together, true, false, null);
+    trace.clearRetainingCapacity();
+    const linked = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, with_nothing, &.{ node, nothing }, &.{ k, .none }, .together, true, false, null);
+    try testing.expectEqual(@as(usize, 1), trace.items.len);
+    try testing.expectEqual(one, linked);
+    // Two equal elements are two positions: walked, and the repeat is read.
+    trace.clearRetainingCapacity();
+    const twice = try f.collect(&.{ node, node });
+    _ = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, twice, &.{ node, node }, &.{ k, k }, .together, true, false, null);
+    f.conds.trace = null;
+    try testing.expect(trace.items.len > 1);
 }
 
 test "#1115 review: a one-element literal's [*] still compares everything its element holds below, and a recast owes its excl" {
