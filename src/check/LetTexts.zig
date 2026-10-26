@@ -115,7 +115,24 @@ pub fn madeByCallHint(r: *Reporter, w: *std.Io.Writer, expected: Var, actual: Va
         var n: u32 = 0;
         while (Walk.child(st, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
     } else return false;
-    const name = if (found.binding.unwrap()) |sym| r.env.interner.slice(sym) else "the value";
+    const sym = found.binding.unwrap() orelse {
+        w.writeAll(
+            \\
+            \\Hint: this pattern takes apart a value of a block that is computed, once,
+            \\where it is written: its right-hand side calls something, or is an `if`, a
+            \\`case` or a block. A computation can make something that holds values, such
+            \\as a new `Ref`, and one such thing cannot hold two types, so what the pattern
+            \\binds has ONE type inside the definition that holds it
+            \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this one
+            \\disagrees.
+            \\
+            \\Make the value in a function, `make ⊤ = …`, and take apart one call of it for
+            \\each type.
+            \\
+        ) catch return error.OutOfMemory;
+        return true;
+    };
+    const name = r.env.interner.slice(sym);
     w.print(
         \\
         \\Hint: `{s}` is a value of a block that is computed, once, where it is
@@ -130,6 +147,7 @@ pub fn madeByCallHint(r: *Reporter, w: *std.Io.Writer, expected: Var, actual: Va
     , .{ name, name, name }) catch return error.OutOfMemory;
     return true;
 }
+
 /// The held variable that made `v`'s binding monomorphic, if any: a
 /// variable inside `v`'s type that a `let` held back. The walk follows
 /// `structural` successors to the bottom, each root once, on a stack

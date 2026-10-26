@@ -1,0 +1,22 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). `b.fresh` reads
+-- like a field, but on the nominal `Box` it is the call `fresh b`
+-- (static-dispatch-spike.md §1.1), which makes a new cell. So `r` is made by
+-- a call and has one type: it cannot be written as `List String` and read as
+-- `List Int`.
+import Ref exposing (Ref)
+
+
+type Box
+    = Box
+
+
+pub fresh : Box → Ref (List a)
+fresh b = Ref.make []
+
+
+pub read : ⊤ → List Int
+read ⊤ =
+    b = Box
+    r = b.fresh
+    Ref.set r [ "x" ]
+    List.map (Ref.get r) λk → k + 1

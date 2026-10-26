@@ -1,0 +1,23 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). `cell` is
+-- computed once, by an impure block whose `c = Ref.make (same [])` holds a
+-- variable that carries `a.eq`. The block's value is a record of lambdas,
+-- but the cell inside it is one cell: a top-level value is evaluated once
+-- per evidence, and `String` and `Int` share one `eq`, so the program wrote
+-- `[ "x" ]` and read it as a `List Int`. `impure_polymorphic_value`.
+import Ref
+
+
+same : a → a
+    where a.eq : a, a → Bool
+same x = if x == x then x else x
+
+
+cell =
+    c = Ref.make (same [])
+    { get = λ⊤ → Ref.get c, set = λv → Ref.set c v }
+
+
+pub read : ⊤ → List Int
+read ⊤ =
+    cell.set [ "x" ]
+    List.map (cell.get ⊤) λk → k + 1

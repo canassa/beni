@@ -1,0 +1,11 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). A pattern takes
+-- apart a value made by a call, so what it binds has one type: `r` is one
+-- cell. The hint names the pattern, which has no name to give a parameter.
+import Ref
+
+
+pub read : ⊤ → List Int
+read ⊤ =
+    ( r, n ) = ( Ref.make [], 0 )
+    Ref.set r [ "x" ]
+    List.map (Ref.get r) λk → k + n + 1

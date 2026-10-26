@@ -1501,7 +1501,8 @@ at one type and read at another, a silent wrong answer. `Queue.unbounded ⊤` an
   annotated or not — or a `let` pattern is **expansive** when its right-hand side is not, by
   syntax alone, a value. A value is a literal, a reference (a local, a declaration, a
   constructor not applied), a `lambda` (a placeholder application `f a _` is one), or a tuple, a
-  list or a record of values, a record update of values, a field or tuple index read of one, or a
+  list or a record of values, a record update of values, a tuple index read of one (not a field
+  read: on a nominal receiver `x.m` is the call `M.m x`, static-dispatch-spike.md §1.1), or a
   call of values to one of core's four transparent functions: `Js.to` and `Js.from`, compiled to
   nothing, `Debug.log`, which returns its argument, and `Debug.todo`, which never returns. Every
   other form — any other call, a method call, an operator, a constructor application, an
@@ -1525,16 +1526,21 @@ at one type and read at another, a silent wrong answer. `Queue.unbounded ⊤` an
   evaluation class is not `pure` and whose scheme quantifies a variable at a non-covariant
   position is **`impure_polymorphic_value`**, an error at its name whose hint is an annotation at
   one type or a parameter — unless what it evaluates to, after the bindings and statements of its
-  blocks, is a value by the syntax above, and no variable the `let` rule held in its body was
-  generalised after all (by the declaration, or by a `let` function of it): then the evaluation
-  made nothing at a quantified type. So `cells = Ref.make []` is refused, `cells : Ref (List Int)`
+  blocks, is a value by the syntax above, and no variable the `let` rule held at the
+  declaration's own frame — a constrained one included, which rule 2 holds — is one of the
+  declaration's quantifiers: in its scheme, or a rigid of the reading an annotated body is
+  checked against. Then the evaluation made nothing at a quantified type. (A top-level value with
+  a `where` is evaluated once per evidence, and `Int` and `String` share one `eq`, so a held
+  constrained variable is no exception.) A variable a `let` function of the body generalises is
+  that function's, a new one per call, and a `number` nothing fixed is quantified in no type. So `cells = Ref.make []` is refused, `cells : Ref (List Int)`
   over the same body checks, `header = Html.text "x"` is pure and stays polymorphic, and a value
   whose block logs and then is a `λ` (`run/EvidenceFunctionBodyPerCall`) checks. The refusal is
   attributed to no declaration, as §27's is.
-- **Diagnostics.** A held flex that carries a constraint is left to `holdLet` (rule 2), which holds
-  it the same way and whose A.30 hint names its method. Every other held flex is recorded
-  (`Env.made_by_call`), and a `type_mismatch` or a `number` mismatch one of whose sides reaches it
-  gets a hint that names the binding and says why it has one type. A held rigid is reported where
+- **Diagnostics.** Every held flex is recorded (`Env.made_by_call`), with its binding and whether
+  it was held to a top-level frame. One that carries a constraint is left to `holdLet` (rule 2),
+  which holds it the same way and whose A.30 hint names its method; a `type_mismatch` or a `number`
+  mismatch one of whose sides reaches any other gets a hint that names the binding, or the
+  pattern, and says why it has one type. A held rigid is reported where
   it is found, as `rigid_mismatch` with its own text (`Messages.madeByCall`), and poisoned with its
   scheme, so step 6 does not report it again.
 
@@ -1563,8 +1569,9 @@ call, used at two types through a variable inside a named type other than `List`
 parameter — the case it exists to refuse, give or take that conservatism — and the escape hatch
 is a parameter (`mk ⊤ = Ref.make []` is a function binding and is generalised) or an annotation at
 a concrete type. `run/LetValuePolymorphism` pins what stays general; `check/bad/LetRefNotGeneral`,
-`LetQueueNotGeneral`, `LetDeferredNotGeneral`, `LetRefAnnotatedTooGeneral` and
-`TopLevelRefNotGeneral` what does not.
+`LetQueueNotGeneral`, `LetDeferredNotGeneral`, `LetRefAnnotatedTooGeneral`, `LetPatternRefNotGeneral`,
+`LetNullaryMethodCellNotGeneral`, `TopLevelRefNotGeneral` and `TopLevelConstrainedCellNotGeneral`
+what does not.
 
 ### 8.5 Obligations at a boundary (I3)
 
