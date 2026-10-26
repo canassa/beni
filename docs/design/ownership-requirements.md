@@ -786,8 +786,7 @@ Not writes (they read their operands):
   (ownership-v2.md §2.13.6, pinned under R-5.10.7), `Send.to`'s consumed word [O 2026-10-25; R-5.9.9], the entry protocols, schema runs (§5.11).
   [O 2026-10-26] `List.sortWith`'s v1 row is asserted with its body pinned: fresh storage, original
   elements, list condition `lost`, record condition preserved, comparator many with borrowed supplies
-  (ownership-v2.md Appendix C.9; #1014). The array primitives include the representation readers `base`,
-  `offset`, `unsafeGet` and `sliceOf`. Everything else in `core/` is inferred from its body. (oc §16.8, §24.5)
+  (ownership-v2.md Appendix C.9; #1014). Everything else in `core/` is inferred from its body. (oc §16.8, §24.5)
 - R-5.10.9 The words must express at least v1's annotated surface (`Js.*`, `String.*`, `Schema.print*`, `Debug.*`,
   `Hosted.keyOf`, `Html.Event`, `Html.Pointer`, `Node.*`, `Ssr.render`, `Task.timeout`, `Task.raceOk`, `Int32`).
   (oc §24.8, §30.9; o/Words, o/WordsBrowser, o/JsPure, o/TaskWords, o/core/JsWords)

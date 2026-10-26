@@ -53,7 +53,9 @@ P7 no: `[ …xs, List.length xs ]` (R-4.1.3) counts two occurrences and refuses;
 poisons every value a shared one touches (Emre et al., thesis §3.4). P2/P3 no: an attribute never says "the result
 is argument 1" (R-4.10.1) or "fresh number 2". P4: function types force invariance (U:840-864). P5: deep uniqueness
 `*[*a]` exists (Barendsen–Smetsers) but no materialisation (R-4.6.9). Diagnostics name one place (R:913).
-**Rejected as the core.** Taken: deep uniqueness as the meaning of `excl`; the demand in the library's types.
+**Rejected as the core.** Taken: the demand in the library's types, and uniqueness as a predicate of one type
+position. `excl` claims exclusivity at the path it names, never at every descendant (§2.9, I-κ); Clean's deep
+`*[*a]` is not taken.
 
 **(c) Borrow inference plus a static contract** — Lean 4 (`InferBorrow.lean`), Koka `fip` (`CheckFBIP.hs`), Roc
 (`arc_solve.zig`). Per-variable owned/borrowed, per-SCC fixpoint, borrowed by default. P1 partial (Lean per
@@ -82,8 +84,9 @@ cyclic types (#955), pairwise in width (#693), instantiated as lists (#716).
 
 ### 1.3 The choice
 
-**v2 is (a), with (d)'s place set and solver, (c)'s contract and driver, and Clean's deep uniqueness as its sharing
-predicate.**
+**v2 is (a), with (d)'s place set and solver, (c)'s contract and driver, and a per-path sharing predicate in place of
+Clean's deep uniqueness: exclusivity is claimed at one path under a summary position, never at every descendant
+(§2.9, I-κ).**
 
 1. **Places are type-shaped and folded per type SCC**, derived from the solved type graph, which `unify` builds
    coinductively (`checker-v2.md` §7.3): a cyclic type with no name (#955) is one place.
@@ -286,8 +289,9 @@ step leads to a place that can reach `P` again (the step is on `P`'s cycle: the 
 component of the place graph), because the levels below `P` include whatever that step reaches; a step off the
 cycle stays `no` (`Node Tree (List Int) Tree`: `π·#Node.1`, the root's own list, against `π·⟲`, the subtrees; but
 `Rose (List Rose)`: `π·#Rose.0`, the root's children list, against `π·⟲`, the subtrees, is `yes`, since the
-subtrees are its elements). The trie agrees: a deep demand on a path whose place is on a cycle also takes the `⟲`
-cells of the cycle's places (§2.8's enumeration, `Demands`). **Except** that two paths diverging
+subtrees are its elements). Holder discovery agrees with this relation for every demand, shallow or deep: §2.8's
+*cycle anchors* find the holders of every cell that `⟲` matching relates to the demanded one, not only those of its
+trie ancestors and descendants. **Except** that two paths diverging
 at a `ctor` place on *different constructors* are alternatives and never `~` (one value has one constructor;
 `π₂·status#Editing.2` and `π₂·status#Saving.1` are not a sharing of one argument, R-4.8.15; two *elements* built
 with different constructors are two positions and are compared by `apart` at the construction); concrete cells
@@ -448,8 +452,20 @@ subtree starts for a forward `let` body and retaining actual sibling-arm exclusi
 `withDefault` regions (a virtual continuation does not make every later sibling compatible): a region per `case` arm,
 `let` body and lambda body (a frame boundary), with `start`, `end`, `parent`, its case, and for an arm its *guard*
 when the scrutinee is `i == e`, a `method_call` of `eq` `Dispatch` resolves to `Int`'s (§2.13.15). Two points are **compatible** when neither lies in an arm of a
-case the other lies in a different arm of (oc §7.2). "After `p`, compatible" is at most `depth` ranges, each a
-binary search in a sorted use list (§2.7). The `withDefault (map m f) d` shape (R-4.2.3) is marked by the BIR
+case the other lies in a different arm of (oc §7.2). The region tree is series-parallel: a case's arms are parallel,
+everything else is in sequence. `Regions` numbers a case's arms so that they tile the case's span after its
+scrutinee, and gives each region `base₂`, its start in the **second order**, which lists every case's arms
+(virtual `withDefault` arms included) in reverse. A child region spans the same length in both orders, so a point
+x directly in region r keeps its offset: `rank₂(x) = base₂(r) + (x − start(r))`. A series-parallel order has
+dimension two, so for points p < u, **p and u are compatible exactly when `rank₂(p) < rank₂(u)`**. "After `p`,
+compatible" is therefore one threshold on `rank₂`, never a list of ranges (§2.7). The binary-lifting ancestor
+slots of §4.1 answer the same test for a pair of points and name the case and arms that separate them.
+In the virtual `withDefault (map m f) d` region the inner `map` call belongs to the f arm, so the two arms tile
+the span from the f arm's first point to d's last. The call writes only through `f`, on a payload that exists only
+when `m` matches, which is the f arm's case; so a demand at the call never has a write that d's uses could
+observe, and making the call incompatible with d loses nothing. Without this, the call would be compatible with
+both arms while the arms are not compatible with each other, which no pair of orders can express. S2's
+`compatible` must give the call this answer, and S4's `MaybeDefault` and `ResultDefault` pin it. The `withDefault (map m f) d` shape (R-4.2.3) is marked by the BIR
 pre-pass (§2.12) as a two-arm region, so it has arms in this tree.
 
 ### 2.6 Transfer rules
@@ -484,7 +500,9 @@ at that point (R-4.1.4).
 
 ### 2.7 Uses and liveness
 
-A **use** is `(local, PathId, point, kind, callee-use-node?)`; kinds: `field` (this frame's own field chain,
+A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
+its declaration and deterministic, not the operand instruction, so one instruction reading a local twice has two
+uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame's own field chain,
 record pattern or field capture — **hoistable**), `whole` (a scrutinee, a comparison at the root, a store, a
 return, a send, a whole capture at consumption), `call` (an argument: the callee reads it at the paths its class
 `use` names — recorded once as `(local, p, use-node U)` and answered lazily by projecting `U` along the queried
@@ -492,11 +510,32 @@ remainder; **never hoistable**, since the read happens inside the callee: R-4.8.
 keyed by **path**, never by place (two fields of one record type share a place).
 
 **The index** (`Liveness.zig`, §3.4a): per `(local, PathId)` the uses sorted by point; each use is stored once at its own path.
-Lexicographic path-prefix order makes a subtree a contiguous range without copies at every ancestor.
-The merge-sort tree over that range finds the next point in O(log² U) fixed-word work; path comparisons
-and rejected candidates retain their own charged continuations. Per-local last-use and range-index nodes use the one-key lanes of §4.1. A query descends the
-range index explicitly; every candidate/path/region visit is a retained query task, classified before work into §4.1's direct-demand query lane or growth; every written demand has its own bounded query lane.
-Region compatibility uses the preprocessed tree index, never an uncharged ancestor walk. No hidden depth×uses preprocessing is free.
+Paths are ordered lexicographically by their steps, so a path's subtree is one contiguous range and no use is
+copied to an ancestor. Construction gives every canonical path node that an indexed path passes through its rank
+in that order and its subtree's rank interval, once, so a query navigates by one-word comparisons of ranks and
+never rereads a path's steps. Per-local last-use and range-index nodes use the one-key lanes of §4.1. A query
+descends the range index explicitly; every node and candidate it visits is a retained query task, classified
+before work into §4.1's direct-demand query lane or growth.
+
+**Compatibility is a threshold.** Each index entry carries its use's `rank₂` (§2.5), and each merge-sort node keeps
+a max tree over the `rank₂` of its pairs. "The first use of this range after p and compatible with p" is then one
+descent: a binary search past p by point, and a max-tree search for the first `rank₂` above `rank₂(p)`. Every
+candidate it returns is compatible, so a nested `case` produces no region intervals and no rejected incompatible
+candidate. The binary-lifting ancestry query (§4.1) decides the same relation for a pair in hand: a holder's use in
+`Demands`, a keep edge.
+
+**One query per prefix.** A demand reads its path once. For the direct holder (the base's own local at the written
+path q = s₁…s_d), the query for prefix q_i = s₁…s_i is one rank lookup (q_i is q's trie ancestor, so no step is
+compared) and one exact-run descent, both on step s_i's own direct-demand lane (§4.1). The subtree query at q, or at
+q·f for each written field f ∈ F, is one rank-interval descent on the last step's lane or on f's; a `call`
+candidate's use node is tested at q·f on f's lane too. **Per demand,
+the direct holder costs d + |F| direct-demand kernels, each O(log² U) fixed-word work in its own baseline lane:
+no growth, whatever d and the case nesting depth.** Up to two further holders per
+demand are baseline as well: in `let items = model.items in { model | items = List.push items x }`, `model` also
+holds the written cell. Each runs the same prefix queries over the path at which it holds the cell, on the lanes
+of §4.1's *holder and callee path words*. Separately reserved: a `call` candidate the kind filter rejects (its
+use node empty at the remainder of q), holders beyond those two, a joined or deep cell set's further cells, and
+inferred alternatives. These are §4.1's demand×use and demand×holder products.
 Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 
 | Query | Lists | Answer |
@@ -506,7 +545,9 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
 
-Query cost is O(visited index/path/region records · log(U+2)), charged in §4.1; no bound solely by returned uses is asserted. `R-4.8.2`'s untouched fields cost nothing.
+Query cost is the bound of *One query per prefix* for the direct holder; other holders and rejected `call`
+candidates pay their own reserved tasks (§4.1). No bound solely by returned uses is asserted. `R-4.8.2`'s untouched
+fields cost nothing.
 
 ### 2.8 Demands and the check
 
@@ -548,8 +589,8 @@ evaluation-order sweep — **after** the point's own result has been registered,
 operand's set nodes keeps them live across the hand-over (`mₖ = { mₖ₋₁ | f = [ k ] }`: `mₖ`'s root is registered,
 then `mₖ₋₁` expires; the shared subtree never drops to 0 and is never relinked, O(log) per step, not O(k)) — it is
 unregistered, and a root with no holders decrements its children's live counts
-recursively, so a set node with no live parent is skipped. `holdersOf(c)`: for `c`, its trie ancestors and (deep
-demands) its trie descendants, walk the chain of set nodes keyed by that cell and climb their *live* parents to
+recursively, so a set node with no live parent is skipped. `holdersOf(c)`: for `c`, its trie ancestors, (deep
+demands) its trie descendants and the live cells its cycle anchors name (*Holders across a cycle*, below), walk the chain of set nodes keyed by that cell and climb their *live* parents to
 the roots. This is candidate discovery, not the final holder answer. When ι is in force, reinterpret a
 whole-container holder as `others c·ι` before testing overlap with `elem c·ι`; the split's κ at q
 excludes only the corresponding path q in other positions. It never excludes an alias at another sibling
@@ -563,6 +604,52 @@ k record updates finds only `m_{k−1}` once `m₁…m_{k−2}` have expired. Th
 holds the cell (a pruned walk of its node guided by `reach`), and §2.7's queries. Cost per demand includes the live parent edges, holder-path visits and queries actually inspected;
 §4.1 bounds their module total. Distinct routes to one root are visited once per query. The second review's `ys = r.a` then `send (Got r)` is found: `send` is deep, `param π₂·.a` is a trie
 descendant of `param π₂·ε`, `ys` holds it and is used after → refused (R-5.9.1).
+
+**Holders across a cycle (`⟲`).** Trie ancestors and descendants are not every cell `alias` relates to `c`. Take
+`type Rose = Rose (List Rose)` and `case r of Rose kids → (kids, incKids r)`, where `incKids` writes only
+`π₁·⟲·#Rose.0`. The call's demand is on `r·⟲·#Rose.0`, the subtrees' lists; its trie ancestors are `r·⟲` and `r`.
+`kids` holds `r·#Rose.0`, a `List Rose` whose elements are the cycle, and `alias` says yes: the step `#Rose.0` is on
+`Rose`'s SCC (§2.2). So `kids`, the tuple's pending operand, is a holder, and the call is refused `held-operand`. A
+climb alone misses `kids`, and the subtrees' lists are then pushed in place. The rule, for every demand:
+
+- A **cycle anchor** of a symbolic path q is a prefix q₀ of q whose place P lies on a cyclic SCC of the place graph
+  and whose next step s in q stays on that SCC: s is `⟲`, or a step to a place of the SCC. Anchors are read off
+  the canonical path when a cell is interned, so a cell has at most L of them, L ≤ 2·|places| the longest
+  canonical path of the owner's places: a type-sized count.
+- **Refinements** (`elem`, `others`, `level`, `below`) hang off the cell they refine, not off the trie node of
+  their canonical path, so neither a climb nor an anchor reaches them by path. In
+  `case r of Rose kids → case kids of [ c, …_ ] → case c of Rose ck → (ck, incKids r)`, `ck`'s canonical path is
+  `r·⟲·#Rose.0`, the written cell itself; with `xss : List (List Int)`, `elem(xss·ι)` is canonically `xss·[*]`.
+  So a refinement is also linked into the **refinement chain** of its canonical path, keyed by
+  `(base origin, canonical PathId)`, and anchors by that canonical path.
+- `Demands` keeps one anchor chain per `(base origin, anchor PathId, step class)`, where the step class is `⟲` or
+  `on-cycle`, beside the refinement chains. A cell is linked into its chains when its live count goes 0 → 1, and
+  unlinked when it returns to 0, beside its `set_head` link, so a chain holds live cells only. A cell's first
+  activation links it on the lane of the source atom that interned it, role *anchor links*, at most L records
+  (the excess reserves growth when L > 512); a later activation relinks as growth, as every later activation does
+  (§4.1).
+- For each cell c of the demand's cell set (a deep demand's enumerated cells included), read the refinement chain
+  at c's canonical path and at each of its trie ancestors; and for each anchor q₀ of c's path with next step s:
+  - if s is `⟲`, read chain `(q₀, on-cycle)`: an on-cycle container's holder reaches the written levels through
+    its contents (the `kids` case);
+  - if s is an on-cycle step and the demand is **deep**, read chain `(q₀, ⟲)`: the levels below are contents of
+    the demanded container. A shallow demand skips this chain: a list storage write never counts against the
+    elements it holds (§2.11 *Keep edges*), and an immutable value cannot hold its own container at a level
+    below, so `List.push kids x` with a subtree held is accepted, as its non-recursive twin is.
+
+  The cells found are candidates. `alias`, refinement- and constructor-aware, decides each one; the holders of an
+  aliasing cell then come from `set_head` and the live parent climb, as for any cell.
+- Concrete cells (`site`, `result`, `esc`) need no anchors: their contents are explicit children, found through
+  `reach`.
+
+Cost: the first cell of the cell set reads at most two anchor chain heads and one refinement chain head per
+prefix, on the lane of the demand's step at that prefix (§2.7 *One query per prefix*); each further cell of a
+joined or deep cell set reads its own as growth (a demand × alternative product). Each live cell found costs
+O(log C) plus the climb's charged edges. A chain never holds a dead cell, and every cell it holds has a live
+holder, so no cell without a holder is visited: O(Σ over the cell set of its anchors + holders found × log C)
+per demand. Holders found this way are charged as §2.7 says for holders beyond the direct one. `RoseKidsHeld`,
+`RoseAlias`, `MaybeTreeAlias` and `MutualAlias` (Appendix B) check a write under `⟲` while an on-cycle container
+or a level above is held, and a deep demand on an on-cycle container while a level below it is held.
 
 **Verdicts** (R-0.3): `accepted` {`fresh`, `call`, `param`, `callback-param`, `once`, `entry`}; `pending detail`
 (§2.11); `refused cause` per R-6.3, exact/approximate/position by the pairs it rested on; among failing holders
@@ -578,17 +665,29 @@ or at descendants it will not write (R-4.6.4, `o/Beside*Helper`). The kind filte
 written kind. Outside holders are checked separately by Dead. Cross-path sharing remains in the shape
 and `sep`/holder checks; a fresh record with two fields containing `x` still contains one `x` twice.
 
-`Cond` owns immutable κ snapshots, not a mutable column keyed by `NodeId`. Each snapshot associates the
-shape interpretation with explicit per-path condition bindings and derivation links. Projection returns
-both the projected shape and its projected snapshot. A join returns a new snapshot and changes neither
-operand; a union's derived condition is memoised by its immutable member snapshots and path/kind, never
-by shape node alone. Substitution includes invocation and supply roots in that key. Split conditions refer
-to these settled snapshots; a fixpoint weakening creates a new version and reschedules its dependants.
-An early `yes` cannot survive a later arrival through a stale memo.
+**No shape node owns a mutable fact**, neither a condition nor a use label (`mark` cells, §2.2). Nodes are
+interned structurally, so one node stands in several values, rounds and classes; a fact keyed by the node
+alone would leak between them. A κ snapshot is therefore immutable and owned by its holder, a frame's walk or a
+class. S2 builds it as a persistent map `(NodeId, position class) → CondId` that its holder threads (§3.4); the
+position class says whether the path crosses a summary position (`[*]`, `⟲`).
+
+**A read of κ(v, q) is the join of the holder's stored condition for the node with the condition derived at the
+read's own position from the node's cells**: `apart` over its arrivals, `excl` for each arrival standing for many
+positions, `yes` at a plain path. A stored condition can add constraints but never replaces or weakens that
+derivation, so no key granularity (node, position class or path) can make a read unsound, and the derivation is
+charged per read and never memoised. The position class in the key is a precision split only: an interned node
+reached at a plain path and at a summary path keeps one stored condition for each, so a constraint stored at one
+does not tighten the other (`CallbackFieldPositions`, `CallbackFieldPositionsBranch`, Appendix B). A union's
+derived part comes from its members. Projection returns both the projected shape and the snapshot. A join returns
+a new snapshot and changes neither operand. S3b adds a substitution's invocation and supply roots to the
+snapshot's key, with `Shape.map`'s correspondence. Split conditions refer to settled snapshots; a fixpoint
+weakening creates a new version and reschedules its dependants.
 
 A **single-arrival leaf** may default to `yes` at its own ordinary occurrence. A projected symbolic
-summary arrival requires `excl` at the selected path; a multi-arrival leaf must derive its condition from
-its arrivals there. A memoised union is derived from its members, never defaulted to `yes`. Empty/crossing
+summary arrival requires `excl` at the selected path. This is what makes `List.map xs λl → …` record
+`xreq excl xs[*]`: the elements of a parameter list are one arrival projected under `[*]`, and their exclusivity
+is the caller's to discharge. A multi-arrival leaf must derive its condition from its arrivals there. A union's
+condition is derived from its members, never defaulted to `yes`. Empty/crossing
 children make no object obligations. Thus a fresh list of plain integers has a fresh storage cell and κ
 `yes`; crossing elements do not make the list `lost`. Freshness of outer storage says nothing about shared
 nested cells.
@@ -621,10 +720,14 @@ eager quadratic array of `sep` atoms.
 Where κ is set, always **at the selected path p**:
 
 - A literal `[v₁…vₙ]` joins the conditions of `vᵢ` at p and forms one `apart{cellsAt(vᵢ,p)}` group.
+  The group compares **positions**, not only one path: each position's cells at p are tested against every
+  other position's whole `reach`. In `[ (a, b), (b, a) ]` the cells at `.0`, `a` and `b`, are distinct, but `b`
+  at `[1].0` is also `[0].1`, so κ at `[*].0` is `shared`. A comparison at p alone hides this sibling-component
+  alias. Holders are the other half: a live holder of `[0].1` is found by §2.8 (S3a).
   A record/tuple/constructor supplies the conditions of its children at their respective paths; explicit
   comparisons between two paths use their cells. A repeated child never becomes fresh through its parent.
 - A construction lowers the base's condition at `[*].p` by the stored value's condition at p and
-  `apart{cellsAt(stored,p), cellsAt(base,[*].p)}`. A later spread of a variable loses the relevant condition.
+  `apart{cellsAt(stored,p), cellsAt(base,[*].p)}`, compared by position as for a literal. A later spread of a variable loses the relevant condition.
 - A call instantiates κ(res): `excl πᵢ·q` asks the argument's condition **at q**; `sep` and `within`
   interpret cells under their label-specific supplies (§2.11); `keep`/`writes` use the actual class's facts.
 - A `delta` retains unaffected bindings and lowers the written paths by the new values. Storage
@@ -634,8 +737,9 @@ Where κ is set, always **at the selected path p**:
   `List.copy`/`Dict.copy` separate storage and preserve value conditions (R-4.10.9).
 
 There are no deep `sep`/`apart` atoms. A genuinely deep demand enumerates its tracked paths and conjoins
-those paths' obligations, memoising the graph walk; it does not strengthen every shallow atom into a deep
-one. All enumeration, union and substitution work uses §4.1. A chain of W single-arrival stores makes O(W)
+those paths' obligations through `Cond.deep` (S2): a walk of the value's explicit structure that meets a
+projected summary arrival as `excl` at that arrival's path. S3a's deep demands (send, `consumed`, focus) conjoin
+`deep` over their cell set. A deep demand does not strengthen every shallow atom into a deep one. All enumeration, union and substitution work uses §4.1. A chain of W single-arrival stores makes O(W)
 outer condition nodes plus O(W log C) persistent group insertion work, not a quadratic sequence of sorts.
 
 Where κ is relied on (oc §18.4): a callback writing what a destructive read supplies (`List.update`, `map`'s
@@ -662,7 +766,7 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 | `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@λ·q`, `⊤`; `fresh` numbered after solving by canonical result path of first occurrence (two sites at one path may share a number, adding aliasing only; κ is published, not re-derived; inference uses stable allocation/port keys) |
 | `κ` | immutable interpretation of `res` at each selected path, atoms over arrivals (a parameter's own `excl` implicit); supply/use values retain their corresponding snapshots |
 | `xreq` | the atoms the body relied on |
-| `fun(j)` | `calls ∈ {0, ≤1, many}`; `supply(k)`: nodes handed as πⱼ's `k`th argument with `owned`, `taken` and κ; `need`; `seen`; `keeps`: the keep edges of §2.11 |
+| `fun(j)` | `calls ∈ {0, ≤1, many}`; `supply(λ, k)`: per callback label λ and argument index k, the node handed as πⱼ's `k`th argument at λ, with `owned`, `taken` and κ; `need`; `seen`; `keeps`: the keep edges of §2.11 |
 | `classes` | **a summary-local class table**: every `closure` node in `res`, `supply` or `use` (a lambda returned, a lambda handed on, a closure in a record) carries a `ClassId` into it, normalised by Block for publication (R-5.4.8, R-5.4.9, R-5.5.9); the fixpoint joins classes pointwise |
 | `slots` | versioned cell-slot reads/writes and callback write-back transformations (§2.13.7), preserved on substitution and joins |
 | `refs` | stable `(handle origin, ◆)` slot identities the body may operate on, independent of currently stored value; top for unknown calls (directly or through a callee), for §2.13.7's re-entry rule |
@@ -672,8 +776,8 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 **Functional operations.** `Summary.join(a,b)` builds a new class, including new κ roots, without
 mutating a or b. `leq` is a simulation over pairs of shape nodes **and their κ interpretations**, including
 carried class pairs; a left node reached against two right nodes requires two checks. Local ids or a DFS
-serialisation are not semantic equality. Supplies are keyed by `(callback label, argument index, port)`;
-join only equal keys. A program point or the smallest of two points is never a substitute for a label.
+serialisation are not semantic equality. Supplies are keyed by `(callback label, argument index)`; S4 adds the
+receiving port of a carried class (item 1 below) to the key. Join only equal keys. A program point or the smallest of two points is never a substitute for a label.
 
 **Lattice.** Pointwise (closure code/port identities fixed by the rule below): bits by inclusion; provenance shapes by `leq` (the lower order, `fresh k ⊑ esc k ⊑ ⊤`,
 thesis §4.6) **after widening** (§2.3), so a shape ranges over at most one node per canonical path and the
@@ -750,8 +854,8 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    every other path of `aᵢ`, and `S`'s environment cells: R-5.1.5).
 4. **E**: `cellsAt(aᵢ, q)` escape deeply. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
-   `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (the actual writes its `k`th parameter where
-   `S.supply(k)` is borrowed → `supply`; owned with provenance `πᵢ·q″` → a `callsite` demand on `aᵢ` at `q″`; `cb j′`
+   `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
+   parameter where `S.supply(L, k)` is borrowed → `supply`; owned with provenance `πᵢ·q″` → a `callsite` demand on `aᵢ` at `q″`; `cb j′`
    → the actual for πⱼ′'s result is instantiated and demanded, item 5), **need**, **keep** (below), **seen** (an actual writing a parameter handed
    where `S` loses sight → `pending`, R-5.5.3).
 5. **What a callback's result is**: wherever the callee relies on what its callback returned — a `need` (it writes
@@ -802,7 +906,7 @@ cell in `reach(N)` (the keeper may hold the parent or the part), or a trie *ance
 step of the kept path is a written field (`b = f o.inner; { o | y = 3 }` writes `o` at `y`, off the kept path
 `.inner`, and records no edge: a keeper of one field with a write of another is accepted, R-4.8.13, R-5.2.4); a
 list storage write never counts against the elements it holds — record `keep(j, k, path of the cell in N, written
-path)`; `supply(k).owned` is decided by Dead at
+path)`; `supply(λ, k).owned` is decided by Dead at
 `p` as for any demand. At the caller: an actual whose class may hold its `k`th parameter at a path aliasing the
 kept path in its result (`res` names `π_k·q` with `q` overlapping, or `cb`, or `⊤`) is refused `supply (a)` at the
 function value supplied (R-4.8.11, `p/RecordKeptInLiteral`: `f [ r ]` supplies a fresh list whose `[*]` holds `r`,
@@ -927,7 +1031,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 3. **Patterns and views** (R-2.14, R-4.5): `[ x, …rest ]` on `n`: `x ↦ elem(c·ι)` per container cell
    `c ∈ cellsAt(n, ε)` (§2.2: the position of `c`'s `[*]` taken at ι),
    `rest ↦` a node with `n`'s `ε` cells (a view shares the storage) and `[*] ↦ others(c·ι)`; the split records
-   κ(n) at ι (§2.2). A constructor pattern on a recursive place materialises `level(c·ι)` for the matched node's
+   the container's interpretation at ι: its κ snapshot projected through `[*]`, κ(n, `[*]`·q) at each path q (§2.9). A constructor pattern on a recursive place materialises `level(c·ι)` for the matched node's
    non-recursive arguments and one `below(c·C#i·ι)` per recursive child step, pairwise apart under κ (R-4.7.1,
    R-4.7.7: `l`'s lists and `r` are two `below`s; `p/WriteOneLevel`); a pattern nested two constructors deep splits
    the inner `below` again, so `v` and `v2` of `Node (Node l v r) v2 r2` are distinct cells; a non-recursive
@@ -1341,8 +1445,9 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
 intern     : owner-local comparison tree (origin, kind, a, b) → CellId
 sets       : persistent compressed binary radix sets of (CellId, approx), u32 keys; at most 33 nodes per insertion
              union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order)
-splits     : MultiArrayList { container: CellId, label: LabelId, kappa: KappaId, single: u1, entry: LabelId }
-             immutable interpretation/version; .none entry = this recursive group's entry
+splits     : MultiArrayList { container: CellId, inst: u32, label: LabelId, cond }   (S1)
+             the split instruction, its label chain and the container's projected interpretation; immutable per version
+             S4 adds single: u1 and entry: LabelId (§2.2 *Traversals*); .none entry = this recursive group's entry
 marks      : MultiArrayList { bits: u4, fields: SetId, deep: u1 }  interned use-label payloads
 ```
 
@@ -1363,9 +1468,12 @@ memo_join  : owner-local comparison tree (canonical member-run id) → NodeId; m
 memo_map   : stamped column NodeId → NodeId within one immutable substitution context/version; different contexts never reuse that stamp
 ```
 
-κ is **not** a column of this table: `Cond` owns immutable interpretations (§3.4).
+κ is **not** a column of this table, and neither is a use label: no node owns a mutable fact (§2.9).
+`Cond`'s holder-owned maps carry κ (§3.4); `mark` cells carry use labels (§2.2).
 The inverted holder index belongs to `Demands` (S3a), over Cell's persistent set nodes: dense
-`CellId → live set-node head`, same-cell links, live parent links and holder-root lists. Cell itself
+`CellId → live set-node head`, same-cell links, a live count per set node, live parent links, holder-root lists,
+and §2.8's anchor and refinement chains (heads in an owner-local comparison tree keyed by
+`(base origin, PathId, class)`, links in dense columns). Cell itself
 contains neither liveness nor a holder registry. Holders are found through the live inverted set index (§2.8), never a scope scan.
 Live parent links and their transition/query tasks use §4.1 accounting.
 
@@ -1377,20 +1485,30 @@ Cond.Table (per walk)
   a, b    : u32     and: (CondId, CondId); atom: (atom kind: excl | sep | within | apart | keep | writes, operands)
 groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
 intern    : owner-local comparison tree (kind, a, b) → CondId
-kappa     : immutable KappaId roots for value interpretations; persistent per-path bindings/derivations
-            each root names its shape root, operands and substitution context; never NodeId → mutable CondId
+kappa     : KappaId roots, each a holder-owned immutable persistent map (NodeId, position class) → CondId (S2),
+            the class saying whether the path crosses `[*]` or `⟲`; hash-consed, threaded by its frame or class;
+            a join builds a new root. A read joins the stored condition with the one derived at the read's
+            position from the node's cells (apart over its arrivals, excl per arrival standing for many
+            positions, yes at a plain path), charged per read and never memoised: the stored part only adds
+            constraints, and the position class is a precision split only (§2.9). S3b adds the substitution
+            context (invocation and supply roots) to the root's key with Shape.map's correspondence. Never a
+            mutable column NodeId → CondId
 flat      : memo CondId → sorted atom run (print, compare, block)
-memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version) → CondId; memo_paths: (NodeId, KappaId, selected path/kind, interpretation) → CondId
+memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version) → CondId; `deep` walks per query and stores nothing in a root
 ```
 
 ### 3.4a The liveness index (`Liveness.zig`)
 
 ```
-uses      : MultiArrayList { local, path: PathId, point, kind: u8, region, use_node: NodeId (.none unless kind call) }
-            sorted by (local, path, point)
+uses      : MultiArrayList { atom, local, path: PathId, point, rank2: u32, kind: u8, region, use_node: NodeId (.none unless kind call) }
+            atom: the use occurrence, unique in the declaration (asserted at build under runtime safety)
+            sorted by (local, path rank, point)
 by_local  : column local → Range into `uses` (dense: a declaration's locals)
-by_path   : within a local's range a sorted run of (PathId, Range), binary-searched — never a local × path table
-subtree   : lexicographic path-prefix intervals + merge-sort tree of (point, UseId) runs
+path_rank : stamped column PathId → (rank, subtree rank interval) for every canonical path node an indexed path
+            passes through, assigned once by one walk of the path trie
+by_path   : within a local's range a sorted run of (path rank, Range), binary-searched by one-word comparisons —
+            never a local × path table
+subtree   : merge-sort tree of (point, rank2, UseId) runs over rank intervals, each node with a max tree over rank2
             each use belongs to at most 33 tree nodes; paths stored once, no ancestor copies
 last_use  : column local → point
 ```
@@ -1405,7 +1523,7 @@ Class
   kappa    : KappaId immutable interpretation root for res and corresponding roots on supply/use values
   res      : NodeId
   xreq     : Range   atoms
-  funs     : Range   { calls: u2, need: u1, seen: u1, supply: Range of { label: LabelId, k, port, node, kappa: KappaId, owned: u1, taken: u1 }, keeps: Range of { k, kept_path: PathId, written_path: PathId, writer: u32 } }
+  funs     : Range   { calls: u2, need: u1, seen: u1, supply: Range of { label: LabelId, k, node, taken: u1, kappa: KappaId, owned: u1, port }, keeps: Range of { k, kept_path: PathId, written_path: PathId, writer: u32 } }
   classes  : Range   into the summary-local class table: ClassId per closure node reachable from res/supply/use
   slots    : Range   stable handle/◆ identities and versioned read/write transformations
   refs     : SetId   stable handle/◆ slots touched; top bit for unknown
@@ -1413,6 +1531,9 @@ Class
   once     : Range
   account  : SummaryAccountId   -- owner declaration, inherited by every nested class
 ```
+
+A supply is keyed by `(label, k)`. S2 builds the record `(label, k, node, taken)`; the other fields arrive with
+the slices that compute them, and S4 adds the receiving `port` of a carried class (§2.10) to the key.
 
 Summaries live in the module arena as immutable local graphs. Local normalisation orders graph references
 and supply keys for comparison/printing; its words still contain owner-local ids and are neither hashed
@@ -1609,9 +1730,9 @@ list, child array or arbitrary-size set. Every inference operation is one of the
 | dependency cycle search, validation, numbering, block codec | graph/version plus DFS/worklist cursor, visited record and continuation; cycles write id backreferences |
 
 A task/request is reserved **before** dictionary lookup (hit or miss), interning, climbing a parent,
-walking a path/region, allocating an output or scheduling an edge. A query must not call `rangesAfter`
-and only charge after its unbounded ancestor/sibling walk; use the bounded ancestry kernel or reserve
-each traversal step before it runs. Memoise a completed answer only after all fallible checks succeed;
+walking a path/region, allocating an output or scheduling an edge. A query never walks region ancestors
+or siblings: compatibility is §2.5's `rank₂` threshold inside the range descent, or the bounded ancestry
+kernel for a pair. Memoise a completed answer only after all fallible checks succeed;
 provisional cycle knots are private and invalidated on failure. A task runs at most once, reads/writes O(1) already-addressable words and
 creates at most a fixed number of successor requests/notification edges. Iterating a long adjacency run,
 copying a variable-width key, bulk allocation, traversing children and retrying an unsuccessful lookup all
@@ -1657,6 +1778,12 @@ source credit never pays for its caller's expansion.
 
 S_f counts the declaration's written BIR records and sidecar words (operands, fields, arms, explicit paths and
 capture/schema edges), plus each distinct canonical imported **semantic record/edge** actually consumed once.
+**Holder and callee path words:** S_f also counts 3·L words per written demand and per written call argument,
+L ≤ 2·|places| the longest canonical path of the owner's places. Each word is an original atom
+`(written demand or argument, slot, k)`: slot 0 pays step k of a callee's `W` path below the written argument;
+slots 1 and 2 pay step k of the path at which the first two holders beyond the direct one hold the demanded cell
+(§2.7). Their lanes are direct-demand query lanes. These are type-sized multiples of written atoms, never
+inferred contexts.
 It includes nested lexical bodies owned by f once, not their instantiations; mutually recursive originals are
 source graphs, not repeatedly credited copies. A table is identified by package/module/declaration and semantic
 block identity, not by cache address. Transitive unchanged table references get one read credit per identity;
@@ -1702,7 +1829,7 @@ their enclosing owner once; executing an inferred copy is not a new original bod
 | Additional lane | Bounded kernel and eligibility |
 |---|---|
 | final source validation | One final walk per original body/atom after settling, including recursive groups and local functions. It has its own copy of the 32 direct + eight 512-record lanes. It reads immutable solved facts; existing proof results are references. It does not renew inference lanes or flatten inferred graphs. Validation of growth records reserves its continuation in G_f when those records are created. |
-| direct demand query | ≤512 records per written demand/explicit path-step atom: one range query, one direct holder/root candidate and one region-compatibility test. The merge-sort index decomposes a range into at most 64 nodes; each reserved inspection does one ≤32-comparison binary search (O(log² U) fixed-word work for the query). At most 64 inspection records, one candidate, 64 cursor/link records and 32 root/event records give ≤161 records, leaving room inside 512 for the fixed query result/notification links. This is a distinct kernel from the 428-record one-key update; do not compose both under one lane. Original region preorder/parent/arm data is source input; precompute 32 binary-lifting ancestor slots per region (u32 region ids), charging them to its source settlement lane (428+32≤460<512). LCA/first-differing-arm queries take at most 64 fixed-word steps, independent of nesting depth; additional non-tree guard obligations are general proof tasks. A chain of written path steps has one atom per step. Enumerating multiple holders, composed paths or matching a demand against inferred alternatives is not this kernel. |
+| direct demand query | ≤512 records per written demand/explicit path-step atom: one path-rank lookup, one range query whose candidates are compatible by construction (§2.7), one direct holder/root candidate, and the chain-head reads of the prefix's cycle anchors (§2.8). The merge-sort index decomposes a range into at most 64 nodes; each reserved inspection does one ≤32-comparison binary search by point and one ≤64-step search of the node's `rank₂` max tree (up, then down) (O(log² U) fixed-word work for the query). At most 64 inspection records, one candidate, 64 cursor/link records and 32 root/event records give ≤161 records; the rank lookup is ≤32 one-word comparisons in one record, and a prefix has at most two anchor chain heads, leaving room inside 512 for the fixed query result/notification links. This is a distinct kernel from the 428-record one-key update; do not compose both under one lane. Original region preorder/parent/arm data is source input; precompute 32 binary-lifting ancestor slots and `base₂` per region (u32 values), charging them to its source settlement lane (428+33≤461<512). LCA/first-differing-arm queries take at most 64 fixed-word steps, independent of nesting depth; additional non-tree guard obligations are general proof tasks. A chain of written path steps has one atom per step. Enumerating multiple holders, composed paths or matching a demand against inferred alternatives is not this kernel. |
 | call view and direct obligation | ≤512 per written call/argument/explicit path atom: template+actual-root references, constant-width substitution environment link, and one selected direct label/`W`/use/κ/xreq obligation per original call, argument or explicit-path atom (never per inferred obligation). A singleton callback-result template can instantiate its one label at each written call; multiple unselected labels cannot use that singleton case. A direct obligation is a terminal test or one fixed-width decomposition step, never a recursive/compound κ or xreq descent. Descending a group/graph requires corresponding original path atoms or pre-reserved growth tasks; calling it “one obligation” gives no exemption. Share original callee condition/use graphs; do not eagerly copy their paths at every call. **All** obligations still must be discharged before acceptance: an M-obligation summary at N distinct actual substitutions can require NM checks. Neither “callsite” nor “import” creates NM baseline atoms. |
 | static transfer settlement | ≤512 per original transfer/dependency atom: initial equation, one final resolved evaluation and its bounded notification links. Build the dependency graph once; on fact changes schedule affected transfer nodes, not a full body replay. Further versions and `(edge,fact)` products require G_f. The initial and final source scans therefore cost O(S_f), regardless of body length or recursive/local status. |
 | entry identity/delta | ≤512 per original/imported model-field or written override atom: unchanged fields are shared identity equations; gather changed fields once and retain one root/substitution per arm. A same-field identity-or-fresh update joins its origin set once, forwarding the shared root, not all memberships to every arm. No model-width×arm materialisation. General cross-field feedback, many alternatives or repeated obligation comparisons are not this kernel. |
@@ -1710,12 +1837,14 @@ their enclosing owner once; executing an inferred copy is not a new original bod
 Except for the direct-demand range-query kernel just bounded, each additional 512-record kernel has the fixed-word bound: at most 33 visited/copied index nodes,
 66 links, 33 cursor records, 132 activation/expiry continuations, 32 root/event/memo records and 132
 result/notification links, ≤428 for the **entire** admitted kernel, not 428 per lookup composed inside it.
-The range-query bound is for one contiguous range and one candidate: multiple region intervals, rejected
-candidates, symbolic-cycle matches or inferred-holder alternatives require separately reserved tasks.
-Lexicographic comparisons charge each written path step to its own atom before reading it; each such atom
-pays at most 64 comparisons for the two binary searches, not an entire path to the first step's lane. This is one query, not one renewed lane per prefix:
-`useAfter` querying all d prefixes can reread a path step Θ(d) times. Reuse precomputed prefix ranges where
-available; otherwise those repeated comparisons and the prefix×interval product reserve growth continuations.
+The range-query bound is for one contiguous range and one candidate. Compatibility never splits the range (the
+`rank₂` threshold is applied inside the descent), so case nesting adds no work. A `call` candidate the kind filter
+rejects, the cells a cycle anchor's chain holds and inferred-holder alternatives are separately reserved tasks.
+A query compares ranks, never path steps. `useAfter` reads the demand's path once and runs one charged range query
+per prefix with fixed-key navigation: prefix q_i on step s_i's lane, one rank lookup and one descent. No step is
+reread, and no prefix×interval product exists. A demand whose path continues below its written steps (a callee's
+`W` at q) runs each step below them on its own direct-demand lane, the call argument's *holder and callee path
+word* for that step (S_f, above); no range query runs on the call-view lane.
 The at-most-64-step ancestry query is an iterative fixed-word primitive with no per-step allocation;
 its ≤32 precomputed slots belong to the separate original-region atom. Region preprocessing, original arm/field runs and written actual arguments
 have their own original atoms; they cannot be hidden variable-size payloads in a call/query lane.
@@ -1726,10 +1855,12 @@ lanes never buy another frame walk. This is a constructive bound for the specifi
 that arbitrary holder queries, callee discharges or entry propagation are source-linear.
 
 **Lane identity and reservation.** Every lane key is `(owning declaration, original atom, role, phase)`.
-An atom is a stable original use/region/path-step or imported semantic edge, not a sorted-array index or a
-frame-local counter. Nested frames share their owner's namespace; inference and final validation have
-distinct real phases. Liveness construction charges the ≤33 index entries per use to that use's lane and
-ancestry preprocessing to the original region's settlement lane. A path's steps each use their own atoms.
+An atom is a stable original use occurrence/region/path-step or imported semantic edge, not a sorted-array index,
+an operand instruction or a frame-local counter. Nested frames share their owner's namespace; inference and final validation have
+distinct real phases. Liveness construction charges the ≤33 index entries per use to that use's lane, the rank and
+interval of a canonical path node at depth k to written step k of the earliest use occurrence whose path passes
+through it (role *path rank*), and a region's ancestor slots and `base₂` to the original
+region's settlement lane. A path's steps each use their own atoms.
 No declaration, nested function or later slice renews or aliases a lane accidentally.
 
 **Runtime enforcement of the kernel bound.** Each lane has a dense provenance slot and checked record count.
@@ -1943,8 +2074,8 @@ L0  Ids
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 300 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
-| `Regions.zig` | 4 | region tree, points, compatibility, guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rangesAfter`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | immutable per-path κ interpretations, atoms, shallow `apart`/`sep`, selected-path conjunctions, instantiation, rely | `yes/lost/shared`, `and`, `atom`, `kappa`, `paths`, `sep`, `lower`, `instantiate`, `rely`, `flat` | Ids, Facts, Cell, Shape | ≤ 1 000 |
+| `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
+| `Cond.zig` | 4 | holder-owned immutable κ maps, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's explicit structure; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, `atom`, `kappa`, `deep`, `sep`, `lower`, `instantiate`, `rely`, `flat` | Ids, Facts, Cell, Shape | ≤ 1 000 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 400 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
@@ -2174,11 +2305,11 @@ its runtime half is rebased, its ownership half rewritten as words.
 |---|---|---|---|---|---|---|
 | S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints same, v2-only accepts, v2-only refuses and one-sided demands | — | S1, S2 | 7 |
 | S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked owner-original-atom/role/phase lane counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 10 |
-| S2 | **Conditions and summaries** | `Cond` (immutable per-path κ snapshots, cell use marks, derived multi-arrival/union conditions), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path, per-written-demand query lanes, fixed-word region ancestry, lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 8 |
+| S2 | **Conditions and summaries** | `Cond` (holder-owned immutable κ maps (NodeId, position class) → CondId, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 8 |
 | S2b | **Words, the spread fact, core in-process** | all §2.13.6 type/value words and the temporary §2.13.5 `sender` alias-port metadata in separate v2 columns through lexer/parser/lowering, typed interfaces and formatter with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`, the pinned `sortWith` row [O 2026-10-26], and the representation readers `base`, `offset`, `unsafeGet`, `sliceOf` with the words of §2.13.16), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught all new words, including sequence/cell/failure metadata, Ref/Deferred slot rows, Builder/`done`/`concatenated`, and renamed-type/value tests; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16 (on paper in Appendix C; its decisions in C.9 include the pinned sortWith row and conservative fold-element κ); **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session; Bump the frontend artifact/BIR, typed-interface and affected cache payload/key versions for spread facts, ownership metadata and the attribute; old bytes are cache misses, cold/warm inputs identical. Raise-attribute grammar, placement, formatting, cache input and diagnostics (§4.4), `OwnershipSummarySizeRaised`, `language.md` and `skills/beni/`; **instrumentation:** record B_f/G_f/S_f/N_f and per-category high-water sizes on corpus and research apps, generator-deduplicated, report G_f ≥10% of default growth allowance to owner. Initially record supported constructs, never call unsupported zero; repeat in S4/S7. Minimal blocks already encode class/environment backreferences. | `zig build gates` green under v1 (runtime types/code unchanged by words; ownership metadata is retained, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 15 |
-| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with the SCC-reachability `⟲` rule for trie/deep queries; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5 | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 6 |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), Shape.map's correspondence hook transporting κ snapshots with graph relabelling, `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 10 |
-| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes; §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 20 |
+| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5 | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseKidsHeld, RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 6 |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key (§3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 10 |
+| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 20 |
 | S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 7 |
 | S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh. | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8 | S5 | S7 | 6 |
 | S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast` | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 8 |
@@ -2415,7 +2546,9 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), RecordProvenanceTopLevelOk (291), SchemaIssuesFresh (307), SchemaIssuesExclusive (293) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5, R-4.10.8 | S7 |
 | DictFocusGrow (267), DictHelperAlias (270), DictRecordAlias (270), DictTupleAlias (270), CopyApart (276), RefOwnsContents (286), LogAnnotateUpdate (308) | R-4.10.12, R-4.10.13, R-4.6.8, R-5.12.3, R-5.12.2 | S8 |
 | *to write, red twins found by review:* CallbackResultTwice (`twice f = (y = f ⊤; _ = f ⊤; [ y, y ])` then `List.update … 0 λl → List.push l 9`: `exclusive`), CallbackResultForwarded (`h f = (_ = f ⊤; f ⊤); k f = (a = h f; [ a, a ])`, its recursive `h f n` twin, and `once`/`dup`: `exclusive`), the `dup2` and 3-cycle twins of RecordIndexExchange (`exclusive`) | R-4.6.2, R-4.8.17 | S4, S5 |
-| *to write, red twins found by the S1 review (§2.2's `⟲` matching):* RoseAlias (`type Rose = Rose (List Rose)`: a write through the root's children list with a subtree held → refused `alias`; the prefix reading of `⟲` accepted it), MaybeTreeAlias (`type T = T (Maybe T) (List Int)`: the same through `Maybe`), MutualAlias (`type A = A B | …`, `type B = B (List A)`: a write to `B`'s list with an `A` below held) | R-4.7.1, R-4.7.4 | S3a |
+| *to write, red twins found by the S1 review (§2.2's `⟲` matching):* RoseAlias (`type Rose = Rose (List Rose)`: a write through the root's children list with a subtree held → refused `alias`; the prefix reading of `⟲` accepted it), MaybeTreeAlias (`type T = T (Maybe T) (List Int)`: the same through `Maybe`), MutualAlias (`type A = A B | …`, `type B = B (List A)`: a write to `B`'s list with an `A` below held). In all three the write is under `⟲` or the demand is deep; a shallow storage write of the container while a level below is held is accepted (§2.8 *Holders across a cycle*) | R-4.7.1, R-4.7.4 | S3a |
+| *to write, red twin of §2.9's position class:* CallbackFieldPositions (`w = if c then (g 1).a else (g 2).a` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })` with `g = λ_ → shared`: the branch's `yes` at a plain path must not answer the element write at `[*].a`, which reads the same interned leaf under a summary position; refused `exclusive`. S2 pins the κ half as a unit test), CallbackFieldPositionsBranch (`if c then [ (g 1).a ] else [ (g 2).a ]` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })`: the leaf `{cb@ι₁·.a, cb@ι₂·.a}` stored `yes` at a summary position in one branch is the same interned leaf as `[ g 1, g 2 ]`'s `[*].a`; the read derives `apart` over its arrivals and records `xreq`, never the stored `yes`; refused `exclusive` with `g = λ_ → shared`) | R-4.6.2, R-4.6.4 | S5 |
+| *to write, red twin of §2.8's cycle anchors:* RoseKidsHeld (`type Rose = Rose (List Rose)`; `case r of Rose kids → (kids, incKids r)` with `incKids` writing only `π₁·⟲·#Rose.0`: refused `held-operand` at the call, since `kids` holds the container of the subtrees whose lists are written; a climb of trie ancestors alone accepted it and pushed the subtrees' lists in place) | R-4.7.1, R-4.7.4 | S3a |
 
 **Additional callback fixtures to write with S4 (not added by this docs-only revision).** `CallbackPairWrapper`
 pins `wp f = pair f` with a fresh actual: a write through .0 with .1 later live is accepted; the shared-returning actual is
