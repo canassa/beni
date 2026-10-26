@@ -687,7 +687,7 @@ pub const Module = struct {
         if (target) |t| {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
-            if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, owner, owner.decls[t[1]]) };
+            if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, t[0], owner.decls[t[1]]) };
             // A container's `eq`/`compare` with no words (`List.eq`, written
             // in JavaScript over its element evidence): the derived class when
             // no evidence it is handed is written by hand (§2.13.13).
@@ -744,7 +744,7 @@ pub const Module = struct {
 
     /// A worded declaration's class at this call (§5's signature adapter):
     /// its words over the call's own argument and result places.
-    fn wordedClass(mod: *Module, words: []const [2]u32, args: []const u32, inst: u32, owner: *const Bir, decl: Bir.Decl) Error!ClassId {
+    fn wordedClass(mod: *Module, words: []const [2]u32, args: []const u32, inst: u32, owner: u32, decl: Bir.Decl) Error!ClassId {
         const gpa = mod.gpa;
         var params: std.ArrayList(Rows.Param) = .empty;
         defer params.deinit(gpa);
@@ -755,7 +755,7 @@ pub const Module = struct {
             for (words) |s| if (s[0] == k) {
                 w = s[1];
             };
-            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(owner, decl, k) });
+            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in, owner, decl, k) });
         }
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
@@ -882,7 +882,7 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
                 result = f.result.toOptional();
                 for (store.vars(f.params)) |p| {
                     const at = try mod.adapter.placeOfVar(p.toOptional());
-                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in.bir, d, params.items.len) });
+                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in, mod.in.module, d, params.items.len) });
                 }
             },
             else => {},
@@ -898,14 +898,68 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
     return try Rows.fromWords(mod.env(), &mod.sums, .{ .params = params.items, .result = try mod.adapter.placeOfVar(result), .result_words = result_words });
 }
 
-/// Whether parameter `k` of `d`'s annotation is a bare type variable
-/// (`borrowed a`): its value may hold any structure, and the callee may read
-/// any of it, so its words apply at every depth (§2.13.6, #1105).
-fn paramIsTypeVariable(owner: *const Bir, d: Bir.Decl, k: usize) bool {
+/// Whether parameter `k` of declaration `d` of module `owner` is declared
+/// as a bare type variable (`borrowed a`), aliases expanded (`Id a` with
+/// `type alias Id a = a`): its value may hold any structure, and the callee
+/// may read any of it, so its words apply at every depth (§2.13.6, #1105).
+fn paramIsTypeVariable(in: *const Input, owner: u32, d: Bir.Decl, k: usize) bool {
+    const bir = in.birs[owner];
     const ann = d.annotation.unwrap() orelse return false;
-    if (owner.instTag(ann) != .type_fn) return false;
-    const ps = owner.extraSlice(owner.subRange(@fromBackingInt(owner.instData(ann).lhs)), Bir.Inst.Index);
-    return k < ps.len and owner.instTag(ps[k]) == .type_var;
+    if (bir.instTag(ann) != .type_fn) return false;
+    const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Bir.Inst.Index);
+    return k < ps.len and expandsToVariable(in, owner, ps[k], null);
+}
+
+/// A type written in module `module` whose type variables are bound by
+/// `env` (an alias's arguments; null in an annotation, where every variable
+/// is free).
+const AliasEnv = struct { module: u32, args: []const Bir.Inst.Index, outer: ?*const AliasEnv };
+
+/// Whether the type `t` of `module` expands to a free type variable.
+/// Alias cycles are refused by the checker (`recursive_alias`), so the
+/// expansion ends.
+fn expandsToVariable(in: *const Input, module: u32, t: Bir.Inst.Index, env: ?*const AliasEnv) bool {
+    const bir = in.birs[module];
+    switch (bir.instTag(t)) {
+        .type_var => {
+            const e = env orelse return true;
+            const p = Bir.TypeVarInfo.unpack(bir.instData(t).rhs).param;
+            if (p >= e.args.len) return false;
+            return expandsToVariable(in, e.module, e.args[p], e.outer);
+        },
+        .type_app => {
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).rhs)), Bir.Inst.Index);
+            const alias = aliasOf(in, module, @fromBackingInt(bir.instData(t).lhs)) orelse return false;
+            const inner: AliasEnv = .{ .module = module, .args = args, .outer = env };
+            return expandsToVariable(in, alias[0], alias[1], &inner);
+        },
+        .type_top, .ext_type => {
+            const alias = aliasOf(in, module, t) orelse return false;
+            const inner: AliasEnv = .{ .module = module, .args = &.{}, .outer = env };
+            return expandsToVariable(in, alias[0], alias[1], &inner);
+        },
+        else => return false,
+    }
+}
+
+/// The aliased type of the alias a type reference names, with the module
+/// it is written in; null for anything else.
+fn aliasOf(in: *const Input, module: u32, ref: Bir.Inst.Index) ?struct { u32, Bir.Inst.Index } {
+    const bir = in.birs[module];
+    const data = bir.instData(ref);
+    const at: [2]u32 = switch (bir.instTag(ref)) {
+        .type_top => .{ module, data.lhs },
+        .ext_type => blk: {
+            if (data.lhs >= in.provenance.len) return null;
+            const d = in.provenance[data.lhs].typeDecl(data.rhs) orelse return null;
+            break :blk .{ data.lhs, d.int() };
+        },
+        else => return null,
+    };
+    if (at[0] >= in.birs.len) return null;
+    const decls = in.birs[at[0]].decls;
+    if (at[1] >= decls.len or decls[at[1]].kind != .type_alias) return null;
+    return .{ at[0], decls[at[1]].annotation.unwrap() orelse return null };
 }
 
 /// A v2 word on a place without the kind it reads (#1056 item 4): lowering

@@ -2,11 +2,20 @@ module HeldIntoTypeVariable
   14:12 construction xs: rejected alias: ys[*] holds it and is read at 15:7
   21:12 construction xs: rejected alias: ys[*] holds it and is read at 22:16
   33:27 construction r: rejected alias: rows[*] holds it and is read at 33:37
+  51:12 construction xs: rejected alias: ys[*] holds it and is read at 52:7
+  64:12 construction xs: rejected alias: ys[*] holds it and is read at 65:7
+  75:12 construction xs: rejected alias: ys[*] holds it and is read at 76:16
   summary look: π1 R; res ⊤{lost}r{lost} (words)
   summary heldIntoVar: π1 RAW; res fresh1{excl π1} ~π1
   summary heldIntoFrom: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{shared} ~π1
   summary size: π1 R; res ⊤{lost}r{lost} (words)
   summary sizeAfter: π1 R, π1[*] RW; xreq excl π1
-  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-cause alias 3
+  summary lookId: π1 R; res ⊤{lost}r{lost} (words)
+  summary heldIntoAlias: π1 RAW; res fresh1{excl π1} ~π1
+  summary wrap: π1 R
+  summary viaWrap: π1 RAW; res fresh1{excl π1} ~π1
+  summary fromWrap: π1 RA; res π1
+  summary viaFromWrap: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{shared} ~π1
+  demands 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause alias 6
