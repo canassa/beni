@@ -1,0 +1,44 @@
+-- run: a request for more permits than there are counts all it asked for
+-- as taken (transparent-effects-proposal.md §17.9, its 2026-10-26
+-- amendment). On 2 permits an `acquire` of 5 is served, since all are
+-- free, and counts 5. Grown to 10, the semaphore has 5 free, not 8: a
+-- `withPermits` of 3 gets in, and an `acquire` of 8 waits. The manual
+-- `release` of 5 then balances exactly: 7 free with the 3 held, and the 8
+-- still waits until the 3 are given back.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    Semaphore.acquire s 5
+    _ = Debug.log "after acquire 5 on 2, available" (Semaphore.available s)
+    Semaphore.resize s 10
+    _ = Debug.log "after resize 10, available" (Semaphore.available s)
+    gate : Deferred ⊤
+    gate = Deferred.make ⊤
+
+    three = Task.spawn λ⊤ →
+        Semaphore.withPermits s 3 λ⊤ →
+            Debug.log "three in" ⊤
+            Deferred.wait gate
+    eight = Task.spawn λ⊤ →
+        Semaphore.acquire s 8
+        Debug.log "eight in" ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "three in, eight waits, available" (Semaphore.available s)
+    Semaphore.release s 5
+    Task.yieldNow ⊤
+    _ = Debug.log "after release 5, eight waits" (Task.running eight)
+    _ = Debug.log "after release 5, available" (Semaphore.available s)
+    _ = Deferred.complete gate ⊤
+    Task.join three
+    Task.join eight
+    _ = Debug.log "eight holds, available" (Semaphore.available s)
+    Semaphore.release s 8
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

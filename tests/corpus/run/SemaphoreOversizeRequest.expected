@@ -1,7 +1,7 @@
 available while both wait: 1
 five in, available: 0
 five resized to 3, available: 0
-one in, available: 0
 five out: ⊤
+one in, available: 2
 available at the end: 3
 done

@@ -101,11 +101,12 @@ A `Semaphore` limits how many fibers do one thing at the same time. `Semaphore.m
   `work` does not run.
 - Fibers get permits in the order they started to wait. A request waits while an earlier request
   waits.
-- A request for more permits than there are waits until all are free, then takes all of them.
-  A request for 0 or fewer does not wait.
+- A request for more permits than there are waits until all are free. Then it counts all of its
+  `n` as taken, so give back the same `n`. A request for 0 or fewer does not wait.
 - `Semaphore.acquire s n` and `Semaphore.release s n` are the manual pair. One fiber can take a
   permit and a different fiber can give it back. Nothing gives back a permit that you `acquire`:
-  if you do not `release` it, it is lost.
+  if you do not `release` it, it is lost. Inside `Task.race` or `Task.timeout`, use
+  `withPermits`, not `acquire`.
 - `Semaphore.available s` is the number of free permits. `Semaphore.resize s n` changes the
   number of permits.
 

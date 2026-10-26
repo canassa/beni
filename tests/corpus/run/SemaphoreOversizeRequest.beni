@@ -1,11 +1,11 @@
 -- run: a request for more permits than the semaphore has
 -- (transparent-effects-proposal.md §17.9 and its 2026-10-26 amendment).
 -- It would block the queue forever, so it is served once every permit is
--- free, and takes them all — the 2 there are, not the 5 it asked for. On 2
--- permits a holder takes 1; a request for 5 waits, and a request for 1
--- waits behind it. When the holder ends the request for 5 runs, with
--- nothing free. It grows the semaphore to 3: since it holds 2, the 1 more
--- is handed at once to the request for 1, which runs while it still holds.
+-- free, and counts all 5 as taken. On 2 permits a holder takes 1; a
+-- request for 5 waits, and a request for 1 waits behind it. When the
+-- holder ends the request for 5 runs, with nothing free. It grows the
+-- semaphore to 3, which still leaves none free against the 5 it holds, so
+-- the request for 1 runs only once the 5 are given back.
 import Deferred exposing (Deferred)
 import Io
 import Node exposing (Program)
