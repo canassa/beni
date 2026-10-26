@@ -126,22 +126,42 @@ pub const Index = struct {
         var x: Index = .{};
         errdefer x.deinit(gpa);
         const n: u32 = @intCast(uses.len);
-        // The step runs of every distinct path, root first.
+        // The step runs of every distinct path, root first. A path's run is
+        // built from the run of its nearest ancestor the index already has
+        // (copied from this buffer, not re-read), plus the nodes below it,
+        // each read and charged ONCE per build: `x.a.f0 … x.a.f599` reads
+        // `x.a` once, whatever the number of paths below it.
+        var missing: std.ArrayList(PathId) = .empty;
+        defer missing.deinit(gpa);
+        var seen_atoms: Ids.FixedDict(1) = .{};
+        defer seen_atoms.deinit(gpa);
         for (uses) |u| {
             const charge: Charge = .in(account, .{ .atom = u.atom, .role = .liveness_index, .phase = phase });
             try charge.reserve(gpa, .use, 1);
+            // `Use.atom` is a use occurrence, unique in the declaration: a
+            // repeat is Transfer's defect, caught here under runtime safety.
+            if (std.debug.runtime_safety) std.debug.assert(!(try seen_atoms.getOrPut(gpa, .{u.atom})).found_existing);
             if (x.runs.contains(u.path)) continue;
-            const start: u32 = @intCast(x.steps.items.len);
+            missing.clearRetainingCapacity();
             var at = u.path;
-            var depth: u32 = 0;
-            while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
-                const node_lane: Charge = .in(account, .{ .atom = Ids.atom_path_bit | at.int(), .role = .liveness_index, .phase = phase });
-                try node_lane.reserve(gpa, .path, 1);
-                try x.steps.append(gpa, places.pathStep(at));
-                depth += 1;
+            while (at != .none and !x.runs.contains(at)) : (at = places.pathParent(at)) try missing.append(gpa, at);
+            const start: u32 = @intCast(x.steps.items.len);
+            if (at != .none) {
+                const r = x.runs.get(at).?;
+                var i: u32 = 0;
+                while (i < r.len) : (i += 1) try x.steps.append(gpa, x.steps.items[r.start + i]);
             }
-            std.mem.reverse(Place.Step, x.steps.items[start..]);
-            try x.runs.put(gpa, u.path, .{ .start = start, .len = depth });
+            var i = missing.items.len;
+            while (i > 0) {
+                i -= 1;
+                const node = missing.items[i];
+                if (places.pathParent(node) != .none) {
+                    const node_lane: Charge = .in(account, .{ .atom = Ids.atom_path_bit | node.int(), .role = .liveness_index, .phase = phase });
+                    try node_lane.reserve(gpa, .path, 1);
+                    try x.steps.append(gpa, places.pathStep(node));
+                }
+                try x.runs.put(gpa, node, .{ .start = start, .len = @intCast(x.steps.items.len - start) });
+            }
         }
         // Sorted by (local, path, point).
         const order = try gpa.alloc(u32, n);
@@ -555,6 +575,16 @@ const TestGraph = struct {
                 try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 2 });
                 return .{ .kind = .list, .head = 200 };
             },
+            // 900: `{ a : W }`, 901: `W`, a record of 600 list fields.
+            900 => {
+                try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, 10) catch unreachable), .@"var" = 901 });
+                return .{ .kind = .record };
+            },
+            901 => {
+                var k: u32 = 0;
+                while (k < 600) : (k += 1) try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, 1000 + k) catch unreachable), .@"var" = 1 });
+                return .{ .kind = .record };
+            },
             else => unreachable,
         }
     }
@@ -855,4 +885,42 @@ test "fault injection: a refused build or query leaves no index and no state beh
         try testing.expectEqual(@as(u32, 3), x.count());
     }
     try testing.expect(allowance > 0 and allowance < 200);
+}
+
+test "a path node is read and charged once per build, whatever the number of paths below it" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const fa = try Place.Step.field(&f.account, 10);
+    const xa = try f.path(900, &.{fa});
+    // `x.a.f0 … x.a.f599`: 600 distinct use paths under `x.a`.
+    var uses: std.ArrayList(Use) = .empty;
+    defer uses.deinit(gpa);
+    var k: u32 = 0;
+    while (k < 600) : (k += 1) {
+        const p = try f.path(900, &.{ fa, try Place.Step.field(&f.account, 1000 + k) });
+        try uses.append(gpa, .{ .local = 1, .path = p, .point = 5, .kind = .field, .region = .from(0), .use_node = .none, .atom = 7000 + k });
+    }
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    var x = try Index.build(gpa, &account, .inference, &f.places, uses.items);
+    defer x.deinit(gpa);
+    try testing.expectEqual(@as(u32, 1), account.laneUsed(.{ .atom = Ids.atom_path_bit | xa.int(), .role = .liveness_index }));
+    try testing.expectEqual(@as(u32, 1), account.laneUsed(.{ .atom = Ids.atom_path_bit | uses.items[7].path.int(), .role = .liveness_index }));
+    try testing.expectEqual(@as(u32, 0), account.growth);
+    // 600 uses + 600 leaf nodes + `x.a` once + the tree levels (10 inner
+    // levels of 1024 leaves, per use).
+    try testing.expectEqual(@as(u64, 600 + 600 + 1 + 600 * 10), account.baseline);
+    // One operand making many uses (a record update reading `r` at every
+    // untouched field): each use its own atom, no lane past its ceiling.
+    var many: std.ArrayList(Use) = .empty;
+    defer many.deinit(gpa);
+    k = 0;
+    while (k < 80) : (k += 1) try many.append(gpa, .{ .local = 2, .path = uses.items[k].path, .point = 9, .kind = .field, .region = .from(0), .use_node = .none, .atom = (9 << 10) | k });
+    var account2: Ids.Account = .{};
+    defer account2.deinit(gpa);
+    var y = try Index.build(gpa, &account2, .inference, &f.places, many.items);
+    defer y.deinit(gpa);
+    try testing.expect(account2.failed == null);
 }
