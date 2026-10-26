@@ -263,7 +263,7 @@ pub fn ctorClass(env: Env, sums: *Summary.Table, type_place: PlaceId, steps: []c
     var kappas: Cond.Kappas = .none;
     if (!crosses(env, type_place)) {
         const k = try env.conds.apart(gpa, env.charge, env.cells, env.places, items.items, null);
-        kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, k)).ctx;
+        kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, false, k)).ctx;
     }
     return sums.add(env, .{ .params = params.items, .res = res, .kappas = kappas, .origin = .asserted });
 }
