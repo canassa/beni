@@ -1,0 +1,33 @@
+-- ownership: a list storage write on one level of a recursive value while
+-- a level below it is held (ownership-v2.md §2.8, §2.13.3). `Rose k1`
+-- materialises `below(c·#Rose.0·ι)`, and `Rose g` under it another below
+-- that: `g` is an element of `k1`'s elements, never `k1` itself, so a
+-- shallow write of `k1` is accepted, as the push of `kids` with a subtree
+-- held is.
+type Rose
+    = Rose (List Rose)
+
+
+pub levelHeld : List Rose → List Rose × List Rose
+levelHeld kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ Rose g, …_ ] →
+                    ( List.push k1 (Rose []), g )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsHeld : List Rose → List Rose × List Rose
+kidsHeld kids =
+    case kids of
+        [ Rose g, …_ ] →
+            ( List.push kids (Rose []), g )
+
+        _ →
+            ( [], [] )

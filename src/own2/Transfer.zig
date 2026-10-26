@@ -107,6 +107,9 @@ pub const Frame = struct {
     bir: *const Bir,
     decl: Bir.Decl,
     regions: *const Regions.Tree,
+    /// The declaration's parameter places (its signature's), when known: a
+    /// pattern parameter has no type of its own.
+    param_places: []const PlaceId = &.{},
     vals: []Val = &.{},
     locals: []Value = &.{},
     bound: []bool = &.{},
@@ -542,7 +545,13 @@ pub const Frame = struct {
                 const rest = try shapes.node(f.gpa, f.account(), list_place, shapes.cells(v.node), kids);
                 var k = try f.kappaSet(v.kappa, rest, false, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
                 k = try f.kappaSet(k, node, true, split_kappa);
-                try f.bind(f.data(item.int()).lhs, .{ .node = rest, .kappa = k }, point);
+                const rest_pat = f.data(item.int()).lhs;
+                try f.bind(rest_pat, .{ .node = rest, .kappa = k }, point);
+                // The rest holds every position but the taken ones.
+                if (taken_split != .none and rest_pat != none and f.tag(rest_pat) == .pat_var) {
+                    const h = f.binding[f.data(rest_pat).lhs];
+                    if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = none - 1, .explicit = if (explicit_rest == .none) SetId.none else shapes.cells(explicit_rest) };
+                }
                 continue;
             }
             try f.bind(item.int(), .{ .node = node, .kappa = v.kappa }, point);
@@ -578,7 +587,11 @@ pub const Frame = struct {
                 kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
             }
             const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
-            kappa = try f.env.conds.propagate(f.gpa, f.env.charge, f.env.view(), kappa, elems, members.items, ctxs.items, .together, true, null);
+            kappa = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), kappa, elems, members.items, ctxs.items, .together, true, false, null);
+            // Each element at the literal's `[*]`: its own κ there (§2.9: the
+            // conditions of `vᵢ` at `p`, relative to `vᵢ`), what a read of a
+            // side of the positions node finds.
+            for (members.items, ctxs.items) |m, c| kappa = try f.kappaSet(kappa, m, true, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
             kids = try shapes.overPut(f.gpa, f.account(), kids, Step.elem, elems);
         }
         const node = try shapes.node(f.gpa, f.account(), at, try f.set1(site), kids);
@@ -991,7 +1004,7 @@ pub const Frame = struct {
         const params = f.bir.extraSlice(.{ .start = f.decl.params_start, .end = f.decl.params_end }, Inst.Index);
         for (params, 0..) |p, k| {
             // A pattern has no type of its own; a variable has its local's.
-            const at = if (f.tag(p.int()) == .pat_var) try f.ctx.placeOfLocal(f.ctx.ctx, f.data(p.int()).lhs) else try f.placeOf(p.int());
+            const at = if (k < f.param_places.len) f.param_places[k] else if (f.tag(p.int()) == .pat_var) try f.ctx.placeOfLocal(f.ctx.ctx, f.data(p.int()).lhs) else try f.placeOf(p.int());
             const root = try f.env.places.rootPath(f.gpa, at);
             const c = try f.env.cells.symbolic(f.gpa, f.account(), f.env.places, .param, @intCast(k), root, 0);
             const kids = f.env.places.kind(at);

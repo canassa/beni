@@ -1,0 +1,7 @@
+module RoseLevelHeld
+  17:23 List.push k1: accepted param
+  30:15 List.push kids: accepted param
+  summary levelHeld: π1 R, π1[*]#Rose.0 RAW[storage], π1[*]#Rose.0[*] A, π1[*]⟨Rose⟩⁺#Rose.0 RA; res .0 condition(fresh3) fresh3 π1[*]#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsHeld: π1 RAW[storage], π1[*] A, π1[*]#Rose.0 RA; res .0 condition(fresh3) fresh3 π1, .0[*] ~condition(fresh4) ~π1[*], .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1[*]#Rose.0{excl π1}r{excl π1}, condition(fresh2){lost}r{lost}
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -826,10 +826,24 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
     var param_places: std.ArrayList(PlaceId) = .empty;
     defer param_places.deinit(gpa);
     const params = mod.in.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
-    for (params) |p| {
-        const b = mod.in.bir;
-        const at = if (b.instTag(p) == .pat_var) try Module.placeOfLocal(mod, b.instData(p).lhs) else try Module.placeOfInst(mod, p.int());
-        try param_places.append(gpa, at);
+    // The parameters' places are the scheme's: a pattern parameter (a
+    // tuple, a record, a constructor) has no type of its own.
+    const di = r.decl;
+    const scheme: Var.Optional = if (di < mod.in.decl_scheme.len) mod.in.decl_scheme[di] else .none;
+    if (scheme.unwrap()) |v| switch (mod.in.store.resolvedContent(v)) {
+        .structure => |s| switch (s) {
+            .func => |f| if (mod.in.store.vars(f.params).len == params.len) for (mod.in.store.vars(f.params)) |p| try param_places.append(gpa, try mod.adapter.placeOfVar(p.toOptional())),
+            else => {},
+        },
+        else => {},
+    };
+    if (param_places.items.len != params.len) {
+        param_places.clearRetainingCapacity();
+        for (params) |p| {
+            const b = mod.in.bir;
+            const at = if (b.instTag(p) == .pat_var) try Module.placeOfLocal(mod, b.instData(p).lhs) else try Module.placeOfInst(mod, p.int());
+            try param_places.append(gpa, at);
+        }
     }
     const result_place = try Module.placeOfInst(mod, d.body.unwrap().?.int());
     var res = try Walk.walk(.{

@@ -1,0 +1,16 @@
+module HeldElementWrites
+  10:10 List.push xss: accepted param
+  13:15 List.push a: rejected alias: zs[*] holds it and is read at 13:13 (approx)
+  21:10 List.push xss: accepted param
+  24:15 List.push a: rejected alias: zs[*] holds it and is read at 24:13 (approx)
+  32:10 List.set xss: accepted param
+  35:15 List.push a: rejected alias: zs[*] holds it and is read at 35:13 (approx)
+  43:10 List.push xss: accepted param
+  48:23 List.push b: rejected alias: rest[*] holds it and is read at 48:21 (approx)
+  59:10 List.push <call List.push>: accepted param
+  59:21 List.push xss: accepted param
+  62:15 List.push a: rejected element: b holds it and is read at 62:13 (approx)
+  demands 11: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 11: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 4
+cause element 1

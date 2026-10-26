@@ -1,0 +1,1 @@
+S3a (ownership-v2.md §2.13.3, §2.9, R-6.3): sameTwice is refused as the split's `shared` (v1: q holds it); stillNamed's `a` holds one of the position's two possible objects, so the refusal is approximate (v1: exact).

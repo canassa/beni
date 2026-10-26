@@ -1,0 +1,1 @@
+S3a (ownership-v2.md §2.9, P5; #1080): v1 accepts the write to `a` although `b` is the same list; v2 refuses it as `exclusive`, exactly.

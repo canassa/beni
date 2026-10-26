@@ -92,6 +92,8 @@ fn baseText(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .list => "<literal>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
+        .call => if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
+        .method_call => if (try refName(f, a, i)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         else => "<expression>",
     };
 }

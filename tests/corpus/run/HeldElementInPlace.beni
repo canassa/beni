@@ -1,0 +1,34 @@
+-- A write to a pattern's element while the list it came from is still read
+-- (ownership-v2.md §2.8, the refinement chain). `basic`
+-- pushes onto `a`, the first element of `zs`, and returns `zs`: written in
+-- place, `zs` would print `5,1;0`. The answer is `5;0`. Built under
+-- the list stale-read sanitiser with the check enforced, a write the
+-- checker wrongly accepted runs on a copy and poisons `a`, so the read of
+-- `zs` traps there: the twin `HeldElementDead` is that pass, on the write
+-- the checker accepts. This program is refused under the check enforced,
+-- so it runs only as built.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+basic : List (List Int) → List Int × List (List Int)
+basic xss =
+    zs = List.push xss [ 0 ]
+    case zs of
+        [ a, _ ] →
+            ( List.push a 1, zs )
+
+        _ →
+            ( [], [] )
+
+
+main : Program
+main =
+    case basic [ [ 5 ] ] of
+        ( a, zs ) →
+            Node.printLines [ show a, String.join (List.map zs show) ";" ]

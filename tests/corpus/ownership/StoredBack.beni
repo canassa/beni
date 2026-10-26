@@ -1,0 +1,20 @@
+-- ownership: a taken element stored back beside the elements it was taken
+-- from (ownership-v2.md §2.9's `shared`, P5). `p` is the list's first
+-- element, `List.set xss 1 p` puts it at position 1 too, so `a` and `b`
+-- are one list: writing `a` changes `b`. v1 accepts it (#1080); v2 reads
+-- `elem(π1·ι)` beside `π1[*]` as one object at two positions and refuses
+-- the write as `exclusive`, exactly.
+pub storedBack : List (List Int) → List Int × List Int
+storedBack xss =
+    case xss of
+        [ p, …_ ] →
+            zs = List.set xss 1 p
+            case zs of
+                [ a, b, …_ ] →
+                    ( List.push a 1, b )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )

@@ -1,0 +1,65 @@
+-- ownership: the positions of a literal of distinct lists
+-- (ownership-v2.md §2.13.3, §2.9). A pattern on `[ a, b ]` takes one
+-- position each; every position may be `a` or `b`, so each holds both
+-- cells, but two positions of one split are one object only if the
+-- literal's `[*]` is not apart. `[ a, b ]` of two fresh lists is apart:
+-- the writes are accepted. `[ a, a ]` is `shared`: refused, exactly. A
+-- binding of `a` itself still holds a position's object: refused.
+pub named : ⊤ → List Int × List Int
+named ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    xs = [ a, b ]
+    case xs of
+        [ p, q ] →
+            ( List.push p 1, q )
+
+        _ →
+            ( [], [] )
+
+
+pub literal : ⊤ → List Int × List Int
+literal ⊤ =
+    xs = [ [ 1 ], [ 2 ] ]
+    case xs of
+        [ p, q ] →
+            ( List.push p 1, q )
+
+        _ →
+            ( [], [] )
+
+
+pub withRest : ⊤ → List Int × List (List Int)
+withRest ⊤ =
+    xs = [ [ 1 ], [ 2 ] ]
+    case xs of
+        [ p, …rest ] →
+            ( List.push p 1, rest )
+
+        _ →
+            ( [], [] )
+
+
+pub sameTwice : ⊤ → List Int × List Int
+sameTwice ⊤ =
+    a = [ 1 ]
+    xs = [ a, a ]
+    case xs of
+        [ p, q ] →
+            ( List.push p 1, q )
+
+        _ →
+            ( [], [] )
+
+
+pub stillNamed : ⊤ → List Int × List Int
+stillNamed ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    xs = [ a, b ]
+    case xs of
+        [ p, _ ] →
+            ( List.push p 1, a )
+
+        _ →
+            ( [], [] )

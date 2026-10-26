@@ -1,0 +1,27 @@
+-- A write to a pattern's element once nothing reads the list it came from
+-- (ownership-v2.md §2.8): the twin of `HeldElementInPlace`. `zs` is dead
+-- after the match, so the push onto its first element is accepted, and
+-- under the list stale-read sanitiser it runs on a copy that poisons the
+-- old list: a holder the checker missed would trap.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+dead : List (List Int) → List Int
+dead xss =
+    zs = List.push xss [ 0 ]
+    case zs of
+        [ a, _ ] →
+            List.push a 1
+
+        _ →
+            []
+
+
+main : Program
+main = Node.printLines [ show (dead [ [ 5 ] ]) ]

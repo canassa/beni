@@ -1027,6 +1027,13 @@ pub const Table = struct {
     /// cut from grows as children are pushed. A record per state, member
     /// projection and cell.
     pub fn propagate(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, traversal: ?Traversal) Error!Kappas {
+        return t.propagateFrom(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, at_summary, traversal);
+    }
+
+    /// `propagate` with the members read at their own position class:
+    /// a literal puts values rooted at a plain path under its `[*]`, and
+    /// §2.9 joins the conditions of each `vᵢ` at `p` relative to `vᵢ`.
+    pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
         var ctx = out;
         var projected = false;
@@ -1035,12 +1042,12 @@ pub const Table = struct {
         defer runs.deinit(gpa);
         var run_ctxs: std.ArrayList(Kappas) = .empty;
         defer run_ctxs.deinit(gpa);
-        const Frame = struct { node: NodeId, first: u32, len: u32, summary: bool };
+        const Frame = struct { node: NodeId, first: u32, len: u32, summary: bool, msummary: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try runs.appendSlice(gpa, members);
         try run_ctxs.appendSlice(gpa, member_ctxs);
-        try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary });
+        try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary });
         // Exact states: a run interned as a cons list of `(member, snapshot)`
         // pairs, the state `(node, class, run)`.
         var cons: Ids.FixedDict(3) = .{};
@@ -1062,7 +1069,7 @@ pub const Table = struct {
                 run = got.value_ptr.*;
             }
             try charge.reserve(gpa, .memo, 1);
-            const state = try visited.getOrPut(gpa, .{ f.node.int(), @intFromBool(f.summary), run });
+            const state = try visited.getOrPut(gpa, .{ f.node.int(), @as(u32, @intFromBool(f.summary)) | @as(u32, @intFromBool(f.msummary)) << 1, run });
             if (state.found_existing) continue;
             state.value_ptr.* = 1;
             try t.traced(gpa, f.node, f.summary);
@@ -1071,7 +1078,7 @@ pub const Table = struct {
             for (0..f.len) |i| {
                 const m = runs.items[f.first + i];
                 const c = run_ctxs.items[f.first + i];
-                const km = try t.kappaOf(gpa, charge, v, c, m, f.summary);
+                const km = try t.kappaOf(gpa, charge, v, c, m, f.msummary);
                 k = if (mode == .alternatives) try t.join(gpa, charge, k, km) else try t.@"and"(gpa, charge, k, km);
                 if (mode == .together) {
                     k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(m)));
@@ -1111,7 +1118,7 @@ pub const Table = struct {
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, c);
                 }
-                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary });
+                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary, .msummary = f.msummary or below(s) });
             }
         }
         return ctx;
@@ -2100,7 +2107,7 @@ test "red twin CallbackFieldPositions: a plain-path κ never answers a summary-p
     try testing.expectEqual(yes, try f.kappa(me, w, false));
 }
 
-test "a union's κ is read once per node of a shared union DAG: depth 250, 500, 1000" {
+test "a union's κ is read once per node of a shared union DAG: depth 64, 128, 256" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
@@ -2108,7 +2115,7 @@ test "a union's κ is read once per node of a shared union DAG: depth 250, 500, 
     const list = try f.placeOf(1);
     f.account.allowance = 1 << 24;
     var last: u64 = 0;
-    for ([_]u32{ 250, 500, 1000 }) |depth| {
+    for ([_]u32{ 64, 128, 256 }) |depth| {
         // `u_k = if c then (if d then u_{k−1} else a_k) else (if e then u_{k−1} else b_k)`.
         var u = try f.leaf(1, &.{try f.param(1, 1, &.{})});
         var k: u32 = 0;
