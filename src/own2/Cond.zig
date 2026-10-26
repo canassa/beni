@@ -38,7 +38,7 @@
 //! Obligations kept here: O13 (a construction's κ is `yes` only when the
 //! stored cells are pairwise apart at that path; a stored refinement of the
 //! base's own `[*]` is `shared`), O15 (κ(join) is below every member's; a
-//! union's κ is the join of its sides', derived and never stale).
+//! union's κ is its sides' join, derived and never stale).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -78,12 +78,11 @@ pub const yes: CondId = .from(0);
 pub const shared: CondId = .from(1);
 pub const lost: CondId = .from(2);
 
-/// The root of a persistent map `NodeId → CondId`: a holder's κ snapshot.
-/// `.none` is the empty map (everything derived).
+/// A holder's κ snapshot: the root of a persistent map, `.none` when empty.
 pub const Kappas = Ids.KappaId;
 
-/// A node of the κ map: a leaf (`mask == 0`: `prefix` the node id, `left`
-/// the condition) or a branch. Hash-consed, so equal maps are one root.
+/// A κ map node: a leaf (`mask == 0`: `prefix` the key, `left` the
+/// condition) or a branch; hash-consed, so equal maps are one root.
 pub const MapNode = struct { prefix: u32, mask: u32, left: u32, right: u32 };
 
 /// S4's answer for two `taken` elements of one container from distinct
@@ -107,9 +106,9 @@ pub const Printer = struct {
 /// `rely`'s answer (§2.9): nothing, the atoms (the class's `xreq`), a refusal.
 pub const Rely = union(enum) { ok, xreq: SetId, refused: Exactness };
 
-/// How `propagate` reads a joined node's members: a branch (one or the
-/// other: the lattice join, O15) or a summary position holding every member
-/// (`apart` across their cells at every path, and every member's κ).
+/// How `propagate` reads a joined node's members: a branch (the lattice
+/// join, O15) or a summary position holding every member (`apart` across
+/// their cells at every path, and every member's κ).
 pub const Mode = enum(u8) { alternatives, together };
 
 /// The tables `kappaOf` and its callers read; passed down, never stored.
@@ -414,8 +413,9 @@ pub const Table = struct {
     /// column for this read alone, nothing goes stale; a side in progress
     /// reads `yes`). At a summary position — a positions node makes it one —
     /// the leaf rule over the root's cells besides, every cell both sides of
-    /// a positions node hold counted once more (the multiset; an approximate
-    /// side's repeat is `lost`). A record per node and repeated cell: linear.
+    /// a positions node hold counted once more (the multiset; a repeat
+    /// through a side holding a recast anywhere in its DAG is `lost`). A
+    /// record per node and repeated cell: linear.
     fn dagKappa(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, root: NodeId, at_summary: bool) Error!CondId {
         var memo: stamped.Column(NodeId, CondId) = .{};
         defer memo.deinit(gpa);
@@ -423,6 +423,8 @@ pub const Table = struct {
         defer done.deinit(gpa);
         var dups: std.ArrayList(Item) = .empty;
         defer dups.deinit(gpa);
+        var approx: stamped.Column(NodeId, void) = .{};
+        defer approx.deinit(gpa);
         var summary = at_summary;
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
@@ -436,6 +438,7 @@ pub const Table = struct {
             const d = v.shapes.get(n);
             if (nk != .@"union" and nk != .positions) {
                 try memo.put(gpa, n, try t.kappaOf(gpa, charge, v, ctx, n, at_summary));
+                if (nk == .recast) try approx.put(gpa, n, {});
             } else if (!f.expanded) {
                 try memo.put(gpa, n, yes);
                 try stack.appendSlice(gpa, &.{ .{ .node = n, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
@@ -444,13 +447,13 @@ pub const Table = struct {
                 var k = try t.join(gpa, charge, memo.get(.from(d.a)).?, memo.get(.from(d.b)).?);
                 if (t.kappaGet(ctx, n, at_summary)) |s| k = try t.join(gpa, charge, s, k);
                 try memo.put(gpa, n, k);
+                if (approx.contains(.from(d.a)) or approx.contains(.from(d.b))) try approx.put(gpa, n, {});
                 if (nk == .positions) {
                     summary = true;
-                    const approx = v.shapes.kind(.from(d.a)) == .recast or v.shapes.kind(.from(d.b)) == .recast;
                     var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, v.shapes.cells(.from(d.a)), v.shapes.cells(.from(d.b))));
                     while (it.next()) |e| {
                         try charge.reserve(gpa, .inspection, 1);
-                        try dups.append(gpa, .{ .cell = .from(e.key), .approx = approx or e.value == 1 });
+                        try dups.append(gpa, .{ .cell = .from(e.key), .approx = approx.contains(n) or e.value == 1 });
                     }
                 }
             }
@@ -475,8 +478,8 @@ pub const Table = struct {
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
     }
 
-    /// κ from the cells at the read's position (header) and, at a summary
-    /// position, `extra` arrivals counted besides them; charged per read.
+    /// κ from the cells at the read's position (header), `extra` arrivals
+    /// counted besides them at a summary position; charged per read.
     fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, extra: []const Item) Error!CondId {
         if (!at_summary) {
             var it = v.cells.sets.iterate(cells);
@@ -1985,9 +1988,14 @@ test "red twin PositionsRepeatArg: `[ { a = a }, { a = b } ]` at `f x x` is shar
     // A cell on one side of an alternative and at another position may be
     // held twice: `[ if c then a else b, a ]` is shared.
     try testing.expectEqual(shared, try f.kappa(.none, try f.collect(&.{ try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, l1, l2), l1 }), true));
-    // A repeat through an approximate side is `lost`, never exact.
+    // A repeat through an approximate side is `lost`, never exact — the
+    // recast an immediate side, or reached through a union in the side
+    // (`positions(union(cast a, c), a)`); a side with no recast anywhere
+    // keeps its repeat exact.
     const cast = try f.shapes.recast(gpa, &f.account, try f.placeOf(0), l1);
     try testing.expectEqual(lost, try f.kappa(.none, try f.collect(&.{ cast, l1 }), true));
+    try testing.expectEqual(lost, try f.kappa(.none, try f.collect(&.{ try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, cast, l3), l1 }), true));
+    try testing.expectEqual(shared, try f.kappa(.none, try f.collect(&.{ try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, l1, l3), try f.collect(&.{ l1, l2 }) }), true));
 }
 
 test "a positions DAG reads in linear time: depth 250, 500, 1000" {
