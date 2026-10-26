@@ -1,0 +1,4 @@
+HelperStaticBoolEffects helper: lines 17-23 (not built: markup)
+HelperStaticBoolEffects view: lines 28-39 (not built: call)
+HelperStaticBoolEffects update: lines 43-50 (not built: record_update)
+HelperStaticBoolEffects main: lines 53-54 (not built: lambda)

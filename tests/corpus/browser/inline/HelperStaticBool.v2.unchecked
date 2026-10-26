@@ -1,0 +1,4 @@
+HelperStaticBool helper: lines 17-18 (not built: markup)
+HelperStaticBool view: lines 21-28 (not built: call)
+HelperStaticBool update: lines 32-39 (not built: record_update)
+HelperStaticBool main: lines 42-43 (not built: lambda)

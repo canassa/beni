@@ -1,0 +1,4 @@
+MountedPrograms shell: lines 20-28 (not built: lambda)
+MountedPrograms counter: lines 40-46 (not built: lambda)
+MountedPrograms namer: lines 54-59 (not built: lambda)
+MountedPrograms main: lines 63-68 (not built: call)

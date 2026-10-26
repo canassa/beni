@@ -1,0 +1,4 @@
+DefectEveryProgram sleeper: lines 27-30 (not built: lambda)
+DefectEveryProgram first: lines 37-48 (not built: call)
+DefectEveryProgram second: lines 56-62 (not built: call)
+DefectEveryProgram main: lines 66-67 (not built: call)

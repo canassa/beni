@@ -1,0 +1,7 @@
+Main work: lines 83-95 (not built: lambda)
+Main restart: lines 57-59 (not built: local)
+Main update: lines 62-80 (not built: let_def)
+Main say: lines 98-99 (not built: call)
+Main subscriptions: lines 102-106 (not built: local)
+Main view: lines 110-117 (not built: markup)
+Main main: lines 121-127 (not built: lambda)

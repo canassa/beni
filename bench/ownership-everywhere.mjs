@@ -304,8 +304,9 @@ async function diff(sides) {
     for (const key of [...new Set([...va.keys(), ...vb.keys()])].sort()) {
       const x = va.get(key);
       const y = vb.get(key);
-      const [module, pos] = key.split("\t");
-      const where = `${root.name} ${module} ${pos}`;
+      // The occurrence (`#k`) tells apart two alike demands at one position.
+      const [module, pos, , occurrence] = key.split("\t");
+      const where = `${root.name} ${module} ${pos} ${occurrence}`;
       const row = { where, a: x ? [x.line] : [], b: y ? [y.line] : [] };
       const line = Number(pos.split(":")[0]);
       // A demand only one side reports, in a declaration the other did not

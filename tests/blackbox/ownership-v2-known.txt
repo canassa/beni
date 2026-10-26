@@ -1,41 +1,42 @@
 # The known, justified differences between --ownership=v1 and --ownership=v2,
 # in `node bench/ownership-everywhere.mjs --diff=v1,v2` and in the corpus
-# harness's v2 parity of every ownership fixture, every run/ program and
-# core (ownership-v2.md §7.2). One per line:
+# harness's v2 parity of every ownership fixture, every run/ program, every
+# browser/ page and core (ownership-v2.md §7.2). One per line:
 #
-#     <root> <module> <line:col> :: <demand> :: <v1> :: <v2>  <why>
+#     <root> <module> <line:col> #<k> :: <demand> :: <v1> :: <v2>  <why>
 #
-# where a verdict is `accepted`, `rejected`, `pending`, or `absent` when
-# that checker reports no such demand: an entry excuses that one difference
-# and no other. Both fail on any other difference, and on an entry that no
-# longer occurs.
+# where `#<k>` counts alike demands at one position from 0, and a verdict
+# is `accepted`, `rejected`, `pending`, or `absent` when that checker
+# reports no such demand: an entry excuses that one difference and no
+# other. Both fail on any other difference, and on an entry that no longer
+# occurs.
 #
 # v2 accepts where v1 refused.
-tests/corpus/ownership/Copy.beni [node] Copy 24:27 :: construction first :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
-tests/corpus/ownership/Split.beni [node] Split 38:27 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
-tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariable 33:27 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `borrowed List a` reads the outer list only; the contrast to a bare `a` (#1105)
-tests/corpus/ownership/core/V2WordsHiddenFromV1.beni [node] V2WordsHiddenFromV1 17:12 :: construction xs :: rejected :: accepted  the fixture's point: v1 reads none of v2's words
-tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 27:23 :: List.push xs :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
-tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 56:15 :: List.push a :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
+tests/corpus/ownership/Copy.beni [node] Copy 24:27 #0 :: construction first :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
+tests/corpus/ownership/Split.beni [node] Split 38:27 #0 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
+tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariable 33:27 #0 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `borrowed List a` reads the outer list only; the contrast to a bare `a` (#1105)
+tests/corpus/ownership/core/V2WordsHiddenFromV1.beni [node] V2WordsHiddenFromV1 17:12 #0 :: construction xs :: rejected :: accepted  the fixture's point: v1 reads none of v2's words
+tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 27:23 #0 :: List.push xs :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
+tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 56:15 #0 :: List.push a :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
 #
 # v2 refuses where v1 accepted (S3a builds neither initialization transfer,
 # S7, nor record paths, S5).
-tests/corpus/browser/tea/InitializationTransfer Main 12:17 :: ++ Main.seed :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 14:17 :: ++ InitializationTransfer.seed :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 84:7 :: List.push left :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 119:15 :: List.push InitializationTransfer.chainStart :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 123:12 :: List.push InitializationTransfer.chainMiddle :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 185:44 :: List.set InitializationTransfer.issueSeed :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/InitializationWide.beni [browser-inline] InitializationWide 77:8 :: List.push InitializationWide.seed.f00 :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/DotFieldCall.beni [browser-inline] DotFieldCall 15:10 :: List.push r.items :: accepted :: rejected  a record field's path is S5's (`r` read again whole)
-tests/corpus/ownership/PolyRecTuples.beni [node] PolyRecTuples 23:26 :: List.push a :: accepted :: rejected  polymorphic recursion folds `a` and `b` to one place (PolyRec*, S4)
-tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23 :: List.push a :: accepted :: rejected  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
+tests/corpus/browser/tea/InitializationTransfer Main 12:17 #0 :: ++ Main.seed :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 14:17 #0 :: ++ InitializationTransfer.seed :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 84:7 #0 :: List.push left :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 119:15 #0 :: List.push InitializationTransfer.chainStart :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 123:12 #0 :: List.push InitializationTransfer.chainMiddle :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 185:44 #0 :: List.set InitializationTransfer.issueSeed :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/InitializationWide.beni [browser-inline] InitializationWide 77:8 #0 :: List.push InitializationWide.seed.f00 :: accepted :: rejected  initialization transfer is S7
+tests/corpus/ownership/DotFieldCall.beni [browser-inline] DotFieldCall 15:10 #0 :: List.push r.items :: accepted :: rejected  a record field's path is S5's (`r` read again whole)
+tests/corpus/ownership/PolyRecTuples.beni [node] PolyRecTuples 23:26 #0 :: List.push a :: accepted :: rejected  polymorphic recursion folds `a` and `b` to one place (PolyRec*, S4)
+tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23 #0 :: List.push a :: accepted :: rejected  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
 #
 # A demand only one side reports.
-tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5 :: Ref.set cell :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-core List 1745:20 :: List.focus func :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
-core List 1745:20 :: List.focus i :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
+tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5 #0 :: Ref.set cell :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+core List 1745:20 #0 :: List.focus func :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
+core List 1745:20 #0 :: List.focus i :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)

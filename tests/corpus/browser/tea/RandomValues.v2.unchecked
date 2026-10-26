@@ -1,0 +1,6 @@
+RandomValues die: lines 24-25 (not built: call)
+RandomValues nums: lines 108-109 (not built: ext_value)
+RandomValues samples: lines 28-71 (not built: call)
+RandomValues update: lines 75-85 (not built: call)
+RandomValues view: lines 88-94 (not built: local)
+RandomValues main: lines 98-104 (not built: lambda)

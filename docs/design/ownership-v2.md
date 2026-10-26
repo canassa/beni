@@ -1260,7 +1260,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    adapter additionally rejects a resolved type that lacks the required kind, rather than silently treating
    an invalid asserted word as absent (#1056).
    **A word on a bare type variable applies at every depth** [M 2026-10-26, #1105]. A parameter whose
-   declared type is a type variable (`borrowed a`, `returned a`, `stored a`; not `List a`) can hold any
+   declared type is a type variable (`borrowed a`, `returned a`, `stored a`, or an alias that expands to one,
+   `type alias Id a = a`, expanded before deciding; not `List a`) can hold any
    structure at the call, and the callee — a `foreign`, `Js`, or evidence — may read anything inside it. So
    every word there is its deep form: `borrowed a` is `R` at `ε` and at every path below (a leaf of marks,
    §2.10), and so `A`, `E` and `W` for the words that give them. `Rows.fromWords` reads this from the
@@ -2528,15 +2529,17 @@ are identical and nothing is written (R-7.11).
 
    **The gates carry the same net** (#1103), so it never depends on someone running the bench. The corpus
    harness compares v2's demands with v1's for every `ownership/` fixture (against its v1 golden), every
-   `run/` program and core, under the same rule. Justified differences are
-   `tests/blackbox/ownership-v2-known.txt`, keyed by root, module, position, demand text and **both
-   verdicts** (`absent` for a one-sided demand), so an entry excuses that one difference and nothing else at
-   its position; an entry no case of a whole walk uses is stale and fails. A difference inside a declaration
-   v2 does not check is excused only because the declaration is listed: each fixture and program commits a
+   `run/` program, every `browser/` page and core, under the same rule, from one `dump --ownership-both`
+   per program. Justified differences are `tests/blackbox/ownership-v2-known.txt`, keyed by root, module,
+   position, occurrence (`#k`, alike demands at one position counted from 0), demand text and **both
+   verdicts** (`absent` for a one-sided demand), so an entry excuses that one difference and nothing else;
+   an entry no case of a whole walk uses is stale and fails. A difference inside a declaration v2 does not
+   check is excused only because the declaration is listed: each fixture, program and page commits a
    `.v2.unchecked` golden naming every such declaration with its reason and construct (`not built: call`),
-   so marking a construct not built, or building one, changes a golden and fails the gate, and the parity
-   can never pass vacuously. A v2 limit (§4.4) is a failure, not an exemption, except in a fixture with a
-   `.v2` golden of its own, whose limits that golden pins.
+   and core's is `tests/corpus/ownership/core.v2.unchecked`, so marking a construct not built, or building
+   one, changes a golden and fails the gate, and the parity can never pass vacuously. A v2 limit (§4.4) is a
+   failure, not an exemption, except in a fixture with a `.v2` golden of its own, whose limits that golden
+   pins.
 3. **The stale-read sanitiser, the arbiter** (R-8.5). A sanitised accepted write runs on a copy and poisons
    the old storage: a subsequent read through a stale holder traps. Hoisted reads precede the write.
    `--sanitize-records` traps reads of written old fields; its copy result must remain assigned even when

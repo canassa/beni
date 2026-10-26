@@ -1,0 +1,6 @@
+HelperSkip update: lines 45-52 (not built: record_update)
+HelperSkip tag: lines 55-56 (not built: markup)
+HelperSkip card: lines 59-64 (not built: call)
+HelperSkip boxed: lines 68-71 (not built: markup)
+HelperSkip view: lines 74-81 (not built: call)
+HelperSkip main: lines 85-86 (not built: lambda)

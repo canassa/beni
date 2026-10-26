@@ -1,0 +1,8 @@
+Main update: lines 35-42 (not built: call)
+Main view: lines 45-49 (not built: call)
+Main main: lines 13-22 (not built: call)
+W1 update: lines 18-22 (not built: record_update)
+W1 bump: lines 26-27 (not built: record_update)
+W1 view: lines 31-34 (not built: markup)
+W2 update: lines 20-24 (not built: record_update)
+W2 view: lines 27-32 (not built: ctor)
