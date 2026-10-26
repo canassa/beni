@@ -507,13 +507,21 @@ const Reader = struct {
                 return a.int();
             },
             .node => return (try r.node(false)).int(),
+            .owner => {
+                // One map for every value under it, as the writer closed it.
+                const n = try r.count();
+                const roots = try gpa.alloc(u32, n);
+                defer gpa.free(roots);
+                for (roots) |*x| x.* = (try r.posRef()) orelse return error.Malformed;
+                return (try r.kmap(roots)).int();
+            },
             .supply => {
                 const k = try r.get();
                 const bits = try r.flag(3);
                 const l = try r.opt(LabelId, .label);
                 const o = try r.posRef();
                 const n: NodeId = if (o) |x| .from(r.vals.items[x]) else .none;
-                const kappa = if (o) |x| try r.kmap(&.{x}) else .none;
+                const kappa: Cond.Kappas = if (try r.ref(.owner)) |v| .from(v) else .none;
                 try r.supplies.append(gpa, .{ .j = 0, .k = k, .node = n, .label = l, .owned = bits & 1 == 1, .taken = bits & 2 == 2, .kappa = kappa });
                 return @intCast(r.supplies.items.len - 1);
             },
@@ -681,6 +689,7 @@ const Reader = struct {
         const origin = try enumOf(Summary.Origin, try r.get());
         const res_o = try r.posRef();
         const res: NodeId = if (res_o) |o| .from(r.vals.items[o]) else .none;
+        const kappas: Cond.Kappas = if (try r.ref(.owner)) |v| .from(v) else .none;
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         var i: u32 = 0;
@@ -688,7 +697,6 @@ const Reader = struct {
             const o = try r.posRef();
             try params.append(gpa, if (o) |x| .from(r.vals.items[x]) else .none);
         }
-        const kappas = if (res_o) |o| try r.kmap(&.{o}) else .none;
         const xreq: CondId = if (try r.ref(.atoms)) |v| .from(v) else Cond.yes;
         var funs: std.ArrayList(Summary.DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -1705,7 +1713,7 @@ test "a node no constructor makes is no block: sides at two places, a child at a
     const ref = @backingInt(Place.Kind.ref);
     const leaf = @backingInt(Shape.Kind.leaf);
     const cond_yes = [_]u32{ tag(.cond), @backingInt(Cond.Kind.yes) };
-    const no_class_rest = [_]u32{ none, 0, 0, 0, 0, none };
+    const no_class_rest = [_]u32{ none, none, 0, 0, 0, 0, none };
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     for ([_]u32{ 1, 0 }) |second| {
@@ -1853,4 +1861,97 @@ test "supplies that hold one value under one map are one owner: the cost stays f
         const cost = a.account.growth - before;
         if (first == 0) first = cost else try testing.expect(cost * 10 <= first * 13);
     }
+}
+
+/// A class with `res` and one supply of `held`, both under one map with
+/// `shared` stored at `stored`'s `[*]` position: κ at `[*]` of each value,
+/// before and after a round trip, each under its own decoded map.
+fn twoValues(t: *Tables, res: NodeId, held: NodeId, entry: NodeId, extra: []const NodeId) ![4]CondId {
+    const gpa = testing.allocator;
+    const env = t.env();
+    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.yes)).ctx;
+    for (extra) |n| km = (try t.conds.kappaSet(gpa, env.charge, km, n, false, Cond.yes)).ctx;
+    km = (try t.conds.kappaSet(gpa, env.charge, km, entry, true, Cond.shared)).ctx;
+    const sups = [_]Summary.Supply{.{ .j = 0, .k = 0, .node = held, .label = .none, .owned = true, .taken = false, .kappa = km }};
+    const c = try t.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &sups }} });
+    const s0 = t.sums.supply(t.sums.fun(c, 0), 0);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = try roundTrip(t, &b, c);
+    const s1 = b.sums.supply(b.sums.fun(back, 0), 0);
+    const r = b.sums.get(back);
+    return .{
+        try kappaAt(t, km, res, &.{Step.elem}),           try kappaAt(&b, r.kappas, r.res, &.{Step.elem}),
+        try kappaAt(t, s0.kappa, s0.node, &.{Step.elem}), try kappaAt(&b, s1.kappa, s1.node, &.{Step.elem}),
+    };
+}
+
+test "two values under one map keep the map's κ wherever either reaches it" {
+    const gpa = testing.allocator;
+    // Two leaves whose `[*]` projections are one leaf.
+    {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const lists = try a.place(2);
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, lists), 0);
+        const ps = try a.cells.sets.insert(gpa, a.env().charge, .none, p.int(), 0);
+        const site = try a.cells.site(gpa, &a.account, 1, lists, .list);
+        const leaf_a = try a.shapes.leaf(gpa, &a.account, lists, ps);
+        const leaf_b = try a.shapes.leaf(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, ps, site.int(), 0));
+        const e = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, leaf_a, Step.elem)).?;
+        try testing.expectEqual(e, (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, leaf_b, Step.elem)).?);
+        const k = try twoValues(&a, leaf_a, leaf_b, e, &.{});
+        try testing.expectEqual(Cond.shared, k[0]);
+        try testing.expectEqual(k[0], k[1]);
+        try testing.expectEqual(k[2], k[3]);
+    }
+    // One leaf's `[*]` projection is a part of the other value.
+    {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const lists = try a.place(2);
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, lists), 0);
+        const site = try a.cells.site(gpa, &a.account, 1, lists, .list);
+        const leaf_a = try a.shapes.leaf(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, .none, p.int(), 0));
+        const e = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, leaf_a, Step.elem)).?;
+        const nb = try a.shapes.node(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, .none, site.int(), 0), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, e));
+        const k = try twoValues(&a, leaf_a, nb, e, &.{nb});
+        try testing.expectEqual(Cond.shared, k[0]);
+        try testing.expectEqual(k[0], k[1]);
+        try testing.expectEqual(k[2], k[3]);
+    }
+}
+
+test "a block built in another order writes the same bytes: two values of one owner" {
+    const gpa = testing.allocator;
+    var out: [2]std.ArrayList(u32) = .{ .empty, .empty };
+    defer for (&out) |*o| o.deinit(gpa);
+    for (0..2) |flip| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const env = a.env();
+        const lists = try a.place(2);
+        const root = try a.places.rootPath(gpa, lists);
+        var ps: [2]SetId = undefined;
+        for (0..2) |k| {
+            const i = if (flip == 0) k else 1 - k;
+            const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, @intCast(i), root, 0);
+            ps[i] = try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0);
+        }
+        var vals: [2]NodeId = undefined;
+        for (0..2) |k| {
+            const i = if (flip == 0) k else 1 - k;
+            vals[i] = try a.shapes.leaf(gpa, &a.account, lists, ps[i]);
+        }
+        var km: Cond.Kappas = .none;
+        for (vals) |v| km = (try a.conds.kappaSet(gpa, env.charge, km, (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, v, Step.elem)).?, true, Cond.shared)).ctx;
+        const sups = [_]Summary.Supply{.{ .j = 0, .k = 0, .node = vals[1], .label = .none, .owned = true, .taken = false, .kappa = km }};
+        const c = try a.sums.add(env, .{ .params = &.{.none}, .res = vals[0], .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &sups }} });
+        try write(env, &a.sums, &.{c}, .identity, &out[flip]);
+    }
+    try testing.expectEqualSlices(u32, out[0].items, out[1].items);
 }
