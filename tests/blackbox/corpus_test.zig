@@ -641,12 +641,24 @@ fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const
 }
 
 /// Every fixture of `kind` under the root, in the order the walker runs
-/// them.
+/// them. A run-hash record file anywhere the collection walks, or the old
+/// index beside the root, fails it before any program runs, every one of
+/// them named (`isRecordFile`).
 fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const Fixture {
+    record_files = 0;
+    try reportIndex(arena, cfg.root);
+    const fixtures = try collectFixtures(arena, cfg, kind);
+    if (record_files != 0) {
+        std.debug.print("{d} run-hash record file{s} left in the corpus (`git ls-files '*run-hash' tests/blackbox/run-hashes.txt` lists them): delete every one\n", .{ record_files, if (record_files == 1) "" else "s" });
+        return error.RecordFileInCorpus;
+    }
+    return fixtures;
+}
+
+fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const Fixture {
     const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
     const core_dir = try std.fs.path.join(arena, &.{ kind_dir, "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
-    try refuseIndex(arena, cfg.root);
     // Under a root that is not the default one, a kind that does not exist
     // there is simply not part of it: `tests/pending/` holds only the kinds
     // its red fixtures need (`plans/checker-rewrite.md` §2.1).
@@ -1462,7 +1474,10 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
-        if (entry.kind == .file and isRecordFile(entry.name)) return refuseRecord(dir_path, entry.name);
+        if (entry.kind == .file and isRecordFile(entry.name)) {
+            reportRecord(dir_path, entry.name);
+            continue;
+        }
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
         try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core });
     }
@@ -1479,41 +1494,46 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
 /// that comes back — a pull request from before the change, a rebase that
 /// kept a modified record — would be ignored by every reader, and a
 /// `browser/tea` page's `.fuzz-run-hash` would silently stand where its
-/// `.value-fuzz` marker belongs. So the walk refuses it, by name, with
-/// the fix.
+/// `.value-fuzz` marker belongs. So the walk refuses every one of them, by
+/// name, with the fix (`fixturesOf`).
 fn isRecordFile(name: []const u8) bool {
     return std.mem.endsWith(u8, name, ".run-hash") or std.mem.endsWith(u8, name, "-run-hash");
 }
 
-fn refuseRecord(dir_path: []const u8, name: []const u8) error{RecordFileInCorpus} {
+/// The record files and the index `fixturesOf`'s collection found so far:
+/// each is named as it is met, and the count fails the collection at its
+/// end, so one walk names every one a rebase left.
+var record_files: usize = 0;
+
+fn reportRecord(dir_path: []const u8, name: []const u8) void {
     const fuzz = std.mem.endsWith(u8, name, ".fuzz-run-hash");
     std.debug.print(
         "{s}/{s}: a run-hash record file; the records left git for the run-hash cache (#881): delete it{s}\n",
         .{ dir_path, name, if (fuzz) ", and for a browser/tea page's value fuzz add an empty `<page>.value-fuzz` (`_expected.value-fuzz` in a project) beside the page" else "" },
     );
-    return error.RecordFileInCorpus;
+    record_files += 1;
 }
 
-/// `refuseRecord` for the files directly under a project directory, where
+/// `reportRecord` for the files directly under a project directory, where
 /// a project's records were.
 fn refuseRecordsIn(project_path: []const u8) !void {
     const io = testing.io;
     var dir = Io.Dir.cwd().openDir(io, project_path, .{ .iterate = true }) catch return;
     defer dir.close(io);
     var it = dir.iterate();
-    while (try it.next(io)) |entry| if (entry.kind == .file and isRecordFile(entry.name)) return refuseRecord(project_path, entry.name);
+    while (try it.next(io)) |entry| if (entry.kind == .file and isRecordFile(entry.name)) reportRecord(project_path, entry.name);
 }
 
-/// Refuse the old run-hash index, `tests/blackbox/run-hashes.txt` beside
-/// the corpus root, for the same reason as `refuseRecord`.
-fn refuseIndex(arena: std.mem.Allocator, root: []const u8) !void {
+/// The old run-hash index, `tests/blackbox/run-hashes.txt` beside the
+/// corpus root, is reported for the same reason as a record file.
+fn reportIndex(arena: std.mem.Allocator, root: []const u8) !void {
     const path = try std.fs.path.join(arena, &.{ root, "..", "blackbox", "run-hashes.txt" });
     Io.Dir.cwd().access(testing.io, path, .{}) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return err,
     };
     std.debug.print("{s}: the run-hash index; it left git for the run-hash cache (#881): delete it\n", .{path});
-    return error.RecordFileInCorpus;
+    record_files += 1;
 }
 
 /// The `BENI_BLESS_ONLY` substring, if set and non-empty.
@@ -3192,7 +3212,7 @@ const Case = struct {
     /// the records written in place under the record sanitiser, as they
     /// ship and as a release ships them, or the lists under the list
     /// sanitiser. Each is a build of its own directory, run whatever the
-    /// fixture's run hashes say, and never blessed. None when the ownership
+    /// run-hash cache says, and never blessed. None when the ownership
     /// checker refuses the program under the pass's flags.
     fn differentialPages(c: Case, platform_arg: []const u8, sources: []const []const u8) ![4]?PagePlan {
         var plans: [4]?PagePlan = @splat(null);
