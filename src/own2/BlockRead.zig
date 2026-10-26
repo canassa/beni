@@ -929,7 +929,8 @@ const Rows = @import("Rows.zig");
 
 /// 0 `List Int`, 1 `Int`, 2 `List (List Int)`, 3 `List Int → List Int`,
 /// 4 `Ref (List Int)`, 5 `Maybe (List Int)`, 6 `{ a : List Int }`,
-/// 7 `List { a : List Int }`, 8 `type Tree = Node Tree (List Int) Tree`.
+/// 7 `List { a : List Int }`, 8 `type Tree = Node Tree (List Int) Tree`,
+/// 9 `List Int × List Int`, 10 and 11 wide records (below).
 const Graph = struct {
     table: *Place.Table,
     account: *Ids.Account,
@@ -962,6 +963,13 @@ const Graph = struct {
             9 => {
                 for (0..2) |i| try out.append(gpa, .{ .step = Step.index(g.account, @intCast(i)) catch unreachable, .@"var" = 0 });
                 return .{ .kind = .tuple };
+            },
+            // 10 and 11: records of 8 and of 512 `List (List Int)` fields (ranks
+            // 100…), for a width the writer must not pay twice (#1073).
+            10, 11 => {
+                const w: u32 = if (v == 10) 8 else 512;
+                for (0..w) |i| try out.append(gpa, .{ .step = Step.field(g.account, @intCast(100 + i)) catch unreachable, .@"var" = 2 });
+                return .{ .kind = .record };
             },
             else => unreachable,
         }
@@ -2770,4 +2778,46 @@ test "#1073: a folded snapshot round-trips: its fold, and every read at and belo
     }
     // And a fold was there to round-trip.
     try testing.expect(any);
+}
+
+test "#1073: κ stored below one unbuilt field of a wide record costs the writer the same at any width" {
+    const gpa = testing.allocator;
+    var extra: [2]u64 = undefined;
+    for ([_]u32{ 10, 11 }, 0..) |place, run| {
+        var cost: [2]u64 = undefined;
+        for (0..2) |stores| {
+            var a: Tables = .{};
+            try a.init();
+            defer a.deinit();
+            const env = a.env();
+            const rec = try a.place(place);
+            // A record parameter: a leaf, no field built.
+            const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, rec), 0);
+            const res = try a.shapes.leaf(gpa, &a.account, rec, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+            const f0 = try Step.field(&a.account, 100);
+            const at = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, f0)).?, Step.elem)).?;
+            const km: Cond.Kappas = if (stores == 1) try a.conds.kappaSetAt(gpa, env.charge, .none, &.{ f0, Step.elem }, at, Cond.shared) else .none;
+            const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
+            var words: std.ArrayList(u32) = .empty;
+            defer words.deinit(gpa);
+            const before = a.account.total();
+            try write(env, &a.sums, &.{c}, .identity, &words);
+            cost[stores] = a.account.total() - before;
+            if (stores == 1) {
+                // And it is read back where it was stored.
+                var b: Tables = .{};
+                try b.init();
+                defer b.deinit();
+                const back = b.sums.get(try roundTrip(&a, &b, c));
+                const g0 = try Step.field(&b.account, 100);
+                try testing.expectEqual(Cond.shared, try kappaAt(&b, back.kappas, back.res, &.{ g0, Step.elem }));
+            }
+        }
+        // What the stored entry adds to the block's work.
+        extra[run] = cost[1] - cost[0];
+    }
+    // Eight fields or 512: the entry costs the same, up to the codec's
+    // logarithmic sort terms; the place's width is paid once, by the place
+    // table, either way.
+    try testing.expect(extra[1] <= extra[0] + 16);
 }
