@@ -96,6 +96,7 @@ type alias Bucket =
     open : Int → ⊤
     close : ⊤ → ⊤
     landed : Queue Ball
+    settled : Queue ⊤
 
 
 --| The bucket's flat bottom.
@@ -125,7 +126,7 @@ pass gate =
 
 
 --| Let balls into the bucket until it holds `n`, or until `window` after
---| the first one landed, then shut its gate.
+--| the first one landed, then shut its gate and wait until they lie still.
 fill : Bucket, Int, Duration → ⊤
 fill bucket n window =
     bucket.open n
@@ -133,6 +134,8 @@ fill bucket n window =
     _ = Task.timeout window λ⊤ → List.map (List.range 2 n) λ_ → waitBall bucket.landed
     bucket.close ⊤
     drain bucket.landed
+    _ = Queue.take bucket.settled
+    ⊤
 
 
 --| Open the trapdoor until the bucket is empty, for 1.5 s at most.
@@ -177,11 +180,12 @@ machine send =
         }
     , bucket =
         { open = λn → Ref.update world λw → { w | bucketDoor = n, asked = n }
-        , close = λ⊤ → Ref.update world λw → { w | bucketDoor = 0 }
+        , close = λ⊤ → closeBucket world
         , landed = Queue.unbounded ⊤
+        , settled = Queue.unbounded ⊤
         }
     , trapdoor =
-        { open = λ⊤ → openTrapdoor world
+        { open = λ⊤ → Ref.update world openTrap
         , close = λ⊤ → Ref.update world λw → { w | trapOpen = False, armed = False }
         , emptied = Queue.unbounded ⊤
         }
@@ -202,13 +206,13 @@ debugging ⊤ =
             False
 
 
-openTrapdoor : Ref World → ⊤
-openTrapdoor world =
+closeBucket : Ref World → ⊤
+closeBucket world =
     w = Ref.get world
     bucket = List.filter w.balls λb → b.bucketed
     first = Maybe.withDefault (List.minimum (List.map bucket λb → b.landedAt)) w.now
-    Log.debug "drop: ${List.length bucket} of ${w.asked}, the first in for ${clock ⊤ - first} ms"
-    Ref.update world openTrap
+    Log.debug "batch: ${List.length bucket} of ${w.asked}, the first in for ${clock ⊤ - first} ms"
+    Ref.update world λv → { v | bucketDoor = 0, settling = True }
 
 
 openBay : Ref World → ⊤
@@ -273,6 +277,9 @@ signal m s =
             Landed ball →
                 Queue.offer m.bucket.landed ball
 
+            Settled →
+                Queue.offer m.bucket.settled ⊤
+
             Emptied →
                 Queue.offer m.trapdoor.emptied ⊤
 
@@ -292,6 +299,7 @@ type Signal
     = AtHopper Ball
     | Entered Ball
     | Landed Ball
+    | Settled
     | Emptied
     | Exited Ball
     | AtBay Ball
@@ -364,6 +372,7 @@ type alias World =
     bayFreeAt : Int
     asked : Int
     trapOpen : Bool
+    settling : Bool
     armed : Bool
     flap : Maybe Route
     events : List (Float × Bool)
@@ -389,6 +398,7 @@ fresh ⊤ =
     , bayFreeAt = 0
     , asked = 0
     , trapOpen = False
+    , settling = False
     , armed = False
     , flap = Nothing
     , events = []
@@ -653,9 +663,12 @@ substep w h sigs =
                 ( b2, ww2, ss2 ) = cross ww ss px py b
                 ( List.push acc b2, ww2, ss2 )
     emptied = w2.trapOpen && w2.armed && not (List.any balls λb → b.bucketed)
+    still = w2.settling && List.all balls λb → not b.bucketed || distance b.vx b.vy < 30
     first = List.head (List.sortBy (List.filter balls λb → b.inBox) λb → b.boxAt)
     w3 = { w2 | balls = balls, flap = Maybe.andThen first λb → b.route }
-    if emptied then ( { w3 | armed = False }, List.push sigs2 Emptied ) else ( w3, sigs2 )
+    ( w4, sigs3 ) =
+        if emptied then ( { w3 | armed = False }, List.push sigs2 Emptied ) else ( w3, sigs2 )
+    if still then ( { w4 | settling = False }, List.push sigs3 Settled ) else ( w4, sigs3 )
 
 
 -- The forces: gravity; the air in the return tube; the flap's push.
@@ -735,6 +748,13 @@ bump a c =
 -- Where a ball crosses a gate or a sensor in this substep.
 cross : World, List Signal, Float, Float, Ball → Ball × World × List Signal
 cross w sigs px py b =
+    ( b2, w2, sigs2 ) = crossIn w sigs px py b
+    crossOut w2 sigs2 px b2
+
+
+-- Where a ball goes past a gate or a sensor, or into the box at the check.
+crossIn : World, List Signal, Float, Float, Ball → Ball × World × List Signal
+crossIn w sigs px py b =
     down = λy → py < y && b.y ≥ y
     near = λwd → abs (b.x - cx) < wd + 2
     if b.stage == Pool && down gateA && near half && w.entry > 0 then
@@ -747,18 +767,17 @@ cross w sigs px py b =
         ( ball, w, List.push sigs (AtHopper ball) )
     else if b.stage == Inside && not b.bucketed && not b.dropped && down gateB && near half then
         ball = { b | bucketed = True, landedAt = w.now }
-        ( ball, { w | bucketDoor = max 0 (w.bucketDoor - 1) }, List.push sigs (Landed ball) )
+        -- A ball that slips past the gate as it shuts drops with this
+        -- batch: the bucket's sensor hears only the balls the gate let in.
+        if w.bucketDoor > 0 then
+            ( ball, { w | bucketDoor = w.bucketDoor - 1 }, List.push sigs (Landed ball) )
+        else
+            ( ball, w, sigs )
     else if b.bucketed && down trap && near door && w.trapOpen then
         ( { b | bucketed = False, dropped = True }, w, sigs )
     else if b.dropped && not b.inBox && down (exitY + r) && near box then
         ball = { b | inBox = True, boxAt = w.t, route = Just (if b.red then ToLeft else ToRight) }
         if b.red then ( ball, { w | failAt = w.t }, sigs ) else ( ball, { w | passAt = w.t }, sigs )
-    else if b.inBox && b.route == Just ToRight && px < cx + box && b.x ≥ cx + box then
-        ball = { b | inBox = False, stage = Done, dropped = False, token = False }
-        ( ball, { w | events = List.push w.events ( w.t, True ) }, List.push sigs (Exited ball) )
-    else if b.inBox && b.route == Just ToLeft && px > cx - box && b.x ≤ cx - box then
-        ball = { b | inBox = False, stage = Returning, dropped = False, route = Nothing }
-        ( ball, { w | events = List.push w.events ( w.t, False ) }, sigs )
     else if b.stage == Returning && not b.sensed && b.y < bayBottom + 2 && b.x > cx - 60 then
         ball = { b | sensed = True, waitFrom = w.t, arrivedAt = w.now }
         ( ball, w, List.push sigs (AtBay ball) )
@@ -770,6 +789,20 @@ cross w sigs px py b =
         , { w | bayDoor = w.bayDoor - 1, seed = seed, bayFree = w.t, bayFreeAt = w.now }
         , List.push sigs (Returned ball)
         )
+    else
+        ( b, w, sigs )
+
+
+-- A ball in the box that goes out past its open flap, in the same
+-- substep as it came into the box or later.
+crossOut : World, List Signal, Float, Ball → Ball × World × List Signal
+crossOut w sigs px b =
+    if b.inBox && b.route == Just ToRight && px < cx + box && b.x ≥ cx + box then
+        ball = { b | inBox = False, stage = Done, dropped = False, token = False }
+        ( ball, { w | events = List.push w.events ( w.t, True ) }, List.push sigs (Exited ball) )
+    else if b.inBox && b.route == Just ToLeft && px > cx - box && b.x ≤ cx - box then
+        ball = { b | inBox = False, stage = Returning, dropped = False, route = Nothing }
+        ( ball, { w | events = List.push w.events ( w.t, False ) }, sigs )
     else
         ( b, w, sigs )
 
@@ -975,6 +1008,7 @@ view model =
                 />
                 <text
                     class="caption"
+                    fill={muted}
                     x="0"
                     y="0"
                     transform="translate(-4 305.5) rotate(-90)"
@@ -1160,7 +1194,14 @@ view model =
                     {λk → viewChip (cx + 22 + toFloat k * 8.5) (gateA - 7) (k < free)}
                 </For>
             </g>
-            <text class="caption" x="200" y="495" dominant-baseline="middle" letter-spacing="1.4">
+            <text
+                class="caption"
+                fill={muted}
+                x="200"
+                y="495"
+                dominant-baseline="middle"
+                letter-spacing="1.4"
+            >
                 DONE ↓
             </text>
             <g filter="url(#ballShadow)">

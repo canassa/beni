@@ -6,15 +6,18 @@
 # - "At once": never more balls in the machine than it allows. Each `in:`
 #   line counts the balls that hold room once a ball came in.
 # - "Per batch": a batch drops when the bucket holds the batch, or 500 ms
-#   after its first ball landed. Each `drop:` line is the balls in the
-#   bucket as the trapdoor opens, the batch asked for, and how long the
-#   first ball waited.
+#   after its first ball landed. Each `batch:` line is the balls in the
+#   bucket as its gate shuts, the batch asked for, and how long the first
+#   ball waited; the trapdoor opens once they lie still.
 # - A retry waits 200 × 2ⁿ ms, n the times the ball went round before. Each
 #   `retry:` line is how long `retry` slept before the bay gate opened.
 #
-# The frames are 33 ms apart, the longest step the physics takes, so 340
-# frames are 11 s of the machine: drops of both kinds, and ball 3 failing
-# twice, waiting 200 ms and then 400 ms.
+# The frames are 33 ms apart, the longest step the physics takes, so 352
+# frames are 11.6 s of the machine: batches of both kinds, and ball 3
+# failing twice, waiting 200 ms and then 400 ms. Then "At once" goes down
+# to 2 while 8 balls hold room: no ball comes in until fewer than 2 do.
 url "?debug"
-input #at-once "6"
-frame 340 33
+input #at-once "8"
+frame 352 33
+input #at-once "2"
+frame 92 33
