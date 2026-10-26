@@ -277,6 +277,13 @@ pub const Table = struct {
         t.ctor_args.deinit(gpa);
     }
 
+    /// The first type-variable number no place of this table is memoised
+    /// under: a block read into the table numbers its places from here, so
+    /// they never meet a variable of the module's or of another block's.
+    pub fn freshVar(t: *const Table) u32 {
+        return @intCast(t.by_var.slots.items.len);
+    }
+
     pub fn count(t: *const Table) u32 {
         return @intCast(t.places.len);
     }

@@ -53,7 +53,10 @@ const layers = [_]Entry{
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 900 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1200 },
+    // §5 says 1 400 since S2b: the canonical order by memoised structural
+    // hashes (linear, where spelling sort keys was exponential), the trial
+    // read into tables of its own and the checked decoder.
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1400 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
