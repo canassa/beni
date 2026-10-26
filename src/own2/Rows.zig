@@ -47,8 +47,12 @@
 //! | `cellread` + `lent` / `lentoptional` | π₁ `R`, its handle in `refs`; `loan(π₁◆·ρ)`, at the carrier's payload step for the second |
 //! | `cellwrite`/`cellcomplete` | π₁ `R`, `W` at `◆`, in `refs` |
 //! | `consumed cellstored` | `RS`: the value goes behind the barrier |
-//! | `cellupdate`/`cellmodify` | called once, its supply `π₁◆` taken and owned, its answer put back so `need` owned (the whole answer: `cellmodify`'s `.1` alone is #1052's); `cellmodify` returns its `.0` or a loan of the slot |
+//! | `cellupdate`/`cellmodify` + `stored` | called once, its supply `π₁◆` taken and owned; the write-back of its answer (`cellmodify`: of its `.1`) at `π₁◆`; `cellmodify` returns its `.0` or a loan of the slot |
 //! | `cellnew` / `cellempty` | a fresh handle, `◆ ↦ π₁` or empty |
+//! | `elementof` | `π₁[*]` itself, π₁ `R` and `A` at `[*]`: no split, nothing taken |
+//! | `copyof` | fresh storage, `[*]` `π₁[*]`, κ there lost for list-kind elements, `excl π₁[*]` for records, none where they cross |
+//! | `prepended` | `stored` π₁ in front of `returned` π₂: storage π₂ or fresh, `[*]` `π₁` and `π₂[*]`, κ by the construction rule; no write |
+//! | `once taken stored` (callback) | the answer (or a carrier's payload, `fn_payload`) stored at `written returned` π₁'s `[*]` by the construction rule, and its write-back there; a carrier's nullary answer removes |
 //!
 //! The slot relation's versions and the loan lifetimes are S8's (§2.13.7);
 //! these rows carry what a class can say today.
@@ -93,6 +97,14 @@ pub const Param = struct {
     fn_params: ?[]const PlaceId = null,
     /// `List (a → b)`: `fn_params` describes each element (oc §30.9).
     list_of_fns: bool = false,
+    /// The written-out function type's result place, or null: where a
+    /// `stored` callback's answer is read (§2.13.6).
+    fn_result: ?PlaceId = null,
+    /// A callback whose argument and answer are a Maybe-like carrier over
+    /// the element (§2.13.6's `stored` row): the step to the carrier's
+    /// unary payload, which the adapter resolved and validated (one
+    /// nullary and one unary constructor). Null: the element itself.
+    fn_payload: ?Step = null,
 };
 
 pub const Signature = struct {
@@ -153,19 +165,38 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
     var writes = false;
     var refs: SetId = .none;
     var kappas: Cond.Kappas = .none;
-    // Each fun's run of `supplies`, cut into slices once the list is complete.
-    var fun_runs: std.ArrayList([2]u32) = .empty;
+    // Each fun's runs of `supplies` and `backs`, cut into slices once the
+    // lists are complete.
+    var fun_runs: std.ArrayList([4]u32) = .empty;
     defer fun_runs.deinit(gpa);
-    // The parameters stored into the result sequence's `[*]` (`stored`).
-    var stored: std.ArrayList(u32) = .empty;
+    var backs: std.ArrayList(Summary.Back) = .empty;
+    defer backs.deinit(gpa);
+    // The values stored into the result container's `[*]`: each `stored`
+    // parameter's cell, and a `stored` callback's answer (§2.13.6).
+    var stored: std.ArrayList(CellId) = .empty;
     defer stored.deinit(gpa);
-    // The returned sequence a `stored` parameter is put into: its leaf is
+    // The returned container a `stored` value is put into: its leaf is
     // built below, with the stored values at `[*]`, not in the loop.
     var into: ?u32 = null;
+    var any_stored = false;
     for (sig.params, 0..) |prm, iu| {
-        if (has(prm.words, .stored) and prm.fn_params == null) try stored.append(gpa, @intCast(iu));
+        if (!has(prm.words, .stored) or prm.fn_params != null) continue;
+        any_stored = true;
+        if (!crosses(env, prm.place)) try stored.append(gpa, try paramCell(env, @intCast(iu), prm.place));
     }
-    if (stored.items.len != 0) for (sig.params, 0..) |prm, iu| {
+    // The callback whose answer goes back at the element position of
+    // parameter 1: one, or none (two would be an ambiguous destination).
+    var elem_back: ?ElemBack = null;
+    var elem_backs: u32 = 0;
+    for (sig.params, 0..) |prm, iu| if (try elementBack(env, sig, @intCast(iu), prm)) |b| {
+        elem_backs += 1;
+        elem_back = b;
+    };
+    if (elem_backs > 1) elem_back = null;
+    if (elem_back) |b| {
+        into = 0;
+        if (!crosses(env, env.places.child(sig.params[0].place, Step.elem).?)) try stored.append(gpa, b.answer);
+    } else if (any_stored) for (sig.params, 0..) |prm, iu| {
         if (has(prm.words, .returned) and isSequence(env, prm.place) and !crosses(env, sig.result)) into = @intCast(iu);
     };
     const entry_bit = Word.entry.bit();
@@ -176,6 +207,19 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         // place that is no storage, is not a word (R-5.10.3).
         if (words & cell_words != 0 and !(sig.params.len > 0 and isCell(env, sig.params[0].place))) words &= ~cell_words;
         if (has(words, .written) and !(isSequence(env, prm.place) or isCell(env, prm.place) or env.places.kind(prm.place) == .dict)) words &= ~Word.written.bit();
+        // A callback's answer put back (§2.13.6): into parameter 1's `◆`
+        // with `cellupdate`/`cellmodify`, at its element position with
+        // `once taken stored`. A selector whose places do not fit is no
+        // word (R-5.10.3): the callback loses it, and `stored` with it.
+        var back: ?Summary.Back = null;
+        if (prm.fn_params != null and has(words, .stored)) {
+            if (words & cell_callback != 0) {
+                back = try cellBack(env, sig, prm, words);
+            } else if (elem_back) |b| {
+                if (b.i == i) back = b.back;
+            }
+            if (back == null) words &= ~(Word.stored.bit() | cell_callback);
+        } else words &= ~cell_callback;
         if (words == 0) words = Word.escaped.bit();
         var use: NodeId = .none;
         // A `List` of functions is a function slot only when its words say
@@ -201,27 +245,40 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
             // first container argument; `cellupdate`/`cellmodify` the first
             // parameter's `◆` contents, taken and owned (§2.13.7).
             const first: ?Param = if (sig.params.len > 0) sig.params[0] else null;
-            const takes_elem = has(words, .taken) and first != null and isSequence(env, first.?.place);
-            const takes_contents = (has(words, .cellupdate) or has(words, .cellmodify)) and first != null and isCell(env, first.?.place);
+            const takes_elem = has(words, .taken) and first != null and isContainer(env, first.?.place);
+            const takes_contents = words & cell_callback != 0;
             const run_start: u32 = @intCast(supplies.items.len);
             if (calls != .zero) {
                 for (fps, 0..) |fp, k| {
                     if (k == 0 and (takes_elem or takes_contents)) {
                         const c = if (takes_elem) try takenElem(env, first.?.place) else try contentsCell(env, first.?.place);
-                        const node = try env.shapes.leaf(gpa, env.account(), fp, try env.cells.sets.insert(gpa, env.charge, .none, c.int(), 0));
-                        try supplies.append(gpa, .{ .j = j, .k = 0, .node = node, .label = .none, .owned = true, .taken = true, .kappa = .none });
+                        const leaf = try env.shapes.leaf(gpa, env.account(), fp, try env.cells.sets.insert(gpa, env.charge, .none, c.int(), 0));
+                        // A carrier argument (`Maybe v`): the taken element
+                        // at its payload, nothing in the nullary alternative.
+                        const node = if (takes_elem and prm.fn_payload != null and back != null)
+                            try env.shapes.node(gpa, env.account(), fp, .none, try env.shapes.overPut(gpa, env.account(), Ids.none_int, prm.fn_payload.?, try env.shapes.leaf(gpa, env.account(), env.places.child(fp, prm.fn_payload.?).?, env.shapes.cells(leaf))))
+                        else
+                            leaf;
+                        // A built node's own κ at ε is its cells', as for `res` below.
+                        const kappa: Cond.Kappas = if (node == leaf) .none else blk: {
+                            const own = try env.shapes.leaf(gpa, env.account(), fp, env.shapes.cells(node));
+                            break :blk (try env.conds.kappaSet(gpa, env.charge, .none, node, false, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
+                        };
+                        try supplies.append(gpa, .{ .j = j, .k = 0, .node = node, .label = .none, .owned = true, .taken = true, .kappa = kappa });
                         continue;
                     }
                     const node = if (has(words, .owned)) try freshLeaf(env, .result, 0, fp) else try topLeaf(env, fp);
                     try supplies.append(gpa, .{ .j = j, .k = @intCast(k), .node = node, .label = .none, .owned = has(words, .owned), .taken = false, .kappa = .none });
                 }
             }
-            // Supplies are appended to one list; the fun's slice is cut
-            // below, once the list is complete.
-            // `cellupdate`/`cellmodify` put the callback's answer back in the slot:
-            // it must be owned there (`need`), as `cellstored` asks of a value.
-            try funs.append(gpa, .{ .j = j, .calls = calls, .seen = !kept, .need = takes_contents });
-            try fun_runs.append(gpa, .{ run_start, @intCast(supplies.items.len - run_start) });
+            // Supplies and write-backs are appended to one list each; the
+            // fun's slices are cut below, once the lists are complete. The
+            // answer put back is the effect (§2.13.6), not a `need` on all
+            // of it: `cellmodify` demands nothing of its `.0`.
+            const back_start: u32 = @intCast(backs.items.len);
+            if (back) |b| try backs.append(gpa, b);
+            try funs.append(gpa, .{ .j = j, .calls = calls, .seen = !kept });
+            try fun_runs.append(gpa, .{ run_start, @intCast(supplies.items.len - run_start), back_start, @intCast(backs.items.len - back_start) });
             if (kept) {
                 use = try Summary.Table.markUse(env, .none, prm.place, &.{}, .{ .r = true, .e = true }, &.{});
             } else if (calls != .zero or prm.list_of_fns) {
@@ -235,11 +292,15 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
                     returned = true;
                     res = try addRes(env, res, cb_leaf);
                 }
-                // `cellmodify`: the callback's first component is returned,
-                // and where it may overlap the slot it is a loan of it.
-                if (has(words, .aliased) or (takes_contents and has(words, .cellmodify))) res = try addRes(env, res, try env.shapes.recast(gpa, env.account(), sig.result, cb_leaf));
-                if (takes_contents and has(words, .cellmodify)) {
+                if (has(words, .aliased)) res = try addRes(env, res, try env.shapes.recast(gpa, env.account(), sig.result, cb_leaf));
+                // `cellmodify`: the answer's `.0` is returned, and where it
+                // may overlap the slot it is a loan of it.
+                if (has(words, .cellmodify)) {
                     returned = true;
+                    const first_part = (try env.places.extend(gpa, env.charge, try env.places.rootPath(gpa, prm.fn_result.?), try Step.index(env.account(), 0))).?;
+                    const part = try env.cells.symbolic(gpa, env.account(), env.places, .cb, Ids.none_int, first_part, j);
+                    const part_leaf = try env.shapes.leaf(gpa, env.account(), env.places.pathPlace(first_part), try env.cells.sets.insert(gpa, env.charge, .none, part.int(), 0));
+                    res = try addRes(env, res, if (env.places.pathPlace(first_part) == sig.result) part_leaf else try env.shapes.recast(gpa, env.account(), sig.result, part_leaf));
                     res = try addRes(env, res, try loanLeaf(env, first.?.place, sig.result));
                 }
             }
@@ -265,7 +326,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         if (!m.isEmpty() and !crosses(env, prm.place)) use = try Summary.Table.markUse(env, .none, prm.place, &.{}, m, &.{});
         // A sequence result read off at `[*]` (`taken`, `concatenated`):
         // the elements are kept (`A` there).
-        if (i == 0 and (has(sig.result_words, .taken) or has(sig.result_words, .concatenated)) and isSequence(env, prm.place))
+        if (i == 0 and sig.result_words & (Word.taken.bit() | Word.concatenated.bit() | Word.elementof.bit() | Word.copyof.bit()) != 0 and isSequence(env, prm.place))
             use = try Summary.Table.markUse(env, use, prm.place, &.{Step.elem}, .{ .a = true }, &.{});
         if (i == 1 and has(sig.result_words, .concatenated) and isSequence(env, prm.place))
             use = try Summary.Table.markUse(env, use, prm.place, &.{Step.elem}, .{ .a = true }, &.{});
@@ -291,18 +352,24 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         }
         if (has(words, .aliased)) res = try addRes(env, res, try env.shapes.recast(gpa, env.account(), sig.result, p_leaf));
     }
-    // Cut the funs' supply slices now that the list is complete.
-    for (funs.items, fun_runs.items) |*f, run| f.supplies = supplies.items[run[0]..][0..run[1]];
-    // The returned sequence with the stored values at `[*]` (§2.9's
+    // Cut the funs' supply and write-back slices now that the lists are
+    // complete.
+    for (funs.items, fun_runs.items) |*f, run| {
+        f.supplies = supplies.items[run[0]..][0..run[1]];
+        f.backs = backs.items[run[2]..][0..run[3]];
+    }
+    const rw = sig.result_words;
+    // The returned container with the stored values at `[*]` (§2.9's
     // construction rule: κ there is the base's, `apart` the arrivals, each
-    // stored value's own).
+    // stored value's own). `prepended`: parameter 1 put in front of a
+    // `returned` parameter 2, whose storage the result may share, or fresh.
     if (into) |r| {
         returned = true;
-        const built = try storedInto(env, sig, r, stored.items);
+        const prepends = has(rw, .prepended) and r == 1 and sig.params.len == 2 and has(sig.params[0].words, .stored);
+        const built = try storedInto(env, sig, r, stored.items, prepends);
         res = try addRes(env, res, built.node);
         kappas = built.kappas;
     }
-    const rw = sig.result_words;
     const first_place: ?PlaceId = if (sig.params.len > 0) sig.params[0].place else null;
     if (crosses(env, sig.result)) {
         res = try env.shapes.nothing(gpa, env.account(), sig.result);
@@ -316,6 +383,18 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         returned = true;
         const c = try takenElem(env, first_place.?);
         res = try addRes(env, res, try env.shapes.leaf(gpa, env.account(), sig.result, try env.cells.sets.insert(gpa, env.charge, .none, c.int(), 0)));
+    } else if (has(rw, .elementof) and first_place != null and isSequence(env, first_place.?) and !crosses(env, first_place.?)) {
+        // An element of parameter 1 read in place: `π₁[*]` itself, with no
+        // split and nothing taken (§2.13.6).
+        returned = true;
+        const at = env.places.child(first_place.?, Step.elem).?;
+        const leaf = try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, (try paramCellAtIndex(env, 0, first_place.?)).int(), 0));
+        res = try addRes(env, res, if (at == sig.result) leaf else try env.shapes.recast(gpa, env.account(), sig.result, leaf));
+    } else if (has(rw, .copyof) and first_place != null and isSequence(env, first_place.?) and !crosses(env, first_place.?) and isSequence(env, sig.result)) {
+        returned = true;
+        const built = try copyOf(env, sig);
+        res = try addRes(env, res, built.node);
+        kappas = built.kappas;
     } else if (has(rw, .lent) and first_place != null and isCell(env, first_place.?)) {
         returned = true;
         res = try addRes(env, res, try loanLeaf(env, first_place.?, sig.result));
@@ -388,6 +467,69 @@ fn isCell(env: Env, at: PlaceId) bool {
     return env.places.kind(at) == .ref and env.places.child(at, Step.contents) != null;
 }
 
+/// The callback words that put the answer back into a cell's `◆`.
+const cell_callback = Word.cellupdate.bit() | Word.cellmodify.bit();
+
+/// A container of elements (`sequence` metadata, or a dict's value
+/// position): a list or dict place with its `[*]`.
+fn isContainer(env: Env, at: PlaceId) bool {
+    const k = env.places.kind(at);
+    return (k == .list or k == .dict) and env.places.child(at, Step.elem) != null;
+}
+
+/// A `stored` callback whose answer goes back at parameter 1's element
+/// position, the answer's selected cell `cb_j·selected`, and the effect.
+const ElemBack = struct { i: u32, answer: CellId, back: Summary.Back };
+
+/// Parameter `i`'s element write-back (§2.13.6's callback `stored`), when
+/// its words and places make one: `once taken stored`, no cell word; a
+/// `written returned` container as parameter 1; the callback's argument
+/// and answer the element, or both a carrier over it whose payload the
+/// answer stores (`fn_payload`), its nullary alternative a removal.
+fn elementBack(env: Env, sig: Signature, i: u32, prm: Param) Error!?ElemBack {
+    const want = Word.stored.bit() | Word.once.bit() | Word.taken.bit();
+    if (prm.fn_params == null or prm.list_of_fns or prm.words & want != want or prm.words & cell_callback != 0) return null;
+    if (i == 0 or prm.fn_params.?.len == 0) return null;
+    const into = sig.params[0];
+    const dest_words = Word.written.bit() | Word.returned.bit();
+    if (into.words & dest_words != dest_words or !isContainer(env, into.place)) return null;
+    const elem = env.places.child(into.place, Step.elem).?;
+    const answer = prm.fn_result orelse return null;
+    const arg = prm.fn_params.?[0];
+    var selected = try env.places.rootPath(env.gpa, answer);
+    if (prm.fn_payload) |s| {
+        if (env.places.child(answer, s) != elem or env.places.child(arg, s) != elem) return null;
+        selected = (try env.places.extend(env.gpa, env.charge, selected, s)).?;
+    } else if (answer != elem or arg != elem) return null;
+    const j = i;
+    const dest = (try env.places.extend(env.gpa, env.charge, try env.places.rootPath(env.gpa, into.place), Step.elem)).?;
+    return .{
+        .i = i,
+        .answer = try env.cells.symbolic(env.gpa, env.account(), env.places, .cb, Ids.none_int, selected, j),
+        .back = .{ .selected = selected, .dest = dest, .dest_param = 0, .mode = .element, .removes = prm.fn_payload != null },
+    };
+}
+
+/// A cell callback's write-back (§2.13.6): `cellupdate stored` puts its
+/// whole answer, `cellmodify stored` the answer's `.1`, into parameter 1's
+/// `◆`; null when the places do not fit (the answer, or its `.1`, is not
+/// the contents' place).
+fn cellBack(env: Env, sig: Signature, prm: Param, words: u32) Error!?Summary.Back {
+    if (prm.list_of_fns or sig.params.len == 0 or !isCell(env, sig.params[0].place)) return null;
+    if (@popCount(words & cell_callback) != 1) return null;
+    const contents = env.places.child(sig.params[0].place, Step.contents).?;
+    const answer = prm.fn_result orelse return null;
+    var selected = try env.places.rootPath(env.gpa, answer);
+    if (has(words, .cellmodify)) {
+        const second = try Step.index(env.account(), 1);
+        if (env.places.child(answer, second) != contents) return null;
+        if (env.places.child(answer, try Step.index(env.account(), 0)) == null) return null;
+        selected = (try env.places.extend(env.gpa, env.charge, selected, second)).?;
+    } else if (answer != contents) return null;
+    const dest = (try env.places.extend(env.gpa, env.charge, try env.places.rootPath(env.gpa, sig.params[0].place), Step.contents)).?;
+    return .{ .selected = selected, .dest = dest, .dest_param = 0, .mode = .cell };
+}
+
 /// `param πᵢ` at its root.
 fn paramCell(env: Env, i: u32, at: PlaceId) Error!CellId {
     return env.cells.symbolic(env.gpa, env.account(), env.places, .param, i, try env.places.rootPath(env.gpa, at), 0);
@@ -424,9 +566,10 @@ fn loanLeaf(env: Env, cell: PlaceId, at: PlaceId) Error!NodeId {
 
 const Built = struct { node: NodeId, kappas: Cond.Kappas };
 
-/// Parameter `r`'s sequence with the `stored` parameters at `[*]`: κ at
-/// `[*]` by §2.9's construction rule, one store after another.
-fn storedInto(env: Env, sig: Signature, r: u32, stored: []const u32) Error!Built {
+/// Parameter `r`'s container with the `stored` values at `[*]`: κ at
+/// `[*]` by §2.9's construction rule, one store after another. `fresh`
+/// (`prepended`): the storage is parameter `r`'s or a fresh one.
+fn storedInto(env: Env, sig: Signature, r: u32, stored: []const CellId, fresh: bool) Error!Built {
     const gpa = env.gpa;
     const list = sig.params[r].place;
     const at = env.places.child(list, Step.elem).?;
@@ -435,9 +578,7 @@ fn storedInto(env: Env, sig: Signature, r: u32, stored: []const u32) Error!Built
     var cells = try env.cells.sets.insert(gpa, env.charge, .none, base_elem.int(), 0);
     var k = try env.conds.kappaOf(gpa, env.charge, env.view(), .none, try env.shapes.leaf(gpa, env.account(), at, cells), true);
     var excls = Cond.yes;
-    for (stored) |s| {
-        if (crosses(env, sig.params[s].place)) continue;
-        const v = try paramCell(env, s, sig.params[s].place);
+    for (stored) |v| {
         const v_leaf = try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, v.int(), 0));
         k = try env.conds.lower(gpa, env.charge, env.view(), .none, k, cells, v_leaf, true, null);
         // The stored value's own condition as a position (C.10 item 5):
@@ -449,7 +590,9 @@ fn storedInto(env: Env, sig: Signature, r: u32, stored: []const u32) Error!Built
     }
     k = try env.conds.@"and"(gpa, env.charge, k, excls);
     const elems = try env.shapes.leaf(gpa, env.account(), at, cells);
-    const node = try env.shapes.node(gpa, env.account(), list, try env.cells.sets.insert(gpa, env.charge, .none, base.int(), 0), try env.shapes.overPut(gpa, env.account(), Ids.none_int, Step.elem, elems));
+    var storage = try env.cells.sets.insert(gpa, env.charge, .none, base.int(), 0);
+    if (fresh) storage = try env.cells.sets.insert(gpa, env.charge, storage, (try env.cells.result(gpa, env.account(), .result, .none, 1, list, .list)).int(), 0);
+    const node = try env.shapes.node(gpa, env.account(), list, storage, try env.shapes.overPut(gpa, env.account(), Ids.none_int, Step.elem, elems));
     const res = if (list == sig.result) node else try env.shapes.recast(gpa, env.account(), sig.result, node);
     return .{ .node = res, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
 }
@@ -479,6 +622,25 @@ fn concatenation(env: Env, sig: Signature) Error!Built {
         const together = try env.conds.apart(gpa, env.charge, env.cells, env.places, &items, null);
         break :blk try env.conds.@"and"(gpa, env.charge, together, try env.conds.@"and"(gpa, env.charge, try env.conds.excl(gpa, env.charge, a), try env.conds.excl(gpa, env.charge, b)));
     } else if (env.places.holds(at).isEmpty()) Cond.yes else Cond.lost;
+    return .{ .node = node, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
+}
+
+/// `copyof` (§2.13.6): fresh storage holding parameter 1's elements, `[*]`
+/// `π₁[*]`. κ at `[*]` is lost where the elements are of a list's kind (or
+/// any other kind that holds cells), `excl π₁[*]` for records (copying the
+/// storage does not make two of them one), `yes` where they cross.
+fn copyOf(env: Env, sig: Signature) Error!Built {
+    const gpa = env.gpa;
+    const at = env.places.child(sig.result, Step.elem).?;
+    const storage = try env.cells.sets.insert(gpa, env.charge, .none, (try env.cells.result(gpa, env.account(), .result, .none, 1, sig.result, .list)).int(), 0);
+    // Crossing elements carry no cell: the copy is its fresh storage.
+    if (crosses(env, at)) return .{ .node = try env.shapes.node(gpa, env.account(), sig.result, storage, Ids.none_int), .kappas = .none };
+    const a = try paramCellAtIndex(env, 0, sig.params[0].place);
+    const elems = try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, a.int(), 0));
+    const node = try env.shapes.node(gpa, env.account(), sig.result, storage, try env.shapes.overPut(gpa, env.account(), Ids.none_int, Step.elem, elems));
+    const k = if (env.places.kind(at) == .record)
+        try env.conds.excl(gpa, env.charge, a)
+    else if (env.places.holds(at).isEmpty()) Cond.yes else Cond.lost;
     return .{ .node = node, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
 }
 
@@ -621,6 +783,12 @@ const TestGraph = struct {
             },
             // 12 `List Int → List Int`, a function written out.
             12 => return .{ .kind = .closure, .head = 301 },
+            // 13 `List Int × List Int`, what `cellmodify`'s callback answers.
+            13 => {
+                try out.append(g.gpa, .{ .step = (Step.index(g.account, 0) catch unreachable), .@"var" = 0 });
+                try out.append(g.gpa, .{ .step = (Step.index(g.account, 1) catch unreachable), .@"var" = 0 });
+                return .{ .kind = .tuple };
+            },
             else => unreachable,
         }
     }
@@ -1183,10 +1351,14 @@ test "v2's words: a cell's make, read, write, update, modify and completion; an 
     try testing.expectEqualStrings("summary isDone: π1 R (words)", try f.text(done, "isDone"));
     const set = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = list, .words = bits(&.{ .consumed, .cellstored }) } }, .result = int });
     try testing.expectEqualStrings("summary set: π1 R, π1◆ W, π2 RS (words)", try f.text(set, "set"));
-    const update = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{.cellupdate}), .fn_params = &.{list} } }, .result = int });
-    try testing.expectEqualStrings("summary update: π1 R, π1◆ W, π2 R; π2 calls ≤1, need owned, supply 1 π1◆ owned taken (words)", try f.text(update, "update"));
-    const modify = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{.cellmodify}), .fn_params = &.{list} } }, .result = list });
-    try testing.expectEqualStrings("summary modify: π1 R, π1◆ W, π2 R; res loan(π1◆·λ) ~cb2; π2 calls ≤1, need owned, supply 1 π1◆ owned taken (words)", try f.text(modify, "modify"));
+    // `cellupdate stored` puts the whole answer back into `◆`;
+    // `cellmodify stored` its `.1`, and returns its `.0` or a loan of the
+    // slot (§2.13.6). The write-back is the effect, not a `need`.
+    const pair = try f.placeOf(13);
+    const update = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellupdate, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = int });
+    try testing.expectEqualStrings("summary update: π1 R, π1◆ W, π2 R; π2 calls ≤1, supply 1 π1◆ owned taken, stores answer at π1◆ (words)", try f.text(update, "update"));
+    const modify = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellmodify, .stored }), .fn_params = &.{list}, .fn_result = pair } }, .result = list });
+    try testing.expectEqualStrings("summary modify: π1 R, π1◆ W, π2 R; res cb2.0 loan(π1◆·λ); π2 calls ≤1, supply 1 π1◆ owned taken, stores answer.1 at π1◆ (words)", try f.text(modify, "modify"));
     const complete = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellcomplete}) }, .{ .place = list, .words = bits(&.{ .consumed, .cellstored }) } }, .result = int });
     try testing.expectEqualStrings("summary complete: π1 R, π1◆ W, π2 RS (words)", try f.text(complete, "complete"));
     const wrong = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = list, .words = bits(&.{.cellread}) }}, .result = list, .result_words = bits(&.{.lent}) });
@@ -1269,4 +1441,81 @@ test "v2's words: stores into one sequence keep one arrivals group, and n stores
         try testing.expectEqual(@as(u32, 1), groups);
         try testing.expectEqual(n + 1, members);
     }
+}
+
+test "v2's result selectors: an element read in place, a fresh copy, a prepend" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const list = try f.placeOf(0);
+    const int = try f.placeOf(1);
+    const lists = try f.placeOf(2);
+    const recs = try f.placeOf(9);
+    const rec = try f.placeOf(5);
+    const fun = try f.placeOf(3);
+    // at, unsafeGet : borrowed List a, borrowed Int → elementof a
+    const at = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{.borrowed}) }, .{ .place = int, .words = bits(&.{.borrowed}) } }, .result = list, .result_words = bits(&.{.elementof}) });
+    try testing.expectEqualStrings("summary at: π1 R, π1[*] A; res π1[*] (words)", try f.text(at, "at"));
+    // copy : borrowed List a → copyof List a, over lists and over records
+    const copy = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = lists, .words = bits(&.{.borrowed}) }}, .result = lists, .result_words = bits(&.{.copyof}) });
+    try testing.expectEqualStrings("summary copy: π1 R, π1[*] A; res [*] π1[*]{lost}, fresh1 (words)", try f.text(copy, "copy"));
+    const copyr = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = recs, .words = bits(&.{.borrowed}) }}, .result = recs, .result_words = bits(&.{.copyof}) });
+    try testing.expectEqualStrings("summary copy: π1 R, π1[*] A; res [*] π1[*]{excl π1[*]}, fresh1 (words)", try f.text(copyr, "copy"));
+    const copyi = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = list, .words = bits(&.{.borrowed}) }}, .result = list, .result_words = bits(&.{.copyof}) });
+    try testing.expectEqualStrings("summary copy: π1 R, π1[*] A; res fresh1 (words)", try f.text(copyi, "copy"));
+    // sortWith : borrowed List a, many (a, a → Order) → copyof List a
+    const sort = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = recs, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{.many}), .fn_params = &.{ rec, rec } } }, .result = recs, .result_words = bits(&.{.copyof}) });
+    try testing.expectEqualStrings("summary sortWith: π1 R, π1[*] A, π2 R; res [*] π1[*]{excl π1[*]}, fresh1; π2 calls many, supply 1 ⊤ borrowed{lost}, supply 2 ⊤ borrowed{lost} (words)", try f.text(sort, "sortWith"));
+    // cons : stored a, returned List a → prepended List a
+    const cons = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.stored}) }, .{ .place = lists, .words = bits(&.{.returned}) } }, .result = lists, .result_words = bits(&.{.prepended}) });
+    try testing.expectEqualStrings("summary cons: π1 RA, π2 RA; res [*] π1 π2[*]{apart [π1] [π2[*]], excl π1, excl π2[*]}, fresh1 π2 (words)", try f.text(cons, "cons"));
+    try testing.expect(!f.sums.get(cons).writes);
+}
+
+test "v2's stored callback: the answer put back at the element position, a carrier's payload, and its removal" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const list = try f.placeOf(0);
+    const int = try f.placeOf(1);
+    const lists = try f.placeOf(2);
+    const maybe = try f.placeOf(8);
+    const fun = try f.placeOf(12);
+    // focus : written returned List a, borrowed Int, once taken stored (a → a) → List a
+    const focus = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = lists });
+    try testing.expectEqualStrings("summary focus: π1 RAW, π3 R; res [*] cb3 π1[*]{apart [cb3] [π1[*]], excl cb3, excl π1[*]}, π1; π3 calls ≤1, supply 1 elem(π1·λ) owned taken, stores answer at π1[*] (words)", try f.text(focus, "focus"));
+    // The carrier form, `Maybe a → Maybe a`: `Just`'s payload is stored,
+    // `Nothing` removes the taken position.
+    const payload = try f.places.ctorStep(testing.allocator, &f.account, 1, 0);
+    const mfocus = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{maybe}, .fn_result = maybe, .fn_payload = payload } }, .result = lists });
+    try testing.expectEqualStrings("summary focusMaybe: π1 RAW, π3 R; res [*] cb3#C.0 π1[*]{apart [cb3#C.0] [π1[*]], excl cb3#C.0, excl π1[*]}, π1; π3 calls ≤1, supply 1  owned taken, stores answer#C.0 at π1[*] or removes (words)", try f.text(mfocus, "focusMaybe"));
+    // No destination, or an answer that is not the element: no write-back.
+    const nodest = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{.borrowed}) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = lists });
+    try testing.expectEqualStrings("summary nodest: π1 R, π3 R; res ⊤{lost}; π3 calls ≤1, supply 1 elem(π1·λ) owned taken (words)", try f.text(nodest, "nodest"));
+    const wrong = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = int } }, .result = lists });
+    try testing.expectEqualStrings("summary wrong: π1 RAW, π3 R; res π1; π3 calls ≤1, supply 1 elem(π1·λ) owned taken (words)", try f.text(wrong, "wrong"));
+}
+
+test "a write-back is part of the class: the normal form tells it apart, a join keeps it, the order reads it" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const list = try f.placeOf(0);
+    const int = try f.placeOf(1);
+    const ref = try f.placeOf(7);
+    const fun = try f.placeOf(12);
+    const pair = try f.placeOf(13);
+    // `cellupdate stored` against `cellmodify stored`, with one result
+    // place: two different write-backs of one callback, `ε` and `.1`.
+    const whole = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellupdate, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = int });
+    const second = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellmodify, .stored }), .fn_params = &.{list}, .fn_result = pair } }, .result = int });
+    try testing.expect(!try f.sums.eq(env, whole, second));
+    const joined = try f.sums.join(env, whole, second);
+    try testing.expectEqual(@as(u32, 2), f.sums.fun(joined, 0).backs.len);
+    try testing.expect(try f.sums.leq(env, whole, joined));
+    try testing.expect(try f.sums.leq(env, second, joined));
+    try testing.expect(!try f.sums.leq(env, joined, whole));
 }

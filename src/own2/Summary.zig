@@ -10,7 +10,7 @@
 //! holder's, never the node's, §3.4); `xreq` the flat atom set relied on;
 //! `fun(j)` has `calls`, `need`, `seen`, supplies keyed by LABEL and `k`
 //! (two labels never merge, §2.2), each with the handed value's snapshot,
-//! and keep edges, both runs sorted; `j ≥ params` names a function slot.
+//! keep edges and write-backs (`Back`, §2.13.6), the runs sorted; `j ≥ params` names a function slot.
 //!
 //! **Lattice** (§2.10): pointwise and FUNCTIONAL — `join` builds a new class
 //! with a new snapshot (`Cond.propagate`, O15) and never writes a member's;
@@ -75,7 +75,26 @@ pub const Fun = struct {
     seen: bool,
     supplies: Ids.Range,
     keeps: Ids.Range,
+    /// Its write-backs (`Back`), a sorted run of `backs`.
+    backs: Ids.Range,
 };
+
+/// A selected callback-result write-back (§2.13.6, *Write-back is a summary
+/// effect*): when fun `j` is called, the path `selected` of its answer is
+/// put back at `dest` of parameter `dest_param` — a sequence's or a dict's
+/// element position `[*]` (`element`) or a cell's `◆` (`cell`). `removes`:
+/// the answer is a Maybe-like carrier whose nullary alternative stores
+/// nothing and removes the taken position. A flat record, not a `need`
+/// on the whole answer, which could not say which part is stored.
+pub const Back = struct {
+    selected: PathId,
+    dest: PathId,
+    dest_param: u32,
+    mode: BackMode,
+    removes: bool = false,
+};
+
+pub const BackMode = enum(u8) { element, cell };
 
 /// A function slot (oc §24.9): a function at `path` of parameter `param`,
 /// named as `fun(params + k)`.
@@ -174,6 +193,7 @@ pub const DraftFun = struct {
     seen: bool = true,
     supplies: []const Supply = &.{},
     keeps: []const Keep = &.{},
+    backs: []const Back = &.{},
 };
 
 /// The order of a fun's supplies: by label, argument, node, `taken`.
@@ -200,6 +220,20 @@ fn keepSame(a: Keep, b: Keep) bool {
     return a.j == b.j and a.k == b.k and a.kept_path == b.kept_path and a.written_path == b.written_path and a.writer == b.writer;
 }
 
+/// The order of a fun's write-backs: by destination, mode, removal, then
+/// the selected path.
+fn backLess(_: void, a: Back, b: Back) bool {
+    if (a.dest_param != b.dest_param) return a.dest_param < b.dest_param;
+    if (a.dest != b.dest) return a.dest.int() < b.dest.int();
+    if (a.mode != b.mode) return @backingInt(a.mode) < @backingInt(b.mode);
+    if (a.removes != b.removes) return !a.removes;
+    return a.selected.int() < b.selected.int();
+}
+
+fn backSame(a: Back, b: Back) bool {
+    return a.dest_param == b.dest_param and a.dest == b.dest and a.mode == b.mode and a.removes == b.removes and a.selected == b.selected;
+}
+
 fn pathLess(_: void, a: PathId, b: PathId) bool {
     return a.int() < b.int();
 }
@@ -217,6 +251,7 @@ pub const Table = struct {
     slots: std.MultiArrayList(Slot) = .empty,
     nested: std.ArrayList(ClassId) = .empty,
     onces: std.ArrayList(PathId) = .empty,
+    backs: std.MultiArrayList(Back) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.classes.deinit(gpa);
@@ -227,6 +262,7 @@ pub const Table = struct {
         t.slots.deinit(gpa);
         t.nested.deinit(gpa);
         t.onces.deinit(gpa);
+        t.backs.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -263,6 +299,11 @@ pub const Table = struct {
         return t.keeps.get(f.keeps.start + k);
     }
 
+    pub fn backOf(t: *const Table, f: Fun, k: u32) Back {
+        std.debug.assert(k < f.backs.len);
+        return t.backs.get(f.backs.start + k);
+    }
+
     pub fn slot(t: *const Table, c: ClassId, k: u32) Slot {
         const r = t.classes.items(.slots)[c.int()];
         std.debug.assert(k < r.len);
@@ -287,7 +328,7 @@ pub const Table = struct {
     /// supplies and keeps sorted by their keys, the once paths by id.
     pub fn add(t: *Table, env: Env, d: Draft) Error!ClassId {
         var n: u32 = 1 + @as(u32, @intCast(d.params.len + d.funs.len + d.slots.len + d.classes.len + d.once.len));
-        for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len);
+        for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len + f.backs.len);
         try env.charge.reserve(env.gpa, .class, n);
         const gpa = env.gpa;
         const params: Ids.Range = .{ .start = @intCast(t.uses.items.len), .len = @intCast(d.params.len) };
@@ -309,7 +350,10 @@ pub const Table = struct {
             const kr: Ids.Range = .{ .start = @intCast(t.keeps.len), .len = @intCast(f.keeps.len) };
             for (f.keeps) |k| try t.keeps.append(gpa, k);
             try sortRun(Keep, gpa, &t.keeps, kr, keepLess);
-            try t.funs.append(gpa, .{ .j = f.j, .calls = f.calls, .need = f.need, .seen = f.seen, .supplies = sr, .keeps = kr });
+            const br: Ids.Range = .{ .start = @intCast(t.backs.len), .len = @intCast(f.backs.len) };
+            for (f.backs) |b| try t.backs.append(gpa, b);
+            try sortRun(Back, gpa, &t.backs, br, backLess);
+            try t.funs.append(gpa, .{ .j = f.j, .calls = f.calls, .need = f.need, .seen = f.seen, .supplies = sr, .keeps = kr, .backs = br });
         }
         const slots: Ids.Range = .{ .start = @intCast(t.slots.len), .len = @intCast(d.slots.len) };
         for (d.slots) |s| try t.slots.append(gpa, s);
@@ -474,7 +518,9 @@ pub const Table = struct {
         defer sup_store.deinit(gpa);
         var keep_store: std.ArrayList(Keep) = .empty;
         defer keep_store.deinit(gpa);
-        const Merged = struct { f: DraftFun, sup: Ids.Range, keep: Ids.Range };
+        var back_store: std.ArrayList(Back) = .empty;
+        defer back_store.deinit(gpa);
+        const Merged = struct { f: DraftFun, sup: Ids.Range, keep: Ids.Range, back: Ids.Range };
         var merged: std.ArrayList(Merged) = .empty;
         defer merged.deinit(gpa);
         var i: u32 = 0;
@@ -485,27 +531,29 @@ pub const Table = struct {
             const fb: ?Fun = if (j < cb.funs.len) t.fun(b, j) else null;
             const sup_start: u32 = @intCast(sup_store.items.len);
             const keep_start: u32 = @intCast(keep_store.items.len);
+            const back_start: u32 = @intCast(back_store.items.len);
             var f: DraftFun = undefined;
             if (fb == null or (fa != null and fa.?.j < fb.?.j)) {
                 f = .{ .j = fa.?.j, .calls = fa.?.calls, .need = fa.?.need, .seen = fa.?.seen };
-                try t.mergeFun(env, fa.?, null, &sup_store, &keep_store);
+                try t.mergeFun(env, fa.?, null, &sup_store, &keep_store, &back_store);
                 i += 1;
             } else if (fa == null or fb.?.j < fa.?.j) {
                 f = .{ .j = fb.?.j, .calls = fb.?.calls, .need = fb.?.need, .seen = fb.?.seen };
-                try t.mergeFun(env, fb.?, null, &sup_store, &keep_store);
+                try t.mergeFun(env, fb.?, null, &sup_store, &keep_store, &back_store);
                 j += 1;
             } else {
                 f = .{ .j = fa.?.j, .calls = fa.?.calls.join(fb.?.calls), .need = fa.?.need or fb.?.need, .seen = fa.?.seen and fb.?.seen };
-                try t.mergeFun(env, fa.?, fb.?, &sup_store, &keep_store);
+                try t.mergeFun(env, fa.?, fb.?, &sup_store, &keep_store, &back_store);
                 i += 1;
                 j += 1;
             }
-            try merged.append(gpa, .{ .f = f, .sup = .{ .start = sup_start, .len = @intCast(sup_store.items.len - sup_start) }, .keep = .{ .start = keep_start, .len = @intCast(keep_store.items.len - keep_start) } });
+            try merged.append(gpa, .{ .f = f, .sup = .{ .start = sup_start, .len = @intCast(sup_store.items.len - sup_start) }, .keep = .{ .start = keep_start, .len = @intCast(keep_store.items.len - keep_start) }, .back = .{ .start = back_start, .len = @intCast(back_store.items.len - back_start) } });
         }
         for (merged.items) |m| {
             var f = m.f;
             f.supplies = sup_store.items[m.sup.start..][0..m.sup.len];
             f.keeps = keep_store.items[m.keep.start..][0..m.keep.len];
+            f.backs = back_store.items[m.back.start..][0..m.back.len];
             try funs.append(gpa, f);
         }
         var nested: std.ArrayList(ClassId) = .empty;
@@ -546,7 +594,7 @@ pub const Table = struct {
     /// to the stores: one pass over two sorted runs, one record per entry
     /// read. A supply of one `(label, k, node, taken)` in both joins
     /// (`owned` and-ed, κ joined); two labels never merge.
-    fn mergeFun(t: *const Table, env: Env, fa: Fun, fb: ?Fun, sup: *std.ArrayList(Supply), keeps: *std.ArrayList(Keep)) Error!void {
+    fn mergeFun(t: *const Table, env: Env, fa: Fun, fb: ?Fun, sup: *std.ArrayList(Supply), keeps: *std.ArrayList(Keep), backs: *std.ArrayList(Back)) Error!void {
         const gpa = env.gpa;
         var i: u32 = 0;
         var j: u32 = 0;
@@ -586,6 +634,26 @@ pub const Table = struct {
                 j += 1;
             } else {
                 try keeps.append(gpa, ka.?);
+                i += 1;
+                j += 1;
+            }
+        }
+        // Write-backs: the union of both runs.
+        i = 0;
+        j = 0;
+        const bb: u32 = if (fb) |f| f.backs.len else 0;
+        while (i < fa.backs.len or j < bb) {
+            try env.charge.reserve(gpa, .class, 1);
+            const xa: ?Back = if (i < fa.backs.len) t.backOf(fa, i) else null;
+            const xb: ?Back = if (j < bb) t.backOf(fb.?, j) else null;
+            if (xb == null or (xa != null and backLess({}, xa.?, xb.?))) {
+                try backs.append(gpa, xa.?);
+                i += 1;
+            } else if (xa == null or backLess({}, xb.?, xa.?)) {
+                try backs.append(gpa, xb.?);
+                j += 1;
+            } else {
+                try backs.append(gpa, xa.?);
                 i += 1;
                 j += 1;
             }
@@ -654,6 +722,13 @@ pub const Table = struct {
                 while (m < fb.keeps.len and keepLess({}, t.keepOf(fb, m), x)) m += 1;
                 if (m >= fb.keeps.len or !keepSame(t.keepOf(fb, m), x)) return false;
             }
+            m = 0;
+            for (0..fa.backs.len) |k| {
+                try env.charge.reserve(gpa, .inspection, 1);
+                const x = t.backOf(fa, @intCast(k));
+                while (m < fb.backs.len and backLess({}, t.backOf(fb, m), x)) m += 1;
+                if (m >= fb.backs.len or !backSame(t.backOf(fb, m), x)) return false;
+            }
         }
         const na = t.nestedOf(a);
         const nb = t.nestedOf(b);
@@ -710,7 +785,7 @@ pub const Table = struct {
         ordinal: stamped.Column(NodeId, u32) = .{},
         next: u32 = 0,
 
-        const Tag = enum(u32) { class, node_new, node_ref, cell, set, cond, atom, fun, supply, keep, slot, path, label, none };
+        const Tag = enum(u32) { class, node_new, node_ref, cell, set, cond, atom, fun, supply, keep, slot, path, label, none, back };
 
         fn deinit(n: *Normalizer) void {
             n.ordinal.deinit(n.env.gpa);
@@ -746,6 +821,7 @@ pub const Table = struct {
                 try n.put(@as(u32, @intFromBool(f.need)) | (@as(u32, @intFromBool(f.seen)) << 1));
                 try n.sortedItems(.supply, f, f.supplies.len, supplyWords);
                 try n.sortedItems(.keep, f, f.keeps.len, keepWords);
+                try n.sortedItems(.back, f, f.backs.len, backWords);
             }
             try n.put(k.slots.len);
             for (0..k.slots.len) |i| {
@@ -771,6 +847,14 @@ pub const Table = struct {
             n.ctx = s.kappa;
             defer n.ctx = saved;
             try n.node(s.node, false);
+        }
+
+        fn backWords(n: *Normalizer, f: Fun, i: u32) Error!void {
+            const b = n.t.backOf(f, i);
+            try n.put(b.dest_param);
+            try n.put(@as(u32, @backingInt(b.mode)) | (@as(u32, @intFromBool(b.removes)) << 8));
+            try n.path(b.selected);
+            try n.path(b.dest);
         }
 
         fn keepWords(n: *Normalizer, f: Fun, i: u32) Error!void {
@@ -1102,6 +1186,15 @@ pub const Table = struct {
                 }
                 Cond.sortText(sup.items);
                 for (sup.items) |s| try wr.print(", {s}", .{s});
+                // The write-backs, in the run's order.
+                for (0..f.backs.len) |s| {
+                    const b = p.t.backOf(f, @intCast(s));
+                    try wr.writeAll(", stores answer");
+                    try p.path(wr, b.selected);
+                    try wr.print(" at π{d}", .{b.dest_param + 1});
+                    try p.path(wr, b.dest);
+                    if (b.removes) try wr.writeAll(" or removes");
+                }
                 try parts.append(arena, buf.toOwnedSlice() catch return error.OutOfMemory);
             }
             if (k.xreq != .none) {
@@ -1391,6 +1484,7 @@ comptime {
     Ids.assertRecord(Slot);
     Ids.assertRecord(Supply);
     Ids.assertRecord(Keep);
+    Ids.assertRecord(Back);
     std.debug.assert(@sizeOf(Class) <= 64);
 }
 

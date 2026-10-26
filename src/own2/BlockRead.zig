@@ -143,6 +143,7 @@ const Reader = struct {
     supplies: std.ArrayList(Summary.Supply) = .empty,
     keeps: std.ArrayList(Summary.Keep) = .empty,
     slots: std.ArrayList(Summary.Slot) = .empty,
+    backs: std.ArrayList(Summary.Back) = .empty,
     /// The positions read: each one's node, class, κ and parts, and the
     /// position each ordinal is (`none` for another record).
     infos: std.ArrayList(Pos) = .empty,
@@ -164,6 +165,7 @@ const Reader = struct {
         r.supplies.deinit(gpa);
         r.keeps.deinit(gpa);
         r.slots.deinit(gpa);
+        r.backs.deinit(gpa);
         r.infos.deinit(gpa);
         r.edges.deinit(gpa);
         r.pos_of.deinit(gpa);
@@ -538,6 +540,15 @@ const Reader = struct {
                 try r.slots.append(gpa, .{ .param = p, .path = try r.opt(PathId, .path) });
                 return @intCast(r.slots.items.len - 1);
             },
+            .back => {
+                const dest_param = try r.get();
+                const flags = try r.get();
+                if (flags >> 8 > 1) return error.Malformed;
+                const mode = try enumOf(Summary.BackMode, flags & 0xff);
+                const selected = try r.opt(PathId, .path);
+                try r.backs.append(gpa, .{ .dest_param = dest_param, .mode = mode, .removes = flags >> 8 == 1, .selected = selected, .dest = try r.opt(PathId, .path) });
+                return @intCast(r.backs.items.len - 1);
+            },
             .class => return (try r.class()).int(),
             .group => return error.Malformed,
         }
@@ -704,7 +715,9 @@ const Reader = struct {
         defer supplies.deinit(gpa);
         var keeps: std.ArrayList(Summary.Keep) = .empty;
         defer keeps.deinit(gpa);
-        var runs: std.ArrayList([4]u32) = .empty;
+        var backs: std.ArrayList(Summary.Back) = .empty;
+        defer backs.deinit(gpa);
+        var runs: std.ArrayList([6]u32) = .empty;
         defer runs.deinit(gpa);
         const n_funs = try r.count();
         i = 0;
@@ -724,12 +737,17 @@ const Reader = struct {
             const n_k = try r.count();
             s = 0;
             while (s < n_k) : (s += 1) try keeps.append(gpa, r.keeps.items[try r.need(.keep)]);
+            const b_start: u32 = @intCast(backs.items.len);
+            const n_b = try r.count();
+            s = 0;
+            while (s < n_b) : (s += 1) try backs.append(gpa, r.backs.items[try r.need(.back)]);
             try funs.append(gpa, .{ .j = j, .calls = calls, .need = bits & 1 == 1, .seen = bits & 2 == 2 });
-            try runs.append(gpa, .{ s_start, n_s, k_start, n_k });
+            try runs.append(gpa, .{ s_start, n_s, k_start, n_k, b_start, n_b });
         }
         for (funs.items, runs.items) |*f, run| {
             f.supplies = supplies.items[run[0]..][0..run[1]];
             f.keeps = keeps.items[run[2]..][0..run[3]];
+            f.backs = backs.items[run[4]..][0..run[5]];
         }
         var slots: std.ArrayList(Summary.Slot) = .empty;
         defer slots.deinit(gpa);
@@ -799,6 +817,10 @@ const Graph = struct {
             8 => {
                 for ([_]u32{ 8, 0, 8 }, 0..) |child, i| try out.append(gpa, .{ .step = g.table.ctorStep(gpa, g.account, 0, @intCast(i)) catch unreachable, .@"var" = child });
                 return .{ .kind = .ctor, .head = 800 };
+            },
+            9 => {
+                for (0..2) |i| try out.append(gpa, .{ .step = Step.index(g.account, @intCast(i)) catch unreachable, .@"var" = 0 });
+                return .{ .kind = .tuple };
             },
             else => unreachable,
         }
@@ -878,11 +900,11 @@ fn rows(t: *Tables, reverse: bool) ![8]ClassId {
     const sigs = [8]Rows.Signature{
         .{ .params = &.{ .{ .place = lists, .words = wordBits(&.{ .written, .returned }) }, .{ .place = list, .words = wordBits(&.{.stored}) } }, .result = lists },
         .{ .params = &.{ .{ .place = lists, .words = wordBits(&.{.borrowed}) }, .{ .place = int, .words = wordBits(&.{.borrowed}) } }, .result = list, .result_words = wordBits(&.{.taken}) },
-        .{ .params = &.{ .{ .place = lists, .words = wordBits(&.{ .written, .returned }) }, .{ .place = int, .words = wordBits(&.{.borrowed}) }, .{ .place = fun, .words = wordBits(&.{ .once, .taken }), .fn_params = &.{list} } }, .result = lists },
+        .{ .params = &.{ .{ .place = lists, .words = wordBits(&.{ .written, .returned }) }, .{ .place = int, .words = wordBits(&.{.borrowed}) }, .{ .place = fun, .words = wordBits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = lists },
         .{ .params = &.{ .{ .place = recs, .words = wordBits(&.{.written}) }, .{ .place = recs, .words = wordBits(&.{.borrowed}) } }, .result = recs, .result_words = wordBits(&.{.concatenated}) },
         .{ .params = &.{.{ .place = list, .words = wordBits(&.{.consumed}) }}, .result = ref, .result_words = wordBits(&.{.cellnew}) },
         .{ .params = &.{.{ .place = ref, .words = wordBits(&.{.cellread}) }}, .result = maybe, .result_words = wordBits(&.{.lentoptional}), .optional_payload = try t.places.ctorStep(testing.allocator, &t.account, 1, 0) },
-        .{ .params = &.{ .{ .place = ref, .words = wordBits(&.{.cellwrite}) }, .{ .place = fun, .words = wordBits(&.{.cellmodify}), .fn_params = &.{list} } }, .result = list },
+        .{ .params = &.{ .{ .place = ref, .words = wordBits(&.{.cellwrite}) }, .{ .place = fun, .words = wordBits(&.{ .cellmodify, .stored }), .fn_params = &.{list}, .fn_result = try t.place(9) } }, .result = list },
         .{ .params = &.{ .{ .place = list, .words = wordBits(&.{.many}) }, .{ .place = fun, .words = wordBits(&.{ .many, .owned }), .fn_params = &.{list} } }, .result = list, .result_words = wordBits(&.{ .fresh, .exclusive }) },
     };
     var out: [8]ClassId = undefined;
@@ -918,6 +940,9 @@ test "a block round-trips: read into tables of its own, written again, the same 
     try write(b.env(), &b.sums, read_back.items, .identity, &again);
     try testing.expectEqualSlices(u32, words.items, again.items);
     for (classes, read_back.items) |x, y| try testing.expectEqualStrings(try a.text(arena, x), try b.text(arena, y));
+    // The write-backs travel with their funs (ownership-v2.md §2.13.6).
+    try testing.expect(std.mem.indexOf(u8, try b.text(arena, read_back.items[2]), "stores answer at π1[*]") != null);
+    try testing.expect(std.mem.indexOf(u8, try b.text(arena, read_back.items[6]), "stores answer.1 at π1◆") != null);
     // That the same rows built in another order write the same bytes is
     // the next tests'.
 }
