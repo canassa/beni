@@ -7806,7 +7806,9 @@ fn accountTotal(dump: []const u8, owner: []const u8) !u64 {
         if (!std.mem.startsWith(u8, t, "account ")) continue;
         if (!std.mem.startsWith(u8, t["account ".len..], owner) or t["account ".len + owner.len] != ':') continue;
         const at = std.mem.lastIndexOf(u8, t, "total ") orelse return error.NoTotal;
-        return std.fmt.parseInt(u64, t[at + "total ".len ..], 10);
+        const digits = t[at + "total ".len ..];
+        const end = std.mem.indexOfNone(u8, digits, "0123456789") orelse digits.len;
+        return std.fmt.parseInt(u64, digits[0..end], 10);
     }
     return error.NoAccount;
 }
@@ -7852,4 +7854,72 @@ test "the checker v2's work grows linearly with a declaration's statements and i
     }
     try testing.expect(counts[1] * 10 <= counts[0] * 25);
     try testing.expect(lives[1] * 10 <= lives[0] * 25);
+}
+
+test "the checker v2's published blocks are the same bytes at one job and at eight" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §3.8 and rule 5: a block's bytes never depend on
+    // thread timing or on a session id. The dump names each module's block
+    // by its size and a hash of its bytes; three modules checked in
+    // parallel, records with fields interned in different orders, and a
+    // shared value one module reads from another.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("A.beni",
+        \\pub type alias Row =
+        \\    { zeta : List Int, alpha : List Int }
+        \\
+        \\
+        \\pub table : List Int
+        \\table =
+        \\    [ 1, 2 ]
+        \\
+        \\
+        \\pub grow : Row → Row
+        \\grow r =
+        \\    { zeta = List.push r.zeta 1, alpha = r.alpha }
+        \\
+    );
+    try w.write("B.beni",
+        \\import A
+        \\
+        \\
+        \\pub pick : List (List Int) → List Int
+        \\pick xss =
+        \\    case xss of
+        \\        [ a, …_ ] →
+        \\            List.push a 1
+        \\
+        \\        _ →
+        \\            A.table
+        \\
+    );
+    try w.write("Main.beni",
+        \\import A
+        \\import B
+        \\
+        \\
+        \\pub both : List (List Int) → List Int × A.Row
+        \\both xss =
+        \\    ( B.pick xss, { alpha = [], zeta = [ 2 ] } )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var dumps: [4][]const u8 = undefined;
+    for (&dumps, [_][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" }) |*d, jobs| {
+        const r = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", jobs, "." });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        d.* = r.stdout;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, dumps[0], "  block: "));
+    for (dumps[1..]) |d| try testing.expectEqualStrings(dumps[0], d);
 }

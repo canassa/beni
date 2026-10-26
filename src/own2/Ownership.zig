@@ -31,6 +31,8 @@ pub const Input = struct {
 const SummaryNames = struct {
     names: Names,
     module: u32,
+    /// A `shared` cell's index → `(module, declaration)`.
+    shared: []const [2]u32,
 
     fn field(ctx: *anyopaque, rank: u32) []const u8 {
         const s: *SummaryNames = @ptrCast(@alignCast(ctx));
@@ -42,9 +44,12 @@ const SummaryNames = struct {
         _ = c;
         return "C";
     }
-    fn decl(ctx: *anyopaque, module: u32, d: u32) []const u8 {
+    fn decl(ctx: *anyopaque, index: u32, j: u32) []const u8 {
+        _ = j;
         const s: *SummaryNames = @ptrCast(@alignCast(ctx));
-        return s.names.declName(module, d);
+        if (index >= s.shared.len) return "?";
+        const md = s.shared[index];
+        return s.names.declName(md[0], md[1]);
     }
 };
 
@@ -90,10 +95,15 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             }
             if (in.format_summaries) {
                 const a = &dr.account;
-                try others.append(arena, try std.fmt.allocPrint(arena, "account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total() }));
+                var line: std.Io.Writer.Allocating = .init(arena);
+                line.writer.print("account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total() }) catch return error.OutOfMemory;
+                // §4.4's category counts: the growth records by what they
+                // were reserved for, the nonzero ones in category order.
+                for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @enumFromInt(c)), n }) catch return error.OutOfMemory;
+                try others.append(arena, line.written());
             }
             if (in.format_summaries and dr.class != .none) {
-                var sn: SummaryNames = .{ .names = in.names, .module = mi.module };
+                var sn: SummaryNames = .{ .names = in.names, .module = mi.module, .shared = mod.shared_of.items };
                 var buf: std.Io.Writer.Allocating = .init(arena);
                 mod.account = &dr.account;
                 const sum_names: Summary.Names = .{ .ctx = &sn, .field = SummaryNames.field, .ctor = SummaryNames.ctor, .decl = SummaryNames.decl };
@@ -108,7 +118,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 } else if (text.len != 0) try others.append(arena, text);
             }
         }
-        const block: ?[]const u8 = if (in.publish and limits == 0) try publish(gpa, arena, in.names, mod) else null;
+        const block: ?[]const u8 = if ((in.publish or in.format_summaries) and limits == 0) try publish(gpa, arena, in.names, mod) else null;
+        // The dump names the block by its size and a hash of its bytes: what
+        // the determinism tests compare across job counts (rule 5).
+        if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
         var errs: std.ArrayList(Groups.WordError) = .empty;
         defer errs.deinit(gpa);
         Groups.wordKindErrors(mod, &errs) catch |err| switch (err) {

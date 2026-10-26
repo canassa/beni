@@ -138,7 +138,11 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .later_use, .alias, .element => blk: {
                 const h = l.holder.?;
                 w.writeAll(localName(f, h.who)) catch return error.OutOfMemory;
-                if (o.cause != .later_use) pathText(f, w, o.holder_path) catch return error.OutOfMemory;
+                // A hold at some level below the holder (a path ending in `⟲`)
+                // names the holder: it holds every level (v1's text).
+                var hp = o.holder_path;
+                if (hp != .none and f.places.pathParent(hp) != .none and f.places.pathStep(hp).kind == .level) hp = f.places.pathParent(hp);
+                if (o.cause != .later_use) pathText(f, w, hp) catch return error.OutOfMemory;
                 break :blk if (o.cause == .later_use)
                     w.print(" is read again at {d}:{d}", .{ up.line, up.col })
                 else
@@ -149,7 +153,8 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
                 break :blk w.print("the value at {d}:{d}, evaluated before it, holds it until its consumer runs", .{ pp.line, pp.col });
             },
             .disjoint => w.writeAll("another operand of the same operation reaches it"),
-            .exclusive => w.writeAll("the callee needs the list's elements not to share, and they may"),
+            // A demand relies only on its splits' κ (a callee's `xreq` is the frame's).
+            .exclusive => w.writeAll("the elements of the list it was taken from may share one list"),
             .escaped => w.writeAll("it was given to JavaScript, or kept by a callee"),
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
             .top_level => blk: {

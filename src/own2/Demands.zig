@@ -111,7 +111,15 @@ pub const Holder = struct {
     /// index keys its uses under.
     root: PathId,
     token: u32,
+    /// `binding` of a list pattern's position (§2.13.3): which.
+    taken: Taken = .{},
 };
+
+/// A pattern variable bound at position `pos` of split `split`, with the
+/// explicit cells at the container's `[*]` (a concrete container's
+/// elements) that every position holds: two positions of one split hold
+/// one of them only if the split's κ fails, as `elem`s of two sides do.
+pub const Taken = struct { split: Ids.SplitId = .none, pos: u32 = none, explicit: SetId = .none };
 
 pub const Escape = struct { node: NodeId, point: u32 };
 
@@ -122,6 +130,8 @@ pub const Frame = struct {
     escapes: []const Escape,
     index: *const Liveness.Index,
     regions: *const Regions.Tree,
+    /// Per local, its binding's index in `holders`, or `none`.
+    bindings: []const u32 = &.{},
 };
 
 /// A resolved demand: its verdict and what the message names.
@@ -305,10 +315,28 @@ const Live = struct {
         }
     }
 
+    /// The refinement chain key of a refinement's canonical path (§2.8):
+    /// `(origin·kind 2, index, canonical path, j)`, or null for a
+    /// refinement of a concrete cell (its contents are explicit children).
+    fn refinementKey(l: *Live, c: CellId) Error!?[4]u32 {
+        if (!l.env.cells.origin(c).isRefinement()) return null;
+        const sym = (try l.env.cells.unrefined(l.gpa, l.env.account(), l.env.places, c)) orelse return null;
+        return l.pathKey(sym, .from(l.env.cells.get(sym).b));
+    }
+
+    /// The refinement chain key of symbolic cell `sym`'s origin at `path`.
+    fn pathKey(l: *Live, sym: CellId, path: PathId) [4]u32 {
+        const x = l.env.cells.get(sym);
+        return .{ (@as(u32, @backingInt(x.origin)) << 8) | 2, x.a, path.int(), x.c << 1 };
+    }
+
     fn linkAnchors(l: *Live, leaf: SetId) Error!void {
         var keys: std.ArrayList([4]u32) = .empty;
         defer keys.deinit(l.gpa);
-        try l.anchorsOf(l.leafCell(leaf), &keys);
+        const cell = l.leafCell(leaf);
+        try l.anchorsOf(cell, &keys);
+        // A refinement is also in the chain of its canonical path (§2.8).
+        if (try l.refinementKey(cell)) |k| try keys.append(l.gpa, k);
         for (keys.items) |key| {
             try l.env.charge.reserve(l.gpa, .edge, 1);
             const got = try l.anchors.getOrPut(l.gpa, key);
@@ -450,10 +478,38 @@ const Resolver = struct {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             try out.append(r.gpa, at);
         }
+        // A refinement's canonical cell (`elem(c·ι)` is `c[*]`) and its trie
+        // ancestors: what a holder that never took the split names (a
+        // container's explicit `[*]` child holding `c[*]`). Then the
+        // refinement chain at the canonical path and at each ancestor of it:
+        // the live refinements another split or another position of this
+        // one took there (a sibling, a view's `others`), §2.8.
+        const unrefined = try r.env.cells.unrefined(r.gpa, r.env.account(), r.env.places, c);
+        if (unrefined) |u| {
+            if (u != c) {
+                at = u;
+                while (at != .none) : (at = r.env.cells.parent(at)) {
+                    try r.env.charge.reserve(r.gpa, .inspection, 1);
+                    try out.append(r.gpa, at);
+                }
+            }
+            var path: PathId = .from(r.env.cells.get(u).b);
+            while (path != .none) : (path = r.env.places.pathParent(path)) {
+                try r.env.charge.reserve(r.gpa, .inspection, 1);
+                var link = r.live.anchors.get(r.live.pathKey(u, path)) orelse continue;
+                while (link != none) {
+                    try r.env.charge.reserve(r.gpa, .inspection, 1);
+                    const a = r.live.anchor_links.items[link];
+                    try out.append(r.gpa, r.live.leafCell(a.leaf));
+                    link = a.next;
+                }
+            }
+        }
         if (deep) {
             var stack: std.ArrayList(CellId) = .empty;
             defer stack.deinit(r.gpa);
             try stack.append(r.gpa, c);
+            if (unrefined) |u| if (u != c) try stack.append(r.gpa, u);
             while (stack.pop()) |x| {
                 var it = r.env.cells.children(x);
                 while (it.next()) |k| {
@@ -508,14 +564,16 @@ const Resolver = struct {
         }
     }
 
-    const Hold = struct { path: PathId, d: CellId, approx: bool };
+    /// `several`: the holder's value there is one of several alternatives.
+    const Hold = struct { path: PathId, d: CellId, approx: bool, several: bool = false };
 
     /// The paths at which holder value `n` (at `path`) holds candidate `d`,
     /// extended down to `c` when `d` is its trie ancestor: a walk of the
     /// explicit structure pruned by `reach` (§2.8). `false` paths come with
     /// a summary flag: held only at a summary position.
     fn holdPaths(r: *Resolver, n: NodeId, root: PathId, d: CellId, c: CellId, out: *std.ArrayList(Hold)) Error!void {
-        const Frame_ = struct { node: NodeId, path: PathId };
+        // `alt`: reached through a union's side, one of several alternatives.
+        const Frame_ = struct { node: NodeId, path: PathId, alt: bool = false };
         var stack: std.ArrayList(Frame_) = .empty;
         defer stack.deinit(r.gpa);
         var seen: stamped.Column(NodeId, void) = .{};
@@ -546,7 +604,7 @@ const Resolver = struct {
                         for (r.steps.items) |s| at = (try r.env.places.extend(r.gpa, r.env.charge, at, s)) orelse break;
                     }
                 }
-                try out.append(r.gpa, .{ .path = at, .d = d, .approx = v == 1 });
+                try out.append(r.gpa, .{ .path = at, .d = d, .approx = v == 1, .several = f.alt or several(r.env.cells, cells) });
             };
             const k = shapes.get(f.node);
             if (seen.contains(f.node)) continue;
@@ -562,7 +620,10 @@ const Resolver = struct {
                     }
                 },
                 .recast => try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path }),
-                .@"union", .positions => try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path }, .{ .node = .from(k.b), .path = f.path } }),
+                .@"union", .positions => {
+                    const alt = f.alt or k.kind == .@"union";
+                    try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path, .alt = alt }, .{ .node = .from(k.b), .path = f.path, .alt = alt } });
+                },
             }
         }
     }
@@ -598,6 +659,59 @@ const Resolver = struct {
         const pa = r.frame.index.get(above.?).point;
         const pu = r.frame.index.get(under.?).point;
         return if (pu < pa) under else above;
+    }
+
+    /// Whether a cell set has two members or more: alternatives, of which a
+    /// conflict on one is only possible (an approximate refusal, R-6.3).
+    fn several(cellt: *const Cell.Table, s: SetId) bool {
+        var it = cellt.sets.iterate(s);
+        return it.next() != null and it.next() != null;
+    }
+
+    /// A refusal found for one (holder, path): `exact` the base cells it
+    /// certainly holds there, each once (`last` the cell index last
+    /// counted), and the cause of an exact hold if there is one.
+    const Found = struct {
+        holder: u32,
+        path: PathId,
+        point: u32,
+        cause: Facts.Cause,
+        approx: bool,
+        use: UseId,
+        exact: usize = 0,
+        last: usize = std.math.maxInt(usize),
+    };
+
+    const FoundList = struct {
+        items: std.ArrayList(Found) = .empty,
+        index: Ids.FixedDict(2) = .{},
+
+        fn deinit(l: *FoundList, gpa: Allocator) void {
+            l.items.deinit(gpa);
+            l.index.deinit(gpa);
+        }
+    };
+
+    /// Record refusal `x` for base cell `ci`: one entry per (holder, path),
+    /// its earliest use; an exact hold's cause wins over `element`.
+    fn note(r: *Resolver, l: *FoundList, x: Found, ci: usize) Error!void {
+        try r.env.charge.reserve(r.gpa, .inspection, 1);
+        const got = try l.index.getOrPut(r.gpa, .{ x.holder, x.path.int() });
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(l.items.items.len);
+            var first = x;
+            first.cause = if (x.approx) .element else x.cause;
+            try l.items.append(r.gpa, first);
+        }
+        const y = &l.items.items[got.value_ptr.*];
+        if (got.found_existing and x.point < y.point) {
+            y.point = x.point;
+            y.use = x.use;
+        }
+        if (x.approx or y.last == ci) return;
+        if (y.exact == 0) y.cause = x.cause;
+        y.last = ci;
+        y.exact += 1;
     }
 
     fn isFresh(o: Cell.Origin) bool {
@@ -651,15 +765,20 @@ const Resolver = struct {
             }
         }
         // 5. Dead: the holders of every candidate, the one used first.
-        var best: ?Outcome = null;
-        var best_point: u32 = none;
+        // A shallow base of several cells is one of them: a hold of some of
+        // them is a possible sharing; it is certain only when every cell of
+        // the base is held there (R-6.3). So the refusals are gathered per
+        // (holder, path) first, with the base cells they hit.
+        const alternatives = !deep and several(cellt, base_cells);
+        var found: FoundList = .{};
+        defer found.deinit(r.gpa);
         var cands: std.ArrayList(CellId) = .empty;
         defer cands.deinit(r.gpa);
         var hs: std.ArrayList(u32) = .empty;
         defer hs.deinit(r.gpa);
         var holds: std.ArrayList(Hold) = .empty;
         defer holds.deinit(r.gpa);
-        for (cells.items) |e| {
+        for (cells.items, 0..) |e, ci| {
             const c: CellId = .from(e.key);
             cands.clearRetainingCapacity();
             try r.candidates(c, deep, &cands);
@@ -683,22 +802,20 @@ const Resolver = struct {
                             relied = Cond.lost;
                             continue;
                         },
-                        .yes => {},
+                        .yes => if (r.otherPosition(dm, h, d)) |s| {
+                            relied = try r.env.conds.@"and"(r.gpa, r.env.charge, relied, r.splitCond(s));
+                            continue;
+                        },
                     }
                     if (h.kind == .pending) {
                         if (!(h.start < dm.point and dm.point < h.end and r.compatible(h.start, dm.point))) continue;
-                        const cand: Outcome = .{ .verdict = .refused, .cause = .held_operand, .exactness = if (e.value == 1) .approximate else .exact, .holder = hi };
-                        if (best == null or h.start < best_point) {
-                            best = cand;
-                            best_point = h.start;
-                        }
+                        try r.note(&found, .{ .holder = hi, .path = .none, .point = h.start, .cause = .held_operand, .approx = e.value == 1, .use = .none }, ci);
                         continue;
                     }
                     holds.clearRetainingCapacity();
                     try r.holdPaths(h.value.node, h.root, d, c, &holds);
                     for (holds.items) |hold| {
                         const u = (try r.laterUse(h.who, hold.path, dm.point)) orelse continue;
-                        const up = r.frame.index.get(u).point;
                         // Held only at a summary position, or by a cell that
                         // itself stands for several objects (a level of a
                         // recursive value): maybe another one (§2.8's
@@ -708,21 +825,26 @@ const Resolver = struct {
                         const approx = hold.approx or e.value == 1 or summary;
                         const own = h.who == dm.base_local and (dm.base_path == .none or overlaps(r.env.places, hold.path, dm.base_path));
                         const cause: Facts.Cause = if (approx) .element else if (own) .later_use else .alias;
-                        const cand: Outcome = .{ .verdict = .refused, .cause = cause, .exactness = if (approx) .approximate else .exact, .holder = hi, .holder_path = hold.path, .use = u };
-                        // An exact refusal wins over an approximate one; then
-                        // the holder used first, ties to the earlier binding.
-                        const better = if (best) |b|
-                            (b.exactness == .approximate and !approx) or
-                                ((b.exactness == .approximate) == approx and (up < best_point or (up == best_point and h.start < r.frame.holders[b.holder].start)))
-                        else
-                            true;
-                        if (better) {
-                            best = cand;
-                            best_point = up;
-                        }
+                        const several_held = hold.several and !r.env.places.isSummary(hold.path);
+                        try r.note(&found, .{ .holder = hi, .path = hold.path, .point = r.frame.index.get(u).point, .cause = cause, .approx = approx or several_held, .use = u }, ci);
                     }
                 }
             }
+        }
+        // An exact refusal wins over an approximate one; then the holder used
+        // first (a pending operand by its start), ties to the earlier binding.
+        var best: ?Outcome = null;
+        var best_point: u32 = none;
+        for (found.items.items) |x| {
+            const inexact = if (alternatives) x.exact < cells.items.len else x.exact == 0;
+            const better = if (best) |b|
+                (b.exactness == .approximate and !inexact) or
+                    ((b.exactness == .approximate) == inexact and (x.point < best_point or (x.point == best_point and r.frame.holders[x.holder].start < r.frame.holders[b.holder].start)))
+            else
+                true;
+            if (!better) continue;
+            best = .{ .verdict = .refused, .cause = x.cause, .exactness = if (inexact) .approximate else .exact, .holder = x.holder, .holder_path = x.path, .use = x.use };
+            best_point = x.point;
         }
         if (best) |b| return b;
         // 6. Exclusive.
@@ -734,6 +856,20 @@ const Resolver = struct {
         return out;
     }
 
+    /// The split under which holder `h` holds explicit cell `d` at another
+    /// position than the demand's base (`Taken`): not one object if the
+    /// split's κ held. Null when either is no such position.
+    fn otherPosition(r: *Resolver, dm: Demand, h: Holder, d: CellId) ?Ids.SplitId {
+        if (h.kind != .binding or h.taken.split == .none or dm.base_local == none) return null;
+        if (dm.base_local >= r.frame.bindings.len) return null;
+        const b = r.frame.bindings[dm.base_local];
+        if (b == none) return null;
+        const t = r.frame.holders[b].taken;
+        if (t.split != h.taken.split or t.pos == h.taken.pos) return null;
+        if (!r.env.cells.sets.member(t.explicit, d.int())) return null;
+        return t.split;
+    }
+
     fn splitCond(r: *Resolver, s: Ids.SplitId) CondId {
         const k = r.env.cells.splitOf(s).cond;
         return if (k == .none) Cond.lost else k;
@@ -741,7 +877,10 @@ const Resolver = struct {
 
     /// A refinement a split took: one position, not the summary.
     fn isMaterialised(cellt: *const Cell.Table, c: CellId) bool {
-        const o = cellt.origin(c);
+        var at = c;
+        // A recursive child of a taken position is that position's own.
+        while (cellt.origin(at) == .below) at = cellt.parent(at);
+        const o = cellt.origin(at);
         return o == .elem or o == .level;
     }
 

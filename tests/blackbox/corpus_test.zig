@@ -3510,7 +3510,7 @@ const Case = struct {
                 // A test platform is named by its directory
                 // (`tests/platforms/page`); its golden by the last part.
                 try c.expectGolden(try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}), r.stdout);
-                try c.ownershipV2(flags, path, try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}));
+                try c.ownershipV2(flags, path, try std.fmt.allocPrint(c.arena, "{s}.ownership", .{std.fs.path.basename(name)}), enforces);
             }
             if (!any) return error.PlatformFileEmpty;
             return;
@@ -3524,7 +3524,7 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=ownership", path });
         try expectExit(0, r);
         try c.expectGolden("ownership", r.stdout);
-        try c.ownershipV2(&.{}, path, "ownership");
+        try c.ownershipV2(&.{}, path, "ownership", false);
     }
 
     /// An ownership fixture with a `.v2` file is reported by the checker v2
@@ -3533,10 +3533,21 @@ const Case = struct {
     /// `module`, demand, `demands`, `total`, `records`, `limits` and `cause`
     /// lines; the `summary` and `limit` lines are each checker's own,
     /// R-7.15). The `.v2` file says why the fixture is one of v2's.
-    fn ownershipV2(c: Case, flags: []const []const u8, path: []const u8, golden: []const u8) !void {
+    fn ownershipV2(c: Case, flags: []const []const u8, path: []const u8, golden: []const u8, enforces: bool) !void {
         if (!c.goldenExists("v2")) return;
         const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
         try expectExit(0, r);
+        // `check --ownership=v2` agrees with v2's own report as v1's does with
+        // v1's: on an enforcing chain it fails exactly when the report has a
+        // rejected or pending list line or a limit, with ownership codes only.
+        const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v2" }, flags, &.{path} }));
+        if (enforces and (ownershipRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null)) {
+            try expectExit(1, checked);
+            if (!ownershipOnly(checked.stderr)) {
+                detail("{s}: under --ownership=v2 the report's rejections must be the check's only errors\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+                return error.OwnershipErrorsDisagree;
+            }
+        } else try expectExit(0, checked);
         // A `.v2.ownership` is v2's own verdict lines where they differ from
         // v1's on purpose (a red twin v1 gets wrong, a holder named more
         // precisely), the `.v2` file saying why.

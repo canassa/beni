@@ -553,7 +553,7 @@ pub const Table = struct {
             switch (x.origin) {
                 .elem, .others => try out.append(gpa, Place.Step.elem),
                 .level, .loan => {},
-                .below => try out.append(gpa, Place.Step.level),
+                .below => try out.append(gpa, Place.Step.fromWord(x.c)),
                 else => if (x.origin.isSymbolic()) try out.append(gpa, places.pathStep(.from(x.b))),
             }
         }
@@ -562,8 +562,8 @@ pub const Table = struct {
     }
 
     /// The symbolic cell at a refinement's canonical position, the split
-    /// forgotten (`elem c·ι` is `c[*]`, `level c·ι` is `c`, `below` is
-    /// `c⟲`): what a refinement projects through (§2.2: a refinement's
+    /// forgotten (`elem c·ι` is `c[*]`, `level c·ι` is `c`, `below c·s·ι`
+    /// is `c·s`, folded): what a refinement projects through (§2.2: a refinement's
     /// projection is its parent's, refined). Null when the base is
     /// concrete, whose contents are explicit children.
     pub fn unrefined(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, c: CellId) Error!?CellId {
@@ -573,7 +573,7 @@ pub const Table = struct {
         const y = t.get(inner);
         const step: ?Place.Step = switch (x.origin) {
             .elem, .others => Place.Step.elem,
-            .below => Place.Step.level,
+            .below => Place.Step.fromWord(x.c),
             .level => null,
             .loan => return inner,
             else => unreachable,
