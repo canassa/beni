@@ -2298,6 +2298,29 @@ running its finalisers (`Scope.ts`); so a finaliser a child's release defers on 
 scope runs at once, told `Cancelled`. A `defer` on a root that has never run a fiber lists the root
 in the registry, so the teardown finds it.
 
+*Amended 2026-10-26 (#1040): `Task.forever`.*
+
+```elm
+-- core/Task.beni — addition
+pub forever : (⊤ → a) → b
+```
+
+**`forever work`** runs `work` again and again, and ends only when its fiber is cancelled. Then the
+cleanup of the run in progress runs, as for any cancelled work. It is a tail-recursive loop in
+`core/Task.beni` with no runtime support, so a loop of any length uses no stack. **After each run
+it yields, as `yieldNow` does.** A fiber switches only at a suspension point (§17.1 item 3), so a
+`work` that never suspends would otherwise hold the scheduler for ever: no other fiber would run,
+no timer would fire, and the cancel that should end the loop could not be delivered. The yield
+is that suspension point. It also brings the drain's budget into play: after 64 resumptions the
+rest runs in a macrotask, so a page renders and timers fire while the loop spins. The budget alone
+would not help, because it counts resumptions, and a loop that never suspends is never resumed.
+Effect's `forever` yields in the same place (`internal/effect.ts:2586`: `flatMap(self, (_) => yieldNow)`,
+unless `disableYield`). beni offers no `disableYield`: it would buy only speed, and it would give
+back the starvation. Fixtures: `run/TaskForeverCancelled` (a loop parked on a queue is cancelled,
+and its run's release and the loop's `onExit` both run), `run/TaskForeverNoStack` (100 000 runs
+that never wait, and 100 000 that wait on a `bounded 1` queue) and `run/TaskForeverYields` (another
+fiber runs between two runs, and a real 1 ms timer fires while the loop spins).
+
 ### 17.4 `Ref` and `Deferred` (P1)
 
 ```elm
@@ -3171,6 +3194,62 @@ leave the true free count), `run/SemaphoreTryNegativeSize` (a try on a semaphore
 below 0 answers `Nothing`), `run/SemaphoreMiddleCancelled` (a waiter cancelled in the middle of
 the queue leaves it, and those on either side are served in order) and `run/SemaphoreTryCancelled`
 (a holder cancelled inside `tryWithPermits` gives its permits back).
+
+*Amended 2026-10-26 (#1040): `Queue` and `Latch` as built.* Both modules are beni over
+`Task.callback` and `Task.resume`, with no `foreign`. Their waiters are kept in a JavaScript `Set`:
+it keeps the order waiters were added and deletes one in O(1), so cancelling n waiters costs O(n)
+(§17.1 item 1). A parked offer keeps its values, as Effect's `OfferEntry` does (`Queue.ts:375`).
+The text above left eight points open. They are settled as follows.
+
+1. **Takers are served first come, first served, by a hand-off.** A value goes straight to the
+   taker that has waited longest. It leaves the queue when the taker is queued to go on, not when
+   the taker runs. A take, a `takeAll`, a `takeN` or a `poll` never passes a fiber that waits to
+   take. While one waits, a new take waits behind it and `poll` answers `Nothing`, even when
+   values are held. That happens only behind a `takeN` that waits for more values than are held.
+   This is `Semaphore`'s FIFO (decision 8). Effect wakes its takers and lets each one re-check
+   the queue when it runs (`releaseTakers`, `Queue.ts:1917`), so a take that comes later can get
+   the value first.
+2. **A taker handed values but cancelled before it runs gives them back to the front of the
+   queue**, in their order, and the queue is served again. So when another taker waits, the
+   values go straight to it. Otherwise the next take gets them before any value offered later.
+   It is `Semaphore`'s point 3, and the kernel reaches that moment the same way. A fiber resumed
+   but not yet run is still parked, so `halt` drops the queued value and calls the canceller, and
+   the canceller sees the hand-off. This is what keeps `Task.timeout` and `Task.race` around a
+   `take` from losing a value in the direct shape (§17.7, amended 2026-10-26). The give-back can
+   leave a queue holding more than its capacity for a moment, when parked offers were moved in
+   after the hand-off. No value is dropped to prevent that. Later offers wait, or are refused or
+   slide, until takes bring the queue below its capacity again.
+3. **An offer that was accepted stays accepted.** A parked offer's value is moved into the queue
+   when room is made, and the offer is then resumed with `True`. If its fiber is cancelled before
+   it runs, the value stays in the queue, once. The fiber never sees the `True`. An offer
+   cancelled while it still waits is taken out of line, and its value never enters the queue. A
+   parked `offerAll` cancelled after some of its values were accepted keeps those in the queue.
+   The rest never enter.
+4. **A parked `offerAll` keeps its place in line for all its values.** It moves in as many values
+   as fit, then waits with the rest as one entry, which is Effect's `Array` entry. Its answer is
+   `[]` once all are accepted, or the values not yet accepted when the queue ends. On `dropping`
+   it answers the values refused. On `sliding` it answers `[]`.
+5. **`takeN q n` with `n ≤ 0` answers `[]` at once**, on any queue, ended or not. **A `takeN` for
+   more than a bounded, dropping or sliding queue can hold waits until the queue is full**, then
+   takes what it holds. Waiting for `n` there would wait for ever, and Effect caps its minimum the
+   same way (`Math.min(min, self.capacity)`, `Queue.ts:1941`). The nearest meaning, §17.1 item 4.
+6. **A `sliding` offer drops the oldest values until the new one fits.** So a sliding queue left
+   above its capacity by a give-back (point 2) is back at its capacity after the next offer.
+7. **After `end`**, `take`, `takeAll` and `takeN` answer at once with what is held: `Nothing` or
+   `[]` once it is empty. The takers parked at the `end` are served in order with what is held:
+   a parked `takeN` gets the values it waited for, up to `n`, and the takers after it get the
+   rest, then `Nothing` or `[]`. `poll` and `size` work as before.
+8. **`Latch`'s waiters are released in the order they began to wait.** A waiter cancelled while
+   it waits is taken off the list. `open` and `release` take the whole list at once and start a
+   new one. So a fiber that begins to wait at a latch closed again in the same turn waits for the
+   next `open` or `release`.
+
+Fixtures, besides the eight the text above lists: `run/QueueHandoffCancelled` (point 2),
+`run/QueueOfferAcceptedCancelled` (point 3), `run/QueueTakeNoJump` (point 1),
+`run/QueueTakeUnderTimeout` (point 2, under `timeout` on a virtual clock and under `race`).
+`run/QueueTakeAllTakeN` carries point 5, and `run/QueueEndWakesOfferers` carries point 4's
+`end`. The retained-heap check of `bench/fiber` that the text above names is not part of this
+work (the owner, 2026-10-26, #1040).
 
 ### 17.10 A program that can never wake (decision 16; A8, Node)
 
