@@ -2,43 +2,30 @@
 //! class describes a function type's behaviour over `π₁…πₙ`, `ρ`; a summary
 //! is a declaration's class. A class names no declaration (#587's room).
 //!
-//! | field     | content |
-//! |-----------|---------|
-//! | `use(i)`  | a shape over πᵢ's places whose cells are `mark`s: `R`, `A`, `E`, `W`, `S` (deep) and `W{f}` per written field. A `node` of marks labels its own path, a LEAF of marks every path below it (a deep read or write): `Shape.proj` carries marks down a leaf as it carries `⊤`, so "`U` non-empty at the remainder of `q`" (§2.7) is one `cellsAt` |
-//! | `res`     | a shape over ρ's places whose cells are provenances; κ per node in `Cond`'s column |
-//! | `xreq`    | the flat atom set the body relied on |
-//! | `fun(j)`  | `calls`, `need`, `seen`, the supplies (`Facts.Supply`, with κ) and keep edges; `j ≥ params` names a function SLOT, a function at a path of a parameter (`slots`) |
-//! | `classes` | the summary-local class table (closures carried in `res`/supplies: S4) |
-//! | `refs`, `slots` (handles) | S8 |
-//! | `writes`, `once`, `entry`, `origin` | one bit each; where the class came from (`inferred`, `words`, `asserted`, `unknown`) |
+//! `use(i)` is a shape over πᵢ's places whose cells are `mark`s (`R A E W
+//! S`, `W{f}`): a `node` of marks labels its own path, a LEAF every path
+//! below it (a deep read or write), so §2.7's "`U` non-empty at the
+//! remainder" is one `cellsAt`. `res` is a shape over ρ's places; `kappas`
+//! is THE CLASS'S OWN κ snapshot over it (nodes are interned, so κ is the
+//! holder's, never the node's, §3.4); `xreq` the flat atom set relied on;
+//! `fun(j)` has `calls`, `need`, `seen`, supplies keyed by LABEL and `k`
+//! (two labels never merge, §2.2), each with the handed value's snapshot,
+//! and keep edges, both runs sorted; `j ≥ params` names a function slot.
 //!
-//! **Lattice** (§2.10): pointwise. Use and `res` shapes by `Shape.leq`/`join`
-//! after widening; κ per `res` node by `Cond.propagate` where the shapes
-//! join (O15: `Shape.join` knows no κ); `owned ⊑ borrowed`; `calls 0 ⊑ ≤1 ⊑
-//! many`; `seen` yes ⊑ no; xreq by inclusion; κ of a supply by `Cond.join`.
+//! **Lattice** (§2.10): pointwise and FUNCTIONAL — `join` builds a new class
+//! with a new snapshot (`Cond.propagate`, O15) and never writes a member's;
+//! `leq` is `Cond.kappaLeq`'s simulation over node pairs. **Normal form**
+//! (§3.5): words by one canonical DFS with backreferences, every sorted run
+//! (sets, atoms, supplies, keeps) spelled for the sort in a context of its
+//! own so storage order never reaches the words. The words hold this
+//! module's place ids and a union's sides in node-id order: deterministic
+//! within one build, fit for the fixpoint and the tests, NEVER hashed or
+//! published before `Block` (S6) — the gate keeps `normalize` out of every
+//! other file. `print` is v1's `summary` grammar (oc §16.11). Every record
+//! is reserved on the caller's `Charge` before it exists (§4.1).
 //!
-//! **Normal form** (§3.5): `normalize` writes a class as words with every
-//! node numbered by one canonical DFS (children in step order) and a node
-//! met again a backreference, cells spelled out by origin and canonical
-//! path, sets and atoms sorted by their own spelling. Two classes are `eq`
-//! when their words are. Places are this module's ids and a union's sides
-//! are in id order — deterministic within a build (§3.8), structural across
-//! modules only through `Block` (S6), which maps places structurally and
-//! sorts sides by spelling. Fresh numbering by result path is the
-//! read-off's (S3a); `normalize` encodes what it is given.
-//!
-//! **Text**: `print` reproduces v1's `summary` grammar (oc §16.11): the
-//! parameters' bits by path, `res` grouped by path with `~` for an
-//! approximate pair and the path's κ in braces, each function parameter's
-//! `calls`/`need`/`unseen`/supplies, `xreq`, `(words)`/`(asserted)`.
-//!
-//! Every record (a class, a fun, a supply, a keep, a slot, a use node) is
-//! reserved on the caller's `Charge` before it exists, and so is every
-//! node a join, an inclusion test or a normalisation visits (§4.1).
-//!
-//! Obligations kept here: O5's lattice half (a join covers both classes:
-//! every field joined pointwise, κ by `Cond.propagate`), O15 (κ of a joined
-//! `res` is the join of the members' at every path).
+//! Obligations kept here: O5's lattice half (a join covers both classes),
+//! O15 (κ of a joined `res` is the join of the members' at every path).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -63,6 +50,7 @@ pub const Charge = Ids.Charge;
 pub const Error = Ids.ChargeError;
 pub const Supply = Facts.Supply;
 pub const Keep = Facts.Keep;
+pub const Kappas = Cond.Kappas;
 
 pub const Calls = enum(u2) {
     zero,
@@ -79,7 +67,7 @@ pub const Origin = enum(u8) { inferred, words, asserted, unknown };
 
 /// `fun(j)` (§2.10): how often function parameter `j` is called, whether
 /// its result is written (`need`), whether every call of it is in sight
-/// (`seen`), what it is handed and what it keeps.
+/// (`seen`), what it is handed and what it keeps. Both runs are sorted.
 pub const Fun = struct {
     j: u32,
     calls: Calls,
@@ -97,12 +85,13 @@ pub const Class = struct {
     /// Per parameter its use shape: a run of `uses`.
     params: Ids.Range,
     res: NodeId,
+    kappas: Kappas,
     xreq: SetId,
     funs: Ids.Range,
     slots: Ids.Range,
     classes: Ids.Range,
     /// The function-typed result places the class makes once closures at
-    /// (§2.10): a run of `onces`.
+    /// (§2.10): a run of `onces`, sorted.
     once: Ids.Range,
     refs: SetId,
     /// `⊤call`'s `refs` is top: every slot may be touched (§2.11).
@@ -139,6 +128,15 @@ pub const Env = struct {
     pub fn account(e: Env) *Ids.Account {
         return e.charge.account;
     }
+
+    pub fn view(e: Env) Cond.View {
+        return .{ .shapes = e.shapes, .cells = e.cells, .places = e.places };
+    }
+
+    /// κ of a `res` node under a class's map, at a plain path.
+    pub fn kappa(e: Env, ctx: Kappas, n: NodeId) Error!CondId {
+        return e.conds.kappaOf(e.gpa, e.charge, e.view(), ctx, n, false);
+    }
 };
 
 /// How names print (§3.8: never an id): a field by its text rank, a
@@ -155,6 +153,7 @@ pub const Names = struct {
 pub const Draft = struct {
     params: []const NodeId,
     res: NodeId,
+    kappas: Kappas = .none,
     xreq: SetId = .none,
     funs: []const DraftFun = &.{},
     slots: []const Slot = &.{},
@@ -176,6 +175,38 @@ pub const DraftFun = struct {
     supplies: []const Supply = &.{},
     keeps: []const Keep = &.{},
 };
+
+/// The order of a fun's supplies: by label, argument, node, `taken`.
+fn supplyLess(_: void, a: Supply, b: Supply) bool {
+    if (a.label != b.label) return a.label.int() < b.label.int();
+    if (a.k != b.k) return a.k < b.k;
+    if (a.node != b.node) return a.node.int() < b.node.int();
+    return @intFromBool(a.taken) < @intFromBool(b.taken);
+}
+
+fn supplySame(a: Supply, b: Supply) bool {
+    return a.label == b.label and a.k == b.k and a.node == b.node and a.taken == b.taken;
+}
+
+fn keepLess(_: void, a: Keep, b: Keep) bool {
+    if (a.j != b.j) return a.j < b.j;
+    if (a.k != b.k) return a.k < b.k;
+    if (a.kept_path != b.kept_path) return a.kept_path.int() < b.kept_path.int();
+    if (a.written_path != b.written_path) return a.written_path.int() < b.written_path.int();
+    return a.writer < b.writer;
+}
+
+fn keepSame(a: Keep, b: Keep) bool {
+    return a.j == b.j and a.k == b.k and a.kept_path == b.kept_path and a.written_path == b.written_path and a.writer == b.writer;
+}
+
+fn pathLess(_: void, a: PathId, b: PathId) bool {
+    return a.int() < b.int();
+}
+
+fn pathOrder(a: PathId, b: PathId) std.math.Order {
+    return std.math.order(a.int(), b.int());
+}
 
 pub const Table = struct {
     classes: std.MultiArrayList(Class) = .empty,
@@ -252,7 +283,8 @@ pub const Table = struct {
 
     /// A class from its pieces: one record each for the class, every use
     /// node, fun, supply, keep, slot, nested class and once path, reserved
-    /// before anything is appended. Funs are stored sorted by `j`.
+    /// before anything is appended. Funs are stored sorted by `j`, their
+    /// supplies and keeps sorted by their keys, the once paths by id.
     pub fn add(t: *Table, env: Env, d: Draft) Error!ClassId {
         var n: u32 = 1 + @as(u32, @intCast(d.params.len + d.funs.len + d.slots.len + d.classes.len + d.once.len));
         for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len);
@@ -260,7 +292,6 @@ pub const Table = struct {
         const gpa = env.gpa;
         const params: Ids.Range = .{ .start = @intCast(t.uses.items.len), .len = @intCast(d.params.len) };
         try t.uses.appendSlice(gpa, d.params);
-        // Funs in `j` order: sort a scratch index.
         var order: std.ArrayList(u32) = .empty;
         defer order.deinit(gpa);
         for (0..d.funs.len) |i| try order.append(gpa, @intCast(i));
@@ -274,8 +305,10 @@ pub const Table = struct {
             const f = d.funs[i];
             const sr: Ids.Range = .{ .start = @intCast(t.supplies.len), .len = @intCast(f.supplies.len) };
             for (f.supplies) |s| try t.supplies.append(gpa, s);
+            try sortRun(Supply, gpa, &t.supplies, sr, supplyLess);
             const kr: Ids.Range = .{ .start = @intCast(t.keeps.len), .len = @intCast(f.keeps.len) };
             for (f.keeps) |k| try t.keeps.append(gpa, k);
+            try sortRun(Keep, gpa, &t.keeps, kr, keepLess);
             try t.funs.append(gpa, .{ .j = f.j, .calls = f.calls, .need = f.need, .seen = f.seen, .supplies = sr, .keeps = kr });
         }
         const slots: Ids.Range = .{ .start = @intCast(t.slots.len), .len = @intCast(d.slots.len) };
@@ -284,10 +317,12 @@ pub const Table = struct {
         try t.nested.appendSlice(gpa, d.classes);
         const once: Ids.Range = .{ .start = @intCast(t.onces.items.len), .len = @intCast(d.once.len) };
         try t.onces.appendSlice(gpa, d.once);
+        std.mem.sort(PathId, t.onces.items[once.start..], {}, pathLess);
         const id: ClassId = .from(t.count());
         try t.classes.append(gpa, .{
             .params = params,
             .res = d.res,
+            .kappas = d.kappas,
             .xreq = d.xreq,
             .funs = funs,
             .slots = slots,
@@ -303,6 +338,16 @@ pub const Table = struct {
         return id;
     }
 
+    /// Sort a run of a table in place, through a scratch copy of the run.
+    fn sortRun(comptime T: type, gpa: Allocator, list: anytype, r: Ids.Range, comptime lessFn: anytype) Allocator.Error!void {
+        if (r.len < 2) return;
+        const buf = try gpa.alloc(T, r.len);
+        defer gpa.free(buf);
+        for (buf, 0..) |*b, i| b.* = list.get(r.start + i);
+        std.mem.sort(T, buf, {}, lessFn);
+        for (buf, 0..) |b, i| list.set(r.start + i, b);
+    }
+
     /// `⊤call` (§2.11, R-5.5.4): every parameter `RAEW` deep, the result
     /// `⊤` with κ `lost`, every function parameter in `fun_params` called
     /// many times, unseen, its result needed; `refs` top; writes.
@@ -314,11 +359,11 @@ pub const Table = struct {
         for (param_places) |p| try params.append(gpa, try env.shapes.leaf(gpa, env.account(), p, all));
         const top = try env.cells.top(gpa, env.account());
         const res = try env.shapes.leaf(gpa, env.account(), res_place, try env.cells.sets.insert(gpa, env.charge, .none, top.int(), 0));
-        _ = try env.conds.setKappa(gpa, env.charge, res, Cond.lost);
+        const kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, Cond.lost)).ctx;
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
         for (fun_params) |j| try funs.append(gpa, .{ .j = j, .calls = .many, .need = true, .seen = false });
-        return t.add(env, .{ .params = params.items, .res = res, .funs = funs.items, .refs_top = true, .writes = true, .origin = .unknown });
+        return t.add(env, .{ .params = params.items, .res = res, .kappas = kappas, .funs = funs.items, .refs_top = true, .writes = true, .origin = .unknown });
     }
 
     // ---- use shapes ---------------------------------------------------------------
@@ -349,7 +394,6 @@ pub const Table = struct {
         try env.charge.reserve(gpa, .shape, 1);
         const here: SetId = if (n == .none) .none else env.shapes.cells(n);
         if (n != .none and env.shapes.kind(n) == .leaf and here != .none) {
-            // A deep leaf covers this path and everything below: join.
             return env.shapes.leaf(gpa, env.account(), place, try env.cells.sets.unionWith(gpa, env.charge, here, marks));
         }
         if (steps.len == 0) {
@@ -407,9 +451,11 @@ pub const Table = struct {
 
     /// The pointwise join of two classes over one signature (§2.10): use
     /// and `res` shapes by `Shape.join` then `widen`, κ by `Cond.propagate`
-    /// (O15), xreq by union, funs by `j` (calls max, need or, seen and,
-    /// supplies united with `owned` and-ed and κ joined, keeps united),
-    /// nested classes pointwise, bits or-ed. Every visited record charged.
+    /// into the NEW class's map (the members' maps are read, never written),
+    /// xreq by union, funs by `j` (calls max, need or, seen and; supplies
+    /// merged by `(label, k, node, taken)` with `owned` and-ed and κ joined,
+    /// keeps and once paths merged), nested classes pointwise, bits or-ed.
+    /// Sorted runs merge in one pass; every record visited is charged.
     pub fn join(t: *Table, env: Env, a: ClassId, b: ClassId) Error!ClassId {
         if (a == b) return a;
         const gpa = env.gpa;
@@ -420,19 +466,19 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        const res = try joinRes(env, ca.res, cb.res);
+        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
-        // Funs: both runs sorted by `j`, merged.
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
         var sup_store: std.ArrayList(Supply) = .empty;
         defer sup_store.deinit(gpa);
         var keep_store: std.ArrayList(Keep) = .empty;
         defer keep_store.deinit(gpa);
+        const Merged = struct { f: DraftFun, sup: Ids.Range, keep: Ids.Range };
+        var merged: std.ArrayList(Merged) = .empty;
+        defer merged.deinit(gpa);
         var i: u32 = 0;
         var j: u32 = 0;
-        var merged: std.ArrayList(struct { f: DraftFun, sup_start: u32, sup_len: u32, keep_start: u32, keep_len: u32 }) = .empty;
-        defer merged.deinit(gpa);
         while (i < ca.funs.len or j < cb.funs.len) {
             try env.charge.reserve(gpa, .class, 1);
             const fa: ?Fun = if (i < ca.funs.len) t.fun(a, i) else null;
@@ -442,47 +488,46 @@ pub const Table = struct {
             var f: DraftFun = undefined;
             if (fb == null or (fa != null and fa.?.j < fb.?.j)) {
                 f = .{ .j = fa.?.j, .calls = fa.?.calls, .need = fa.?.need, .seen = fa.?.seen };
-                try t.copySupplies(env, fa.?, &sup_store, &keep_store);
+                try t.mergeFun(env, fa.?, null, &sup_store, &keep_store);
                 i += 1;
             } else if (fa == null or fb.?.j < fa.?.j) {
                 f = .{ .j = fb.?.j, .calls = fb.?.calls, .need = fb.?.need, .seen = fb.?.seen };
-                try t.copySupplies(env, fb.?, &sup_store, &keep_store);
+                try t.mergeFun(env, fb.?, null, &sup_store, &keep_store);
                 j += 1;
             } else {
                 f = .{ .j = fa.?.j, .calls = fa.?.calls.join(fb.?.calls), .need = fa.?.need or fb.?.need, .seen = fa.?.seen and fb.?.seen };
-                try t.copySupplies(env, fa.?, &sup_store, &keep_store);
-                try t.mergeSupplies(env, fb.?, &sup_store, sup_start, &keep_store, keep_start);
+                try t.mergeFun(env, fa.?, fb.?, &sup_store, &keep_store);
                 i += 1;
                 j += 1;
             }
-            try merged.append(gpa, .{ .f = f, .sup_start = sup_start, .sup_len = @intCast(sup_store.items.len - sup_start), .keep_start = keep_start, .keep_len = @intCast(keep_store.items.len - keep_start) });
+            try merged.append(gpa, .{ .f = f, .sup = .{ .start = sup_start, .len = @intCast(sup_store.items.len - sup_start) }, .keep = .{ .start = keep_start, .len = @intCast(keep_store.items.len - keep_start) } });
         }
         for (merged.items) |m| {
             var f = m.f;
-            f.supplies = sup_store.items[m.sup_start..][0..m.sup_len];
-            f.keeps = keep_store.items[m.keep_start..][0..m.keep_len];
+            f.supplies = sup_store.items[m.sup.start..][0..m.sup.len];
+            f.keeps = keep_store.items[m.keep.start..][0..m.keep.len];
             try funs.append(gpa, f);
         }
-        // Nested classes pointwise (S4 fills them; today both are empty or
-        // of one length).
         var nested: std.ArrayList(ClassId) = .empty;
         defer nested.deinit(gpa);
         const na = t.nestedOf(a);
         const nb = t.nestedOf(b);
         std.debug.assert(na.len == nb.len);
         for (na, nb) |x, y| try nested.append(gpa, try t.join(env, x, y));
+        // Once paths: both sorted runs, re-sorted and deduplicated by `add`'s
+        // sort (O((|a| + |b|) log) records).
         var once: std.ArrayList(PathId) = .empty;
         defer once.deinit(gpa);
+        try env.charge.reserve(gpa, .class, @intCast(ca.once.len + cb.once.len));
         try once.appendSlice(gpa, t.oncesOf(a));
-        for (t.oncesOf(b)) |p| {
-            if (std.mem.indexOfScalar(PathId, once.items, p) == null) try once.append(gpa, p);
-        }
+        for (t.oncesOf(b)) |p| if (std.sort.binarySearch(PathId, t.oncesOf(a), p, pathOrder) == null) try once.append(gpa, p);
         var slots: std.ArrayList(Slot) = .empty;
         defer slots.deinit(gpa);
         for (0..ca.slots.len) |k| try slots.append(gpa, t.slot(a, @intCast(k)));
         return t.add(env, .{
             .params = params.items,
-            .res = res,
+            .res = joined.node,
+            .kappas = joined.kappas,
             .xreq = xreq,
             .funs = funs.items,
             .slots = slots.items,
@@ -497,47 +542,53 @@ pub const Table = struct {
         });
     }
 
-    fn copySupplies(t: *const Table, env: Env, f: Fun, sup: *std.ArrayList(Supply), keeps: *std.ArrayList(Keep)) Error!void {
-        for (0..f.supplies.len) |k| {
-            try env.charge.reserve(env.gpa, .class, 1);
-            try sup.append(env.gpa, t.supply(f, @intCast(k)));
-        }
-        for (0..f.keeps.len) |k| {
-            try env.charge.reserve(env.gpa, .class, 1);
-            try keeps.append(env.gpa, t.keepOf(f, @intCast(k)));
-        }
-    }
-
-    /// `f`'s supplies and keeps merged into the runs starting at `sup_start`
-    /// and `keep_start`: a supply of the same `(k, node, taken)` as one there
-    /// joins it (`owned` and-ed, κ joined, the earlier point kept), else it
-    /// is added; a keep already there is not added twice.
-    fn mergeSupplies(t: *const Table, env: Env, f: Fun, sup: *std.ArrayList(Supply), sup_start: u32, keeps: *std.ArrayList(Keep), keep_start: u32) Error!void {
-        for (0..f.supplies.len) |k| {
-            try env.charge.reserve(env.gpa, .class, 1);
-            const s = t.supply(f, @intCast(k));
-            var found = false;
-            for (sup.items[sup_start..]) |*e| {
-                if (e.k != s.k or e.node != s.node or e.taken != s.taken) continue;
-                e.owned = e.owned and s.owned;
-                e.cond = try env.conds.join(env.gpa, env.charge, e.cond, s.cond);
-                e.point = @min(e.point, s.point);
-                found = true;
-                break;
+    /// `fa`'s supplies and keeps, merged with `fb`'s when given, appended
+    /// to the stores: one pass over two sorted runs, one record per entry
+    /// read. A supply of one `(label, k, node, taken)` in both joins
+    /// (`owned` and-ed, κ joined); two labels never merge.
+    fn mergeFun(t: *const Table, env: Env, fa: Fun, fb: ?Fun, sup: *std.ArrayList(Supply), keeps: *std.ArrayList(Keep)) Error!void {
+        const gpa = env.gpa;
+        var i: u32 = 0;
+        var j: u32 = 0;
+        const nb: u32 = if (fb) |f| f.supplies.len else 0;
+        while (i < fa.supplies.len or j < nb) {
+            try env.charge.reserve(gpa, .class, 1);
+            const sa: ?Supply = if (i < fa.supplies.len) t.supply(fa, i) else null;
+            const sb: ?Supply = if (j < nb) t.supply(fb.?, j) else null;
+            if (sb == null or (sa != null and supplyLess({}, sa.?, sb.?))) {
+                try sup.append(gpa, sa.?);
+                i += 1;
+            } else if (sa == null or supplyLess({}, sb.?, sa.?)) {
+                try sup.append(gpa, sb.?);
+                j += 1;
+            } else {
+                var s = sa.?;
+                s.owned = s.owned and sb.?.owned;
+                // The two snapshots of one handed value joined into a new one.
+                s.kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                try sup.append(gpa, s);
+                i += 1;
+                j += 1;
             }
-            if (!found) try sup.append(env.gpa, s);
         }
-        for (0..f.keeps.len) |k| {
-            try env.charge.reserve(env.gpa, .class, 1);
-            const x = t.keepOf(f, @intCast(k));
-            var found = false;
-            for (keeps.items[keep_start..]) |e| {
-                if (e.j == x.j and e.k == x.k and e.kept_path == x.kept_path and e.written_path == x.written_path and e.writer == x.writer) {
-                    found = true;
-                    break;
-                }
+        i = 0;
+        j = 0;
+        const kb: u32 = if (fb) |f| f.keeps.len else 0;
+        while (i < fa.keeps.len or j < kb) {
+            try env.charge.reserve(gpa, .class, 1);
+            const ka: ?Keep = if (i < fa.keeps.len) t.keepOf(fa, i) else null;
+            const kk: ?Keep = if (j < kb) t.keepOf(fb.?, j) else null;
+            if (kk == null or (ka != null and keepLess({}, ka.?, kk.?))) {
+                try keeps.append(gpa, ka.?);
+                i += 1;
+            } else if (ka == null or keepLess({}, kk.?, ka.?)) {
+                try keeps.append(gpa, kk.?);
+                j += 1;
+            } else {
+                try keeps.append(gpa, ka.?);
+                i += 1;
+                j += 1;
             }
-            if (!found) try keeps.append(env.gpa, x);
         }
     }
 
@@ -549,32 +600,34 @@ pub const Table = struct {
         return env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
     }
 
-    /// Two `res` shapes joined as alternatives, widened, κ propagated
-    /// (O15). The join's κ is set from both members at every path; when
-    /// widening changed the shape, the widened node's κ is set from the
-    /// join's nodes it merged.
-    pub fn joinRes(env: Env, a: NodeId, b: NodeId) Error!NodeId {
-        if (a == b) return a;
+    pub const Joined = struct { node: NodeId, kappas: Kappas };
+
+    /// Two `res` shapes with their maps joined as alternatives, widened, κ
+    /// propagated into a NEW map (O15), the widened node's from the join's.
+    pub fn joinRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas) Error!Joined {
+        if (a == b and ka == kb) return .{ .node = a, .kappas = ka };
         var members = [_]NodeId{ a, b };
         const j = try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
-        try env.conds.propagate(env.gpa, env.charge, env.shapes, env.cells, env.places, j, &.{ a, b }, .alternatives, null);
+        const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const w = try env.shapes.widen(env.gpa, env.account(), env.places, env.cells, j);
-        if (w != j) try env.conds.propagate(env.gpa, env.charge, env.shapes, env.cells, env.places, w, &.{j}, .alternatives, null);
-        return w;
+        if (w == j) return .{ .node = j, .kappas = mj };
+        const mw = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, w, &.{j}, &.{mj}, .alternatives, false, null);
+        return .{ .node = w, .kappas = mw };
     }
 
     /// `a ⊑ b` pointwise (§2.10): a stronger class below a weaker one.
     pub fn leq(t: *Table, env: Env, a: ClassId, b: ClassId) Error!bool {
         if (a == b) return true;
+        const gpa = env.gpa;
         const ca = t.get(a);
         const cb = t.get(b);
         if (ca.params.len != cb.params.len) return false;
-        try env.charge.reserve(env.gpa, .inspection, 1);
+        try env.charge.reserve(gpa, .inspection, 1);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| if (!try leqUse(env, ua, ub)) return false;
-        if (!try env.shapes.leq(env.gpa, env.account(), env.places, env.cells, ca.res, cb.res)) return false;
-        if (!try kappaLeq(env, ca.res, cb.res)) return false;
-        if (!try env.conds.atoms.subset(env.gpa, env.charge, ca.xreq, cb.xreq)) return false;
-        // Every fun of `a` under one of `b`.
+        if (!try env.shapes.leq(gpa, env.account(), env.places, env.cells, ca.res, cb.res)) return false;
+        if (!try env.conds.kappaLeq(gpa, env.charge, env.view(), ca.kappas, ca.res, cb.kappas, cb.res, false)) return false;
+        if (!try env.conds.atoms.subset(gpa, env.charge, ca.xreq, cb.xreq)) return false;
+        // Every fun of `a` under one of `b`; runs sorted, so two pointers.
         var j: u32 = 0;
         for (0..ca.funs.len) |i| {
             const fa = t.fun(a, @intCast(i));
@@ -584,41 +637,36 @@ pub const Table = struct {
             if (@backingInt(fa.calls) > @backingInt(fb.calls)) return false;
             if (fa.need and !fb.need) return false;
             if (fb.seen and !fa.seen) return false;
+            var m: u32 = 0;
             for (0..fa.supplies.len) |k| {
-                try env.charge.reserve(env.gpa, .inspection, 1);
+                try env.charge.reserve(gpa, .inspection, 1);
                 const s = t.supply(fa, @intCast(k));
-                var found = false;
-                for (0..fb.supplies.len) |m| {
-                    const o = t.supply(fb, @intCast(m));
-                    if (o.k != s.k or o.node != s.node or o.taken != s.taken) continue;
-                    if (o.owned and !s.owned) continue;
-                    if (!try env.conds.leq(env.gpa, env.charge, s.cond, o.cond)) continue;
-                    found = true;
-                    break;
-                }
-                if (!found) return false;
+                while (m < fb.supplies.len and supplyLess({}, t.supply(fb, m), s)) m += 1;
+                if (m >= fb.supplies.len or !supplySame(t.supply(fb, m), s)) return false;
+                const o = t.supply(fb, m);
+                if (o.owned and !s.owned) return false;
+                if (!try env.conds.kappaLeq(gpa, env.charge, env.view(), s.kappa, s.node, o.kappa, o.node, false)) return false;
             }
+            m = 0;
             for (0..fa.keeps.len) |k| {
-                try env.charge.reserve(env.gpa, .inspection, 1);
+                try env.charge.reserve(gpa, .inspection, 1);
                 const x = t.keepOf(fa, @intCast(k));
-                var found = false;
-                for (0..fb.keeps.len) |m| {
-                    const y = t.keepOf(fb, @intCast(m));
-                    if (x.j == y.j and x.k == y.k and x.kept_path == y.kept_path and x.written_path == y.written_path and x.writer == y.writer) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) return false;
+                while (m < fb.keeps.len and keepLess({}, t.keepOf(fb, m), x)) m += 1;
+                if (m >= fb.keeps.len or !keepSame(t.keepOf(fb, m), x)) return false;
             }
         }
         const na = t.nestedOf(a);
         const nb = t.nestedOf(b);
         if (na.len != nb.len) return false;
         for (na, nb) |x, y| if (!try t.leq(env, x, y)) return false;
-        for (t.oncesOf(a)) |p| if (std.mem.indexOfScalar(PathId, t.oncesOf(b), p) == null) return false;
+        var m: usize = 0;
+        const ob = t.oncesOf(b);
+        for (t.oncesOf(a)) |p| {
+            while (m < ob.len and ob[m].int() < p.int()) m += 1;
+            if (m >= ob.len or ob[m] != p) return false;
+        }
         if (ca.refs_top and !cb.refs_top) return false;
-        if (!cb.refs_top and !try env.cells.sets.subset(env.gpa, env.charge, ca.refs, cb.refs)) return false;
+        if (!cb.refs_top and !try env.cells.sets.subset(gpa, env.charge, ca.refs, cb.refs)) return false;
         if (ca.writes and !cb.writes) return false;
         return true;
     }
@@ -629,43 +677,15 @@ pub const Table = struct {
         return env.shapes.leq(env.gpa, env.account(), env.places, env.cells, a, b);
     }
 
-    /// κ(a) ⊑ κ(b) at every node of `a`'s explicit structure, `b` projected
-    /// in lockstep; a node once. One record per node and projection.
-    pub fn kappaLeq(env: Env, a: NodeId, b: NodeId) Error!bool {
-        const gpa = env.gpa;
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
-        var stack: std.ArrayList([2]NodeId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, .{ a, b });
-        while (stack.pop()) |pair| {
-            if (seen.contains(pair[0])) continue;
-            try seen.put(gpa, pair[0], {});
-            try env.charge.reserve(gpa, .inspection, 1);
-            const ka = try env.conds.kappaOf(gpa, env.charge, env.shapes, env.cells, pair[0]);
-            const kb = try env.conds.kappaOf(gpa, env.charge, env.shapes, env.cells, pair[1]);
-            if (!try env.conds.leq(gpa, env.charge, ka, kb)) return false;
-            const kind = env.shapes.kind(pair[0]);
-            if (kind == .leaf or kind == .recast) continue;
-            const steps = env.places.steps(env.shapes.place(pair[0]));
-            for (steps.steps) |s| {
-                const na = (try env.shapes.proj(gpa, env.account(), env.places, env.cells, pair[0], s)) orelse continue;
-                if (env.shapes.kind(na) == .leaf and env.shapes.cells(na) == .none) continue;
-                const nb = (try env.shapes.proj(gpa, env.account(), env.places, env.cells, pair[1], s)) orelse return false;
-                try stack.append(gpa, .{ na, nb });
-            }
-        }
-        return true;
-    }
-
     // ---- normal form --------------------------------------------------------
 
     /// The class as words (header): one canonical DFS over `res` and the
     /// use shapes, nodes by first-visit ordinal with backreferences, cells
     /// spelled by origin and canonical path, sets and atoms sorted by their
     /// spelling. Appended to `out`; every node and cell visited is a record.
+    /// Build-local words (header): never hashed or published.
     pub fn normalize(t: *Table, env: Env, c: ClassId, out: *std.ArrayList(u32)) Error!void {
-        var n: Normalizer = .{ .t = t, .env = env, .out = out };
+        var n: Normalizer = .{ .t = t, .env = env, .out = out, .ctx = t.get(c).kappas };
         defer n.deinit();
         try n.class(c);
     }
@@ -686,6 +706,7 @@ pub const Table = struct {
         t: *Table,
         env: Env,
         out: *std.ArrayList(u32),
+        ctx: Kappas,
         ordinal: stamped.Column(NodeId, u32) = .{},
         next: u32 = 0,
 
@@ -706,12 +727,15 @@ pub const Table = struct {
         fn class(n: *Normalizer, c: ClassId) Error!void {
             try n.env.charge.reserve(n.env.gpa, .inspection, 1);
             const k = n.t.get(c);
+            const saved_ctx = n.ctx;
+            n.ctx = k.kappas;
+            defer n.ctx = saved_ctx;
             try n.tag(.class);
             try n.put(k.params.len);
             try n.put(@as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2));
             try n.put(@backingInt(k.origin));
-            try n.node(k.res);
-            for (n.t.paramUses(c)) |u| if (u == .none) try n.tag(.none) else try n.node(u);
+            try n.node(k.res, false);
+            for (n.t.paramUses(c)) |u| if (u == .none) try n.tag(.none) else try n.node(u, false);
             try n.condSet(k.xreq);
             try n.put(k.funs.len);
             for (0..k.funs.len) |i| {
@@ -720,8 +744,8 @@ pub const Table = struct {
                 try n.put(f.j);
                 try n.put(@backingInt(f.calls));
                 try n.put(@as(u32, @intFromBool(f.need)) | (@as(u32, @intFromBool(f.seen)) << 1));
-                try n.sorted(.supply, f.supplies.len, f, supplyWords);
-                try n.sorted(.keep, f.keeps.len, f, keepWords);
+                try n.sortedItems(.supply, f, f.supplies.len, supplyWords);
+                try n.sortedItems(.keep, f, f.keeps.len, keepWords);
             }
             try n.put(k.slots.len);
             for (0..k.slots.len) |i| {
@@ -733,26 +757,24 @@ pub const Table = struct {
             try n.put(k.classes.len);
             for (n.t.nestedOf(c)) |x| try n.class(x);
             try n.put(k.once.len);
-            try n.sortedPaths(n.t.oncesOf(c));
+            for (n.t.oncesOf(c)) |p| try n.path(p); // sorted by id: the store's order is canonical within a build
             try n.cellSet(k.refs);
         }
 
-        fn supplyWords(n: *Normalizer, f: Fun, i: u32, out: *std.ArrayList(u32)) Error!void {
+        fn supplyWords(n: *Normalizer, f: Fun, i: u32) Error!void {
             const s = n.t.supply(f, i);
-            const saved = n.out;
-            n.out = out;
-            defer n.out = saved;
             try n.put(s.k);
             try n.put(@as(u32, @intFromBool(s.owned)) | (@as(u32, @intFromBool(s.taken)) << 1));
-            try n.node(s.node);
-            try n.cond(s.cond);
+            try n.label(s.label);
+            // The handed value under its own snapshot.
+            const saved = n.ctx;
+            n.ctx = s.kappa;
+            defer n.ctx = saved;
+            try n.node(s.node, false);
         }
 
-        fn keepWords(n: *Normalizer, f: Fun, i: u32, out: *std.ArrayList(u32)) Error!void {
+        fn keepWords(n: *Normalizer, f: Fun, i: u32) Error!void {
             const k = n.t.keepOf(f, i);
-            const saved = n.out;
-            n.out = out;
-            defer n.out = saved;
             try n.put(k.j);
             try n.put(k.k);
             try n.path(k.kept_path);
@@ -760,53 +782,37 @@ pub const Table = struct {
             try n.put(k.writer);
         }
 
-        /// `len` items spelled by `spell`, sorted by their words, appended
-        /// with a tag and count. (Node ordinals inside are assigned in the
-        /// spelling order, which is itself canonical by induction.)
-        fn sorted(n: *Normalizer, t: Tag, len: u32, f: Fun, spell: *const fn (*Normalizer, Fun, u32, *std.ArrayList(u32)) Error!void) Error!void {
+        /// `len` items of `f`: each spelled for the SORT in a context of its
+        /// own (fresh ordinals, so the storage order cannot reach the key),
+        /// then spelled in key order in this context.
+        fn sortedItems(n: *Normalizer, t: Tag, f: Fun, len: u32, spell: *const fn (*Normalizer, Fun, u32) Error!void) Error!void {
             const gpa = n.env.gpa;
-            var runs: std.ArrayList([]u32) = .empty;
+            const Keyed = struct { key: []u32, i: u32 };
+            var keyed: std.ArrayList(Keyed) = .empty;
             defer {
-                for (runs.items) |r| gpa.free(r);
-                runs.deinit(gpa);
+                for (keyed.items) |k| gpa.free(k.key);
+                keyed.deinit(gpa);
             }
             for (0..len) |i| {
                 try n.env.charge.reserve(gpa, .inspection, 1);
                 var buf: std.ArrayList(u32) = .empty;
                 errdefer buf.deinit(gpa);
-                try spell(n, f, @intCast(i), &buf);
-                try runs.append(gpa, try buf.toOwnedSlice(gpa));
+                var fresh: Normalizer = .{ .t = n.t, .env = n.env, .out = &buf, .ctx = n.ctx };
+                defer fresh.deinit();
+                try spell(&fresh, f, @intCast(i));
+                try keyed.append(gpa, .{ .key = try buf.toOwnedSlice(gpa), .i = @intCast(i) });
             }
-            sortRuns(runs.items);
+            std.mem.sort(Keyed, keyed.items, {}, struct {
+                fn lessThan(_: void, x: Keyed, y: Keyed) bool {
+                    return lessRun(x.key, y.key);
+                }
+            }.lessThan);
             try n.tag(t);
             try n.put(len);
-            for (runs.items) |r| try n.out.appendSlice(gpa, r);
+            for (keyed.items) |k| try spell(n, f, k.i);
         }
 
-        fn sortedPaths(n: *Normalizer, paths: []const PathId) Error!void {
-            const gpa = n.env.gpa;
-            var runs: std.ArrayList([]u32) = .empty;
-            defer {
-                for (runs.items) |r| gpa.free(r);
-                runs.deinit(gpa);
-            }
-            for (paths) |p| {
-                var buf: std.ArrayList(u32) = .empty;
-                errdefer buf.deinit(gpa);
-                const saved = n.out;
-                n.out = &buf;
-                n.path(p) catch |e| {
-                    n.out = saved;
-                    return e;
-                };
-                n.out = saved;
-                try runs.append(gpa, try buf.toOwnedSlice(gpa));
-            }
-            sortRuns(runs.items);
-            for (runs.items) |r| try n.out.appendSlice(gpa, r);
-        }
-
-        fn node(n: *Normalizer, id: NodeId) Error!void {
+        fn node(n: *Normalizer, id: NodeId, at_summary: bool) Error!void {
             try n.env.charge.reserve(n.env.gpa, .inspection, 1);
             if (n.ordinal.get(id)) |o| {
                 try n.tag(.node_ref);
@@ -820,24 +826,23 @@ pub const Table = struct {
             try n.put(@backingInt(d.kind));
             try n.put(d.place.int());
             try n.cellSet(d.cells);
-            try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.shapes, n.env.cells, id));
+            try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), n.ctx, id, at_summary));
             switch (d.kind) {
                 .leaf => {},
-                .node => try n.overs(d.a),
+                .node => try n.overs(d.a, at_summary),
                 .delta => {
-                    try n.node(.from(d.a));
-                    try n.overs(d.b);
+                    try n.node(.from(d.a), at_summary);
+                    try n.overs(d.b, at_summary);
                 },
-                .recast => try n.node(.from(d.a)),
+                .recast => try n.node(.from(d.a), at_summary),
                 .@"union" => {
-                    try n.node(.from(d.a));
-                    try n.node(.from(d.b));
+                    try n.node(.from(d.a), at_summary);
+                    try n.node(.from(d.b), at_summary);
                 },
             }
         }
 
-        fn overs(n: *Normalizer, root: u32) Error!void {
-            // Step order is the map's iteration order (by step word).
+        fn overs(n: *Normalizer, root: u32, at_summary: bool) Error!void {
             var n_entries: u32 = 0;
             var it = n.env.shapes.overEntries(root);
             while (it.next()) |_| n_entries += 1;
@@ -845,7 +850,7 @@ pub const Table = struct {
             it = n.env.shapes.overEntries(root);
             while (it.next()) |e| {
                 try n.step(e.step);
-                try n.node(e.node);
+                try n.node(e.node, at_summary or e.step.kind == .elem or e.step.kind == .level);
             }
         }
 
@@ -868,7 +873,6 @@ pub const Table = struct {
             }
             const depth = n.env.places.pathDepth(p);
             try n.put(depth);
-            // Root first: collect by climbing.
             var stepsbuf: std.ArrayList(Step) = .empty;
             defer stepsbuf.deinit(n.env.gpa);
             var at = p;
@@ -924,6 +928,33 @@ pub const Table = struct {
             }
         }
 
+        /// A run of spellings, each into its own buffer, sorted and appended
+        /// with a tag and count.
+        fn sortedRuns(n: *Normalizer, runs: *std.ArrayList([]u32)) Error!void {
+            sortRuns(runs.items);
+            try n.tag(.set);
+            try n.put(@intCast(runs.items.len));
+            for (runs.items) |r| try n.out.appendSlice(n.env.gpa, r);
+        }
+
+        fn spellInto(n: *Normalizer, runs: *std.ArrayList([]u32), comptime spell: anytype, arg: anytype) Error!void {
+            const gpa = n.env.gpa;
+            try n.env.charge.reserve(gpa, .inspection, 1);
+            var buf: std.ArrayList(u32) = .empty;
+            errdefer buf.deinit(gpa);
+            const saved = n.out;
+            n.out = &buf;
+            const r = spell(n, arg);
+            n.out = saved;
+            try r;
+            try runs.append(gpa, try buf.toOwnedSlice(gpa));
+        }
+
+        fn cellWithBit(n: *Normalizer, e: Cell.Radix.Iterator.Entry) Error!void {
+            try n.cell(.from(e.key));
+            try n.put(e.value);
+        }
+
         /// A cell set: its pairs spelled and sorted.
         fn cellSet(n: *Normalizer, s: SetId) Error!void {
             const gpa = n.env.gpa;
@@ -933,21 +964,8 @@ pub const Table = struct {
                 runs.deinit(gpa);
             }
             var it = n.env.cells.sets.iterate(s);
-            while (it.next()) |e| {
-                var buf: std.ArrayList(u32) = .empty;
-                errdefer buf.deinit(gpa);
-                const saved = n.out;
-                n.out = &buf;
-                const r = n.cell(.from(e.key));
-                n.out = saved;
-                try r;
-                try buf.append(gpa, e.value);
-                try runs.append(gpa, try buf.toOwnedSlice(gpa));
-            }
-            sortRuns(runs.items);
-            try n.tag(.set);
-            try n.put(@intCast(runs.items.len));
-            for (runs.items) |r| try n.out.appendSlice(gpa, r);
+            while (it.next()) |e| try n.spellInto(&runs, cellWithBit, e);
+            try n.sortedRuns(&runs);
         }
 
         fn cond(n: *Normalizer, k: CondId) Error!void {
@@ -955,6 +973,10 @@ pub const Table = struct {
             try n.put(@backingInt(n.env.conds.kind(k)));
             if (k == Cond.yes or Cond.Table.fails(k)) return;
             try n.condSet(try n.env.conds.flat(n.env.gpa, n.env.charge, k));
+        }
+
+        fn atomOf(n: *Normalizer, id: u32) Error!void {
+            return n.atom(n.env.conds.get(.from(id)));
         }
 
         /// An atom set spelled and sorted.
@@ -966,21 +988,8 @@ pub const Table = struct {
                 runs.deinit(gpa);
             }
             var it = n.env.conds.atoms.iterate(s);
-            while (it.next()) |e| {
-                try n.env.charge.reserve(gpa, .inspection, 1);
-                var buf: std.ArrayList(u32) = .empty;
-                errdefer buf.deinit(gpa);
-                const saved = n.out;
-                n.out = &buf;
-                const r = n.atom(n.env.conds.get(.from(e.key)));
-                n.out = saved;
-                try r;
-                try runs.append(gpa, try buf.toOwnedSlice(gpa));
-            }
-            sortRuns(runs.items);
-            try n.tag(.set);
-            try n.put(@intCast(runs.items.len));
-            for (runs.items) |r| try n.out.appendSlice(gpa, r);
+            while (it.next()) |e| try n.spellInto(&runs, atomOf, e.key);
+            try n.sortedRuns(&runs);
         }
 
         fn atom(n: *Normalizer, a: Cond.Cond) Error!void {
@@ -989,23 +998,16 @@ pub const Table = struct {
             switch (a.atom) {
                 .excl => try n.cell(.from(a.a)),
                 .sep => {
-                    // The two sides in spelling order.
                     const gpa = n.env.gpa;
-                    var x: std.ArrayList(u32) = .empty;
-                    defer x.deinit(gpa);
-                    var y: std.ArrayList(u32) = .empty;
-                    defer y.deinit(gpa);
-                    const saved = n.out;
-                    n.out = &x;
-                    const rx = n.cell(.from(a.a));
-                    n.out = &y;
-                    const ry = n.cell(.from(a.b));
-                    n.out = saved;
-                    try rx;
-                    try ry;
-                    const first = lessRun(y.items, x.items);
-                    try n.out.appendSlice(gpa, if (first) y.items else x.items);
-                    try n.out.appendSlice(gpa, if (first) x.items else y.items);
+                    var runs: std.ArrayList([]u32) = .empty;
+                    defer {
+                        for (runs.items) |r| gpa.free(r);
+                        runs.deinit(gpa);
+                    }
+                    try n.spellInto(&runs, cell, CellId.from(a.a));
+                    try n.spellInto(&runs, cell, CellId.from(a.b));
+                    sortRuns(runs.items);
+                    for (runs.items) |r| try n.out.appendSlice(gpa, r);
                 },
                 .within => try n.label(.from(a.a)),
                 .apart => try n.cellSet(.from(a.a)),
@@ -1033,7 +1035,7 @@ pub const Table = struct {
     /// parameters, `xreq`; `unused` when nothing is left. `arena` holds the
     /// texts while they are sorted.
     pub fn print(t: *Table, env: Env, arena: Allocator, w: *std.Io.Writer, c: ClassId, name: []const u8, names: Names) (Error || std.Io.Writer.Error)!void {
-        var p: Printer = .{ .t = t, .env = env, .arena = arena, .names = names, .class_id = c };
+        var p: Printer = .{ .t = t, .env = env, .arena = arena, .names = names, .class_id = c, .ctx = t.get(c).kappas };
         defer p.deinit();
         try p.summary(w, name);
     }
@@ -1044,6 +1046,7 @@ pub const Table = struct {
         arena: Allocator,
         names: Names,
         class_id: ClassId,
+        ctx: Kappas,
         slots: []const Slot = &.{},
         params: u32 = 0,
         seen: stamped.Column(NodeId, void) = .{},
@@ -1062,18 +1065,15 @@ pub const Table = struct {
             for (0..k.slots.len) |i| try slots.append(arena, p.t.slot(p.class_id, @intCast(i)));
             p.slots = slots.items;
             var parts: std.ArrayList([]const u8) = .empty;
-            // Parameters' bits by path, in text order.
             var uses: std.ArrayList([]const u8) = .empty;
             for (p.t.paramUses(p.class_id), 0..) |u, i| if (u != .none) try p.useLines(u, @intCast(i), "", &uses);
             Cond.sortText(uses.items);
             if (uses.items.len > 0) try parts.append(arena, try std.mem.join(arena, ", ", uses.items));
-            // The result by path.
             var groups: std.ArrayList([]const u8) = .empty;
             p.seen.clear();
-            try p.resLines(k.res, "", &groups);
+            try p.resLines(k.res, "", false, &groups);
             Cond.sortText(groups.items);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
-            // Function parameters.
             for (0..k.funs.len) |i| {
                 const f = p.t.fun(p.class_id, @intCast(i));
                 var buf: std.Io.Writer.Allocating = .init(arena);
@@ -1093,7 +1093,11 @@ pub const Table = struct {
                     try sb.writer.print("supply {d} ", .{e.k + 1});
                     try p.cellsText(&sb.writer, p.env.shapes.cells(e.node));
                     try sb.writer.print(" {s}{s}", .{ if (e.owned) "owned" else "borrowed", if (e.taken) " taken" else "" });
-                    try p.cond(&sb.writer, e.cond);
+                    try p.cond(&sb.writer, try p.env.conds.kappaOf(p.env.gpa, p.env.charge, p.env.view(), e.kappa, e.node, false));
+                    if (e.label != .none) {
+                        try sb.writer.writeAll(" @");
+                        try p.label(&sb.writer, e.label);
+                    }
                     try sup.append(arena, sb.toOwnedSlice() catch return error.OutOfMemory);
                 }
                 Cond.sortText(sup.items);
@@ -1166,13 +1170,12 @@ pub const Table = struct {
         }
 
         /// `res`'s groups: one text per path of the explicit structure,
-        /// `<path> <provenances> {κ}`, a node once.
-        fn resLines(p: *Printer, n: NodeId, prefix: []const u8, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        /// `<path> <provenances> {κ}`, a node once; a union's sides gathered
+        /// into one group, a recast's cells approximate.
+        fn resLines(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const env = p.env;
             if (p.seen.contains(n)) return;
             try p.seen.put(env.gpa, n, {});
-            // One group per path: a union's sides are gathered into it, a
-            // recast's cells approximate.
             var texts: std.ArrayList([]const u8) = .empty;
             try p.gather(n, &texts);
             Cond.sortText(texts.items);
@@ -1180,25 +1183,24 @@ pub const Table = struct {
             const w = &buf.writer;
             if (prefix.len > 0) try w.print("{s} ", .{prefix});
             try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
-            const k = try env.conds.kappaOf(env.gpa, env.charge, env.shapes, env.cells, n);
+            const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), p.ctx, n, at_summary);
             try p.cond(w, k);
-            // A path holding nothing with nothing to say is not a group.
             if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-            try p.descend(n, prefix, out);
+            try p.descend(n, prefix, at_summary, out);
         }
 
         /// The children of the explicit structure under `n`: a node's or a
         /// delta's projections (so a delta's unchanged fields print), a
         /// union's sides' in turn; a leaf's or a recast's are implied by its
         /// cells and never enumerated.
-        fn descend(p: *Printer, n: NodeId, prefix: []const u8, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        fn descend(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const env = p.env;
             const d = env.shapes.get(n);
             switch (d.kind) {
                 .leaf, .recast => return,
                 .@"union" => {
-                    try p.descend(.from(d.a), prefix, out);
-                    try p.descend(.from(d.b), prefix, out);
+                    try p.descend(.from(d.a), prefix, at_summary, out);
+                    try p.descend(.from(d.b), prefix, at_summary, out);
                 },
                 .node, .delta => {
                     const steps = env.places.steps(d.place);
@@ -1208,7 +1210,7 @@ pub const Table = struct {
                         var sb: std.Io.Writer.Allocating = .init(p.arena);
                         try sb.writer.writeAll(prefix);
                         try p.step(&sb.writer, s);
-                        try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, out);
+                        try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, at_summary or s.kind == .elem or s.kind == .level, out);
                     }
                 },
             }
@@ -1223,24 +1225,23 @@ pub const Table = struct {
                 try p.gather(.from(d.b), texts);
                 return;
             }
-            var it = p.env.cells.sets.iterate(d.cells);
+            try p.gatherCells(d.cells, d.kind == .recast, texts);
+        }
+
+        fn gatherCells(p: *Printer, s: SetId, all_approx: bool, texts: *std.ArrayList([]const u8)) (Error || WErr)!void {
+            var it = p.env.cells.sets.iterate(s);
             while (it.next()) |e| {
                 var buf: std.Io.Writer.Allocating = .init(p.arena);
-                if (e.value == 1 or d.kind == .recast) try buf.writer.writeAll("~");
+                if (e.value == 1 or all_approx) try buf.writer.writeAll("~");
                 try p.cell(&buf.writer, .from(e.key));
                 try texts.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
             }
         }
+
         /// A set's cells in text order, `~` before an approximate pair.
         fn cellsText(p: *Printer, w: *std.Io.Writer, s: SetId) (Error || WErr)!void {
             var texts: std.ArrayList([]const u8) = .empty;
-            var it = p.env.cells.sets.iterate(s);
-            while (it.next()) |e| {
-                var buf: std.Io.Writer.Allocating = .init(p.arena);
-                if (e.value == 1) try buf.writer.writeAll("~");
-                try p.cell(&buf.writer, .from(e.key));
-                try texts.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-            }
+            try p.gatherCells(s, false, &texts);
             Cond.sortText(texts.items);
             try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
         }
@@ -1273,7 +1274,7 @@ pub const Table = struct {
 
         /// A provenance (oc §16.11, §24.7): `π1.a`, `fresh2`, `esc1`,
         /// `shared(M.v).q`, `cb3[*]` (`cb(π1.f)` for a slot), `msg#Got.0`,
-        /// `⊤`, `elem(π1)`, `others(π1)`, `level(…)`, `below(…#C.i)`,
+        /// `⊤`, `elem(π1·ι)`, `others(…)`, `level(…)`, `below(…#i·ι)`,
         /// `loan(…)`, `site7`; a label other than the class's own after `@`.
         fn cell(p: *Printer, w: *std.Io.Writer, c: CellId) WErr!void {
             const env = p.env;
@@ -1357,7 +1358,6 @@ pub const Table = struct {
 
         fn path(p: *Printer, w: *std.Io.Writer, q: PathId) WErr!void {
             if (q == .none) return;
-            // Root first: the steps collected by climbing, in the arena.
             var steps: std.ArrayList(Step) = .empty;
             var at = q;
             while (p.env.places.pathParent(at) != .none) : (at = p.env.places.pathParent(at)) {
@@ -1484,6 +1484,14 @@ const Fixture = struct {
         return f.cells.result(testing.allocator, &f.account, .result, .none, k, try f.placeOf(root), .list);
     }
 
+    fn setK(f: *Fixture, ctx: Kappas, n: NodeId, k: CondId) !Kappas {
+        return (try f.conds.kappaSet(testing.allocator, .growth(&f.account), ctx, n, k)).ctx;
+    }
+
+    fn label(f: *Fixture, inst: u32) !LabelId {
+        return f.cells.label(testing.allocator, &f.account, inst, .none, false);
+    }
+
     fn text(f: *Fixture, c: ClassId, name: []const u8) ![]const u8 {
         var buf: std.Io.Writer.Allocating = .init(f.arena.allocator());
         try f.sums.print(f.env(), f.arena.allocator(), &buf.writer, c, name, test_names);
@@ -1513,7 +1521,6 @@ test "use shapes: marks by path, deep leaves, the lazy call-use query, join and 
     const rec = try f.placeOf(0);
     const fa = try Place.Step.field(&f.account, 10);
     const fb = try Place.Step.field(&f.account, 11);
-    // `{ r | a = … }`: W{a} at ε, A at .b, nothing at .a (R-4.8.2).
     var u = try Table.markUse(env, .none, rec, &.{}, .{ .w = true }, &.{10});
     u = try Table.markUse(env, u, rec, &.{fb}, .{ .a = true }, &.{});
     try testing.expectEqual(Marks{ .w = true }, try Table.marksAt(env, u, &.{}));
@@ -1523,15 +1530,12 @@ test "use shapes: marks by path, deep leaves, the lazy call-use query, join and 
     try testing.expect(try Table.usedAt(env, u, &.{fb}));
     try testing.expect(!try Table.usedAt(env, u, &.{fa}));
     try testing.expect(!try Table.usedAt(env, u, &.{ fa, Place.Step.elem }));
-    // A deep read at .a (a callee that compares the field): used below it.
     const deep = try Table.markUse(env, u, rec, &.{fa}, .{ .r = true, .deep = true }, &.{});
     try testing.expect(try Table.usedAt(env, deep, &.{ fa, Place.Step.elem }));
     try testing.expectEqual(Marks{ .r = true, .deep = true }, try Table.marksAt(env, deep, &.{fa}));
     try testing.expectEqual(Shape.Kind.leaf, f.shapes.kind((try f.shapes.proj(testing.allocator, &f.account, &f.places, &f.cells, deep, fa)).?));
-    // A mark under a deep leaf joins the leaf.
     const under = try Table.markUse(env, deep, rec, &.{ fa, Place.Step.elem }, .{ .w = true }, &.{});
     try testing.expectEqual(Marks{ .r = true, .w = true, .deep = true }, try Table.marksAt(env, under, &.{fa}));
-    // join is pointwise union; leq inclusion; `.none` the empty use.
     const only_b = try Table.markUse(env, .none, rec, &.{fb}, .{ .r = true }, &.{});
     const j = try Table.joinUse(env, u, only_b);
     try testing.expectEqual(Marks{ .r = true, .a = true }, try Table.marksAt(env, j, &.{fb}));
@@ -1551,9 +1555,6 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
     const gpa = testing.allocator;
     const list = try f.placeOf(1);
     const lists = try f.placeOf(3);
-    // `push : written returned List (List Int), borrowed (⊤ → ⊤), stored List Int → …`
-    // read off as: π1 RAW at ε, A at [*]; π3 A; res π1 at ε, `[*]` holds
-    // π1[*] and π3 under apart; fun π2 calls ≤1 with supply π1 owned; xreq.
     const p1 = try f.param(0, 3, &.{});
     const p1e = try f.param(0, 3, &.{Place.Step.elem});
     const p3 = try f.param(2, 1, &.{});
@@ -1565,14 +1566,16 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
     const e1 = try f.conds.excl(gpa, env.charge, p1);
     const e3 = try f.conds.excl(gpa, env.charge, p3);
     const ap = try f.conds.apartAtom(gpa, env.charge, try f.set(&.{ p1e, p3 }));
-    _ = try f.conds.setKappa(gpa, env.charge, res, e1);
-    _ = try f.conds.setKappa(gpa, env.charge, elem, try f.conds.@"and"(gpa, env.charge, ap, e3));
+    var m = try f.setK(.none, res, e1);
+    m = try f.setK(m, elem, try f.conds.@"and"(gpa, env.charge, ap, e3));
     const supply_node = try f.leaf(3, &.{p1});
+    const kappa_e1 = try f.setK(.none, supply_node, e1);
     const c = try f.sums.add(env, .{
         .params = &.{ use1, .none, use3 },
         .res = res,
+        .kappas = m,
         .xreq = try f.conds.flat(gpa, env.charge, e1),
-        .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = supply_node, .point = 5, .owned = true, .taken = false, .cond = e1 }} }},
+        .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = supply_node, .label = .none, .owned = true, .taken = false, .kappa = kappa_e1 }} }},
         .writes = true,
         .origin = .words,
     });
@@ -1580,20 +1583,46 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
         "summary push: π1 RAW, π1[*] A, π3 A; res [*] π1[*] π3{apart [π1[*]] [π3], excl π3}, π1{excl π1}; π2 calls ≤1, supply 1 π1 owned{excl π1}; xreq excl π1 (words)",
         try f.text(c, "push"),
     );
-    // A class with nothing: `unused`. A result-only class.
     const nothing = try f.sums.add(env, .{ .params = &.{.none}, .res = try f.shapes.nothing(gpa, &f.account, list) });
     try testing.expectEqualStrings("summary g: unused", try f.text(nothing, "g"));
     const fresh1 = try f.fresh(1, 1);
     const r2 = try f.leaf(1, &.{fresh1});
     const fr = try f.sums.add(env, .{ .params = &.{}, .res = r2, .origin = .asserted });
     try testing.expectEqualStrings("summary h: res fresh1 (asserted)", try f.text(fr, "h"));
-    // `⊤call`.
     const unk = try f.sums.unknown(env, &.{ lists, list }, &.{1}, list);
     try testing.expectEqualStrings("summary k: π1 RAES, π2 RAES; res ⊤{lost}; π2 calls many, need owned, unseen", try f.text(unk, "k"));
     try testing.expect(f.sums.get(unk).refs_top and f.sums.get(unk).writes);
 }
 
-test "join and leq: pointwise over uses, res with κ, funs, supplies and bits" {
+test "join is functional: the result owns its κ, the members keep theirs, and leq sees the change" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const p1 = try f.param(0, 1, &.{});
+    const p2 = try f.param(1, 1, &.{});
+    const ra = try f.leaf(1, &.{p1});
+    const rb = try f.leaf(1, &.{ p1, p2 });
+    const ma = try f.setK(.none, ra, Cond.lost);
+    const mb = try f.setK(.none, rb, Cond.yes);
+    const a = try f.sums.add(env, .{ .params = &.{ .none, .none }, .res = ra, .kappas = ma });
+    const b = try f.sums.add(env, .{ .params = &.{ .none, .none }, .res = rb, .kappas = mb });
+    // The reviewer's probe: the join's res IS b's node (b ⊒ a in shape);
+    // its κ is lost in the JOIN's map, b's map still says yes, and b is
+    // strictly below the join.
+    const j = try f.sums.join(env, a, b);
+    try testing.expectEqual(rb, f.sums.get(j).res);
+    try testing.expectEqual(Cond.lost, try env.kappa(f.sums.get(j).kappas, rb));
+    try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(b).kappas, rb));
+    try testing.expect(try f.sums.leq(env, b, j));
+    try testing.expect(!try f.sums.leq(env, j, b));
+    try testing.expect(try f.sums.leq(env, a, j));
+    try testing.expect(!try f.sums.leq(env, a, b));
+    try testing.expectEqual(j, try f.sums.join(env, j, j));
+    try testing.expect(try f.sums.eq(env, j, try f.sums.join(env, b, a)));
+}
+
+test "join and leq: uses, funs by label, supplies merged in one pass, bits" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
@@ -1606,21 +1635,20 @@ test "join and leq: pointwise over uses, res with κ, funs, supplies and bits" {
     const ub = try Table.markUse(env, .none, list, &.{}, .{ .r = true, .a = true, .w = true }, &.{});
     const ra = try f.leaf(1, &.{fresh1});
     const rb = try f.leaf(1, &.{p1});
-    _ = try f.conds.setKappa(gpa, env.charge, ra, Cond.lost);
     const e1 = try f.conds.excl(gpa, env.charge, p1);
-    const sup_a: Supply = .{ .j = 1, .k = 0, .node = rb, .point = 3, .owned = true, .taken = false, .cond = Cond.yes };
-    const sup_b: Supply = .{ .j = 1, .k = 0, .node = rb, .point = 7, .owned = false, .taken = false, .cond = e1 };
+    const l3 = try f.label(3);
+    const l7 = try f.label(7);
+    const sup_a: Supply = .{ .j = 1, .k = 0, .node = rb, .label = l3, .owned = true, .taken = false, .kappa = .none };
+    const sup_b: Supply = .{ .j = 1, .k = 0, .node = rb, .label = l3, .owned = false, .taken = false, .kappa = try f.setK(.none, rb, e1) };
+    const sup_other: Supply = .{ .j = 1, .k = 0, .node = rb, .label = l7, .owned = true, .taken = false, .kappa = .none };
     const a = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{sup_a} }} });
     const b = try f.sums.add(env, .{ .params = &.{ub}, .res = rb, .xreq = try f.conds.flat(gpa, env.charge, e1), .funs = &.{ .{ .j = 1, .calls = .many, .need = true, .seen = false }, .{ .j = 2, .calls = .zero } }, .writes = true });
     const j = try f.sums.join(env, a, b);
     const jc = f.sums.get(j);
-    // Uses: RAW. res: both provenances, κ lost (the join of lost and yes).
     try testing.expectEqual(Marks{ .r = true, .a = true, .w = true }, try Table.marksAt(env, f.sums.paramUses(j)[0], &.{}));
     try testing.expectEqual(@as(u32, 2), f.cells.sets.count(f.shapes.cells(jc.res)));
-    try testing.expectEqual(Cond.lost, try f.conds.kappaOf(gpa, env.charge, &f.shapes, &f.cells, jc.res));
     try testing.expect(jc.writes);
     try testing.expectEqual(jc.xreq, f.sums.get(b).xreq);
-    // Funs merged by j: calls many, need, unseen; the supply kept; π3 added.
     try testing.expectEqual(@as(u32, 2), f.sums.funCount(j));
     const f1 = f.sums.fun(j, 0);
     try testing.expectEqual(@as(u32, 1), f1.j);
@@ -1628,27 +1656,25 @@ test "join and leq: pointwise over uses, res with κ, funs, supplies and bits" {
     try testing.expect(f1.need and !f1.seen);
     try testing.expectEqual(@as(u32, 1), f1.supplies.len);
     try testing.expectEqual(@as(u32, 2), f.sums.fun(j, 1).j);
-    // The order: a ⊑ j, b ⊑ j, not j ⊑ a; a ⊑ b fails on res.
     try testing.expect(try f.sums.leq(env, a, j));
     try testing.expect(try f.sums.leq(env, b, j));
     try testing.expect(!try f.sums.leq(env, j, a));
-    try testing.expect(!try f.sums.leq(env, a, b));
-    try testing.expect(try f.sums.leq(env, j, j));
-    // Two supplies of one node: owned and-ed, κ joined.
-    const c = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{sup_b} }} });
+    // One label's supply in both: owned and-ed, κ joined. Another label:
+    // kept beside, never merged (§2.2).
+    const c = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{ sup_other, sup_b } }} });
     const ac = try f.sums.join(env, a, c);
-    const s = f.sums.supply(f.sums.fun(ac, 0), 0);
-    try testing.expect(!s.owned);
-    try testing.expectEqual(@as(u32, 3), s.point);
-    try testing.expectEqual(e1, s.cond);
+    const fac = f.sums.fun(ac, 0);
+    try testing.expectEqual(@as(u32, 2), fac.supplies.len);
+    const s0 = f.sums.supply(fac, 0);
+    try testing.expectEqual(l3, s0.label);
+    try testing.expect(!s0.owned);
+    try testing.expectEqual(e1, try env.kappa(s0.kappa, s0.node));
+    try testing.expectEqual(l7, f.sums.supply(fac, 1).label);
     try testing.expect(try f.sums.leq(env, a, ac));
-    try testing.expect(!try f.sums.leq(env, ac, a)); // borrowed is not below owned
-    // Idempotent.
-    try testing.expectEqual(j, try f.sums.join(env, j, j));
-    try testing.expect(try f.sums.eq(env, j, try f.sums.join(env, b, a)));
+    try testing.expect(!try f.sums.leq(env, ac, a));
 }
 
-test "normal form: equal classes built in another order are byte-equal; a flipped bit is not" {
+test "normal form: equal classes built in another order are byte-equal, storage order never shows; a flipped bit is not" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
@@ -1661,30 +1687,29 @@ test "normal form: equal classes built in another order are byte-equal; a flippe
     const r = try f.leaf(1, &.{ p1, p2 });
     const n1 = try f.leaf(1, &.{p1});
     const n2 = try f.leaf(1, &.{p2});
-    const s1: Supply = .{ .j = 2, .k = 0, .node = n1, .point = 1, .owned = true, .taken = false, .cond = Cond.yes };
-    const s2: Supply = .{ .j = 2, .k = 1, .node = n2, .point = 2, .owned = true, .taken = true, .cond = Cond.yes };
+    const s1: Supply = .{ .j = 2, .k = 0, .node = n1, .label = .none, .owned = true, .taken = false, .kappa = .none };
+    const s2: Supply = .{ .j = 2, .k = 1, .node = n2, .label = .none, .owned = true, .taken = true, .kappa = .none };
     const a = try f.sums.add(env, .{ .params = &.{ u, u, .none }, .res = r, .funs = &.{ .{ .j = 2, .calls = .many, .supplies = &.{ s1, s2 } }, .{ .j = 3, .calls = .zero } } });
     const b = try f.sums.add(env, .{ .params = &.{ u, u, .none }, .res = r, .funs = &.{ .{ .j = 3, .calls = .zero }, .{ .j = 2, .calls = .many, .supplies = &.{ s2, s1 } } } });
     try testing.expect(a != b);
     try testing.expect(try f.sums.eq(env, a, b));
-    var wa: std.ArrayList(u32) = .empty;
-    defer wa.deinit(gpa);
-    try f.sums.normalize(env, a, &wa);
-    try testing.expect(wa.items.len > 20);
+    // The reviewer's probe: two supplies sharing one node, given in either
+    // order, spell the same.
+    const x = try f.leaf(1, &.{try f.fresh(7, 1)});
+    const t0: Supply = .{ .j = 1, .k = 0, .node = x, .label = .none, .owned = true, .taken = false, .kappa = .none };
+    const t1: Supply = .{ .j = 1, .k = 1, .node = x, .label = .none, .owned = true, .taken = false, .kappa = .none };
+    const nothing = try f.shapes.nothing(gpa, &f.account, list);
+    const sa = try f.sums.add(env, .{ .params = &.{ .none, .none }, .res = nothing, .funs = &.{.{ .j = 1, .calls = .many, .supplies = &.{ t0, t1 } }} });
+    const sb = try f.sums.add(env, .{ .params = &.{ .none, .none }, .res = nothing, .funs = &.{.{ .j = 1, .calls = .many, .supplies = &.{ t1, t0 } }} });
+    try testing.expect(try f.sums.eq(env, sa, sb));
     var s1b = s1;
     s1b.owned = false;
     const c = try f.sums.add(env, .{ .params = &.{ u, u, .none }, .res = r, .funs = &.{ .{ .j = 2, .calls = .many, .supplies = &.{ s1b, s2 } }, .{ .j = 3, .calls = .zero } } });
     try testing.expect(!try f.sums.eq(env, a, c));
-    // κ is part of the form.
-    const r2 = try f.leaf(1, &.{ p1, p2 });
-    try testing.expectEqual(r, r2);
-    const d = try f.sums.add(env, .{ .params = &.{ u, u, .none }, .res = r2, .funs = &.{ .{ .j = 2, .calls = .many, .supplies = &.{ s1, s2 } }, .{ .j = 3, .calls = .zero } } });
-    try testing.expect(try f.sums.eq(env, a, d));
-    _ = try f.conds.setKappa(gpa, env.charge, r, Cond.lost);
-    var wa2: std.ArrayList(u32) = .empty;
-    defer wa2.deinit(gpa);
-    try f.sums.normalize(env, a, &wa2);
-    try testing.expect(!std.mem.eql(u32, wa.items, wa2.items));
+    // κ is part of the form, read from each class's own map.
+    const m = try f.setK(.none, r, Cond.lost);
+    const d = try f.sums.add(env, .{ .params = &.{ u, u, .none }, .res = r, .kappas = m, .funs = &.{ .{ .j = 2, .calls = .many, .supplies = &.{ s1, s2 } }, .{ .j = 3, .calls = .zero } } });
+    try testing.expect(!try f.sums.eq(env, a, d));
 }
 
 test "a refused reservation adds no class" {
@@ -1700,4 +1725,101 @@ test "a refused reservation adds no class" {
     try testing.expectError(error.OwnershipLimit, f.sums.add(env, .{ .params = &.{}, .res = r }));
     try testing.expectEqual(@as(u32, 0), f.sums.count());
     try testing.expectEqual(@as(usize, 0), f.sums.uses.items.len);
+}
+
+test "repeated-node simulation: one DAG node against two partners, and a join that reuses an operand's shape" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(0);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const p3 = try f.param(2, 1, &.{});
+    const p4 = try f.param(3, 1, &.{});
+    const p5 = try f.param(4, 1, &.{});
+    const x = try f.leaf(1, &.{p3});
+    const y_good = try f.leaf(1, &.{ p3, p4 });
+    const y_bad = try f.leaf(1, &.{ p3, p5 });
+    const e = try f.conds.excl(gpa, env.charge, p4);
+    const s1 = try f.cells.result(gpa, &f.account, .result, .none, 1, rec, .record);
+    // `a = { a = X, b = X }`: one node X at two paths, κ(X) = excl in a's map.
+    const ra = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, x), fb, x));
+    var ma = try f.setK(.none, x, e);
+    ma = try f.setK(ma, ra, Cond.yes);
+    const a = try f.sums.add(env, .{ .params = &.{}, .res = ra, .kappas = ma });
+    // `b = { a = Y_bad, b = Y_good }` in either order: X meets two partners
+    // and must be checked against both; κ(Y_bad) defaults to yes, so a ⊑ b
+    // is false whichever side holds Y_bad.
+    for ([_][2]NodeId{ .{ y_bad, y_good }, .{ y_good, y_bad } }) |pair| {
+        const rb = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, pair[0]), fb, pair[1]));
+        var mb = try f.setK(.none, y_good, e);
+        mb = try f.setK(mb, rb, Cond.yes);
+        const b = try f.sums.add(env, .{ .params = &.{}, .res = rb, .kappas = mb });
+        try testing.expect(!try f.sums.leq(env, a, b));
+    }
+    // A join whose result reuses an operand's shape (b's node IS the join's
+    // node): the join owns a new snapshot, b's is untouched, and b ⊑ join
+    // strictly.
+    const rc = try f.leaf(1, &.{ p3, p4, p5 });
+    const c = try f.sums.add(env, .{ .params = &.{}, .res = rc, .kappas = try f.setK(.none, rc, Cond.yes) });
+    const d = try f.sums.add(env, .{ .params = &.{}, .res = try f.leaf(1, &.{p3}), .kappas = try f.setK(.none, try f.leaf(1, &.{p3}), Cond.lost) });
+    const j = try f.sums.join(env, d, c);
+    try testing.expectEqual(rc, f.sums.get(j).res);
+    try testing.expectEqual(Cond.lost, try env.kappa(f.sums.get(j).kappas, rc));
+    try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(c).kappas, rc));
+    try testing.expect(try f.sums.leq(env, c, j));
+    try testing.expect(!try f.sums.leq(env, j, c));
+    // A supply's snapshot is the handed value's own: two classes handing one
+    // node under two snapshots join into a third snapshot, the operands'
+    // untouched.
+    const kx_yes = try f.setK(.none, x, Cond.yes);
+    const kx_lost = try f.setK(.none, x, Cond.lost);
+    const sa = try f.sums.add(env, .{ .params = &.{}, .res = rc, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = x, .label = .none, .owned = true, .taken = false, .kappa = kx_yes }} }} });
+    const sb = try f.sums.add(env, .{ .params = &.{}, .res = rc, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = x, .label = .none, .owned = true, .taken = false, .kappa = kx_lost }} }} });
+    const sj = try f.sums.join(env, sa, sb);
+    const sup = f.sums.supply(f.sums.fun(sj, 0), 0);
+    try testing.expectEqual(Cond.lost, try env.kappa(sup.kappa, x));
+    try testing.expectEqual(Cond.yes, try env.kappa(kx_yes, x));
+    try testing.expect(try f.sums.leq(env, sa, sj));
+    try testing.expect(!try f.sums.leq(env, sj, sa));
+}
+
+test "fault injection: a join refused at any step leaves the class table whole" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const env = f.env();
+    const list = try f.placeOf(1);
+    const p1 = try f.param(0, 1, &.{});
+    const p2 = try f.param(1, 1, &.{});
+    const ua = try Table.markUse(env, .none, list, &.{}, .{ .r = true }, &.{});
+    const ub = try Table.markUse(env, .none, list, &.{}, .{ .w = true }, &.{});
+    const ra = try f.leaf(1, &.{p1});
+    const rb = try f.leaf(1, &.{p2});
+    const a = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = ra, .label = .none, .owned = true, .taken = false, .kappa = .none }} }} });
+    const b = try f.sums.add(env, .{ .params = &.{ub}, .res = rb, .funs = &.{.{ .j = 1, .calls = .many, .supplies = &.{.{ .j = 1, .k = 0, .node = rb, .label = .none, .owned = false, .taken = false, .kappa = .none }} }} });
+    var allowance: u32 = 0;
+    while (allowance < 4000) : (allowance += 1) {
+        var broke: Ids.Account = .{ .allowance = allowance };
+        defer broke.deinit(gpa);
+        var tight = env;
+        tight.charge = .growth(&broke);
+        const classes = f.sums.count();
+        const uses = f.sums.uses.items.len;
+        const supplies = f.sums.supplies.len;
+        if (f.sums.join(tight, a, b)) |j| {
+            try testing.expectEqual(classes + 1, f.sums.count());
+            try testing.expect(try f.sums.leq(env, a, j));
+            break;
+        } else |err| {
+            try testing.expectEqual(error.OwnershipLimit, err);
+            try testing.expectEqual(classes, f.sums.count());
+            try testing.expectEqual(uses, f.sums.uses.items.len);
+            try testing.expectEqual(supplies, f.sums.supplies.len);
+        }
+    }
+    try testing.expect(allowance < 4000);
 }

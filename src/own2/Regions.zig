@@ -135,12 +135,23 @@ pub const Tree = struct {
     /// then of each ancestor past the sibling arms of the child on the
     /// chain (an arm's siblings end with their `case` instruction).
     pub fn rangesAfter(t: *const Tree, gpa: Allocator, p: u32, out: *std.ArrayList(Range)) Allocator.Error!void {
+        return t.rangesAfterCharged(gpa, null, p, out) catch |e| switch (e) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => unreachable, // no charge: nothing to refuse
+        };
+    }
+
+    /// `rangesAfter` on an account: every region climbed and every sibling
+    /// arm read is one record on `charge`, reserved before it is read (§2.7:
+    /// never an uncharged ancestor walk).
+    pub fn rangesAfterCharged(t: *const Tree, gpa: Allocator, charge: ?Ids.Charge, p: u32, out: *std.ArrayList(Range)) Ids.ChargeError!void {
         out.clearRetainingCapacity();
         var r = t.regionOf(p);
         var from = p + 1;
         var skips: std.ArrayList(Range) = .empty;
         defer skips.deinit(gpa);
         while (r != .none) {
+            if (charge) |c| try c.reserve(gpa, .region, 1);
             const reg = t.get(r);
             // The other arms of this region's case that lie ahead are
             // incompatible and cut out of the parent's range: for a `case`
@@ -148,7 +159,7 @@ pub const Tree = struct {
             // case (`withDefault (map m f) d`) the inner call sits between.
             if (from <= reg.end) try t.appendMinus(gpa, from, reg.end, skips.items, out);
             skips.clearRetainingCapacity();
-            if (reg.kind == .arm or reg.kind == .virtual_arm) try t.siblingArms(gpa, r, reg, &skips);
+            if (reg.kind == .arm or reg.kind == .virtual_arm) try t.siblingArms(gpa, charge, r, reg, &skips);
             from = reg.end + 1;
             r = reg.parent;
         }
@@ -170,7 +181,7 @@ pub const Tree = struct {
     /// The other arms of `arm`'s case, sorted by start. Arms of one case
     /// are created consecutively, so they are the neighbouring ids with the
     /// same case instruction.
-    fn siblingArms(t: *const Tree, gpa: Allocator, arm: RegionId, reg: Region, out: *std.ArrayList(Range)) Allocator.Error!void {
+    fn siblingArms(t: *const Tree, gpa: Allocator, charge: ?Ids.Charge, arm: RegionId, reg: Region, out: *std.ArrayList(Range)) Ids.ChargeError!void {
         const cases = t.regions.items(.case_inst);
         const starts = t.regions.items(.start);
         const ends = t.regions.items(.end);
@@ -181,6 +192,7 @@ pub const Tree = struct {
         var i = lo;
         while (i <= hi) : (i += 1) {
             if (i == arm.int()) continue;
+            if (charge) |c| try c.reserve(gpa, .region, 1);
             try out.append(gpa, .{ .start = starts[i], .end = ends[i] });
         }
         std.mem.sort(Range, out.items, {}, struct {

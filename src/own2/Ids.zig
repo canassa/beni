@@ -143,6 +143,14 @@ pub const RegionId = enum(u32) {
     pub const int = IdType(@This()).int;
     pub const from = IdType(@This()).from;
 };
+/// The root of an immutable κ snapshot: a persistent map `NodeId → CondId`
+/// a holder owns (§2.9, §3.4); `.none` is the empty snapshot.
+pub const KappaId = enum(u32) {
+    none = none_int,
+    _,
+    pub const int = IdType(@This()).int;
+    pub const from = IdType(@This()).from;
+};
 pub const SummaryAccountId = enum(u32) {
     none = none_int,
     _,
@@ -223,8 +231,15 @@ pub const Role = enum(u8) {
 /// validation (§4.1, *final source validation*).
 pub const Phase = enum(u8) { inference, validation };
 
-/// One baseline lane: an original atom, a role, a phase.
+/// One baseline lane: an original atom, a role, a phase. An atom is a
+/// source identity unique in the owning declaration: an instruction, a use's
+/// operand occurrence, a region id, or a canonical path node marked with
+/// `atom_path_bit` so it never meets an instruction in one role.
 pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference };
+
+/// The high bit of a lane atom that is a canonical path node (a `PathId`),
+/// not an instruction: the two kinds share a role without colliding.
+pub const atom_path_bit: u32 = 1 << 31;
 
 /// §4.4's input and format limits, each its own named `ownership_limit`.
 pub const Limit = enum(u8) {
