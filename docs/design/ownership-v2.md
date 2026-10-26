@@ -396,7 +396,9 @@ Operations, memoised on their node arguments:
   deduplicated or absorbed, built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
   `union`. `map` and `propagate` preserve the kind.
 - `proj(positions(a, b), s) = positions(proj(a, s), proj(b, s))`: projection keeps the kind and so the
-  multiplicity. `cellsAt` of a `positions` node is the **set** of its sides' cells, as for a union; the multiset
+  multiplicity. **A side that is nothing is no position** [M 2026-10-27, #1120]: `positions(a, ∅)` is `a` when `∅` is an
+  empty leaf, because no object can be there. Without this, projecting past `[ r, Rose [] ]`'s empty list made a new
+  node per level at every depth. `cellsAt` of a `positions` node is the **set** of its sides' cells, as for a union; the multiset
   belongs to the κ read (`Cond`'s `dagKappa`, §2.9), the one reader of multiplicity, which counts each cell held by
   both sides of a positions node once more (`Radix.intersection` of the sides' cell sets, one descent per node).
   Reading a positions node as a union would drop a repeated argument's second arrival and accept
@@ -407,21 +409,34 @@ Operations, memoised on their node arguments:
   their cells per path, independent of their members' order and of the balanced tree's shape. Multiplicity is not
   part of γ: it is compared only through κ, by `Cond.kappaLeq` (§2.9). A structural rule — `x ≤ union(a, b)` iff
   `x ≤ a` or `x ≤ b`, with two `positions` nodes matched member to member as multisets — cannot settle §2.12's
-  `F(x) ⊑ x` under `widen`: widen keeps a collection as a side beside its class image (below), so
-  `positions(x, x) ≤ union(image, positions(a, b))` would need `x ≤ a`, which is false although γ holds, and the
-  fixpoint would keep growing. γ-inclusion settles `F(x) ⊑ x` in one step for `Rose [ x, x ]` over the widened
+  `F(x) ⊑ x` under `widen`: a class image is built from many members (below), so `positions(x, x) ≤ image`
+  would need a member-to-member match, which fails although γ holds, and the fixpoint would keep growing. γ-inclusion settles `F(x) ⊑ x` in one step for `Rose [ x, x ]` over the widened
   value, at the coinductive pair cost and with no matching task.
-- `widen` across kinds: widen never expands a `union`'s or a `positions` node's sides and never unifies two
-  sides pairwise. A member of a congruence class that is not explicit structure rides beside the class image:
-  the class's leaves (and a delta's leaf base) fold into one leaf, and a recast, union or positions member stays
-  as it is; these are the sides of a `union` with the image. A class with no explicit member is its side alone.
-  The image is a newly built `node`, so it has no stored κ, and a read through it derives `lost` (§2.9's rule for
-  a built node). Folding recursion ties the children of `Rose [ Rose [], Rose [] ]` to the root class, so a repeat
-  across them reads `lost` (approximate), as a folded label does (§2.2), never exact `shared`
-  (`FoldedPositionsLost`, Appendix B). This is coarser than exact for a non-repeat, which also reads `lost` there
-  where an exact `apart` would hold. **Invariant: no stored κ reaches a widened image at a summary position**; a
-  condition set there is that position's own derivation (the read-off's, S3a), never one carried from a member's
-  snapshot.
+- `widen` across kinds [M 2026-10-27, #1120]: **a `union` or `positions` node met at a re-entry (a `⟲` step: on the
+  cycle being folded) is opened**. Its sides stand at its path, so they become members of its class and their own
+  structure is walked like any member's. Every other union or positions node is kept as it is, and widen never
+  unifies two sides pairwise. A member of a congruence class that is not explicit structure rides beside the class
+  image: the class's leaves (and a delta's leaf base) fold into one leaf, and a recast, or a union or positions
+  member that was not opened, stays as it is; these are the sides of a `union` with the image. An opened member
+  rides beside nothing, since its meaning is its sides', which are members. **Opening is sound:** a class denotes
+  the union of its members, so adding the sides of a member keeps γ (widen stays extensive, O3), and the image's
+  multiplicity is not γ's. It is κ's, and κ for the widened value is propagated from the unwidened one (§2.9):
+  `propagate` folds at the knot and joins every member position it covers. Each such read sees the unwidened
+  `positions` node, so a cell both sides hold reads its repeat (`shared`, or `lost` once approximate), and the
+  fold's join keeps that. A folded `positions` side therefore reads as many: no read of the widened value is
+  stronger than a read of the unwidened one at any position the fold covers. A summary position under the knot
+  still owes the read rule's `excl` over its arrivals. **Cost:** an opened member's sides are two more edges of
+  the walk, so the walk and the congruence closure stay O((nodes + edges) log(nodes + edges)), each node read once.
+  **What it gains and loses:** before, `Rose [ r_{k−1}, Rose [] ]` kept each level's whole tower beside the knot.
+  Its summary grew as about n^2.4 (537 656 bytes at N = 30), with every entry `lost`. Opened, the block is linear
+  (56 452 bytes at N = 1 000) and reads what the unwidened value reads (`yes` there). No summary in the corpus
+  changes (2 698 compared). A class with no explicit member is its side alone.
+  The image is a newly built `node`, so outside the snapshot `propagate` makes for it, it has no stored κ, and a
+  read through it derives `lost` (§2.9's rule for a built node). Folding recursion ties the children of
+  `Rose [ Rose [], Rose [] ]` to the root class. A repeat across them is a cell both children hold, which the
+  unwidened read counts, so it reads `shared` only when one object really stands at both positions, and `lost`
+  where approximation enters. Two distinct objects folded into one class never read `shared`
+  (`FoldedPositionsLost`, Appendix B).
 - `put(n, s, m)`: `delta(n, [(s, m)])` when the `ε` object is the same after the write (an update), else a copy
   with one child changed (a construction's fresh base).
 - `map(n, f)`: relabel cells once per node per immutable substitution context, so a DAG stays a DAG
@@ -838,7 +853,8 @@ reaches `[*].a` through `positions(leaf{π₁}, leaf{π₂})`, and instantiation
 `{x, x}` is `shared`, so an element write is refused `exclusive` (`PositionsRepeatArg`, Appendix B). But
 `if c then [ x ] else [ x ]` joins two one-position literals into `union`, and κ at `[*]` stays `yes`: a write
 into the element is accepted (`BranchSameElement`). `proj`, `Shape.map` and `propagate` preserve the kind, and
-`widen` keeps a positions member as it is (§2.3); nothing turns a `positions` node into a `union`. `leq` is
+`widen` keeps a positions member as it is unless it opens it on a cycle, where κ carries the multiplicity
+(§2.3). Nothing turns a `positions` node into a `union`. `leq` is
 kind-blind, so the multiplicity a positions node carries is compared through κ only (`Cond.kappaLeq`).
 
 A **single-arrival leaf** may default to `yes` at its own ordinary occurrence. A projected symbolic
@@ -896,7 +912,9 @@ Where κ is set, always **at the selected path p**:
   read rule above) belongs to the reader, at the reader's position class. So the summary obligations `propagate`
   would have written at `[*]` and below are read wherever the member is linked. (3) A join of one
   alternative is that alternative (`join` is idempotent). An alternative that is an empty leaf with nothing
-  stored reads `yes` at every position below, and `yes` is the join's unit, so it does not count. A join
+  stored reads `yes` at every position below, and `yes` is the join's unit, so it does not count. Among a
+  literal's elements it is no position either (§2.3), so a literal whose other elements are all nothing is a link
+  to its one element by (1) and (2) [#1120]. A join
   therefore walks only where at least two alternatives differ. A tower of one-element literals, or of joins
   with an empty alternative, walks each level once (N levels, O(N log N) work, the sets' depth). This holds
   only for those two towers: a join whose alternatives are the same value at two depths
@@ -2996,7 +3014,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | *to write, red twins found by the S1 review (§2.2's `⟲` matching):* RoseAlias (`type Rose = Rose (List Rose)`: a write through the root's children list with a subtree held → refused `alias`; the prefix reading of `⟲` accepted it), MaybeTreeAlias (`type T = T (Maybe T) (List Int)`: the same through `Maybe`), MutualAlias (`type A = A B | …`, `type B = B (List A)`: a write to `B`'s list with an `A` below held). In all three the write is under `⟲` or the demand is deep; a shallow storage write of the container while a level below is held is accepted (§2.8 *Holders across a cycle*) | R-4.7.1, R-4.7.4 | S3a |
 | *to write, green twin of §2.9's per-value snapshots:* DeadDuplicateLive (`r = [ 1 ]; a = [ r, r ]; b = [ r ]` with `a` dead, then `List.update b 0 (λl → List.push l 9)` and `b` returned: accepted, as v1 accepts it; `a`'s `shared` lives in `a`'s snapshot and never reaches `b`'s) | R-4.6.7, R-8.3 | S4 |
 | *to write, twins of §2.9's positional collections:* PositionsRepeatArg (`f a b = [ { a = a }, { a = b } ]` called as `f x x`, then an element write at `[*].a`: the `positions` node's multiset `{x, x}` is `shared`; refused `exclusive`), BranchSameElement (green: `if c then [ x ] else [ x ]` is a `union` of alternatives, κ at `[*]` stays `yes`, a write into the element is accepted) | R-4.6.2, R-4.6.7 | S4 |
-| *to write, twin of §2.3's folded positions:* FoldedPositionsLost (a recursive function over `type Rose = Rose (List Rose)` building `Rose [ Rose [], Rose [] ]`-shaped values, whose read-off widens the children into the root class, the collection kept as a side of a `union` beside the class image (§2.3), then a write into one child's list: never refused `shared` (exact); where the fold leaves no proof the cause is `exclusive (a)`, approximate, and where the written path needs no exclusivity the write is accepted) | R-4.7.5, R-6.3 | S3b |
+| *to write, twin of §2.3's folded positions:* FoldedPositionsLost (a recursive function over `type Rose = Rose (List Rose)` building `Rose [ Rose [], Rose [] ]`-shaped values, whose read-off widens the children into the root class, the collection opened on the cycle (§2.3), then a write into one child's list: never refused `shared` (exact); where the fold leaves no proof the cause is `exclusive (a)`, approximate, and where the written path needs no exclusivity the write is accepted) | R-4.7.5, R-6.3 | S3b |
 | *to write, green twin of §2.9's `(NodeId, PathId)` key:* OnePairTwoPositions (`r = [ 1 ]; p = ( [ r ], [ r, r ] )`, then a write into `p.0`'s element through `List.update (Tuple.first p) 0 (λl → List.push l 9)` with `p.1` dead: accepted; `.1[*]`'s `shared` is stored at its own path and never answers `.0[*]`) | R-4.6.4, R-8.3 | S4 |
 | *to write, red twin of §2.9's union read:* CallbackFieldPositionsUnion (`[ { a = (g 1).a }, { a = (g 2).a } ]`, whose `[*].a` is `union(leaf{cb@ι₁·.a}, leaf{cb@ι₂·.a})` read from an empty snapshot, as an instantiation's fresh union is, then an element write at `[*].a` with `g = λ_ → shared`: the read derives `apart` over the united cells, never `yes`; refused `exclusive`) | R-4.6.2, R-4.6.4 | S5 |
 | *to write, red twin of §2.9's position-exact key:* CallbackFieldPositions (`w = if c then (g 1).a else (g 2).a` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })` with `g = λ_ → shared`: the branch's `yes` at a plain path must not answer the element write at `[*].a`, which reads the same interned leaf under a summary position; refused `exclusive`. S2 pins the κ half as a unit test), CallbackFieldPositionsBranch (`if c then [ (g 1).a ] else [ (g 2).a ]` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })`: the leaf `{cb@ι₁·.a, cb@ι₂·.a}` stored `yes` at a summary position in one branch is the same interned leaf as `[ g 1, g 2 ]`'s `[*].a`; the read derives `apart` over its arrivals and records `xreq`, never the stored `yes`; refused `exclusive` with `g = λ_ → shared`) | R-4.6.2, R-4.6.4 | S5 |
