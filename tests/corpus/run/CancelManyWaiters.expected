@@ -1,0 +1,6 @@
+complete: True
+wait: 7
+available while held: 0
+available after release: 1
+try: Just "in"
+done
