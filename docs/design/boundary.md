@@ -1452,6 +1452,21 @@ name. A build that reaches the event imports that name, or writes it in the voca
 itself, and the vocabulary module exports the declaration, as it exports a core-private value.
 The runtime's `identity` stays the extractor of an event with no `via`.
 
+*Amended 2026-10-23 (#883; `plans/core-in-beni.md`, step 4).* **A payload extractor may be a beni
+declaration** of the vocabulary module instead of a `foreign`: annotated, and written over `Js` as
+any platform value is — `targetValue e = Js.to (Js.get (Js.get (Js.from e) "target") "value")`.
+Everything above holds of it unchanged: its type is `E -> P` with `E` a `foreign type`
+(`checker-v2.md` §25.2); it may be `pub` or not; every lowering calls it synchronously while the
+event is dispatched (below); reachability keeps a non-`pub` one for an event that names it, and the
+vocabulary module exports it when it is live, exactly as for a non-`pub` `foreign`
+(`Reach.privateExtractor`). A declaration with no annotation is refused as a `via` that names
+nothing is (`unbound_variable`). **An extractor is `sync`** (*amended 2026-10-26*, the review of
+#925): every lowering calls it while the event is dispatched, outside any fiber, so one that may
+suspend — a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event
+whose `via` names it (`checker-v2.md` §25.8), checked once the effects are inferred, as the sync
+step above checks a function the sibling may call. What changes is that `html`'s extractors need
+no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes (#877).
+
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
 **the build's markup runtime** — whichever lowering's runtime that is. It is held to the four checks
