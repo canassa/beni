@@ -1,0 +1,29 @@
+-- ownership: a write below `⟲` through `Maybe` while a level above holds
+-- it (ownership-v2.md §2.8, *Holders across a cycle*; Appendix B). In
+-- `type T = T (Maybe T) (List Int)` the `Maybe T` holds every level below,
+-- so the list of the next level, `below`, is inside `next`. `writeBelow`
+-- extends `below` and reads `next` after: refused `alias`, found only
+-- through the cycle's anchor (`t⟲#T.1` is no trie descendant of `t#T.0`).
+-- `writeOwn` extends the root's own list, which no level below holds, with
+-- `next` read after: accepted.
+type T
+    = T (Maybe T) (List Int)
+
+
+pub writeBelow : T → List Int × Maybe T
+writeBelow t =
+    case t of
+        T next _ →
+            case next of
+                Just (T _ below) →
+                    ( List.push below 1, next )
+
+                Nothing →
+                    ( [], next )
+
+
+pub writeOwn : T → List Int × Maybe T
+writeOwn t =
+    case t of
+        T next own →
+            ( List.push own 1, next )

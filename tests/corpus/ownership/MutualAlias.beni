@@ -1,0 +1,45 @@
+-- ownership: a write below `⟲` across two mutually recursive types while a
+-- level above holds it (ownership-v2.md §2.8, *Holders across a cycle*;
+-- Appendix B). `type A = A B | Leaf Int` and `type B = B (List A)` are one
+-- cycle: the root's list `items` holds every `A` below it, and so every
+-- deeper `B`'s list. `writeBelow` extends a deeper list and reads `items`
+-- after: refused `alias`, found only through the cycle's anchor.
+-- `writeShallow` extends `items` itself while an element is held: a list
+-- storage write never counts against the elements it holds, accepted.
+type A
+    = A B
+    | Leaf Int
+
+
+type B
+    = B (List A)
+
+
+pub writeBelow : A → List A × List A
+writeBelow a =
+    case a of
+        A (B items) →
+            case items of
+                [ A (B deeper), …_ ] →
+                    ( List.push deeper (Leaf 0), items )
+
+                _ →
+                    ( [], items )
+
+        Leaf _ →
+            ( [], [] )
+
+
+pub writeShallow : A → List A × A
+writeShallow a =
+    case a of
+        A (B items) →
+            case items of
+                [ first, …_ ] →
+                    ( List.push items (Leaf 0), first )
+
+                [] →
+                    ( items, a )
+
+        Leaf _ →
+            ( [], a )

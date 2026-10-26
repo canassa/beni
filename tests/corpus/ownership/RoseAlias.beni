@@ -1,0 +1,38 @@
+-- ownership: a write below `⟲` while a level above holds it
+-- (ownership-v2.md §2.8, *Holders across a cycle*; Appendix B). In
+-- `type Rose = Rose (List Rose)` the root's children list `kids` holds
+-- every subtree, so a subtree's own children list `subkids` is inside it.
+-- `writeBelow` extends `subkids` and reads `kids` after: refused `alias`.
+-- `subkids` is no trie descendant of `kids` (`r⟲#Rose.0` against
+-- `r#Rose.0`): only the cycle's anchor finds `kids` as its holder, and a
+-- reading of `⟲` as a prefix accepted it. `writeShallow` extends `kids`
+-- itself with a subtree still held: a list storage write never counts
+-- against the elements it holds, accepted.
+type Rose
+    = Rose (List Rose)
+
+
+pub writeBelow : Rose → List Rose × List Rose
+writeBelow r =
+    case r of
+        Rose kids →
+            case kids of
+                [ sub, …_ ] →
+                    case sub of
+                        Rose subkids →
+                            ( List.push subkids (Rose []), kids )
+
+                [] →
+                    ( [], kids )
+
+
+pub writeShallow : Rose → List Rose × Rose
+writeShallow r =
+    case r of
+        Rose kids →
+            case kids of
+                [ sub, …_ ] →
+                    ( List.push kids (Rose []), sub )
+
+                [] →
+                    ( kids, r )
