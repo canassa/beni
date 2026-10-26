@@ -100,7 +100,8 @@ pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
 /// 7: a position's κ is what is stored there, never the read (#1069).
 /// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
-pub const version: u32 = 8;
+/// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
+pub const version: u32 = 9;
 
 pub const none: u32 = Ids.none_int;
 
@@ -572,7 +573,8 @@ const Writer = struct {
 
     /// A position: its node's kind, class, place and parts (a child at its
     /// own class and at its position one step below in the snapshot), what
-    /// the snapshot is there (`0` none, `1` a position, `2` a fold), the κ
+    /// the snapshot is there (`0` none, `1` a position, `2` an exact fold,
+    /// `3` a collapsed one), the κ
     /// stored there, and the positions `proj` makes at steps that the
     /// node's parts do not name and the snapshot links (or, below a fold,
     /// where a stored entry needs them, `entries`).
@@ -585,7 +587,7 @@ const Writer = struct {
         const d = shapes.get(p.node);
         try w.word(@backingInt(d.kind));
         try w.word(@intFromBool(p.at_summary));
-        try w.word(if (cur == .none) 0 else if (conds.isFold(cur)) 2 else 1);
+        try w.word(if (cur == .none) 0 else if (conds.isCollapsed(cur)) 3 else if (conds.isFold(cur)) 2 else 1);
         try w.tok(.place, d.place.int());
         var named: std.ArrayList(Over) = .empty;
         defer named.deinit(gpa);
@@ -657,14 +659,11 @@ const Writer = struct {
             .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
         }
         if (!all or cur == .none) return;
+        // A fold's links are the steps it saw: sparse below it too.
         var cand: std.ArrayList(Step) = .empty;
         defer cand.deinit(gpa);
-        if (conds.isFold(cur)) {
-            for (w.env.places.steps(d.place).steps) |s| try cand.append(gpa, s);
-        } else {
-            var lt = conds.kappaLinks(cur);
-            while (lt.next()) |e| try cand.append(gpa, e.step);
-        }
+        var lt = conds.kappaLinks(cur);
+        while (lt.next()) |e| try cand.append(gpa, e.step);
         for (cand.items) |s| {
             try w.take(1);
             w.meter.grow(1);

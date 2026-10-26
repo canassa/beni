@@ -759,6 +759,18 @@ and a fold has one position for all its levels, a fixpoint over folded snapshots
 them is a finite simulation, as on folded shapes. A construction never folds: a recursive construction chain of
 n levels costs O(n) links, where re-keying each child into its parent's canonical paths would cost O(n²).
 
+**The join's premise, and the two kinds of fold** [#1113's review]. A missing entry for a leaf, a recast or a union
+adds nothing (stored κ only adds constraints there), but a missing entry for a built node or a delta reads `lost`.
+So the join argument above holds only where every built node of a covered position carries its entry there.
+`propagate` guarantees this: it writes an entry, `lost` included, for every built node it visits, so its fold is
+**exact**. A snapshot **collapsed** into a fold by `kappaFold` cannot see which covered position lacked an entry.
+This happens where a fold meets another snapshot in `kappaMerge`, or at a graft's knot. A collapsed fold
+therefore reads every built node and delta as `lost`, which is the join of the reads it covers whenever one of
+them is `lost`, and never stronger. Its leaves, recasts and unions read stored ⊔ derived as anywhere. Merging two
+exact folds stays exact, because each covers its own nodes. **A fold keeps the steps it saw** (its links lead
+back to itself), so the frontier below a fold is sparse too: an entry is reached only along steps some route
+through the fold took.
+
 **What S2 builds, and what S3a and S3b change.** In S2 a κ root (`Cond.Kappas`, an `Ids.KappaId`) is an immutable,
 hash-consed persistent radix map `(NodeId, position class) → CondId`, where the position class is whether the
 read's path crossed `[*]` or `⟲`. The holder owns it and threads it: `kappaSet` returns a new root and never
@@ -1718,7 +1730,8 @@ kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a
             persistent hash-consed trie: a position record `{ here, links, fold }`, `here` a radix map
             NodeId → CondId (the conditions stored at this position), `links` a radix map step word → KappaId
             (the position one step below; a child's snapshot linked at a construction, never re-keyed), `fold`
-            set on a position `widen` folded, whose links lead to itself. A key (NodeId, path) has its path
+            set on a position `widen` folded (exact, from `propagate`, or collapsed by `kappaFold`, §2.9),
+            whose links are the steps it saw and lead to itself. A key (NodeId, path) has its path
             relative to the root of the snapshot that stores it; a reader holds a cursor (a KappaId) and moves it
             by `kappaChild` along the steps it takes, re-rooting at a link. S2 built one radix map
             (NodeId, position class) → CondId per value; S3a gives frame values their own roots and moves the key
@@ -1805,8 +1818,8 @@ under a leaf, under a recast and at an empty shape, so the routes to them are th
 search of a type's fields. The finite worklist keys states by `(node, cursor, class)`; a fold is one state for
 all its levels. An implementation may omit a state only when its reads are derived entirely from preserved
 structure and no reachable stored entry affects them; this criterion is shared with `propagate`, `kappaLeq`,
-`deep` and substitution. A written position also records whether its cursor is a fold, so the reader rebuilds
-the fold. Adding a reader requires updating this closure contract and its tests.
+`deep` and substitution. A written position also records whether its cursor is a fold, exact or collapsed,
+so the reader rebuilds the fold; a fold's steps are the steps its members take. Adding a reader requires updating this closure contract and its tests.
 
 Each written position encodes κ **as stored**: what the snapshot stores at that position and nothing
 derived (#1069). Every reader adds the derivation from the structure the block rebuilds, so the
@@ -2439,7 +2452,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 750 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 700 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 500 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
@@ -2451,8 +2464,8 @@ L0  Ids
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 10 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 700 |
-| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 050 |
+| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 660 |
+| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 950 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |

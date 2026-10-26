@@ -181,7 +181,7 @@ const Reader = struct {
     /// `absorbed`: a union its constructor folded into a side, the union
     /// as written (a node no read reaches) to read its κ from.
     /// `cursor`: what the owner's snapshot is at the position (`0` none,
-    /// `1` a position, `2` a fold, §3.6).
+    /// `1` a position, `2` an exact fold, `3` a collapsed one, §3.6).
     const Pos = struct { node: NodeId, at_summary: bool, cursor: u32 = 0, kappa: CondId, place: PlaceId, first: u32, len: u32, absorbed: NodeId = .none };
     /// A part of a position that is a position: a child step's (`step`), a
     /// projected one's (`made`), or a side, a base, an inner.
@@ -454,22 +454,28 @@ const Reader = struct {
             defer stack.deinit(gpa);
             try stack.appendSlice(gpa, seeds);
             var fold = false;
-            for (seeds) |s| fold = fold or r.infos.items[s].cursor == 2;
+            for (seeds) |s| fold = fold or r.infos.items[s].cursor >= 2;
             while (stack.pop()) |i| {
                 try r.env.charge.reserve(gpa, .inspection, 1);
                 if (r.infos.items[i].cursor == 0) continue;
                 if ((try seen.getOrPut(gpa, .{i})).found_existing) continue;
                 try members.append(gpa, i);
                 const p = r.infos.items[i];
-                if (p.cursor == 2) fold = true;
+                const was_fold = fold;
+                if (p.cursor >= 2) fold = true;
                 for (r.edges.items[p.first..][0..p.len]) |e| {
                     if (e.stepped and !fold) continue;
+                    try r.env.charge.reserve(gpa, .inspection, 1);
                     try stack.append(gpa, r.pos_of.items[e.to]);
                 }
-                // A fold found late takes the children seen before it.
-                if (fold and p.cursor == 2) for (members.items) |m| {
+                // A fold found late takes the children of the members seen
+                // before it, once: when the group first becomes a fold.
+                if (fold and !was_fold) for (members.items[0 .. members.items.len - 1]) |m| {
                     const q = r.infos.items[m];
-                    for (r.edges.items[q.first..][0..q.len]) |e| if (e.stepped) try stack.append(gpa, r.pos_of.items[e.to]);
+                    for (r.edges.items[q.first..][0..q.len]) |e| if (e.stepped) {
+                        try r.env.charge.reserve(gpa, .inspection, 1);
+                        try stack.append(gpa, r.pos_of.items[e.to]);
+                    };
                 };
             }
             try r.env.charge.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(members.items.len), std.math.maxInt(u32))));
@@ -506,9 +512,9 @@ const Reader = struct {
             if (b.built.get(.{g})) |hit| return .from(hit);
             if ((try b.open.getOrPut(gpa, .{g})).found_existing) return error.Malformed;
             const members = b.runs.items[g].items;
-            var fold = false;
-            for (members) |i| fold = fold or r.infos.items[i].cursor == 2;
-            var pos: Cond.Kappas = if (fold) try conds.kappaFoldAt(gpa, ch, .none, &.{}) else .none;
+            var fold: u32 = 0;
+            for (members) |i| fold = @max(fold, r.infos.items[i].cursor);
+            var pos: Cond.Kappas = if (fold >= 2) try conds.kappaEmptyFold(gpa, ch, if (fold == 3) Cond.Table.fold_collapsed else Cond.Table.fold_exact) else .none;
             for (members) |i| {
                 const p = r.infos.items[i];
                 if (p.absorbed == .none and p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.node, p.kappa)).ctx;
@@ -520,7 +526,15 @@ const Reader = struct {
                 const k = try conds.kappaOf(gpa, ch, r.env.view(), pos, p.absorbed, p.at_summary);
                 pos = (try conds.kappaSet(gpa, ch, pos, p.node, k)).ctx;
             }
-            if (!fold) {
+            // A fold's links are the steps its members take.
+            if (fold >= 2) for (members) |i| {
+                const p = r.infos.items[i];
+                for (r.edges.items[p.first..][0..p.len]) |e| if (e.stepped) {
+                    try ch.reserve(gpa, .inspection, 1);
+                    pos = try conds.kappaFoldStep(gpa, ch, pos, e.step);
+                };
+            };
+            if (fold < 2) {
                 // The children by step, in step order.
                 var kids: std.ArrayList([2]u32) = .empty;
                 defer kids.deinit(gpa);
@@ -781,7 +795,7 @@ const Reader = struct {
         const sets = &r.env.cells.sets;
         const kind = try enumOf(Shape.Kind, try r.get());
         const at_summary = try r.flag(1) == 1;
-        const cursor = try r.flag(2);
+        const cursor = try r.flag(3);
         const at = try r.placeOf();
         const first: u32 = @intCast(r.edges.items.len);
         var absorbed: NodeId = .none;
@@ -1767,7 +1781,7 @@ test "a block merges two equal knots only where they read the same κ" {
     // `yes` stored on the first knot's node only: the second reads `lost`.
     const inner1: NodeId = if (a.shapes.kind(w1) == .@"union") .from(a.shapes.nodes.items(.a)[w1.int()]) else w1;
     var km = (try a.conds.kappaSet(gpa, a.env().charge, .none, root, Cond.yes)).ctx;
-    km = try a.conds.kappaSetAtNode(gpa, a.env().charge, a.env().view(), km, root, inner1, Cond.yes);
+    km = try setAtNode(&a, km, root, inner1, Cond.yes);
     const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = root, .kappas = km });
     var b: Tables = .{};
     try b.init();
@@ -2820,4 +2834,85 @@ test "#1073: κ stored below one unbuilt field of a wide record costs the writer
     // logarithmic sort terms; the place's width is paid once, by the place
     // table, either way.
     try testing.expect(extra[1] <= extra[0] + 16);
+}
+
+/// `ctx` (the snapshot of a value whose shape is `root`) with κ(target)
+/// joined with `k` at every position of `root`'s explicit structure where
+/// `target` stands; a route stops at a node it has passed.
+fn setAtNode(t: *Tables, ctx: Cond.Kappas, root: NodeId, target: NodeId, k: CondId) !Cond.Kappas {
+    var path: std.ArrayList(Step) = .empty;
+    defer path.deinit(testing.allocator);
+    var route: std.ArrayList(NodeId) = .empty;
+    defer route.deinit(testing.allocator);
+    var out = ctx;
+    try setAtNodeFrom(t, &out, root, target, k, &path, &route);
+    return out;
+}
+
+fn setAtNodeFrom(t: *Tables, out: *Cond.Kappas, n: NodeId, target: NodeId, k: CondId, path: *std.ArrayList(Step), route: *std.ArrayList(NodeId)) !void {
+    const gpa = testing.allocator;
+    for (route.items) |r| if (r == n) return;
+    if (n == target) out.* = try t.conds.kappaSetAt(gpa, t.env().charge, out.*, path.items, n, k);
+    try route.append(gpa, n);
+    defer _ = route.pop();
+    const d = t.shapes.get(n);
+    switch (d.kind) {
+        .leaf => {},
+        .node, .delta => {
+            if (d.kind == .delta) try setAtNodeFrom(t, out, .from(d.a), target, k, path, route);
+            var it = t.shapes.overEntries(if (d.kind == .node) d.a else d.b);
+            while (it.next()) |e| {
+                try path.append(gpa, e.step);
+                defer _ = path.pop();
+                try setAtNodeFrom(t, out, e.node, target, k, path, route);
+            }
+        },
+        .recast => try setAtNodeFrom(t, out, .from(d.a), target, k, path, route),
+        .@"union", .positions => {
+            try setAtNodeFrom(t, out, .from(d.a), target, k, path, route);
+            try setAtNodeFrom(t, out, .from(d.b), target, k, path, route);
+        },
+    }
+}
+
+test "#1073 review: reading a fold's group is linear in its members" {
+    const gpa = testing.allocator;
+    var read_cost: [3]u64 = undefined;
+    for ([_]u32{ 51, 101, 201 }, 0..) |members, run| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        a.account.allowance = std.math.maxInt(u32) - 1;
+        const env = a.env();
+        // A record node with `members − 1` built list fields, its snapshot an
+        // exact fold at the root: every position is one fold group.
+        const rec = try a.place(11);
+        const lists = try a.place(2);
+        var kids: u32 = Ids.none_int;
+        for (0..members - 1) |i| {
+            const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), lists, .list);
+            const kid = try a.shapes.node(gpa, &a.account, lists, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+            kids = try a.shapes.overPut(gpa, &a.account, kids, try Step.field(&a.account, @intCast(100 + i)), kid);
+        }
+        const root = try a.shapes.node(gpa, &a.account, rec, try a.cells.sets.insert(gpa, env.charge, .none, (try a.cells.site(gpa, &a.account, 999, rec, .record)).int(), 0), kids);
+        var km = try a.conds.kappaEmptyFold(gpa, env.charge, Cond.Table.fold_exact);
+        km = (try a.conds.kappaSet(gpa, env.charge, km, root, Cond.yes)).ctx;
+        const c = try a.sums.add(env, .{ .params = &.{.none}, .res = root, .kappas = km });
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        try write(env, &a.sums, &.{c}, .identity, &words);
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        b.account.allowance = std.math.maxInt(u32) - 1;
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(gpa);
+        const before = b.account.total();
+        try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+        read_cost[run] = b.account.total() - before;
+        try testing.expect(b.conds.isFold(b.sums.get(back.items[0]).kappas));
+    }
+    // About twice the members, about twice the reader's work, never four.
+    try testing.expect(read_cost[1] <= 3 * read_cost[0]);
+    try testing.expect(read_cost[2] <= 3 * read_cost[1]);
 }
