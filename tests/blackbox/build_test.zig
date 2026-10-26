@@ -7660,41 +7660,196 @@ test "the list sanitiser runs only where ownership is enforced, and writes its r
     for (try w.listFiles("plain")) |rel| try testing.expect(std.mem.indexOf(u8, rel, "_sanitize") == null);
 }
 
-test "the ownership checker v2 is not built yet, and every command given it says so" {
+test "the ownership checker v2 runs behind --ownership=v2 in check, build and dump" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-v2.md` §8: v2 is built behind the hidden `--ownership=v2`,
-    // slice by slice; until a slice builds it, there is nothing to run.
+    // `ownership-v2.md` §8, S3a: v2 is built behind the hidden
+    // `--ownership=v2`. `held` reads `xs` after `List.push` writes it: on a
+    // chain that enforces, v2 refuses it as v1 does, with v1's code; where
+    // nothing enforces, the build is made and runs.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
         \\import Node exposing (Program)
         \\
         \\
+        \\held : List Int → List Int × List Int
+        \\held xs = ( xs, List.push xs 1 )
+        \\
+        \\
         \\main : Program
         \\main =
-        \\    Node.print "hi"
+        \\    case held [ 1 ] of
+        \\        ( a, b ) →
+        \\            Node.print (String.fromInt (List.length a + List.length b))
         \\
     );
-    const message = "beni: --ownership=v2: the ownership checker v2 is not built yet; run v1, the default\n";
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const raw: world.RunOptions = .{ .raw_diagnostics = true };
-    const check = try w.runWith(&.{ "check", "--ownership=v2", "--platform=node", "Main.beni" }, raw);
-    const build = try w.runWith(&.{ "build", "--ownership=v2", "--platform=node", "Main.beni" }, raw);
-    const dump = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, raw);
-    const v1 = try w.run(&.{ "check", "--ownership=v1", "--platform=node", "Main.beni" });
+    const check = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--platform=node", "Main.beni" }, raw);
+    const v1 = try w.runWith(&.{ "check", "--ownership=v1", "--ownership-everywhere", "--platform=node", "Main.beni" }, raw);
+    const build = try w.run(&.{ "build", "--ownership=v2", "--platform=node", "Main.beni" });
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--platform=node", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for ([_]world.Result{ check, build, dump }) |r| {
-        try testing.expectEqual(@as(u8, 2), r.exit_code);
-        try testing.expectEqualStrings(message, r.stderr);
-        try testing.expectEqualStrings("", r.stdout);
-    }
+    try testing.expectEqual(@as(u8, 1), check.exit_code);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "LIST CHANGED WHILE STILL IN USE") != null);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "Main.beni:5:17") != null);
+    try testing.expectEqual(@as(u8, 1), v1.exit_code);
+    try testing.expect(std.mem.indexOf(u8, v1.stderr, "LIST CHANGED WHILE STILL IN USE") != null);
+    try testing.expectEqual(@as(u8, 0), build.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  5:17 List.push xs: rejected later-use: xs is read again at 5:11\n") != null);
+}
+
+test "under --ownership=v2 a storage word on a value of no storage kind is misplaced_ownership_word" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.6 (#1056 item 4): lowering checks where a word
+    // stands; whether the type there IS a sequence or a cell needs the
+    // types, so the checker v2's signature adapter checks it. `bump`'s
+    // `written` stands on an `Int`; `grow`'s on a `List`, which is right.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{ "platform": true, "name": "words-test", "program": "Prog.Program", "runtime": "runtime.js" }
+        \\
+    );
+    try w.write("platform/runtime.js",
+        \\export function initialize(main) {}
+        \\
+    );
+    try w.write("platform/Prog.beni",
+        \\pub type Program
+        \\    = Program
+        \\
+        \\
+        \\pub bump : written Int → Int
+        \\bump n = n + 1
+        \\
+        \\
+        \\pub grow : written List Int → List Int
+        \\grow xs = xs
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog
+        \\
+        \\
+        \\main : Prog.Program
+        \\main = Prog.Program
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const v2 = try w.runWith(&.{ "check", "--ownership=v2", "--platform=platform", "Main.beni" }, raw);
+    const v1 = try w.runWith(&.{ "check", "--platform=platform", "Main.beni" }, raw);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), v2.exit_code);
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, v2.stderr, "MISPLACED OWNERSHIP WORD"));
+    try testing.expect(std.mem.indexOf(u8, v2.stderr, "`written` reads a list, a cell or a dictionary that parameter 1 of `bump` is") != null);
     try testing.expectEqual(@as(u8, 0), v1.exit_code);
+}
+
+test "@ownership_summary_size raises the checker v2's growth allowance, the declaration's over the module's" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.4: the attribute reaches the walk. The dump's
+    // `account` lines (v2's own, R-7.15) name each owner's allowance R_f.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\@ownership_summary_size(module, 131072)
+        \\
+        \\
+        \\@ownership_summary_size(262144)
+        \\large : ⊤ → List Int
+        \\large ⊤ = [ 1, 2 ]
+        \\
+        \\
+        \\plain : ⊤ → List Int
+        \\plain ⊤ = [ 3 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  account large: ") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, " of 262144, total ") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, " of 131072, total ") != null);
+}
+
+/// The `total` of `account <owner>:` in a v2 dump.
+fn accountTotal(dump: []const u8, owner: []const u8) !u64 {
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "account ")) continue;
+        if (!std.mem.startsWith(u8, t["account ".len..], owner) or t["account ".len + owner.len] != ':') continue;
+        const at = std.mem.lastIndexOf(u8, t, "total ") orelse return error.NoTotal;
+        return std.fmt.parseInt(u64, t[at + "total ".len ..], 10);
+    }
+    return error.NoAccount;
+}
+
+test "the checker v2's work grows linearly with a declaration's statements and its live holders" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1, §2.8: a chain of k writes, each the next's
+    // base, and k live lists each written once while all the others are
+    // still held. Holders come from the live inverted index, never a scan
+    // of the scope, so twice the statements costs about twice the records
+    // (counted by the owner's account, N_f), not four times.
+    var counts: [2]u64 = undefined;
+    var lives: [2]u64 = undefined;
+    for ([_]u32{ 100, 200 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(testing.allocator);
+        const a = testing.allocator;
+        try src.appendSlice(a, "pub chain : ⊤ → Int\nchain ⊤ =\n    x0 = [ 0 ]\n");
+        for (1..n + 1) |i| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ i, i - 1, i });
+        try src.print(a, "    List.length x{d}\n\n\npub live : ⊤ → Int\nlive ⊤ =\n", .{n});
+        for (1..n + 1) |i| try src.print(a, "    a{d} = [ {d} ]\n", .{ i, i });
+        for (1..n + 1) |i| try src.print(a, "    b{d} = List.push a{d} 0\n", .{ i, i });
+        try src.appendSlice(a, "    0");
+        for (1..n + 1) |i| try src.print(a, " + List.length b{d}", .{i});
+        try src.appendSlice(a, "\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        counts[run] = try accountTotal(dump.stdout, "chain");
+        lives[run] = try accountTotal(dump.stdout, "live");
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, try std.fmt.allocPrint(w.arena.allocator(), "total {d}: accepted {d} (fresh {d},", .{ 2 * n, 2 * n, 2 * n })) != null);
+    }
+    try testing.expect(counts[1] * 10 <= counts[0] * 25);
+    try testing.expect(lives[1] * 10 <= lives[0] * 25);
 }

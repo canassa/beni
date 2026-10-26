@@ -68,12 +68,6 @@ pub fn main(init: std.process.Init) u8 {
         .usage => |u| return fail(stderr, "{s}", .{u.message()}),
     };
 
-    if (ownershipV2(command)) {
-        // `--ownership=v2` (`Cli.Common.ownership`): the checker
-        // `ownership-v2.md` specifies is built slice by slice behind the
-        // flag (§8), and until a slice builds it there is nothing to run.
-        return fail(stderr, "beni: --ownership=v2: the ownership checker v2 is not built yet; run v1, the default", .{});
-    }
     switch (command) {
         .version => {
             // The build id follows the version (`fast-compiler.md` §8): a
@@ -115,19 +109,6 @@ pub fn main(init: std.process.Init) u8 {
     }
 }
 
-/// Whether `command` asks for the ownership checker v2 (`--ownership=v2`).
-fn ownershipV2(command: Cli.Command) bool {
-    const common: Cli.Common = switch (command) {
-        .build => |b| b.common,
-        .serve => |s| s.build.common,
-        .check => |c| c.common,
-        .fmt => |f| f.common,
-        .dump => |d| d.common,
-        else => return false,
-    };
-    return common.ownership == .v2;
-}
-
 fn fail(stderr: *Io.Writer, comptime fmt: []const u8, args: anytype) u8 {
     stderr.print(fmt ++ "\n", args) catch {};
     return 2;
@@ -160,6 +141,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .roundtrip_frontend = common.roundtrip_frontend,
         .ownership_everywhere = common.ownership_everywhere,
         .ownership_records_lost = common.ownership_records_lost,
+        .ownership_v2 = common.ownership == .v2,
     };
 }
 
@@ -634,6 +616,7 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
 /// it (ownership-checker.md §9.1). An embedded core or platform module is
 /// included when the path names its directory, and never under `.`.
 fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
+    if (dump.common.ownership == .v2) return dumpOwnershipV2(gpa, session, stdout, stderr, dump);
     const Ownership = beni.own.Ownership;
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const target = storePath(&buffer, dump.file);
@@ -738,4 +721,29 @@ fn moduleOf(session: *const Session, file: SourceStore.Index) ?beni.resolve.Grap
         if (session.graph.moduleFile(m) == file) return m;
     }
     return null;
+}
+
+/// `dump --stage=ownership --ownership=v2` (`ownership-v2.md` §8, S3a): the
+/// same targets as v1's report, the checker v2's lines.
+fn dumpOwnershipV2(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const target = storePath(&buffer, dump.file);
+    var targets: std.ArrayList(u32) = .empty;
+    defer targets.deinit(gpa);
+    for (session.store.byPath()) |f| {
+        const p = session.store.path(f);
+        if (!(std.mem.eql(u8, p, target) or underDir(p, target))) continue;
+        if (session.store.isEmbedded(f) and std.mem.eql(u8, target, ".")) continue;
+        const m = moduleOf(session, f) orelse continue;
+        targets.append(gpa, @intCast(m.int())) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    const Run = struct {
+        fn go(g: std.mem.Allocator, s: *Session, ts: []const u32, w: *Io.Writer, totals: bool) bool {
+            beni.own2.Enforce.dump(g, s, ts, w, .{ .totals_only = totals }) catch return false;
+            return true;
+        }
+    };
+    if (!onBigStackResult(Run.go, .{ gpa, session, targets.items, stdout, dump.ownership_totals })) return fail(stderr, "beni: out of memory", .{});
+    return 0;
 }
