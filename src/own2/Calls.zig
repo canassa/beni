@@ -210,9 +210,10 @@ const Grafter = struct {
         const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), pid });
         if (seen.found_existing) return;
         seen.value_ptr.* = 1;
+        try g.env.charge.reserve(g.gpa(), .inspection, @intCast(w.route.items.len));
         for (w.route.items) |r| if (r[0] == t.int()) {
             // A knot: everything below is that position, folded.
-            w.out = try conds.kappaFoldAt(g.gpa(), g.env.charge, w.out, w.path.items[0..r[1]]);
+            w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items[0..r[1]], .fold);
             return;
         };
         try w.route.append(g.gpa(), .{ t.int(), @intCast(w.path.items.len) });
@@ -223,7 +224,7 @@ const Grafter = struct {
             if (g.env.cells.origin(cell) != .param) continue;
             try g.env.charge.reserve(g.gpa(), .inspection, 1);
             const x = g.env.cells.get(cell);
-            w.out = try conds.kappaMergeAt(g.gpa(), g.env.charge, w.out, w.path.items, try g.argKappa(x.a, .from(x.b)));
+            w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items, .{ .merge = try g.argKappa(x.a, .from(x.b)) });
         }
         const d = shapes.get(t);
         switch (d.kind) {

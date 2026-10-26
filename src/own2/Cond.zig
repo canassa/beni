@@ -549,6 +549,19 @@ pub const Table = struct {
         return ctx != .none and t.position(ctx).fold != 0;
     }
 
+    /// A fold made by collapsing a snapshot (`kappaFold`), not by
+    /// `propagate`'s walk: a built node or a delta absent at one of the
+    /// positions it covered read `lost` there, and the collapse cannot tell
+    /// which, so it reads `lost` (§2.9).
+    pub fn isCollapsed(t: *const Table, ctx: Kappas) bool {
+        return ctx != .none and t.position(ctx).fold == fold_collapsed;
+    }
+
+    /// `Position.fold`: an exact fold (`propagate` stores every built node
+    /// it walks) or a collapsed one.
+    pub const fold_exact: u32 = 1;
+    pub const fold_collapsed: u32 = 2;
+
     pub const Set = struct { ctx: Kappas, changed: bool };
 
     /// `ctx` with κ(n) at this position joined with `k` (monotone, §2.12):
@@ -561,64 +574,25 @@ pub const Table = struct {
         return .{ .ctx = try t.makePos(gpa, charge, .{ .here = try t.mapPut(gpa, charge, p.here, n.int(), new.int()), .links = p.links, .fold = p.fold }), .changed = true };
     }
 
-    /// `root` with κ(n) joined with `k` at the position along `along`,
-    /// path-copied: a record per step, and a fold on the way takes the
-    /// rest of the path as itself.
+    /// What `kappaAt` does at the position its path reaches.
+    pub const PathOp = union(enum) { set: struct { node: NodeId, k: CondId }, merge: Kappas, fold };
+
+    /// `root` with `op` done at the position along `along`, path-copied: a
+    /// record per step; a fold on the way is the rest of the path itself.
+    pub fn kappaAt(t: *Table, gpa: Allocator, charge: Charge, root: Kappas, along: []const Step, op: PathOp) Error!Kappas {
+        if (along.len == 0 or t.isFold(root)) return switch (op) {
+            .set => |s| (try t.kappaSet(gpa, charge, root, s.node, s.k)).ctx,
+            .merge => |sub| t.kappaMerge(gpa, charge, root, sub),
+            .fold => if (t.isFold(root)) root else t.kappaFold(gpa, charge, root),
+        };
+        try charge.reserve(gpa, .inspection, 1);
+        const deeper = try t.kappaAt(gpa, charge, t.kappaChild(root, along[0]), along[1..], op);
+        return t.withLink(gpa, charge, root, along[0], deeper);
+    }
+
+    /// `kappaAt` setting κ(n) to `k` joined.
     pub fn kappaSetAt(t: *Table, gpa: Allocator, charge: Charge, root: Kappas, along: []const Step, n: NodeId, k: CondId) Error!Kappas {
-        if (along.len == 0 or t.isFold(root)) return (try t.kappaSet(gpa, charge, root, n, k)).ctx;
-        try charge.reserve(gpa, .inspection, 1);
-        const deeper = try t.kappaSetAt(gpa, charge, t.kappaChild(root, along[0]), along[1..], n, k);
-        return t.withLink(gpa, charge, root, along[0], deeper);
-    }
-
-    /// `root` with `sub` merged in at the position along `along` (§2.9: an
-    /// argument's snapshot linked where the argument is in a call's result).
-    pub fn kappaMergeAt(t: *Table, gpa: Allocator, charge: Charge, root: Kappas, along: []const Step, sub: Kappas) Error!Kappas {
-        if (sub == .none) return root;
-        if (along.len == 0 or t.isFold(root)) return t.kappaMerge(gpa, charge, root, sub);
-        try charge.reserve(gpa, .inspection, 1);
-        const deeper = try t.kappaMergeAt(gpa, charge, t.kappaChild(root, along[0]), along[1..], sub);
-        return t.withLink(gpa, charge, root, along[0], deeper);
-    }
-
-    /// `ctx` (the snapshot of a value whose shape is `root`) with κ(target)
-    /// joined with `k` at every position of `root`'s explicit structure
-    /// where `target` stands (a route stops at a node it has passed). What
-    /// a test or a reader that knows a node, not its path, sets.
-    pub fn kappaSetAtNode(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, root: NodeId, target: NodeId, k: CondId) Error!Kappas {
-        var path: std.ArrayList(Step) = .empty;
-        defer path.deinit(gpa);
-        var route: std.ArrayList(NodeId) = .empty;
-        defer route.deinit(gpa);
-        var out = ctx;
-        try t.setAtNodeFrom(gpa, charge, v, &out, root, target, k, &path, &route);
-        return out;
-    }
-
-    fn setAtNodeFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: *Kappas, n: NodeId, target: NodeId, k: CondId, path: *std.ArrayList(Step), route: *std.ArrayList(NodeId)) Error!void {
-        try charge.reserve(gpa, .inspection, 1);
-        for (route.items) |r| if (r == n) return;
-        if (n == target) out.* = try t.kappaSetAt(gpa, charge, out.*, path.items, n, k);
-        try route.append(gpa, n);
-        defer _ = route.pop();
-        const d = v.shapes.get(n);
-        switch (d.kind) {
-            .leaf => {},
-            .node, .delta => {
-                if (d.kind == .delta) try t.setAtNodeFrom(gpa, charge, v, out, .from(d.a), target, k, path, route);
-                var it = v.shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                while (it.next()) |e| {
-                    try path.append(gpa, e.step);
-                    defer _ = path.pop();
-                    try t.setAtNodeFrom(gpa, charge, v, out, e.node, target, k, path, route);
-                }
-            },
-            .recast => try t.setAtNodeFrom(gpa, charge, v, out, .from(d.a), target, k, path, route),
-            .@"union", .positions => {
-                try t.setAtNodeFrom(gpa, charge, v, out, .from(d.a), target, k, path, route);
-                try t.setAtNodeFrom(gpa, charge, v, out, .from(d.b), target, k, path, route);
-            },
-        }
+        return t.kappaAt(gpa, charge, root, along, .{ .set = .{ .node = n, .k = k } });
     }
 
     /// `ctx` with its link at `s` replaced by `child`.
@@ -643,8 +617,9 @@ pub const Table = struct {
     /// Two snapshots combined (§2.9: a construction combines its children's
     /// snapshots and joins them where they bind one key): at each position
     /// the union of what both store, a node both bind joined, the links
-    /// merged below. A fold takes the other side folded into it. `a` when
-    /// `b` adds nothing, so a merge of a snapshot with itself is the snapshot.
+    /// merged below. A fold takes the other side folded into it; two exact
+    /// folds stay exact (each stores every built node of its own), anything
+    /// collapsed into one is collapsed. `a` when `b` adds nothing.
     pub fn kappaMerge(t: *Table, gpa: Allocator, charge: Charge, a: Kappas, b: Kappas) Error!Kappas {
         if (a == .none) return b;
         if (b == .none or a == b) return a;
@@ -652,10 +627,11 @@ pub const Table = struct {
         const pa = t.position(a);
         const pb = t.position(b);
         if (pa.fold != 0 or pb.fold != 0) {
-            const fa = try t.kappaFold(gpa, charge, a);
-            const fb = try t.kappaFold(gpa, charge, b);
-            const here = try t.mapUnion(gpa, charge, .cond, t.position(fa).here, t.position(fb).here);
-            return t.makePos(gpa, charge, .{ .here = here, .links = Ids.none_int, .fold = 1 });
+            const fa = t.position(try t.kappaFold(gpa, charge, a));
+            const fb = t.position(try t.kappaFold(gpa, charge, b));
+            const here = try t.mapUnion(gpa, charge, .cond, fa.here, fb.here);
+            const steps_union = try t.mapUnion(gpa, charge, .cond, fa.links, fb.links);
+            return t.makePos(gpa, charge, .{ .here = here, .links = steps_union, .fold = @max(fa.fold, fb.fold) });
         }
         const here = try t.mapUnion(gpa, charge, .cond, pa.here, pb.here);
         const links = try t.mapUnion(gpa, charge, .link, pa.links, pb.links);
@@ -664,18 +640,20 @@ pub const Table = struct {
         return t.makePos(gpa, charge, .{ .here = here, .links = links, .fold = 0 });
     }
 
-    /// `ctx` folded (§2.9, `widen`'s fold): one position storing, by node,
-    /// the join of everything stored at it and below it, its links leading
-    /// back to itself. A record per position and entry folded in, each
-    /// shared position once.
+    /// `ctx` collapsed into one COLLAPSED fold (§2.9): by node, the join of
+    /// everything stored at it and below it; its links, which lead back to
+    /// itself, the steps it saw (so a reader below it stays sparse). A
+    /// record per position, step and entry folded in, each shared position
+    /// once. An exact fold stays as it is.
     pub fn kappaFold(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas) Error!Kappas {
-        if (ctx == .none or t.isFold(ctx)) return ctx;
+        if (ctx != .none and t.isFold(ctx)) return ctx;
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
         var stack: std.ArrayList(Kappas) = .empty;
         defer stack.deinit(gpa);
         var here: u32 = Ids.none_int;
-        try stack.append(gpa, ctx);
+        var steps_seen: u32 = Ids.none_int;
+        if (ctx != .none) try stack.append(gpa, ctx);
         while (stack.pop()) |at| {
             try charge.reserve(gpa, .memo, 1);
             const got = try seen.getOrPut(gpa, .{at.int()});
@@ -683,26 +661,26 @@ pub const Table = struct {
             got.value_ptr.* = 1;
             const p = t.position(at);
             here = try t.mapUnion(gpa, charge, .cond, here, p.here);
-            if (p.fold != 0) continue;
             var it = t.mapEntries(p.links);
             while (it.next()) |e| {
                 try charge.reserve(gpa, .inspection, 1);
-                try stack.append(gpa, .from(e.value));
+                steps_seen = try t.mapPut(gpa, charge, steps_seen, e.key, 0);
+                if (p.fold == 0) try stack.append(gpa, .from(e.value));
             }
         }
-        return t.makePos(gpa, charge, .{ .here = here, .links = Ids.none_int, .fold = 1 });
+        return t.makePos(gpa, charge, .{ .here = here, .links = steps_seen, .fold = fold_collapsed });
     }
 
-    /// `root` with the position along `along` folded (`kappaFold`).
-    pub fn kappaFoldAt(t: *Table, gpa: Allocator, charge: Charge, root: Kappas, along: []const Step) Error!Kappas {
-        if (t.isFold(root)) return root;
-        if (along.len == 0) {
-            const folded = try t.kappaFold(gpa, charge, root);
-            return if (folded == .none) t.makePos(gpa, charge, .{ .here = Ids.none_int, .links = Ids.none_int, .fold = 1 }) else folded;
-        }
-        try charge.reserve(gpa, .inspection, 1);
-        const deeper = try t.kappaFoldAt(gpa, charge, t.kappaChild(root, along[0]), along[1..]);
-        return t.withLink(gpa, charge, root, along[0], deeper);
+    /// An empty fold of `kind` (`fold_exact` or `fold_collapsed`).
+    pub fn kappaEmptyFold(t: *Table, gpa: Allocator, charge: Charge, fold_kind: u32) Error!Kappas {
+        return t.makePos(gpa, charge, .{ .here = Ids.none_int, .links = Ids.none_int, .fold = fold_kind });
+    }
+
+    /// The fold `ctx` with step `s` among the steps it saw.
+    pub fn kappaFoldStep(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, s: Step) Error!Kappas {
+        const p = t.position(ctx);
+        std.debug.assert(p.fold != 0);
+        return t.makePos(gpa, charge, .{ .here = p.here, .links = try t.mapPut(gpa, charge, p.links, s.word(), 0), .fold = p.fold });
     }
 
     /// The `(node, condition)` entries stored at the position `ctx`.
@@ -721,21 +699,23 @@ pub const Table = struct {
         return .{ .it = t.mapEntries(t.position(ctx).here) };
     }
 
-    /// The `(step, position)` links of `ctx` (none for a fold).
+    /// The `(step, position)` links of `ctx`; a fold's are the steps it
+    /// saw, each leading back to it.
     pub const LinkIterator = struct {
         it: MapIterator,
+        fold: Kappas,
 
         pub const Entry = struct { step: Step, child: Kappas };
 
         pub fn next(l: *LinkIterator) ?Entry {
             const e = l.it.next() orelse return null;
-            return .{ .step = Step.fromWord(e.key), .child = .from(e.value) };
+            return .{ .step = Step.fromWord(e.key), .child = if (l.fold != .none) l.fold else .from(e.value) };
         }
     };
 
     pub fn kappaLinks(t: *const Table, ctx: Kappas) LinkIterator {
         const p = t.position(ctx);
-        return .{ .it = t.mapEntries(if (p.fold != 0) Ids.none_int else p.links) };
+        return .{ .it = t.mapEntries(p.links), .fold = if (p.fold != 0) ctx else .none };
     }
 
     /// How `kappaRelabel` maps an entry: its node (null: dropped) and its
@@ -847,7 +827,9 @@ pub const Table = struct {
         const derived: CondId = switch (v.shapes.kind(n)) {
             .leaf => try t.derivedCells(gpa, charge, v, v.shapes.cells(n), at_summary, &.{}),
             // A built node's κ is the walk's (O13): `lost` until set.
-            .node, .delta => return stored orelse lost,
+            // In a collapsed fold an absent entry at one covered position
+            // read `lost` there, so the fold reads `lost` (§2.9).
+            .node, .delta => return if (t.isCollapsed(ctx)) lost else stored orelse lost,
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
             .recast => blk: {
@@ -1240,19 +1222,15 @@ pub const Table = struct {
         var cand: std.ArrayList(u32) = .empty;
         defer cand.deinit(gpa);
         try cand.appendSlice(gpa, named.items);
-        var folded = false;
+        // A fold's links are the steps it saw (sparse below it too).
         for (cursors) |c| {
-            if (t.isFold(c)) folded = true;
             var it = t.kappaLinks(c);
             while (it.next()) |e| {
                 try charge.reserve(gpa, .inspection, 1);
                 try cand.append(gpa, e.step.word());
             }
         }
-        if (folded) for (v.places.steps(v.shapes.place(n)).steps) |s| {
-            try charge.reserve(gpa, .inspection, 1);
-            try cand.append(gpa, s.word());
-        };
+        try charge.reserve(gpa, .inspection, sortCost(cand.items.len) + sortCost(named.items.len));
         std.mem.sort(u32, cand.items, {}, std.sort.asc(u32));
         std.mem.sort(u32, named.items, {}, std.sort.asc(u32));
         var last: ?u32 = null;
@@ -1352,6 +1330,12 @@ pub const Table = struct {
         return null;
     }
 
+    /// A sort of `n` items: n·⌈log₂(n + 1)⌉ comparisons, each a record.
+    fn sortCost(n: usize) u32 {
+        const lg: usize = std.math.log2_int_ceil(usize, n + 1);
+        return @intCast(@min(n * lg, std.math.maxInt(u32)));
+    }
+
     fn below(s: Step) bool {
         return s.kind == .elem or s.kind == .level;
     }
@@ -1397,6 +1381,8 @@ pub const Table = struct {
         try paths.append(gpa, .{ .parent = Ids.none_int, .step = Ids.none_int });
         var fold_at: std.ArrayList(bool) = .empty;
         defer fold_at.deinit(gpa);
+        var fold_steps: std.ArrayList([2]u32) = .empty;
+        defer fold_steps.deinit(gpa);
         try fold_at.append(gpa, false);
         const Write = struct { path: u32, node: NodeId, k: CondId };
         var outs: std.ArrayList(Write) = .empty;
@@ -1498,6 +1484,11 @@ pub const Table = struct {
                         route = try t.mapPut(gpa, charge, f.route, child.int(), path);
                     }
                 }
+                // A step taken at a fold is one of the steps it saw.
+                if (folded) {
+                    try charge.reserve(gpa, .inspection, 1);
+                    try fold_steps.append(gpa, .{ path, e.step });
+                }
                 try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary, .msummary = f.msummary or below(s), .path = path, .folded = folded, .route = route });
             }
         }
@@ -1514,6 +1505,19 @@ pub const Table = struct {
         const here = try gpa.alloc(u32, paths.items.len);
         defer gpa.free(here);
         @memset(here, Ids.none_int);
+        // Each fold's steps: those taken at it, and those of the paths made
+        // below it before it folded.
+        const fold_links = try gpa.alloc(u32, paths.items.len);
+        defer gpa.free(fold_links);
+        @memset(fold_links, Ids.none_int);
+        for (fold_steps.items) |x| {
+            const at = owner[x[0]];
+            fold_links[at] = try t.mapPut(gpa, charge, fold_links[at], x[1], 0);
+        }
+        for (paths.items, 0..) |p, pi| if (p.parent != Ids.none_int and owner[pi] != pi) {
+            try charge.reserve(gpa, .inspection, 1);
+            fold_links[owner[pi]] = try t.mapPut(gpa, charge, fold_links[owner[pi]], p.step, 0);
+        };
         for (outs.items) |w| {
             try charge.reserve(gpa, .inspection, 1);
             const at = owner[w.path];
@@ -1532,7 +1536,7 @@ pub const Table = struct {
         while (i > 0) {
             i -= 1;
             if (owner[i] != i) continue;
-            pos[i] = try t.makePos(gpa, charge, .{ .here = here[i], .links = if (fold_at.items[i]) Ids.none_int else links[i], .fold = @intFromBool(fold_at.items[i]) });
+            pos[i] = try t.makePos(gpa, charge, .{ .here = here[i], .links = if (fold_at.items[i]) fold_links[i] else links[i], .fold = if (fold_at.items[i]) fold_exact else 0 });
             const p = paths.items[i];
             if (p.parent != Ids.none_int and pos[i] != .none) links[p.parent] = try t.mapPut(gpa, charge, links[p.parent], p.step, pos[i].int());
         }
@@ -3332,4 +3336,56 @@ test "#1073: widen's fold: the snapshot of a widened tower folds, the walk ends,
     try testing.expect(f.conds.isFold(at));
     try testing.expectEqual(at, f.conds.kappaChild(at, arg));
     try testing.expectEqual(at, f.conds.kappaChild(f.conds.kappaChild(at, arg), Place.Step.elem));
+}
+
+test "#1073 review: a fold made by collapsing reads a built node lost wherever one covered position lacked its certificate" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // `{ a = X, b = X }` with X's certificate linked at `.a` only: at `.b`, X
+    // reads `lost`. Collapsing the record's snapshot, or merging it into a
+    // fold, must not make X read `yes` there.
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const l = try f.placeOf(1);
+    const x = try f.shapes.node(gpa, &f.account, l, try f.set(&.{try f.cells.site(gpa, &f.account, 1, l, .list)}), Ids.none_int);
+    const s = try f.setKPath(.none, &.{fa}, x, yes);
+    try testing.expectEqual(yes, try f.kappaPath(s, &.{fa}, x, false));
+    try testing.expectEqual(lost, try f.kappaPath(s, &.{fb}, x, false));
+    const folded = try f.conds.kappaFold(gpa, f.charge(), s);
+    try testing.expect(f.conds.isCollapsed(folded));
+    try testing.expectEqual(lost, try f.kappa(folded, x, false));
+    const other = try f.conds.kappaEmptyFold(gpa, f.charge(), Table.fold_exact);
+    const merged = try f.conds.kappaMerge(gpa, f.charge(), other, s);
+    try testing.expectEqual(lost, try f.kappa(merged, x, false));
+    // A leaf's entries only add constraints: collapsing keeps them.
+    const lf = try f.leaf(1, &.{try f.param(0, 1, &.{})});
+    const sl = try f.setKPath(.none, &.{fa}, lf, shared);
+    try testing.expectEqual(shared, try f.kappa(try f.conds.kappaFold(gpa, f.charge(), sl), lf, false));
+}
+
+test "#1073 review: below a fold the frontier is sparse too: a wide record's width costs nothing" {
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 9, 10 }, 0..) |place, run| {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const gpa = testing.allocator;
+        const v = f.view();
+        const f0 = try Place.Step.field(&f.account, 100);
+        const root = try f.leaf(place, &.{try f.param(0, place, &.{})});
+        const at = try f.projOf(try f.projOf(root, f0), Place.Step.elem);
+        // The snapshot collapsed into a fold at the root: its links are the
+        // steps it saw, `.f0` and `[*]`.
+        const k = try f.conds.kappaFold(gpa, f.charge(), try f.setKPath(.none, &.{ f0, Place.Step.elem }, at, shared));
+        try testing.expect(f.conds.isFold(k));
+        const before = f.account.total();
+        try testing.expectEqual(shared, try f.conds.deep(gpa, f.charge(), v, k, root, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, k, root, k, root, false));
+        const out = try f.propagate(.none, root, &.{ root, root }, &.{ k, .none }, .alternatives, false);
+        try testing.expectEqual(shared, try f.kappaPath(out, &.{ f0, Place.Step.elem }, at, true));
+        cost[run] = f.account.total() - before;
+    }
+    try testing.expectEqual(cost[0], cost[1]);
 }

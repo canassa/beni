@@ -8235,6 +8235,35 @@ test "the checker v2 charges an instruction's records to its source lanes" {
     try testing.expect(growth[1] <= 2 * growth[0] + 40);
 }
 
+test "the checker v2's summaries read each position of a value on its own (#1073): two corpus summaries pinned" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The κ trie keys a condition by its position, so a child's root
+    // certificate is no longer read at the summary class under `[*]`, and a
+    // level-1 split's entry no longer leaks into level 2 through the one
+    // canonical `π1⟲` leaf. These summaries print stronger κ than before
+    // (`{lost}` became `{excl π1[*]}`, and `fresh1{lost}` became `fresh1`),
+    // as their non-recursive twins already did; no verdict moves.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const inherit: world.RunOptions = .{ .cwd = .inherit };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const held = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "tests/corpus/ownership/HeldElementWrites.beni" }, inherit);
+    const rose = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "tests/corpus/ownership/RoseAlias.beni" }, inherit);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), held.exit_code);
+    try testing.expect(std.mem.indexOf(u8, held.stdout, "  summary basic: π1 RAW, π1[*] RAW, π1[*][*] A; res .0 fresh1 π1[*], .0 fresh2, .0[*] π1[*][*]{excl π1[*][*]}, .1 fresh3, .1 π1, .1[*] fresh1 π1[*]{excl π1[*]}\n") != null);
+    try testing.expectEqual(@as(u8, 0), rose.exit_code);
+    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1⟲ RA, π1⟲#Rose.0 RAW; res .0 fresh2, .0 π1⟲#Rose.0, .0[*] π1⟲{excl π1⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
+}
+
 test "the checker v2 gives each demand of one call its own query lane" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
