@@ -1,0 +1,29 @@
+-- run: a combinator waits past a child that ended at once (#1047;
+-- transparent-effects-proposal.md §17.7, amended 2026-10-26). The first
+-- child answers without waiting, so the combinator keeps only a record of
+-- its outcome. The second waits on a fiber. When the wait ends, the
+-- combinator stops observing every child, the record too, which has no
+-- observers. Once for `parOk`, once for `raceOk`, and once for `par`.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate : Int → Task.Fiber Int
+    gate n = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        n
+
+    one = gate 1
+    both = Task.parOk (λ⊤ → Ok 0) λ⊤ → Ok (Task.join one)
+    _ = Debug.log "parOk" both
+
+    two = gate 2
+    raced = Task.raceOk [ λ⊤ → Err "at once", λ⊤ → Ok (Task.join two) ]
+    _ = Debug.log "raceOk" raced
+
+    three = gate 3
+    pair = Task.par (λ⊤ → 0) λ⊤ → Task.join three
+    Node.print "par: ${Debug.toString pair}"

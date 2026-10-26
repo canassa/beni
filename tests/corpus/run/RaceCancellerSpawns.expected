@@ -1,0 +1,6 @@
+race: spawned by canceller: ⊤
+race: "first"
+parOk: spawned by canceller: ⊤
+parOk: Err "first"
+timeout: spawned by canceller: ⊤
+timeout: Nothing

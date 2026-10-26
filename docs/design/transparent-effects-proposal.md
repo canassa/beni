@@ -2836,8 +2836,10 @@ behind every resumption already in the queue. A loser whose wait was answered on
 therefore ran first, returned, and had its value thrown away. With a hand-off primitive that is a
 leak: two `Semaphore.acquire` branches both handed a permit by one `release 2` kept two permits
 taken for one winner, and the program could give back neither. Three rules replace the old timing.
-They hold for `race`, `raceAll`, `raceOk`, `timeout`, `parOk` and `forEachOk`, and for `par`,
-`par3` and `forEach` when a child is cancelled by itself.
+They hold for `race`, `raceAll`, `raceOk`, `timeout`, `parOk` and `forEachOk`. The first rule
+also holds for `par`, `par3` and `forEach` when a child is cancelled by itself. The second does not
+apply to them: a child that cancels itself never ends at once. It is still unwinding when its start
+returns, so the next child starts.
 
 - **The losers are cancelled when the answer is decided, from the deciding child's end.** The
   combinator's observer runs inside that child's `complete`, before anything else on the scheduler's
@@ -2895,8 +2897,17 @@ Fixtures, each red before this amendment: `run/RaceLoserDoesNotRunAfterWinner`,
 `run/RaceAcquireNoLeak` (handed on one turn, and at once), `run/TimeoutAcquireNoLeak` (on a virtual
 clock, the timer and a `release` on one turn), `run/RaceAllStopsAtWinner` (three branches, and a
 third never started), and `run/ParOkErrStopsSibling` (`parOk` on one turn and at once, and
-`forEachOk`). Also `run/SemaphoreAcquireOnExit`, which pins the remedy for the nested case. It
-passes before and after this amendment. The existing combinator fixtures print the same lines.
+`forEachOk`), `run/RaceOkStopsAtWinner`, and `run/ParSelfCancelStopsSibling` (the first rule for
+`par`). Also `run/SemaphoreAcquireOnExit`, which pins the remedy for the nested case. It passes
+before and after this amendment. The existing combinator fixtures print the same lines.
+
+**The cancellers run on the combinator's fiber.** The first rule runs the losers' cancellers
+inside the deciding child's end. By then that child has ended. They run with the combinator's own
+parked fiber as the current fiber, as they would if the combinator cancelled them itself. So a
+fiber that a canceller starts is a child of a live fiber, and that fiber waits for it (A10).
+`run/RaceCancellerSpawns` covers `race`, `parOk` and `timeout`. A combinator's record of a child
+that ended at once has no observers, and `unobserve` passes it by (#1047,
+`run/ParEndedChildUnobserve`).
 
 ### 17.8 `Schedule`, `retry`, `repeat` (P4)
 

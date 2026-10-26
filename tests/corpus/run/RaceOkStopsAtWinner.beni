@@ -1,0 +1,32 @@
+-- run: `Task.raceOk` (transparent-effects-proposal.md §17.7, amended
+-- 2026-10-26).
+--
+--   - One turn: both branches join one fiber, so its end answers both
+--     waits on one turn. The first answers `Ok` and wins. The second is
+--     cancelled from the first's end, before it can run again.
+--   - At once: the first answers `Ok` without waiting, so the second is
+--     never started.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        "open"
+
+    one =
+        Task.raceOk
+            [ λ⊤ →
+                v = Task.join gate
+                Debug.log "first after its wait" (Ok v)
+            , λ⊤ →
+                v = Task.join gate
+                Debug.log "second after its wait" (Ok v)
+            ]
+    _ = Debug.log "one turn" one
+
+    two = Task.raceOk [ λ⊤ → Ok 1, λ⊤ → Debug.log "second started" (Ok 2) ]
+    Node.print "at once: ${Debug.toString two}"

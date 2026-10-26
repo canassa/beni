@@ -1,0 +1,29 @@
+-- run: a `Task.par` child that cancels itself cancels its sibling at once
+-- (transparent-effects-proposal.md §17.7, amended 2026-10-26). The first
+-- child joins `g`, and the second waits for `g` to end. `g` is cancelled,
+-- which answers both waits on one turn. The first runs, and is cancelled
+-- by its join. Its end cancels the second before that one can run again,
+-- so the second's step after its wait never prints, and the caller is
+-- cancelled.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done)
+
+
+main : Program
+main = Io.run λ⊤ →
+    g = Task.spawn λ⊤ → Task.never ⊤
+
+    caller = Task.spawn λ⊤ →
+        Task.par (λ⊤ → Task.join g) λ⊤ →
+            _ = Task.wait g
+            Debug.log "second after its wait" ⊤
+    Task.yieldNow ⊤
+    Task.cancel g
+
+    case Task.wait caller of
+        Cancelled →
+            Node.print "the caller is cancelled"
+
+        Done _ →
+            Node.print "done?"
