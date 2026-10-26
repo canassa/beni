@@ -1704,21 +1704,27 @@ A declaration whose summary does not decode is unknown; a block that does not de
 
 **As built in S2b (the minimal block).** `Block.zig` writes and `BlockRead.zig` reads (§5). A class means
 κ *as read* (§2.9: stored ⊔ derived at the position), so its shape nodes are written as **positions**: a
-node, its position class and its owner's map (a class's, a supply's; a use shape is no value and carries
-none), reached from the owner's values through the node's parts and through `proj` at every step of its
-place, as `kappaLeq` and `propagate` read. Each position carries the κ read there (a union's or a positions
-node's: what is stored there, as its sides are read with it) and the positions `proj` makes that the node's
-parts do not name. The reader stores exactly that κ at exactly those positions and checks that `proj`
-makes each of them, so every read of the decoded class is the written one's. A union whose constructor
-absorbs it into a side (its sides merged) has its κ read as written and joined into the side: exact at its
-position, never less below.
+node, its position class and its owner's map (one owner per hash-consed map, so supplies that share a map
+share their positions; a use shape is no value and carries none). The positions are the owner's values,
+closed under the node's parts and its projections at every step of its place (a union's and a node's,
+not a leaf's or an empty one), and **every entry of the owner's map that a read can reach**, with the
+projections that lead to it from those. That set is closed for every read: `kappaOf` at a `proj` path
+from a value, as `kappaLeq`, `propagate`, `join` and `map` make, and `dagKappa` through a union's sides,
+reaches either a written position, which carries the κ read there, or a node with nothing stored, whose κ
+is derived from the structure the block rebuilds alone, in the writer as in the reader. Each position
+carries the κ read there (a union's or a positions node's: what is stored there, as its sides are read
+with it) and the positions `proj` makes that the node's parts do not name. The reader stores exactly that
+κ at exactly those positions and checks that `proj` makes each of them, so every read of the decoded class
+is the written one's. A union whose constructor absorbs it into a side (its sides merged) has its κ read
+as written and joined into the side: exact at its position, never less below. Different maps over one
+value are different owners and each costs the value's positions: that cost is the input's.
 
 One record table: labels, paths, cells, splits, cell sets, atom sets, conditions, atoms, positions,
 supplies, keeps, slots and classes, each written once and named by its ordinal. A record follows its parts,
 except in a knot: the positions of one cycle are one `group` record whose members are numbered together;
 a child step or a projected position may name any member, every other part an earlier record. The order is
 canonical. A record that is not a position is keyed by a hash of its words and its parts' keys. All of the
-block's positions are partitioned once by Hopcroft's algorithm (counting a union's two sides as one label,
+block's positions are partitioned once by Hopcroft's algorithm (`Refine.zig`) (counting a union's two sides as one label,
 O(E log n)), from their kind, class, place, cells, κ and steps. Every choice of the refinement depends on
 block numbers and splitting signatures only, so the final numbers are canonical; they are the positions'
 keys, and one block is one record. The table is a post-order walk from the classes. The reader builds a
@@ -2173,7 +2179,7 @@ L14 Enforce
 L13 Ownership
 L12 BlockRead
 L11 Report  Message  Hoists  Block
-L10 Groups  Entry
+L10 Groups  Entry  Refine
 L9  Walk
 L8  Transfer  Fix
 L7  Calls
@@ -2207,7 +2213,8 @@ L0  Ids
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 300 |
+| `Refine.zig` | 10 | Hopcroft's partition refinement with canonical block numbers (the block's positions) | `blocks` | Ids | ≤ 250 |
+| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 250 |
 | `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 800 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
@@ -2232,7 +2239,7 @@ same account and one-shot scheduling; a cycle is waiting, never proof. `Cond` kn
 ids/records, not class internals or a `Calls` import. `Demands` and `Walk` explicitly import `Regions` for
 compatibility/continuation points. Passed-down interface contexts are ephemeral, never pointers in an IR.
 
-There are **24 production files plus `rules_test.zig`, on 14 layers (L0–L13)**.
+There are **26 production files plus `rules_test.zig`, on 15 layers (L0–L14)**.
 Targets count production lines before `const testing`, excluding tests; the implemented foundation/S2
 interfaces fix the imports here, including Summary→Facts and Liveness→Place. Tests may import helpers
 under the gate's test rules.

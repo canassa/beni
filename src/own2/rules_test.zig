@@ -53,9 +53,11 @@ const layers = [_]Entry{
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 900 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
-    // §5 says 1 300 since S2b: positions with their read κ, one canonical
-    // partition refinement and the shared format; the reader is `BlockRead`.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1300 },
+    .{ .file = "Refine.zig", .layer = 10, .max_lines = 250 },
+    // §5 says 1 250 since S2b: positions with their read κ, closed under the
+    // map's entries, and the shared format; the reader is `BlockRead`, the
+    // refinement `Refine`.
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1250 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
@@ -324,7 +326,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 25), layers.len);
+    try testing.expectEqual(@as(usize, 26), layers.len);
     try testing.expectEqual(@as(usize, 19), causes.len);
 }
 
