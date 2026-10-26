@@ -1311,7 +1311,7 @@ test "three lexical errors in one file yield exactly three diagnostics in positi
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "x = 12abc\ny = 'ab'\nz = @\n");
+    try w.write("Main.beni", "x = 12abc\ny = 'ab'\nz = $\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1350,7 +1350,7 @@ test "three lexical errors in one file yield exactly three diagnostics in positi
             .severity = .@"error",
             .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 6 } },
             .title = "INVALID CHARACTER",
-            .message = "I found `@`, which is not part of the language's syntax.\n" ++
+            .message = "I found `$`, which is not part of the language's syntax.\n" ++
                 "\n" ++
                 "The symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n" ++
                 "+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
@@ -6588,7 +6588,7 @@ test "schema field recovery keeps the next sibling and top-level declaration" {
     defer w.deinit();
     try w.write("Main.beni",
         \\schema Broken =
-        \\    { badTail : Int nonsense @
+        \\    { badTail : Int nonsense $
         \\    , kept : String
         \\    }
         \\
@@ -6624,7 +6624,7 @@ test "schema field recovery keeps the next sibling and top-level declaration" {
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 30 }, .end = .{ .line = 2, .col = 31 } },
         .title = "INVALID CHARACTER",
-        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
+        .message = "I found `$`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = → ← λ | _ ? … × and the operators are\n+ - * / // ^ ++ == ≠ < > ≤ ≥ && || ▷ ◁.",
     }}), r.diagnostics);
 }
 

@@ -1,0 +1,5 @@
+-- fmt: a declaration's `@ownership_summary_size` at the head of a file with
+-- no imports stays directly above its declaration (`ownership-v2.md` §4.4).
+@ownership_summary_size(131072)
+pub large : ⊤ → List Int
+large ⊤ = [ 1, 2, 3 ]

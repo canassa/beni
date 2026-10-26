@@ -1,0 +1,50 @@
+-- check/bad: `invalid_ownership_summary_size` (`ownership-v2.md` §4.4),
+-- lowering's, over the attribute line, which is dropped: a value below the
+-- module's allowance (15:1), not a decimal literal (19:1), another name
+-- (23:1), above 2³²−2 (27:1), on a type (31:1), a module's after the
+-- preamble (36:1), two for one owner (40:1), between an annotation and its
+-- definition (46:1), with no declaration after it (50:1). The rest checks.
+@ownership_summary_size(module, 131072)
+
+import Debug
+
+
+ok = 0
+
+
+@ownership_summary_size(100000)
+low = 1
+
+
+@ownership_summary_size(0x30000)
+hex = 2
+
+
+@other_attribute(200000)
+other = 3
+
+
+@ownership_summary_size(99999999999)
+huge = 4
+
+
+@ownership_summary_size(200000)
+type T
+    = T
+
+
+@ownership_summary_size(module, 200000)
+late = 5
+
+
+@ownership_summary_size(200000)
+@ownership_summary_size(300000)
+twice = 6
+
+
+between : Int
+@ownership_summary_size(200000)
+between = 7
+
+
+@ownership_summary_size(200000)

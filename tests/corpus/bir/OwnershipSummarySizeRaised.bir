@@ -1,0 +1,50 @@
+ownership_summary_size module 262144
+
+decl 0: value large (annotated)
+  ownership_summary_size 300000
+  %0 = type_unit
+  %1 = type_import List.List
+  %2 = type_import Basics.Int
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_unit
+  %6 = int 1
+  %7 = int 2
+  %8 = list [%6, %7]
+  annotation %4
+  params [%5]
+  body %8
+  refs
+    import_type List.List
+    import_type Basics.Int
+
+decl 1: value small
+  ownership_summary_size 262144
+  %0 = int 3
+  %1 = list [%0]
+  params []
+  body %1
+
+decl 2: value plain (annotated)
+  %0 = type_import Basics.Int
+  %1 = int 4
+  annotation %0
+  params []
+  body %1
+  refs
+    import_type Basics.Int
+
+interface
+
+imports
+  import Debug
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float
+  prelude Record

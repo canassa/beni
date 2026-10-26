@@ -88,6 +88,8 @@ pub fn write(
     names: Names,
 ) std.Io.Writer.Error!void {
     var d: Dumper = .{ .w = w, .source = source, .comments = comments, .bir = bir, .names = names };
+    // `@ownership_summary_size(module, n)` (ownership-v2.md §4.4), when raised.
+    if (bir.summary_size != 0) try w.print("ownership_summary_size module {d}\n\n", .{bir.summary_size});
     for (bir.decls, 0..) |decl, i| {
         try d.decl(decl, @intCast(i));
         try w.writeByte('\n');
@@ -252,6 +254,7 @@ const Dumper = struct {
         try d.w.writeByte('\n');
         try d.docs(decl_.doc_start, decl_.doc_end);
         try d.own2Row(decl_);
+        if (decl_.summary_size != 0) try d.w.print("  ownership_summary_size {d}\n", .{decl_.summary_size});
 
         var i = decl_.inst_start.int();
         while (i < decl_.inst_end.int()) : (i += 1) {

@@ -108,6 +108,15 @@ pub const Item = struct {
         own_conflict,
         own_type_word,
         own_failure,
+        /// `invalid_ownership_summary_size` (ownership-v2.md §4.4): why.
+        attr_unknown,
+        attr_module_late,
+        attr_twice,
+        attr_smaller,
+        attr_overflow,
+        attr_not_decimal,
+        attr_no_owner,
+        attr_not_value,
     };
 };
 
@@ -305,6 +314,62 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\and `owned` needs one of them; a result is one of `fresh`, `escaped` and
                 \\`unknown`, and `exclusive` needs `fresh`; a function is never `consumed`.
             , .{text}),
+        },
+        .invalid_ownership_summary_size => switch (item.markup) {
+            .attr_unknown => try w.writeAll(
+                \\This attribute is not one beni knows.
+                \\
+                \\The one attribute is `@ownership_summary_size`: it raises how much
+                \\the ownership checker may build for one declaration, or for every
+                \\declaration of the module when it starts with `module`.
+            ),
+            .attr_module_late => try w.writeAll(
+                \\A module's `@ownership_summary_size(module, …)` stands at the start of
+                \\the file, before the first import or declaration.
+                \\
+                \\Comments and blank lines may come before it. Move the line up, or
+                \\remove `module` to raise the declaration that follows it instead.
+            ),
+            .attr_twice => try w.writeAll(
+                \\This is a second `@ownership_summary_size` for one owner.
+                \\
+                \\A module takes one, and so does a declaration. Keep the larger value
+                \\and remove the other line.
+            ),
+            .attr_smaller => try w.writeAll(
+                \\This `@ownership_summary_size` is below the allowance it would raise.
+                \\
+                \\The value raises an allowance; it never lowers one. A declaration's is at
+                \\least its module's, and a module's at least the default, 65536.
+            ),
+            .attr_overflow => try w.writeAll(
+                \\This `@ownership_summary_size` is larger than the checker can count.
+                \\
+                \\The largest value is 4294967294. A declaration that needs more than that
+                \\is too large to check: split it into smaller declarations.
+            ),
+            .attr_not_decimal => try w.writeAll(
+                \\The value of `@ownership_summary_size` is a decimal integer.
+                \\
+                \\Write the digits alone, with no sign, separator or other base:
+                \\`@ownership_summary_size(131072)`.
+            ),
+            .attr_no_owner => try w.writeAll(
+                \\This `@ownership_summary_size` has no declaration to raise.
+                \\
+                \\The line stands directly before a top-level value's annotation, or its
+                \\definition when it has none. Comments may come between them; another
+                \\attribute or declaration may not.
+            ),
+            .attr_not_value => try w.writeAll(
+                \\`@ownership_summary_size` raises a top-level value, and this
+                \\declaration is not one.
+                \\
+                \\A type, an alias, a `foreign` value or a schema has no ownership summary
+                \\of its own. Put the line before the function that needs it, or raise the
+                \\whole module with `@ownership_summary_size(module, …)`.
+            ),
+            else => unreachable,
         },
         .foreign_outside_platform => try w.writeAll(
             \\This `foreign` declaration is outside a platform package.

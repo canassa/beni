@@ -847,6 +847,9 @@ fn parseModule(p: *Parse) Allocator.Error!void {
                 seen_decl = true;
                 try p.pushScratch(try p.parseDecl(docs, &pending));
             },
+            // An attribute line (ownership-v2.md §4.4). Where it may stand
+            // is lowering's: the parser keeps it in place among the items.
+            .at_sign => try p.pushScratch(try p.parseAttribute()),
             else => {
                 try p.reportPendingAnnotation(&pending);
                 var item = p.itemAt(.expected_declaration);
@@ -865,6 +868,30 @@ fn parseModule(p: *Parse) Allocator.Error!void {
     p.drainComments(@intCast(p.tags.len));
     const range = try p.listToRange(p.scratchSince(mark));
     p.nodes.items(.data)[0] = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) };
+}
+
+/// Attribute := '@' lower_ident '(' (lower_ident ',')? int ')'
+/// (ownership-v2.md §4.4). A malformed one is `expected_token` at the
+/// first token out of place, and the line is skipped.
+fn parseAttribute(p: *Parse) Allocator.Error!Index {
+    const at = p.next(); // `@`
+    var module: u32 = 0;
+    var int: u32 = 0;
+    parse: {
+        if (try p.expectToken(.lower_ident) == null) break :parse;
+        if (try p.expectToken(.l_paren) == null) break :parse;
+        if (p.peek() == .lower_ident) {
+            _ = p.next();
+            module = 1;
+            if (try p.expectToken(.comma) == null) break :parse;
+        }
+        int = (try p.expectToken(.int)) orelse break :parse;
+        if (try p.expectToken(.r_paren) == null) break :parse;
+        return p.addNode(.{ .tag = .attribute, .main_token = at, .data = .{ .lhs = int, .rhs = module } });
+    }
+    // The rest of the line; the next item starts at column 1.
+    while (p.rawTag() != .eof and p.col(p.tok_i) != 1) p.tok_i += 1;
+    return p.addNode(.{ .tag = .attribute, .main_token = at, .data = .{ .lhs = 0, .rhs = module } });
 }
 
 /// Top-level resynchronisation: the next column-1 token, or `eof`.
@@ -4549,7 +4576,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             if (i.alias) |t| try testing.expect(t < token_count);
             try checkIndices(tree, i.exposed);
         },
-        .exposed, .type_var, .type_unit, .type_bottom, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
+        .exposed, .attribute, .type_var, .type_unit, .type_bottom, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
         .annotation => {
             const a = tree.fullAnnotation(n);
             try checkHeader(a.header, token_count, comment_count);

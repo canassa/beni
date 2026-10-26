@@ -208,6 +208,8 @@ cur_refs_start: u32 = 0,
 cur_inst_start: u32 = 0,
 /// Set by the first `markup` instruction (frontend.md §9.7).
 uses_markup: bool = false,
+/// `@ownership_summary_size(module, n)` (ownership-v2.md §4.4), or 0.
+module_summary_size: u32 = 0,
 /// Every `For` row and `Show` body lowered, for the captures and inputs
 /// that `finishRows` computes once every declaration is lowered.
 rows: std.ArrayList(PendingRow) = .empty,
@@ -438,6 +440,7 @@ pub fn lower(
         .module_doc_start = tree.module_doc.start,
         .module_doc_end = tree.module_doc.end,
         .uses_markup = l.uses_markup,
+        .summary_size = l.module_summary_size,
     };
     errdefer bir.deinit(gpa);
     bir.extra = try l.extra.toOwnedSlice(gpa);
@@ -816,26 +819,58 @@ fn importToken(l: *const Lower, i: usize, which: enum { module, alias }) TokenIn
 fn collectDeclarations(l: *Lower) Allocator.Error!void {
     l.shrinkScratch(0);
     const items = l.tree.rootItems();
+    // `@ownership_summary_size` (ownership-v2.md §4.4): the module's, in
+    // the preamble, and a declaration's, the line right before it.
+    var pending: ?Raise = null;
+    var preamble = true;
     var i: usize = 0;
     while (i < items.len) : (i += 1) {
         const node = items[i];
-        switch (l.tree.nodeTag(node)) {
+        const tag = l.tree.nodeTag(node);
+        if (tag != .attribute and tag != .error_decl) {
+            if (pending) |p| if (tag == .import or !isValueDecl(tag)) try l.reportRaise(p.node, if (tag == .import) .attr_no_owner else .attr_not_value);
+            if (tag == .import or !isValueDecl(tag)) pending = null;
+            preamble = false;
+        }
+        switch (tag) {
             .import, .error_decl => {},
+            .attribute => {
+                if (pending) |p| try l.reportRaise(p.node, .attr_no_owner);
+                pending = null;
+                const raise = try l.readRaise(node) orelse continue;
+                if (l.tree.nodeData(node).rhs == 1) {
+                    if (!preamble) {
+                        try l.reportRaise(node, .attr_module_late);
+                    } else if (l.module_summary_size != 0) {
+                        try l.reportRaise(node, .attr_twice);
+                    } else if (raise.value < default_summary_size) {
+                        try l.reportRaise(node, .attr_smaller);
+                    } else l.module_summary_size = raise.value;
+                } else pending = raise;
+            },
             .annotation => {
                 // An annotation directly followed by the definition of the
                 // same name is one declaration; the parser has already
-                // reported the other case.
+                // reported the other case. An attribute between the two is
+                // no declaration's.
                 const ann = l.tree.fullAnnotation(node);
-                if (i + 1 < items.len and l.tree.nodeTag(items[i + 1]) == .definition and
-                    l.tokenSymbol(l.tree.nodeMainToken(items[i + 1])) == l.tokenSymbol(ann.name))
+                var j = i + 1;
+                while (j < items.len and l.tree.nodeTag(items[j]) == .attribute) j += 1;
+                if (j < items.len and l.tree.nodeTag(items[j]) == .definition and
+                    l.tokenSymbol(l.tree.nodeMainToken(items[j])) == l.tokenSymbol(ann.name))
                 {
-                    try l.declareValue(items[i + 1], node.toOptional());
-                    i += 1;
+                    for (items[i + 1 .. j]) |a| try l.reportRaise(a, .attr_no_owner);
+                    try l.declareValue(items[j], node.toOptional());
+                    i = j;
                 } else {
                     try l.declareValue(node, .none);
                 }
+                try l.applyRaise(&pending);
             },
-            .definition => try l.declareValue(node, .none),
+            .definition => {
+                try l.declareValue(node, .none);
+                try l.applyRaise(&pending);
+            },
             .foreign_value => try l.declareValue(node, .none),
             .type_alias, .type_decl, .foreign_type => try l.declareType(node),
             .schema_decl => try l.declareSchema(node),
@@ -843,10 +878,72 @@ fn collectDeclarations(l: *Lower) Allocator.Error!void {
             else => {}, // the parser puts only the kinds above at the root
         }
     }
+    if (pending) |p| try l.reportRaise(p.node, .attr_no_owner);
     l.decl_stamp = try l.scratch_allocator.alloc(u32, l.decls.items.len);
     @memset(l.decl_stamp, 0);
     l.ctor_stamp = try l.scratch_allocator.alloc(u32, l.ctors.items.len);
     @memset(l.ctor_stamp, 0);
+}
+
+/// The ownership checker v2's default growth allowance per owner
+/// (ownership-v2.md §4.4), which an attribute may only raise.
+const default_summary_size: u32 = 65536;
+
+fn isValueDecl(tag: Node.Tag) bool {
+    return tag == .annotation or tag == .definition;
+}
+
+/// The largest allowance an attribute may write: 2³²−2, u32 ids keeping
+/// `.none` (§4.4).
+const max_summary_size: u32 = std.math.maxInt(u32) - 1;
+
+const Raise = struct { node: NodeIndex, value: u32 };
+
+/// An attribute's name and value, checked; null (and reported) when it is
+/// not an `@ownership_summary_size` with a decimal value in range, or when
+/// the parser already reported it.
+fn readRaise(l: *Lower, node: NodeIndex) Allocator.Error!?Raise {
+    const at = l.tree.nodeMainToken(node);
+    const int_token = l.tree.nodeData(node).lhs;
+    if (int_token == 0) return null;
+    if (!std.mem.eql(u8, l.tokenText(at + 1), "ownership_summary_size")) {
+        try l.reportRaise(node, .attr_unknown);
+        return null;
+    }
+    // `module`, when written, is the word between `(` and `,`.
+    if (l.tree.nodeData(node).rhs == 1 and !std.mem.eql(u8, l.tokenText(at + 3), "module")) {
+        try l.reportRaise(node, .attr_unknown);
+        return null;
+    }
+    const text = l.tokenText(int_token);
+    for (text) |c| if (c < '0' or c > '9') {
+        try l.reportRaise(node, .attr_not_decimal);
+        return null;
+    };
+    const value = std.fmt.parseUnsigned(u64, text, 10) catch std.math.maxInt(u64);
+    if (value > max_summary_size) {
+        try l.reportRaise(node, .attr_overflow);
+        return null;
+    }
+    return .{ .node = node, .value = @intCast(value) };
+}
+
+/// The pending attribute onto the declaration just declared: at least the
+/// module's allowance (or the default).
+fn applyRaise(l: *Lower, pending: *?Raise) Allocator.Error!void {
+    const p = pending.* orelse return;
+    pending.* = null;
+    const floor = if (l.module_summary_size != 0) l.module_summary_size else default_summary_size;
+    if (p.value < floor) return l.reportRaise(p.node, .attr_smaller);
+    l.decls.items[l.decls.items.len - 1].summary_size = p.value;
+}
+
+/// `invalid_ownership_summary_size` over the whole attribute line.
+fn reportRaise(l: *Lower, node: NodeIndex, reading: Diagnostics.Item.Markup) Allocator.Error!void {
+    // A read attribute is whole: its last token is the `)` after the value.
+    const at = l.tree.nodeMainToken(node);
+    const last = l.tree.nodeData(node).lhs + 1;
+    try l.diagnostics.append(l.gpa, .{ .code = .invalid_ownership_summary_size, .start = l.starts[at], .end = l.tokenEnd(last), .markup = reading });
 }
 
 fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.DeclHeader) Allocator.Error!u32 {

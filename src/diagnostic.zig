@@ -466,6 +466,12 @@ pub const Code = enum {
     record_still_used,
     top_level_record_changed,
     record_may_be_shared,
+    /// Appended on 2026-10-26 with the raise attribute (ownership-v2.md
+    /// §4.4): an `@ownership_summary_size` that is not one — another name,
+    /// a misplaced line, a second one for one owner, a value that is not a
+    /// decimal literal, below the inherited allowance or above 2³²−2.
+    /// Lowering's, at the attribute; an error.
+    invalid_ownership_summary_size,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -651,6 +657,7 @@ pub fn title(code: Code) []const u8 {
         .record_still_used => "RECORD CHANGED WHILE STILL IN USE",
         .top_level_record_changed => "TOP-LEVEL RECORD CHANGED",
         .record_may_be_shared => "RECORD MAY BE SHARED",
+        .invalid_ownership_summary_size => "INVALID OWNERSHIP SUMMARY SIZE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

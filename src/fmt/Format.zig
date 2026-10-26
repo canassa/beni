@@ -1838,6 +1838,13 @@ const Measurer = struct {
         if (isMarkup(tag)) return m.measureMarkup(n);
         switch (tag) {
             .root => unreachable, // measured by measureRoot
+            // `@ownership_summary_size(…)`: a line of its own (§4.4); a
+            // malformed one is a syntax error, which the formatter refuses.
+            .attribute => {
+                const int = tree.nodeData(n).lhs;
+                if (int == 0) return error.SyntaxErrors;
+                m.set(n, no_fit, main, int + 1);
+            },
             .import => {
                 const i = tree.fullImport(n);
                 var last_tok = i.import_token;
@@ -2747,8 +2754,17 @@ const Printer = struct {
         // every declaration (or reports the file, which is then not here).
         const mark = p.stack.items.len;
         defer p.stack.shrinkRetainingCapacity(mark);
+        // The preamble's module attributes (`@ownership_summary_size(module,
+        // …)`, ownership-v2.md §4.4) come before the imports, each on its
+        // line, then one blank line; a declaration's stays with it.
+        var head: usize = 0;
+        while (head < items.len and p.tree.nodeTag(items[head]) == .attribute and p.tree.nodeData(items[head]).rhs == 1) : (head += 1) {
+            if (head > 0) p.newline(0);
+            try p.leading(p.first(items[head]), 0);
+            try p.decl(items[head]);
+        }
         var decl_start: usize = items.len;
-        for (items, 0..) |item, i| {
+        for (items[head..], head..) |item, i| {
             if (p.tree.nodeTag(item) != .import) {
                 decl_start = i;
                 break;
@@ -2758,6 +2774,7 @@ const Printer = struct {
         const imports = p.stack.items[mark..];
         const import_count = imports.len;
         std.mem.sort(u32, imports, p, importLessThan);
+        if (head > 0 and import_count > 0) p.blankLines(1, 0);
         for (imports, 0..) |item, i| {
             if (i > 0) p.newline(0);
             try p.import(@fromBackingInt(@intCast(item)));
@@ -2765,8 +2782,10 @@ const Printer = struct {
 
         var prev: ?Index = null;
         for (items[decl_start..]) |item| {
-            if (import_count > 0 or prev != null) {
-                if (prev != null and p.tree.nodeTag(prev.?) == .annotation) {
+            if (import_count > 0 or prev != null or head > 0) {
+                // A declaration sits directly under its annotation, and
+                // under its attribute line (§4.4).
+                if (prev != null and (p.tree.nodeTag(prev.?) == .annotation or p.tree.nodeTag(prev.?) == .attribute)) {
                     p.newline(0);
                     try p.leadingWith(p.first(item), 0, false);
                 } else {
@@ -2877,6 +2896,20 @@ const Printer = struct {
         const tree = p.tree;
         const main = tree.nodeMainToken(n);
         switch (tree.nodeTag(n)) {
+            // `@ownership_summary_size(module, 262144)`, spelled so (§4.4).
+            .attribute => {
+                const int = tree.nodeData(n).lhs;
+                try p.tok(main); // `@`
+                try p.tok(main + 1); // the name
+                try p.tok(main + 2); // `(`
+                if (tree.nodeData(n).rhs == 1) {
+                    try p.tok(main + 3); // `module`
+                    try p.tok(main + 4); // `,`
+                    try p.space();
+                }
+                try p.tok(int);
+                try p.tok(int + 1); // `)`
+            },
             .annotation => {
                 const a = tree.fullAnnotation(n);
                 try p.header(a.header);

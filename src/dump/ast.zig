@@ -192,6 +192,14 @@ const Dumper = struct {
                 if (i.exposing_token != null) try d.w.writeAll(" exposing");
                 try d.children(i.exposed, inner);
             },
+            // `(attribute ownership_summary_size module 262144)` (§4.4).
+            .attribute => {
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{d.text(main + 1)});
+                const data = tree.nodeData(n);
+                if (data.rhs == 1) try d.w.writeAll(" module");
+                if (data.lhs != 0) try d.w.print(" {s}", .{d.text(data.lhs)});
+            },
             .type_var => {
                 try d.openTag(tag, main);
                 if (tree.typeVarMarker(n) != null) try d.w.writeAll(" equatable");

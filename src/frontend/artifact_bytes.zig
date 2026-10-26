@@ -127,7 +127,11 @@ pub const magic = "BENIFE\x00\x00";
 /// `misplaced_ownership_word` has six new readings.
 /// 25 (2026-10-26): a declaration row carries its spread chains' range,
 /// `spreads_start`/`spreads_end` (`Bir.Spread`, ownership-v2.md §2.13.2).
-pub const format_version: u32 = 25;
+/// 26 (2026-10-26): `@ownership_summary_size` (ownership-v2.md §4.4) — `Token.Tag`
+/// gained `at_sign` and `Ast.Node.Tag` `attribute`, which shifted later
+/// tags; the flags section carries the module's raise and a declaration
+/// row its own, `summary_size`; lowering has a new code.
+pub const format_version: u32 = 26;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -162,7 +166,8 @@ pub const Section = enum(u32) {
     diagnostics,
     strings,
     bir_module_doc,
-    /// One word of flags: bit 0 is `Bir.uses_markup` (frontend.md §9.7).
+    /// Two words: flags, bit 0 `Bir.uses_markup` (frontend.md §9.7); then
+    /// `Bir.summary_size`, the module's raised ownership growth allowance.
     bir_flags,
 
     pub const count: u32 = @typeInfo(Section).@"enum".field_names.len;
@@ -311,7 +316,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
     lengths[@backingInt(Section.diagnostics)] = diagnosticsLen(in.diagnostics);
     lengths[@backingInt(Section.strings)] = Strings.header + distinct * Strings.row + blob_len;
     lengths[@backingInt(Section.bir_module_doc)] = 8;
-    lengths[@backingInt(Section.bir_flags)] = 4;
+    lengths[@backingInt(Section.bir_flags)] = 8;
 
     var offsets: [Section.count]u32 = @splat(0);
     var at: u32 = body_start;
@@ -397,6 +402,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
         std.mem.writeInt(u32, dst[4..8], bir.module_doc_end, .little);
     }
     std.mem.writeInt(u32, s(out, offsets, lengths, .bir_flags)[0..4], @intFromBool(bir.uses_markup), .little);
+    std.mem.writeInt(u32, s(out, offsets, lengths, .bir_flags)[4..8], bir.summary_size, .little);
 
     // 4. The body hash, last, over everything it covers.
     const digest = iface_bytes.hash(out[hashed_from..]);
@@ -667,7 +673,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     if (lengths[@backingInt(Section.bir_interface)] % 4 != 0) return error.BadArtifact;
     if (lengths[@backingInt(Section.line_starts)] % 4 != 0) return error.BadArtifact;
     if (lengths[@backingInt(Section.bir_module_doc)] != 8) return error.BadArtifact;
-    if (lengths[@backingInt(Section.bir_flags)] != 4) return error.BadArtifact;
+    if (lengths[@backingInt(Section.bir_flags)] != 8) return error.BadArtifact;
     inline for (.{
         .{ Section.bir_decls, Bir.Decl },
         .{ Section.bir_ctors, Bir.Ctor },
@@ -748,6 +754,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         const flags = std.mem.readInt(u32, sec(bytes, offsets, lengths, .bir_flags)[0..4], .little);
         if (flags > 1) return error.BadArtifact;
         out.bir.uses_markup = flags == 1;
+        out.bir.summary_size = std.mem.readInt(u32, sec(bytes, offsets, lengths, .bir_flags)[4..8], .little);
     }
 
     try out.spans.setCapacity(gpa, token_count);
@@ -880,7 +887,8 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 101 since it carries its ownership words' range, two words.
     // 110 since it carries the v2 column, two words, and the type word.
     // 118 since it carries its spread chains' range, two words.
-    try testing.expectEqual(@as(u32, 118), rowBytes(Bir.Decl));
+    // 122 since it carries its raised ownership summary size, one word.
+    try testing.expectEqual(@as(u32, 122), rowBytes(Bir.Decl));
     // 21 since a constructor carries its `failure` mark.
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
