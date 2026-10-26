@@ -1,0 +1,7 @@
+available: 1
+try 1 while one waits: Nothing
+waiter in: ⊤
+try 1 with nobody waiting: Just 1
+available after it: 2
+try 2 with 1 free: Nothing
+done

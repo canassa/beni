@@ -1,0 +1,37 @@
+-- run: `tryWithPermits` never passes a fiber that waits
+-- (transparent-effects-proposal.md §17.9). Of 2 permits a holder takes 1,
+-- and a request for 2 waits. A try for 1 answers `Nothing` and runs
+-- nothing, though 1 permit is free. Once nobody waits, a try for 1 runs
+-- and gives its permit back; a try for more than are free answers
+-- `Nothing`.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    gate : Deferred ⊤
+    gate = Deferred.make ⊤
+    holder = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Deferred.wait gate
+    Task.yieldNow ⊤
+    waiter = Task.spawn λ⊤ → Semaphore.withPermits s 2 λ⊤ → Debug.log "waiter in" ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "available" (Semaphore.available s)
+    _ =
+        Debug.log
+            "try 1 while one waits"
+            (Semaphore.tryWithPermits s 1 λ⊤ → Debug.log "ran" "try 1")
+    _ = Deferred.complete gate ⊤
+    _ = Task.joinAll [ holder, waiter ]
+    _ =
+        Debug.log
+            "try 1 with nobody waiting"
+            (Semaphore.tryWithPermits s 1 λ⊤ → Semaphore.available s)
+    _ = Debug.log "available after it" (Semaphore.available s)
+    _ = Semaphore.withPermit s λ⊤ →
+        Debug.log "try 2 with 1 free" (Semaphore.tryWithPermits s 2 λ⊤ → Debug.log "ran" "try 2")
+    Node.print "done"

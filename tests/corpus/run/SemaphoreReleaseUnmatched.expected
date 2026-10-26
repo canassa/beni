@@ -1,0 +1,9 @@
+available after releasing 5: 2
+available after taking 1, releasing 3: 2
+a in: ⊤
+b in: ⊤
+c waits: True
+available after releasing 0 and -1: 0
+c in: ⊤
+available at the end: 2
+done

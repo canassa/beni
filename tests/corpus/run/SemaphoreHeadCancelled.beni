@@ -1,0 +1,38 @@
+-- run: cancelling the waiter at the head of the queue lets the requests
+-- behind it through at once (transparent-effects-proposal.md §17.9). Of 2
+-- permits a holder takes 1. The head asks for 2 and waits; behind it two
+-- requests for 1 wait, though 1 permit is free. The head is cancelled: the
+-- first request behind it is served at once, the second waits for it.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+request : Semaphore, String, Int, Deferred ⊤ → Fiber ⊤
+request s name n gate = Task.spawn λ⊤ →
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "${name} ended" ⊤) λ_ →
+        Semaphore.withPermits s n λ⊤ →
+            Debug.log "${name} in" ⊤
+            Deferred.wait gate
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    gate = Deferred.make ⊤
+    holder = request s "holder" 1 gate
+    Task.yieldNow ⊤
+    head = request s "head" 2 gate
+    first = request s "first" 1 gate
+    second = request s "second" 1 gate
+    Task.yieldNow ⊤
+    _ = Debug.log "available before the cancel" (Semaphore.available s)
+    Task.cancel head
+    Task.yieldNow ⊤
+    _ = Debug.log "available after the cancel" (Semaphore.available s)
+    _ = Deferred.complete gate ⊤
+    _ = Task.joinAll [ holder, first, second ]
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

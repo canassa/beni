@@ -1,0 +1,215 @@
+--! A count of permits that fibers take before they go on, and give back
+--! after (`transparent-effects-proposal.md` §17.9): Effect's `Semaphore`.
+--! Use it to limit how many fibers do one thing at the same time.
+--!
+--!     pool = Semaphore.make 4
+--!     pages = Task.forEach urls 100 λurl →
+--!         Semaphore.withPermit pool λ⊤ → fetch url
+--!
+--! **`withPermits` is the default.** It waits for the permits, runs the
+--! work, and gives the permits back when the work ends, returned or
+--! cancelled. A permit cannot be lost through it.
+--!
+--! **First come, first served.** Requests are served in the order they
+--! began to wait. A request waits while an earlier one waits, even when
+--! there are permits enough for it, so a request for many permits is never
+--! starved by requests for few. A waiter that is cancelled leaves the queue
+--! at once, and the requests behind it are examined again.
+--!
+--! **A request for more permits than there are** is served when every
+--! permit is free, and takes them all. A request for 0 or fewer takes
+--! nothing and does not wait.
+--!
+--! **`acquire` and `release` are the manual pair**, for a permit that one
+--! fiber takes and another gives back. Nothing gives such a permit back for
+--! you: a permit you `acquire` and never `release` is lost, and the
+--! semaphore has one permit fewer from then on.
+--!
+--! Nothing here is `foreign`: it is beni over `Task.callback`,
+--! `Task.resume` and `Task.uninterruptibleMask`.
+
+import Js
+import Task
+
+
+--| A count of permits, and the fibers that wait for them, in order.
+pub opaque type Semaphore
+    = Semaphore Js.Value
+
+
+--| A new `Semaphore` with `permits` permits, all free. Fewer than 0 is 0.
+--| Each call makes a new one.
+pub make : Int → Semaphore
+make permits = Semaphore (Js.from { permits = max 0 permits, taken = 0, waiters = Js.array [] })
+
+
+--| Take `n` permits, run `work`, and give the permits back when `work`
+--| ends: when it returns, and when the fiber is cancelled. The wait for the
+--| permits can be cancelled; giving them back cannot be stopped.
+--|
+--|     Semaphore.withPermits s 2 λ⊤ → copyFile path
+pub withPermits : Semaphore, Int, (⊤ → a) → a
+withPermits (Semaphore s) n work =
+    if n ≤ 0 then
+        work ⊤
+    else
+        Task.uninterruptibleMask λtoken →
+            got = Task.restore token λ⊤ → take s n
+            Task.onExit (λ⊤ → Task.restore token work) λ_ → give s got
+
+
+--| `withPermits` with one permit.
+pub withPermit : Semaphore, (⊤ → a) → a
+withPermit s work = withPermits s 1 work
+
+
+--| Run `work` with `n` permits only if they can be taken now, without
+--| waiting and without passing a fiber that waits: `Just` its value, and
+--| the permits given back as `withPermits` gives them. Otherwise run
+--| nothing and answer `Nothing`.
+pub tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a
+tryWithPermits (Semaphore s) n work =
+    if n ≤ 0 then
+        Just (work ⊤)
+    else
+        got = if Js.to (Js.get (Js.get s "waiters") "length") == 0 then grant s n else 0
+
+        if got == 0 then
+            Nothing
+        else
+            Js.set s "taken" (Js.from (takenOf s + got))
+            Task.uninterruptibleMask λtoken →
+                Task.onExit (λ⊤ → Just (Task.restore token work)) λ_ → give s got
+
+
+--| Wait until `n` permits can be taken, and take them. The wait joins the
+--| same queue as `withPermits`, and can be cancelled: a cancelled `acquire`
+--| takes nothing.
+--|
+--| Give the permits back with `release`, from this fiber or another. A
+--| permit you `acquire` and never `release` is lost. Prefer `withPermits`
+--| when the permits are given back where they were taken.
+--|
+--|     -- a ball enters the machine
+--|     Semaphore.acquire slots 1
+--|     -- … and in another fiber, when it leaves:
+--|     Semaphore.release slots 1
+pub acquire : Semaphore, Int → ⊤
+acquire (Semaphore s) n =
+    if n > 0 then
+        _ = take s n
+        ⊤
+
+
+--| Give back `n` permits, and serve the fibers that wait, in order.
+--| Giving back more than are taken stops at none taken. That catches only
+--| the case where nothing is held: giving back permits that another fiber
+--| took cannot be told apart from a correct `release`. 0 or fewer does
+--| nothing.
+pub release : Semaphore, Int → ⊤
+release (Semaphore s) n = if n > 0 then give s n
+
+
+--| How many permits are free now. Never fewer than 0.
+pub available : Semaphore → Int
+available (Semaphore s) = max 0 (permitsOf s - takenOf s)
+
+
+--| Set the number of permits to `n`; fewer than 0 is 0. Permits already
+--| taken stay taken. The fibers that wait and now fit are served, in
+--| order.
+pub resize : Semaphore, Int → ⊤
+resize (Semaphore s) n =
+    Js.set s "permits" (Js.from (max 0 n))
+    serve s
+
+
+-- ---- The queue -------------------------------------------------------------
+--
+-- `s` is `{ permits, taken, waiters }`; a waiter is `{ got, n, resume }`,
+-- first in the array first served. A waiter is served by its permits
+-- being counted as taken, `got` set, and its fiber resumed — a hand-off,
+-- so no later request can take them first. Its canceller sees `got`: a
+-- waiter served but cancelled before it ran gives the permits back.
+
+permitsOf : Js.Value → Int
+permitsOf s = Js.to (Js.get s "permits")
+
+
+takenOf : Js.Value → Int
+takenOf s = Js.to (Js.get s "taken")
+
+
+-- What a request for `n > 0` takes now, or 0 when it must wait. A request
+-- for more than there are takes every permit once all are free, and waits
+-- while there are none.
+grant : Js.Value, Int → Int
+grant s n =
+    p = permitsOf s
+    t = takenOf s
+
+    if n ≤ p then
+        if p - t ≥ n then n else 0
+    else if t == 0 then
+        p
+    else
+        0
+
+
+-- Take `n > 0` permits, at once when nobody waits and they fit, otherwise
+-- at the end of the queue. Answers how many were taken.
+take : Js.Value, Int → Int
+take s n =
+    waiters = Js.get s "waiters"
+    now = if Js.to (Js.get waiters "length") == 0 then grant s n else 0
+
+    if now > 0 then
+        Js.set s "taken" (Js.from (takenOf s + now))
+        now
+    else
+        Task.callback λresume →
+            w = Js.from { got = 0, n = n, resume = resume }
+            _ = Js.call waiters "push" [ w ]
+            λ⊤ → leave s w
+
+
+-- A waiter's fiber is cancelled: give back what it was handed, or take it
+-- off the queue — and, when it was the head, look at the queue again.
+leave : Js.Value, Js.Value → ⊤
+leave s w =
+    got : Int
+    got = Js.to (Js.get w "got")
+
+    if got > 0 then
+        give s got
+    else
+        waiters = Js.get s "waiters"
+
+        i : Int
+        i = Js.to (Js.call waiters "indexOf" [ w ])
+        if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ])
+        if i == 0 then serve s
+
+
+-- Give back `n` permits, never below none taken, and serve the queue.
+give : Js.Value, Int → ⊤
+give s n =
+    Js.set s "taken" (Js.from (max 0 (takenOf s - n)))
+    serve s
+
+
+-- Hand permits to the waiters at the head, in order, while they fit.
+serve : Js.Value → ⊤
+serve s =
+    waiters = Js.get s "waiters"
+
+    if Js.to (Js.get waiters "length") > 0 then
+        w = Js.at waiters 0
+
+        got = grant s (Js.to (Js.get w "n"))
+        if got > 0 then
+            _ = Js.call waiters "shift" []
+            Js.set s "taken" (Js.from (takenOf s + got))
+            Js.set w "got" (Js.from got)
+            Task.resume (Js.to (Js.get w "resume")) got
+            serve s

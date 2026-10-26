@@ -1,0 +1,11 @@
+holder in: ⊤
+resize to 4: ⊤
+two in: ⊤
+one in: ⊤
+available: 0
+available after shrinking to 1: 0
+available once all gave back: 1
+available after resizing to -2: 0
+late waits: True
+late in: ⊤
+done

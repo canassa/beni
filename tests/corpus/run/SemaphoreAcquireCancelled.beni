@@ -1,0 +1,29 @@
+-- run: an `acquire` cancelled while it waits takes nothing and leaves the
+-- queue (transparent-effects-proposal.md §17.9, amended 2026-10-26, point
+-- 2; §17.1 item 1). On 1 permit a holder takes it; an `acquire` waits, and
+-- a `withPermit` waits behind it. The `acquire` is cancelled while it
+-- waits: when the holder gives back, the `withPermit` is served, and at
+-- the end the permit is free — the cancelled `acquire` took none.
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 1
+    Semaphore.acquire s 1
+
+    waiting = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "acquire released" ⊤) λ_ →
+            Semaphore.acquire s 1
+            Debug.log "acquire got it" ⊤
+    behind = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Debug.log "behind in" ⊤
+    Task.yieldNow ⊤
+    Task.cancel waiting
+    _ = Debug.log "available after the cancel" (Semaphore.available s)
+    Semaphore.release s 1
+    Task.join behind
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

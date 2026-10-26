@@ -1,0 +1,31 @@
+-- run: requests for 0 or fewer permits, and a semaphore with none
+-- (transparent-effects-proposal.md §17.9 and its 2026-10-26 amendment). A
+-- request for 0 or fewer takes nothing and does not wait, even while
+-- another waits. `make` with a negative count makes 0 permits. On 0
+-- permits a request for 1 is not an oversize request that passes because
+-- nothing is taken: it waits, and is served when the semaphore grows.
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make (-3)
+    _ = Debug.log "available on make -3" (Semaphore.available s)
+    waiter = Task.spawn λ⊤ →
+        Semaphore.withPermit s λ⊤ → Debug.log "waiter in" (Semaphore.available s)
+    Task.yieldNow ⊤
+    _ = Debug.log "waiter waits" (Task.running waiter)
+    _ = Debug.log "withPermits 0" (Semaphore.withPermits s 0 λ⊤ → "ran")
+    _ = Debug.log "withPermits -1" (Semaphore.withPermits s (-1) λ⊤ → "ran")
+    _ = Debug.log "tryWithPermits 0" (Semaphore.tryWithPermits s 0 λ⊤ → "ran")
+    _ = Debug.log "tryWithPermits 1" (Semaphore.tryWithPermits s 1 λ⊤ → "ran")
+    Semaphore.acquire s 0
+    Semaphore.acquire s (-2)
+    _ = Debug.log "acquire 0 and -2 returned, available" (Semaphore.available s)
+    Semaphore.resize s 1
+    _ = Task.join waiter
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"
