@@ -3196,9 +3196,13 @@ the queue leaves it, and those on either side are served in order) and `run/Sema
 (a holder cancelled inside `tryWithPermits` gives its permits back).
 
 *Amended 2026-10-26 (#1040): `Queue` and `Latch` as built.* Both modules are beni over
-`Task.callback` and `Task.resume`, with no `foreign`. Their waiters are kept in a JavaScript `Set`:
-it keeps the order waiters were added and deletes one in O(1), so cancelling n waiters costs O(n)
-(§17.1 item 1). A parked offer keeps its values, as Effect's `OfferEntry` does (`Queue.ts:375`).
+`Task.callback` and `Task.resume`, with no `foreign`. A queue keeps its takers and its parked
+offers in doubly linked lists, as `Semaphore` keeps its waiters: a cancelled waiter unlinks itself
+in O(1), so cancelling n waiters costs O(n) (§17.1 item 1). A JavaScript `Set` would keep the
+order, but reading its first element after many deletions at the front walks every deleted slot,
+which is O(n²) for n cancels. A `Latch` keeps its waiters in a `Set`, because it never reads the
+first one: `open` and `release` iterate the whole set once. A parked offer keeps its values, as
+Effect's `OfferEntry` does (`Queue.ts:375`).
 The text above left eight points open. They are settled as follows.
 
 1. **Takers are served first come, first served, by a hand-off.** A value goes straight to the
@@ -3228,17 +3232,32 @@ The text above left eight points open. They are settled as follows.
 4. **A parked `offerAll` keeps its place in line for all its values.** It moves in as many values
    as fit, then waits with the rest as one entry, which is Effect's `Array` entry. Its answer is
    `[]` once all are accepted, or the values not yet accepted when the queue ends. On `dropping`
-   it answers the values refused. On `sliding` it answers `[]`.
+   it answers the values refused. On `sliding` it answers `[]`. On every kind, when the queue
+   is full and a taker waits, the taker is served before the next value is moved in, dropped or
+   refused, so no value is lost or refused while a taker waits for it (point 1).
 5. **`takeN q n` with `n ≤ 0` answers `[]` at once**, on any queue, ended or not. **A `takeN` for
    more than a bounded, dropping or sliding queue can hold waits until the queue is full**, then
    takes what it holds. Waiting for `n` there would wait for ever, and Effect caps its minimum the
-   same way (`Math.min(min, self.capacity)`, `Queue.ts:1941`). The nearest meaning, §17.1 item 4.
+   same way (`Math.min(min, self.capacity || 1)`, `Queue.ts:1955`). The nearest meaning, §17.1
+   item 4.
 6. **A `sliding` offer drops the oldest values until the new one fits.** So a sliding queue left
    above its capacity by a give-back (point 2) is back at its capacity after the next offer.
 7. **After `end`**, `take`, `takeAll` and `takeN` answer at once with what is held: `Nothing` or
    `[]` once it is empty. The takers parked at the `end` are served in order with what is held:
    a parked `takeN` gets the values it waited for, up to `n`, and the takers after it get the
    rest, then `Nothing` or `[]`. `poll` and `size` work as before.
+   **Points 2 and 7 meet when a hand-off is outstanding at the `end`.** A value handed to a taker
+   that has not yet run may still come back, if that taker is cancelled. So the queue counts the
+   hand-offs that have neither run nor given their values back. While that count is above 0, an
+   ended queue does not answer `Nothing` or `[]`: a take that would get that waits, and so does a
+   parked taker. When the count drops to 0 — the handed taker runs, or gives its values back — the
+   waiting takers are served, in order, with what is held then. So a value given back after the
+   `end` goes to the next taker, and no taker sees the end while a value can still return. A
+   taker resumed through a scheduler that has stopped for good is cancelled by the kernel without
+   its canceller (§17.5's amendment, *a stopped scheduler is a dead end*), so its values are lost
+   and its hand-off is never settled. The stop cancels, and so runs the canceller of, every taker
+   it can interrupt. Only a taker parked where it cannot be interrupted, in a release or an
+   `uninterruptible` region, and left there when the stop's deadline passed, can be resumed so.
 8. **`Latch`'s waiters are released in the order they began to wait.** A waiter cancelled while
    it waits is taken off the list. `open` and `release` take the whole list at once and start a
    new one. So a fiber that begins to wait at a latch closed again in the same turn waits for the
@@ -3246,7 +3265,9 @@ The text above left eight points open. They are settled as follows.
 
 Fixtures, besides the eight the text above lists: `run/QueueHandoffCancelled` (point 2),
 `run/QueueOfferAcceptedCancelled` (point 3), `run/QueueTakeNoJump` (point 1),
-`run/QueueTakeUnderTimeout` (point 2, under `timeout` on a virtual clock and under `race`).
+`run/QueueTakeUnderTimeout` (point 2, under `timeout` on a virtual clock and under `race`),
+`run/QueueEndAfterHandoffCancelled` (points 2 and 7 together) and `run/CancelManyWaitersQueue`
+(400 000 takers cancelled at once).
 `run/QueueTakeAllTakeN` carries point 5, and `run/QueueEndWakesOfferers` carries point 4's
 `end`. The retained-heap check of `bench/fiber` that the text above names is not part of this
 work (the owner, 2026-10-26, #1040).

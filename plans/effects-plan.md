@@ -775,24 +775,31 @@ megabytes. No operation is slower. `Queue` and `Latch` are the second part, belo
 *P5, second part, as built (2026-10-26; #1040).* **`core/Queue.beni`** and **`core/Latch.beni`**
 are beni over `Task.callback` and `Task.resume`, no `foreign`, and **`Task.forever`** is a
 tail-recursive loop in `core/Task.beni`. A queue is a record of its kind, its capacity, an array of
-values read from a `head` index, and two JavaScript `Set`s: the takers `{ need, most, list, got,
-resume }` and the parked offers `{ vs, at, single, done, resume }`. A `Set` keeps insertion order
-and deletes in O(1), so cancelling n waiters is O(n). Takers are served by `Semaphore`'s hand-off:
-`serve` moves the head taker's values into `got` and resumes it, and its canceller gives `got`
-back to the front of the queue and serves again. An accepted offer is marked `done`, and its
-canceller then changes nothing. §17.9's amendment of 2026-10-26 settles eight points: the FIFO
-takers, the give-back, an accepted offer that is cancelled, `offerAll`'s single entry, `takeN`
-with `n ≤ 0` or above the capacity, `sliding` over capacity, the `end`, and `Latch`'s order.
+values read from a `start` index, a count of hand-offs not yet settled, and two doubly linked
+lists, as #1050 makes `Semaphore`'s waiters: the takers `{ need, most, list, got, resume, … }`
+and the parked offers `{ vs, at, single, resume, … }`. A cancelled waiter unlinks itself in O(1);
+a `Set`, the first version, made reading the head after many front deletions O(n²). `Latch` keeps
+a `Set`, which it only iterates. Takers are served by `Semaphore`'s hand-off: `serve` moves the
+head taker's values into `got` and resumes it, and its canceller gives `got` back to the front of
+the queue and serves again. While a hand-off is outstanding an ended queue answers no taker
+`Nothing`; the takers it holds back are served when the hand-off runs or is given back. An
+accepted offer has left its list, and its canceller then changes nothing. §17.9's amendment of
+2026-10-26 settles eight points: the FIFO takers, the give-back, an accepted offer that is
+cancelled, `offerAll`'s single entry and its serving of waiting takers, `takeN` with `n ≤ 0` or
+above the capacity, `sliding` over capacity, the `end` and an outstanding hand-off, and
+`Latch`'s order.
 `forever` yields after each run, as Effect's does (§17.3, amended 2026-10-26). Without the yield, a
 `work` that never suspends held the scheduler, and `run/TaskForeverYields` and
 `run/TaskForeverNoStack` hung. Nothing in the kernel changed. Fixtures, both builds:
 `run/QueueTakerCancelled`, `run/QueueBoundedBackpressure`, `run/QueueEndDrains`,
 `run/QueueEndWakesOfferers`, `run/QueueSlidingDropping`, `run/QueueTakeAllTakeN`,
 `run/QueueHandoffCancelled`, `run/QueueOfferAcceptedCancelled`, `run/QueueTakeNoJump`,
-`run/QueueTakeUnderTimeout`, `run/LatchRelease`, `run/LatchOpenClose`, `run/TaskForeverCancelled`,
+`run/QueueTakeUnderTimeout`, `run/QueueEndAfterHandoffCancelled`, `run/CancelManyWaitersQueue`,
+`run/LatchRelease`, `run/LatchOpenClose`, `run/TaskForeverCancelled`,
 `run/TaskForeverNoStack` and `run/TaskForeverYields`. Each fails on `master`'s core. Each rule was
 also broken on its own in a copy of core (`--core-root`), and each break turned at least one
-fixture red. The measurements this slice named are not part of it (the owner, 2026-10-26).
+fixture red, except `run/CancelManyWaitersQueue`, which a slow version passes, only slower.
+The measurements this slice named are not part of it (the owner, 2026-10-26).
 
 *P7, first part, as built (2026-10-20; #358).* `core/Log.beni` holds the five levels, the five
 direct forms, `log`, `Entry`, `setSink` and `logfmt`, in beni over `Js`; the default minimum is
