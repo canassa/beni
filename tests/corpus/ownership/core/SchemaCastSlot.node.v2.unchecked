@@ -1,0 +1,8 @@
+SchemaCastSlot decimal: lines 6-7 (not built: lambda)
+SchemaCastSlot read: lines 24-28 (not built: call)
+SchemaCastSlot outer: lines 31-37 (not built: let_def)
+SchemaCastSlot separate: lines 40-50 (not built: let_def)
+SchemaCastSlot shared: lines 53-63 (not built: let_def)
+SchemaCastSlot readEncoded: lines 70-74 (not built: call)
+SchemaCastSlot encodedSeparate: lines 77-87 (not built: let_def)
+SchemaCastSlot encodedShared: lines 90-100 (not built: let_def)

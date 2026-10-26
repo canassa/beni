@@ -1,0 +1,4 @@
+Disjoint capture: lines 15-16 (not built: lambda)
+Disjoint orZero: lines 31-36 (not built: call)
+Disjoint forCall: lines 23-24 (not built: call)
+Disjoint forFresh: lines 27-28 (not built: call)

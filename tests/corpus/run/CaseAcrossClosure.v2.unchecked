@@ -1,0 +1,4 @@
+CaseAcrossClosure apply: lines 23-34 (not built: schema_member_top)
+CaseAcrossClosure kept: lines 61-68 (not built: local)
+CaseAcrossClosure line: lines 71-78 (not built: call)
+CaseAcrossClosure main: lines 81-93 (not built: call)

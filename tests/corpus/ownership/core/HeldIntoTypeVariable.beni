@@ -1,0 +1,11 @@
+-- ownership (core): `ys` holds `xs` at `ys[*]` and goes to a `foreign` whose
+-- parameter is a type variable. v1 refuses the edit of `xs` before it; v2
+-- reads `borrowed a` at `ε` only and accepts it (#1105, undecided).
+pub foreign pure look : borrowed a → Int
+
+
+heldIntoVar : List Int → List Int
+heldIntoVar xs =
+    ys = [ xs ]
+    zs = [ …xs, 1 ]
+    [ look ys, …zs ]

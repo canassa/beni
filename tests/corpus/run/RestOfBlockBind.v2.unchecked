@@ -1,0 +1,5 @@
+RestOfBlockBind scope: lines 9-10 (not built: call)
+RestOfBlockBind twice: lines 13-14 (not built: call)
+RestOfBlockBind nested: lines 17-21 (not built: local)
+RestOfBlockBind counted: lines 24-27 (not built: local)
+RestOfBlockBind mixed: lines 30-35 (not built: local)

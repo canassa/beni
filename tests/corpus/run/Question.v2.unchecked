@@ -1,0 +1,5 @@
+Question parseBoth: lines 17-21 (not built: try)
+Question firstPlus: lines 34-37 (not built: call)
+Question bigger: lines 50-52 (not built: method_call)
+Question firstBigger: lines 43-47 (not built: try)
+Question main: lines 85-94 (not built: call)

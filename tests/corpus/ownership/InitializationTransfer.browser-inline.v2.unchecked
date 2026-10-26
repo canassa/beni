@@ -1,0 +1,6 @@
+InitializationTransfer seed: lines 9-10 (not built: call)
+InitializationTransfer deferred: lines 37-38 (not built: lambda)
+InitializationTransfer escapedSeed: lines 87-91 (not built: lambda)
+InitializationTransfer branchRead: lines 110-111 (not built: call)
+InitializationTransfer localFunction: lines 130-133 (not built: let_def)
+InitializationTransfer markupObserver: lines 165-166 (not built: markup)

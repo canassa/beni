@@ -1,0 +1,7 @@
+LetEvidenceCapture tallies: lines 22-24 (not built: let_def)
+LetEvidenceCapture nested: lines 27-31 (not built: let_def)
+LetEvidenceCapture loops: lines 34-42 (not built: let_def)
+LetEvidenceCapture mutual: lines 45-61 (not built: let_def)
+LetEvidenceCapture values: lines 64-66 (not built: let_def)
+LetEvidenceCapture ints: lines 77-78 (not built: ext_value)
+LetEvidenceCapture main: lines 81-94 (not built: call)

@@ -1,0 +1,5 @@
+OwnMethodDemandedEarly pair: lines 26-28 (not built: let_def)
+OwnMethodDemandedEarly pairAnnotated: lines 31-34 (not built: let_def)
+OwnMethodDemandedEarly map2: lines 50-50 (not built: call)
+OwnMethodDemandedEarly boxes: lines 37-41 (not built: let_def)
+OwnMethodDemandedEarly main: lines 60-64 (not built: call)

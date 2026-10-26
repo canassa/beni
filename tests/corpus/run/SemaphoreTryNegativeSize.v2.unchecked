@@ -1,0 +1,2 @@
+SemaphoreTryNegativeSize try: lines 10-14 (not built: lambda)
+SemaphoreTryNegativeSize main: lines 17-23 (not built: call)

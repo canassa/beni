@@ -1,0 +1,8 @@
+Callbacks apply: lines 21-22 (not built: call)
+Callbacks sum: lines 25-26 (not built: local)
+Callbacks t46: lines 29-34 (not built: local)
+Callbacks t15: lines 37-41 (not built: local)
+Callbacks consumes: lines 44-45 (not built: local)
+Callbacks reads: lines 48-49 (not built: local)
+Callbacks applied: lines 52-53 (not built: local)
+Callbacks appliedRead: lines 56-57 (not built: local)

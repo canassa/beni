@@ -1,0 +1,2 @@
+SpecializeRecordLambda run: lines 35-50 (not built: call)
+SpecializeRecordLambda main: lines 54-62 (not built: lambda)

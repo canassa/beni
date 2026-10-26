@@ -1,0 +1,7 @@
+module HeldIntoTypeVariable
+  10:12 construction xs: rejected alias: ys[*] holds it and is read at 11:7
+  summary look: π1 R; res ⊤{lost}r{lost} (words)
+  summary heldIntoVar: π1 RAW; res fresh1{excl π1} ~π1
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

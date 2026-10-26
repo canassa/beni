@@ -1,0 +1,4 @@
+ClosureLevels inRecord: lines 12-17 (not built: lambda)
+ClosureLevels nested: lines 20-26 (not built: lambda)
+ClosureLevels apply: lines 29-30 (not built: call)
+ClosureLevels through: lines 33-38 (not built: lambda)

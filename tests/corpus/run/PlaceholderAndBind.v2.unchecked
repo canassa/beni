@@ -1,0 +1,5 @@
+PlaceholderAndBind twice: lines 25-26 (not built: call)
+PlaceholderAndBind usingAll: lines 29-30 (not built: local)
+PlaceholderAndBind insideRest: lines 33-36 (not built: local)
+PlaceholderAndBind nestedInCallee: lines 39-42 (not built: local)
+PlaceholderAndBind pipedIntoHole: lines 45-48 (not built: local)

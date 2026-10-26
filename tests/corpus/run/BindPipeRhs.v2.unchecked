@@ -1,0 +1,5 @@
+BindPipeRhs withDiff: lines 11-12 (not built: call)
+BindPipeRhs piped: lines 19-22 (not built: local)
+BindPipeRhs chained: lines 25-28 (not built: local)
+BindPipeRhs appliedLeft: lines 31-34 (not built: local)
+BindPipeRhs parenthesised: lines 37-40 (not built: local)

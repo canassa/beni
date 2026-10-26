@@ -1,0 +1,6 @@
+LambdaParamNeed works: lines 28-29 (not built: lambda)
+LambdaParamNeed freshOnly: lines 32-33 (not built: lambda)
+LambdaParamNeed kept: lines 36-37 (not built: local)
+LambdaParamNeed update: lines 40-52 (not built: local)
+LambdaParamNeed view: lines 55-56 (not built: markup)
+LambdaParamNeed main: lines 59-65 (not built: lambda)

@@ -1,0 +1,4 @@
+EntryInvariantCommand grow: lines 28-34 (not built: local)
+EntryInvariantCommand update: lines 37-43 (not built: call)
+EntryInvariantCommand view: lines 46-47 (not built: markup)
+EntryInvariantCommand main: lines 50-56 (not built: lambda)

@@ -1,0 +1,7 @@
+Permutations swapThenEdit: lines 15-16 (not built: top)
+Permutations popThenEdit: lines 19-20 (not built: top)
+Permutations removeThenEdit: lines 23-24 (not built: top)
+Permutations insertThenEdit: lines 27-28 (not built: top)
+Permutations insertTwiceThenEdit: lines 31-32 (not built: top)
+Permutations distinct: lines 35-36 (not built: call)
+Permutations shared: lines 39-42 (not built: call)

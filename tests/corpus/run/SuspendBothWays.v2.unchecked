@@ -1,0 +1,3 @@
+SuspendBothWays twice: lines 15-16 (not built: call)
+SuspendBothWays atLoad: lines 25-26 (not built: local)
+SuspendBothWays main: lines 29-38 (not built: local)

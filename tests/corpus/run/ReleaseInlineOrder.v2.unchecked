@@ -1,0 +1,3 @@
+ReleaseInlineOrder insideLambda: lines 57-62 (not built: lambda)
+ReleaseInlineOrder insideLoop: lines 66-75 (not built: let_def)
+ReleaseInlineOrder main: lines 88-94 (not built: call)

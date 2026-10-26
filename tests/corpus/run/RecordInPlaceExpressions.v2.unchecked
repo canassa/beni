@@ -1,0 +1,7 @@
+RecordInPlaceExpressions label: lines 26-27 (not built: call)
+RecordInPlaceExpressions bump: lines 30-31 (not built: record_update)
+RecordInPlaceExpressions swap: lines 34-35 (not built: record_update)
+RecordInPlaceExpressions pick: lines 38-39 (not built: record_update)
+RecordInPlaceExpressions grow: lines 42-43 (not built: record_update)
+RecordInPlaceExpressions inner: lines 46-49 (not built: record_update)
+RecordInPlaceExpressions main: lines 52-61 (not built: call)

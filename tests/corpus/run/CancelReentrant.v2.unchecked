@@ -1,0 +1,2 @@
+CancelReentrant guarded: lines 28-30 (not built: lambda)
+CancelReentrant main: lines 33-51 (not built: call)

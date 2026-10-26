@@ -1,0 +1,8 @@
+OperatorSectionApplied allSame: lines 18-26 (not built: local)
+OperatorSectionApplied allSame2: lines 29-35 (not built: local)
+OperatorSectionApplied sorted: lines 38-44 (not built: local)
+OperatorSectionApplied eqVia: lines 47-49 (not built: local)
+OperatorSectionApplied allOnes: lines 52-53 (not built: local)
+OperatorSectionApplied allOnesLambda: lines 56-57 (not built: local)
+OperatorSectionApplied anyEq: lines 60-62 (not built: local)
+OperatorSectionApplied main: lines 73-89 (not built: call)

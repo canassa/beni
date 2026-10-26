@@ -1,0 +1,4 @@
+MethodCalls inner: lines 40-42 (not built: method_call)
+MethodCalls middle: lines 45-47 (not built: call)
+MethodCalls outer: lines 50-52 (not built: call)
+MethodCalls main: lines 59-66 (not built: ext_value)

@@ -1,0 +1,8 @@
+DotFieldCall parensLater: lines 19-22 (not built: call)
+DotFieldCall dottedCaptured: lines 25-29 (not built: lambda)
+DotFieldCall parensCaptured: lines 32-36 (not built: lambda)
+DotFieldCall extParens: lines 51-52 (not built: call)
+DotFieldCall extDottedFresh: lines 55-56 (not built: lambda)
+DotFieldCall extParensFresh: lines 59-60 (not built: lambda)
+DotFieldCall extDottedShared: lines 63-64 (not built: lambda)
+DotFieldCall extParensShared: lines 67-68 (not built: lambda)
