@@ -2068,8 +2068,11 @@ build without them is byte for byte what it was (the run hashes of the whole `ru
   on a fresh plain copy of its base; when it returns, the base is poisoned. The other operands and the callback
   run first, as they run before an in-place store. A plain array's elements become holes read through a
   prototype that throws; a view's own keys throw and its base and plain copy are poisoned; a trie header's own
-  keys throw and so does every array of its storage (head, tail, plain copy, each node and leaf), since a list
-  that shares it (`List.drop` of a trie) aliases the trie. A spread or `++` chain is one demand, on its first
+  keys throw, and so do its tree's and its head, tail, plain copy and tree root, since a list that shares that
+  storage (`List.drop` of a trie) aliases the trie and reaches it only through them. Both the poison and a
+  trie's copy are O(1) (a trie is copied as its header, head, tail, tree and root, sharing the nodes below,
+  which no writer writes), so a loop of a hundred thousand pushes stays linear: `run/ListWalkDeep` runs in
+  0.75 s sanitised, 0.06 s plain. An empty tree is never poisoned: it may be `core/List`'s shared `noTree`. A spread or `++` chain is one demand, on its first
   operand (`[ …a, …b, x ]` writes `a` and reads `b`), so the calls that build the rest of the chain are not
   wrapped. A call into a function that writes its parameter is covered where that function writes.
 - **Coverage is checked against v1.** For every `.sanitize-lists` fixture, and every program
