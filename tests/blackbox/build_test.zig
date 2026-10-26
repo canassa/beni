@@ -8349,6 +8349,53 @@ test "the checker v2's growth in a tower of joins of one value at two depths is 
     try testing.expect(growth[2] <= 73_000);
 }
 
+test "the checker v2's block is linear in a tower of two-element literals, whose widen opens the collection" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1120: `r_k = Rose [ r_{k-1}, Rose [] ]`. Widen kept each level's
+    // `[*]` (a positions node) beside the knot, so the published summary
+    // grew as about n^2.4 (537 656 bytes at N = 30), every entry `lost`.
+    // Opened on the cycle (§2.3), the block is linear and reads what the
+    // unwidened value reads. The growth is not linear yet: a literal's
+    // root compares each element's whole reach (#1121).
+    var block: [3]u64 = undefined;
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 100, 300 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 4194304)\n\n\ntype Rose =\n    Rose (List Rose)\n\n\npub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n");
+        for (1..n + 1) |i| try src.print(a, "    r{d} = Rose [ r{d}, Rose [] ]\n", .{ i, i - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        // No entry reads `lost`: each list is a fresh object of its own.
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "{lost}") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+        const at = std.mem.indexOf(u8, dump.stdout, "  block: ").? + "  block: ".len;
+        const end = std.mem.indexOfScalarPos(u8, dump.stdout, at, ' ').?;
+        block[run] = try std.fmt.parseInt(u64, dump.stdout[at..end], 10);
+    }
+    // 1 008 / 6 048 / 17 248 bytes: a constant per level.
+    try testing.expect(block[1] <= 7 * block[0]);
+    try testing.expect(block[2] <= 4 * block[1]);
+    // 3 180 / 52 237 / 279 347: at most quadratic until #1121.
+    try testing.expect(growth[2] <= 9 * growth[1]);
+}
+
 test "a one-element literal's [*] compares the objects its element holds at every path" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -367,6 +367,11 @@ pub const Table = struct {
 
     /// Two positions at one place (`collect`'s node, `proj`'s image of one).
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        // A side that is nothing (an empty leaf) is no position: no object
+        // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
+        // `[*]` past the empty list is `x`'s alone, not a new node per level.
+        if (t.kind(r) == .leaf and t.cells(r) == .none) return l;
+        if (t.kind(l) == .leaf and t.cells(l) == .none) return r;
         const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
         return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
     }
@@ -1126,6 +1131,10 @@ pub const Table = struct {
         /// Canonical path → the class at it.
         by_path: stamped.Column(PathId, u32) = .{},
         visited: stamped.Column(NodeId, void) = .{},
+        /// The unions and positions nodes met at a re-entry (`⟲`), whose
+        /// sides are walked as members of their class (§2.3): their meaning
+        /// is their sides', so they ride beside no image.
+        opened: stamped.Column(NodeId, void) = .{},
         pending: std.ArrayList([2]u32) = .empty,
         image: stamped.Column(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
@@ -1149,6 +1158,7 @@ pub const Table = struct {
             w.edges.deinit(w.gpa);
             w.by_path.deinit(w.gpa);
             w.visited.deinit(w.gpa);
+            w.opened.deinit(w.gpa);
             w.pending.deinit(w.gpa);
             w.image.deinit(w.gpa);
             w.kids.deinit(w.gpa);
@@ -1263,7 +1273,8 @@ pub const Table = struct {
                 try w.touch(f.node);
                 try w.account.reserve(.edge, 1);
                 // `⟲` is its ancestor's class: the re-entered place's node.
-                const key = if (w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level) w.places.pathParent(f.path) else f.path;
+                const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
+                const key = if (reentry) w.places.pathParent(f.path) else f.path;
                 if (w.by_path.get(key)) |cls| {
                     _ = try w.unite(cls, f.node.int());
                 } else {
@@ -1271,6 +1282,17 @@ pub const Table = struct {
                 }
                 if (w.visited.contains(f.node)) continue;
                 try w.visited.put(w.gpa, f.node, {});
+                // A union or a positions node on the cycle being folded: its sides
+                // are at its path, so they are members of its class (§2.3).
+                switch (w.t.kind(f.node)) {
+                    .@"union", .positions => if (reentry) {
+                        try w.opened.put(w.gpa, f.node, {});
+                        const d = w.t.get(f.node);
+                        try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
+                        continue;
+                    },
+                    else => {},
+                }
                 try w.explicitEdges(f.node);
                 // `kids` holds (step word, child) pairs; copy out before the
                 // recursion below reuses it.
@@ -1333,7 +1355,7 @@ pub const Table = struct {
                             has_leaf = true;
                             leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, d.cells);
                         },
-                        .recast, .@"union", .positions => try extra.append(w.gpa, .from(m)),
+                        .recast, .@"union", .positions => if (!w.opened.contains(.from(m))) try extra.append(w.gpa, .from(m)),
                         .delta => {
                             explicit = true;
                             const base: NodeId = .from(d.a);
