@@ -101,16 +101,14 @@ pub const Table = struct {
     arrivals_memo: stamped.Column(NodeId, SetId) = .{},
     /// `unionHas`'s visited stamp.
     union_seen: stamped.Column(NodeId, void) = .{},
-    /// `rank`'s memo, and its walk's in-progress mark.
+    /// `rank`'s memo: final ranks only (its in-progress marks are the call's).
     rank_memo: stamped.Column(NodeId, u32) = .{},
-    rank_open: stamped.Column(NodeId, void) = .{},
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.rank_memo.deinit(gpa);
-        t.rank_open.deinit(gpa);
         t.named_memo.deinit(gpa);
         t.named_pool.deinit(gpa);
         t.nodes.deinit(gpa);
@@ -764,6 +762,11 @@ pub const Table = struct {
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        // The nodes on the walk's stack: the call's own, so a refusal in
+        // the middle leaves no mark behind (§2.3 *Memo safety*); only a
+        // finished node's rank is memoised.
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
         var kids: std.ArrayList(NodeId) = .empty;
         defer kids.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });
@@ -772,16 +775,16 @@ pub const Table = struct {
             kids.clearRetainingCapacity();
             if (!f.expanded) {
                 // Open: on the stack below, whose finish reads it as a cycle.
-                if (t.rank_memo.contains(x) or t.rank_open.contains(x)) continue;
+                if (t.rank_memo.contains(x) or open.contains(x)) continue;
                 try account.reserve(.inspection, 1);
-                try t.rank_open.put(gpa, x, {});
+                try open.put(gpa, x, {});
                 try stack.append(gpa, .{ .node = x, .expanded = true });
                 try t.rankKids(gpa, account, x, &kids);
-                for (kids.items) |k| if (!t.rank_memo.contains(k) and !t.rank_open.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false });
+                for (kids.items) |k| if (!t.rank_memo.contains(k) and !open.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false });
                 continue;
             }
             // Finished: every child is ranked, or still open (a cycle).
-            t.rank_open.remove(x);
+            open.remove(x);
             try t.rankKids(gpa, account, x, &kids);
             const d = t.get(x);
             var r: u32 = 0;
@@ -1702,6 +1705,32 @@ test "rank falls along every projection, and a knot or a recast has none; named 
     try testing.expectEqual(@as(usize, 3), named_u.len);
     try testing.expect(std.sort.isSorted(u32, named_u, {}, std.sort.asc(u32)));
     try testing.expectEqual(@as(usize, 0), (try f.shapes.namedSteps(gpa, &f.account, t_param)).len);
+}
+
+test "a rank refused in the middle leaves no mark: the same node ranks right afterwards" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const leaf = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    var inner_children = try f.one(s0, leaf);
+    inner_children = try f.shapes.overPut(gpa, &f.account, inner_children, s1, leaf);
+    const inner = try f.shapes.node(gpa, &f.account, tree, .none, inner_children);
+    const outer = try f.shapes.node(gpa, &f.account, tree, .none, try f.one(s0, inner));
+    // The walk needs more than three records: refused part way, with
+    // `outer` and `inner` on its stack.
+    var short: Account = .{ .allowance = 3 };
+    defer short.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, f.shapes.rank(gpa, &short, outer));
+    // A fresh account: no mark left behind reads as a cycle or a missing rank.
+    var fresh: Account = .{};
+    defer fresh.deinit(gpa);
+    try testing.expectEqual(@as(u32, 2), try f.shapes.rank(gpa, &fresh, outer));
+    try testing.expectEqual(@as(u32, 1), try f.shapes.rank(gpa, &fresh, inner));
 }
 
 test "a chain of k deltas costs O(k log F) and reach shares the base" {
