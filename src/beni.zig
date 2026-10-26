@@ -200,6 +200,15 @@ pub const own2 = struct {
     pub const Block = @import("own2/Block.zig");
     pub const BlockRead = @import("own2/BlockRead.zig");
     pub const Refine = @import("own2/Refine.zig");
+    pub const Demands = @import("own2/Demands.zig");
+    pub const Calls = @import("own2/Calls.zig");
+    pub const Transfer = @import("own2/Transfer.zig");
+    pub const Walk = @import("own2/Walk.zig");
+    pub const Groups = @import("own2/Groups.zig");
+    pub const Message = @import("own2/Message.zig");
+    pub const Report = @import("own2/Report.zig");
+    pub const Ownership = @import("own2/Ownership.zig");
+    pub const Enforce = @import("own2/Enforce.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {
