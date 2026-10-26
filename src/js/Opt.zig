@@ -1,5 +1,6 @@
 //! `backend.md` §9's release optimiser, **item 1**: local dead bindings, and
-//! the single use that follows them. One pass over `JsIr`, per function body,
+//! the single use that follows them, and **item 6**: a forwarding lambda
+//! printed as its callee (`eta`). One pass over `JsIr`, per function body,
 //! between `Lower.lower` and `Print.print` and under `--release` only.
 //!
 //! `Reach` decided which declarations exist; this decides what is left inside
@@ -64,7 +65,9 @@ pub const Plan = struct {
     /// One bit per node index: a `const_decl` or `let_decl` the printer skips.
     dropped: []const u32 = &.{},
     /// One slot per NODE index: for the `ident` that is a binding's single
-    /// use, the node whose value takes its place.
+    /// use, the node whose value takes its place; for the `arrow` item 6
+    /// reduces (`eta`), the `ident` of its callee, which the printer writes
+    /// where the arrow stood.
     ///
     /// **Keyed by the use site and not by the name**, and that is not a
     /// detail. A local's `NameIndex` is shared across the whole module —
@@ -170,6 +173,8 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .binds = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
         .rebound = try arena.alloc(bool, ir.names.len),
+        .let_bound = try arena.alloc(bool, ir.names.len),
+        .top_stable = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .pinned = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
@@ -182,6 +187,25 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.dropped, 0);
     @memset(o.pinned, 0);
     @memset(o.inlined, .none);
+    @memset(o.top_stable, false);
+    // Item 6's callee may be a name the module binds once and never
+    // assigns: a top-level `const` or function, or an import. A top-level
+    // `let` (a `Js.Ref` of the module) is not one.
+    for (ir.extraSlice(ir.body, Index)) |top| {
+        const d = ir.data(top);
+        switch (ir.tag(top)) {
+            .const_decl, .func_decl, .gen_decl => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| {
+                if (i < o.top_stable.len) o.top_stable[i] = true;
+            },
+            .import_stmt => {
+                const imp = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
+                for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| if (spec.local.unwrap()) |i| {
+                    if (i < o.top_stable.len) o.top_stable[i] = true;
+                };
+            },
+            else => {},
+        }
+    }
     // A statement that runs a store of a record update written in place
     // is the update, never an unused pure value (`ownership-checker.md`
     // §31.10, *The optimiser barrier*).
@@ -244,6 +268,15 @@ const Opt = struct {
     /// itself — `x = v`, not `x.p = v`: what `copy` asks, since writing a
     /// property of a binding's object leaves the binding the same name.
     rebound: []bool,
+    /// Whether a `let_decl` in this declaration binds the name: a `Js.Ref`,
+    /// a `case` result filled by its arms, a loop's slot. Item 6 never
+    /// reduces to one, since the lambda read it when called and the name
+    /// would be read where the lambda was made.
+    let_bound: []bool,
+    /// One slot per name, for the whole module: bound at the top level by a
+    /// `const`, a function or an import, which nothing emitted assigns. Item
+    /// 6's callee may be one.
+    top_stable: []bool,
     dropped: []u32,
     /// One bit per node: a statement a call was moved into (`readsBefore`'s
     /// rule), never dropped for want of a read, though, unlike a `kept` one,
@@ -292,6 +325,7 @@ const Opt = struct {
         o.binds[i] = 0;
         o.assigned[i] = false;
         o.rebound[i] = false;
+        o.let_bound[i] = false;
     }
 
     fn use(o: *Opt, n: NameIndex) void {
@@ -320,6 +354,12 @@ const Opt = struct {
         return @field(o, field)[i];
     }
 
+    /// A per-declaration flag, false for a slot this declaration never touched.
+    fn flagOf(o: *Opt, i: u32, comptime field: []const u8) bool {
+        if (o.stamp[i] != o.current) return false;
+        return @field(o, field)[i];
+    }
+
     /// One walk of a top-level declaration's statements. Every name-carrying
     /// slot is either a DECLARATION (the name slot of a declaration
     /// statement), a PROPERTY (a `member`'s key, a `property`'s key, the
@@ -343,7 +383,11 @@ const Opt = struct {
             },
             .let_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.let_bound.len) {
+                    o.let_bound[i] = true;
+                };
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try o.countExpr(v);
             },
             .func_decl, .gen_decl => {
@@ -560,10 +604,69 @@ const Opt = struct {
         while (o.stack.items.len > base) {
             const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
-                .arrow => try o.planFunc(@fromBackingInt(@intCast(o.ir.data(node).lhs))),
+                .arrow => {
+                    const record: JsIr.ExtraIndex = @fromBackingInt(@intCast(o.ir.data(node).lhs));
+                    try o.planFunc(record);
+                    if (o.ir.data(node).rhs == Node.arrow_plain) o.eta(node, record);
+                },
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
             }
         }
+    }
+
+    /// §9 item 6: a plain arrow whose body is exactly `return f(p₁, …, pₙ)`
+    /// over its own parameters, in order, each once, is printed as `f` when
+    /// `f` denotes the same function at every call of the arrow as where the
+    /// arrow was made — a parameter, a local `const` or a top-level name no
+    /// `assign_stmt` in this declaration targets. Beni has no function
+    /// identity, so the two objects the lambda gave and the one `f` is are
+    /// told apart by no program. Decided after the arrow's own lists were
+    /// planned, so a callee item 1 substitutes is read through the plan:
+    /// `const g = f; … λa b → g a b` reduces to `f`, and a callee whose
+    /// substitution is not a name (a function made once and used here) is
+    /// left as written.
+    fn eta(o: *Opt, arrow: Index, record: JsIr.ExtraIndex) void {
+        const f = o.ir.extraData(record, JsIr.Func);
+        const body = o.ir.extraSlice(f.body(), Index);
+        if (body.len != 1 or o.ir.tag(body[0]) != .return_stmt) return;
+        const call = @as(Node.OptionalIndex, @fromBackingInt(@intCast(o.ir.data(body[0]).lhs))).unwrap() orelse return;
+        if (o.ir.tag(call) != .call) return;
+        const cd = o.ir.data(call);
+        const callee: Index = @fromBackingInt(@intCast(cd.lhs));
+        if (o.ir.tag(callee) != .ident) return;
+        const params = o.ir.extraSlice(f.params(), NameIndex);
+        const args = o.ir.extraSlice(o.ir.subRange(@fromBackingInt(@intCast(cd.rhs))), Index);
+        if (args.len != params.len) return;
+        const name: NameIndex = @fromBackingInt(@intCast(o.ir.data(callee).lhs));
+        for (params, args, 0..) |pn, arg, i| {
+            if (o.ir.tag(arg) != .ident) return;
+            if (@as(NameIndex, @fromBackingInt(@intCast(o.ir.data(arg).lhs))) != pn) return;
+            if (pn == name or pn == .none) return;
+            for (params[0..i]) |q| if (q == pn) return;
+        }
+        const i = name.unwrap() orelse return;
+        if (i >= o.uses.len) return;
+        for (o.mutable) |m| if (m == name) return;
+        if (o.flagOf(i, "assigned")) return;
+        const bound_here = o.readOf(i, "binds");
+        if (bound_here == 0) {
+            // Not a binding of this declaration: a top-level name or an
+            // import of this module, or a name another file exports. A
+            // module's own top-level `let` is neither.
+            if (!(o.top_stable[i] or o.ir.name(name).module != .none)) return;
+        } else {
+            // Bound once here: a parameter (no declaration), a local
+            // `const` or an inner function (one declaration). Never a `let`,
+            // and never a name bound twice, whose one `NameIndex` would
+            // then mean two bindings.
+            if (bound_here != 1 or o.readOf(i, "decls") > 1 or o.flagOf(i, "let_bound")) return;
+        }
+        var target = callee;
+        if (o.inlined[callee.int()].unwrap()) |r| {
+            if (o.ir.tag(r) != .ident or o.inlined[r.int()] != .none) return;
+            target = r;
+        }
+        o.inlined[arrow.int()] = target.toOptional();
     }
 
     fn list(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
