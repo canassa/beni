@@ -98,7 +98,8 @@ pub const ReadError = Error || error{BlockConflict};
 /// `"OWN2"`, little-endian.
 pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
-pub const version: u32 = 6;
+/// 7: a position's κ is what is stored there, never the read (#1069).
+pub const version: u32 = 7;
 
 pub const none: u32 = Ids.none_int;
 
@@ -433,13 +434,6 @@ const Writer = struct {
         return w.meter.account.failed.?.err();
     }
 
-    fn kappaOf(w: *Writer, kappas: Cond.Kappas, n: NodeId, summary: bool) Error!CondId {
-        const before = w.codec.growth;
-        const k = w.env.conds.kappaOf(w.env.gpa, .growth(w.codecAccount()), w.env.view(), kappas, n, summary) catch |e| return w.codecFailed(before, e);
-        w.settle(before);
-        return k;
-    }
-
     fn proj(w: *Writer, n: NodeId, s: Step) Error!?NodeId {
         const before = w.codec.growth;
         const c = w.env.shapes.proj(w.env.gpa, w.codecAccount(), w.env.places, w.env.cells, n, s) catch |e| return w.codecFailed(before, e);
@@ -593,14 +587,13 @@ const Writer = struct {
             .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner)),
             .@"union", .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner), try w.pos(.from(d.b), p.at_summary, p.owner) }),
         }
-        // A union's and a positions node's κ is read from its sides with
-        // what is stored there, so the stored is written; any other node's
-        // is what is read there.
+        // What is stored at the position, nothing else (§3.6): every reader
+        // adds the derivation from the structure the reader rebuilds, and
+        // one that reads only the stored (`deep` below a leaf) must find the
+        // same after a round trip.
         if (kappas == null) {
             try w.tok(.ref, none);
-        } else if (d.kind == .@"union" or d.kind == .positions) {
-            try w.ref(.cond, if (conds.kappaGet(kappas.?, p.node, p.at_summary)) |k| k.int() else none);
-        } else try w.ref(.cond, (try w.kappaOf(kappas.?, p.node, p.at_summary)).int());
+        } else try w.ref(.cond, if (conds.kappaGet(kappas.?, p.node, p.at_summary)) |k| k.int() else none);
         // The projections that lead to a stored κ beyond the node's parts
         // (`entries`), each a position.
         var made: std.ArrayList(Over) = .empty;

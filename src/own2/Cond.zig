@@ -476,7 +476,12 @@ pub const Table = struct {
             .leaf => try t.derivedCells(gpa, charge, v, v.shapes.cells(n), at_summary, &.{}),
             // A built node's κ is the walk's (O13): `lost` until set.
             .node, .delta => return stored orelse lost,
-            .recast => if (holdsBelow(v.places, v.shapes.place(n))) lost else yes,
+            // A recast and its inner are one position: what is stored at
+            // either counts (§2.9, §2.13.9).
+            .recast => blk: {
+                const d: CondId = if (holdsBelow(v.places, v.shapes.place(n))) lost else yes;
+                break :blk if (t.kappaGet(ctx, .from(v.shapes.get(n).a), at_summary)) |s| try t.join(gpa, charge, s, d) else d;
+            },
             .@"union", .positions => return t.dagKappa(gpa, charge, v, ctx, n, at_summary),
         };
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
@@ -786,25 +791,41 @@ pub const Table = struct {
     }
 
     /// The positions a κ read reaches from `(n, summary)` (§2.9): a position
-    /// is a PATH, so the transitions are the projections along `n`'s place
-    /// steps, nothing else. Other nodes at `n`'s path are read by `kappaOf`
-    /// of `n`: a union's or positions node's sides by `dagKappa`; a delta's
-    /// base and a recast's inner never (a built node's κ is the walk's, O13;
-    /// a recast's is derived). `explicit`: `n`'s structure names something
-    /// at that step (`explicitAt`); the others and the empty ones are
-    /// followed only when `projected` (a snapshot may store there). The one
-    /// walk of `propagate`, `kappaLeq` and `deep`; Block writes a superset.
-    pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true };
+    /// is a PATH, so the transitions are the projections along the place's
+    /// steps. Other nodes at `n`'s path are read by `kappaOf` of `n`: a
+    /// union's or positions node's sides by `dagKappa`, a recast's inner
+    /// beside the recast (a recast changes the type, not the path, so the
+    /// two are one position, and the inner's own projections are the
+    /// position's too: `inner`); a delta's base never (a built node's κ is
+    /// the walk's, O13). `explicit`: the structure names something at that
+    /// step (`explicitAt`); the others and the empty ones are followed only
+    /// when `projected` (a snapshot may store there). The one walk of
+    /// `propagate`, `kappaLeq` and `deep`; Block writes a superset.
+    pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, inner: bool = false };
 
     pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, out: *std.ArrayList(Next)) Error!void {
+        try t.steps(gpa, charge, v, n, summary, projected, false, out);
+        if (v.shapes.kind(n) == .recast) try t.steps(gpa, charge, v, .from(v.shapes.get(n).a), summary, projected, true, out);
+    }
+
+    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, inner: bool, out: *std.ArrayList(Next)) Error!void {
         for (v.places.steps(v.shapes.place(n)).steps) |s| {
             try charge.reserve(gpa, .inspection, 1);
             const c = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, n, s)) orelse continue;
-            const explicit = try t.explicitAt(gpa, charge, v, n, s);
+            // Through a recast's inner only what a snapshot stores is more:
+            // an unstored inner adds nothing to the recast's derived read.
+            const explicit = !inner and try t.explicitAt(gpa, charge, v, n, s);
             const empty = v.shapes.kind(c) == .leaf and v.shapes.cells(c) == .none;
             if (!projected and (!explicit or empty)) continue;
-            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = explicit });
+            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = explicit, .inner = inner });
         }
+    }
+
+    /// A member's counterpart of `n` for a transition: itself, or for one
+    /// out of a recast's inner (`Next.inner`), its own inner when it is a
+    /// recast too.
+    fn side(v: View, m: NodeId, inner: bool) NodeId {
+        return if (inner and v.shapes.kind(m) == .recast) .from(v.shapes.get(m).a) else m;
     }
 
     /// Whether `n`'s structure names something at step `s`: an override in
@@ -938,7 +959,7 @@ pub const Table = struct {
                     try charge.reserve(gpa, .inspection, 1);
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
-                    const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, m, s)) orelse continue;
+                    const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, side(v, m, e.inner), s)) orelse continue;
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, c);
                 }
@@ -976,7 +997,7 @@ pub const Table = struct {
             next.clearRetainingCapacity();
             try t.frontier(gpa, charge, v, f.a, f.summary, projected, &next);
             for (next.items) |e| {
-                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, f.b, Step.fromWord(e.step))) orelse return false;
+                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, side(v, f.b, e.inner), Step.fromWord(e.step))) orelse return false;
                 try stack.append(gpa, .{ .a = e.node, .b = nb, .summary = e.summary });
             }
         }
@@ -2248,7 +2269,7 @@ fn traceCount(list: []const u32, n: NodeId, summary: bool) usize {
     return c;
 }
 
-test "#1063: a delta's base and a recast's inner are not positions: every reader agrees" {
+test "#1063: a delta's base is no position, a recast's inner is the recast's: every reader agrees" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
@@ -2280,14 +2301,14 @@ test "#1063: a delta's base and a recast's inner are not positions: every reader
     const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), inner);
     try testing.expectEqual(yes, try f.kappa(.none, r, false));
     try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, .none, r, false));
-    // `Rows`'s stored-into result (Rows.zig `storedInto`): a list node whose
-    // `[*]` carries a stored κ, recast to the signature's `Int` result.
+    // `Rows.storedInto`: a list node whose `[*]` carries a stored κ, recast
+    // to the signature's `Int` result: the entry is the recast position's.
     const ls = try f.cells.site(gpa, &f.account, 8, try f.placeOf(1), .list);
     const elems = try f.leaf(2, &.{});
     const list = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{ls}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
     const rl = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), list);
     const kl = try f.setKAt(.none, elems, true, shared);
-    try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, kl, rl, false));
+    try testing.expectEqual(shared, try f.conds.deep(gpa, f.charge(), v, kl, rl, false));
     try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, .none, rl, false));
 }
 
@@ -2311,6 +2332,12 @@ test "#1063: propagate, kappaLeq and deep read exactly one frontier" {
     const rc = try f.shapes.recast(gpa, &f.account, try f.placeOf(3), n1);
     const rose = try f.leaf(6, &.{try f.param(4, 6, &.{})});
     const lol = try f.leaf(3, &.{try f.param(5, 3, &.{})});
+    // A delta over a built base (`explicitAt` recurses into it), and a
+    // built list of two element records collected as positions.
+    const built_delta = try f.shapes.delta(gpa, &f.account, n1, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fb, try f.leaf(1, &.{try f.param(6, 1, &.{})})));
+    const lsite = try f.cells.site(gpa, &f.account, 9, try f.placeOf(5), .list);
+    const pos = try f.collect(&.{ n1, n2 });
+    const list = try f.shapes.node(gpa, &f.account, try f.placeOf(5), try f.set(&.{lsite}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, pos));
     const Case = struct { root: NodeId, at: NodeId, summary: bool };
     const cases = [_]Case{
         .{ .root = delta, .at = try f.projOf(delta, fb), .summary = false },
@@ -2318,15 +2345,17 @@ test "#1063: propagate, kappaLeq and deep read exactly one frontier" {
         .{ .root = rc, .at = try f.projOf(rc, Place.Step.elem), .summary = true },
         .{ .root = rose, .at = try f.projOf(rose, arg), .summary = false },
         .{ .root = lol, .at = try f.projOf(try f.projOf(lol, Place.Step.elem), Place.Step.elem), .summary = true },
+        .{ .root = built_delta, .at = try f.projOf(built_delta, fa), .summary = false },
+        .{ .root = list, .at = try f.projOf(try f.projOf(try f.projOf(list, Place.Step.elem), fa), Place.Step.elem), .summary = true },
     };
     for (cases) |c| for ([_]bool{ false, true }) |stores| {
         const ctx = if (stores) try f.setKAt(.none, c.at, c.summary, lost) else .none;
         var lists: [3]std.ArrayList(u32) = @splat(.empty);
         defer for (&lists) |*l| l.deinit(gpa);
         f.conds.trace = &lists[0];
-        _ = try f.conds.deep(gpa, f.charge(), f.view(), ctx, c.root, false);
+        const d_ctx = try f.conds.deep(gpa, f.charge(), f.view(), ctx, c.root, false);
         f.conds.trace = &lists[1];
-        _ = try f.propagate(.none, c.root, &.{c.root}, &.{ctx}, .alternatives, false);
+        const out = try f.propagate(.none, c.root, &.{c.root}, &.{ctx}, .alternatives, false);
         f.conds.trace = &lists[2];
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), ctx, c.root, ctx, c.root, false));
         f.conds.trace = null;
@@ -2335,6 +2364,11 @@ test "#1063: propagate, kappaLeq and deep read exactly one frontier" {
         try testing.expectEqualSlices(u32, want, traceSet(&lists[2]));
         // A stored entry is at a position every reader reaches.
         if (stores) try testing.expect(traceCount(want, c.at, c.summary) == 1);
+        // And each reader applies it alike: what `propagate` keeps reads
+        // the same through `deep` and both ways through `kappaLeq`.
+        try testing.expectEqual(d_ctx, try f.conds.deep(gpa, f.charge(), f.view(), out, c.root, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), ctx, c.root, out, c.root, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), out, c.root, ctx, c.root, false));
     };
 }
 
@@ -2421,4 +2455,31 @@ test "#1064: a cyclic place with two contexts ends at the revisited exact states
     try testing.expectEqual(shared, try f.kappa(out, try f.projOf(joined, arg), false));
     const n = trace.items.len;
     try testing.expectEqual(n, traceSet(&trace).len);
+}
+
+test "#1063: a recast and its inner are one position: an entry stored below the inner survives a join" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const v = f.view();
+    // `Rows.storedInto`: a list node whose `[*]` stores `excl x`, recast to
+    // the signature's result. The recast changes the type, not the path:
+    // the inner's entries are the position's, and a join keeps them.
+    const x = try f.param(0, 1, &.{});
+    const site = try f.cells.site(gpa, &f.account, 3, try f.placeOf(1), .list);
+    const elems = try f.leaf(2, &.{});
+    const inner = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{site}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
+    const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), inner);
+    const k = try f.conds.excl(gpa, f.charge(), x);
+    const ctx = try f.setKAt(.none, elems, true, k);
+    try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, ctx, r, false));
+    const out = try f.propagate(.none, r, &.{r}, &.{ctx}, .alternatives, false);
+    try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, out, r, false));
+    try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, ctx, r, out, r, false));
+    try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, r, .none, r, false));
+    // What is stored at the inner itself is read at the recast; with
+    // nothing stored, the recast reads its derivation: `yes`.
+    try testing.expectEqual(yes, try f.kappa(.none, r, false));
+    try testing.expectEqual(k, try f.kappa(try f.setK(.none, inner, k), r, false));
 }

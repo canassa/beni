@@ -2546,3 +2546,45 @@ test "a declaration's growth is its own: editing another that shares its records
     try testing.expectEqual(charged[0], charged[1]);
     try testing.expectEqual(charged[0], charged[2]);
 }
+
+/// The atoms of a condition: how many, and how many are `excl` (a constant
+/// is 100 + its id, no atoms).
+fn atomCounts(t: *Tables, k: CondId) ![2]u32 {
+    if (k == Cond.yes or k == Cond.shared or k == Cond.lost) return .{ k.int() + 100, 0 };
+    var it = t.conds.atoms.iterate(try t.conds.flat(testing.allocator, t.env().charge, k));
+    var n: u32 = 0;
+    var excls: u32 = 0;
+    while (it.next()) |e| {
+        n += 1;
+        if (t.conds.get(.from(e.key)).atom == .excl) excls += 1;
+    }
+    return .{ n, excls };
+}
+
+test "a round trip keeps deep's answer below a leaf: the block writes what is stored" {
+    // `ownership-v2.md` §3.6: a position's κ is written as stored, the read
+    // derives the rest from the structure the block rebuilds. `res` is the
+    // leaf `{p}` at `List { a : List Int }`, `excl q` stored at `[*].a`; the
+    // `[*]` on the way there is a projection `deep` reads stored-only, so a
+    // block that wrote its derivation there would give `deep` more atoms.
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    const recs = try a.place(7);
+    const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, recs), 0);
+    const q = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 1, try a.places.rootPath(gpa, recs), 0);
+    const res = try a.shapes.leaf(gpa, &a.account, recs, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    const e1 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, Step.elem)).?;
+    const e2 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, e1, try Step.field(&a.account, 10))).?;
+    const km = (try a.conds.kappaSet(gpa, env.charge, .none, e2, true, try a.conds.excl(gpa, env.charge, q))).ctx;
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
+    const d0 = try a.conds.deep(gpa, env.charge, env.view(), km, res, false);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    const d1 = try b.conds.deep(gpa, b.env().charge, b.env().view(), back.kappas, back.res, false);
+    try testing.expectEqual(try atomCounts(&a, d0), try atomCounts(&b, d1));
+}
