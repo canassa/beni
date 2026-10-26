@@ -100,17 +100,17 @@ logLine entry =
 
 -- How the fiber `run` started ended: its program's output and exit code,
 -- or 130 when it was cancelled. `runtime.js` has already run the empty
--- program `main` evaluated to. A `Program` is the host object `Node`'s
--- sibling builds, read by its two properties.
+-- program `main` evaluated to. A `Program` is plain data, `{ $c, $o }`
+-- (`Node.beni`), read by its two keys.
 finish : Exit Program → ⊤
 finish exit =
     case exit of
         Task.Done program →
-            out = Js.get (Js.from program) "out"
+            out = Js.get (Js.from program) "$o"
             if not (Js.same (Js.get out "length") (Js.from 0)) then
                 _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ out ]
                 ⊤
-            Js.set (Js.global "process") "exitCode" (Js.get (Js.from program) "code")
+            Js.set (Js.global "process") "exitCode" (Js.get (Js.from program) "$c")
 
         Task.Cancelled →
             Js.set (Js.global "process") "exitCode" (Js.from 130)

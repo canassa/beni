@@ -4218,7 +4218,7 @@ that declaration moves it — not an edit elsewhere in the file, not a change to
 which would move every BIR hash at once and train editors to update pins without reading; folding whitespace lets
 the formatter re-lay a body without a false alarm, while a changed comment inside it still alarms, on the safe
 side. A `crossing` type has no body and is not pinned. The helpers a body calls in its own file are pinned beside
-it — `Js.js`'s `args`, `Node.js`'s `spine`, `String`'s `elements`, `Debug`'s `logAs` and `toStringAs` — but not
+it — `Js.js`'s `args`, `String`'s `elements`, `Debug`'s `logAs` and `toStringAs` (`Node.js`'s `spine` until the sibling went, 2026-10-23) — but not
 transitively: the schema engine behind `Schema`'s four, and `Debug`'s printer below `toStringAs`, move no pin, and a
 change there relies on review.
 
@@ -4267,9 +4267,9 @@ names the fixture that pins each (§24.6).
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
 | ~~`Hosted.keyOf`~~ | — | *Withdrawn 2026-10-26 (#877): the keys are beni over `Js` (`Hosted.key`, no words: `Js.from k` is `returned` and `Js.object` holds its fields `aliased`, so the checker reads the value as held by the key), and `Hosted.js` is gone. |
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
-| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
-| `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
-| `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
+| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.beni` (2026-10-23, #877): `Js.object [ ( "$c", code ), ( "$o", out ) ]`, a new object of a number and a string |
+| `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
+| `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
 
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
