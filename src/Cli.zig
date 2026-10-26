@@ -30,7 +30,7 @@ pub const usage =
     \\  serve    build --watch, and serve the output over HTTP with live reload
     \\  check   parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership)
+    \\  dump     print one file's IR as text, or a directory's for some stages (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -89,7 +89,8 @@ pub const usage =
     \\                            which representation to print (required)
     \\  --positions               include source positions
     \\  --platform=<name>         as check's, for the stages that resolve imports (interface, raw,
-    \\                            types, graph, dispatch, writes); refused on the others
+    \\                            types, graph, dispatch, writes, ownership); with bir and a
+    \\                            platform's directory, lowers its modules; refused on the others
     \\
     \\exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O failure
     \\
