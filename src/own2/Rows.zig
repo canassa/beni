@@ -34,7 +34,10 @@
 //! **v2's words** (§2.13.6, §2.13.7), read against the PLACE's kind — a
 //! sequence's `[*]`, a cell's `◆` — which the place adapter derives from the
 //! `sequence`/`cell` type metadata; a word whose place lacks that kind is
-//! no word (R-5.10.3). No name is read: a renamed type gives the same row.
+//! no word (R-5.10.3) — except a callback whose answer is put back: one
+//! whose places give no write-back makes the whole signature `⊤call`, since
+//! dropping the write-back would say the answer is discarded. No name is
+//! read: a renamed type gives the same row.
 //!
 //! | word | row |
 //! |---|---|
@@ -193,6 +196,19 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         elem_back = b;
     };
     if (elem_backs > 1) elem_back = null;
+    // A callback whose answer is put back where the places give it no
+    // write-back — no destination of the kind, an answer that is not the
+    // element or the cell's contents, two answers for one destination, a
+    // cell word without `stored` — is not a row of fewer words: dropping the
+    // write-back would say the answer is discarded, which allows more than
+    // the code does. The signature is no row at all, `⊤call` (R-5.10.3).
+    for (sig.params, 0..) |prm, iu| {
+        if (prm.fn_params == null or prm.words & (Word.stored.bit() | cell_callback) == 0) continue;
+        const fits = if (prm.words & cell_callback != 0)
+            has(prm.words, .stored) and try cellBack(env, sig, prm, prm.words) != null
+        else if (elem_back) |b| b.i == iu else false;
+        if (!fits) return pessimistic(env, sums, sig);
+    }
     if (elem_back) |b| {
         into = 0;
         if (!crosses(env, env.places.child(sig.params[0].place, Step.elem).?)) try stored.append(gpa, b.answer);
@@ -467,6 +483,21 @@ fn isCell(env: Env, at: PlaceId) bool {
     return env.places.kind(at) == .ref and env.places.child(at, Step.contents) != null;
 }
 
+/// `⊤call` over the signature's places (§2.11, R-5.10.3): every parameter
+/// `RAEW` deep, every function parameter called many times, unseen, its
+/// answer put back anywhere; the result `⊤`.
+fn pessimistic(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
+    var places: std.ArrayList(PlaceId) = .empty;
+    defer places.deinit(env.gpa);
+    var funs: std.ArrayList(u32) = .empty;
+    defer funs.deinit(env.gpa);
+    for (sig.params, 0..) |prm, i| {
+        try places.append(env.gpa, prm.place);
+        if (prm.fn_params != null and !prm.list_of_fns) try funs.append(env.gpa, @intCast(i));
+    }
+    return sums.unknown(env, places.items, funs.items, sig.result);
+}
+
 /// The callback words that put the answer back into a cell's `◆`.
 const cell_callback = Word.cellupdate.bit() | Word.cellmodify.bit();
 
@@ -479,6 +510,10 @@ fn isContainer(env: Env, at: PlaceId) bool {
 
 /// A `stored` callback whose answer goes back at parameter 1's element
 /// position, the answer's selected cell `cb_j·selected`, and the effect.
+/// The row compares the answer with the whole `π₁[*]` (`storedInto`):
+/// §2.13.6 compares it with the remainder, the taken position removed,
+/// which a row cannot spell; `Calls` removes it under the call's split when
+/// it applies the write-back (#1081). The row is only less precise.
 const ElemBack = struct { i: u32, answer: CellId, back: Summary.Back };
 
 /// Parameter `i`'s element write-back (§2.13.6's callback `stored`), when
@@ -1491,11 +1526,23 @@ test "v2's stored callback: the answer put back at the element position, a carri
     const payload = try f.places.ctorStep(testing.allocator, &f.account, 1, 0);
     const mfocus = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{maybe}, .fn_result = maybe, .fn_payload = payload } }, .result = lists });
     try testing.expectEqualStrings("summary focusMaybe: π1 RAW, π3 R; res [*] cb3#C.0 π1[*]{apart [cb3#C.0] [π1[*]], excl cb3#C.0, excl π1[*]}, π1; π3 calls ≤1, supply 1  owned taken, stores answer#C.0 at π1[*] or removes (words)", try f.text(mfocus, "focusMaybe"));
-    // No destination, or an answer that is not the element: no write-back.
+    // No destination, an answer that is not the element, or two answers for
+    // one destination: no row of fewer words (which would say the answer is
+    // discarded) but `⊤call`, the pessimistic class (R-5.10.3).
     const nodest = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{.borrowed}) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = lists });
-    try testing.expectEqualStrings("summary nodest: π1 R, π3 R; res ⊤{lost}; π3 calls ≤1, supply 1 elem(π1·λ) owned taken (words)", try f.text(nodest, "nodest"));
+    try testing.expectEqualStrings("summary nodest: π1 RAES, π2 RAES, π3 RAES; res ⊤{lost}; π3 calls many, need owned, unseen", try f.text(nodest, "nodest"));
+    try testing.expectEqual(Summary.Origin.unknown, f.sums.get(nodest).origin);
     const wrong = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = int } }, .result = lists });
-    try testing.expectEqualStrings("summary wrong: π1 RAW, π3 R; res π1; π3 calls ≤1, supply 1 elem(π1·λ) owned taken (words)", try f.text(wrong, "wrong"));
+    try testing.expectEqualStrings("summary wrong: π1 RAES, π2 RAES, π3 RAES; res ⊤{lost}; π3 calls many, need owned, unseen", try f.text(wrong, "wrong"));
+    const cb: Param = .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list };
+    const two = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, cb, cb }, .result = lists });
+    try testing.expectEqual(Summary.Origin.unknown, f.sums.get(two).origin);
+    // A cell callback without `stored`, or whose answer is not the contents.
+    const ref = try f.placeOf(7);
+    const bare = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{.cellupdate}), .fn_params = &.{list}, .fn_result = list } }, .result = int });
+    try testing.expectEqual(Summary.Origin.unknown, f.sums.get(bare).origin);
+    const off = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellupdate, .stored }), .fn_params = &.{list}, .fn_result = int } }, .result = int });
+    try testing.expectEqual(Summary.Origin.unknown, f.sums.get(off).origin);
 }
 
 test "a write-back is part of the class: the normal form tells it apart, a join keeps it, the order reads it" {
@@ -1518,4 +1565,39 @@ test "a write-back is part of the class: the normal form tells it apart, a join 
     try testing.expect(try f.sums.leq(env, whole, joined));
     try testing.expect(try f.sums.leq(env, second, joined));
     try testing.expect(!try f.sums.leq(env, joined, whole));
+}
+
+test "every row of the selectors and the write-backs is below `⊤call` over its places" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const list = try f.placeOf(0);
+    const int = try f.placeOf(1);
+    const lists = try f.placeOf(2);
+    const recs = try f.placeOf(9);
+    const rec = try f.placeOf(5);
+    const fun3 = try f.placeOf(3);
+    const fun = try f.placeOf(12);
+    const ref = try f.placeOf(7);
+    const maybe = try f.placeOf(8);
+    const pair = try f.placeOf(13);
+    const payload = try f.places.ctorStep(testing.allocator, &f.account, 1, 0);
+    const sigs = [_]Signature{
+        .{ .params = &.{ .{ .place = lists, .words = bits(&.{.borrowed}) }, .{ .place = int, .words = bits(&.{.borrowed}) } }, .result = list, .result_words = bits(&.{.elementof}) },
+        .{ .params = &.{.{ .place = lists, .words = bits(&.{.borrowed}) }}, .result = lists, .result_words = bits(&.{.copyof}) },
+        .{ .params = &.{.{ .place = recs, .words = bits(&.{.borrowed}) }}, .result = recs, .result_words = bits(&.{.copyof}) },
+        .{ .params = &.{ .{ .place = recs, .words = bits(&.{.borrowed}) }, .{ .place = fun3, .words = bits(&.{.many}), .fn_params = &.{ rec, rec } } }, .result = recs, .result_words = bits(&.{.copyof}) },
+        .{ .params = &.{ .{ .place = list, .words = bits(&.{.stored}) }, .{ .place = lists, .words = bits(&.{.returned}) } }, .result = lists, .result_words = bits(&.{.prepended}) },
+        .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = lists },
+        .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) }, .{ .place = fun, .words = bits(&.{ .once, .taken, .stored }), .fn_params = &.{maybe}, .fn_result = maybe, .fn_payload = payload } }, .result = lists },
+        .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellupdate, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = int },
+        .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellmodify, .stored }), .fn_params = &.{list}, .fn_result = pair } }, .result = list },
+    };
+    for (sigs) |sig| {
+        const row = try fromWords(env, &f.sums, sig);
+        const top = try pessimistic(env, &f.sums, sig);
+        try testing.expect(try f.sums.leq(env, row, top));
+        try testing.expect(!try f.sums.leq(env, top, row));
+    }
 }
