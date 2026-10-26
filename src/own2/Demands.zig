@@ -845,6 +845,11 @@ const Resolver = struct {
             if (!isFresh(o) and o != .mark) out.accepted = .param;
         }
         // A base with no cell holds no object: nothing to write.
+        // Several cells (alternatives, or a deep demand's reach) make every
+        // query below a product of the demand with them: growth, chosen
+        // here before the work (§4.1, *direct demand query*).
+        const product: ?Ids.Account.Kernel = if (cells.items.len > 1) try r.env.account().enter(r.gpa, null) else null;
+        defer if (product) |k| r.env.account().leave(k);
         // 1. Known.
         for (cells.items) |e| if (cellt.origin(.from(e.key)) == .top) {
             return .{ .verdict = .refused, .cause = .unknown, .exactness = .approximate };
@@ -1062,8 +1067,9 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
         if (si < n) p = @min(p, frame.holders[by_start[si]].start);
         if (ei < n) p = @min(p, frame.holders[by_end[ei]].end);
         while (di < order.len and frame.demands[order[di]].point == p) : (di += 1) {
-            // §4.1: a written demand's query is its own kernel.
-            const kernel = try env.account().enter(gpa, .{ .atom = p, .role = .direct_demand_query });
+            // §4.1: a written demand's query is its own kernel, keyed by the
+            // demand's base: two demands at one call are two lanes.
+            const kernel = try env.account().enter(gpa, .{ .atom = frame.demands[order[di]].base_inst, .role = .direct_demand_query });
             defer env.account().leave(kernel);
             out[order[di]] = try r.resolve(frame.demands[order[di]]);
         }

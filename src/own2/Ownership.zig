@@ -113,6 +113,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
+                // The lanes in use by role (§4.1): how many source atoms each kernel used.
+                var roles: [@typeInfo(Ids.Role).@"enum".field_names.len]u32 = @splat(0);
+                for (0..a.lanes.count()) |li| roles[a.lanes.keys.items[li * 3 + 1]] += 1;
+                for (roles, 0..) |n, ri| if (n != 0) line.writer.print(", {t} lanes {d}", .{ @as(Ids.Role, @fromBackingInt(@intCast(ri))), n }) catch return error.OutOfMemory;
                 try others.append(arena, line.written());
             }
             if (in.format_summaries and dr.class != .none) {
