@@ -74,6 +74,9 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | `skill install --link` | write a symlink to the installed folder instead of a copy |
 | `skill install --force` | replace a beni skill that is already at `<dir>/beni`; anything else is refused |
 
+The types dump accepts a file or a project directory. A directory prints each project
+module in path order, including the types of local bindings.
+
 The ownership dump shows where a field is read before a record write, and where a closure
 reads a field it captures. Each location uses source line and column numbers.
 A cast path shows the complete type after `as`. The first boundary is exact.

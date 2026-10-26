@@ -3959,6 +3959,26 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
+test "dump types over a project directory resolves imports and prints only project modules in path order" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Math.Value\npub total : Int\ntotal = Math.Value.addOne 41\n");
+    try w.write("Math/Value.beni", "pub addOne : Int → Int\naddOne n = n + 1\n");
+
+    const r = try w.runWith(&.{ "dump", "--stage=types", "--jobs=8", "." }, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  total : Int
+        \\module Math.Value
+        \\  addOne : Int → Int
+        \\    n : Int
+        \\
+    , r.stdout);
+}
+
 test "dump --stage=types prints the schema endpoint a constructor's argument names" {
     // checker-v2.md §11.5, §12.2: `Got`'s argument is the endpoint, as in an
     // annotation. It used to read as an `err` no message stood behind, so

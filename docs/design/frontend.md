@@ -270,6 +270,7 @@ no positions (so a formatting change to the input leaves an `.ast` golden unchan
   written in `Ast.Node.Tag`, identifier and literal text inline. Error placeholder nodes print
   as `(error <code>)`.
 - `--stage=bir`: one declaration per block, then its instructions, then its interface entry. *Amended 2026-10-26*: a directory dumps every module under it in path order, each headed `module M`; with `--platform=P` a platform's own modules are lowered as a check lowers them; each declaration prints its ownership words, `own` (v1's column) and `own2` (ownership-v2.md §2.13.6).
+
   The implementer designs it; it must show every desugaring in `language.md` §8 legibly. Static
   dispatch put two instruction tags into that dump, `method_call` and `type_dispatch`, and a
   `method_call` **prints the operator it was written as** — `%4 = method_call %2 .eq [%3] (==)` —
@@ -279,6 +280,12 @@ no positions (so a formatting change to the input leaves an `.ast` golden unchan
   `markup_text`'s bytes printed quoted and escaped, since a run may span lines — the markup and vocabulary
   node tags to `ast`, and the `markup` instruction with its tree and the vocabulary declarations to
   `bir` (§9.2, §9.4, §9.7).
+
+*Amended 2026-10-26, #1084:* `--stage=types` also accepts a directory. It
+checks the project and prints every module's declaration and local types in
+path order, using the existing single-module format. Embedded core and platform
+modules are excluded from a project dump. A file's output is unchanged. This
+lets the playground's Types tab resolve and report its imported source modules.
 
 ## 2. Repository layout
 
