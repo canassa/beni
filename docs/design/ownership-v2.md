@@ -1854,28 +1854,33 @@ One record table: labels, paths, cells, splits, cell sets, atom sets, conditions
 supplies, keeps, slots and classes, each written once and named by its ordinal. A record follows its parts,
 except in a knot: the positions of one cycle are one `group` record whose members are numbered together;
 a child step or a projected position may name any member, every other part an earlier record. The order is
-canonical and exact (#1065): no hash decides an equality or orders a tie. `Refine.rank` interns local words
-exactly and orders the distinct keys by (hash, length, words). The places the records name, closed under
-their children, are refined once as one graph, so a place's rank is shared by every key that names it and no
-place's reachable graph is encoded per key. The records no position reaches are ranked a height at a time,
-each naming its parts by their keys; all of the block's positions are partitioned once by Hopcroft's
-algorithm (`Refine.blocks`) from their kind, class, place, cells, κ and steps; the owners, supplies and
-classes are ranked last, by height. The refinement is unlabelled with counted edges: a position with more
-than one labelled part has a port state per part, so a union's two sides are a count, not an order. Every
-choice depends on block numbers and counts only — the blocks that split taken in number order, a block's
-parts in count order (sorts of at most two items per new block), the touched predecessors grouped by lists
-threaded through per-state and per-count arrays, never a comparison sort of a splitter's edges — so the
-final numbers are canonical, each edge is read O(log n) times, and the refinement is O((V + A) log V), the
-places' O((Q + T) log Q), the ranking O(E + R log R). Records of one key are one record. Every lookup, token,
-scan, sort and word is reserved before it is done (#1066) and nothing reaches the output before all of it is
-paid: a refused write leaves no output and no memo the next write would read. The table is a post-order walk
-from the classes. The reader builds a
+canonical and exact (#1065), and no hash reaches it: `Refine.rank` orders keys by their words with a merge
+sort and makes equal neighbours one rank. The places the records name, closed under their children, are
+refined once as one graph, so a place's rank is shared by every key that names it and no place's reachable
+graph is encoded per key. The records no position reaches are ranked a height at a time, each naming its
+parts by their keys; all of the block's positions are partitioned once by Hopcroft's algorithm
+(`Refine.blocks`) from their kind, class, place, cells, κ and steps; the owners, supplies and classes are
+ranked last, by height. The refinement is unlabelled with counted edges: a position with more than one
+labelled part has a port state per part, so a union's two sides are a count, not an order. The touched
+predecessors are grouped by lists threaded through per-state and per-count arrays, never a comparison sort of
+a splitter's edges; the blocks that split are taken in number order and a block's parts in count order
+(sorts of at most two items per new block). Those numbers follow the split history, which copies of a state
+steer, so the quotient — one state per block — is refined once more and its numbers are the keys: bisimilar
+position or place graphs, however many copies they hold, get equal keys and bytes, and write ∘ read ∘ write is
+write. Each edge is read O(log n) times; the refinements are O((V + A) log V) and O((Q + T) log Q), the
+ranking O((E + R) log R). Records of one key are one record, and a final sort checks that no two units
+spell the same words. Every lookup, token, scan, sort and word is reserved before it is done (#1066) on the
+codec's lane (§4.1, `codec_factor`), and nothing reaches the output before all of it is paid: a refused
+write leaves no output and no memo the next write would read. The owner's growth sees only what a class
+adds — a second interpretation of a node, and the κ reads and projections it makes — each on its own
+declaration's charge. The table is a post-order walk from the classes. The reader builds a
 knot's nodes and deltas as nodes no constructor interns and ties their child maps when the knot is read;
 everything else is its constructor's, and a node no constructor makes (sides at two places, a child at a
-place its step does not reach) is no block. It decodes into tables of its own first, against the caller's
-allowance and place room, charges that work once, and only then builds in the caller's tables, with the
-block's places in a namespace of their own. Its scans are reserved before they run too, and a valid block
-read past the allowance is the limit, never "no block".
+place its step does not reach) is no block. It decodes into tables of its own first, on the codec's lane:
+its allowance is `codec_factor`'s bound of the block's length, set before any word is read, and its records
+are the caller's baseline. A decode past that bound is no block; one past the room in the caller's place
+table is the caller's limit, never "no block". Only then does it build in the caller's tables, with the
+block's places in a namespace of their own.
 
 **Where S2b's block is short of the contract above.** The note describes the code; the text before it is
 the target. (1) `Cond.kappaOf` already reads κ by §2.9's kind-specific rule, and `Block` writes through it;
@@ -1884,8 +1889,8 @@ a stored constraint below them is not carried or compared, and `propagate`'s vis
 are unsound (#1063, #1064). Both are repaired before S3b. (2) The absorbed-union merge is
 conservative under S2's coarser `(NodeId, position class)` key; the path-trie precision above arrives with
 S3a's trie. (3) and (4), a comparison sort per splitter and variable work done before its reservation, are
-repaired (#1065, #1066): the note above is the code. The ranking's initial sorts are by (hash, length,
-words) per height and per refinement, within the stated bound. The record table also holds `owner` records
+repaired (#1065, #1066): the note above is the code. The ranking's sorts are by the words alone, per
+height and per refinement, within the stated bound. The record table also holds `owner` records
 (`Block.Kind.owner`), which the list in the note leaves out.
 
 ### 3.7 Inputs, outputs, and where the pass runs
@@ -1968,6 +1973,20 @@ them. `Cond.lower` must index arrivals by original base so W distinct-base inser
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
 need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
+
+**The codec lane and `codec_factor`** (the owner's decision, 2026-10-26: the allowance counts summary growth,
+so the codec does not spend it). Encoding and decoding a block are the *codec/import index*'s work: the
+writer's lookups, tokens, scans, sorts, refinements and output words, and the reader's trial decode, are
+baseline records (B_f) on one codec lane per block, each reserved before its step. The lane is bounded by
+`codec_factor`·(S + 16)·⌈log₂(S + 2)⌉ records, where S counts the records and edges the writer reads from the
+tables — including the source-derived place graph, so a type's depth or width never spends R_f — or the words a
+reader decodes. `codec_factor` is **16**. The algorithm's own bound is O(S log S) (the refinements and the
+ranking's sorts above), and the measured maximum over the block tests is 1.7·(S + 16)·⌈log₂(S + 2)⌉, so 16 is
+margin for a defect, not a budget. Past the bound the writer stops with `ownership_accounting_invariant` (the
+codec broke its own bound), and the reader returns no block (no writer makes those bytes). Only what a class adds
+while it is written is growth, on its own declaration's account: a second interpretation of a node — a position
+under another κ map (§3.6) — and the κ reads and projections it makes. A many-map class still meets the limit
+loudly.
 
 **Fresh-fragment certificate and algorithm.** For a settled result-template DAG whose every tracked origin
 is a fresh allocation k, with no parameter/capture/shared/unknown/feedback dependency, certify that property
