@@ -1488,6 +1488,79 @@ then `Resolve.closeLet` in step 7):
   that applies it. A use inside the group (a recursive `let`) instantiates nothing and is a group
   call, P6's §12.3 cases with the callee's final list.
 
+*Amended 2026-10-26 (#1048, the owner's approval of the same day).* **A value made by a call is
+not generalised over a variable a write could reach.** §26's effects made a `let` value no longer
+always pure: `r = Ref.make []` was `∀a. Ref (List a)`, so `Ref.set r [ "x" ]` and
+`List.map (Ref.get r) λk → k + 1` both checked and the program printed `"x1"` — one cell written
+at one type and read at another, a silent wrong answer. `Queue.unbounded ⊤` and
+`Deferred.make ⊤` did the same. The rule is ML's value restriction with Garrigue's relaxation
+("Relaxing the value restriction", 2004), in two places.
+
+- **At a `let` frame** (`Generalize.holdExpansive`, step 5, before `holdLet`). A header that is
+  a value binding — a `let_def` with no parameters whose right-hand side is not a `lambda`,
+  annotated or not — or a `let` pattern is **expansive** when its right-hand side is not, by
+  syntax alone, a value. A value is a literal, a reference (a local, a declaration, a
+  constructor not applied), a `lambda` (a placeholder application `f a _` is one), or a tuple, a
+  list or a record of values, a record update of values, or a field or tuple index read of one.
+  Every other form — a call, a method call, an operator, a constructor application, an
+  interpolation, `case`/`if`, a block, `?`, markup — is expansive. For an expansive header, every
+  young root (flex or rigid) the header's type reaches at a **non-covariant position** is held:
+  lowered with its method types to the enclosing rank (`Walk.lowerTo`), as rule 2 holds a
+  constrained root. A position is covariant when the path to it from the header's root passes
+  only through tuple elements, record fields and a record's extension, a function's result, an
+  alias's expansion, and `List`'s argument. A function's parameter and an argument of any other
+  named type are not covariant. So `xs = List.reverse []` (`List a`), `p = ( [], Nothing )` (a
+  value: a constructor not applied is a reference) and `f = List.map _ g` stay
+  generalised; `r = Ref.make []`, `q = Queue.unbounded ⊤`, `d = Deferred.make ⊤` and
+  `( r, n ) = ( Ref.make [], 0 )` are not. A held flex is fixed by its first use, so a second use
+  at another type is `type_mismatch`. A held rigid is an escape of §8.3, so `r : Ref (List a)`
+  over `Ref.make []` is `rigid_mismatch`, "too general".
+- **At the top level** (`Generalize.impureValues`, after `Effects.run`, beside the `sync` check of
+  §27 and on its condition). A top-level value with no parameters is not held at its boundary,
+  because there is no enclosing rank to hold it at, and its evaluation class (§26,
+  transparent-effects-proposal.md §14.3 rule 1) is solved by then. A top-level value whose
+  evaluation class is not `pure` and whose scheme quantifies a variable at a non-covariant
+  position is **`impure_polymorphic_value`**, an error at its name whose hint is an annotation at
+  one type or a parameter — unless what it evaluates to, after the bindings and statements of its
+  blocks, is a value by the syntax above, and no variable the `let` rule held in its body was
+  generalised after all (by the declaration, or by a `let` function of it): then the evaluation
+  made nothing at a quantified type. So `cells = Ref.make []` is refused, `cells : Ref (List Int)`
+  over the same body checks, `header = Html.text "x"` is pure and stays polymorphic, and a value
+  whose block logs and then is a `λ` (`run/EvidenceFunctionBodyPerCall`) checks. The refusal is
+  attributed to no declaration, as §27's is.
+- **Diagnostics.** A held flex that carries a constraint is left to `holdLet` (rule 2), which holds
+  it the same way and whose A.30 hint names its method. Every other held flex is recorded
+  (`Env.made_by_call`), and a `type_mismatch` or a `number` mismatch one of whose sides reaches it
+  gets a hint that names the binding and says why it has one type. A held rigid is reported where
+  it is found, as `rigid_mismatch` with its own text (`Messages.madeByCall`), and poisoned with its
+  scheme, so step 6 does not report it again.
+
+*Why it is sound.* Only a call can run an effect, and only an effect can make a cell (`Ref`,
+`Deferred`, `Queue`, a `foreign type`). A non-expansive right-hand side runs no call, so it makes
+no cell, and generalising it is HM's. An expansive one may have made one, but a variable that
+occurs only covariantly cannot type a cell's contents: a cell's type is a named type other than
+`List`, every one of whose arguments counts as invariant here, and a closure that writes a captured
+cell takes the value as a parameter. This is Garrigue's theorem, with variance read off the store
+and not off a type's declaration: a named type's declaration may be another module's, whose cache
+entry would then have to publish it (§14.2). That costs `x = List.head []` its polymorphism
+(`Maybe a`): it is fixed by its first use. *Why not by the effect bits at a `let`.* They are
+solved by `Effects.run`, after P5, and a `let`'s right-hand side runs in its enclosing arrow's
+ambient, so no class says what the right-hand side alone does; at the top level the class is
+there, and it is read. *What the top level still refuses.* "Impure" is coarser than "makes a
+cell": a `Debug.log` makes an evaluation impure, and a named type other than `List` counts as
+invariant, a `foreign type` (`Html msg`, `Hosted.Job msg`) included. So a top-level `Html msg`
+whose markup logs, or `Navigation.reload : Cmd msg` (`Cmd.perform` reads the log context), is
+refused although it makes no cell: the corpus's `run/MarkupBlocks` says `Html ⊥`, and the
+`browser` platform's `reload` takes `⊤` (`boundary.md` §9.8.13 (c), amended 2026-10-26). Variance
+published per type, with a declared one for a `foreign type`, would lift both; it is not built.
+*Rule 7.* The restriction refuses only a block value, made by a
+call, used at two types through a variable inside a named type other than `List` or a function's
+parameter — the case it exists to refuse, give or take that conservatism — and the escape hatch
+is a parameter (`mk ⊤ = Ref.make []` is a function binding and is generalised) or an annotation at
+a concrete type. `run/LetValuePolymorphism` pins what stays general; `check/bad/LetRefNotGeneral`,
+`LetQueueNotGeneral`, `LetDeferredNotGeneral`, `LetRefAnnotatedTooGeneral` and
+`TopLevelRefNotGeneral` what does not.
+
 ### 8.5 Obligations at a boundary (I3)
 
 Obligations ride on their variables (§4.5). By kind:
