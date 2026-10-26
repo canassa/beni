@@ -782,9 +782,10 @@ through summarised declarations' grafts.
 
 **A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
 construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
-At a summary position a built node's read is its certificate and `excl` of each storage arrival standing for many
-positions, as a leaf's derivation has (the certificate alone where it is `shared`) [M 2026-10-26, #1112]: the
-obligation is the position's, so a node reads it wherever it is linked, never because a walk wrote it there.
+At a summary position a built node's or a recast's read also has the leaf derivation over its own cells (`excl` of
+each arrival standing for many positions, `apart` over them; a certificate that is `shared` stays `shared`)
+[M 2026-10-26, #1112, #1115's review]. The obligation belongs to the position, so a node reads it wherever it is
+linked, never because a walk wrote it there.
 A leaf joins its stored condition with the condition derived at that position: `apart` over its arrivals,
 `excl` for an arrival standing for many positions, `yes` at a plain path, `lost` for `⊤` or an approximate
 cell. A recast derives `lost` wherever the reinterpreted place holds objects below it, otherwise `yes`. For leaves/recasts a stored condition can only add constraints; it never weakens the derivation.
@@ -884,11 +885,15 @@ Where κ is set, always **at the selected path p**:
   A record/tuple/constructor supplies the conditions of its children at their respective paths; explicit
   comparisons between two paths use their cells. A repeated child never becomes fresh through its parent.
   **A literal of one element, and a join of one alternative, is a link** [M 2026-10-26, #1112]: the position is
-  the member's own snapshot position, linked as it is, and nothing below it is walked or written. This reads
-  exactly the member, because there is nothing for `propagate` to add. (1) `apart` compares positions, and one
-  element is one position. Two objects of one element at two paths are the shape's and the `sep`/holder
-  checks' (above), never κ's. (2) A leaf's summary derivation and a built node's summary `excl` (the read
-  rule above) are the reader's, at the reader's position class. So the summary obligations `propagate`
+  the member's own snapshot position, linked as it is; nothing below it is walked or written. This reads
+  exactly what the old walk read, for three reasons. (1) The walk compared objects at the literal's `[*]` itself
+  across every path of the element: `apart` over `reach`, the `[ (a, b), (b, a) ]` twin within one element.
+  That one entry is still written, at the element's node at `[*]`, together with its `summaryExcl`. It is taken
+  over the element's **arrivals** (`Shape.arrivals`: the cells of its reach that construction does not make
+  apart, memoised per node like `reach`), because a site, a result or an escape is apart from every other
+  cell. Below `[*]` the walk compared only the cells at each path, and one element is one position, so the
+  only constraint left is the read's own. (2) The summary derivation of a leaf, a built node and a recast (the
+  read rule above) belongs to the reader, at the reader's position class. So the summary obligations `propagate`
   would have written at `[*]` and below are read wherever the member is linked. (3) A join of one
   alternative is that alternative (`join` is idempotent). An alternative that is an empty leaf with nothing
   stored reads `yes` at every position below, and `yes` is the join's unit, so it does not count. A join
@@ -2466,7 +2471,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 785 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 805 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 500 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |

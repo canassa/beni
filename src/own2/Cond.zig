@@ -834,7 +834,7 @@ pub const Table = struct {
                 if (t.isCollapsed(ctx)) return lost;
                 const s = stored orelse return lost;
                 if (!at_summary or s == shared) return s;
-                return t.@"and"(gpa, charge, s, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(n)));
+                return t.@"and"(gpa, charge, s, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
             },
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
@@ -848,6 +848,8 @@ pub const Table = struct {
                 for (inners.items) |i| if (t.kappaGet(ctx, i)) |s| {
                     d = try t.join(gpa, charge, s, d);
                 };
+                // At a summary position its cells owe what a leaf's do (#1115).
+                if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
                 break :blk d;
             },
             .@"union", .positions => return t.dagKappa(gpa, charge, v, ctx, n, at_summary),
@@ -1466,6 +1468,21 @@ pub const Table = struct {
                 if (one) {
                     try charge.reserve(gpa, .inspection, 1);
                     try linked.append(gpa, .{ .path = f.path, .at = c0 });
+                    // A literal's one element at its `[*]` itself: the objects it
+                    // holds at any path below are compared there (§2.9), over
+                    // those construction does not make apart (`arrivals`).
+                    if (mode == .together and f.node == joined) {
+                        var k1 = try t.kappaOf(gpa, charge, v, c0, m0, f.msummary);
+                        k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(m0)));
+                        items.clearRetainingCapacity();
+                        var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
+                        while (it.next()) |e| {
+                            try charge.reserve(gpa, .inspection, 1);
+                            try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+                        }
+                        k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
+                        try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k1 });
+                    }
                     continue;
                 }
             }
@@ -3605,4 +3622,33 @@ test "#1112: a one-element literal and a join with an empty alternative are link
     f.conds.trace = null;
     try testing.expectEqual(@as(usize, 1), trace.items.len);
     try testing.expectEqual(k, alt);
+}
+
+test "#1115 review: a one-element literal's [*] still compares everything its element holds below, and a recast owes its excl" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const rec = try f.placeOf(0);
+    const site = try f.cells.site(gpa, &f.account, 1, rec, .record);
+    // `[ { a = a, b = b } ]` over two parameters: at `[*]`, `apart{π1, π2}`.
+    const p1 = try f.param(0, 1, &.{});
+    const p2 = try f.param(1, 1, &.{});
+    const pair = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{site}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{p1})), fb, try f.leaf(1, &.{p2})));
+    const pk = try f.setK(.none, pair, yes);
+    const out = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, pair, &.{pair}, &.{pk}, .together, true, false, null);
+    const k = try f.kappa(out, pair, true);
+    try testing.expectEqual(Kind.atom, f.conds.kind(k));
+    try testing.expectEqual(AtomKind.apart, f.conds.get(k).atom);
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(.from(f.conds.get(k).a)));
+    // (`[ ( xs, x ) ]` with `x` one of `xs`'s elements: `build_test`.)
+    const pe = try f.param(0, 3, &.{Place.Step.elem});
+    // A recast member standing for many (`π1[*]`) owes `excl` at `[*]`.
+    const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(1), try f.leaf(3, &.{pe}));
+    const out3 = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, r, &.{r}, &.{.none}, .together, true, false, null);
+    const k3 = try f.kappa(out3, r, true);
+    try testing.expectEqual(Kind.atom, f.conds.kind(k3));
+    try testing.expectEqual(AtomKind.excl, f.conds.get(k3).atom);
 }
