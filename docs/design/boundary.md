@@ -2999,7 +2999,7 @@ arrival and departure (the driver's `flush` takes several selectors, each clicke
 one task); each of the three fails against a listener that adds itself or sends at once, or that
 starts after its key left.
 
-*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js`, `Sub.beni`,
+*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js` (gone 2026-10-26, below), `Sub.beni`,
 `Browser/Events.beni`, `Browser/Navigation.beni`; `platforms/browser-tea/Tea.beni`;
 `core/Task.beni`'s `onShutdown`; `tests/browser/driver.mjs`'s `--fiber-page`), as specified.
 A page whose subscriptions all wait pays a little for the split (`bench/size.mjs`'s `every`, a
@@ -3102,6 +3102,12 @@ fiber (`suspends`), for the test hook `fibered`.
 *Amended 2026-10-02 (§9.8.3, the type's identity):* `key` is beni, `keyOf (Js.fingerprint k EQ) k`
 over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`
 compares by identity, then by its type's `compare` — no longer "by value".
+
+*Amended 2026-10-26 (#877, after `Js.lt` #882):* the keys are beni, and `Hosted.js` is gone. `key`
+builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as a lambda over the
+`where` clause (`comparer`), the value — and `compare` orders two keys of different types by their
+identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
+type go through the stored `compare` with `Js.apply`, read back at `Order`.
 
 A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
 it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is
