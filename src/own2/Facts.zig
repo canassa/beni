@@ -242,6 +242,62 @@ pub const Prepass = struct {
     };
 };
 
+/// A source position, `line:col` as a diagnostic prints it.
+pub const Position = struct { line: u32, col: u32 };
+
+/// One verdict line of the report (R-7.15), as `Message` says it and
+/// `Report` prints it: positions and texts, no id.
+pub const Line = struct {
+    position: Position,
+    /// The main token of the demand's instruction, what a diagnostic underlines.
+    token: u32 = Ids.none_int,
+    op: []const u8,
+    base: []const u8,
+    refused: bool,
+    accepted: Verdict.Accepted = .fresh,
+    cause: Cause = .unknown,
+    approx: bool = false,
+    detail: []const u8 = "",
+};
+
+/// R-7.15's spelling of an acceptance's ground.
+pub fn acceptText(a: Verdict.Accepted) []const u8 {
+    return switch (a) {
+        .fresh => "fresh",
+        .call => "call",
+        .param => "param",
+        .callback_param => "callback-param",
+        .once => "once",
+        .entry => "entry",
+        .assumed => "assumed",
+    };
+}
+
+/// R-6.3's spelling of a cause.
+pub fn causeText(c: Cause) []const u8 {
+    return switch (c) {
+        .unknown => "unknown",
+        .escaped => "escaped",
+        .top_level => "top-level",
+        .captured_edit => "captured-edit",
+        .disjoint => "disjoint",
+        .held_operand => "held-operand",
+        .later_use => "later-use",
+        .alias => "alias",
+        .captured => "captured",
+        .element => "element",
+        .call => "call",
+        .supply => "supply",
+        .need => "need",
+        .limit => "limit",
+        .exclusive => "exclusive",
+        .once => "once",
+        .payload => "payload",
+        .read_only => "read-only",
+        .level => "level",
+    };
+}
+
 comptime {
     Ids.assertRecord(Use);
     Ids.assertRecord(Demand);

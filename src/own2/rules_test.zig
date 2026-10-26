@@ -36,8 +36,11 @@ const layers = [_]Entry{
     // table is amended to 700 with the slice's design commit.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 700 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 800 },
-    .{ .file = "Facts.zig", .layer = 2, .max_lines = 300 },
+    // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
+    // and a refinement's canonical position (`unrefined`) Demands reads.
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 900 },
+    // §5 says 350 since S3a: the report's text line and its two spellings.
+    .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
@@ -54,7 +57,8 @@ const layers = [_]Entry{
     .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 900 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 900 },
+    // §5 says 1 100 since S3a: the source and signature adapters.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1100 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -75,15 +79,22 @@ const layers = [_]Entry{
 /// §5's base layer, the only files outside `own2/` a production line may
 /// import: `bir/Bir`, `check/{TypeStore,Types,Walk,Dispatch,SchemaPlan,
 /// EffectPlan,Scc}`, `resolve/{Interface,Graph}`, `parse/Ast`, `InternPool`,
-/// `stamped`, plus the build's option modules. `only` names the one file
+/// `stamped`, plus the build's option modules. `only` names the files
 /// allowed to import it (the type modules: "only `Place` reads type
 /// children").
-const BaseImport = struct { path: []const u8, only: ?[]const u8 = null };
+const BaseImport = struct { path: []const u8, only: ?[]const []const u8 = null };
 const base_imports = [_]BaseImport{
     .{ .path = "../bir/Bir.zig" },
-    .{ .path = "../check/TypeStore.zig", .only = "Place.zig" },
-    .{ .path = "../check/Types.zig", .only = "Place.zig" },
-    .{ .path = "../check/Walk.zig", .only = "Place.zig" },
+    // The type modules: `Place` and the `Groups` source and signature
+    // adapters read type children (§5); `Enforce` builds their inputs.
+    .{ .path = "../check/TypeStore.zig", .only = &.{ "Place.zig", "Groups.zig" } },
+    .{ .path = "../check/Types.zig", .only = &.{ "Place.zig", "Groups.zig", "Enforce.zig" } },
+    .{ .path = "../check/Walk.zig", .only = &.{"Place.zig"} },
+    // The hook's session, driver and diagnostics: `Enforce` alone (§3.7).
+    .{ .path = "../Session.zig", .only = &.{"Enforce.zig"} },
+    .{ .path = "../check/Driver.zig", .only = &.{"Enforce.zig"} },
+    .{ .path = "../check/Check.zig", .only = &.{"Enforce.zig"} },
+    .{ .path = "../check/Diagnostics.zig", .only = &.{"Enforce.zig"} },
     .{ .path = "../check/Dispatch.zig" },
     .{ .path = "../check/Edges.zig" },
     .{ .path = "../check/SchemaPlan.zig" },
@@ -183,7 +194,10 @@ fn importVerdict(file: []const u8, target: []const u8, in_tests: bool) ?[]const 
     }
     for (base_imports) |b| {
         if (!std.mem.eql(u8, b.path, target)) continue;
-        if (b.only) |only| if (!std.mem.eql(u8, only, file)) return "only Place reads type children (§5)";
+        if (b.only) |only| {
+            for (only) |o| if (std.mem.eql(u8, o, file)) return null;
+            return "only Place and the Groups adapters read type children; only Enforce reads the session (§5)";
+        }
         return null;
     }
     if (in_tests) {
