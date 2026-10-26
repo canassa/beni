@@ -55,9 +55,9 @@ body {
   background: var(--panel);
 }
 
-/* The words on the machine, on its dark backdrop in both schemes. */
+/* The words on the machine, on its dark backdrop in both schemes; their
+   colour is the markup's, red where a label warns. */
 .machine .caption {
-  fill: #8f87a1;
   font: 500 7px var(--mono);
 }
 
