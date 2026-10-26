@@ -42,7 +42,7 @@ const layers = [_]Entry{
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     .{ .file = "Cond.zig", .layer = 4, .max_lines = 1000 },
-    // §5 says 1 400 since S2: the normal-form encoder and v1's print grammar.
+    // §5 says 1 400 since S2: the normal-form encoder, the κ-owning join and v1's print grammar.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1400 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1100 },
@@ -257,6 +257,12 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
         // Only `Cell` defines `alias`.
         if (!std.mem.eql(u8, s.name, "Cell.zig") and std.mem.indexOf(u8, s.text, "fn alias(") != null) {
             fail(&bad, "{s} defines `alias`: only Cell.alias compares cells (§5)", .{s.name});
+        }
+        // The normal form's words are build-local (§3.5: this module's
+        // place ids, union sides in id order): only `Summary` makes them
+        // and only `Block` may spell them for a hash or a file.
+        if (!std.mem.eql(u8, s.name, "Summary.zig") and !std.mem.eql(u8, s.name, "Block.zig") and std.mem.indexOf(u8, production(s.text), "normalize(") != null) {
+            fail(&bad, "{s} calls `normalize`: the normal-form words are build-local and only Block may hash or publish them (§3.5)", .{s.name});
         }
         // Name comparisons in the fenced files.
         for (no_name_compare) |f| {

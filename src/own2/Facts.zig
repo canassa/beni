@@ -32,6 +32,10 @@ pub const Use = struct {
     region: RegionId,
     /// `call` only: the callee's `use` node, projected lazily.
     use_node: NodeId,
+    /// The source occurrence that made the use — the operand's instruction
+    /// — unique in the owning declaration across its frames: the atom of
+    /// the use's `liveness_index` lane (§4.1).
+    atom: u32,
 };
 
 /// The kinds of demand (§2.8).
@@ -115,17 +119,19 @@ pub const Verdict = union(enum(u8)) {
 };
 
 /// A supply (§2.11): the node handed to function parameter `j` as its
-/// `k`th argument at `point`.
+/// `k`th argument at the call the label names (§2.2: supplies are attached
+/// to labels; a direct call's label is `(ι, none)`). Two labels are never
+/// merged.
 pub const Supply = struct {
     j: u32,
     k: u32,
     node: NodeId,
-    point: u32,
+    label: LabelId,
     owned: bool,
     taken: bool,
-    /// κ of the node handed (§2.10's `supply(k)`): what the callee relies
-    /// on when it writes what it was handed.
-    cond: CondId,
+    /// The κ snapshot of the value handed (§2.10's `supply(k)`): what the
+    /// callee relies on when it writes what it was handed, per path.
+    kappa: Ids.KappaId,
 };
 
 /// A keep edge (§2.11): `keep(j, k, kept path, written path)`.
@@ -238,7 +244,7 @@ comptime {
     Ids.assertRecord(ProofAnswer);
     Ids.assertRecord(Prepass.Spread);
     Ids.assertRecord(Prepass.MaybeJoin);
-    std.debug.assert(@sizeOf(Use) == 24);
+    std.debug.assert(@sizeOf(Use) == 28);
     std.debug.assert(@sizeOf(Demand) == 32);
 }
 
