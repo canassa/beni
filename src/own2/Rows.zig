@@ -108,6 +108,10 @@ pub const Param = struct {
     /// unary payload, which the adapter resolved and validated (one
     /// nullary and one unary constructor). Null: the element itself.
     fn_payload: ?Step = null,
+    /// The parameter's declared type is a bare type variable: the value can
+    /// hold any structure and the callee may read any of it, so every word
+    /// on it applies at every depth (§2.13.6, #1105).
+    type_variable: bool = false,
 };
 
 pub const Signature = struct {
@@ -339,6 +343,8 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
             m.w = true;
             writes = true;
         }
+        // A bare type variable (§2.13.6, #1105): the marks hold below ε.
+        if (prm.type_variable and !m.isEmpty()) m.deep = true;
         if (!m.isEmpty() and !crosses(env, prm.place)) use = try Summary.Table.markUse(env, .none, prm.place, &.{}, m, &.{});
         // A sequence result read off at `[*]` (`taken`, `concatenated`):
         // the elements are kept (`A` there).

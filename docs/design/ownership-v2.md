@@ -1259,6 +1259,14 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    survives interfaces. `misplaced_ownership_word` validates the placement/companions below; the S3a signature
    adapter additionally rejects a resolved type that lacks the required kind, rather than silently treating
    an invalid asserted word as absent (#1056).
+   **A word on a bare type variable applies at every depth** [M 2026-10-26, #1105]. A parameter whose
+   declared type is a type variable (`borrowed a`, `returned a`, `stored a`; not `List a`) can hold any
+   structure at the call, and the callee — a `foreign`, `Js`, or evidence — may read anything inside it. So
+   every word there is its deep form: `borrowed a` is `R` at `ε` and at every path below (a leaf of marks,
+   §2.10), and so `A`, `E` and `W` for the words that give them. `Rows.fromWords` reads this from the
+   callee's annotation (`Rows.Param.type_variable`), never from the call site's instantiated places, where
+   `ε` would end at the instantiated type's root. A word on `List a` keeps its own depth (`List.length`
+   reads only `ε`, R-4.3.5). Fixture: `ownership/core/HeldIntoTypeVariable.beni`.
    `Js.maySuspend f` gives `f` `unused`; Log's work is `once`; `Task.keepLogContext` is `returned`. Their
    v2 wording and Dict's rows land at S8 (#1053), with v1's input columns and verdicts unchanged.
    **Type metadata, published as data (S2b).** These are contextual ownership words, permitted only in core/
