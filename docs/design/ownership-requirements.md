@@ -194,6 +194,10 @@ Not writes (they read their operands):
 - R-4.3.5 A pending argument holds the written list only at the paths its callee touches: accept
   `changed { model | draft = "" } (model.todos ++ [ new ])` when `changed` never reads `.todos`; a callee that never
   looks at a shared subtree is accepted, one that returns it refused. (oc §16.4 item 1; o/Changed, o/UnusedSubtree)
+  The same per-path reading holds for a holder: a later read of a list's storage alone is no use of an element it
+  holds, so `case rows of [ r, …_ ] → List.length [ …r, 0 ] + List.length rows` writes `r` in place and is accepted
+  (`List.length` is `borrowed`: `R` at `ε`, not at `[*]`); v1 refused it `alias`. [M 2026-10-26, #1072]
+  (o/Split `readAfter`)
 - R-4.3.6 **Cause precedence.** Known, then Unescaped, then not captured, then Disjoint, then Dead; the first that
   fails names the cause (o/Toplevel 26:15 is `top-level` though a later read exists). Exact beats approximate;
   among failing holders, the one used first (ties: the earlier binding). (oc §8.1–§8.4)
