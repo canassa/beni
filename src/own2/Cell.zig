@@ -178,7 +178,10 @@ pub const Alias = union(enum) {
 
 pub const Table = struct {
     cells: std.MultiArrayList(Cell) = .empty,
-    intern: Ids.FixedDict(4) = .{},
+    /// Keyed by `(origin·kind, a, b, c, place)`: a cell is one object at one
+    /// place, so a `result`, `site` or refinement made at another place is
+    /// another cell, whatever order made them.
+    intern: Ids.FixedDict(5) = .{},
     labels: std.MultiArrayList(Label) = .empty,
     label_intern: Ids.FixedDict(3) = .{},
     splits: std.MultiArrayList(Split) = .empty,
@@ -273,7 +276,7 @@ pub const Table = struct {
     /// trie parent. One growth record when new.
     fn internCell(t: *Table, gpa: Allocator, account: *Account, o: Origin, k: Kind, a: u32, b: u32, c: u32, at: PlaceId, trie_parent: CellId) Error!CellId {
         try account.reserve(.cell, 1);
-        const got = try t.intern.getOrPut(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c });
+        const got = try t.intern.getOrPut(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c, at.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
         const id: CellId = .from(t.count());
         got.value_ptr.* = id.int();
@@ -328,7 +331,7 @@ pub const Table = struct {
         var at = path;
         var found: CellId = .none;
         while (true) {
-            const key = [4]u32{ (@as(u32, @backingInt(o)) << 8) | @backingInt(Kind.ofPlace(places.kind(places.pathPlace(at)))), index, at.int(), j };
+            const key = [5]u32{ (@as(u32, @backingInt(o)) << 8) | @backingInt(Kind.ofPlace(places.kind(places.pathPlace(at)))), index, at.int(), j, places.pathPlace(at).int() };
             if (t.intern.get(key)) |hit| {
                 found = .from(hit);
                 break;
