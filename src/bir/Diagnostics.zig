@@ -265,9 +265,11 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`lentoptional` a `cellread` one; `cellwrite` needs a second parameter that is
                 \\`cellstored`, `cellupdate` or `cellmodify`, and `cellcomplete` one that is
                 \\`cellstored`; `cellstored` is `consumed` and follows `cellwrite` or
-                \\`cellcomplete`; `builderdone` needs a `written returned` first parameter,
-                \\`concatenated` a `written` first parameter and a second one, and a `taken`
-                \\result a parameter to take it from. Write the missing word, or remove this one.
+                \\`cellcomplete`; `builderdone` needs a `written returned` first parameter and a
+                \\second, its length, at most `borrowed`; `concatenated` a `written` first
+                \\parameter and exactly one more; a `taken` result or function parameter a
+                \\container before it that is not `unused`. Write the missing word, or remove
+                \\this one.
             , .{text}),
             .own_conflict => try w.print(
                 \\The ownership word `{s}` cannot hold together with another word written here.
