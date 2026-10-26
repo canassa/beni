@@ -7707,6 +7707,79 @@ test "the ownership checker v2 runs behind --ownership=v2 in check, build and du
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  5:17 List.push xs: rejected later-use: xs is read again at 5:11\n") != null);
 }
 
+test "dump --ownership-both prints v1's report, a marker line, then v2's, from one check" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §7.2: the corpus harness's parity dumps a program
+    // under both checkers in one process. The two halves are exactly the
+    // reports the two separate dumps print.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\held : List Int → List Int × List Int
+        \\held xs = ( xs, List.push xs 1 )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const both = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", "--platform=node", "Main.beni" });
+    const v1 = try w.run(&.{ "dump", "--stage=ownership", "--ownership-everywhere", "--platform=node", "Main.beni" });
+    const v2 = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-everywhere", "--platform=node", "Main.beni" });
+    const refused = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), both.exit_code);
+    const want = try std.mem.concat(w.arena.allocator(), u8, &.{ v1.stdout, "== ownership v2\n", v2.stdout });
+    try testing.expectEqualStrings(want, both.stdout);
+    try testing.expect(std.mem.indexOf(u8, v1.stdout, "List.push xs: rejected") != null);
+    try testing.expectEqual(@as(u8, 2), refused.exit_code);
+}
+
+test "an ownership dump checks only the program and reads core's facts from the checked core" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1106: `dump --stage=ownership` checked all of core from source in
+    // every process (0.2 to 0.3 s a program). It now reads core's
+    // ownership blocks as `check` does: one module is checked, core's are
+    // installed, under both checkers.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\held : List Int → List Int
+        \\held xs = List.push (List.map xs (λx → x + 1)) 1
+        \\
+    );
+    const arena = w.arena.allocator();
+    for ([_][]const u8{ "--ownership=v1", "--ownership=v2" }) |side| {
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const r = try w.run(&.{ "dump", "--stage=ownership", side, "--self-profile=profile.json", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        const root = try std.json.parseFromSliceLeaky(std.json.Value, arena, try w.read("profile.json"), .{});
+        var checked: ?i64 = null;
+        var embedded: ?i64 = null;
+        for (root.object.get("traceEvents").?.array.items) |event| {
+            const args = event.object.get("args") orelse continue;
+            if (args != .object) continue;
+            if (args.object.get("modules_checked")) |v| checked = v.integer;
+            if (args.object.get("embedded_modules")) |v| embedded = v.integer;
+        }
+        try testing.expectEqual(@as(?i64, 1), checked);
+        try testing.expect((embedded orelse 0) > 0);
+    }
+}
+
 test "under --ownership=v2 a storage word on a value of no storage kind is misplaced_ownership_word" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

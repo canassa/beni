@@ -550,6 +550,11 @@ pub const Dump = struct {
     /// (`ownership-checker.md` §24.6). A flip is
     /// `Module.name:<slot>:<from>><to>[+…]`, `<slot>` a parameter from 1 or
     /// `res`, a word or `-`.
+    /// `--ownership-both` — hidden, test-only: with `--stage=ownership`,
+    /// print v1's report, then the line `== ownership v2`, then v2's, from
+    /// one check of the program (`ownership-v2.md` §7.2: the corpus
+    /// harness's parity, one process per program).
+    ownership_both: bool = false,
     ownership_flips: ?[]const u8 = null,
     file: []const u8,
 };
@@ -1339,6 +1344,7 @@ const DumpSpecific = struct {
     writes_work: ?u64 = null,
     msg_types: bool = false,
     ownership_totals: bool = false,
+    ownership_both: bool = false,
     ownership_flips: ?[]const u8 = null,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
@@ -1376,6 +1382,12 @@ const DumpSpecific = struct {
             if (value != null) return noValue(name);
             self.ownership_totals = true;
             self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--ownership-both")) {
+            // Hidden and test-only (ownership-v2.md §7.2): both checkers'
+            // reports from one process, for the corpus harness's parity.
+            if (value != null) return noValue(name);
+            self.ownership_both = true;
+            self.consumed = true;
         } else if (std.mem.eql(u8, name, "--ownership-flips")) {
             // Hidden and test-only (ownership-checker.md §24.6): what the
             // trusted-surface tests flip a word with, to see a pin fail.
@@ -1410,6 +1422,8 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.msg_types and stage != .writes) return .{ .usage = .init("beni: --msg-types applies to --stage=writes only", .{}) };
     if (s.specific.ownership_totals and stage != .ownership) return .{ .usage = .init("beni: --ownership-totals applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_flips != null and stage != .ownership) return .{ .usage = .init("beni: --ownership-flips applies to --stage=ownership only", .{}) };
+    if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
+    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership == .v2)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
         .stage = stage,
@@ -1418,6 +1432,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .writes_work = s.specific.writes_work,
         .msg_types = s.specific.msg_types,
         .ownership_totals = s.specific.ownership_totals,
+        .ownership_both = s.specific.ownership_both,
         .ownership_flips = s.specific.ownership_flips,
         .file = s.positionals.items[0],
     } } };
@@ -1545,6 +1560,9 @@ test "dump: stage, positions, exactly one file" {
     // Hidden too (§16.11): the totals alone, and only for that stage.
     try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_totals = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-totals", "src" });
     try expectUsage("beni: --ownership-totals applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-totals", "M.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_both = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-both", "src" });
+    try expectUsage("beni: --ownership-both applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-both", "M.beni" });
+    try expectUsage("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
