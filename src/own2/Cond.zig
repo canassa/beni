@@ -833,8 +833,16 @@ pub const Table = struct {
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
             .recast => blk: {
-                const d: CondId = if (holdsBelow(v.places, v.shapes.place(n))) lost else yes;
-                break :blk if (t.kappaGet(ctx, .from(v.shapes.get(n).a))) |s| try t.join(gpa, charge, s, d) else d;
+                var d: CondId = if (holdsBelow(v.places, v.shapes.place(n))) lost else yes;
+                // Every inner at this position, a union's recasts' inside an
+                // inner too (#1101).
+                var inners: std.ArrayList(NodeId) = .empty;
+                defer inners.deinit(gpa);
+                try innersOf(gpa, charge, v, n, &inners);
+                for (inners.items) |i| if (t.kappaGet(ctx, i)) |s| {
+                    d = try t.join(gpa, charge, s, d);
+                };
+                break :blk d;
             },
             .@"union", .positions => return t.dagKappa(gpa, charge, v, ctx, n, at_summary),
         };
@@ -1289,18 +1297,21 @@ pub const Table = struct {
         }
     }
 
-    /// The inners of the recasts at `n`'s path: `n`'s own, and those of its
-    /// union's or positions node's sides, each once. A record per node.
+    /// The inners of the recasts at `n`'s path: `n`'s own, those of its
+    /// union's or positions node's sides, and, an inner being at the same
+    /// path, those found inside an inner (a recast of a union of recasts,
+    /// #1101), each once. A record per node.
     fn innersOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
         switch (v.shapes.kind(n)) {
-            .recast => return out.append(gpa, .from(v.shapes.get(n).a)),
-            .@"union", .positions => {},
+            .recast, .@"union", .positions => {},
             else => return,
         }
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         var seen: stamped.Column(NodeId, void) = .{};
         defer seen.deinit(gpa);
+        var listed: stamped.Column(NodeId, void) = .{};
+        defer listed.deinit(gpa);
         try stack.append(gpa, n);
         while (stack.pop()) |x| {
             if (seen.contains(x)) continue;
@@ -1308,9 +1319,12 @@ pub const Table = struct {
             try seen.put(gpa, x, {});
             const d = v.shapes.get(x);
             switch (d.kind) {
-                .recast => if (!seen.contains(.from(d.a))) {
-                    try seen.put(gpa, .from(d.a), {});
-                    try out.append(gpa, .from(d.a));
+                .recast => {
+                    if (!listed.contains(.from(d.a))) {
+                        try listed.put(gpa, .from(d.a), {});
+                        try out.append(gpa, .from(d.a));
+                    }
+                    try stack.append(gpa, .from(d.a));
                 },
                 .@"union", .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
                 else => {},
@@ -3388,4 +3402,40 @@ test "#1073 review: below a fold the frontier is sparse too: a wide record's wid
         cost[run] = f.account.total() - before;
     }
     try testing.expectEqual(cost[0], cost[1]);
+}
+
+test "#1101: a recast whose inner is a union of recasts keeps what is stored below them, through a join" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const v = f.view();
+    // `excl x` stored at the `[*]` of a list node `in1`, recast; a union of
+    // that recast and another, recast again: every inner at the outer
+    // recast's path is the position's, and its links are its transitions.
+    const x = try f.param(0, 1, &.{});
+    const k = try f.conds.excl(gpa, f.charge(), x);
+    const s1 = try f.cells.site(gpa, &f.account, 3, try f.placeOf(1), .list);
+    const s2 = try f.cells.site(gpa, &f.account, 4, try f.placeOf(1), .list);
+    const elems = try f.leaf(2, &.{});
+    const in1 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
+    const in2 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{})));
+    const ra = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in1);
+    const rb = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in2);
+    const u = try f.join2(ra, rb);
+    const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(1), u);
+    try testing.expectEqual(Shape.Kind.recast, f.shapes.kind(r));
+    try testing.expectEqual(u, NodeId.from(f.shapes.get(r).a));
+    const km = try f.setKPath(.none, &.{Place.Step.elem}, elems, k);
+    // Read through the outer recast, before any join.
+    try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, km, r, false));
+    // Joined with another alternative at the outer place, kept.
+    const other = try f.leaf(1, &.{});
+    const j = try f.join2(r, other);
+    const out = try f.propagate(.none, j, &.{ r, other }, &.{ km, .none }, .alternatives, false);
+    try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, out, j, false));
+    try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, km, r, out, j, false));
+    try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, j, .none, j, false));
+    // What is stored at a nested inner itself is read at the outer recast.
+    try testing.expectEqual(k, try f.kappa(try f.setK(.none, in1, k), r, false));
 }
