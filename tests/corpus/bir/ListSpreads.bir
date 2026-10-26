@@ -5,6 +5,7 @@ decl 0: value consOne
   %3 = local 1 (xs)
   %4 = import_value List.cons
   %5 = call %4 [%2, %3]
+  spread %5: %2, …%3
   params [%0, %1]
   body %5
   locals
@@ -24,6 +25,7 @@ decl 1: value consTwo
   %7 = call %6 [%4, %5]
   %8 = import_value List.cons
   %9 = call %8 [%3, %7]
+  spread %9: %3, %4, …%5
   params [%0, %1, %2]
   body %9
   locals
@@ -41,6 +43,7 @@ decl 2: value snoc
   %4 = list [%3]
   %5 = import_value List.append
   %6 = call %5 [%2, %4]
+  spread %6: …%2, %3
   params [%0, %1]
   body %6
   locals
@@ -56,6 +59,7 @@ decl 3: value both
   %3 = local 1 (b)
   %4 = import_value List.append
   %5 = call %4 [%2, %3]
+  spread %5: …%2, …%3
   params [%0, %1]
   body %5
   locals
@@ -76,6 +80,7 @@ decl 4: value between
   %8 = call %7 [%4, %6]
   %9 = import_value List.cons
   %10 = call %9 [%3, %8]
+  spread %10: %3, …%4, %5
   params [%0, %1, %2]
   body %10
   locals
@@ -89,6 +94,7 @@ decl 4: value between
 decl 5: value whole
   %0 = pat_var local 0 (xs)
   %1 = local 0 (xs)
+  spread %1: …%1
   params [%0]
   body %1
   locals

@@ -987,6 +987,27 @@ pub fn ownSlotsV2(b: *const Bir, d: Decl) []const [2]u32 {
     return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
 }
 
+/// A spread literal `[ x, …xs, y ]` as one fact (ownership-v2.md §2.13.2):
+/// `root` is the instruction the literal lowered to (the outermost
+/// `List.cons`/`List.append` call, or the operand itself for `[ …xs ]`),
+/// and `items_start..items_end` its items in source order as pairs in
+/// `extra`, `(instruction, 1 when spread)`. Lowering also emits the calls,
+/// which the checker and the emitter read; only the ownership checker v2
+/// reads this record.
+pub const Spread = extern struct { root: u32, items_start: u32, items_end: u32 };
+
+/// The spread chains of declaration `d`.
+pub fn spreads(b: *const Bir, d: Decl) []const Spread {
+    const words = b.extra[d.spreads_start..d.spreads_end];
+    return @as([*]const Spread, @ptrCast(words.ptr))[0 .. words.len / 3];
+}
+
+/// A chain's items, `(instruction, is_spread)` pairs.
+pub fn spreadItems(b: *const Bir, s: Spread) []const [2]u32 {
+    const words = b.extra[s.items_start..s.items_end];
+    return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
+}
+
 /// The type word a declaration carries (ownership-v2.md §2.13.5, §2.13.6),
 /// checked by lowering: `sequence` on a unary `foreign type`, `cell` on a
 /// unary opaque `type` or `foreign type`, `sender` on a one-argument
@@ -1056,6 +1077,11 @@ pub const Decl = struct {
     own2_end: u32 = 0,
     /// `sequence`, `cell` or `sender` (`OwnKind`), else `none`.
     own_kind: OwnKind = .none,
+    /// The declaration's spread chains (`Spread`, ownership-v2.md §2.13.2):
+    /// `Spread` records in `extra[spreads_start..spreads_end]`, one per
+    /// spread literal in source order of completion (inner chains first).
+    spreads_start: u32 = 0,
+    spreads_end: u32 = 0,
     /// `value`: the body expression. Else none.
     body: Inst.OptionalIndex,
     /// `schema`: root of the unresolved schema instruction graph. Else none.

@@ -125,7 +125,9 @@ pub const magic = "BENIFE\x00\x00";
 /// and the type word `own_kind`, a constructor row its `failure` mark, a
 /// declaration header the type word's token, and lowering's
 /// `misplaced_ownership_word` has six new readings.
-pub const format_version: u32 = 24;
+/// 25 (2026-10-26): a declaration row carries its spread chains' range,
+/// `spreads_start`/`spreads_end` (`Bir.Spread`, ownership-v2.md §2.13.2).
+pub const format_version: u32 = 25;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -877,7 +879,8 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 93 since a declaration carries a `foreign` value's rung, one byte.
     // 101 since it carries its ownership words' range, two words.
     // 110 since it carries the v2 column, two words, and the type word.
-    try testing.expectEqual(@as(u32, 110), rowBytes(Bir.Decl));
+    // 118 since it carries its spread chains' range, two words.
+    try testing.expectEqual(@as(u32, 118), rowBytes(Bir.Decl));
     // 21 since a constructor carries its `failure` mark.
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));

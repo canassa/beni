@@ -101,6 +101,7 @@ decl 3: value sequences
   %9 = import_value List.cons
   %10 = call %9 [%7, %8]
   %11 = tuple [%6, %10]
+  spread %10: %7, …%8
   params [%0, %1, %2]
   body %11
   locals

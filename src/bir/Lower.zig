@@ -191,6 +191,9 @@ own_slot: u32 = no_own_slot,
 sig_root: u32 = no_own_slot,
 /// The words met while lowering one signature: position, word, token.
 own_seen: std.ArrayList([3]u32) = .empty,
+/// The current declaration's spread chains (`Bir.Spread`, three words
+/// each), written to `extra` when the declaration is done.
+spreads: std.ArrayList(u32) = .empty,
 cur_decl: u32 = 0,
 /// While lowering a `via` Atom, lexical locals resolve normally and every
 /// nonlocal name stays as an unresolved schema-expression leaf for resolution.
@@ -401,6 +404,7 @@ pub fn lower(
         l.type_param_index.deinit(scratch);
         l.annotation_vars.deinit(scratch);
         l.own_seen.deinit(scratch);
+        l.spreads.deinit(scratch);
         l.rows.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
@@ -1327,6 +1331,12 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                 if (v.type_expr) |te| l.decls.items[i].annotation = (try l.lowerRootType(te)).toOptional();
             },
             else => unreachable,
+        }
+        if (l.spreads.items.len != 0) {
+            l.decls.items[i].spreads_start = @intCast(l.extra.items.len);
+            try l.extra.appendSlice(l.gpa, l.spreads.items);
+            l.decls.items[i].spreads_end = @intCast(l.extra.items.len);
+            l.spreads.clearRetainingCapacity();
         }
         const done = &l.decls.items[i];
         done.inst_end = @fromBackingInt(@intCast(@as(u32, @intCast(l.insts.len))));
@@ -2801,6 +2811,14 @@ fn lowerSpreadList(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             built = try l.call(callee, &.{ lowered[i].int(), built.?.int() });
         }
     }
+    // The chain as one fact (ownership-v2.md §2.13.2): its root and its
+    // items in source order, each marked when it is spread. The calls above
+    // stay what the checker and the emitter read.
+    const at: u32 = @intCast(l.extra.items.len);
+    for (items, lowered) |item, inst| {
+        try l.extra.appendSlice(l.gpa, &.{ inst.int(), @intFromBool(l.tree.nodeTag(item) == .spread) });
+    }
+    try l.spreads.appendSlice(l.scratch_allocator, &.{ built.?.int(), at, @intCast(l.extra.items.len) });
     return built.?;
 }
 
@@ -5289,6 +5307,7 @@ test "operators become calls of their core functions, `(+)` the function itself,
         \\  %16 = import_value Basics.negate
         \\  %17 = call %16 [%15]
         \\  %18 = tuple [%5, %9, %13, %14, %17]
+        \\  spread %13: %10, …%11
         \\  params [%0, %1]
         \\  body %18
         \\  locals
@@ -5398,6 +5417,7 @@ test "a leading element and a spread desugar to List.cons, not Basics.cons" {
         \\  %3 = local 1 (xs)
         \\  %4 = import_value List.cons
         \\  %5 = call %4 [%2, %3]
+        \\  spread %5: %2, …%3
         \\  params [%0, %1]
         \\  body %5
         \\  locals
