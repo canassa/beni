@@ -1,0 +1,40 @@
+-- run: a `release` of more permits than are taken stops at none taken
+-- (transparent-effects-proposal.md §17.9, amended 2026-10-26, point 4).
+-- On 2 permits, releasing 5 with nothing taken leaves 2 free, not 7; so
+-- after it, 2 holders fill the semaphore and a third waits. A `release`
+-- of 0 or fewer does nothing.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+holder : Semaphore, String, Deferred ⊤ → Fiber ⊤
+holder s name gate = Task.spawn λ⊤ →
+    Semaphore.withPermit s λ⊤ →
+        Debug.log "${name} in" ⊤
+        Deferred.wait gate
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    Semaphore.release s 5
+    _ = Debug.log "available after releasing 5" (Semaphore.available s)
+    Semaphore.acquire s 1
+    Semaphore.release s 3
+    _ = Debug.log "available after taking 1, releasing 3" (Semaphore.available s)
+    gate = Deferred.make ⊤
+    a = holder s "a" gate
+    b = holder s "b" gate
+    c = holder s "c" gate
+    Task.yieldNow ⊤
+    _ = Debug.log "c waits" (Task.running c)
+    Semaphore.release s 0
+    Semaphore.release s (-1)
+    _ = Debug.log "available after releasing 0 and -1" (Semaphore.available s)
+    _ = Deferred.complete gate ⊤
+    _ = Task.joinAll [ a, b, c ]
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

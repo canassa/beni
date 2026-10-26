@@ -1,0 +1,32 @@
+-- run: a holder cancelled inside `withPermits` gives its permits back
+-- (transparent-effects-proposal.md §17.9, §17.1 item 1). On one permit,
+-- the holder sleeps an hour on a virtual clock and is cancelled before the
+-- clock moves: its release runs, the permit is free again at once, and the
+-- fiber that waited behind it goes on. Nothing is left taken at the end.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 1
+    clock = Clock.virtual 0
+
+    holder = Clock.run clock λ⊤ →
+        Task.spawn λ⊤ →
+            Semaphore.withPermit s λ⊤ →
+                Debug.log "holder in" ⊤
+                Task.sleep (Duration.hours 1)
+                Debug.log "holder woke" ⊤
+    next = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Debug.log "next in" (Semaphore.available s)
+    Task.yieldNow ⊤
+    _ = Debug.log "available while held" (Semaphore.available s)
+    Task.cancel holder
+    _ = Debug.log "available after cancel" (Semaphore.available s)
+    _ = Task.join next
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

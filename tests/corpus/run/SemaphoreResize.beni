@@ -1,0 +1,46 @@
+-- run: `resize` sets the number of permits, keeps those taken, and serves
+-- the waiters that now fit, in order (transparent-effects-proposal.md
+-- §17.9). On 1 permit a holder takes it; requests for 2 and then 1 wait.
+-- Growing to 4 serves both, in their order. Shrinking to 1 while 3 are
+-- taken leaves none free until enough are given back. A negative size is
+-- 0: a request then waits until the semaphore grows again.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+request : Semaphore, String, Int, Deferred ⊤ → Fiber ⊤
+request s name n gate = Task.spawn λ⊤ →
+    Semaphore.withPermits s n λ⊤ →
+        Debug.log "${name} in" ⊤
+        Deferred.wait gate
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 1
+    gate = Deferred.make ⊤
+    holder = request s "holder" 1 gate
+    Task.yieldNow ⊤
+    two = request s "two" 2 gate
+    one = request s "one" 1 gate
+    Task.yieldNow ⊤
+    Debug.log "resize to 4" ⊤
+    Semaphore.resize s 4
+    Task.yieldNow ⊤
+    _ = Debug.log "available" (Semaphore.available s)
+    Semaphore.resize s 1
+    _ = Debug.log "available after shrinking to 1" (Semaphore.available s)
+    _ = Deferred.complete gate ⊤
+    _ = Task.joinAll [ holder, two, one ]
+    _ = Debug.log "available once all gave back" (Semaphore.available s)
+    Semaphore.resize s (-2)
+    _ = Debug.log "available after resizing to -2" (Semaphore.available s)
+    late = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Debug.log "late in" ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "late waits" (Task.running late)
+    Semaphore.resize s 1
+    Task.join late
+    Node.print "done"

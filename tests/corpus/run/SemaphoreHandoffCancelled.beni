@@ -1,0 +1,35 @@
+-- run: a waiter handed its permits but cancelled before it runs gives them
+-- back, and the queue is examined again (transparent-effects-proposal.md
+-- §17.9, amended 2026-10-26, point 3). FIFO hands the permit straight to
+-- the head when it is released; here the head is cancelled in the same
+-- turn, before it can run. The permit goes on to the next waiter, which
+-- runs. Once with a `withPermit` head, once with an `acquire` head.
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task
+
+
+round : Semaphore, String, (⊤ → ⊤) → ⊤
+round s name head =
+    Semaphore.acquire s 1
+    first = Task.spawn head
+    next = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Debug.log "${name}: next in" ⊤
+    Task.yieldNow ⊤
+    Semaphore.release s 1
+    Task.cancel first
+    _ = Debug.log "${name}: available after the cancel" (Semaphore.available s)
+    Task.join next
+    _ = Debug.log "${name}: available at the end" (Semaphore.available s)
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 1
+    round s "withPermit" λ⊤ → Semaphore.withPermit s λ⊤ → Debug.log "withPermit: head in" ⊤
+
+    round s "acquire" λ⊤ →
+        Semaphore.acquire s 1
+        Debug.log "acquire: head in" ⊤
+    Node.print "done"

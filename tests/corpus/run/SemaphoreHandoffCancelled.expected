@@ -1,0 +1,7 @@
+withPermit: next in: ⊤
+withPermit: available after the cancel: 1
+withPermit: available at the end: 1
+acquire: next in: ⊤
+acquire: available after the cancel: 1
+acquire: available at the end: 1
+done

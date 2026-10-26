@@ -1,0 +1,40 @@
+-- run: a request for more permits than the semaphore has
+-- (transparent-effects-proposal.md §17.9 and its 2026-10-26 amendment).
+-- It would block the queue forever, so it is served once every permit is
+-- free, and takes them all — the 2 there are, not the 5 it asked for. On 2
+-- permits a holder takes 1; a request for 5 waits, and a request for 1
+-- waits behind it. When the holder ends the request for 5 runs, with
+-- nothing free. It grows the semaphore to 3: since it holds 2, the 1 more
+-- is handed at once to the request for 1, which runs while it still holds.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    gate : Deferred ⊤
+    gate = Deferred.make ⊤
+    holder = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → Deferred.wait gate
+    Task.yieldNow ⊤
+
+    big = Task.spawn λ⊤ →
+        Semaphore.withPermits s 5 λ⊤ →
+            _ = Debug.log "five in, available" (Semaphore.available s)
+            Semaphore.resize s 3
+            _ = Debug.log "five resized to 3, available" (Semaphore.available s)
+            Task.yieldNow ⊤
+            Task.yieldNow ⊤
+            Debug.log "five out" ⊤
+    small = Task.spawn λ⊤ →
+        Semaphore.withPermit s λ⊤ → Debug.log "one in, available" (Semaphore.available s)
+    Task.yieldNow ⊤
+    _ = Debug.log "available while both wait" (Semaphore.available s)
+    _ = Deferred.complete gate ⊤
+    _ = Task.joinAll [ holder, big ]
+    _ = Task.join small
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

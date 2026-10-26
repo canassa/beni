@@ -1,0 +1,9 @@
+holder in: ⊤
+available while both wait: 1
+holder out: ⊤
+three in, available: 0
+three out: ⊤
+one in, available: 2
+one out: ⊤
+available at the end: 3
+done

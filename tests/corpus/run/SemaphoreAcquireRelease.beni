@@ -1,0 +1,38 @@
+-- run: the manual pair (transparent-effects-proposal.md §17.9, amended
+-- 2026-10-26). A ball enters a machine with 1 slot: the fiber that lets it
+-- in acquires the slot and ends, still holding it. A second ball waits.
+-- Another fiber, when the first ball leaves, releases the slot: the second
+-- ball is let in. A manual `acquire` joins the same queue as `withPermits`.
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+enter : Semaphore, String → Fiber ⊤
+enter slots ball = Task.spawn λ⊤ →
+    Semaphore.acquire slots 1
+    Debug.log "${ball} entered" ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    slots = Semaphore.make 1
+    first = enter slots "first ball"
+    Task.join first
+    _ = Debug.log "first entry ended, available" (Semaphore.available slots)
+    second = enter slots "second ball"
+    third = Task.spawn λ⊤ → Semaphore.withPermit slots λ⊤ → Debug.log "third, with a permit" ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "second still waits" (Task.running second)
+
+    leave = Task.spawn λ⊤ →
+        Debug.log "first ball left" ⊤
+        Semaphore.release slots 1
+    Task.join leave
+    Task.join second
+    _ = Debug.log "available after the second entered" (Semaphore.available slots)
+    Semaphore.release slots 1
+    Task.join third
+    _ = Debug.log "available at the end" (Semaphore.available slots)
+    Node.print "done"

@@ -1,0 +1,42 @@
+-- run: a FIFO semaphore (transparent-effects-proposal.md §17.9, decision
+-- 8). Of 3 permits a holder takes 2 for a second of virtual time. A
+-- request for 3 then waits, and a later request for 1 waits behind it
+-- although 1 permit is free: it is not served before the earlier, larger
+-- request. When the holder gives its permits back the request for 3 runs,
+-- then the request for 1.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task exposing (Fiber)
+
+
+request : Semaphore, String, Int → Fiber ⊤
+request s name n = Task.spawn λ⊤ →
+    Semaphore.withPermits s n λ⊤ →
+        _ = Debug.log "${name} in, available" (Semaphore.available s)
+        Task.yieldNow ⊤
+        Debug.log "${name} out" ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 3
+    clock = Clock.virtual 0
+
+    holder = Clock.run clock λ⊤ →
+        Task.spawn λ⊤ →
+            Semaphore.withPermits s 2 λ⊤ →
+                Debug.log "holder in" ⊤
+                Task.sleep (Duration.seconds 1)
+                Debug.log "holder out" ⊤
+    Task.yieldNow ⊤
+    big = request s "three" 3
+    small = request s "one" 1
+    Task.yieldNow ⊤
+    _ = Debug.log "available while both wait" (Semaphore.available s)
+    Clock.adjust clock (Duration.seconds 1)
+    _ = Task.joinAll [ holder, big, small ]
+    _ = Debug.log "available at the end" (Semaphore.available s)
+    Node.print "done"

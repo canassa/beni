@@ -1,0 +1,10 @@
+available on make -3: 0
+waiter waits: True
+withPermits 0: "ran"
+withPermits -1: "ran"
+tryWithPermits 0: Just "ran"
+tryWithPermits 1: Nothing
+acquire 0 and -2 returned, available: 0
+waiter in: 0
+available at the end: 1
+done
