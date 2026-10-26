@@ -961,7 +961,46 @@ test "a block round-trips: read into tables of its own, written again, the same 
     // the next tests'.
 }
 
-test "a block that does not decode is no block: every truncation, a wrong magic, a wrong version, a bad tag" {
+/// Every truncation of the rows block whose length lies in the `part`-th of
+/// three slices (cut at √⅓ and √⅔ of its length, so that no one test runs
+/// long), read into one set of tables: each refused
+/// read is no block, leaves no class in `out` and no record in the tables.
+fn expectTruncationsRefused(part: u32) !void {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const classes = try rows(&a, false);
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &classes, .identity, &words);
+    const w: f64 = @floatFromInt(words.items.len);
+    const cuts = [4]usize{ 0, @intFromFloat(w * @sqrt(1.0 / 3.0)), @intFromFloat(w * @sqrt(2.0 / 3.0)), words.items.len };
+    var out: std.ArrayList(ClassId) = .empty;
+    defer out.deinit(testing.allocator);
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    const counts = tableCounts(&t);
+    for (cuts[part]..cuts[part + 1]) |n| {
+        try testing.expect(try read(t.env(), &t.sums, words.items[0..n], .identity, &out) == null);
+        try testing.expectEqual(@as(usize, 0), out.items.len);
+        try testing.expectEqualSlices(u32, &counts, &tableCounts(&t));
+    }
+}
+
+test "a block that does not decode is no block: every truncation, the shortest third" {
+    try expectTruncationsRefused(0);
+}
+
+test "a block that does not decode is no block: every truncation, the middle third" {
+    try expectTruncationsRefused(1);
+}
+
+test "a block that does not decode is no block: every truncation, the longest third" {
+    try expectTruncationsRefused(2);
+}
+
+test "a block that does not decode is no block: a wrong magic, a wrong version, a bad tag, a trailing word" {
     var a: Tables = .{};
     try a.init();
     defer a.deinit();
@@ -971,15 +1010,6 @@ test "a block that does not decode is no block: every truncation, a wrong magic,
     try write(a.env(), &a.sums, &classes, .identity, &words);
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
-    // Each prefix in tables of its own: a refused read may leave records
-    // behind in its tables, never a class in `out`.
-    for (0..words.items.len) |n| {
-        var t: Tables = .{};
-        try t.init();
-        defer t.deinit();
-        try testing.expect(try read(t.env(), &t.sums, words.items[0..n], .identity, &out) == null);
-        try testing.expectEqual(@as(usize, 0), out.items.len);
-    }
     var b: Tables = .{};
     try b.init();
     defer b.deinit();
