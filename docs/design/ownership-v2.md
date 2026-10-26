@@ -898,7 +898,10 @@ Where κ is set, always **at the selected path p**:
   alternative is that alternative (`join` is idempotent). An alternative that is an empty leaf with nothing
   stored reads `yes` at every position below, and `yes` is the join's unit, so it does not count. A join
   therefore walks only where at least two alternatives differ. A tower of one-element literals, or of joins
-  with an empty alternative, walks each level once (N levels, O(N log N) work, the sets' depth).
+  with an empty alternative, walks each level once (N levels, O(N log N) work, the sets' depth). This holds
+  only for those two towers: a join whose alternatives are the same value at two depths
+  (`if c then Rose [ r ] else r`, #1119), a literal of two elements (`Rose [ r, Rose [] ]`, #1120), and a
+  new object per level (#1121) are not linear yet.
 - A construction lowers the base's condition at `[*].p` by the stored value's condition at p and
   `apart{cellsAt(stored,p), cellsAt(base,[*].p)}`, compared by position as for a literal. A later spread of a variable loses the relevant condition.
 - A call instantiates κ(res): `excl πᵢ·q` asks the argument's condition **at q**; `sep` and `within`
@@ -2471,7 +2474,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 805 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 850 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 500 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |

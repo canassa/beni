@@ -101,8 +101,18 @@ pub const Table = struct {
     arrivals_memo: stamped.Column(NodeId, SetId) = .{},
     /// `unionHas`'s visited stamp.
     union_seen: stamped.Column(NodeId, void) = .{},
+    /// `rank`'s memo, and its walk's in-progress mark.
+    rank_memo: stamped.Column(NodeId, u32) = .{},
+    rank_open: stamped.Column(NodeId, void) = .{},
+    /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
+    named_memo: stamped.Column(NodeId, [2]u32) = .{},
+    named_pool: std.ArrayList(u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.rank_memo.deinit(gpa);
+        t.rank_open.deinit(gpa);
+        t.named_memo.deinit(gpa);
+        t.named_pool.deinit(gpa);
         t.nodes.deinit(gpa);
         t.intern.deinit(gpa);
         t.overs.deinit(gpa);
@@ -654,6 +664,171 @@ pub const Table = struct {
             }
         }
     };
+
+    // ---- named steps ------------------------------------------------------------------------
+
+    /// The steps `n`'s structure names, sorted and distinct: a node's
+    /// children, a delta's overrides and its base's, a union's or a
+    /// positions node's sides'; a leaf or a recast names none. Memoised per
+    /// node, a side's list merged into its union's, so a union DAG costs
+    /// each node its own steps once. The slice is valid until the next call.
+    pub fn namedSteps(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![]const u32 {
+        try account.reserve(.memo, 1);
+        if (t.named_memo.get(n)) |r| return t.named_pool.items[r[0]..][0..r[1]];
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var buf: std.ArrayList(u32) = .empty;
+        defer buf.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            const x = f.node;
+            if (t.named_memo.contains(x)) continue;
+            const d = t.get(x);
+            // A union's sides and a delta's base first; nothing below them
+            // names `x` (a side is made before its union).
+            if (!f.expanded) switch (d.kind) {
+                .@"union", .positions => {
+                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
+                    continue;
+                },
+                .delta => {
+                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false } });
+                    continue;
+                },
+                else => {},
+            };
+            try account.reserve(.inspection, 1);
+            buf.clearRetainingCapacity();
+            switch (d.kind) {
+                .leaf, .recast => {},
+                .node, .delta => {
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| {
+                        try account.reserve(.inspection, 1);
+                        try buf.append(gpa, e.step.word());
+                    }
+                    std.mem.sort(u32, buf.items, {}, std.sort.asc(u32));
+                    if (d.kind == .delta) try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
+                },
+                .@"union", .positions => {
+                    try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
+                    try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.b)).?);
+                },
+            }
+            const at: u32 = @intCast(t.named_pool.items.len);
+            try t.named_pool.appendSlice(gpa, buf.items);
+            try t.named_memo.put(gpa, x, .{ at, @intCast(buf.items.len) });
+        }
+        const r = t.named_memo.get(n).?;
+        return t.named_pool.items[r[0]..][0..r[1]];
+    }
+
+    /// `buf` (sorted, distinct) merged with a memoised list, a record per
+    /// step read.
+    fn mergeNamed(t: *Table, gpa: Allocator, account: *Account, buf: *std.ArrayList(u32), other: [2]u32) Error!void {
+        const b = t.named_pool.items[other[0]..][0..other[1]];
+        if (b.len == 0) return;
+        try account.reserve(.inspection, @intCast(buf.items.len + b.len));
+        var merged: std.ArrayList(u32) = .empty;
+        defer merged.deinit(gpa);
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < buf.items.len or j < b.len) {
+            const x = if (j >= b.len or (i < buf.items.len and buf.items[i] <= b[j])) buf.items[i] else b[j];
+            if (i < buf.items.len and buf.items[i] == x) i += 1;
+            if (j < b.len and b[j] == x) j += 1;
+            if (merged.items.len == 0 or merged.items[merged.items.len - 1] != x) try merged.append(gpa, x);
+        }
+        buf.clearRetainingCapacity();
+        try buf.appendSlice(gpa, merged.items);
+    }
+
+    // ---- rank -------------------------------------------------------------------------------
+
+    /// No finite rank: a recast, or a node on or above a cycle.
+    pub const rank_unbounded: u32 = std.math.maxInt(u32);
+
+    /// The projection rank (§2.9, *The join memo*): a leaf 0; a node one
+    /// more than its children's; a delta the larger of one more than its
+    /// overrides' and its base's; a union or a positions node its sides'
+    /// larger; a recast, and a node on or above a cycle, unbounded. Every
+    /// `proj` of a node of finite rank r ≥ 1 has a rank below r, and a
+    /// rank-0 node projects to rank 0, so such a node is never a projection
+    /// of anything it projects to. Memoised per node; one walk over an
+    /// explicit stack, a record per node and edge. Asked only of finished
+    /// nodes: a knot is tied before anything walks it.
+    pub fn rank(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!u32 {
+        try account.reserve(.memo, 1);
+        if (t.rank_memo.get(n)) |r| return r;
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var kids: std.ArrayList(NodeId) = .empty;
+        defer kids.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            const x = f.node;
+            kids.clearRetainingCapacity();
+            if (!f.expanded) {
+                // Open: on the stack below, whose finish reads it as a cycle.
+                if (t.rank_memo.contains(x) or t.rank_open.contains(x)) continue;
+                try account.reserve(.inspection, 1);
+                try t.rank_open.put(gpa, x, {});
+                try stack.append(gpa, .{ .node = x, .expanded = true });
+                try t.rankKids(gpa, account, x, &kids);
+                for (kids.items) |k| if (!t.rank_memo.contains(k) and !t.rank_open.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false });
+                continue;
+            }
+            // Finished: every child is ranked, or still open (a cycle).
+            t.rank_open.remove(x);
+            try t.rankKids(gpa, account, x, &kids);
+            const d = t.get(x);
+            var r: u32 = 0;
+            switch (d.kind) {
+                .leaf => {},
+                .recast => r = rank_unbounded,
+                .node => {
+                    r = 1;
+                    for (kids.items) |k| r = rankAbove(r, t.rank_memo.get(k) orelse rank_unbounded);
+                },
+                .delta => {
+                    // `kids`: the overrides, then the base.
+                    r = 1;
+                    for (kids.items[0 .. kids.items.len - 1]) |k| r = rankAbove(r, t.rank_memo.get(k) orelse rank_unbounded);
+                    r = @max(r, t.rank_memo.get(kids.items[kids.items.len - 1]) orelse rank_unbounded);
+                },
+                .@"union", .positions => for (kids.items) |k| {
+                    r = @max(r, t.rank_memo.get(k) orelse rank_unbounded);
+                },
+            }
+            try t.rank_memo.put(gpa, x, r);
+        }
+        return t.rank_memo.get(n).?;
+    }
+
+    /// One more than a child's rank, and at least `r`.
+    fn rankAbove(r: u32, child: u32) u32 {
+        return if (child == rank_unbounded) rank_unbounded else @max(r, child + 1);
+    }
+
+    /// What `rank` reads below `x`: a node's children, a delta's overrides
+    /// then its base, a union's or a positions node's sides.
+    fn rankKids(t: *Table, gpa: Allocator, account: *Account, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        const d = t.get(x);
+        switch (d.kind) {
+            .leaf, .recast => {},
+            .node, .delta => {
+                var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                while (it.next()) |e| {
+                    try account.reserve(.inspection, 1);
+                    try out.append(gpa, e.node);
+                }
+                if (d.kind == .delta) try out.append(gpa, .from(d.a));
+            },
+            .@"union", .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+        }
+    }
 
     // ---- join -------------------------------------------------------------------------------
 

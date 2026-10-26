@@ -139,6 +139,17 @@ pub const Table = struct {
     /// `sep`'s memo for an exact pair with no traversal context; a split's
     /// κ is fixed at its creation (S1), so the answer is too.
     memo_sep: Ids.FixedDict(2) = .{},
+    /// `propagate`'s runs, interned across calls: `(member, its position,
+    /// the rest)` → a run id. Keys only, never published.
+    prop_runs: Ids.FixedDict(3) = .{},
+    /// `propagate`'s join memo (§2.9, *The join memo*): a state `(joined
+    /// node, class and mode bits, run)` whose walk is the same wherever it is
+    /// met → the snapshot its walk puts at its position. Written only once
+    /// a call has finished.
+    memo_prop: Ids.FixedDict(3) = .{},
+    /// `dagKappa`'s memo: `(position, node, class)` → its read; the
+    /// position and the node are immutable, so it is never stale.
+    memo_dag: Ids.FixedDict(3) = .{},
     /// For tests: every position a reader (`deep`, `propagate`,
     /// `kappaLeq`) reads, as `node << 1 | class`, so a test can compare
     /// the frontiers they walk.
@@ -169,6 +180,9 @@ pub const Table = struct {
         t.of_set.deinit(gpa);
         t.memo_deep.deinit(gpa);
         t.memo_sep.deinit(gpa);
+        t.prop_runs.deinit(gpa);
+        t.memo_prop.deinit(gpa);
+        t.memo_dag.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -852,7 +866,16 @@ pub const Table = struct {
                 if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
                 break :blk d;
             },
-            .@"union", .positions => return t.dagKappa(gpa, charge, v, ctx, n, at_summary),
+            .@"union", .positions => {
+                // A pure function of the read, memoised like `deep`.
+                const key: [3]u32 = .{ ctx.int(), n.int(), @intFromBool(at_summary) };
+                try charge.reserve(gpa, .memo, 1);
+                if (t.memo_dag.get(key)) |hit| return .from(hit);
+                const k = try t.dagKappa(gpa, charge, v, ctx, n, at_summary);
+                try charge.reserve(gpa, .memo, 1);
+                (try t.memo_dag.getOrPut(gpa, key)).value_ptr.* = k.int();
+                return k;
+            },
         };
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
     }
@@ -1273,36 +1296,12 @@ pub const Table = struct {
 
     /// The steps `n`'s structure names: a node's overrides, a delta's and
     /// its base's, a union's or a positions node's sides'; a leaf or a
-    /// recast names none (its projections are derived). A record per
-    /// own-path DAG node and step.
+    /// recast names none (its projections are derived). Sorted and
+    /// distinct, `Shape.namedSteps`' memo: a record per step read.
     fn explicitSteps(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(u32)) Error!void {
-        switch (v.shapes.kind(n)) {
-            .leaf, .recast => return,
-            else => {},
-        }
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
-        try stack.append(gpa, n);
-        while (stack.pop()) |x| {
-            if (seen.contains(x)) continue;
-            try charge.reserve(gpa, .inspection, 1);
-            try seen.put(gpa, x, {});
-            const d = v.shapes.get(x);
-            switch (d.kind) {
-                .leaf, .recast => {},
-                .node, .delta => {
-                    var it = v.shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                    while (it.next()) |e| {
-                        try charge.reserve(gpa, .inspection, 1);
-                        try out.append(gpa, e.step.word());
-                    }
-                    if (d.kind == .delta) try stack.append(gpa, .from(d.a));
-                },
-                .@"union", .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
-            }
-        }
+        const named = try v.shapes.namedSteps(gpa, charge.account, n);
+        try charge.reserve(gpa, .inspection, @intCast(named.len));
+        try out.appendSlice(gpa, named);
     }
 
     /// The inners of the recasts at `n`'s path: `n`'s own, those of its
@@ -1314,6 +1313,8 @@ pub const Table = struct {
             .recast, .@"union", .positions => {},
             else => return,
         }
+        // A finite rank: no recast anywhere below, so none at this path.
+        if (try v.shapes.rank(gpa, charge.account, n) != Shape.Table.rank_unbounded) return;
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         var seen: stamped.Column(NodeId, void) = .{};
@@ -1395,7 +1396,10 @@ pub const Table = struct {
         defer run_ctxs.deinit(gpa);
         // `route`: the joined nodes on the way to this frame, each with its
         // output position (a persistent map node → path).
-        const Frame = struct { node: NodeId, first: u32, len: u32, summary: bool, msummary: bool, path: u32, folded: bool, route: u32 };
+        // `clean`: every joined node on the way, this one included, has a
+        // finite rank of at least 1, so nothing below can fold back onto
+        // the way: the walk from here is a function of the state alone.
+        const Frame = struct { node: NodeId, first: u32, len: u32, summary: bool, msummary: bool, path: u32, folded: bool, route: u32, clean: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try runs.appendSlice(gpa, members);
@@ -1411,6 +1415,14 @@ pub const Table = struct {
         defer fold_at.deinit(gpa);
         var fold_steps: std.ArrayList([2]u32) = .empty;
         defer fold_steps.deinit(gpa);
+        // The states met at each output position.
+        var path_states: std.ArrayList(u32) = .empty;
+        defer path_states.deinit(gpa);
+        try path_states.append(gpa, 0);
+        // The memo states walked here, written once the call has finished.
+        const Candidate = struct { key: [3]u32, path: u32 };
+        var candidates: std.ArrayList(Candidate) = .empty;
+        defer candidates.deinit(gpa);
         try fold_at.append(gpa, false);
         const Write = struct { path: u32, node: NodeId, k: CondId };
         var outs: std.ArrayList(Write) = .empty;
@@ -1420,11 +1432,10 @@ pub const Table = struct {
         var linked: std.ArrayList(Linked) = .empty;
         defer linked.deinit(gpa);
         const root_route = try t.mapPut(gpa, charge, Ids.none_int, joined.int(), 0);
-        try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary, .path = 0, .folded = false, .route = root_route });
+        try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary, .path = 0, .folded = false, .route = root_route, .clean = traversal == null and try memoRank(gpa, charge, v, joined) });
         // Exact states: a run interned as a cons list of `(member, position)`
-        // pairs, the state `(node, class, run, output position)`.
-        var cons: Ids.FixedDict(3) = .{};
-        defer cons.deinit(gpa);
+        // pairs (`prop_runs`, across calls), the state `(node, class, run,
+        // output position)`.
         var visited: Ids.FixedDict(4) = .{};
         defer visited.deinit(gpa);
         var items: std.ArrayList(Item) = .empty;
@@ -1437,7 +1448,7 @@ pub const Table = struct {
             while (r > 0) {
                 r -= 1;
                 try charge.reserve(gpa, .memo, 1);
-                const got = try cons.getOrPut(gpa, .{ runs.items[f.first + r].int(), run_ctxs.items[f.first + r].int(), run });
+                const got = try t.prop_runs.getOrPut(gpa, .{ runs.items[f.first + r].int(), run_ctxs.items[f.first + r].int(), run });
                 if (!got.found_existing) got.value_ptr.* = got.index;
                 run = got.value_ptr.*;
             }
@@ -1445,6 +1456,7 @@ pub const Table = struct {
             const state = try visited.getOrPut(gpa, .{ f.node.int(), @as(u32, @intFromBool(f.summary)) | @as(u32, @intFromBool(f.msummary)) << 1, run, f.path });
             if (state.found_existing) continue;
             state.value_ptr.* = 1;
+            path_states.items[f.path] += 1;
             try t.traced(gpa, f.node, f.summary);
             // One alternative, or alternatives all one member at its own
             // node: the position IS that member's, a link (§2.9, #1112) —
@@ -1485,6 +1497,18 @@ pub const Table = struct {
                     }
                     continue;
                 }
+            }
+            // A clean state met before, in this call or another: its walk
+            // is the same, so its position is the snapshot that walk made,
+            // linked as it is (§2.9, *The join memo*).
+            if (f.clean) {
+                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined), run };
+                try charge.reserve(gpa, .memo, 1);
+                if (t.memo_prop.get(key)) |hit| {
+                    try linked.append(gpa, .{ .path = f.path, .at = .from(hit) });
+                    continue;
+                }
+                try candidates.append(gpa, .{ .key = key, .path = f.path });
             }
             var k: CondId = yes;
             items.clearRetainingCapacity();
@@ -1551,6 +1575,7 @@ pub const Table = struct {
                             got.value_ptr.* = @intCast(paths.items.len);
                             try paths.append(gpa, .{ .parent = f.path, .step = e.step });
                             try fold_at.append(gpa, false);
+                            try path_states.append(gpa, 0);
                         }
                         path = got.value_ptr.*;
                         route = try t.mapPut(gpa, charge, f.route, child.int(), path);
@@ -1561,7 +1586,7 @@ pub const Table = struct {
                     try charge.reserve(gpa, .inspection, 1);
                     try fold_steps.append(gpa, .{ path, e.step });
                 }
-                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary, .msummary = f.msummary or below(s), .path = path, .folded = folded, .route = route });
+                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary, .msummary = f.msummary or below(s), .path = path, .folded = folded, .route = route, .clean = f.clean and !folded and try memoRank(gpa, charge, v, child) });
             }
         }
         // Each output position below a fold is the fold (the highest one on
@@ -1625,7 +1650,27 @@ pub const Table = struct {
             const p = paths.items[i];
             if (p.parent != Ids.none_int and pos[i] != .none) links[p.parent] = try t.mapPut(gpa, charge, links[p.parent], p.step, pos[i].int());
         }
+        // The call has finished: each clean state walked here, alone at its
+        // position, is that position's snapshot wherever it is met again.
+        for (candidates.items) |c| {
+            if (path_states.items[c.path] != 1) continue;
+            try charge.reserve(gpa, .memo, 1);
+            (try t.memo_prop.getOrPut(gpa, c.key)).value_ptr.* = pos[c.path].int();
+        }
         return t.kappaMerge(gpa, charge, out, pos[0]);
+    }
+
+    /// A memo state's bits: its class, the mode, and whether it is the
+    /// call's root (a literal's root reads everything its members hold).
+    fn stateBits(summary: bool, msummary: bool, mode: Mode, root: bool) u32 {
+        return @as(u32, @intFromBool(summary)) | @as(u32, @intFromBool(msummary)) << 1 | @as(u32, @backingInt(mode)) << 2 | @as(u32, @intFromBool(root)) << 3;
+    }
+
+    /// Whether `n` may key the join memo: a finite rank of at least 1, so
+    /// no walk below it meets it, or anything above it, again.
+    fn memoRank(gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!bool {
+        const r = try v.shapes.rank(gpa, charge.account, n);
+        return r >= 1 and r != Shape.Table.rank_unbounded;
     }
 
     /// An empty leaf: no object can be there.
