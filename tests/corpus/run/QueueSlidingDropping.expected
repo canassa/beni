@@ -1,0 +1,19 @@
+dropping offer 1: True
+dropping offer 2: True
+dropping offer 3: False
+dropping holds: [1,2]
+dropping offerAll left: [6,7]
+dropping holds: [4,5]
+dropping offer to a taker: True
+dropping taker got: Just 8
+sliding offer 1: True
+sliding offer 2: True
+sliding offer 3: True
+sliding holds: [2,3]
+sliding offerAll left: []
+sliding holds: [6,7]
+sliding offer to a taker: True
+sliding taker got: Just 8
+sliding 0 holds: [3]
+dropping -5 holds: [1]
+done

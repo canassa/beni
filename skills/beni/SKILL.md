@@ -98,7 +98,7 @@ Open the file that your task needs. Each is short.
 - `references/types-and-dispatch.md` — custom types, `pub opaque`, record aliases, methods and `x.m a`,
   `where`, `eq` and `compare`, return-type dispatch, `Dict` and `Set` keys.
 - `references/effects.md` — the two inferred bits, `Result` and no exceptions, `Task`, `Ref`, `Deferred`,
-  `Semaphore`, `Debug` in a release build, `Log`.
+  `Semaphore`, `Queue`, `Latch`, `Task.forever`, `Debug` in a release build, `Log`.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
 - `references/markup.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`

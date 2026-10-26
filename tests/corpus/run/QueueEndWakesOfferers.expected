@@ -1,0 +1,7 @@
+took: Just "held"
+offer x: True
+offerAll left: ["y","z"]
+offer w: False
+took: Just "x"
+took: Nothing
+done

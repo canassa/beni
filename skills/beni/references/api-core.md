@@ -220,6 +220,14 @@ module Json
   value encode : a → Result (List Issue) String where a.codec : ⊤ → Codec a  -- impure
   value encodeValue : a → Result (List Issue) Value where a.codec : ⊤ → Codec a  -- impure
   value encodeWith : Options, a → Result (List Issue) String where a.codec : ⊤ → Codec a  -- impure
+module Latch
+  opaque type Latch
+  value close : Latch → ⊤  -- impure
+  value isOpen : Latch → Bool  -- impure
+  value make : Bool → Latch  -- impure
+  value open : Latch → ⊤  -- impure
+  value release : Latch → ⊤  -- impure
+  value wait : Latch → ⊤  -- suspends
 module List
   type List a
   value all : List a, (a → Bool) → Bool
@@ -306,6 +314,20 @@ module Maybe
   value map4 : Maybe a, Maybe b, Maybe c, Maybe d, (a, b, c, d → value) → Maybe value
   value map5 : Maybe a, Maybe b, Maybe c, Maybe d, Maybe e, (a, b, c, d, e → value) → Maybe value
   value withDefault : Maybe a, a → a
+module Queue
+  opaque type Queue a
+  value bounded : Int → Queue a  -- impure
+  value dropping : Int → Queue a  -- impure
+  value end : Queue a → ⊤  -- impure
+  value offer : Queue a, a → Bool  -- suspends
+  value offerAll : Queue a, List a → List a  -- suspends
+  value poll : Queue a → Maybe a  -- impure
+  value size : Queue a → Int  -- impure
+  value sliding : Int → Queue a  -- impure
+  value take : Queue a → Maybe a  -- suspends
+  value takeAll : Queue a → List a  -- suspends
+  value takeN : Queue a, Int → List a  -- suspends
+  value unbounded : ⊤ → Queue a  -- impure
 module Random.Pcg
   type Generator a
     Generator
@@ -605,6 +627,7 @@ module Task
   value defer : Scope, (Exit ⊤ → ⊤) → ⊤  -- impure
   value forEach : List a, Int, (a → b) → List b  -- suspends
   value forEachOk : List a, Int, (a → Result e b) → Result e (List b)  -- suspends
+  value forever : (⊤ → a) → b  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
   value hasLogContext : ⊤ → Bool  -- impure
   value isWaiting : a → Bool

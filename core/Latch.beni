@@ -1,0 +1,76 @@
+--! A gate that fibers wait at (`transparent-effects-proposal.md` §17.9):
+--! Effect's `Latch`.
+--!
+--!     ready = Latch.make False
+--!     _ = Task.spawn λ⊤ →
+--!         Latch.wait ready
+--!         serve ⊤
+--!     Latch.open ready
+--!
+--! **Open, a wait passes; closed, it waits.** `open` wakes every fiber that
+--! waits, in the order they began to wait. `release` wakes them too, but
+--! leaves the latch closed: a pulse, after which a wait still waits.
+--!
+--! **Waiting is cancellable and leaves nothing behind.** A fiber cancelled
+--! while it waits is taken off the list at once.
+--!
+--! Nothing here is `foreign`: it is beni over `Task.callback` and
+--! `Task.resume`.
+
+import Js
+import Task
+
+
+--| A gate, open or closed, and the fibers that wait at it, in order.
+pub opaque type Latch
+    = Latch Js.Value
+
+
+--| A new `Latch`, open when `opened` is `True`. Each call makes a new one.
+pub make : Bool → Latch
+make opened = Latch (Js.from { open = opened, waiters = Js.construct (Js.global "Set") [] })
+
+
+--| Open the latch: every fiber that waits goes on, in the order they began
+--| to wait, and later waits pass until it is closed.
+pub open : Latch → ⊤
+open (Latch l) =
+    Js.set l "open" (Js.from True)
+    wake l
+
+
+--| Close the latch: later waits wait until it is opened or released.
+pub close : Latch → ⊤
+close (Latch l) = Js.set l "open" (Js.from False)
+
+
+--| Let every fiber that waits now go on, in the order they began to wait,
+--| without opening the latch: a wait that begins later still waits.
+pub release : Latch → ⊤
+release (Latch l) = wake l
+
+
+--| Return at once when the latch is open; otherwise wait until it is
+--| opened or released. Cancelling the fiber that waits ends the wait.
+pub wait : Latch → ⊤
+wait (Latch l) =
+    if not (Js.to (Js.get l "open")) then
+        Task.callback λresume →
+            w = Js.from resume
+            waiters = Js.get l "waiters"
+            _ = Js.call waiters "add" [ w ]
+            λ⊤ → Js.to (Js.call waiters "delete" [ w ])
+
+
+--| Whether the latch is open.
+pub isOpen : Latch → Bool
+isOpen (Latch l) = Js.to (Js.get l "open")
+
+
+-- Resume every waiter, in order, and start a new list for later ones.
+wake : Js.Value → ⊤
+wake l =
+    waiters = Js.get l "waiters"
+    if Js.to (Js.get waiters "size") > 0 then
+        Js.set l "waiters" (Js.construct (Js.global "Set") [])
+        Js.each waiters λw → Task.resume (Js.to w) ⊤

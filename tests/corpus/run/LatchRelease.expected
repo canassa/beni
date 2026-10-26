@@ -1,0 +1,6 @@
+open after the release: False
+a passed: ⊤
+b passed: ⊤
+c still waits: True
+c passed: ⊤
+done

@@ -1,0 +1,11 @@
+b ended: ⊤
+a took: Just 1
+a ended: ⊤
+c took: Just 2
+c ended: ⊤
+size: 0
+size while takeN waits: 1
+one took: Just 3
+one ended: ⊤
+size at the end: 0
+done

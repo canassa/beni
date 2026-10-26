@@ -1,0 +1,42 @@
+-- run: a wait at an open latch passes at once; at a closed one it waits
+-- until `open`, which wakes every waiter in the order they began to wait
+-- (transparent-effects-proposal.md §17.9). A waiter cancelled while it
+-- waits leaves the list and is never woken. After `close`, waits wait
+-- again; after a second `open`, they pass.
+import Io
+import Latch exposing (Latch)
+import Node exposing (Program)
+import Task exposing (Fiber)
+
+
+waiter : Latch, String → Fiber ⊤
+waiter l name = Task.spawn λ⊤ →
+    Latch.wait l
+    Debug.log "${name} passed" ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    l = Latch.make True
+    Latch.wait l
+    _ = Debug.log "open at the start" (Latch.isOpen l)
+    Latch.close l
+    _ = Debug.log "open after close" (Latch.isOpen l)
+    a = waiter l "a"
+    b = waiter l "b"
+    c = waiter l "c"
+    Task.yieldNow ⊤
+    Task.cancel b
+    Latch.open l
+    _ = Task.joinAll [ a, c ]
+    _ = Debug.log "b ended" (Task.poll b)
+    d = waiter l "d"
+    Task.join d
+    Latch.close l
+    late = waiter l "late"
+    Task.yieldNow ⊤
+    _ = Debug.log "late still waits" (Task.poll late == Nothing)
+    Latch.open l
+    Latch.open l
+    Task.join late
+    Node.print "done"

@@ -1,0 +1,9 @@
+size after the cancel: 2
+took: Just 1
+took: Just 2
+next took: Just 3
+next got: Just 3
+left: [4]
+after takeAll's cancel: [5,6,7]
+after takeN's cancel: [8,9,10]
+done

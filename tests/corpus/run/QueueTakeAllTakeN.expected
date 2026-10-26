@@ -1,0 +1,12 @@
+takeAll got: [1,2]
+takeN 3 still waits: True
+takeN 3 got: [3,4,5]
+left: [6,7]
+takeN 0: []
+takeN -1: []
+takeN 5 on bounded 2 got: [10,20]
+left: [30]
+takeN 4 at the end got: [100]
+takeAll after the end: []
+takeN after the end: []
+done

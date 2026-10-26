@@ -1,0 +1,43 @@
+-- run: a `Queue.take` that `Task.timeout` gave up on loses no value
+-- (transparent-effects-proposal.md §17.7, amended 2026-10-26; §17.9), on a
+-- virtual clock. A producer sleeps 10 ms and then offers "v"; the
+-- timeout's timer is 10 ms too, so both wake on one turn, the producer
+-- first: its offer hands "v" to the waiting take, and then the timer ends
+-- and wins. The take is cancelled from the timer's end, before it runs,
+-- and its canceller puts "v" back. The same for a `race` of two takes
+-- handed one value each on one turn: the loser's value goes back.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual 0
+    q = Queue.unbounded ⊤
+
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            producer = Task.spawn λ⊤ →
+                Task.sleep (Duration.millis 10)
+                _ = Queue.offer q "v"
+                ⊤
+            Task.yieldNow ⊤
+
+            got = Task.timeout (Duration.millis 10) λ⊤ → Queue.take q
+            _ = Debug.log "at ${String.fromInt (Clock.now ⊤)}" got
+            Task.join producer
+    Clock.adjust clock (Duration.millis 100)
+    Task.join caller
+    _ = Debug.log "size" (Queue.size q)
+    _ = Debug.log "took" (Queue.take q)
+
+    two = Task.spawn λ⊤ → Task.race (λ⊤ → Queue.take q) λ⊤ → Queue.take q
+    Task.yieldNow ⊤
+    _ = Queue.offerAll q [ "first", "second" ]
+    _ = Debug.log "race won with" (Task.join two)
+    _ = Debug.log "left" (Queue.takeAll q)
+    Node.print "done"

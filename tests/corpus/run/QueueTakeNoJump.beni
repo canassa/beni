@@ -1,0 +1,27 @@
+-- run: a take never passes a fiber that waits to take
+-- (transparent-effects-proposal.md §17.9, amended 2026-10-26). A `takeN`
+-- for 3 waits with two values held. A `take` that begins later waits
+-- behind it, and `poll` answers `Nothing`, though values are held. The
+-- third value serves the `takeN`; then the `take` waits for the next.
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    three = Task.spawn λ⊤ → Debug.log "takeN took" (Queue.takeN q 3)
+    Task.yieldNow ⊤
+    _ = Queue.offerAll q [ 1, 2 ]
+    one = Task.spawn λ⊤ → Debug.log "take took" (Queue.take q)
+    Task.yieldNow ⊤
+    _ = Debug.log "size" (Queue.size q)
+    _ = Debug.log "poll" (Queue.poll q)
+    _ = Queue.offer q 3
+    _ = Task.join three
+    _ = Debug.log "take still waits" (Task.poll one == Nothing)
+    _ = Queue.offer q 4
+    _ = Task.join one
+    Node.print "done"

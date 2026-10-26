@@ -1,0 +1,47 @@
+-- run: `takeAll` waits while the queue is empty and then takes every value
+-- held; `takeN` waits until `n` values are held, or the queue ends, and
+-- takes up to `n` (transparent-effects-proposal.md §17.9, and its
+-- amendment of 2026-10-26). A `takeN` for more than a bounded queue can
+-- hold waits until it is full. `takeN` of 0 or fewer answers `[]` at once,
+-- even on an empty queue. After the `end`, a parked `takeN` gets what is
+-- held, and `takeAll` on an empty ended queue is `[]`.
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    all = Task.spawn λ⊤ → Queue.takeAll q
+    Task.yieldNow ⊤
+    _ = Queue.offerAll q [ 1, 2 ]
+    _ = Debug.log "takeAll got" (Task.join all)
+
+    three = Task.spawn λ⊤ → Queue.takeN q 3
+    _ = Queue.offerAll q [ 3, 4 ]
+    Task.yieldNow ⊤
+    _ = Debug.log "takeN 3 still waits" (Task.poll three == Nothing)
+    _ = Queue.offerAll q [ 5, 6, 7 ]
+    _ = Debug.log "takeN 3 got" (Task.join three)
+    _ = Debug.log "left" (Queue.takeAll q)
+    _ = Debug.log "takeN 0" (Queue.takeN q 0)
+    _ = Debug.log "takeN -1" (Queue.takeN q (0 - 1))
+
+    small = Queue.bounded 2
+    big = Task.spawn λ⊤ → Queue.takeN small 5
+    Task.yieldNow ⊤
+    _ = Queue.offerAll small [ 10, 20, 30 ]
+    _ = Debug.log "takeN 5 on bounded 2 got" (Task.join big)
+    _ = Debug.log "left" (Queue.takeAll small)
+
+    ends = Queue.unbounded ⊤
+    _ = Queue.offer ends 100
+    late = Task.spawn λ⊤ → Queue.takeN ends 4
+    Task.yieldNow ⊤
+    Queue.end ends
+    _ = Debug.log "takeN 4 at the end got" (Task.join late)
+    _ = Debug.log "takeAll after the end" (Queue.takeAll ends)
+    _ = Debug.log "takeN after the end" (Queue.takeN ends 2)
+    Node.print "done"

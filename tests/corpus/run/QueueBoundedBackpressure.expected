@@ -1,0 +1,18 @@
+offered 1: True
+offered 2: True
+size while full: 2
+took: Just 1
+offered 3: True
+took: Just 2
+offered 10: True
+took: Just 3
+offered 4: True
+took: Just 10
+offered 5: True
+took: Just 4
+took: Just 5
+capacity 0 holds: 1
+took: Just "a"
+b accepted: True
+took: Just "b"
+done
