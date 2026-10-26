@@ -788,7 +788,9 @@ Not writes (they read their operands):
   executes them. The helper closure crosses module/package boundaries up to independently justified pinned
   contracts/foreign leaves; Task's scheduler and Deferred's Task helpers are no exemption (#1061, S8).
   A new unlisted reader/forwarder or changed body fails the gate; these are assumptions, not inferred proofs.
-- R-5.10.8 Asserted, not inferred: the `List` array primitives, `traverseAt`, `List.focus`, `Dict.focus` and §4.10's
+- R-5.10.8 Asserted, not inferred: the `List` array primitives, `traverseAt`, `List.focus`, `Dict.focus` (its callback
+  `stored` row puts the answer back at the dictionary's value position: `Just`'s payload is stored, `Nothing` is a
+  removal that stores nothing; worded in S8, #1021, #1053) and §4.10's
   `Dict` rows, the sequence/cell/failure metadata and Ref/Deferred/Builder slot-protocol rows
   (ownership-v2.md §2.13.6, pinned under R-5.10.7), `Send.to`'s consumed word [O 2026-10-25; R-5.9.9], the entry protocols, schema runs (§5.11).
   [O 2026-10-26] `List.sortWith`'s v1 row is asserted with its body pinned: fresh storage, original
@@ -1013,7 +1015,7 @@ Not writes (they read their operands):
     It changes resources, never proof rules. Its implementation updates `language.md` and `skills/beni/`.
   - The measured **structural callback-label** maximum is 10 (`o/LimitOwnedAtoms.beni:45`); this is not yet
     a measurement of the complete new resource. Instrument B_f/G_f/S_f/N_f on corpus, core, platforms, examples
-    and generator-deduplicated research apps from S2b; report G_f approaching one tenth of the default growth allowance to
+    and generator-deduplicated research apps from S3a (#1056); report G_f approaching one tenth of the default growth allowance to
     the owner, never silently raise it or weaken precision. A bounded-kernel lane overflow is a checked internal
     `ownership_accounting_invariant` defect, never automatic growth spill or a user resource refusal. The headroom gate uses measured G_f; baseline size is reported separately.
   - Huge named written-input/format limits remain as listed in ownership-v2.md §4.4, each loud and tested;
