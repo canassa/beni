@@ -91,7 +91,7 @@ build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the ho
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #1 4114f66aa8d1e28678d781e0c88b33dde188923ec0cc3e31bba301720df994b4
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #2 325bdc0108f5c60fe5f440cac6fa669ea7aa6a6a4c8ec8bffb46f4f227065ca3
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #3 8b023a5925f48aea9c49b8781f1b4cd2bf2ddee182fa633836922dfacb5f6489
-build_test.test.the list sanitiser runs only where ownership is enforced, and writes its runtime only there #0 cb0f786966c191f4babbed540b9ae0d5e6a1d49ad5b763710e94fd59098521c7
+build_test.test.the list sanitiser runs only where ownership is enforced, and writes its runtime only there #0 c467136029af787c483d628ffd38d131357fbafb39f1df8e2a541816765ad9b5
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
 cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 96f62a3ae1022da9e741af37de3383e31034e0a3c163863a0b64be952b43c39a
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 29d4232a75bb829a355eb42d4be3e0a378bd857ee918127eb9635ced86f73623

@@ -21,12 +21,16 @@
 //   iterator).
 // - A view's own properties throw, `length` included, and its base array is
 //   poisoned as well: a view aliases its base's cells.
-// - A trie header's own properties throw, and so does every array of its
-//   storage: the head, the tail, the plain copy `p` and each node and leaf of
-//   its tree, down to the elements, which are left alone. Another list over
-//   those arrays — `List.drop` of a trie is a header over the same ones, and a
-//   loop holds `p` — aliases the trie, so its read after the write is stale.
-//   A writer's result never shares them: it is built from the copy.
+// - A trie header's own properties throw, and so do its tree's (`T`), the
+//   head, the tail, the plain copy `p` and the tree's root array. Another
+//   list over that storage — `List.drop` of a trie is a header over the same
+//   `T`, or a new `T` over the same root, head and tail, and a loop holds
+//   `p` — aliases the trie, so its read after the write is stale, and every
+//   way into the storage passes one of those. A writer's result never shares
+//   them: it is built from the copy. Poisoning them is O(1); the nodes and
+//   leaves below the root are left alone, since only the root reaches them.
+//   An empty tree (`tc` 0) may be `core/List`'s one shared `noTree`, and
+//   holds nothing, so it is never poisoned.
 
 const stale = (site, what) => {
   throw new Error(`beni: a stale read of a list (${what}), which ${site} changed in place`);
@@ -51,14 +55,6 @@ const poisonObject = (o, site) => {
   }
 };
 
-// A tree node at shift `s` (`core/List.beni`'s `leafAt`): above 0 its
-// children are nodes, at 0 it is a leaf of elements.
-const poisonNode = (node, s, site) => {
-  if (!Array.isArray(node)) return;
-  if (s > 0) for (const child of node) poisonNode(child, s - 5, site);
-  poisonArray(node, site);
-};
-
 const poison = (xs, site) => {
   if (Array.isArray(xs)) return poisonArray(xs, site);
   // Every part is read before any is poisoned.
@@ -66,17 +62,32 @@ const poison = (xs, site) => {
   const { b, p, h, t, T } = xs;
   poisonObject(xs, site);
   for (const a of view ? [b, p] : [h, t, p]) if (Array.isArray(a)) poisonArray(a, site);
-  if (!view && T !== undefined) {
-    const { r, s } = T;
+  if (!view && T !== undefined && T.tc > 0) {
+    const { r } = T;
     poisonObject(T, site);
-    poisonNode(r, s, site);
+    if (Array.isArray(r)) poisonArray(r, site);
   }
+};
+
+const own = (a) => (Array.isArray(a) ? a.slice() : a);
+
+// The list a write runs on: a fresh copy of `xs` that shares none of the
+// storage `poison` poisons. A plain array or a view is copied whole. A trie is
+// copied as its header, head, tail, tree and root, O(32): the nodes below the
+// root are shared, which no writer writes (they path-copy), and which
+// `poison` leaves alone.
+const fresh = (xs) => {
+  if (Array.isArray(xs)) return xs.slice();
+  if (xs.o !== undefined || xs.T === undefined) return xs.$plain().slice();
+  const { length, h, hc, T, t, $plain } = xs;
+  const tree = T.tc > 0 ? { r: own(T.r), s: T.s, off: T.off, tc: T.tc } : T;
+  return { length, h: own(h), hc, T: tree, t: own(t), p: null, $plain };
 };
 
 // `List.<writer>(base, …rest)` under the sanitiser: `site` names the write.
 // A base already poisoned traps here, where the copy reads it.
 export const list = (site, writer, base, ...rest) => {
-  const copy = (Array.isArray(base) ? base : base.$plain()).slice();
+  const copy = fresh(base);
   const result = writer(copy, ...rest);
   poison(base, site);
   return result;
