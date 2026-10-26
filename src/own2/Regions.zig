@@ -12,8 +12,17 @@
 //!
 //! **Compatible** (§2.5): two points are compatible when neither lies in an
 //! arm of a case the other lies in a different arm of — the climb to their
-//! regions' lowest common ancestor, O(depth). **After `p`, compatible** is
-//! at most `depth` ranges (`rangesAfter`).
+//! regions' lowest common ancestor, O(depth) (`compatible`). The region
+//! tree is series-parallel, so the relation has dimension two: `base₂` is
+//! each region's start in the **second order**, which lists every case's
+//! arms in reverse and keeps every other point's offset in its parent, and
+//! for p < u the points are compatible exactly when `rank₂(p) < rank₂(u)`
+//! (`rank2`). "After `p`, compatible" is one threshold, never a list of
+//! ranges (§2.7). Precondition: a case's arms are adjacent in the point
+//! order and tile its span; the `withDefault (map m f) d` reference the
+//! pipeline form lowers between the two virtual arms has no use and no
+//! demand, so no query asks about it. The inner `map` call belongs to the
+//! f arm (§2.5), so the arms tile the span from f's first point to d's last.
 //!
 //! Obligations kept here: O2's region half (a use is recorded in the right
 //! region: `of` is the innermost region of the point).
@@ -57,6 +66,9 @@ pub const Region = struct {
     /// case is on one, else `none`. Whether `Dispatch` resolves it to
     /// `Int`'s is the reader's question (§2.13.15).
     guard: u32,
+    /// The region's start in the second order (§2.5): `rank₂(x) = base₂ +
+    /// (x − start)` for a point `x` directly in it.
+    base2: u32,
 };
 
 pub const Tree = struct {
@@ -128,83 +140,53 @@ pub const Tree = struct {
         return none;
     }
 
-    pub const Range = struct { start: u32, end: u32 };
-
-    /// The instruction ranges after `p` that are compatible with it, at
-    /// most `depth` of them, in ascending order: the rest of `p`'s region,
-    /// then of each ancestor past the sibling arms of the child on the
-    /// chain (an arm's siblings end with their `case` instruction).
-    pub fn rangesAfter(t: *const Tree, gpa: Allocator, p: u32, out: *std.ArrayList(Range)) Allocator.Error!void {
-        return t.rangesAfterCharged(gpa, null, p, out) catch |e| switch (e) {
-            error.OutOfMemory => error.OutOfMemory,
-            else => unreachable, // no charge: nothing to refuse
-        };
+    /// Point `p`'s rank in the second order (§2.5): one region read and one
+    /// addition. For p < u, compatible ⇔ `rank2(p) < rank2(u)`.
+    pub fn rank2(t: *const Tree, p: u32) u32 {
+        const r = t.regionOf(p).int();
+        return t.regions.items(.base2)[r] + (p - t.regions.items(.start)[r]);
     }
 
-    /// `rangesAfter` on an account: every region climbed and every sibling
-    /// arm read is one record on `charge`, reserved before it is read (§2.7:
-    /// never an uncharged ancestor walk).
-    pub fn rangesAfterCharged(t: *const Tree, gpa: Allocator, charge: ?Ids.Charge, p: u32, out: *std.ArrayList(Range)) Ids.ChargeError!void {
-        out.clearRetainingCapacity();
-        var r = t.regionOf(p);
-        var from = p + 1;
-        var skips: std.ArrayList(Range) = .empty;
-        defer skips.deinit(gpa);
-        while (r != .none) {
-            if (charge) |c| try c.reserve(gpa, .region, 1);
-            const reg = t.get(r);
-            // The other arms of this region's case that lie ahead are
-            // incompatible and cut out of the parent's range: for a `case`
-            // they fill the gap up to the case instruction, for a virtual
-            // case (`withDefault (map m f) d`) the inner call sits between.
-            if (from <= reg.end) try t.appendMinus(gpa, from, reg.end, skips.items, out);
-            skips.clearRetainingCapacity();
-            if (reg.kind == .arm or reg.kind == .virtual_arm) try t.siblingArms(gpa, charge, r, reg, &skips);
-            from = reg.end + 1;
-            r = reg.parent;
-        }
+    /// Whether point `q` lies in `[p + 1, ∞)` compatibly with `p`: the
+    /// `rank₂` threshold a query applies (§2.7).
+    pub fn afterCompatible(t: *const Tree, p: u32, q: u32) bool {
+        return q > p and t.rank2(q) > t.rank2(p);
     }
 
-    /// `[from, end]` with `skips` (sorted, disjoint) cut out, appended.
-    fn appendMinus(t: *const Tree, gpa: Allocator, from: u32, end: u32, skips: []const Range, out: *std.ArrayList(Range)) Allocator.Error!void {
-        _ = t;
-        var at = from;
-        for (skips) |s| {
-            if (s.end < at) continue;
-            if (s.start > end) break;
-            if (s.start > at) try out.append(gpa, .{ .start = at, .end = s.start - 1 });
-            at = s.end + 1;
-        }
-        if (at <= end) try out.append(gpa, .{ .start = at, .end = end });
-    }
-
-    /// The other arms of `arm`'s case, sorted by start. Arms of one case
-    /// are created consecutively, so they are the neighbouring ids with the
-    /// same case instruction.
-    fn siblingArms(t: *const Tree, gpa: Allocator, charge: ?Ids.Charge, arm: RegionId, reg: Region, out: *std.ArrayList(Range)) Ids.ChargeError!void {
-        const cases = t.regions.items(.case_inst);
+    /// `base₂` of every region (§2.5): the root keeps the point order; a
+    /// `let` body or frame keeps its offset in its parent; the arms of one
+    /// case (consecutive ids, one parent) tile their span in REVERSE, each
+    /// placed after the arms that start later. Parents precede children by
+    /// id, so one pass; O(arms²) per case for the reversal.
+    fn secondOrder(t: *Tree) void {
+        const kinds = t.regions.items(.kind);
         const starts = t.regions.items(.start);
         const ends = t.regions.items(.end);
-        var lo = arm.int();
-        while (lo > 0 and cases[lo - 1] == reg.case_inst) lo -= 1;
-        var hi = arm.int();
-        while (hi + 1 < t.regions.len and cases[hi + 1] == reg.case_inst) hi += 1;
-        var i = lo;
-        while (i <= hi) : (i += 1) {
-            if (i == arm.int()) continue;
-            if (charge) |c| try c.reserve(gpa, .region, 1);
-            try out.append(gpa, .{ .start = starts[i], .end = ends[i] });
-        }
-        std.mem.sort(Range, out.items, {}, struct {
-            fn lessThan(_: void, a: Range, b: Range) bool {
-                return a.start < b.start;
+        const parents = t.regions.items(.parent);
+        const cases = t.regions.items(.case_inst);
+        const base2 = t.regions.items(.base2);
+        base2[0] = starts[0];
+        var i: usize = 1;
+        while (i < t.regions.len) {
+            const p = parents[i].int();
+            if (kinds[i] != .arm and kinds[i] != .virtual_arm) {
+                base2[i] = base2[p] + (starts[i] - starts[p]);
+                i += 1;
+                continue;
             }
-        }.lessThan);
-    }
-
-    /// Whether point `q` lies in `[p + 1, ∞)` compatibly with `p`.
-    pub fn afterCompatible(t: *const Tree, p: u32, q: u32) bool {
-        return q > p and t.compatible(p, q);
+            var j = i + 1;
+            while (j < t.regions.len and cases[j] == cases[i] and (kinds[j] == .arm or kinds[j] == .virtual_arm)) j += 1;
+            var span_start = starts[i];
+            for (i..j) |k| span_start = @min(span_start, starts[k]);
+            for (i..j) |k| {
+                var later: u32 = 0;
+                for (i..j) |l| if (starts[l] > starts[k]) {
+                    later += ends[l] - starts[l] + 1;
+                };
+                base2[k] = base2[p] + (span_start - starts[p]) + later;
+            }
+            i = j;
+        }
     }
 };
 
@@ -224,7 +206,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Fact
     defer gpa.free(first);
     for (first, 0..) |*f, i| f.* = @intCast(d.inst_start.int() + i);
     try Prepass.subtreeStarts(gpa, bir, d, first);
-    try t.regions.append(gpa, .{ .kind = .body, .start = d.inst_start.int(), .end = d.inst_end.int() - 1, .parent = .none, .depth = 0, .case_inst = none, .arm = 0, .guard = none });
+    try t.regions.append(gpa, .{ .kind = .body, .start = d.inst_start.int(), .end = d.inst_end.int() - 1, .parent = .none, .depth = 0, .case_inst = none, .arm = 0, .guard = none, .base2 = 0 });
     // Walk the body, opening a region per arm, let body and frame; the
     // parent is the innermost open region, found by the stack.
     const Frame = struct { inst: Bir.Inst.Index, region: RegionId };
@@ -276,7 +258,10 @@ pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Fact
                     // `case m of Just x → f x; Nothing → d`: `f` and `d` are
                     // pinned to arms of their own, wherever under the outer
                     // call the walk reaches them (`f` through the inner call).
-                    try pinned.put(gpa, j.f, try open(&t, gpa, .virtual_arm, first[j.f - t.inst_start], j.f, region, j.outer, 0, none));
+                    // The inner call belongs to the f arm (§2.5): it writes
+                    // only through `f`, on a payload that exists only when
+                    // `m` matches, so the two arms tile the span.
+                    try pinned.put(gpa, j.f, try open(&t, gpa, .virtual_arm, first[j.f - t.inst_start], j.inner, region, j.outer, 0, none));
                     try pinned.put(gpa, j.d, try open(&t, gpa, .virtual_arm, first[j.d - t.inst_start], j.d, region, j.outer, 1, none));
                 }
             },
@@ -286,6 +271,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Fact
         try bir.operands(gpa, f.inst, &ops);
         for (ops.items) |o| try stack.append(gpa, .{ .inst = o, .region = pinned.get(o.int()) orelse region });
     }
+    t.secondOrder();
     // The innermost region of every instruction: a sweep over the laminar
     // ranges, regions sorted by (start, -end).
     const order = try gpa.alloc(u32, t.regions.len);
@@ -318,13 +304,13 @@ pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Fact
 
 fn open(t: *Tree, gpa: Allocator, k: Kind, start: u32, end: u32, parent: RegionId, case_inst: u32, arm: u32, g: u32) Allocator.Error!RegionId {
     const id: RegionId = .from(@intCast(t.regions.len));
-    try t.regions.append(gpa, .{ .kind = k, .start = start, .end = end, .parent = parent, .depth = t.regions.items(.depth)[parent.int()] + 1, .case_inst = case_inst, .arm = arm, .guard = g });
+    try t.regions.append(gpa, .{ .kind = k, .start = start, .end = end, .parent = parent, .depth = t.regions.items(.depth)[parent.int()] + 1, .case_inst = case_inst, .arm = arm, .guard = g, .base2 = 0 });
     return id;
 }
 
 comptime {
     Ids.assertRecord(Region);
-    std.debug.assert(@sizeOf(Region) == 32);
+    std.debug.assert(@sizeOf(Region) == 36);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,21 +385,12 @@ test "arms of one case are incompatible, everything else compatible; guards and 
     try testing.expectEqual(Kind.frame, rl.kind);
     try testing.expectEqual(t.regionOf(if1), rl.parent);
     try testing.expectEqual(lambda - 1, rl.end);
-    // After a point in arm 0: the rest of the arm, then past the case —
-    // never arm 1's instructions.
-    var ranges: std.ArrayList(Tree.Range) = .empty;
-    defer ranges.deinit(testing.allocator);
-    try t.rangesAfter(testing.allocator, a0, &ranges);
-    try testing.expect(ranges.items.len >= 2 and ranges.items.len <= 4);
-    try testing.expectEqual(a0 + 1, ranges.items[0].start);
-    var last: u32 = 0;
-    for (ranges.items) |r| {
-        try testing.expect(r.start > last);
-        try testing.expect(r.start <= r.end);
-        try testing.expect(!(r.start <= a1 and a1 <= r.end));
-        last = r.end;
-    }
+    // After a point in arm 0, compatible: past the case, never arm 1 — the
+    // `rank₂` threshold; and the threshold agrees with the climb to the
+    // lowest common ancestor on EVERY pair of points of the declaration.
     try testing.expect(t.afterCompatible(a0, if0) and !t.afterCompatible(a0, a1) and !t.afterCompatible(if0, a0));
+    try testing.expect(t.rank2(a0) > t.rank2(a1) and t.rank2(if0) > t.rank2(if1));
+    try expectRank2Agrees(&t, d.inst_start.int(), d.inst_end.int(), null);
     // Every instruction has a region, the parameters the body's.
     for (t.of) |r| try testing.expect(r != .none);
     try testing.expectEqual(@as(u32, 0), t.regionOf(d.inst_start.int()).int());
@@ -451,7 +428,23 @@ test "withDefault (map m f) d is two virtual arms of one case" {
     try testing.expect(t.compatible(j.m, j.d) and t.compatible(j.m, f_body) and t.compatible(j.outer, j.d));
 }
 
-test "rangesAfter agrees with compatible around a virtual case" {
+/// `rank₂`'s threshold against the LCA climb for every pair of points in
+/// `[lo, hi)`, a point `skip` left out (the reference an application form
+/// lowers between two virtual arms: no use, no demand, no query).
+fn expectRank2Agrees(t: *const Tree, lo: u32, hi: u32, skip: ?u32) !void {
+    var p = lo;
+    while (p < hi) : (p += 1) {
+        if (skip == p) continue;
+        var q = lo;
+        while (q < hi) : (q += 1) {
+            if (skip == q or q == p) continue;
+            const by_rank = (p < q) == (t.rank2(p) < t.rank2(q));
+            try testing.expectEqual(t.compatible(p, q), by_rank);
+        }
+    }
+}
+
+test "rank₂ agrees with compatible around a virtual case, whose inner call belongs to the f arm" {
     var l = try Prepass.lowerSource(
         \\module Main exposing (j)
         \\
@@ -466,27 +459,26 @@ test "rangesAfter agrees with compatible around a virtual case" {
         .map = l.qualifiedTarget("Maybe", "map"),
     }};
     const pp = try Prepass.run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .joins = &targets });
-    const d = l.bir.decls[l.declNamed("j")];
-    var t = try build(testing.allocator, &l.bir, d, &pp);
-    defer t.deinit(testing.allocator);
-    const j = pp.joins[0];
-    const f_body = l.bir.instData(@fromBackingInt(j.f)).rhs;
-    var ranges: std.ArrayList(Tree.Range) = .empty;
-    defer ranges.deinit(testing.allocator);
-    try t.rangesAfter(testing.allocator, f_body, &ranges);
-    // Every instruction after `f`'s body is in the ranges exactly when it
-    // is compatible: the inner call is, `d` is not, the outer call is.
-    var q = f_body + 1;
-    while (q < d.inst_end.int()) : (q += 1) {
-        var covered = false;
-        for (ranges.items) |r| if (r.start <= q and q <= r.end) {
-            covered = true;
-        };
-        try testing.expectEqual(t.afterCompatible(f_body, q), covered);
+    try testing.expectEqual(@as(usize, 1), pp.joins.len);
+    {
+        const d = l.bir.decls[l.declNamed("j")];
+        var t = try build(testing.allocator, &l.bir, d, &pp);
+        defer t.deinit(testing.allocator);
+        const j = pp.joins[0];
+        const f_body = l.bir.instData(@fromBackingInt(j.f)).rhs;
+        // The inner call is in the f arm, incompatible with `d`; `f`'s body
+        // is compatible with the inner call and the outer call, not with `d`.
+        const rf = t.get(t.regionOf(j.inner));
+        try testing.expectEqual(Kind.virtual_arm, rf.kind);
+        try testing.expectEqual(@as(u32, 0), rf.arm);
+        try testing.expectEqual(j.inner, rf.end);
+        try testing.expect(!t.compatible(j.inner, j.d) and !t.afterCompatible(j.inner, j.d));
+        try testing.expect(t.afterCompatible(f_body, j.inner) and !t.afterCompatible(f_body, j.d) and t.afterCompatible(f_body, j.outer));
+        // The arms tile the span from `f`'s first point to `d`, except the
+        // reference the pipeline form lowers between them.
+        const rd = t.get(t.regionOf(j.d));
+        const gap: ?u32 = if (rd.start == j.inner + 1) null else j.inner + 1;
+        if (gap) |g| try testing.expectEqual(rd.start, g + 1);
+        try expectRank2Agrees(&t, d.inst_start.int(), d.inst_end.int(), gap);
     }
-    var inner_covered = false;
-    for (ranges.items) |r| if (r.start <= j.inner and j.inner <= r.end) {
-        inner_covered = true;
-    };
-    try testing.expect(inner_covered);
 }
