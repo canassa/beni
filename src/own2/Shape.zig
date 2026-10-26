@@ -292,6 +292,51 @@ pub const Table = struct {
         return t.positions(gpa, account, cellsets, try t.collect(gpa, account, cellsets, members[0..mid]), try t.collect(gpa, account, cellsets, members[mid..]));
     }
 
+    /// `n` without the cells of `drop` at its own path: a leaf keeps the
+    /// others, a union or a positions node is rebuilt over its sides, a
+    /// built node, a delta or a recast stays as it is (its `ε` cells are
+    /// its own object). Each node of the same-path DAG once (`memo_map`).
+    /// `.none` when nothing is left. `one`: the value at ONE of `n`'s
+    /// positions (a pattern's element), so a positions node becomes the
+    /// union of its sides — alternatives.
+    pub fn without(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, drop: SetId, one: bool) Error!NodeId {
+        if (drop == .none and !one) return n;
+        t.memo_map.clear();
+        const F = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(F) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            if (t.memo_map.get(f.node) != null) continue;
+            try account.reserve(.shape, 1);
+            const d = t.get(f.node);
+            switch (d.kind) {
+                .leaf => if (drop == .none) {
+                    try t.memo_map.put(gpa, f.node, f.node);
+                } else {
+                    var kept: SetId = .none;
+                    var it = cellsets.iterate(d.cells);
+                    while (it.next()) |e| {
+                        if (cellsets.member(drop, e.key)) continue;
+                        kept = try cellsets.insert(gpa, .growth(account), kept, e.key, e.value);
+                    }
+                    try t.memo_map.put(gpa, f.node, if (kept == .none) .none else if (kept == d.cells) f.node else try t.leaf(gpa, account, d.place, kept));
+                },
+                .node, .delta, .recast => try t.memo_map.put(gpa, f.node, f.node),
+                .@"union", .positions => if (!f.expanded) {
+                    try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
+                } else {
+                    const l = t.memo_map.get(.from(d.a)).?;
+                    const r = t.memo_map.get(.from(d.b)).?;
+                    const as_union = d.kind == .@"union" or one;
+                    const out: NodeId = if (l == .none) r else if (r == .none) l else if (l == NodeId.from(d.a) and r == NodeId.from(d.b) and as_union == (d.kind == .@"union")) f.node else if (as_union) try t.@"union"(gpa, account, cellsets, l, r) else try t.positions(gpa, account, cellsets, l, r);
+                    try t.memo_map.put(gpa, f.node, out);
+                },
+            }
+        }
+        return t.memo_map.get(n).?;
+    }
+
     /// A node no constructor interns, its record set later by `tie`: how a
     /// reader rebuilds a knot (`widen`'s, `map`'s), whose parts name it
     /// before it is whole. The empty leaf until it is tied.

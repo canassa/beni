@@ -188,9 +188,14 @@ pub const Adapter = struct {
         return got.value_ptr.*;
     }
 
+    /// A symbol's text rank (§3.8). Every symbol a body or a type names is
+    /// interned by parsing and lowering, before `Enforce.inputs` ranks them
+    /// all, and the checker interns none; a session id must never stand in
+    /// for a rank (it would reach published bytes), so a miss is a defect.
     fn rank(a: *const Adapter, s: InternPool.Symbol) u32 {
         const i = @backingInt(s);
-        return if (i < a.in.ranks.len) a.in.ranks[i] else i;
+        if (i >= a.in.ranks.len) @panic("ownership v2: a symbol interned after the ranks were taken");
+        return a.in.ranks[i];
     }
 
     // ---- store variables -----------------------------------------------------
@@ -584,6 +589,19 @@ pub const Module = struct {
                 const decl = mod.in.provenance[d.lhs].valueDecl(d.rhs) orelse break :blk null;
                 break :blk .{ d.lhs, decl.int() };
             },
+            .method_call => mod.methodTarget(inst),
+            else => null,
+        };
+    }
+
+    /// The declaration a method call dispatches to, when it is one.
+    fn methodTarget(mod: *const Module, inst: u32) ?[2]u32 {
+        const dt = mod.in.dispatch orelse return null;
+        const site = dt.siteOf(@fromBackingInt(inst)) orelse return null;
+        const ti = site.callee.unwrap() orelse return null;
+        return switch (dt.term(ti)) {
+            .top => |u| .{ mod.in.module, u.decl.int() },
+            .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else null else null,
             else => null,
         };
     }
@@ -670,6 +688,10 @@ pub const Module = struct {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
             if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst) };
+            // A container's `eq`/`compare` with no words (`List.eq`, written
+            // in JavaScript over its element evidence): the derived class when
+            // no evidence it is handed is written by hand (§2.13.13).
+            if (try mod.unwordedComparison(inst)) derived = true;
         }
         if (derived and args.items.len == 2) {
             const res = try placeOfInst(ctx, inst);
@@ -693,6 +715,20 @@ pub const Module = struct {
 
     /// Whether an evidence term names a function written by hand (a `top`
     /// or `ext` term anywhere in it): its class is a summary, S3b's.
+    /// Whether `inst` is an `==`/`<` method call whose dispatched callee
+    /// takes only derived or primitive evidence (nothing written by hand).
+    fn unwordedComparison(mod: *const Module, inst: u32) Allocator.Error!bool {
+        const bir = mod.in.bir;
+        if (bir.instTag(@fromBackingInt(inst)) != .method_call) return false;
+        const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
+        if (m.origin == .none) return false;
+        const dt = mod.in.dispatch orelse return false;
+        const site = dt.siteOf(@fromBackingInt(inst)) orelse return false;
+        const ti = site.callee.unwrap() orelse return false;
+        for (dt.argsOfTerm(ti)) |a| if (try mod.handWritten(dt, a)) return false;
+        return true;
+    }
+
     fn handWritten(mod: *const Module, dt: *const Dispatch, root: Dispatch.TermIndex) Allocator.Error!bool {
         var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
         defer stack.deinit(mod.gpa);

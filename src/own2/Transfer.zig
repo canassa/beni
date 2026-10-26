@@ -387,9 +387,11 @@ pub const Frame = struct {
                         f.markUnbuilt(it.pat);
                         continue;
                     };
-                    for (f.bir.extraSlice(f.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index), 0..) |a, k| {
+                    const arg_pats = f.bir.extraSlice(f.bir.subRange(@fromBackingInt(d.rhs)), Inst.Index);
+                    for (arg_pats, 0..) |a, k| {
                         const step = try f.env.places.ctorStep(f.gpa, f.account(), ord[0], @intCast(k));
-                        try stack.append(f.gpa, .{ .pat = a.int(), .value = try f.project(it.value, step, a.int()) });
+                        const value = try f.project(it.value, step, a.int());
+                        try stack.append(f.gpa, .{ .pat = a.int(), .value = try f.below(it.pat, it.value, step, value) });
                     }
                 },
                 .pat_list => try f.bindList(it.pat, it.value, point),
@@ -397,6 +399,53 @@ pub const Frame = struct {
                 else => f.markUnbuilt(it.pat),
             }
         }
+    }
+
+    /// A constructor pattern's argument at `s` (§2.13.3): when `s` stays on
+    /// the cycle of the matched value's place, the levels under that
+    /// recursive child, one `below(c·s·ι)` per symbolic cell `c` of the
+    /// matched value (the cells a projection of `c` puts there replaced),
+    /// so they are below the matched levels' cells and apart from another
+    /// recursive child's under the split's κ. Otherwise the projection.
+    fn below(f: *Frame, p: u32, v: Value, s: Step, projected: Value) Error!Value {
+        const shapes = f.env.shapes;
+        const cells = f.env.cells;
+        const places = f.env.places;
+        if (v.node == .none or projected.node == .none) return projected;
+        const at = shapes.place(v.node);
+        const child = places.child(at, s) orelse return projected;
+        if (!places.sameCycle(at, child) or shapes.place(projected.node) != child) return projected;
+        const label = try cells.label(f.gpa, f.account(), p, .none, false);
+        const kind = Cell.Kind.ofPlace(places.kind(child));
+        const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, projected.node, true);
+        var refined: SetId = .none;
+        var canon: SetId = .none;
+        var it = cells.sets.iterate(shapes.cells(v.node));
+        while (it.next()) |e| {
+            const c: CellId = .from(e.key);
+            const o = cells.origin(c);
+            if (o == .site or o == .result or o == .esc or o == .top) continue;
+            _ = try cells.split(f.gpa, f.account(), c, p, label, split_kappa);
+            const b = try cells.refine(f.gpa, f.account(), .below, c, label, s.word(), child, kind);
+            refined = try cells.sets.insert(f.gpa, f.env.charge, refined, b.int(), e.value);
+            const u = (try cells.unrefined(f.gpa, f.account(), places, b)) orelse continue;
+            canon = try cells.sets.insert(f.gpa, f.env.charge, canon, u.int(), 0);
+        }
+        if (refined == .none) return projected;
+        var drop: SetId = .none;
+        var ct = cells.sets.iterate(shapes.cells(projected.node));
+        while (ct.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const u = (try cells.unrefined(f.gpa, f.account(), places, .from(e.key))) orelse continue;
+            if (cells.sets.member(canon, u.int())) drop = try cells.sets.insert(f.gpa, f.env.charge, drop, e.key, 0);
+        }
+        var node = try shapes.leaf(f.gpa, f.account(), child, refined);
+        const explicit = try shapes.without(f.gpa, f.account(), &cells.sets, projected.node, drop, false);
+        if (explicit != .none) {
+            var two = [_]NodeId{ node, explicit };
+            node = try shapes.join(f.gpa, f.account(), places, cells, &two);
+        }
+        return .{ .node = node, .kappa = projected.kappa };
     }
 
     /// `proj(v, s)`, at the pattern's or expression's own place when the
@@ -426,56 +475,82 @@ pub const Frame = struct {
             f.markUnbuilt(p);
             return;
         };
+        const elem_kind = Cell.Kind.ofPlace(f.env.places.kind(elem_place));
         const label = try cells.label(f.gpa, f.account(), p, .none, false);
         const contents = (try shapes.proj(f.gpa, f.account(), f.env.places, cells, v.node, Step.elem)).?;
         const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, contents, true);
-        var others: SetId = .none;
-        var concrete = false;
-        var it = cells.sets.iterate(shapes.cells(v.node));
+        // §2.13.3: a position is `elem(c·ι)` per symbolic container cell `c`
+        // (its `[*]` projection, `c[*]`, is what it refines), and the rest's
+        // `[*]` `others(c·ι)`. The other cells at `[*]` — a concrete
+        // container's explicit elements, a value a push stored — stay as
+        // they are, in every position: `explicit`, `contents` without the
+        // containers' projections.
         var containers: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
         defer containers.deinit(f.gpa);
-        while (it.next()) |e| try containers.append(f.gpa, e);
-        for (containers.items) |e| {
+        var projections: SetId = .none;
+        var it = cells.sets.iterate(shapes.cells(v.node));
+        while (it.next()) |e| {
             const c: CellId = .from(e.key);
             const o = cells.origin(c);
-            if (o == .site or o == .result or o == .esc or o == .top) {
-                concrete = true;
-                continue;
-            }
+            if (o == .site or o == .result or o == .esc or o == .top) continue;
+            try containers.append(f.gpa, e);
             _ = try cells.split(f.gpa, f.account(), c, p, label, split_kappa);
-            others = try cells.sets.insert(f.gpa, f.env.charge, others, (try cells.refine(f.gpa, f.account(), .others, c, label, 0, elem_place, Cell.Kind.ofPlace(f.env.places.kind(elem_place)))).int(), e.value);
+            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, try cells.refine(f.gpa, f.account(), .elem, c, label, 0, elem_place, elem_kind))) orelse continue;
+            projections = try cells.sets.insert(f.gpa, f.env.charge, projections, u.int(), 0);
         }
+        var drop: SetId = .none;
+        if (projections != .none) {
+            var ct = cells.sets.iterate(shapes.cells(contents));
+            while (ct.next()) |e| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, .from(e.key))) orelse continue;
+                if (cells.sets.member(projections, u.int())) drop = try cells.sets.insert(f.gpa, f.env.charge, drop, e.key, 0);
+            }
+        }
+        const explicit_one = try shapes.without(f.gpa, f.account(), &cells.sets, contents, drop, true);
+        // A concrete container's positions share its explicit elements: each
+        // position bound to a variable records which it is, under one split
+        // of the container whose κ is the contents' (`Demands.Taken`).
+        var taken_split: Ids.SplitId = .none;
+        it = cells.sets.iterate(shapes.cells(v.node));
+        while (it.next()) |e| {
+            const o = cells.origin(.from(e.key));
+            if (o != .site and o != .result and o != .esc) continue;
+            taken_split = try cells.split(f.gpa, f.account(), .from(e.key), p, label, split_kappa);
+            break;
+        }
+        const explicit_cells = if (explicit_one == .none) SetId.none else shapes.cells(explicit_one);
+        const explicit_rest = try shapes.without(f.gpa, f.account(), &cells.sets, contents, drop, false);
         var position: u32 = 0;
         for (items) |item| {
-            if (f.tag(item.int()) == .pat_spread) {
-                // The rest: the same storage (a view), its contents the others.
-                var rest_elems = try shapes.leaf(f.gpa, f.account(), elem_place, others);
-                if (concrete) {
-                    var two = [_]NodeId{ rest_elems, contents };
-                    rest_elems = if (others == .none) contents else try shapes.join(f.gpa, f.account(), f.env.places, cells, &two);
-                }
-                const kids = try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, rest_elems);
-                const rest = try shapes.node(f.gpa, f.account(), list_place, shapes.cells(v.node), kids);
-                var k = try f.kappaSet(v.kappa, rest, false, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
-                k = try f.kappaSet(k, rest_elems, true, split_kappa);
-                const operand = f.data(item.int()).lhs;
-                try f.bind(operand, .{ .node = rest, .kappa = k }, point);
-                continue;
-            }
-            var elems: SetId = .none;
+            const spread = f.tag(item.int()) == .pat_spread;
+            var refined: SetId = .none;
             for (containers.items) |e| {
                 const c: CellId = .from(e.key);
-                const o = cells.origin(c);
-                if (o == .site or o == .result or o == .esc or o == .top) continue;
-                elems = try cells.sets.insert(f.gpa, f.env.charge, elems, (try cells.refine(f.gpa, f.account(), .elem, c, label, position, elem_place, Cell.Kind.ofPlace(f.env.places.kind(elem_place)))).int(), e.value);
+                const r = if (spread) try cells.refine(f.gpa, f.account(), .others, c, label, 0, elem_place, elem_kind) else try cells.refine(f.gpa, f.account(), .elem, c, label, position, elem_place, elem_kind);
+                refined = try cells.sets.insert(f.gpa, f.env.charge, refined, r.int(), e.value);
             }
-            var node = try shapes.leaf(f.gpa, f.account(), elem_place, elems);
-            if (concrete) {
-                var two = [_]NodeId{ node, contents };
-                node = if (elems == .none) contents else try shapes.join(f.gpa, f.account(), f.env.places, cells, &two);
+            var node = try shapes.leaf(f.gpa, f.account(), elem_place, refined);
+            const explicit = if (spread) explicit_rest else explicit_one;
+            if (explicit != .none) {
+                var two = [_]NodeId{ node, explicit };
+                node = if (refined == .none) explicit else try shapes.join(f.gpa, f.account(), f.env.places, cells, &two);
+            }
+            if (spread) {
+                // The rest: the same storage (a view), its contents the others.
+                const kids = try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, node);
+                const rest = try shapes.node(f.gpa, f.account(), list_place, shapes.cells(v.node), kids);
+                var k = try f.kappaSet(v.kappa, rest, false, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
+                k = try f.kappaSet(k, node, true, split_kappa);
+                try f.bind(f.data(item.int()).lhs, .{ .node = rest, .kappa = k }, point);
+                continue;
+            }
+            try f.bind(item.int(), .{ .node = node, .kappa = v.kappa }, point);
+            if (taken_split != .none and f.tag(item.int()) == .pat_var) {
+                const h = f.binding[f.data(item.int()).lhs];
+                if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = position, .explicit = explicit_cells };
             }
             position += 1;
-            try f.bind(item.int(), .{ .node = node, .kappa = v.kappa }, point);
         }
     }
 
@@ -860,7 +935,7 @@ pub const Frame = struct {
                 defer all.deinit(f.gpa);
                 try all.append(f.gpa, @fromBackingInt(d.lhs));
                 try all.appendSlice(f.gpa, f.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index));
-                return .{ .value = try f.call(i, none, all.items) };
+                return .{ .value = try f.call(i, i, all.items) };
             },
             .let => return f.val(d.rhs),
             .let_def => {

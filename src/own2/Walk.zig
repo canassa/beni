@@ -38,6 +38,7 @@ pub const CellId = Ids.CellId;
 pub const SetId = Ids.SetId;
 pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
+pub const CondId = Ids.CondId;
 pub const Env = Summary.Env;
 pub const Error = Ids.ChargeError;
 pub const none: u32 = Ids.none_int;
@@ -105,6 +106,7 @@ pub fn walk(in: Input) Error!Result {
         .escapes = frame.escapes.items,
         .index = &index,
         .regions = &regions,
+        .bindings = frame.binding,
     }, outcomes);
     const lines = try gpa.alloc(Line, outcomes.len);
     errdefer gpa.free(lines);
@@ -127,7 +129,8 @@ fn pessimistic(in: Input) Error!ClassId {
 
 const ReadOff = struct {
     env: Env,
-    fresh: std.ArrayList(CellId) = .empty,
+    /// A frame cell → its `fresh k` (k from 1, first-sight order).
+    fresh: Ids.FixedDict(1) = .{},
 
     fn relabel(r: *ReadOff, s: SetId) Error!SetId {
         if (s == .none) return .none;
@@ -136,33 +139,71 @@ const ReadOff = struct {
         var it = cells.sets.iterate(s);
         while (it.next()) |e| {
             const c: CellId = .from(e.key);
-            const x = cells.get(c);
+            var src = c;
+            var approx = e.value;
+            if (cells.origin(c).isRefinement()) {
+                // A refinement is its canonical cell's image (§2.2: `elem(π1·ι)`
+                // is `π1[*]`); over a concrete base, the base's, approximate.
+                if (try cells.unrefined(r.env.gpa, r.env.account(), r.env.places, c)) |u| src = u else {
+                    src = cells.base(c);
+                    approx = 1;
+                }
+            }
+            const x = cells.get(src);
             const m: CellId = switch (x.origin) {
                 .site, .result => blk: {
-                    const k: u32 = for (r.fresh.items, 0..) |f, i| {
-                        if (f == c) break @intCast(i + 1);
-                    } else k: {
-                        try r.fresh.append(r.env.gpa, c);
-                        break :k @intCast(r.fresh.items.len);
-                    };
-                    break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, k, x.place, x.kind);
+                    try r.env.charge.reserve(r.env.gpa, .inspection, 1);
+                    const got = try r.fresh.getOrPut(r.env.gpa, .{src.int()});
+                    if (!got.found_existing) got.value_ptr.* = r.fresh.count();
+                    break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
                 },
                 .esc => try cells.result(r.env.gpa, r.env.account(), .esc, .none, x.b, x.place, x.kind),
-                // A refinement is its base's image, approximate (§2.10).
-                .elem, .others, .level, .below, .loan => cells.base(c),
-                else => c,
+                else => src,
             };
-            const approx: u1 = if (x.origin.isRefinement()) 1 else e.value;
             out = try cells.sets.insert(r.env.gpa, r.env.charge, out, m.int(), approx);
         }
         return out;
     }
+
+    /// One cell's image in the class (as `relabel` maps each member).
+    fn image(r: *ReadOff, c: CellId) Error!CellId {
+        const set = try r.relabel(try r.env.cells.sets.insert(r.env.gpa, r.env.charge, .none, c.int(), 0));
+        var it = r.env.cells.sets.iterate(set);
+        return .from(it.next().?.key);
+    }
+
+    /// A condition of the frame's in the class's cells: the frame's own
+    /// cells (a split's refinements, its sites) never reach a class (§2.10),
+    /// so every atom is rebuilt over their images and decided again.
+    fn atom(ctx: *anyopaque, t: *Cond.Table, gpa: Allocator, charge: Ids.Charge, a: Cond.Cond) Error!CondId {
+        const r: *ReadOff = @ptrCast(@alignCast(ctx));
+        const cells = r.env.cells;
+        switch (a.atom) {
+            .excl => return t.excl(gpa, charge, try r.image(.from(a.a))),
+            .sep => return t.sep(gpa, charge, cells, r.env.places, try r.image(.from(a.a)), try r.image(.from(a.b)), false, null),
+            .apart => {
+                var items: std.ArrayList(Cond.Item) = .empty;
+                defer items.deinit(gpa);
+                var it = cells.sets.iterate(.from(a.a));
+                while (it.next()) |e| try items.append(gpa, .{ .cell = try r.image(.from(e.key)), .approx = false });
+                return t.apart(gpa, charge, cells, r.env.places, items.items, null);
+            },
+            .within => return t.within(gpa, charge, .from(a.a)),
+            .keep => return t.keep(gpa, charge, a.a),
+            .writes => return t.writes(gpa, charge, a.a),
+        }
+    }
+
+    fn cond(r: *ReadOff, k: CondId) Error!CondId {
+        return r.env.conds.instantiate(r.env.gpa, r.env.charge, k, .{ .ctx = r, .atom = atom });
+    }
 };
 
-/// The parameter a cell (or the base it refines) names, and its path.
-fn paramOf(cells: *const Cell.Table, c: CellId) ?struct { u32, PathId } {
-    const b = cells.base(c);
-    const x = cells.get(b);
+/// The parameter a cell names, and its path: a refinement's at its
+/// canonical position (`elem(π1·ι)` is `π1[*]`, §2.2), not its base's.
+fn paramOf(env: Env, c: CellId) Error!?struct { u32, PathId } {
+    const u = (try env.cells.unrefined(env.gpa, env.account(), env.places, c)) orelse return null;
+    const x = env.cells.get(u);
     if (x.origin != .param) return null;
     return .{ x.a, .from(x.b) };
 }
@@ -215,16 +256,26 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {
         var it = env.cells.sets.iterate(env.shapes.cells(d.base.node));
-        while (it.next()) |e| if (paramOf(env.cells, .from(e.key))) |pq| {
+        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };
     }
     // E: escaped parameter cells; A: the result's.
     for (frame.escapes.items) |esc| {
         var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, esc.node));
-        while (it.next()) |e| if (paramOf(env.cells, .from(e.key))) |pq| {
+        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .e = true }, &steps);
         };
+    }
+    var ro: ReadOff = .{ .env = env };
+    defer ro.fresh.deinit(gpa);
+    // The frame's reliance in the class's cells; one that fails there
+    // (a split's atom no caller could discharge) is no class at all.
+    var class_xreq: SetId = .none;
+    if (xreq != .none) {
+        const k = try ro.cond(try env.conds.ofSet(gpa, env.charge, xreq));
+        if (Cond.Table.fails(k)) return pessimistic(in);
+        class_xreq = try env.conds.flat(gpa, env.charge, k);
     }
     const result = frame.result();
     var res: NodeId = undefined;
@@ -233,21 +284,19 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         res = try env.shapes.nothing(gpa, env.account(), in.result_place);
     } else {
         var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, result.node));
-        while (it.next()) |e| if (paramOf(env.cells, .from(e.key))) |pq| {
+        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
         };
-        var ro: ReadOff = .{ .env = env };
-        defer ro.fresh.deinit(gpa);
         const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
         // The value's κ, carried over the relabelling.
         var kt = env.conds.kappaEntries(result.kappa);
         while (kt.next()) |e| {
             try env.charge.reserve(gpa, .inspection, 1);
             const m = env.shapes.memo_map.get(e.node) orelse continue;
-            kappa = (try env.conds.kappaSet(gpa, env.charge, kappa, m, e.at_summary, e.cond)).ctx;
+            kappa = (try env.conds.kappaSet(gpa, env.charge, kappa, m, e.at_summary, try ro.cond(e.cond))).ctx;
         }
         res = try env.shapes.widen(gpa, env.account(), env.places, env.cells, mapped);
         if (res != mapped) kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, res, &.{mapped}, &.{kappa}, .alternatives, false, null);
     }
-    return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = xreq, .origin = .inferred });
+    return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = class_xreq, .origin = .inferred });
 }

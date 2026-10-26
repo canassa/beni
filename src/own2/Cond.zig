@@ -690,6 +690,19 @@ pub const Table = struct {
         if (arrivals.items.len >= 2) {
             var group: SetId = .none;
             for (arrivals.items) |c| group = try cellt.sets.insert(gpa, charge, group, c.int(), 0);
+            // A taken element stored back beside the elements it was taken
+            // from (`elem(c·ι)` with `c[*]`, not `others(c·ι)`): one object at
+            // two positions, exactly (§2.9's `shared`, P5).
+            for (arrivals.items) |c| if (cellt.origin(c) == .elem) {
+                var kids = cellt.children(cellt.parent(c));
+                while (kids.next()) |k| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    const o = cellt.origin(k);
+                    if (!o.isSymbolic() or o == .top) continue;
+                    if (places.pathStep(.from(cellt.get(k).b)).kind != .elem) continue;
+                    if (cellt.sets.member(group, k.int())) return shared;
+                }
+            };
             acc = try t.@"and"(gpa, charge, acc, try t.apartAtom(gpa, charge, group));
             acc = try t.@"and"(gpa, charge, acc, try t.sameBasePairs(gpa, charge, cellt, places, arrivals.items, traversal));
         }
