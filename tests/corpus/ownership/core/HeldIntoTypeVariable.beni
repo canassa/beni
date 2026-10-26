@@ -34,3 +34,43 @@ sizeAfter rows =
 
         _ →
             0
+
+
+-- An alias that expands to a bare variable is one: `borrowed Id a` reads
+-- all of `ys` too.
+type alias Id a =
+    a
+
+
+pub foreign pure lookId : borrowed Id a → Int
+
+
+heldIntoAlias : List Int → List Int
+heldIntoAlias xs =
+    ys = [ xs ]
+    zs = [ …xs, 1 ]
+    [ lookId ys, …zs ]
+
+
+-- A beni wrapper over `look`: its call is not built until S3b (its
+-- `.v2.unchecked` line), where it must be refused as v1 refuses it.
+wrap : a → Int
+wrap x = look x
+
+
+viaWrap : List Int → List Int
+viaWrap xs =
+    ys = [ xs ]
+    zs = [ …xs, 1 ]
+    [ wrap ys, …zs ]
+
+
+fromWrap : a → Js.Value
+fromWrap x = Js.from x
+
+
+viaFromWrap : List Int → Js.Value
+viaFromWrap xs =
+    ys = [ xs ]
+    zs = [ …xs, 1 ]
+    Js.array [ fromWrap ys, Js.from zs ]
