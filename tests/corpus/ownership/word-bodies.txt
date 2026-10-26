@@ -24,6 +24,13 @@ core/Task.beni                  Task.raceOk         61d2026298837ef8f91a86cf6e6c
 core/Task.beni                  Task.within         438c12ddfacd783d9da5dfdfc5883883e5f919bd74756e30a68e27c8ea9b16a6
 core/Task.beni                  Task.startIn        f84a81adc193a110a2d4d5a586125b60ac01af56c6680ac3694060c4f6b5b489
 core/Task.beni                  Task.valueOf        e115c506f87ffd748bb62025cf08d53f82ee2b2c1406982a8b8a3e90b1c37b8a
+core/Task.beni                  Task.firstOf        a9ec629f30c714ec0796e17fe883733dc015ee648bcb663e6158aed35cc88602
+core/Task.beni                  Task.haltOthers     60b44000d07070f2b61ec5e854d0a423d35b57c17bf31b0206a3a362338d51d3
+core/Task.beni                  Task.haltAs         00ab5860579e3f29d76bf137ba160b3654f56da4a8b22d26c692a38ca7fe92f7
+core/Task.beni                  Task.endedWith      aa4e76b598b2f8bdc649b3f7b6dc0bd7840876fe307ae9165dc1187fa808ed69
+core/Task.beni                  Task.allDone        cfcb46c0c1e224d010e21274fed5b7f1e790f05e295c9ee3604cc9f5e65d9952
+core/Task.beni                  Task.startRacers    016b42b36940ce20650632851f26520e7ff8cc6eb8bbd19108eef05ebc736c30
+core/Task.beni                  Task.errorOf        2625944a2390115aa6323cf8ce7765b188048ae0411b41d10272a48cfc755a3f
 core/Schema.beni                Schema.print        3a80795348d8d28d8d25a8b2d23171e571c557af846f1d8f9edd68af7ebd0dd1
 core/Schema.beni                Schema.printWith    9bcc40b4e9446b99264307c3c3750cdeb7fa03b3f13514fc8f475df9ce2d9a62
 core/Js.js                      Js.args             60918ef47c38583496832acc4a33a2c2c7421ae9ff7d3e1668f6bebfe1632360

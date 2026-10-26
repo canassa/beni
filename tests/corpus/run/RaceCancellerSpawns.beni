@@ -1,0 +1,42 @@
+-- run: a loser's canceller runs on the combinator's own fiber
+-- (transparent-effects-proposal.md §17.7, amended 2026-10-26). The loser
+-- waits in a `Task.callback` whose canceller starts a fiber. The winner's
+-- end cancels the loser, so the canceller runs inside that end. The fiber
+-- it starts is a child of the combinator's fiber, which is alive and
+-- waits for it, and not of the winner, which has ended. Once for
+-- `race`, once for `parOk`, and once for `timeout`.
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+waitSpawning : String → String
+waitSpawning name = Task.callback λ_ →
+    λ⊤ →
+        _ = Task.spawn λ⊤ → Debug.log "${name}: spawned by canceller" ⊤
+        ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    raced =
+        Task.race
+            (λ⊤ →
+                Task.yieldNow ⊤
+                "first"
+            )
+            λ⊤ → waitSpawning "race"
+    _ = Debug.log "race" raced
+
+    failed =
+        Task.parOk
+            (λ⊤ →
+                Task.yieldNow ⊤
+                Err "first"
+            )
+            λ⊤ → Ok (waitSpawning "parOk")
+    _ = Debug.log "parOk" failed
+
+    late = Task.timeout (Duration.millis 1) λ⊤ → waitSpawning "timeout"
+    Node.print "timeout: ${Debug.toString late}"

@@ -725,8 +725,9 @@ observe fiber observer =
 
 unobserve : V, V → ⊤
 unobserve fiber observer =
+    -- Undefined on a combinator's record of a child that ended at once.
     os = Js.get fiber "observers"
-    if Js.isNull os then
+    if Js.isNullish os then
         ⊤
     else
         i : Int
@@ -2878,9 +2879,10 @@ clockMillis ⊤ =
 -- loser whose wait was answered on the same turn never runs again, and its
 -- wait's canceller sees the answer and gives back what it was handed
 -- (§17.7, amended 2026-10-26). The combinator still waits for them, as its
--- scope closes. The fiber whose end did that is the answer, even when
--- `stop` held first of another: those interrupted may end before the
--- combinator runs again, and none of them is the one that decided.
+-- scope closes. Their cancellers run with the combinator's own fiber as
+-- the current one, as they would where it cancels them itself, so a fiber
+-- a canceller starts is that fiber's child, which it waits for — not the
+-- ended fiber's.
 firstOf : V, (V → Bool), (V → Bool) → V
 firstOf fibers stop kill =
     found = endedWith fibers stop 0
@@ -2892,7 +2894,7 @@ firstOf fibers stop kill =
         Js.null
     else
         each = Js.ref Js.null
-        decided = Js.ref Js.null
+        me = Js.read current
 
         got = suspend λwake →
             left = Js.ref 0
@@ -2904,9 +2906,7 @@ firstOf fibers stop kill =
                 o = Js.get f "outcome"
 
                 if stop o then
-                    if kill o && Js.isNull (Js.read decided) then
-                        Js.write decided f
-                        haltOthers fibers f
+                    if kill o then haltAs me fibers f
                     Js.to (Js.apply wake [ f ])
                 else if Js.read left == 0 then
                     Js.to (Js.apply wake [ Js.null ])
@@ -2914,13 +2914,23 @@ firstOf fibers stop kill =
             Js.each fibers λf → if Js.isNull (Js.get f "outcome") then observe f observer
             Js.from λ_ → Js.each fibers λf → unobserve f observer
         Js.each fibers λf → unobserve f (Js.read each)
-        if Js.isNull (Js.read decided) then got else Js.read decided
+        got
 
 
 -- Interrupt every fiber of `fibers` but `winner`; those that have ended are
 -- left as they are.
 haltOthers : V, V → ⊤
 haltOthers fibers winner = Js.each fibers λg → if not (Js.same g winner) then halt g
+
+
+-- `haltOthers` with `fiber` as the current fiber, and the one before put
+-- back however it ends: a canceller that throws is a defect, and the drain
+-- takes the fiber that ran for its culprit. Nothing is caught.
+haltAs : V, V, V → ⊤
+haltAs fiber fibers winner =
+    outer = Js.read current
+    Js.write current fiber
+    Js.finally (λ⊤ → haltOthers fibers winner) λ⊤ → Js.write current outer
 
 
 endedWith : V, (V → Bool), Int → V
@@ -3171,8 +3181,11 @@ boundedFrom h items results bound call stopsAt ends next inFlight slots =
     else
         found = firstOf inFlight (λ_ → True) ends
 
-        -- The call that ended the run, when one did: those it cancelled may
-        -- have ended too, and come before it in `inFlight`.
+        -- The call that ended first, when it ended the run: those its end
+        -- cancelled are queued before this fiber, may have ended too, and
+        -- may come before it in `inFlight`. When a later call ended the run
+        -- on the same turn, what it cancelled is queued after this fiber,
+        -- has not run, and `harvest` finds that call.
         if not (Js.isNull found) && ends (Js.get found "outcome") then
             found
         else
