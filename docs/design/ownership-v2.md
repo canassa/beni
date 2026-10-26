@@ -1702,18 +1702,31 @@ refinement is a decode failure: the summary is unknown (`⊤`, every split clear
 
 A declaration whose summary does not decode is unknown; a block that does not decode is no block (R-5.7.4).
 
-**As built in S2b (the minimal block).** One record table: labels, paths, cells, splits, cell sets, atom
-sets, conditions, atoms, nodes, κ entries and maps, supplies, keeps, slots and classes, each written once and
-named by its ordinal everywhere else. A record follows its parts, except in a knot: the nodes of one cycle
-are one `group` record whose members are numbered before any is written. A member's child step may name any
-member; every other part names an earlier record, because every cycle the constructors make passes through
-a child step. The order is canonical: each record has a key from its own words, its places' encodings and
-its parts' keys (unordered parts sorted). A knot's keys come from partition refinement, rounds until the
-partition is stable, so bisimilar members are one record. The table is a post-order walk from the classes.
-Equal words are one record. A κ map is written as the stored κ of every node its owner's values reach.
-The reader rebuilds a knot by making its members first and tying each when its parts are read. It decodes
-into tables of its own first, against the caller's allowance and place room, charges that work once, and
-only then builds in the caller's tables, with the block's places in a namespace of their own.
+**As built in S2b (the minimal block).** `Block.zig` writes and `BlockRead.zig` reads (§5). A class means
+κ *as read* (§2.9: stored ⊔ derived at the position), so its shape nodes are written as **positions**: a
+node, its position class and its owner's map (a class's, a supply's; a use shape is no value and carries
+none), reached from the owner's values through the node's parts and through `proj` at every step of its
+place, as `kappaLeq` and `propagate` read. Each position carries the κ read there (a union's or a positions
+node's: what is stored there, as its sides are read with it) and the positions `proj` makes that the node's
+parts do not name. The reader stores exactly that κ at exactly those positions and checks that `proj`
+makes each of them, so every read of the decoded class is the written one's. A union whose constructor
+absorbs it into a side (its sides merged) has its κ read as written and joined into the side: exact at its
+position, never less below.
+
+One record table: labels, paths, cells, splits, cell sets, atom sets, conditions, atoms, positions,
+supplies, keeps, slots and classes, each written once and named by its ordinal. A record follows its parts,
+except in a knot: the positions of one cycle are one `group` record whose members are numbered together;
+a child step or a projected position may name any member, every other part an earlier record. The order is
+canonical. A record that is not a position is keyed by a hash of its words and its parts' keys. All of the
+block's positions are partitioned once by Hopcroft's algorithm (counting a union's two sides as one label,
+O(E log n)), from their kind, class, place, cells, κ and steps. Every choice of the refinement depends on
+block numbers and splitting signatures only, so the final numbers are canonical; they are the positions'
+keys, and one block is one record. The table is a post-order walk from the classes. The reader builds a
+knot's nodes and deltas as nodes no constructor interns and ties their child maps when the knot is read;
+everything else is its constructor's, and a node no constructor makes (sides at two places, a child at a
+place its step does not reach) is no block. It decodes into tables of its own first, against the caller's
+allowance and place room, charges that work once, and only then builds in the caller's tables, with the
+block's places in a namespace of their own.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
@@ -2156,8 +2169,9 @@ import each other; upward needs go through interface structs passed down (`Class
 `Fix.Instance{ctx, step, join, leq}` for the driver, `Obligation.entry` records for `Entry`).
 
 ```
-L13 Enforce
-L12 Ownership
+L14 Enforce
+L13 Ownership
+L12 BlockRead
 L11 Report  Message  Hoists  Block
 L10 Groups  Entry
 L9  Walk
@@ -2193,12 +2207,13 @@ L0  Ids
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 700 |
+| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 300 |
+| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 800 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 12 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, Hoists, Message, Report | ≤ 300 |
-| `Enforce.zig` | 13 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block | ≤ 450 |
+| `Ownership.zig` | 13 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 300 |
+| `Enforce.zig` | 14 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 **Input adapters.** `Groups` builds `Place.Source` and `Rows.Signature` together, reading
