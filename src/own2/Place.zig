@@ -253,6 +253,10 @@ pub const Table = struct {
     step_tab: std.MultiArrayList(StepEntry) = .empty,
     /// The type walk's memo, type variable → place.
     by_var: stamped.Column(u32, PlaceId) = .{},
+    /// `ofBlock`'s memo, a block's place number → place: a namespace of
+    /// its own, so a block's places never meet a type variable of the
+    /// module's (`Block.read`), cleared by `beginBlock`.
+    block_var: stamped.Column(u32, PlaceId) = .{},
     paths: std.MultiArrayList(PathNode) = .empty,
     /// `(parent path, step)` → path; a root is `(none, place)`.
     path_index: Ids.FixedDict(2) = .{},
@@ -271,17 +275,17 @@ pub const Table = struct {
         t.places.deinit(gpa);
         t.step_tab.deinit(gpa);
         t.by_var.deinit(gpa);
+        t.block_var.deinit(gpa);
         t.paths.deinit(gpa);
         t.path_index.deinit(gpa);
         t.extend_memo.deinit(gpa);
         t.ctor_args.deinit(gpa);
     }
 
-    /// The first type-variable number no place of this table is memoised
-    /// under: a block read into the table numbers its places from here, so
-    /// they never meet a variable of the module's or of another block's.
-    pub fn freshVar(t: *const Table) u32 {
-        return @intCast(t.by_var.slots.items.len);
+    /// Start a block's place namespace: `ofBlock`'s numbers from here on
+    /// are the next block's, and meet no earlier block's.
+    pub fn beginBlock(t: *Table) void {
+        t.block_var.clear();
     }
 
     pub fn count(t: *const Table) u32 {
@@ -371,7 +375,17 @@ pub const Table = struct {
     /// from it that the table does not have yet (R-4.7.3). O(E) in the
     /// edges first seen; a variable seen before costs one column read.
     pub fn of(t: *Table, gpa: Allocator, account: *Account, source: Source, root: u32) Error!PlaceId {
-        if (t.by_var.get(root)) |p| return p;
+        return t.ofIn(&t.by_var, gpa, account, source, root);
+    }
+
+    /// `of` in the current block's namespace (`beginBlock`): `root` is a
+    /// block's place number, never a type variable of the module's.
+    pub fn ofBlock(t: *Table, gpa: Allocator, account: *Account, source: Source, root: u32) Error!PlaceId {
+        return t.ofIn(&t.block_var, gpa, account, source, root);
+    }
+
+    fn ofIn(t: *Table, memo: *stamped.Column(u32, PlaceId), gpa: Allocator, account: *Account, source: Source, root: u32) Error!PlaceId {
+        if (memo.get(root)) |p| return p;
         var scratch: std.ArrayList(Child) = .empty;
         defer scratch.deinit(gpa);
         var stack: std.ArrayList(Frame) = .empty;
@@ -384,8 +398,8 @@ pub const Table = struct {
         defer added.deinit(gpa);
         const first_new = t.count();
         const first_step: usize = t.step_tab.len;
-        errdefer t.rollback(first_new, first_step, added.items);
-        const top = try t.open(gpa, account, source, root, &scratch, &stack, &added);
+        errdefer t.rollback(memo, first_new, first_step, added.items);
+        const top = try t.open(memo, gpa, account, source, root, &scratch, &stack, &added);
         while (stack.items.len > 0) {
             const f = &stack.items[stack.items.len - 1];
             if (f.cursor == f.len) {
@@ -396,11 +410,11 @@ pub const Table = struct {
             const c = scratch.items[f.first + f.cursor];
             const slot = t.stepRange(f.place).start + f.cursor;
             f.cursor += 1;
-            if (t.by_var.get(c.@"var")) |known| {
+            if (memo.get(c.@"var")) |known| {
                 t.step_tab.items(.child)[slot] = known;
                 continue;
             }
-            const made = try t.open(gpa, account, source, c.@"var", &scratch, &stack, &added);
+            const made = try t.open(memo, gpa, account, source, c.@"var", &scratch, &stack, &added);
             t.step_tab.items(.child)[slot] = made;
         }
         try t.settleHolds(gpa, first_new);
@@ -409,8 +423,8 @@ pub const Table = struct {
     }
 
     /// Undo a refused walk: its places, their steps and their memo entries.
-    fn rollback(t: *Table, first_new: u32, first_step: usize, vars: []const u32) void {
-        for (vars) |v| t.by_var.remove(v);
+    fn rollback(t: *Table, memo: *stamped.Column(u32, PlaceId), first_new: u32, first_step: usize, vars: []const u32) void {
+        for (vars) |v| memo.remove(v);
         t.places.shrinkRetainingCapacity(first_new);
         t.step_tab.shrinkRetainingCapacity(first_step);
     }
@@ -418,7 +432,7 @@ pub const Table = struct {
     /// Describe `v` and check every limit FIRST; only then allocate its
     /// place and memoise it — before its children are visited (the knot) —
     /// and push a frame for them.
-    fn open(t: *Table, gpa: Allocator, account: *Account, source: Source, v: u32, scratch: *std.ArrayList(Child), stack: *std.ArrayList(Frame), added: *std.ArrayList(u32)) Error!PlaceId {
+    fn open(t: *Table, memo: *stamped.Column(u32, PlaceId), gpa: Allocator, account: *Account, source: Source, v: u32, scratch: *std.ArrayList(Child), stack: *std.ArrayList(Frame), added: *std.ArrayList(u32)) Error!PlaceId {
         try account.limitOver(.type_places, @as(u64, t.count()) + 1, t.limits.type_places);
         const first: u32 = @intCast(scratch.items.len);
         const d = try source.describe(source.ctx, v, scratch);
@@ -426,7 +440,7 @@ pub const Table = struct {
         if (d.kind.childLimit()) |l| try account.limitOver(l, len, t.limits.children);
         const id: PlaceId = .from(t.count());
         try added.append(gpa, v);
-        try t.by_var.put(gpa, v, id);
+        try memo.put(gpa, v, id);
         const start: u32 = @intCast(t.step_tab.len);
         // The canonical step order is the word order of `Step`: fields by
         // text rank, indices, `C#i` by (constructor, argument). A source

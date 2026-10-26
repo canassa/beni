@@ -292,6 +292,22 @@ pub const Table = struct {
         return t.positions(gpa, account, cellsets, try t.collect(gpa, account, cellsets, members[0..mid]), try t.collect(gpa, account, cellsets, members[mid..]));
     }
 
+    /// A node no constructor interns, its record set later by `tie`: how a
+    /// reader rebuilds a knot (`widen`'s, `map`'s), whose parts name it
+    /// before it is whole. The empty leaf until it is tied.
+    pub fn knot(t: *Table, gpa: Allocator, account: *Account) Error!NodeId {
+        try account.reserve(.shape, 1);
+        const id: NodeId = .from(t.count());
+        try t.nodes.append(gpa, .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
+        return id;
+    }
+
+    /// Set a `knot`'s record: the caller's to make it one a constructor
+    /// could have made but for the cycle.
+    pub fn tie(t: *Table, id: NodeId, n: Node) void {
+        t.nodes.set(id.int(), n);
+    }
+
     /// Two positions at one place (`collect`'s node, `proj`'s image of one).
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));

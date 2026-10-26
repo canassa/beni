@@ -1702,6 +1702,19 @@ refinement is a decode failure: the summary is unknown (`⊤`, every split clear
 
 A declaration whose summary does not decode is unknown; a block that does not decode is no block (R-5.7.4).
 
+**As built in S2b (the minimal block).** One record table: labels, paths, cells, splits, cell sets, atom
+sets, conditions, atoms, nodes, κ entries and maps, supplies, keeps, slots and classes, each written once and
+named by its ordinal everywhere else. A record follows its parts, except in a knot: the nodes of one cycle
+are one `group` record whose members are numbered before any is written. A member's child step may name any
+member; every other part names an earlier record, because every cycle the constructors make passes through
+a child step. The order is canonical: each record has a key from its own words, its places' encodings and
+its parts' keys (unordered parts sorted). A knot's keys come from partition refinement, rounds until the
+partition is stable, so bisimilar members are one record. The table is a post-order walk from the classes.
+Equal words are one record. A κ map is written as the stored κ of every node its owner's values reach.
+The reader rebuilds a knot by making its members first and tying each when its parts are read. It decodes
+into tables of its own first, against the caller's allowance and place room, charges that work once, and
+only then builds in the caller's tables, with the block's places in a namespace of their own.
+
 ### 3.7 Inputs, outputs, and where the pass runs
 
 Inputs (R-1.6): the module's `Bir` with the new spread table (§2.13.2), `Check.Module` (`inst_type`, `local_type`,
@@ -2180,7 +2193,7 @@ L0  Ids
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 400 |
+| `Block.zig` | 11 | class ⇄ bytes, lazy directory | `write`, `open`, `summary`, `version` | Ids, Summary, Place, Cell, Shape, Cond | ≤ 1 700 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
