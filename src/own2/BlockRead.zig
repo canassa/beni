@@ -1759,3 +1759,98 @@ test "a union of two equal knots, merged into one, still reads what the union re
     const after = try kappaAt(&b, r.kappas, r.res, &.{try b.places.ctorStep(gpa, &b.account, 0, 0)});
     try testing.expect(before == after or after == Cond.shared or after == Cond.lost);
 }
+
+/// A class whose `res` is `res`, with `shared` stored at the position
+/// `steps` reach from it (and `yes` at `res`), written and read back: κ
+/// there, before and after.
+fn storedBelow(res: NodeId, t: *Tables, steps: []const Step) ![2]CondId {
+    const gpa = testing.allocator;
+    const env = t.env();
+    var at = res;
+    var summary = false;
+    for (steps) |s| {
+        at = (try t.shapes.proj(gpa, &t.account, &t.places, &t.cells, at, s)).?;
+        summary = below(summary, s);
+    }
+    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.yes)).ctx;
+    km = (try t.conds.kappaSet(gpa, env.charge, km, at, summary, Cond.shared)).ctx;
+    const c = try t.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
+    const before = try kappaAt(t, km, res, steps);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(t, &b, c));
+    // `[*]` and a field's rank are the same steps in the reader's table.
+    return .{ before, try kappaAt(&b, back.kappas, back.res, steps) };
+}
+
+test "a block keeps a κ stored under a leaf and at an empty projection" {
+    const gpa = testing.allocator;
+    // A leaf `res`, κ stored at `[*]`.
+    {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const lists = try a.place(2);
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, lists), 0);
+        const res = try a.shapes.leaf(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, .none, p.int(), 0));
+        const k = try storedBelow(res, &a, &.{Step.elem});
+        try testing.expectEqual(Cond.shared, k[0]);
+        try testing.expectEqual(k[0], k[1]);
+    }
+    // A leaf `res` at `List { a : List Int }`, κ stored at `[*].a`.
+    {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const recs = try a.place(7);
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, recs), 0);
+        const res = try a.shapes.leaf(gpa, &a.account, recs, try a.cells.sets.insert(gpa, a.env().charge, .none, p.int(), 0));
+        const k = try storedBelow(res, &a, &.{ Step.elem, try Step.field(&a.account, 10) });
+        try testing.expectEqual(Cond.shared, k[0]);
+        try testing.expectEqual(k[0], k[1]);
+    }
+    // A node `res` with no `[*]` child, κ stored at the empty leaf there.
+    {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const lists = try a.place(2);
+        const site = try a.cells.site(gpa, &a.account, 1, lists, .list);
+        const res = try a.shapes.node(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, .none, site.int(), 0), Ids.none_int);
+        const k = try storedBelow(res, &a, &.{Step.elem});
+        try testing.expectEqual(Cond.shared, k[0]);
+        try testing.expectEqual(k[0], k[1]);
+    }
+}
+
+test "supplies that hold one value under one map are one owner: the cost stays flat in their number" {
+    const gpa = testing.allocator;
+    var first: u64 = 0;
+    for ([_]u32{ 1, 16, 64 }) |count| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const env = a.env();
+        const tree = try a.place(8);
+        const s0 = try a.places.ctorStep(gpa, &a.account, 0, 0);
+        var v = try a.shapes.nothing(gpa, &a.account, tree);
+        var km: Cond.Kappas = .none;
+        for (0..200) |i| {
+            const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), tree, .list);
+            v = try a.shapes.node(gpa, &a.account, tree, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, v));
+            km = (try a.conds.kappaSet(gpa, env.charge, km, v, false, Cond.yes)).ctx;
+        }
+        const sups = try gpa.alloc(Summary.Supply, count);
+        defer gpa.free(sups);
+        for (sups, 0..) |*s, i| s.* = .{ .j = 0, .k = @intCast(i), .node = v, .label = .none, .owned = true, .taken = false, .kappa = km };
+        const c = try a.sums.add(env, .{ .params = &.{.none}, .res = v, .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = sups }} });
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        // Under the default allowance.
+        const before = a.account.growth;
+        try write(env, &a.sums, &.{c}, .identity, &words);
+        const cost = a.account.growth - before;
+        if (first == 0) first = cost else try testing.expect(cost * 10 <= first * 13);
+    }
+}

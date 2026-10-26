@@ -199,6 +199,7 @@ pub const own2 = struct {
     pub const Rows = @import("own2/Rows.zig");
     pub const Block = @import("own2/Block.zig");
     pub const BlockRead = @import("own2/BlockRead.zig");
+    pub const Refine = @import("own2/Refine.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {
