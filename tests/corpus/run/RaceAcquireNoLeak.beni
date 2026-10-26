@@ -1,0 +1,32 @@
+-- run: a losing `Semaphore.acquire` under `Task.race` takes no permit
+-- (transparent-effects-proposal.md §17.7, amended 2026-10-26; §17.9).
+--
+--   - Handed on one turn: both branches wait, and one `release 2` hands a
+--     permit to each. The first wins. The second is cancelled from the
+--     winner's end, before it runs, and its canceller gives its permit
+--     back. One permit stays taken, by the winner.
+--   - At once: with both permits free, the first branch takes one and
+--     returns without waiting, so the second is never started.
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Semaphore.make 2
+    Semaphore.acquire s 2
+
+    racer = Task.spawn λ⊤ → Task.race (λ⊤ → Semaphore.acquire s 1) λ⊤ → Semaphore.acquire s 1
+    Task.yieldNow ⊤
+    Semaphore.release s 2
+    Task.join racer
+    _ = Debug.log "handed on one turn: available" (Semaphore.available s)
+
+    free = Semaphore.make 2
+
+    Task.race (λ⊤ → Semaphore.acquire free 1) λ⊤ →
+        Semaphore.acquire free 1
+        Debug.log "second started" ⊤
+    Node.print "at once: available ${String.fromInt (Semaphore.available free)}"

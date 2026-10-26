@@ -1,0 +1,37 @@
+-- run: a `Semaphore.acquire` that `Task.timeout` gave up on takes no
+-- permit (transparent-effects-proposal.md §17.7, amended 2026-10-26;
+-- §17.9), on a virtual clock. The only permit is held. A releaser sleeps
+-- 10 ms, and then the timeout's timer sleeps 10 ms, so at 10 ms both wake
+-- on one turn, the releaser first: its `release` hands the permit to the
+-- waiting work, and then the timer ends and wins. The work is cancelled
+-- from the timer's end, before it runs, and its canceller gives the
+-- permit back.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Semaphore
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual 0
+    s = Semaphore.make 1
+    Semaphore.acquire s 1
+
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            releaser = Task.spawn λ⊤ →
+                Task.sleep (Duration.millis 10)
+                Semaphore.release s 1
+            Task.yieldNow ⊤
+
+            got = Task.timeout (Duration.millis 10) λ⊤ →
+                Semaphore.acquire s 1
+                "got the permit"
+            _ = Debug.log "at ${String.fromInt (Clock.now ⊤)}" got
+            Task.join releaser
+    Clock.adjust clock (Duration.millis 100)
+    Task.join caller
+    Node.print "available: ${String.fromInt (Semaphore.available s)}"

@@ -6477,8 +6477,8 @@ function's words, which describe each element: the summary's function slot at th
 
 | Declaration | Words | Why |
 |---|---|---|
-| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `within` closes that scope before the call returns; `valueOf` reads the child's outcome, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call |
-| `Task.raceOk` | `many aliased List (⊤ → Result e a) → fresh Result (List e) a` | each thunk runs once as a child of the call's scope, closed before it returns; the answer is the winner's `Ok` payload or a new list of every `Err` |
+| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `within` closes that scope before the call returns; `valueOf` reads the child's outcome, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call (re-read 2026-10-26: only `firstOf`'s cancelling of the other child changed) |
+| `Task.raceOk` | `many aliased List (⊤ → Result e a) → fresh Result (List e) a` | each thunk runs at most once as a child of the call's scope, closed before it returns (none after one that answered `Ok` at once; `startRacers` walks the list in order and keeps no part of it, re-read 2026-10-26); the answer is the winner's `Ok` payload or a new list of every `Err` |
 | `Int32` | `crossing` | an `Int32` is a JavaScript number, `Math.imul`'s and the bit operations': it holds no list and no function |
 
 They are pinned in `trusted-surface.txt` (`ownership/TaskWords`, `ownership/RandomGenerate`) and their bodies,

@@ -2830,6 +2830,74 @@ Fixture names as built: `run/ForEachBounded` carries `ForEachBoundBelowOne`'s ca
 carries `RaceOkOneSideFails`, `RaceOkAllFail` and `RaceOkEmpty`, and `run/TimeoutAwaitsCleanup`
 carries `TimeoutZero`.
 
+*Amended 2026-10-26 (#1043): losers are cancelled from the winner's end.* As built above, a race
+cancelled its losers only when its own fiber ran again, and that fiber's resumption was queued
+behind every resumption already in the queue. A loser whose wait was answered on the winner's turn
+therefore ran first, returned, and had its value thrown away. With a hand-off primitive that is a
+leak: two `Semaphore.acquire` branches both handed a permit by one `release 2` kept two permits
+taken for one winner, and the program could give back neither. Three rules replace the old timing.
+They hold for `race`, `raceAll`, `raceOk`, `timeout`, `parOk` and `forEachOk`, and for `par`,
+`par3` and `forEach` when a child is cancelled by itself.
+
+- **The losers are cancelled when the answer is decided, from the deciding child's end.** The
+  combinator's observer runs inside that child's `complete`, before anything else on the scheduler's
+  queue runs. It interrupts every other child there and then, so no other child has run since the
+  deciding end. The answer is decided by a race's winner, `timeout`'s first child to end, or a
+  fail-fast combinator's first `Err` or self-cancelled child. A child whose wait was answered on the
+  same turn and has not yet run is interrupted while still parked on that wait. Its queued
+  resumption is stale and is dropped, and the wait's canceller runs and sees the answer. The
+  combinator still waits for every child to end and run its cleanup before it returns (A10, §17.1
+  item 2).
+- **No child starts once the answer is decided.** Children start at once and in order (the
+  amendment above). When one ends at once with an outcome that decides the answer, the children
+  after it are not started: a `race` whose first branch returns without waiting never starts the
+  second. `parOk` does not start its second branch after an `Err` at once. `timeout` never starts
+  its timer for work that answers at once, and `forEachOk` already stopped at an `Err` at once.
+  Effect's `raceAllFirst` stops its start loop the same way (`if (done) break`).
+- **At most one deciding child is `Done` when the answer is chosen, and it wins.** The scheduler runs
+  one fiber at a time, and a child's end calls the observer synchronously. So the first deciding
+  end is observed before any other child runs. While the combinator starts its children, only the
+  child it started last can have ended, because an earlier one that ended deciding would have
+  stopped the start. The winner is thus the first deciding child in time, and among children that
+  ended at once, the first in input order. No other child is `Done` with a value the combinator
+  would have to drop. Outcomes that do not decide the answer are kept as before: `raceOk`'s `Err`
+  branches and the values `forEachOk` has already collected.
+
+**Why this closes the leak.** A hand-off primitive hands its value to a parked wait. The value is
+held by that wait until the waiter's fiber runs. If the waiter is interrupted first, the wait's
+canceller sees the value and gives it back: `Semaphore`'s `leave` (§17.9) does this, and
+`Queue.take` must do the same. Under the first rule, a loser is interrupted before it can run after
+the winner. So a value handed to a losing combinator's own wait on the winner's turn always goes
+back through the canceller. Under the second rule, no branch can take a value at once after the
+winner has its value. Under the third, no value of a second `Done` branch is ever dropped.
+
+**What the combinators cannot guarantee.**
+
+- **A child inside an `uninterruptible` region runs on until it leaves the region.** Its interrupt
+  is latched, as `timeout` already says. If it returns without suspending again, its value is
+  dropped. The program chose not to be interrupted there.
+- **A value that a grandchild has already returned is lost with a cancelled branch.** Take
+  `race (λ⊤ → timeout d (λ⊤ → acquire s 1)) (λ⊤ → acquire s 1)`, with both waiters handed a
+  permit on one turn. The inner waiter runs first, takes its permit and returns. That wakes the
+  first branch's inner `timeout`, but the branch's own fiber has not run yet. Then the second
+  branch returns and wins. The first branch is cancelled while its inner `timeout` holds the value,
+  and the permit is lost. When the winner ends, the grandchild has already ended, so no rule a
+  combinator applies at that moment can reach it.
+  This is not a combinator defect. Once `acquire` (or `Queue.take`) returns, the permit or value
+  belongs to the fiber that called it. If that fiber is cancelled before it gives it back, it is
+  lost. A program that runs `acquire s 1`, then `Task.sleep`, and is cancelled during the sleep has
+  exactly the same problem. This is the general cost of a manual API, accepted with
+  `acquire`/`release` (§17.9), and Effect's bare `take` behaves the same. The remedy is the
+  documented one: give the permits back in `Task.onExit`, or use `withPermits`, which does that for
+  you.
+
+Fixtures, each red before this amendment: `run/RaceLoserDoesNotRunAfterWinner`,
+`run/RaceAcquireNoLeak` (handed on one turn, and at once), `run/TimeoutAcquireNoLeak` (on a virtual
+clock, the timer and a `release` on one turn), `run/RaceAllStopsAtWinner` (three branches, and a
+third never started), and `run/ParOkErrStopsSibling` (`parOk` on one turn and at once, and
+`forEachOk`). Also `run/SemaphoreAcquireOnExit`, which pins the remedy for the nested case. It
+passes before and after this amendment. The existing combinator fixtures print the same lines.
+
 ### 17.8 `Schedule`, `retry`, `repeat` (P4)
 
 ```elm
