@@ -1,0 +1,7 @@
+--! fmt: a module's `@ownership_summary_size` with no imports after it
+--! (`ownership-v2.md` §4.4) is followed by one blank line, not two
+--! (`language.md` §9).
+
+@ownership_summary_size(module, 70000)
+
+f = 1

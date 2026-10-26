@@ -36,7 +36,9 @@ Any package can write it.
 
 - `@ownership_summary_size(n)` on the line directly before a top-level
   value's annotation, or its definition when it has no annotation, raises
-  the limit for that value. Comments can go between the two lines.
+  the limit for that value. Comments can go between the two lines. A `--|`
+  doc comment goes after the attribute line, directly before the
+  declaration; before the attribute line it is `unattached_doc_comment`.
 - `@ownership_summary_size(module, n)` before the first import raises the
   limit for every value of the module.
 

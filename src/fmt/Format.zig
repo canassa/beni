@@ -2789,7 +2789,8 @@ const Printer = struct {
                     p.newline(0);
                     try p.leadingWith(p.first(item), 0, false);
                 } else {
-                    p.blankLines(2, 0);
+                    // After the module attribute alone, one blank line (language.md §9).
+                    p.blankLines(if (prev == null and import_count == 0) 1 else 2, 0);
                 }
             }
             try p.decl(item);

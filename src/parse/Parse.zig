@@ -819,6 +819,7 @@ fn parseModule(p: *Parse) Allocator.Error!void {
     defer p.shrinkScratch(mark);
 
     var seen_decl = false;
+    var seen_import = false;
     var pending: ?PendingAnnotation = null;
     while (true) {
         const before = p.tok_i;
@@ -840,6 +841,7 @@ fn parseModule(p: *Parse) Allocator.Error!void {
                 try p.reportPendingAnnotation(&pending);
                 p.drainComments(p.tok_i + 1);
                 if (seen_decl) _ = try p.report(p.itemAtToken(.import_after_declaration, p.tok_i));
+                seen_import = true;
                 try p.pushScratch(try p.parseImport());
             },
             .keyword_pub, .keyword_type, .keyword_foreign, .lower_ident => {
@@ -849,7 +851,15 @@ fn parseModule(p: *Parse) Allocator.Error!void {
             },
             // An attribute line (ownership-v2.md §4.4). Where it may stand
             // is lowering's: the parser keeps it in place among the items.
-            .at_sign => try p.pushScratch(try p.parseAttribute()),
+            // Only a module's, in the preamble, may come before an import:
+            // any other is a declaration's line, and an import after it is
+            // `import_after_declaration`, as after a declaration.
+            .at_sign => {
+                const node = try p.parseAttribute();
+                const module = p.nodes.items(.data)[@backingInt(node)].rhs == 1;
+                if (!module or seen_import or seen_decl) seen_decl = true;
+                try p.pushScratch(node);
+            },
             else => {
                 try p.reportPendingAnnotation(&pending);
                 var item = p.itemAt(.expected_declaration);

@@ -1793,6 +1793,40 @@ test "fmt --stdout prints the canonical form of an ugly module and writes nothin
     try testing.expectEqualStrings(ugly_module, try w.read("Main.beni"));
 }
 
+test "fmt --check refuses a file with an import after a declaration's attribute, and never skips it silently" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A declaration's `@ownership_summary_size` (ownership-v2.md §4.4) is
+    // one of its lines, so an import after it comes after a declaration:
+    // the parser's `import_after_declaration`, which fmt reports, never a
+    // file fmt passes over without a word. A module's, in the preamble,
+    // may stand before the imports, and the rest of the file is checked.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("A.beni", "import List\n@ownership_summary_size(70000)\nimport String\n\n\nf = 1\n");
+    try w.write("B.beni", "@ownership_summary_size(module, 70000)\n@ownership_summary_size(70000)\nimport List\n\n\nf = 1\n");
+    try w.write("C.beni", "@ownership_summary_size(module, 70000)\n\nimport List\n\n\nf =     1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const a = try w.run(&.{ "fmt", "--check", "A.beni" });
+    const b = try w.run(&.{ "fmt", "--check", "B.beni" });
+    const c = try w.run(&.{ "fmt", "--check", "C.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]@TypeOf(a){ a, b }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.import_after_declaration, r.diagnostics[0].code);
+    }
+    try testing.expectEqual(@as(u8, 1), c.exit_code);
+    try testing.expectEqualStrings("C.beni\n", c.stdout);
+}
+
 test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout and says nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
