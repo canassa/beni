@@ -1,0 +1,160 @@
+--! The simulated hardware: connect its parts to the physics and page.
+
+import Browser.Events
+import Browser.Navigation
+import Bucket exposing (Bucket)
+import Gate exposing (Gate)
+import Log
+import Physics exposing (World, Ball, Signal, AtHopper, Entered, Landed, Settled, Emptied, Exited, AtBay, Returned, Returning, fresh, clock, openTrap, step, held)
+import Queue
+import Ref exposing (Ref)
+import Semaphore exposing (Semaphore)
+import Sensor exposing (Sensor)
+import Task
+import Trapdoor exposing (Trapdoor)
+
+
+--| The parts of one machine.
+pub type alias Machine =
+    world : Ref World
+    hopper : Sensor
+    exit : Sensor
+    bay : Sensor
+    entry : Gate
+    bayGate : Gate
+    bucket : Bucket
+    trapdoor : Trapdoor
+    send : World → ⊤
+
+
+pub perBatch : Machine → Int
+perBatch m = (Ref.get m.world).perBatch
+
+
+pub make : (World → ⊤) → Machine
+make send =
+    world : Ref World
+    world = Ref.make (fresh ⊤)
+    { world = world
+    , hopper = Queue.unbounded ⊤
+    , exit = Queue.unbounded ⊤
+    , bay = Queue.unbounded ⊤
+    , entry =
+        { open = λ⊤ → Ref.update world λw → { w | entry = w.entry + 1 }
+        , through = Queue.unbounded ⊤
+        }
+    , bayGate =
+        { open = λ⊤ → openBay world
+        , through = Queue.unbounded ⊤
+        }
+    , bucket =
+        { open = λn → Ref.update world λw → { w | bucketDoor = n, asked = n }
+        , close = λ⊤ → closeBucket world
+        , landed = Queue.unbounded ⊤
+        , settled = Queue.unbounded ⊤
+        }
+    , trapdoor =
+        { open = λ⊤ → Ref.update world openTrap
+        , close = λ⊤ → Ref.update world λw → { w | trapOpen = False, armed = False }
+        , emptied = Queue.unbounded ⊤
+        }
+    , send = send
+    }
+
+
+-- With `?debug` in the page's address, as on the flow page, the machine
+-- logs each ball it lets in, each batch it drops and each retry, with the
+-- times on the page's clock.
+pub debugging : ⊤ → Bool
+debugging ⊤ =
+    case Browser.Navigation.currentUrl ⊤ of
+        Just url →
+            url.query == Just "debug"
+
+        Nothing →
+            False
+
+
+closeBucket : Ref World → ⊤
+closeBucket world =
+    w = Ref.get world
+    bucket = List.filter w.balls λb → b.bucketed
+    first = Maybe.withDefault (List.minimum (List.map bucket λb → b.landedAt)) w.now
+    Log.debug "batch: ${List.length bucket} of ${w.asked}, the first in for ${clock ⊤ - first} ms"
+    Ref.update world λv → { v | bucketDoor = 0, settling = True }
+
+
+openBay : Ref World → ⊤
+openBay world =
+    w = Ref.get world
+    waiting = List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+        b.arrivedAt
+    case waiting of
+        [ b, …_ ] →
+            Log.debug
+                "retry: ball ${b.id} went round ${b.attempts} times before and waited ${clock ⊤ - max b.arrivedAt w.bayFreeAt} ms"
+
+        [] →
+            ⊤
+    Ref.update world λv → { v | bayDoor = v.bayDoor + 1 }
+
+
+simulate : Machine, Semaphore → ⊤
+simulate m room = Browser.Events.eachAnimationFrameDelta λms →
+    now = Ref.get m.world
+    if now.sized ≠ now.atOnce then
+        Semaphore.resize room now.atOnce
+        Ref.update m.world λw → { w | sized = w.atOnce }
+    signals = Ref.modify m.world λw → step w (min (1 / 30) (ms / 1000)) (clock ⊤)
+    _ = List.map signals λs → signal m s
+    if List.any signals isEntered then
+        w = Ref.get m.world
+        Log.debug "in: ${held w} of ${w.atOnce} in the machine"
+    m.send (Ref.get m.world)
+
+
+isEntered : Signal → Bool
+isEntered s =
+    case s of
+        Entered _ →
+            True
+
+        _ →
+            False
+
+
+signal : Machine, Signal → ⊤
+signal m s =
+    _ =
+        case s of
+            AtHopper ball →
+                Queue.offer m.hopper ball
+
+            Entered ball →
+                Queue.offer m.entry.through ball
+
+            Landed ball →
+                Queue.offer m.bucket.landed ball
+
+            Settled →
+                Queue.offer m.bucket.settled ⊤
+
+            Emptied →
+                Queue.offer m.trapdoor.emptied ⊤
+
+            Exited ball →
+                Queue.offer m.exit ball
+
+            AtBay ball →
+                Queue.offer m.bay ball
+
+            Returned ball →
+                Queue.offer m.bayGate.through ball
+    ⊤
+
+
+--| Run the simulation in the same scope as the four control fibers.
+pub simulateIn : Task.Scope, Machine, Semaphore → ⊤
+simulateIn scope m room =
+    _ = Task.spawnIn scope λ⊤ → simulate m room
+    ⊤

@@ -171,7 +171,7 @@ async function open(url) {
   const toEnd = async (editor = "#editor") => {
     await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
     for (const type of ["rawKeyDown", "keyUp"]) {
-      await send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35, modifiers: 2 }, sessionId);
+      await send("Input.dispatchKeyEvent", { type, key: process.platform === "darwin" ? "ArrowDown" : "End", code: process.platform === "darwin" ? "ArrowDown" : "End", windowsVirtualKeyCode: process.platform === "darwin" ? 40 : 35, modifiers: process.platform === "darwin" ? 4 : 2 }, sessionId);
     }
   };
   // Select all of the editor's text and delete it, with Ctrl+A and
@@ -179,7 +179,7 @@ async function open(url) {
   const clear = async (editor) => {
     await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
     for (const type of ["rawKeyDown", "keyUp"]) {
-      await send("Input.dispatchKeyEvent", { type, key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 }, sessionId);
+      await send("Input.dispatchKeyEvent", { type, key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: process.platform === "darwin" ? 4 : 2 }, sessionId);
     }
     for (const type of ["rawKeyDown", "keyUp"]) {
       await send("Input.dispatchKeyEvent", { type, key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }, sessionId);
@@ -205,7 +205,7 @@ async function open(url) {
     const { data } = await send("Page.captureScreenshot", { format: "png", clip }, sessionId);
     writeFileSync(join(screenshots, file), Buffer.from(data, "base64"));
   };
-  return { targetId, evaluate, until, type, toEnd, clear, inFrame, scheme, size, screenshot };
+  return { targetId, sessionId, evaluate, until, type, toEnd, clear, inFrame, scheme, size, screenshot };
 }
 
 /// A page opened from a link to `source` and `css` on `platform`, which the
@@ -296,7 +296,7 @@ const looks = {
     known: `getComputedStyle(document.querySelector(".tally b")).color + " on " + getComputedStyle(document.documentElement).backgroundColor`,
     light: "rgb(166, 75, 0) on rgb(245, 245, 245)",
     dark: "rgb(255, 154, 60) on rgb(4, 2, 5)",
-    texts: [{ text: ".tally" }, { text: ".tally b" }, { text: ".knob" }, { text: ".knob output" }],
+    texts: [{ text: ".tally" }, { text: ".tally b" }, { text: ".knob" }, { text: ".knob output" }, { text: ".controls button" }, { text: ".cap-note" }],
   },
 };
 
@@ -364,6 +364,31 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
     check((await page.until(mounted, 10_000, true)) !== null, `sample ${name} mounts its markup`);
     check(looks[name] !== undefined, `sample ${name} has a look to check`);
     if (looks[name] !== undefined) await checkLook(page, name, looks[name]);
+    if (name === "Ball machine") {
+      for (const [width, height] of [[1280, 800], [390, 900]]) {
+        await page.size(width, height);
+        const visible = `['#at-once', '#per-batch', '#again'].every((selector) => { const el = document.querySelector(selector); if (!el) return false; const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.width > 0; })`;
+        check((await page.until(visible, 3_000, true)) !== null, `ball machine sliders and reset are visible without scrolling at ${width}px`);
+      }
+      await page.size();
+      const setKnob = (id, value) => `(() => { const el = document.getElementById(${JSON.stringify(id)}); el.value = ${JSON.stringify(String(value))}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`;
+      await page.inFrame(setKnob("at-once", 2));
+      await page.inFrame(setKnob("per-batch", 5));
+      check((await page.until(`document.querySelector('#at-once').closest('label').querySelector('output').textContent === '2' && document.querySelector('#per-batch').closest('label').querySelector('output').textContent === '5'`, 3_000, true)) !== null, "both ball machine sliders update their displayed values");
+      check((await page.until(`document.getElementById('cap-note')?.hidden === false && document.querySelector('svg').textContent.includes('of 2') && document.querySelector('svg').textContent.includes('of 5')`, 3_000, true)) !== null, "the running machine takes the slider values and explains when the batch exceeds capacity");
+      const reset = await page.inFrame(`document.getElementById('again') !== null`);
+      check(reset, "the ball machine has Reset the counts");
+      if (reset) {
+        for (let i = 0; i < 2; i += 1) {
+          await page.inFrame(`document.getElementById('again').click()`);
+          check((await page.until(`document.querySelector('.tally').textContent.includes('last 0 s: 0 done · 0 failed') && document.getElementById('at-once').value === '2' && document.getElementById('per-batch').value === '5'`, 3_000, true)) !== null, "reset clears the counts and keeps both slider settings");
+          check((await page.until(`document.querySelectorAll('svg circle[r="7.5"]').length > 0`, 5_000, true)) !== null, "the simulation runs again after reset");
+        }
+      }
+      const tabs = await page.evaluate(`JSON.stringify([...document.querySelectorAll('[aria-label="Files"] [role="tab"]')].map((t) => t.textContent))`);
+      check(JSON.stringify(JSON.parse(tabs).sort()) === JSON.stringify(["Main.beni", "Control.beni", "Sensor.beni", "Gate.beni", "Bucket.beni", "Trapdoor.beni", "Machine.beni", "Physics.beni", "View.beni", "style.css"].sort()), "the ball machine exposes its source modules as file tabs");
+      check(await page.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent === "Control.beni" && [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) .cm-content')].some((e) => e.textContent.includes("Semaphore.make 4") && (e.textContent.match(/Task.spawnIn/g) ?? []).length === 4)`), "the ball machine opens on the four semaphore control loops");
+    }
   }
 }
 if (screenshots) {
@@ -381,6 +406,52 @@ if (screenshots) {
   }
   await page.scheme("light");
 }
+
+// A project: editing an imported module changes the running program;
+// switching files retains its history, and a diagnostic opens its own file.
+const projectFiles = {
+  "Main.beni": "import Node exposing (Program)\nimport Math.Value\n\nmain : Program\nmain = Node.print (String.fromInt Math.Value.answer)\n",
+  "Math/Value.beni": "pub answer : Int\nanswer = 41\n",
+};
+const project = await open(`${origin}/#${await encode("node", projectFiles["Main.beni"], "body {}", projectFiles, "Math/Value.beni")}`);
+check((await project.until(built)) !== null, `a project with a nested module builds (${await project.evaluate(status)})`);
+check((await project.until(`document.getElementById("console").textContent.trim() === "41"`)) !== null, "the imported module runs");
+const chooseSource = (name) => `(() => { const t = [...document.querySelectorAll('[aria-label="Files"] [role="tab"]')].find((t) => t.textContent === ${JSON.stringify(name)}); t.click(); })()`;
+const sourceSelector = ".pane[aria-label=Source] .editor:not([hidden])";
+const activeSource = `document.querySelector(${JSON.stringify(sourceSelector)})`;
+const activeText = `(${activeSource})?.textContent ?? ""`;
+check(await project.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent === "Math/Value.beni"`), "a project link opens its selected module");
+await project.evaluate(`(${activeSource}).querySelector(".cm-content").focus()`);
+await project.clear(sourceSelector);
+await project.type("pub answer : Int\nanswer = 42\n", sourceSelector);
+check((await project.until(`(${built}) && document.getElementById("console").textContent.trim() === "42"`)) !== null, "editing an imported module recompiles the whole project");
+await project.evaluate(`document.querySelector('[data-tab="types"]').click()`);
+check((await project.until(`document.getElementById("types-text").textContent.includes("answer : Int") && !document.getElementById("types-text").classList.contains("stale")`)) !== null, "Types includes the imported module");
+await project.evaluate(`document.querySelector('[data-tab="ownership"]').click()`);
+check((await project.until(`document.getElementById("ownership-text").textContent.includes("module Math.Value") && !document.getElementById("ownership-text").classList.contains("stale")`)) !== null, "Ownership includes the imported module");
+await project.evaluate(`document.querySelector('[data-tab="result"]').click()`);
+await project.evaluate(`globalThis.savedFrame = document.getElementById("frame")`);
+await project.evaluate(chooseSource("Main.beni"));
+await project.evaluate(chooseSource("Math/Value.beni"));
+check(await project.evaluate(`(${activeText}).includes("answer = 42") && savedFrame === document.getElementById("frame")`), "switching source tabs preserves edits and the running frame");
+await project.toEnd(sourceSelector);
+await project.type("bad = missing\n", sourceSelector);
+check((await project.until(`/^1 error/.test(${status})`)) !== null, "an error in an imported module is reported");
+await project.evaluate(chooseSource("Main.beni"));
+await project.evaluate(`document.querySelector(".diagnostic").click()`);
+check(await project.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent === "Math/Value.beni" && (${activeSource}).querySelector(".cm-lintRange-error")?.textContent === "missing"`), "a diagnostic opens and marks the module it names");
+// Undo survives a switch away and back to the module.
+await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: process.platform === "darwin" ? 4 : 2 }, project.sessionId);
+await send("Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: process.platform === "darwin" ? 4 : 2 }, project.sessionId);
+check((await project.until(`(${built}) && document.getElementById("console").textContent.trim() === "42"`)) !== null, "the imported module retains undo history across file switches");
+await project.evaluate(`document.getElementById("share").click()`);
+const projectLink = await project.until(`location.hash.includes("files=") && location.href`);
+check(projectLink !== null, "Share includes all source modules");
+const projectCopy = await open(projectLink);
+check((await projectCopy.until(`(${built}) && document.getElementById("console").textContent.trim() === "42"`)) !== null, "the shared project runs its edited imported module");
+check(await projectCopy.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent === "Math/Value.beni" && (${activeText}).includes("answer = 42") && document.getElementById("css-editor").textContent.includes("body {}")`), "the shared project restores the selected source, edits and CSS");
+await projectCopy.evaluate(`(() => { const s = document.getElementById("sample"); s.value = "0"; s.dispatchEvent(new Event("change")); })()`);
+check((await projectCopy.until(`(${built}) && document.querySelectorAll('[aria-label="Files"] [role="tab"]').length === 2`)) !== null, "switching to a single-file sample removes the project's extra modules");
 
 // An error, marked in the editor and listed.
 const wrong = await pageWith("node", "import Node exposing (Program)\n\n\nmain : Program\nmain = Node.printLines [ missing ]\n");

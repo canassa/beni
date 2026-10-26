@@ -1,0 +1,49 @@
+--! Four fibers run the machine. Only admission takes a permit;
+--! a ball keeps it through the bucket and retries, until it exits.
+
+import Bucket
+import Duration
+import Gate
+import Machine exposing (Machine)
+import Semaphore exposing (Semaphore)
+import Sensor
+import Task
+import Trapdoor
+
+
+pub run : Machine → ⊤
+run m =
+    room = Semaphore.make 4
+    Task.scope λs →
+        _ = Task.spawnIn s λ⊤ → admit m room
+        _ = Task.spawnIn s λ⊤ → batch m
+        _ = Task.spawnIn s λ⊤ → finish m room
+        _ = Task.spawnIn s λ⊤ → retry m
+        Machine.simulateIn s m room
+        Task.never ⊤
+
+
+admit : Machine, Semaphore → ⊤
+admit m room = Task.forever λ⊤ →
+    _ = Sensor.waitBall m.hopper
+    Semaphore.acquire room 1
+    Gate.pass m.entry
+
+
+batch : Machine → ⊤
+batch m = Task.forever λ⊤ →
+    Bucket.fill m.bucket (Machine.perBatch m) (Duration.millis 500)
+    Trapdoor.drop m.trapdoor
+
+
+finish : Machine, Semaphore → ⊤
+finish m room = Task.forever λ⊤ →
+    _ = Sensor.waitBall m.exit
+    Semaphore.release room 1
+
+
+retry : Machine → ⊤
+retry m = Task.forever λ⊤ →
+    ball = Sensor.waitBall m.bay
+    Task.sleep (Duration.millis (200 * 2 ^ ball.attempts))
+    Gate.pass m.bayGate

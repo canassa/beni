@@ -182,6 +182,29 @@ compiled.
 
 ### 4.2 The editor (second pull request)
 
+*Amended 2026-10-26, the owner's ball-machine refactor (#1083).* A sample may
+contain several source modules. Its index entry lists a `files` map from project
+paths to site URLs and an optional `focus` path; the existing `path` form means
+one `Main.beni`. Each module has an editable file tab. Selecting a tab preserves
+its edits, undo history and diagnostics; it does not compile or restart the
+program. Every compile or dump receives the complete project, with
+`Main.beni` as the page entry. A diagnostic marks its own module and clicking it opens that file.
+The source tabs scroll horizontally when they do not fit.
+
+The ball machine opens on `Control.beni`: four scoped fibers admit, batch,
+finish and retry balls, with a semaphore permit acquired at entry and released
+at exit. Its sensors, gates, bucket and trapdoor, simulation, drawing and page
+wiring are separate modules. The existing controls still resize the semaphore
+and choose the batch size; the controller's scope also owns the simulation.
+
+Shared links preserve every source module and the selected file as well as the
+platform and CSS. Single-file links retain their existing format. A project
+link adds deflated JSON in `files` and its selected path in `focus`; `code`
+still holds `Main.beni`. The decoded project requires `Main.beni`, string
+contents, and relative module paths (upper-identifier segments, `.beni` suffix),
+with no duplicate `Main.beni`. Its total UTF-8 source size, including `Main.beni`,
+is at most `maxSource`; malformed projects open the first sample as damaged links do.
+
 CodeMirror 6, every package at a pinned version, with a beni grammar for highlighting:
 keywords, comments, strings, numbers, and the Unicode notation (`language.md` §12.7–§12.10). The
 diagnostics come from `--diagnostics=json` and show at their positions in the editor.
@@ -263,11 +286,20 @@ the CSS pane with it (§4.6, *The samples' CSS*).
 *Amended 2026-10-26, issue #1041:* a fourth sample, the ball machine of the beni site's flow page,
 on `browser-tea`: four fibers run the control program the page shows, a fifth steps the physics,
 and `view` draws the machine as one SVG scene. Its `.beni` is the fixture
-`tests/corpus/browser/tea/BallMachine.beni`, which drives the sample itself on the page's
+`tests/corpus/browser/tea/BallMachine/`, which drives the sample itself on the page's
 virtual clock, and `zig build playground` copies it into the site as
-`samples/browser-tea/BallMachine.beni`, as it copies TodoMVC; its CSS is
+`samples/browser-tea/BallMachine/`, as it copies TodoMVC; its CSS is
 `playground/samples/browser-tea/BallMachine.css`. The machine is dark in both schemes: in the
 light one it is a dark panel on a light page (§4.6, *The samples' look*).
+
+*Amended 2026-10-26, the owner's flow-page controls.* The ball machine's
+"At once" (1–8) and "Per batch" (1–5) sliders and their current values sit
+above the diagram, visible when the preview opens and sticky while it scrolls.
+When the batch exceeds capacity, a hint explains that raising "At once" will
+let the bucket fill. "Reset the counts" restarts the machine, including its
+counters and control fibers, keeping the selected slider values. The previous
+command is cancelled with `Cmd.Restart` before its replacement runs. These
+controls and their state belong to the beni sample, as on `beni-logo/flow.html`.
 
 ### 4.4 The tabs (second pull request)
 

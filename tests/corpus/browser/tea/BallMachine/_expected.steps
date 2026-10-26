@@ -21,3 +21,13 @@ input #at-once "8"
 frame 352 33
 input #at-once "2"
 frame 92 33
+
+# Reset a running machine twice. Both slider choices survive, and only
+# one simulation frame remains scheduled after each restart.
+input #per-batch "5"
+click #again
+frames
+frame 3 33
+click #again
+frames
+frame 3 33

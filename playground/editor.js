@@ -131,7 +131,7 @@ export function replaceText(view, text) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, selection: EditorSelection.cursor(0) });
 }
 
-/// Mark `diagnostics` (the compiler's JSON, those in `Main.beni`) in the
+/// Mark `diagnostics` (the compiler's JSON, those in this module) in the
 /// editor, which holds the text they were made from.
 export function markDiagnostics(view, diagnostics) {
   const text = textOf(view);

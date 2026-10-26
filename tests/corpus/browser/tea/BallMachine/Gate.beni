@@ -1,0 +1,19 @@
+--! Let a ball through a gate, waiting until it has passed.
+
+import Physics exposing (Ball)
+import Queue exposing (Queue)
+import Sensor
+
+
+--| A gate: `open` lets one more ball through, and `through` hears each.
+pub type alias Gate =
+    open : ⊤ → ⊤
+    through : Queue Ball
+
+
+--| Let one ball through the gate, and wait until it has gone through.
+pub pass : Gate → ⊤
+pass gate =
+    gate.open ⊤
+    _ = Sensor.waitBall gate.through
+    ⊤

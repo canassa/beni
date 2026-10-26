@@ -1,0 +1,32 @@
+--! Open the bucket floor until it is empty.
+
+import Duration
+import Queue exposing (Queue)
+import Task
+
+
+--| The bucket's flat bottom.
+pub type alias Trapdoor =
+    open : ⊤ → ⊤
+    close : ⊤ → ⊤
+    emptied : Queue ⊤
+
+
+--| Open the trapdoor until the bucket is empty, for 1.5 s at most.
+pub drop : Trapdoor → ⊤
+drop trapdoor =
+    trapdoor.open ⊤
+    _ = Task.timeout (Duration.millis 1500) λ⊤ → Queue.take trapdoor.emptied
+    trapdoor.close ⊤
+    drain trapdoor.emptied
+
+
+-- What a wait cut short by its timeout left behind.
+drain : Queue a → ⊤
+drain q =
+    case Queue.poll q of
+        Just _ →
+            drain q
+
+        Nothing →
+            ⊤

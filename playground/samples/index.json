@@ -1,6 +1,16 @@
 [
   { "name": "Counter", "platform": "browser-tea", "path": "samples/browser-tea/Counter.beni", "css": "samples/browser-tea/Counter.css" },
   { "name": "TodoMVC", "platform": "browser-tea", "path": "samples/browser-tea/TodoMVC.beni", "css": "samples/browser-tea/TodoMVC.css" },
-  { "name": "Ball machine", "platform": "browser-tea", "path": "samples/browser-tea/BallMachine.beni", "css": "samples/browser-tea/BallMachine.css" },
+  { "name": "Ball machine", "platform": "browser-tea", "focus": "Control.beni", "files": {
+    "Control.beni": "samples/browser-tea/BallMachine/Control.beni",
+    "Main.beni": "samples/browser-tea/BallMachine/Main.beni",
+    "Sensor.beni": "samples/browser-tea/BallMachine/Sensor.beni",
+    "Gate.beni": "samples/browser-tea/BallMachine/Gate.beni",
+    "Bucket.beni": "samples/browser-tea/BallMachine/Bucket.beni",
+    "Trapdoor.beni": "samples/browser-tea/BallMachine/Trapdoor.beni",
+    "Machine.beni": "samples/browser-tea/BallMachine/Machine.beni",
+    "Physics.beni": "samples/browser-tea/BallMachine/Physics.beni",
+    "View.beni": "samples/browser-tea/BallMachine/View.beni"
+  }, "css": "samples/browser-tea/BallMachine.css" },
   { "name": "Fibonacci (prints)", "platform": "node", "path": "samples/node/Print.beni" }
 ]

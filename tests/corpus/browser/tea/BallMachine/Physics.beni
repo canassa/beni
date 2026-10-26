@@ -1,0 +1,550 @@
+--! Gravity, collisions, sensors and the machine geometry.
+
+import Random
+import Time
+
+
+--| What a sensor or a gate saw in one step.
+pub type Signal
+    = AtHopper Ball
+    | Entered Ball
+    | Landed Ball
+    | Settled
+    | Emptied
+    | Exited Ball
+    | AtBay Ball
+    | Returned Ball
+
+
+--| Where a ball is on its way.
+pub type Stage
+    = Pool
+    | Inside
+    | Done
+    | Returning
+
+
+--| Where the flap at the check sends a ball.
+pub type Route
+    = ToLeft
+    | ToRight
+
+
+--| A ball. `token`: it takes up room. `attempts`: how many times it went
+--| round again.
+pub type alias Ball =
+    id : Int
+    x : Float
+    y : Float
+    vx : Float
+    vy : Float
+    red : Bool
+    stage : Stage
+    token : Bool
+    sensed : Bool
+    bucketed : Bool
+    landedAt : Int
+    dropped : Bool
+    inBox : Bool
+    boxAt : Float
+    route : Maybe Route
+    attempts : Int
+    waitFrom : Float
+    arrivedAt : Int
+    alpha : Float
+
+
+--| A spark from the trapdoor.
+type alias Spark =
+    x : Float
+    y : Float
+    vx : Float
+    vy : Float
+    life : Float
+
+
+--| The whole machine at one moment. `entry`, `bucketDoor` and `bayDoor`
+--| count the balls each gate still lets through.
+pub type alias World =
+    t : Float
+    now : Int
+    balls : List Ball
+    sparks : List Spark
+    seed : Random.Seed
+    next : Int
+    atOnce : Int
+    perBatch : Int
+    sized : Int
+    entry : Int
+    bucketDoor : Int
+    bayDoor : Int
+    bayFree : Float
+    bayFreeAt : Int
+    asked : Int
+    trapOpen : Bool
+    settling : Bool
+    armed : Bool
+    flap : Maybe Route
+    events : List (Float × Bool)
+    failAt : Float
+    passAt : Float
+
+
+pub fresh : ⊤ → World
+fresh ⊤ =
+    { t = 0
+    , now = clock ⊤
+    , balls = []
+    , sparks = []
+    , seed = Random.initialSeed (Time.toMillis (Time.now ⊤))
+    , next = 1
+    , atOnce = 4
+    , perBatch = 3
+    , sized = 4
+    , entry = 0
+    , bucketDoor = 0
+    , bayDoor = 0
+    , bayFree = 0
+    , bayFreeAt = 0
+    , asked = 0
+    , trapOpen = False
+    , settling = False
+    , armed = False
+    , flap = Nothing
+    , events = []
+    , failAt = -9
+    , passAt = -9
+    }
+
+
+-- The world's units: a 400 × 560 box.
+pub r : Float
+r = 7.5
+
+
+pub cx : Float
+cx = 150
+
+
+gravity : Float
+gravity = 700
+
+
+flaky : Float
+flaky = 0.18
+
+
+pub hopTop : Float
+hopTop = 14
+
+
+pub gateA : Float
+gateA = 94
+
+
+pub bayTop : Float
+bayTop = 115
+
+
+pub bayBottom : Float
+bayBottom = 137
+
+
+pub gateB : Float
+gateB = 172
+
+
+pub bucketTop : Float
+bucketTop = 176
+
+
+pub trap : Float
+trap = 216
+
+
+pub intake : Float
+intake = 440
+
+
+pub exitY : Float
+exitY = 474
+
+
+pub floorY : Float
+floorY = 492
+
+
+-- Half widths: the chute, the trapdoor, the pipe, the funnel's top and its
+-- neck; and where the right channel ends.
+pub half : Float
+half = 11
+
+
+pub door : Float
+door = 24
+
+
+pub pipe : Float
+pipe = 26
+
+
+pub funnel : Float
+funnel = 42
+
+
+pub box : Float
+box = 8.5
+
+
+pub out : Float
+out = cx + 44
+
+
+--| A wall, and the part of the machine it belongs to.
+type alias Wall =
+    ax : Float
+    ay : Float
+    bx : Float
+    by : Float
+    part : Part
+
+
+pub type Part
+    = Fixed
+    | EntryGate
+    | BucketGate
+    | TrapGate
+    | BayGate
+    | LeftFlap
+    | RightFlap
+
+
+wall : Float, Float, Float, Float → Wall
+wall ax ay bx by = { ax = ax, ay = ay, bx = bx, by = by, part = Fixed }
+
+
+pub walls : List Wall
+walls =
+    [ wall (cx - 95) hopTop (cx - half) (gateA - 2)
+    , wall (cx + 95) hopTop (cx + half) (gateA - 2)
+    , wall (cx - half) (gateA - 2) (cx - half) bayTop
+    , wall (cx - half) bayBottom (cx - half) gateB
+    , wall (cx + half) (gateA - 2) (cx + half) gateB
+    , wall (cx - half) gateB (cx - 46) bucketTop
+    , wall (cx + half) gateB (cx + 46) bucketTop
+    , wall (cx - 46) bucketTop (cx - door) trap
+    , wall (cx + 46) bucketTop (cx + door) trap
+    , wall (cx - door) trap (cx - pipe) (trap + 4)
+    , wall (cx + door) trap (cx + pipe) (trap + 4)
+    , wall (cx - pipe) (trap + 4) (cx - pipe) intake
+    , wall (cx + pipe) (trap + 4) (cx + pipe) intake
+    , wall (cx - funnel) intake (cx - pipe) intake
+    , wall (cx + pipe) intake (cx + funnel) intake
+    , wall (cx - funnel) intake (cx - box) exitY
+    , wall (cx + funnel) intake (cx + box) exitY
+    , wall 25 exitY (cx - box) exitY
+    , wall (cx + box) exitY out exitY
+    , wall 3 floorY out floorY
+    , wall 3 floorY 3 bayTop
+    , wall 25 exitY 25 bayBottom
+    , wall 3 bayTop (cx - half) bayTop
+    , wall 25 bayBottom (cx - half) bayBottom
+    , { ax = cx - half, ay = gateA, bx = cx + half, by = gateA, part = EntryGate }
+    , { ax = cx - half, ay = gateB, bx = cx + half, by = gateB, part = BucketGate }
+    , { ax = cx - door, ay = trap, bx = cx + door, by = trap, part = TrapGate }
+    , { ax = cx - half - 3, ay = bayTop, bx = cx - half - 3, by = bayBottom, part = BayGate }
+    , { ax = cx - box, ay = exitY, bx = cx - box, by = floorY, part = LeftFlap }
+    , { ax = cx + box, ay = exitY, bx = cx + box, by = floorY, part = RightFlap }
+    ]
+
+
+solid : World, Part → Bool
+solid w part =
+    case part of
+        Fixed →
+            True
+
+        EntryGate →
+            w.entry ≤ 0
+
+        BucketGate →
+            w.bucketDoor ≤ 0
+
+        TrapGate →
+            not w.trapOpen
+
+        BayGate →
+            w.bayDoor ≤ 0
+
+        LeftFlap →
+            w.flap ≠ Just ToLeft
+
+        RightFlap →
+            w.flap ≠ Just ToRight
+
+
+roll : Random.Seed → Float × Random.Seed
+roll seed = Random.step (Random.float 0 1) seed
+
+
+--| One frame: new balls, six substeps of physics, then the slow things.
+pub step : World, Float, Int → List Signal × World
+step w0 dt now =
+    w1 = spawn { w0 | t = w0.t + dt, now = now }
+    h = dt / 6
+    ( w2, signals ) = List.foldl (List.range 1 6) ( w1, [] ) λ_ ( w, sigs ) → substep w h sigs
+    balls =
+        List.filter
+            (List.map w2.balls λb →
+                if b.stage == Done && b.y > floorY + 10 then
+                    { b | alpha = b.alpha - dt * 2.5 }
+                else
+                    b
+            )
+            λb → b.alpha > 0 && b.y < 600
+    sparks =
+        List.filter
+            (List.map w2.sparks λs →
+                { s
+                    | x = s.x + s.vx * dt
+                    , y = s.y + s.vy * dt
+                    , vy = s.vy + 380 * dt
+                    , life = s.life - dt
+                }
+            )
+            λs → s.life > 0
+    events = List.filter w2.events λev → w2.t - ev.0 < 10
+    ( signals, { w2 | balls = balls, sparks = sparks, events = events } )
+
+
+-- A new ball in the hopper while it holds fewer than ten.
+spawn : World → World
+spawn w =
+    pool = List.length (List.filter w.balls λb → b.stage == Pool)
+    ( u1, s1 ) = roll w.seed
+    ( u2, s2 ) = roll s1
+    ( u3, s3 ) = roll s2
+    x = cx + (u1 - 0.5) * 120
+    crowded = List.any w.balls λo → distance (o.x - x) (o.y - 4) < r * 2.2
+    if pool ≥ 10 || crowded then
+        { w | seed = s3 }
+    else
+        ball =
+            { id = w.next
+            , x = x
+            , y = 4
+            , vx = (u2 - 0.5) * 20
+            , vy = 0
+            , red = u3 < flaky
+            , stage = Pool
+            , token = False
+            , sensed = False
+            , bucketed = False
+            , landedAt = 0
+            , dropped = False
+            , inBox = False
+            , boxAt = 0
+            , route = Nothing
+            , attempts = 0
+            , waitFrom = 0
+            , arrivedAt = 0
+            , alpha = 1
+            }
+        { w | seed = s3, next = w.next + 1, balls = List.push w.balls ball }
+
+
+distance : Float, Float → Float
+distance dx dy = sqrt (dx * dx + dy * dy)
+
+
+substep : World, Float, List Signal → World × List Signal
+substep w h sigs =
+    ( moved, seed ) = List.foldl w.balls ( [], w.seed ) λb ( acc, s ) →
+        ( b2, s2 ) = move w b h s
+        ( List.push acc b2, s2 )
+    shut = List.filter walls λwl → solid w wl.part
+    walled = List.map moved λb → List.foldl shut b λwl acc → hitWall acc wl
+    bumped = collide walled
+    ( balls, w2, sigs2 ) =
+        List.foldl
+            (List.map2 w.balls bumped λp b → ( p.x, p.y, b ))
+            ( [], { w | seed = seed }, sigs )
+            λ( px, py, b ) ( acc, ww, ss ) →
+                ( b2, ww2, ss2 ) = cross ww ss px py b
+                ( List.push acc b2, ww2, ss2 )
+    emptied = w2.trapOpen && w2.armed && not (List.any balls λb → b.bucketed)
+    still = w2.settling && List.all balls λb → not b.bucketed || distance b.vx b.vy < 30
+    first = List.head (List.sortBy (List.filter balls λb → b.inBox) λb → b.boxAt)
+    w3 = { w2 | balls = balls, flap = Maybe.andThen first λb → b.route }
+    ( w4, sigs3 ) =
+        if emptied then ( { w3 | armed = False }, List.push sigs2 Emptied ) else ( w3, sigs2 )
+    if still then ( { w4 | settling = False }, List.push sigs3 Settled ) else ( w4, sigs3 )
+
+
+-- The forces: gravity; the air in the return tube; the flap's push.
+move : World, Ball, Float, Random.Seed → Ball × Random.Seed
+move w b h seed =
+    k = min 1 (10 * h)
+    air = λtx ty → { b | vx = b.vx + (tx - b.vx) * k, vy = b.vy + (ty - b.vy) * k }
+    inBand = b.y > exitY && b.y < floorY
+    ( pushed, s2 ) =
+        if b.inBox && b.route ≠ Nothing && b.route == w.flap then
+            ( air (if b.route == Just ToRight then 180 else -180) 0, seed )
+        else if inBand && b.x > cx + box - 2 && b.x < out then
+            ( air (if b.stage == Done then 180 else -180) 0, seed )
+        else if inBand && b.x < cx - box + 2 && b.x > 25 then
+            ( air (if b.stage == Returning then -180 else 180) 0, seed )
+        else if b.x > 3 && b.x < 25 && b.y > bayTop && b.y < floorY then
+            ( if b.y < bayBottom then air 130 0 else air 0 (-190), seed )
+        else if b.y > bayTop && b.y < bayBottom && b.x > 3 && b.x < cx - half then
+            ( air 130 0, seed )
+        else if b.stage == Pool && b.y < gateA then
+            ( shake, s ) = roll seed
+            ( { b | vy = b.vy + gravity * h, vx = b.vx + (shake - 0.5) * 900 * h }, s )
+        else
+            ( { b | vy = b.vy + gravity * h }, seed )
+    v = distance pushed.vx pushed.vy
+    capped =
+        if v > 700 then { pushed | vx = pushed.vx * 700 / v, vy = pushed.vy * 700 / v } else pushed
+    ( { capped | x = capped.x + capped.vx * h, y = capped.y + capped.vy * h }, s2 )
+
+
+hitWall : Ball, Wall → Ball
+hitWall b wl =
+    dx = wl.bx - wl.ax
+    dy = wl.by - wl.ay
+    k = clamp (((b.x - wl.ax) * dx + (b.y - wl.ay) * dy) / (dx * dx + dy * dy)) 0 1
+    nx = b.x - (wl.ax + dx * k)
+    ny = b.y - (wl.ay + dy * k)
+    d = distance nx ny
+    if d ≥ r || d == 0 then
+        b
+    else
+        ux = nx / d
+        uy = ny / d
+        vn = b.vx * ux + b.vy * uy
+        placed = { b | x = b.x + ux * (r - d), y = b.y + uy * (r - d) }
+        if vn < 0 then
+            { placed
+                | vx = (b.vx - 1.2 * vn * ux) * 0.995
+                , vy = (b.vy - 1.2 * vn * uy) * 0.995
+            }
+        else
+            placed
+
+
+-- Each ball pushed apart from every ball it overlaps.
+collide : List Ball → List Ball
+collide balls = List.map balls λa →
+    List.foldl balls a λc acc → if c.id == a.id then acc else bump acc c
+
+
+bump : Ball, Ball → Ball
+bump a c =
+    nx = c.x - a.x
+    ny = c.y - a.y
+    d = distance nx ny
+    if d ≥ r * 2 || d == 0 then
+        a
+    else
+        ux = nx / d
+        uy = ny / d
+        push = (r * 2 - d) / 2
+        vn = (c.vx - a.vx) * ux + (c.vy - a.vy) * uy
+        jn = if vn < 0 then -1.1 * vn / 2 else 0
+        { a | x = a.x - ux * push, y = a.y - uy * push, vx = a.vx - jn * ux, vy = a.vy - jn * uy }
+
+
+-- Where a ball crosses a gate or a sensor in this substep.
+cross : World, List Signal, Float, Float, Ball → Ball × World × List Signal
+cross w sigs px py b =
+    ( b2, w2, sigs2 ) = crossIn w sigs px py b
+    crossOut w2 sigs2 px b2
+
+
+-- Where a ball goes past a gate or a sensor, or into the box at the check.
+crossIn : World, List Signal, Float, Float, Ball → Ball × World × List Signal
+crossIn w sigs px py b =
+    down = λy → py < y && b.y ≥ y
+    near = λwd → abs (b.x - cx) < wd + 2
+    if b.stage == Pool && down gateA && near half && w.entry > 0 then
+        ball = { b | stage = Inside, token = True, sensed = False }
+        ( ball, { w | entry = w.entry - 1 }, List.push sigs (Entered ball) )
+    else if
+        b.stage == Pool && not b.sensed && b.y > gateA - r * 2.4 && abs (b.x - cx) < half + r
+    then
+        ball = { b | sensed = True }
+        ( ball, w, List.push sigs (AtHopper ball) )
+    else if b.stage == Inside && not b.bucketed && not b.dropped && down gateB && near half then
+        ball = { b | bucketed = True, landedAt = w.now }
+        -- A ball that slips past the gate as it shuts drops with this
+        -- batch: the bucket's sensor hears only the balls the gate let in.
+        if w.bucketDoor > 0 then
+            ( ball, { w | bucketDoor = w.bucketDoor - 1 }, List.push sigs (Landed ball) )
+        else
+            ( ball, w, sigs )
+    else if b.bucketed && down trap && near door && w.trapOpen then
+        ( { b | bucketed = False, dropped = True }, w, sigs )
+    else if b.dropped && not b.inBox && down (exitY + r) && near box then
+        ball = { b | inBox = True, boxAt = w.t, route = Just (if b.red then ToLeft else ToRight) }
+        if b.red then ( ball, { w | failAt = w.t }, sigs ) else ( ball, { w | passAt = w.t }, sigs )
+    else if b.stage == Returning && not b.sensed && b.y < bayBottom + 2 && b.x > cx - 60 then
+        ball = { b | sensed = True, waitFrom = w.t, arrivedAt = w.now }
+        ( ball, w, List.push sigs (AtBay ball) )
+    else if b.stage == Returning && px < cx - half - 3 && b.x ≥ cx - half - 3 && w.bayDoor > 0 then
+        ( chance, seed ) = roll w.seed
+        ball =
+            { b | stage = Inside, red = chance < flaky, sensed = False, attempts = b.attempts + 1 }
+        ( ball
+        , { w | bayDoor = w.bayDoor - 1, seed = seed, bayFree = w.t, bayFreeAt = w.now }
+        , List.push sigs (Returned ball)
+        )
+    else
+        ( b, w, sigs )
+
+
+-- A ball in the box that goes out past its open flap, in the same
+-- substep as it came into the box or later.
+crossOut : World, List Signal, Float, Ball → Ball × World × List Signal
+crossOut w sigs px b =
+    if b.inBox && b.route == Just ToRight && px < cx + box && b.x ≥ cx + box then
+        ball = { b | inBox = False, stage = Done, dropped = False, token = False }
+        ( ball, { w | events = List.push w.events ( w.t, True ) }, List.push sigs (Exited ball) )
+    else if b.inBox && b.route == Just ToLeft && px > cx - box && b.x ≤ cx - box then
+        ball = { b | inBox = False, stage = Returning, dropped = False, route = Nothing }
+        ( ball, { w | events = List.push w.events ( w.t, False ) }, sigs )
+    else
+        ( b, w, sigs )
+
+
+-- The trapdoor opens, with a burst of sparks.
+pub openTrap : World → World
+openTrap w =
+    ( sparks, seed ) = List.foldl (List.range 1 16) ( w.sparks, w.seed ) λ_ ( acc, s0 ) →
+        ( a, s1 ) = roll s0
+        ( v, s2 ) = roll s1
+        ( x, s3 ) = roll s2
+        ( l, s4 ) = roll s3
+        angle = pi / 2 + (a - 0.5) * 2.2
+        speed = 40 + v * 90
+        spark =
+            { x = cx + (x - 0.5) * door * 2
+            , y = trap
+            , vx = cos angle * speed
+            , vy = sin angle * speed - 30
+            , life = 0.4 + l * 0.35
+            }
+        ( List.push acc spark, s4 )
+    { w | trapOpen = True, armed = True, sparks = sparks, seed = seed }
+
+
+pub held : World → Int
+held w = List.length (List.filter w.balls λb → b.token)
+
+
+pub inBucket : World → Int
+inBucket w = List.length (List.filter w.balls λb → b.bucketed)
+
+
+pub clock : ⊤ → Int
+clock ⊤ = Time.toMillis (Time.now ⊤)

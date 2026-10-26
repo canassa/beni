@@ -1,0 +1,81 @@
+--! The page wiring. Open Control.beni for the semaphore example.
+
+import Cmd exposing (Cmd)
+import Control
+import Log
+import Machine
+import Physics exposing (World, fresh)
+import Ref
+import Sub exposing (Sub)
+import Tea
+import View exposing (Model, Msg, Built, Stepped, SetAtOnce, SetPerBatch, Reset)
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = begin 4 3
+
+
+begin : Int, Int → Model × Cmd Msg
+begin atOnce perBatch =
+    w = fresh ⊤
+    ( { world = { w | atOnce = atOnce, perBatch = perBatch }
+      , machine = Nothing
+      , atOnce = atOnce
+      , perBatch = perBatch
+      }
+    , Cmd.keyed "machine" Cmd.Restart (start atOnce perBatch _)
+    )
+
+
+start : Int, Int, Cmd.Send Msg → ⊤
+start atOnce perBatch send =
+    if Machine.debugging ⊤ then Log.setMinimum Log.Debug
+    m = Machine.make λw → send (Stepped w)
+    Ref.update m.world λw → { w | atOnce = atOnce, perBatch = perBatch }
+    send (Built m)
+    Control.run m
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Built m →
+            ( { model | machine = Just m }, Cmd.none )
+
+        Stepped w →
+            ( { model | world = w }, Cmd.none )
+
+        SetAtOnce text →
+            n = clamp (Maybe.withDefault (String.toInt text) model.atOnce) 1 8
+            ( { model | atOnce = n }, knob model λw → { w | atOnce = n } )
+
+        SetPerBatch text →
+            n = clamp (Maybe.withDefault (String.toInt text) model.perBatch) 1 5
+            ( { model | perBatch = n }, knob model λw → { w | perBatch = n } )
+
+        Reset →
+            begin model.atOnce model.perBatch
+
+
+knob : Model, (World → World) → Cmd Msg
+knob model turn =
+    case model.machine of
+        Just m →
+            Cmd.perform λ_ → Ref.update m.world turn
+
+        Nothing →
+            Cmd.none
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.none
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = init
+        , update = update
+        , view = View.view
+        , subscriptions = subscriptions
+        }
