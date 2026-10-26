@@ -99,7 +99,8 @@ pub const ReadError = Error || error{BlockConflict};
 pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
 /// 7: a position's κ is what is stored there, never the read (#1069).
-pub const version: u32 = 7;
+/// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
+pub const version: u32 = 8;
 
 pub const none: u32 = Ids.none_int;
 
@@ -251,7 +252,8 @@ const Rec = struct {
 };
 
 /// A node read at a position class under an owner's κ map.
-const Position = struct { node: NodeId, at_summary: bool, owner: u32 };
+/// `cursor` is the node's position in the owner's snapshot (§3.6).
+const Position = struct { node: NodeId, at_summary: bool, owner: u32, cursor: Cond.Kappas };
 
 const Extra = union(enum) {
     supply: Summary.Supply,
@@ -274,17 +276,17 @@ const Writer = struct {
     recs: std.ArrayList(Rec) = .empty,
     /// `(kind, table id)` → record.
     index: std.AutoHashMapUnmanaged(u64, u32) = .empty,
-    /// `(node, position class, owner)` → position record.
-    pos_index: Ids.FixedDict(3) = .{},
+    /// `(node, position class, owner, cursor)` → position record.
+    pos_index: Ids.FixedDict(4) = .{},
     positions: std.ArrayList(Position) = .empty,
     /// Each owner's κ map (null: the use shapes, whose cells are marks and
     /// carry no κ), one owner per map, and the values it holds.
     owners: std.ArrayList(?Cond.Kappas) = .empty,
     owner_index: Ids.FixedDict(1) = .{},
     roots: std.ArrayList(std.ArrayList(NodeId)) = .empty,
-    /// `(node, class, owner)` → the projections a stored κ beyond the
-    /// structure needs written (`entries`).
-    extra_index: Ids.FixedDict(3) = .{},
+    /// `(node, class, owner, cursor)` → the projections a stored κ beyond
+    /// the structure needs written (`entries`).
+    extra_index: Ids.FixedDict(4) = .{},
     extras_made: std.ArrayList(std.ArrayList(Step)) = .empty,
     toks: std.ArrayList(Tok) = .empty,
     extras: std.ArrayList(Extra) = .empty,
@@ -386,15 +388,21 @@ const Writer = struct {
         return got.value_ptr.*;
     }
 
-    /// The position of `n` at class `at_summary` under owner `owner`.
-    fn pos(w: *Writer, n: NodeId, at_summary: bool, who: u32) Error!u32 {
+    /// The position of `n` at class `at_summary` under owner `owner`, at
+    /// `cursor` in its snapshot.
+    fn pos(w: *Writer, n: NodeId, at_summary: bool, who: u32, cursor: Cond.Kappas) Error!u32 {
         if (n == .none) return none;
         try w.take(2);
-        if (w.pos_index.get(.{ n.int(), @intFromBool(at_summary), who })) |r| return r;
-        try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who });
+        if (w.pos_index.get(.{ n.int(), @intFromBool(at_summary), who, cursor.int() })) |r| return r;
+        try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who, .cursor = cursor });
         const r = try w.fresh(.node, @intCast(w.positions.items.len - 1));
-        (try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who })).value_ptr.* = r;
+        (try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who, cursor.int() })).value_ptr.* = r;
         return r;
+    }
+
+    /// Owner `o`'s snapshot root (`.none` for the use shapes).
+    fn rootOf(w: *Writer, o: u32) Cond.Kappas {
+        return w.owners.items[o] orelse .none;
     }
 
     // ---- the codec's table reads -------------------------------------------------
@@ -463,7 +471,7 @@ const Writer = struct {
 
     /// A value of owner `o`: its position, recorded as a root of `o`'s walk.
     fn value(w: *Writer, n: NodeId, o: u32) Error!u32 {
-        const x = try w.pos(n, false, o);
+        const x = try w.pos(n, false, o, w.rootOf(o));
         if (n != .none) try w.roots.items[o].append(w.env.gpa, n);
         return x;
     }
@@ -563,29 +571,34 @@ const Writer = struct {
     const Over = struct { step: Step, rec: u32 };
 
     /// A position: its node's kind, class, place and parts (a child at its
-    /// own class), the κ read there, and the positions `proj` makes at the
-    /// place's steps that the node's parts do not name.
+    /// own class and at its position one step below in the snapshot), what
+    /// the snapshot is there (`0` none, `1` a position, `2` a fold), the κ
+    /// stored there, and the positions `proj` makes at steps that the
+    /// node's parts do not name and the snapshot links (or, below a fold,
+    /// where a stored entry needs them, `entries`).
     fn position(w: *Writer, p: Position) Error!void {
         const gpa = w.env.gpa;
         const shapes = w.env.shapes;
         const conds = w.env.conds;
         const kappas = w.owners.items[p.owner];
+        const cur = p.cursor;
         const d = shapes.get(p.node);
         try w.word(@backingInt(d.kind));
         try w.word(@intFromBool(p.at_summary));
+        try w.word(if (cur == .none) 0 else if (conds.isFold(cur)) 2 else 1);
         try w.tok(.place, d.place.int());
         var named: std.ArrayList(Over) = .empty;
         defer named.deinit(gpa);
         switch (d.kind) {
             .leaf => try w.ref(.set, d.cells.int()),
             .node, .delta => {
-                if (d.kind == .node) try w.ref(.set, d.cells.int()) else try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner));
+                if (d.kind == .node) try w.ref(.set, d.cells.int()) else try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur));
                 var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                while (it.next()) |e| try named.append(gpa, .{ .step = e.step, .rec = try w.pos(e.node, below(p.at_summary, e.step), p.owner) });
+                while (it.next()) |e| try named.append(gpa, .{ .step = e.step, .rec = try w.pos(e.node, below(p.at_summary, e.step), p.owner, conds.kappaChild(cur, e.step)) });
                 try w.steps(named.items);
             },
-            .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner)),
-            .@"union", .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner), try w.pos(.from(d.b), p.at_summary, p.owner) }),
+            .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur)),
+            .@"union", .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
         }
         // What is stored at the position, nothing else (§3.6): every reader
         // adds the derivation from the structure the reader rebuilds, and
@@ -593,33 +606,37 @@ const Writer = struct {
         // same after a round trip.
         if (kappas == null) {
             try w.tok(.ref, none);
-        } else try w.ref(.cond, if (conds.kappaGet(kappas.?, p.node, p.at_summary)) |k| k.int() else none);
+        } else try w.ref(.cond, if (conds.kappaGet(cur, p.node)) |k| k.int() else none);
         // The projections that lead to a stored κ beyond the node's parts
         // (`entries`), each a position.
         var made: std.ArrayList(Over) = .empty;
         defer made.deinit(gpa);
         try w.take(1);
-        if (w.extra_index.get(.{ p.node.int(), @intFromBool(p.at_summary), p.owner })) |beyond| {
+        if (w.extra_index.get(.{ p.node.int(), @intFromBool(p.at_summary), p.owner, cur.int() })) |beyond| {
             const list = w.extras_made.items[beyond].items;
             try w.take(list.len);
             for (list) |s| {
                 const c = (try w.proj(p.node, s)) orelse return w.invariant();
-                try made.append(gpa, .{ .step = s, .rec = try w.pos(c, below(p.at_summary, s), p.owner) });
+                try made.append(gpa, .{ .step = s, .rec = try w.pos(c, below(p.at_summary, s), p.owner, conds.kappaChild(cur, s)) });
             }
         }
         try w.steps(made.items);
     }
 
-    /// A node's successors `(node, class, step word, how)`: its parts (0)
-    /// — the children it holds, a delta's base, a recast's inner, a union's
-    /// or a positions node's sides — and, with `all`, the projection at
-    /// every step of its place (2), `Cond.frontier`'s transitions. What a
-    /// block writes is the parts and the projections that lead to a stored
-    /// κ (`entries`): any other projection reads κ derived from structure the
-    /// reader rebuilds. Each is reserved before it is found.
-    fn successors(w: *Writer, n: NodeId, summary: bool, all: bool, out: *std.ArrayList([4]u32)) Error!void {
+    /// A node's successors `(node, class, step word, how, cursor)` at its
+    /// position `cur` of the owner's snapshot: its parts (0) — the children
+    /// it holds, at their positions one step below, a delta's base, a
+    /// recast's inner, a union's or a positions node's sides, at its own —
+    /// and, with `all`, the projections (2) at the steps the snapshot links
+    /// there, or below a fold at every step of the place: `Cond.frontier`'s
+    /// sparse transitions. What a block writes is the parts and the
+    /// projections that lead to a stored κ (`entries`): any other
+    /// projection reads κ derived from structure the reader rebuilds. Each
+    /// is reserved before it is found.
+    fn successors(w: *Writer, n: NodeId, summary: bool, cur: Cond.Kappas, all: bool, out: *std.ArrayList([5]u32)) Error!void {
         const gpa = w.env.gpa;
         const shapes = w.env.shapes;
+        const conds = w.env.conds;
         const d = shapes.get(n);
         const sb: u32 = @intFromBool(summary);
         // Every edge found is one the codec reads.
@@ -629,59 +646,81 @@ const Writer = struct {
             .leaf => {},
             .node, .delta => {
                 try w.take(1);
-                if (d.kind == .delta) try out.append(gpa, .{ d.a, sb, none, 0 });
+                if (d.kind == .delta) try out.append(gpa, .{ d.a, sb, none, 0, cur.int() });
                 var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
                 while (it.next()) |e| {
                     try w.take(1);
-                    try out.append(gpa, .{ e.node.int(), @intFromBool(below(summary, e.step)), e.step.word(), 0 });
+                    try out.append(gpa, .{ e.node.int(), @intFromBool(below(summary, e.step)), e.step.word(), 0, conds.kappaChild(cur, e.step).int() });
                 }
             },
-            .recast => try out.append(gpa, .{ d.a, sb, none, 0 }),
-            .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0 }, .{ d.b, sb, none, 0 } }),
+            .recast => try out.append(gpa, .{ d.a, sb, none, 0, cur.int() }),
+            .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
         }
-        if (!all) return;
-        for (w.env.places.steps(d.place).steps) |s| {
+        if (!all or cur == .none) return;
+        var cand: std.ArrayList(Step) = .empty;
+        defer cand.deinit(gpa);
+        if (conds.isFold(cur)) {
+            for (w.env.places.steps(d.place).steps) |s| try cand.append(gpa, s);
+        } else {
+            var lt = conds.kappaLinks(cur);
+            while (lt.next()) |e| try cand.append(gpa, e.step);
+        }
+        for (cand.items) |s| {
             try w.take(1);
             w.meter.grow(1);
             const c = (try w.proj(n, s)) orelse continue;
             if ((d.kind == .node or d.kind == .delta) and shapes.overGet(if (d.kind == .node) d.a else d.b, s) == c) continue;
-            try out.append(gpa, .{ c.int(), @intFromBool(below(summary, s)), s.word(), 2 });
+            try out.append(gpa, .{ c.int(), @intFromBool(below(summary, s)), s.word(), 2, conds.kappaChild(cur, s).int() });
         }
     }
 
-    /// Close owner `o`'s positions under its κ map: every stored entry a
-    /// read can reach. A read — `kappaOf` at a `proj` path from a value (as
-    /// `kappaLeq`, `propagate`, `join` and `map` read, `dagKappa` through a
-    /// union's sides) — reaches only the positions `successors(all)` makes
-    /// from the values. Where one holds a stored entry, the projections that
-    /// lead to it are written (`extras_made`), so it is a position with the
-    /// κ read there; where none, both sides derive κ from the structure the
-    /// block rebuilds alone. So the written positions are closed: every read
-    /// of the decoded class is the written one's.
+    /// Close owner `o`'s positions under its snapshot: every stored entry a
+    /// read can reach. A read — `kappaOf` at a position reached from a
+    /// value (as `kappaLeq`, `propagate`, `join` and `map` read, `dagKappa`
+    /// through a union's sides) — reaches only the positions
+    /// `successors(all)` makes from the values. Where one holds a stored
+    /// entry, the projections that lead to it are written (`extras_made`),
+    /// so it is a position with the κ read there; where none, both sides
+    /// derive κ from the structure the block rebuilds alone. So the written
+    /// positions are closed: every read of the decoded class is the
+    /// written one's. The snapshot's links give the route to an entry, so
+    /// only below a fold does a projection need a search of the place.
     fn entries(w: *Writer, o: u32) Error!void {
         const gpa = w.env.gpa;
+        const conds = w.env.conds;
         const kappas = w.owners.items[o] orelse return;
         if (kappas == .none) return;
-        // The map's entries (its leaves), as `node << 1 | class`.
-        var stored: Ids.FixedDict(1) = .{};
+        // The snapshot's entries, `(node, position)`.
+        var stored: Ids.FixedDict(2) = .{};
         defer stored.deinit(gpa);
-        var walk: std.ArrayList(u32) = .empty;
-        defer walk.deinit(gpa);
-        try walk.append(gpa, kappas.int());
-        const maps = w.env.conds.kmaps;
-        while (walk.pop()) |m| {
-            try w.take(1);
-            if (maps.items(.mask)[m] == 0) {
-                (try stored.getOrPut(gpa, .{maps.items(.prefix)[m]})).value_ptr.* = 0;
-            } else try walk.appendSlice(gpa, &.{ maps.items(.left)[m], maps.items(.right)[m] });
+        {
+            var walked: Ids.FixedDict(1) = .{};
+            defer walked.deinit(gpa);
+            var walk: std.ArrayList(Cond.Kappas) = .empty;
+            defer walk.deinit(gpa);
+            try walk.append(gpa, kappas);
+            while (walk.pop()) |c| {
+                try w.take(1);
+                if ((try walked.getOrPut(gpa, .{c.int()})).found_existing) continue;
+                var ht = conds.kappaHere(c);
+                while (ht.next()) |e| {
+                    try w.take(1);
+                    (try stored.getOrPut(gpa, .{ e.node.int(), c.int() })).value_ptr.* = 0;
+                }
+                var lt = conds.kappaLinks(c);
+                while (lt.next()) |e| {
+                    try w.take(1);
+                    try walk.append(gpa, e.child);
+                }
+            }
         }
         // The positions `position` writes anyway, from the values.
-        const State = struct { key: u32, parent: u32, step: u32, chained: bool = false };
+        const State = struct { node: u32, summary: bool, cur: u32, parent: u32, step: u32, chained: bool = false };
         var states: std.ArrayList(State) = .empty;
         defer states.deinit(gpa);
-        var seen: Ids.FixedDict(1) = .{};
+        var seen: Ids.FixedDict(3) = .{};
         defer seen.deinit(gpa);
-        var next: std.ArrayList([4]u32) = .empty;
+        var next: std.ArrayList([5]u32) = .empty;
         defer next.deinit(gpa);
         var remaining = stored.count();
         for (0..2) |pass| {
@@ -694,39 +733,38 @@ const Writer = struct {
                 }
             } else for (w.roots.items[o].items) |n| {
                 try w.take(1);
-                const got = try seen.getOrPut(gpa, .{n.int() << 1});
+                const got = try seen.getOrPut(gpa, .{ n.int(), 0, kappas.int() });
                 if (got.found_existing) continue;
                 got.value_ptr.* = @intCast(states.items.len);
                 w.meter.grow(1);
-                try states.append(gpa, .{ .key = n.int() << 1, .parent = none - 1, .step = none });
+                try states.append(gpa, .{ .node = n.int(), .summary = false, .cur = kappas.int(), .parent = none - 1, .step = none });
             }
             var at: usize = 0;
             while (at < states.items.len) : (at += 1) {
                 const x = states.items[at];
                 try w.take(1);
                 if (pass == 0) {
-                    if (stored.get(.{x.key})) |v| if (v == 0) {
-                        (try stored.getOrPut(gpa, .{x.key})).value_ptr.* = 1;
+                    if (stored.get(.{ x.node, x.cur })) |v| if (v == 0) {
+                        (try stored.getOrPut(gpa, .{ x.node, x.cur })).value_ptr.* = 1;
                         remaining -= 1;
                     };
                 }
                 next.clearRetainingCapacity();
-                try w.successors(.from(x.key >> 1), x.key & 1 == 1, pass == 1, &next);
+                try w.successors(.from(x.node), x.summary, .from(x.cur), pass == 1, &next);
                 // Each successor's two lookups and its state.
                 try w.take(next.items.len);
                 for (next.items) |e| {
                     if (pass == 0 and e[3] == 2) continue;
-                    const key = (e[0] << 1) | e[1];
-                    const got = try seen.getOrPut(gpa, .{key});
+                    const got = try seen.getOrPut(gpa, .{ e[0], e[1], e[4] });
                     if (got.found_existing) continue;
                     got.value_ptr.* = @intCast(states.items.len);
                     w.meter.grow(1);
-                    try states.append(gpa, .{ .key = key, .parent = @intCast(at), .step = if (e[3] == 2) e[2] else none });
+                    try states.append(gpa, .{ .node = e[0], .summary = e[1] == 1, .cur = e[4], .parent = @intCast(at), .step = if (e[3] == 2) e[2] else none });
                     // An entry beyond the written positions: the chain of
                     // projections from a written one, each written.
-                    const v = stored.get(.{key}) orelse continue;
+                    const v = stored.get(.{ e[0], e[4] }) orelse continue;
                     if (v != 0) continue;
-                    (try stored.getOrPut(gpa, .{key})).value_ptr.* = 1;
+                    (try stored.getOrPut(gpa, .{ e[0], e[4] })).value_ptr.* = 1;
                     remaining -= 1;
                     var c = states.items.len - 1;
                     while (states.items[c].parent != none - 1 and !states.items[c].chained) {
@@ -734,7 +772,7 @@ const Writer = struct {
                         try w.take(1);
                         const link = states.items[c];
                         const p = states.items[link.parent];
-                        if (link.step != none) try w.extraMade(.from(p.key >> 1), p.key & 1 == 1, o, Step.fromWord(link.step));
+                        if (link.step != none) try w.extraMade(.from(p.node), p.summary, o, .from(p.cur), Step.fromWord(link.step));
                         c = link.parent;
                     }
                 }
@@ -781,9 +819,9 @@ const Writer = struct {
             try charge.reserve(gpa, .context, positions - nodes.count());
         }
     }
-    fn extraMade(w: *Writer, n: NodeId, summary: bool, o: u32, s: Step) Error!void {
+    fn extraMade(w: *Writer, n: NodeId, summary: bool, o: u32, cur: Cond.Kappas, s: Step) Error!void {
         try w.take(1);
-        const got = try w.extra_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(summary), o });
+        const got = try w.extra_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(summary), o, cur.int() });
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.extras_made.items.len);
             try w.extras_made.append(w.env.gpa, .empty);
@@ -941,7 +979,7 @@ const Writer = struct {
                 var once: Ids.FixedDict(1) = .{};
                 defer once.deinit(gpa);
                 for (w.roots.items[id].items) |n| {
-                    const x = try w.pos(n, false, id);
+                    const x = try w.pos(n, false, id, w.rootOf(id));
                     try w.take(1);
                     if ((try once.getOrPut(gpa, .{x})).found_existing) continue;
                     try list.append(gpa, x);
@@ -964,7 +1002,7 @@ const Writer = struct {
         try w.tok(.ref, try w.value(k.res, o));
         try w.ref(.owner, o);
         const uses = try w.owner(null);
-        for (w.sums.paramUses(c)) |u| try w.tok(.ref, try w.pos(u, false, uses));
+        for (w.sums.paramUses(c)) |u| try w.tok(.ref, try w.pos(u, false, uses, .none));
         try w.ref(.atoms, k.xreq.int());
         try w.word(k.funs.len);
         var list: std.ArrayList(u32) = .empty;

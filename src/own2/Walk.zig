@@ -294,13 +294,21 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
         };
         const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
-        // The value's κ, carried over the relabelling.
-        var kt = env.conds.kappaEntries(result.kappa);
-        while (kt.next()) |e| {
-            try env.charge.reserve(gpa, .inspection, 1);
-            const m = env.shapes.memo_map.get(e.node) orelse continue;
-            kappa = (try env.conds.kappaSet(gpa, env.charge, kappa, m, e.at_summary, try ro.cond(e.cond))).ctx;
-        }
+        // The value's κ, carried over the relabelling: each entry's node
+        // relabelled, its path unchanged (§2.9).
+        const Carry = struct {
+            ro: *ReadOff,
+            fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return c.ro.env.shapes.memo_map.get(x);
+            }
+            fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return c.ro.cond(k);
+            }
+        };
+        var carry: Carry = .{ .ro = &ro };
+        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
         res = try env.shapes.widen(gpa, env.account(), env.places, env.cells, mapped);
         if (res != mapped) kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, res, &.{mapped}, &.{kappa}, .alternatives, false, null);
     }

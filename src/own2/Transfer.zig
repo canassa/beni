@@ -223,8 +223,14 @@ pub const Frame = struct {
         return .{ .node = try f.env.shapes.leaf(f.gpa, f.account(), at, try f.set1(top)) };
     }
 
-    fn kappaSet(f: *Frame, k: Cond.Kappas, n: NodeId, summary: bool, c: CondId) Error!Cond.Kappas {
-        return (try f.env.conds.kappaSet(f.gpa, f.env.charge, k, n, summary, c)).ctx;
+    /// `k` with κ(n) joined with `c` at the position `k` is.
+    fn kappaSet(f: *Frame, k: Cond.Kappas, n: NodeId, c: CondId) Error!Cond.Kappas {
+        return (try f.env.conds.kappaSet(f.gpa, f.env.charge, k, n, c)).ctx;
+    }
+
+    /// `k` with κ(n) joined with `c` at its `[*]`.
+    fn kappaSetElem(f: *Frame, k: Cond.Kappas, n: NodeId, c: CondId) Error!Cond.Kappas {
+        return f.env.conds.kappaSetAt(f.gpa, f.env.charge, k, &.{Step.elem}, n, c);
     }
 
     // ---- the preliminary passes ------------------------------------------------
@@ -453,7 +459,7 @@ pub const Frame = struct {
         if (!recursive) return projected;
         const label = try cells.label(f.gpa, f.account(), p, .none, false);
         const kind = Cell.Kind.ofPlace(places.kind(child));
-        const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, projected.node, true);
+        const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), projected.kappa, projected.node, true);
         var refined: SetId = .none;
         var canon: SetId = .none;
         var it = cells.sets.iterate(shapes.cells(v.node));
@@ -495,7 +501,7 @@ pub const Frame = struct {
         if (v.node == .none) return f.topValue(at);
         const n = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, v.node, s)) orelse
             return .{ .node = try shapes.recast(f.gpa, f.account(), at, v.node), .kappa = v.kappa };
-        return .{ .node = n, .kappa = v.kappa };
+        return .{ .node = n, .kappa = f.env.conds.kappaChild(v.kappa, s) };
     }
 
     /// `[ a, b, …rest ]` (§2.13.3): per container cell, the positions taken
@@ -520,7 +526,8 @@ pub const Frame = struct {
         const elem_kind = Cell.Kind.ofPlace(f.env.places.kind(elem_place));
         const label = try cells.label(f.gpa, f.account(), p, .none, false);
         const contents = (try shapes.proj(f.gpa, f.account(), f.env.places, cells, v.node, Step.elem)).?;
-        const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, contents, true);
+        const contents_kappa = f.env.conds.kappaChild(v.kappa, Step.elem);
+        const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), contents_kappa, contents, true);
         // §2.13.3: a position is `elem(c·ι)` per symbolic container cell `c`
         // (its `[*]` projection, `c[*]`, is what it refines), and the rest's
         // `[*]` `others(c·ι)`. The other cells at `[*]` — a concrete
@@ -586,8 +593,8 @@ pub const Frame = struct {
                 // The rest: the same storage (a view), its contents the others.
                 const kids = try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, node);
                 const rest = try shapes.node(f.gpa, f.account(), list_place, shapes.cells(v.node), kids);
-                var k = try f.kappaSet(v.kappa, rest, false, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
-                k = try f.kappaSet(k, node, true, split_kappa);
+                var k = try f.kappaSet(v.kappa, rest, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
+                k = try f.kappaSetElem(k, node, split_kappa);
                 const rest_pat = f.data(item.int()).lhs;
                 try f.bind(rest_pat, .{ .node = rest, .kappa = k }, point);
                 // The rest holds every position but the taken ones.
@@ -597,7 +604,7 @@ pub const Frame = struct {
                 }
                 continue;
             }
-            try f.bind(item.int(), .{ .node = node, .kappa = v.kappa }, point);
+            try f.bind(item.int(), .{ .node = node, .kappa = contents_kappa }, point);
             if (taken_split != .none and f.tag(item.int()) == .pat_var) {
                 const h = f.binding[f.data(item.int()).lhs];
                 if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = position, .explicit = explicit_cells };
@@ -617,6 +624,8 @@ pub const Frame = struct {
         const elem_place = f.env.places.child(at, Step.elem) orelse return f.topValue(at);
         const site = try cells.site(f.gpa, f.account(), i, at, .list);
         var kappa: Cond.Kappas = .none;
+        // The literal's `[*]`: one position, its items' snapshots merged (§2.9).
+        var elem_k: Cond.Kappas = .none;
         var kids: u32 = Ids.none_int;
         if (items.len > 0) {
             var members: std.ArrayList(NodeId) = .empty;
@@ -630,22 +639,23 @@ pub const Frame = struct {
                 const v = try f.fit(f.val(item).value, elem_place);
                 try members.append(f.gpa, v.node);
                 try ctxs.append(f.gpa, v.kappa);
-                kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
+                elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             }
             // The positions DAG and the run's condition: a general task over
             // the whole run, growth until its work is split by item (#1098).
             const task = try f.account().enter(f.gpa, null);
             defer f.account().leave(task);
             const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
-            kappa = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), kappa, elems, members.items, ctxs.items, .together, true, false, null);
+            elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
             // Each element at the literal's `[*]`: its own κ there (§2.9: the
             // conditions of `vᵢ` at `p`, relative to `vᵢ`), what a read of a
             // side of the positions node finds.
-            for (members.items, ctxs.items) |m, c| kappa = try f.kappaSet(kappa, m, true, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
+            for (members.items, ctxs.items) |m, c| elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
             kids = try shapes.overPut(f.gpa, f.account(), kids, Step.elem, elems);
+            kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, kappa, Step.elem, elem_k);
         }
         const node = try shapes.node(f.gpa, f.account(), at, try f.set1(site), kids);
-        return .{ .node = node, .kappa = try f.kappaSet(kappa, node, false, Cond.yes) };
+        return .{ .node = node, .kappa = try f.kappaSet(kappa, node, Cond.yes) };
     }
 
     /// `v` read at place `at`: itself, or a recast when its place differs.
@@ -670,11 +680,12 @@ pub const Frame = struct {
             const child_place = f.env.places.child(at, s) orelse continue;
             const v = try f.fit(f.val(p).value, child_place);
             kids = try shapes.overPut(f.gpa, f.account(), kids, s, v.node);
-            kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
+            // §2.9: each part's snapshot linked under its step, never re-keyed.
+            kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, kappa, s, v.kappa);
         }
         const cells: SetId = if (record) try f.set1(try f.env.cells.site(f.gpa, f.account(), i, at, .record)) else .none;
         const node = try shapes.node(f.gpa, f.account(), at, cells, kids);
-        return .{ .node = node, .kappa = try f.kappaSet(kappa, node, false, Cond.yes) };
+        return .{ .node = node, .kappa = try f.kappaSet(kappa, node, Cond.yes) };
     }
 
     /// The stores of a construction into `base` (§2.9's construction rule):
@@ -689,20 +700,23 @@ pub const Frame = struct {
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);
         try members.append(f.gpa, old);
-        var kappa = base.kappa;
-        var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), base.kappa, old, true);
+        // The base's `[*]`, with each stored value's snapshot merged in:
+        // they are one position (§2.9).
+        var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
+        var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), elem_k, old, true);
         var held = shapes.cells(old);
         for (stored) |s| {
             const v = try f.fit(s, elem_place);
-            kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
-            k = try f.env.conds.lower(f.gpa, f.env.charge, f.env.view(), kappa, k, held, v.node, true, null);
+            elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
+            k = try f.env.conds.lower(f.gpa, f.env.charge, f.env.view(), v.kappa, k, held, v.node, true, null);
             held = try cells.sets.unionWith(f.gpa, f.env.charge, held, shapes.cells(v.node));
             try members.append(f.gpa, v.node);
         }
         const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
         const node = try shapes.put(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem, elems, true, .none);
-        kappa = try f.kappaSet(kappa, elems, true, k);
-        kappa = try f.kappaSet(kappa, node, false, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), base.kappa, base.node, false));
+        elem_k = try f.kappaSet(elem_k, elems, k);
+        var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, base.kappa, Step.elem, elem_k);
+        kappa = try f.kappaSet(kappa, node, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), base.kappa, base.node, false));
         return .{ .node = node, .kappa = kappa };
     }
 
@@ -768,12 +782,12 @@ pub const Frame = struct {
         var fresh = true;
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);
-        var kappa = base.kappa;
+        var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
         const base_reach = try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
         for (fronts) |it| {
             const v = try f.fit(f.val(it[0]).value, elem_place);
             try members.append(f.gpa, v.node);
-            kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, v.kappa);
+            elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             const t = f.tag(it[0]);
             if (t == .record or t == .tuple) continue;
             if (t == .call) if (f.ctx.ctorOf(f.ctx.ctx, f.data(it[0]).lhs) != null) continue;
@@ -798,8 +812,9 @@ pub const Frame = struct {
             while (bt.next()) |e| c = try cells.sets.insert(f.gpa, f.env.charge, c, e.key, 1);
         }
         const node = try shapes.node(f.gpa, f.account(), at, c, try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, elems));
-        kappa = try f.kappaSet(kappa, node, false, if (fresh) Cond.yes else Cond.lost);
-        kappa = try f.kappaSet(kappa, elems, true, Cond.lost);
+        elem_k = try f.kappaSet(elem_k, elems, Cond.lost);
+        var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, .none, Step.elem, elem_k);
+        kappa = try f.kappaSet(kappa, node, if (fresh) Cond.yes else Cond.lost);
         return .{ .node = node, .kappa = kappa };
     }
 
@@ -903,7 +918,7 @@ pub const Frame = struct {
         var at = v;
         for (steps) |s| {
             const n = (try f.env.shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, at.node, s)) orelse return at;
-            at = .{ .node = n, .kappa = v.kappa };
+            at = .{ .node = n, .kappa = f.env.conds.kappaChild(at.kappa, s) };
         }
         return at;
     }

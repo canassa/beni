@@ -44,9 +44,10 @@ const layers = [_]Entry{
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
-    // §5 says 1 300: the observable-position frontier every κ reader walks,
-    // exact propagation states, and (S3a) the snapshot merge.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1300 },
+    // §5 says 1 750 since #1073: the observable-position frontier every κ
+    // reader walks, exact propagation states, and the snapshot trie (its
+    // links, merges, folds and relabelling).
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1750 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1500 },
@@ -67,11 +68,12 @@ const layers = [_]Entry{
     // map's entries, and the shared format; the reader is `BlockRead`, the
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1650 },
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1700 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 800 },
+    // §5 says 1 050 since #1073: a snapshot rebuilt from its positions.
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1050 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
     .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
 };

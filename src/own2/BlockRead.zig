@@ -180,7 +180,9 @@ const Reader = struct {
 
     /// `absorbed`: a union its constructor folded into a side, the union
     /// as written (a node no read reaches) to read its κ from.
-    const Pos = struct { node: NodeId, at_summary: bool, kappa: CondId, place: PlaceId, first: u32, len: u32, absorbed: NodeId = .none };
+    /// `cursor`: what the owner's snapshot is at the position (`0` none,
+    /// `1` a position, `2` a fold, §3.6).
+    const Pos = struct { node: NodeId, at_summary: bool, cursor: u32 = 0, kappa: CondId, place: PlaceId, first: u32, len: u32, absorbed: NodeId = .none };
     /// A part of a position that is a position: a child step's (`step`), a
     /// projected one's (`made`), or a side, a base, an inner.
     const Edge = struct { to: u32, step: Step = Step.elem, stepped: bool = false, made: bool = false };
@@ -385,48 +387,172 @@ const Reader = struct {
         return o;
     }
 
-    /// The κ map of an owner whose values are the positions `roots`: the
-    /// κ each reached position was written with, at it. A use shape is not
-    /// a value and carries none.
+    /// The snapshot of an owner whose values are the positions `roots`
+    /// (§3.6), rebuilt by route: the values are at the root; the positions
+    /// one snapshot position holds are a GROUP, closed under a position's
+    /// sides, base and inner (one position, §2.9), and the group one step
+    /// `s` below is its members' children at `s`, closed alike; below a fold
+    /// every step is the group itself. Each group stores the κ each of its
+    /// positions was written with. A group is a route's, never a merge of
+    /// two routes, so a position the block shares between two routes (the
+    /// refinement merges equal ones) is read at each with its κ there. A use
+    /// shape is not a value and carries none.
     fn kmap(r: *Reader, roots: []const u32) Failure!Cond.Kappas {
         const gpa = r.env.gpa;
-        var ctx: Cond.Kappas = .none;
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(gpa);
-        var stack: std.ArrayList(u32) = .empty;
-        defer stack.deinit(gpa);
-        var absorbed: std.ArrayList(u32) = .empty;
-        defer absorbed.deinit(gpa);
-        for (roots) |o| try stack.append(gpa, r.pos_of.items[o]);
-        while (stack.pop()) |i| {
-            try r.env.charge.reserve(gpa, .inspection, 1);
-            if ((try seen.getOrPut(gpa, .{i})).found_existing) continue;
-            const p = r.infos.items[i];
+        var b: GroupBuild = .{ .r = r };
+        defer b.deinit();
+        var start: std.ArrayList(u32) = .empty;
+        defer start.deinit(gpa);
+        for (roots) |o| {
+            const i = r.pos_of.items[o];
             // A value holds objects, never a use shape's marks.
-            var it = r.env.cells.sets.iterate(r.env.shapes.cells(p.node));
-            while (it.next()) |e| {
-                try r.env.charge.reserve(gpa, .inspection, 1);
-                if (r.env.cells.origin(.from(e.key)) == .mark) return error.Malformed;
-            }
-            if (p.absorbed != .none) {
-                try absorbed.append(gpa, i);
-            } else if (p.kappa != .none) ctx = (try r.env.conds.kappaSet(gpa, r.env.charge, ctx, p.node, p.at_summary, p.kappa)).ctx;
-            for (r.edges.items[p.first..][0..p.len]) |e| try stack.append(gpa, r.pos_of.items[e.to]);
+            try r.checkValue(i);
+            if (r.infos.items[i].cursor != 0) try start.append(gpa, i);
         }
-        // A union its constructor absorbed into a side is read, at its
-        // position, as that side: the κ the union as written reads (its
-        // stored κ over its sides') is joined into the side's, parts first.
-        // Exact there; the side's own reads can only grow (§2.12).
-        try r.env.charge.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(absorbed.items.len), std.math.maxInt(u32))));
-        std.mem.sort(u32, absorbed.items, {}, std.sort.asc(u32));
-        for (absorbed.items) |i| {
-            const p = r.infos.items[i];
-            if (p.kappa != .none) ctx = (try r.env.conds.kappaSet(gpa, r.env.charge, ctx, p.absorbed, p.at_summary, p.kappa)).ctx;
-            const k = try r.env.conds.kappaOf(gpa, r.env.charge, r.env.view(), ctx, p.absorbed, p.at_summary);
-            ctx = (try r.env.conds.kappaSet(gpa, r.env.charge, ctx, p.node, p.at_summary, k)).ctx;
-        }
-        return ctx;
+        if (start.items.len == 0) return .none;
+        const g = try b.group(start.items);
+        return b.build(g);
     }
+
+    fn checkValue(r: *Reader, i: u32) Failure!void {
+        const p = r.infos.items[i];
+        var it = r.env.cells.sets.iterate(r.env.shapes.cells(p.node));
+        while (it.next()) |e| {
+            try r.env.charge.reserve(r.env.gpa, .inspection, 1);
+            if (r.env.cells.origin(.from(e.key)) == .mark) return error.Malformed;
+        }
+    }
+
+    /// `kmap`'s groups: each an interned sorted run of positions.
+    const GroupBuild = struct {
+        r: *Reader,
+        /// A run as a cons list `(position, rest)` → its id.
+        cons: Ids.FixedDict(2) = .{},
+        runs: std.ArrayList(std.ArrayList(u32)) = .empty,
+        built: Ids.FixedDict(1) = .{},
+        open: Ids.FixedDict(1) = .{},
+
+        fn deinit(b: *GroupBuild) void {
+            const gpa = b.r.env.gpa;
+            b.cons.deinit(gpa);
+            for (b.runs.items) |*l| l.deinit(gpa);
+            b.runs.deinit(gpa);
+            b.built.deinit(gpa);
+            b.open.deinit(gpa);
+        }
+
+        /// The group of `seeds`: closed under the same-position parts, and
+        /// under every child of a fold. Its id, interned by its sorted run.
+        fn group(b: *GroupBuild, seeds: []const u32) Failure!u32 {
+            const r = b.r;
+            const gpa = r.env.gpa;
+            var members: std.ArrayList(u32) = .empty;
+            defer members.deinit(gpa);
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(gpa);
+            var stack: std.ArrayList(u32) = .empty;
+            defer stack.deinit(gpa);
+            try stack.appendSlice(gpa, seeds);
+            var fold = false;
+            for (seeds) |s| fold = fold or r.infos.items[s].cursor == 2;
+            while (stack.pop()) |i| {
+                try r.env.charge.reserve(gpa, .inspection, 1);
+                if (r.infos.items[i].cursor == 0) continue;
+                if ((try seen.getOrPut(gpa, .{i})).found_existing) continue;
+                try members.append(gpa, i);
+                const p = r.infos.items[i];
+                if (p.cursor == 2) fold = true;
+                for (r.edges.items[p.first..][0..p.len]) |e| {
+                    if (e.stepped and !fold) continue;
+                    try stack.append(gpa, r.pos_of.items[e.to]);
+                }
+                // A fold found late takes the children seen before it.
+                if (fold and p.cursor == 2) for (members.items) |m| {
+                    const q = r.infos.items[m];
+                    for (r.edges.items[q.first..][0..q.len]) |e| if (e.stepped) try stack.append(gpa, r.pos_of.items[e.to]);
+                };
+            }
+            try r.env.charge.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(members.items.len), std.math.maxInt(u32))));
+            std.mem.sort(u32, members.items, {}, std.sort.asc(u32));
+            var id: u32 = none;
+            var k = members.items.len;
+            while (k > 0) {
+                k -= 1;
+                try r.env.charge.reserve(gpa, .memo, 1);
+                const got = try b.cons.getOrPut(gpa, .{ members.items[k], id });
+                if (!got.found_existing) {
+                    got.value_ptr.* = @intCast(b.runs.items.len);
+                    var run: std.ArrayList(u32) = .empty;
+                    try run.appendSlice(gpa, members.items[k..]);
+                    try b.runs.append(gpa, run);
+                }
+                id = got.value_ptr.*;
+            }
+            return id;
+        }
+
+        /// Group `g`'s snapshot position: its members' κ, a union its
+        /// constructor absorbed into a side read as that side (its stored κ
+        /// over its sides' joined into the side's, exact there; §2.12), and
+        /// its links, each child group built first.
+        fn build(b: *GroupBuild, g: u32) Failure!Cond.Kappas {
+            const r = b.r;
+            const gpa = r.env.gpa;
+            const conds = r.env.conds;
+            const ch = r.env.charge;
+            // No member has a snapshot position: nothing is there.
+            if (g == none) return .none;
+            try ch.reserve(gpa, .memo, 1);
+            if (b.built.get(.{g})) |hit| return .from(hit);
+            if ((try b.open.getOrPut(gpa, .{g})).found_existing) return error.Malformed;
+            const members = b.runs.items[g].items;
+            var fold = false;
+            for (members) |i| fold = fold or r.infos.items[i].cursor == 2;
+            var pos: Cond.Kappas = if (fold) try conds.kappaFoldAt(gpa, ch, .none, &.{}) else .none;
+            for (members) |i| {
+                const p = r.infos.items[i];
+                if (p.absorbed == .none and p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.node, p.kappa)).ctx;
+            }
+            for (members) |i| {
+                const p = r.infos.items[i];
+                if (p.absorbed == .none) continue;
+                if (p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.absorbed, p.kappa)).ctx;
+                const k = try conds.kappaOf(gpa, ch, r.env.view(), pos, p.absorbed, p.at_summary);
+                pos = (try conds.kappaSet(gpa, ch, pos, p.node, k)).ctx;
+            }
+            if (!fold) {
+                // The children by step, in step order.
+                var kids: std.ArrayList([2]u32) = .empty;
+                defer kids.deinit(gpa);
+                for (members) |i| {
+                    const p = r.infos.items[i];
+                    for (r.edges.items[p.first..][0..p.len]) |e| if (e.stepped) {
+                        try ch.reserve(gpa, .inspection, 1);
+                        try kids.append(gpa, .{ e.step.word(), r.pos_of.items[e.to] });
+                    };
+                }
+                try ch.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(kids.items.len), std.math.maxInt(u32))));
+                std.mem.sort([2]u32, kids.items, {}, struct {
+                    fn less(_: void, x: [2]u32, y: [2]u32) bool {
+                        return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+                    }
+                }.less);
+                var seeds: std.ArrayList(u32) = .empty;
+                defer seeds.deinit(gpa);
+                var at: usize = 0;
+                while (at < kids.items.len) {
+                    var end = at;
+                    seeds.clearRetainingCapacity();
+                    while (end < kids.items.len and kids.items[end][0] == kids.items[at][0]) : (end += 1) try seeds.append(gpa, kids.items[end][1]);
+                    const child = try b.build(try b.group(seeds.items));
+                    pos = try conds.kappaLink(gpa, ch, pos, Step.fromWord(kids.items[at][0]), child);
+                    at = end;
+                }
+            }
+            (try b.built.getOrPut(gpa, .{g})).value_ptr.* = pos.int();
+            return pos;
+        }
+    };
 
     /// The checks a knot's members could not have while they were read: a
     /// child at the place its step reaches, then every projected position
@@ -655,6 +781,7 @@ const Reader = struct {
         const sets = &r.env.cells.sets;
         const kind = try enumOf(Shape.Kind, try r.get());
         const at_summary = try r.flag(1) == 1;
+        const cursor = try r.flag(2);
         const at = try r.placeOf();
         const first: u32 = @intCast(r.edges.items.len);
         var absorbed: NodeId = .none;
@@ -703,7 +830,7 @@ const Reader = struct {
         // A use shape's positions (marks) carry none.
         const kappa = try r.opt(CondId, .cond);
         _ = try r.steps(true, false);
-        try r.infos.append(gpa, .{ .node = id, .at_summary = at_summary, .kappa = kappa, .place = at, .first = first, .len = @intCast(r.edges.items.len - first), .absorbed = absorbed });
+        try r.infos.append(gpa, .{ .node = id, .at_summary = at_summary, .cursor = cursor, .kappa = kappa, .place = at, .first = first, .len = @intCast(r.edges.items.len - first), .absorbed = absorbed });
         return id;
     }
 
@@ -1127,9 +1254,9 @@ test "a block round-trips labels, splits, κ snapshots, xreq, keeps, slots and n
     const res_elem = try leafOf(&a, list, &.{ cb, taken });
     const res = try a.shapes.node(gpa, &a.account, lists, .none, try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, res_elem));
     const k = try a.conds.@"and"(gpa, env.charge, try a.conds.within(gpa, env.charge, inner), try a.conds.sepAtom(gpa, env.charge, cb, taken));
-    const kappas = (try a.conds.kappaSet(gpa, env.charge, .none, res_elem, true, k)).ctx;
+    const kappas = try a.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, res_elem, k);
     const supply_node = try leafOf(&a, list, &.{taken});
-    const supply_k = (try a.conds.kappaSet(gpa, env.charge, .none, supply_node, false, try a.conds.excl(gpa, env.charge, p1))).ctx;
+    const supply_k = (try a.conds.kappaSet(gpa, env.charge, .none, supply_node, try a.conds.excl(gpa, env.charge, p1))).ctx;
     const use = try Summary.Table.markUse(env, .none, lists, &.{}, .{ .r = true, .a = true }, &.{});
     const nested = try a.sums.add(env, .{ .params = &.{.none}, .res = try leafOf(&a, list, &.{p1}) });
     const c = try a.sums.add(env, .{
@@ -1245,11 +1372,11 @@ test "a knot's member may name itself by a child step and by nothing else" {
     // One place, `List` of itself; `yes`; one knot of one member; no class.
     const head = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 1, elem, 0, 0, 2, tag(.cond), @backingInt(Cond.Kind.yes), tag(.group), 1, tag(.node) };
     // A node whose `[*]` child is itself: a knot.
-    const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
+    const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
     // A recast of itself: no constructor makes it.
-    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 1, 0, 0, 0 };
+    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0, 1, 0, 0, 0 };
     // A union with itself as a side.
-    const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 0, 2, 1, 1, none, 0, 0 };
+    const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 1, none, 0, 0 };
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     for ([_][]const u32{ &by_step, &by_inner, &by_side }, [_]bool{ true, false, false }) |words, ok| {
@@ -1379,7 +1506,7 @@ test "a recursive class's widened knot is written once and read back as a knot" 
     a.account.allowance = std.math.maxInt(u32) - 1;
     const w = try widenedTree(&a);
     const k = try a.conds.excl(testing.allocator, a.env().charge, try a.cells.top(testing.allocator, &a.account));
-    const c = try a.sums.add(a.env(), .{ .params = &.{w}, .res = w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, w, false, k)).ctx });
+    const c = try a.sums.add(a.env(), .{ .params = &.{w}, .res = w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, w, k)).ctx });
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(testing.allocator);
     try write(a.env(), &a.sums, &.{c}, .identity, &words);
@@ -1387,7 +1514,7 @@ test "a recursive class's widened knot is written once and read back as a knot" 
     // Widened again, the same knot under other ids: the same words.
     const again_w = try widenedTree(&a);
     try testing.expect(again_w != w);
-    const c2 = try a.sums.add(a.env(), .{ .params = &.{again_w}, .res = again_w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, again_w, false, k)).ctx });
+    const c2 = try a.sums.add(a.env(), .{ .params = &.{again_w}, .res = again_w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, again_w, k)).ctx });
     var words2: std.ArrayList(u32) = .empty;
     defer words2.deinit(testing.allocator);
     try write(a.env(), &a.sums, &.{c2}, .identity, &words2);
@@ -1412,7 +1539,7 @@ test "a recursive class's widened knot is written once and read back as a knot" 
     const child = b.shapes.overGet(b.shapes.nodes.items(.a)[at.int()], s0).?;
     try testing.expect(child == res or b.shapes.nodes.items(.a)[child.int()] == at.int() or child == at);
     // Its stored κ came back with it.
-    try testing.expect(b.conds.kappaGet(b.sums.get(back.items[0]).kappas, res, false) != null);
+    try testing.expect(b.conds.kappaGet(b.sums.get(back.items[0]).kappas, res) != null);
 }
 
 test "a block built in another order writes the same bytes: nested classes and supplies with maps of their own" {
@@ -1432,7 +1559,7 @@ test "a block built in another order writes the same bytes: nested classes and s
             for (0..2) |k| {
                 const i = if (flip) 1 - k else k;
                 const leaf = try t.shapes.leaf(gpa, &t.account, list, try t.cells.sets.insert(gpa, env.charge, .none, p[i].int(), 0));
-                const map = (try t.conds.kappaSet(gpa, env.charge, .none, leaf, false, try t.conds.excl(gpa, env.charge, p[i]))).ctx;
+                const map = (try t.conds.kappaSet(gpa, env.charge, .none, leaf, try t.conds.excl(gpa, env.charge, p[i]))).ctx;
                 nested[k] = try t.sums.add(env, .{ .params = &.{.none}, .res = leaf, .kappas = map });
                 supplies[k] = .{ .j = 0, .k = @intCast(i), .node = leaf, .label = .none, .owned = true, .taken = false, .kappa = map };
             }
@@ -1557,7 +1684,15 @@ fn kappaAt(t: *Tables, kappas: Cond.Kappas, n: NodeId, steps: []const Step) !Con
         at = (try t.shapes.proj(testing.allocator, &t.account, &t.places, &t.cells, at, s)).?;
         summary = below(summary, s);
     }
-    return t.conds.kappaOf(testing.allocator, t.env().charge, t.env().view(), kappas, at, summary);
+    return t.conds.kappaOf(testing.allocator, t.env().charge, t.env().view(), t.conds.kappaAlong(kappas, steps), at, summary);
+}
+
+/// `km` with κ(n) joined with `k` `depth` steps `s` below the root.
+fn below_n(t: *Tables, km: Cond.Kappas, s: Step, depth: usize, n: NodeId, k: CondId) !Cond.Kappas {
+    const steps = try testing.allocator.alloc(Step, depth);
+    defer testing.allocator.free(steps);
+    @memset(steps, s);
+    return t.conds.kappaSetAt(testing.allocator, t.env().charge, km, steps, n, k);
 }
 
 fn roundTrip(a: *Tables, b: *Tables, c: ClassId) !ClassId {
@@ -1589,8 +1724,8 @@ test "a block keeps the κ a joined class stored at a position only `proj` reach
         const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), list, .list);
         const leaf = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0));
         tops[i] = try a.shapes.node(gpa, &a.account, lists, .none, try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, leaf));
-        var m = (try a.conds.kappaSet(gpa, env.charge, .none, tops[i], false, Cond.yes)).ctx;
-        m = (try a.conds.kappaSet(gpa, env.charge, m, leaf, true, Cond.shared)).ctx;
+        var m = (try a.conds.kappaSet(gpa, env.charge, .none, tops[i], Cond.yes)).ctx;
+        m = try a.conds.kappaSetAt(gpa, env.charge, m, &.{Step.elem}, leaf, Cond.shared);
         maps[i] = m;
     }
     // The join stores `shared` on `proj(j, [*])`, a node no part of `j` names.
@@ -1623,8 +1758,8 @@ test "a block merges two equal knots only where they read the same κ" {
     const root = try a.shapes.node(gpa, &a.account, tree, .none, ch);
     // `yes` stored on the first knot's node only: the second reads `lost`.
     const inner1: NodeId = if (a.shapes.kind(w1) == .@"union") .from(a.shapes.nodes.items(.a)[w1.int()]) else w1;
-    var km = (try a.conds.kappaSet(gpa, a.env().charge, .none, root, false, Cond.yes)).ctx;
-    km = (try a.conds.kappaSet(gpa, a.env().charge, km, inner1, false, Cond.yes)).ctx;
+    var km = (try a.conds.kappaSet(gpa, a.env().charge, .none, root, Cond.yes)).ctx;
+    km = try a.conds.kappaSetAtNode(gpa, a.env().charge, a.env().view(), km, root, inner1, Cond.yes);
     const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = root, .kappas = km });
     var b: Tables = .{};
     try b.init();
@@ -1785,7 +1920,7 @@ test "a node no constructor makes is no block: sides at two places, a child at a
     for ([_]u32{ 1, 0 }) |second| {
         // A union of a leaf at `List` and a leaf at place `second`.
         const words = [_]u32{ magic, version, 2, list, 200, 0, 0, ref, 400, 0, 0, 5 } ++ cond_yes ++
-            [_]u32{ tag(.node), leaf, 0, 0, none, 0, 0, tag(.node), leaf, 0, second, none, 0, 0, tag(.node), @backingInt(Shape.Kind.@"union"), 0, 0, 2, 1, 2, none, 0, tag(.class), 0, 0, 0, 3 } ++ no_class_rest ++ [_]u32{ 1, 4 };
+            [_]u32{ tag(.node), leaf, 0, 0, 0, none, 0, 0, tag(.node), leaf, 0, 0, second, none, 0, 0, tag(.node), @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 2, none, 0, tag(.class), 0, 0, 0, 3 } ++ no_class_rest ++ [_]u32{ 1, 4 };
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -1794,7 +1929,7 @@ test "a node no constructor makes is no block: sides at two places, a child at a
     for ([_]u32{ 2, 1 }) |at| {
         // A `List` whose `[*]` child is a leaf at place `at` (its step's is 1).
         const words = [_]u32{ magic, version, 3, list, 200, 0, 1, @backingInt(Place.StepKind.elem), 0, 1, list, 201, 0, 0, ref, 400, 0, 0, 4 } ++ cond_yes ++
-            [_]u32{ tag(.node), leaf, 1, at, none, 0, 0, tag(.node), @backingInt(Shape.Kind.node), 0, 0, none, 1, @backingInt(Place.StepKind.elem), 0, 1, 0, 0, tag(.class), 0, 0, 0, 2 } ++ no_class_rest ++ [_]u32{ 1, 3 };
+            [_]u32{ tag(.node), leaf, 1, 0, at, none, 0, 0, tag(.node), @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, @backingInt(Place.StepKind.elem), 0, 1, 0, 0, tag(.class), 0, 0, 0, 2 } ++ no_class_rest ++ [_]u32{ 1, 3 };
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -1813,7 +1948,7 @@ test "a union of two equal knots, merged into one, still reads what the union re
     const u = try a.shapes.@"union"(gpa, &a.account, &a.cells.sets, w1, w2);
     try testing.expect(u != w1 and u != w2);
     // `shared` stored on the union itself: its sides read less.
-    const km = (try a.conds.kappaSet(gpa, a.env().charge, .none, u, false, Cond.shared)).ctx;
+    const km = (try a.conds.kappaSet(gpa, a.env().charge, .none, u, Cond.shared)).ctx;
     const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = u, .kappas = km });
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(gpa);
@@ -1846,8 +1981,9 @@ fn storedBelow(res: NodeId, t: *Tables, steps: []const Step) ![2]CondId {
         at = (try t.shapes.proj(gpa, &t.account, &t.places, &t.cells, at, s)).?;
         summary = below(summary, s);
     }
-    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.yes)).ctx;
-    km = (try t.conds.kappaSet(gpa, env.charge, km, at, summary, Cond.shared)).ctx;
+    _ = &summary;
+    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, Cond.yes)).ctx;
+    km = try t.conds.kappaSetAt(gpa, env.charge, km, steps, at, Cond.shared);
     const c = try t.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
     const before = try kappaAt(t, km, res, steps);
     var b: Tables = .{};
@@ -1913,7 +2049,8 @@ test "supplies that hold one value under one map are one owner: the cost stays f
         for (0..200) |i| {
             const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), tree, .list);
             v = try a.shapes.node(gpa, &a.account, tree, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, v));
-            km = (try a.conds.kappaSet(gpa, env.charge, km, v, false, Cond.yes)).ctx;
+            km = try a.conds.kappaLink(gpa, env.charge, .none, s0, km);
+            km = (try a.conds.kappaSet(gpa, env.charge, km, v, Cond.yes)).ctx;
         }
         const sups = try gpa.alloc(Summary.Supply, count);
         defer gpa.free(sups);
@@ -1935,9 +2072,9 @@ test "supplies that hold one value under one map are one owner: the cost stays f
 fn twoValues(t: *Tables, res: NodeId, held: NodeId, entry: NodeId, extra: []const NodeId) ![4]CondId {
     const gpa = testing.allocator;
     const env = t.env();
-    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.yes)).ctx;
-    for (extra) |n| km = (try t.conds.kappaSet(gpa, env.charge, km, n, false, Cond.yes)).ctx;
-    km = (try t.conds.kappaSet(gpa, env.charge, km, entry, true, Cond.shared)).ctx;
+    var km = (try t.conds.kappaSet(gpa, env.charge, .none, res, Cond.yes)).ctx;
+    for (extra) |n| km = (try t.conds.kappaSet(gpa, env.charge, km, n, Cond.yes)).ctx;
+    km = try t.conds.kappaSetAt(gpa, env.charge, km, &.{Step.elem}, entry, Cond.shared);
     const sups = [_]Summary.Supply{.{ .j = 0, .k = 0, .node = held, .label = .none, .owned = true, .taken = false, .kappa = km }};
     const c = try t.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &sups }} });
     const s0 = t.sums.supply(t.sums.fun(c, 0), 0);
@@ -2014,7 +2151,7 @@ test "a block built in another order writes the same bytes: two values of one ow
             vals[i] = try a.shapes.leaf(gpa, &a.account, lists, ps[i]);
         }
         var km: Cond.Kappas = .none;
-        for (vals) |v| km = (try a.conds.kappaSet(gpa, env.charge, km, (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, v, Step.elem)).?, true, Cond.shared)).ctx;
+        for (vals) |v| km = try a.conds.kappaSetAt(gpa, env.charge, km, &.{Step.elem}, (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, v, Step.elem)).?, Cond.shared);
         const sups = [_]Summary.Supply{.{ .j = 0, .k = 0, .node = vals[1], .label = .none, .owned = true, .taken = false, .kappa = km }};
         const c = try a.sums.add(env, .{ .params = &.{.none}, .res = vals[0], .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &sups }} });
         try write(env, &a.sums, &.{c}, .identity, &out[flip]);
@@ -2105,7 +2242,8 @@ fn mixed(t: *Tables, flip: bool) ![11]ClassId {
                     for (0..12) |i| {
                         const site = try t.cells.site(gpa, &t.account, @intCast(i + 40), tree, .list);
                         v = try t.shapes.node(gpa, &t.account, tree, try t.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try t.shapes.overPut(gpa, &t.account, Ids.none_int, s0, v));
-                        km = (try t.conds.kappaSet(gpa, env.charge, km, v, false, if (i % 3 == 0) Cond.shared else Cond.yes)).ctx;
+                        km = try t.conds.kappaLink(gpa, env.charge, .none, s0, km);
+                        km = (try t.conds.kappaSet(gpa, env.charge, km, v, if (i % 3 == 0) Cond.shared else Cond.yes)).ctx;
                     }
                     var sups: [8]Summary.Supply = undefined;
                     for (&sups, 0..) |*s, i| s.* = .{ .j = 0, .k = @intCast(i), .node = v, .label = .none, .owned = true, .taken = false, .kappa = km };
@@ -2371,7 +2509,7 @@ fn manyMaps(t: *Tables, k: u32) !ClassId {
     const sups = try gpa.alloc(Summary.Supply, k);
     defer gpa.free(sups);
     for (sups, 0..) |*s, i| {
-        const km = (try t.conds.kappaSet(gpa, env.charge, .none, chain[i % 400], false, Cond.shared)).ctx;
+        const km = try below_n(t, .none, s0, 399 - (i % 400), chain[i % 400], Cond.shared);
         s.* = .{ .j = 0, .k = @intCast(i), .node = v, .label = .none, .owned = true, .taken = false, .kappa = km };
     }
     return t.sums.add(env, .{ .params = &.{.none}, .res = v, .funs = &.{.{ .j = 0, .calls = .once, .supplies = sups }} });
@@ -2578,7 +2716,7 @@ test "a round trip keeps deep's answer below a leaf: the block writes what is st
     const res = try a.shapes.leaf(gpa, &a.account, recs, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
     const e1 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, Step.elem)).?;
     const e2 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, e1, try Step.field(&a.account, 10))).?;
-    const km = (try a.conds.kappaSet(gpa, env.charge, .none, e2, true, try a.conds.excl(gpa, env.charge, q))).ctx;
+    const km = try a.conds.kappaSetAt(gpa, env.charge, .none, &.{ Step.elem, try Step.field(&a.account, 10) }, e2, try a.conds.excl(gpa, env.charge, q));
     const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
     const d0 = try a.conds.deep(gpa, env.charge, env.view(), km, res, false);
     var b: Tables = .{};
@@ -2587,4 +2725,49 @@ test "a round trip keeps deep's answer below a leaf: the block writes what is st
     const back = b.sums.get(try roundTrip(&a, &b, c));
     const d1 = try b.conds.deep(gpa, b.env().charge, b.env().view(), back.kappas, back.res, false);
     try testing.expectEqual(try atomCounts(&a, d0), try atomCounts(&b, d1));
+}
+
+test "#1073: a folded snapshot round-trips: its fold, and every read at and below it" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    a.account.allowance = std.math.maxInt(u32) - 1;
+    const env = a.env();
+    const s0 = try a.places.ctorStep(gpa, &a.account, 0, 0);
+    // The widened tree's snapshot, `shared` stored at `.0` before the
+    // widen: `propagate` folds it where the shape cycles.
+    const w = try widenedTree(&a);
+    var unfolded = (try a.conds.kappaSet(gpa, env.charge, .none, w, Cond.yes)).ctx;
+    unfolded = try a.conds.kappaSetAt(gpa, env.charge, unfolded, &.{s0}, try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, w, s0) orelse return error.NoChild, Cond.shared);
+    const km = try a.conds.propagate(gpa, env.charge, env.view(), .none, w, &.{w}, &.{unfolded}, .alternatives, false, null);
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = w, .kappas = km });
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    // Where the written snapshot folds, the read one does, at the same path
+    // (each table's own words for the constructor's arguments).
+    const Paths = struct {
+        fn of(t: *Tables, i: usize) ![]const Step {
+            const g = testing.allocator;
+            const x0 = try t.places.ctorStep(g, &t.account, 0, 0);
+            const x2 = try t.places.ctorStep(g, &t.account, 0, 2);
+            const all = [_][]const Step{ &.{}, &.{x0}, &.{x2}, &.{ x0, x0 }, &.{ x0, x2 }, &.{ x2, x0, x0 } };
+            return g.dupe(Step, all[i]);
+        }
+    };
+    var any = false;
+    for (0..6) |i| {
+        const pa = try Paths.of(&a, i);
+        defer gpa.free(pa);
+        const pb = try Paths.of(&b, i);
+        defer gpa.free(pb);
+        const fa = a.conds.isFold(a.conds.kappaAlong(km, pa));
+        any = any or fa;
+        try testing.expectEqual(fa, b.conds.isFold(b.conds.kappaAlong(back.kappas, pb)));
+        try testing.expectEqual(try kappaAt(&a, km, w, pa), try kappaAt(&b, back.kappas, back.res, pb));
+    }
+    // And a fold was there to round-trip.
+    try testing.expect(any);
 }
