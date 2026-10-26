@@ -317,7 +317,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\and the cell word needs `stored`: `cellupdate stored sync (a → a)` stores the
                 \\whole answer, `cellmodify stored sync (a → b × a)` its second part. The
                 \\callback is one function written out, not a `List` of them, and it is not
-                \\also `many`, `returned`, `aliased`, `escaped` or `unused`.
+                \\also `many`, `returned`, `aliased`, `escaped` or `unused`. One callback puts
+                \\its answer back, into the first parameter alone: a second such callback, or a
+                \\second `written returned` parameter beside it, is refused.
             , .{text}),
             .own_selector => try w.print(
                 \\`{s}` needs words on the parameters, and one is missing or contradicts it.

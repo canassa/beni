@@ -2461,6 +2461,27 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
             s.bits &= ~W.stored.bit();
         }
     }
+    // One answer put back at one destination (§2.13.6: ambiguous
+    // destinations are refused): a second callback whose answer goes back at
+    // the element position, or, beside one, a second `written returned`
+    // parameter, is reported at its word and dropped.
+    {
+        const cell_cb = W.cellupdate.bit() | W.cellmodify.bit();
+        const into = W.written.bit() | W.returned.bit();
+        var elem_stored = false;
+        for (slots) |*s| {
+            if (!s.arrow or s.bits & W.stored.bit() == 0 or s.bits & cell_cb != 0) continue;
+            if (elem_stored) {
+                try l.reportOwn(s.firsts[@backingInt(W.stored)], .own_stored_callback);
+                s.bits &= ~W.stored.bit();
+            } else elem_stored = true;
+        }
+        if (elem_stored) for (slots) |*s| {
+            if (s.slot == 0 or s.slot == Bir.own_result or s.arrow or s.bits & into != into) continue;
+            try l.reportOwn(s.firsts[@backingInt(W.returned)], .own_stored_callback);
+            s.bits &= ~W.returned.bit();
+        };
+    }
     for (slots) |*s| {
         if (s.slot != 0) continue;
         const second = S.at(slots, 1);
