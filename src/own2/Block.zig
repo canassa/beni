@@ -14,7 +14,7 @@
 //! An `owner` record names every value under one map, and the reader builds
 //! that one map for all of them. The set is closed by construction
 //! (`entries`): the owner's values, their
-//! parts and projections, and every stored entry a read can reach with the
+//! parts, and every stored entry a read can reach with the
 //! projections that lead to it. The reader stores exactly that κ at exactly
 //! those positions, so every read of the decoded class is the written one's.
 //!
@@ -59,10 +59,11 @@
 //! (`Refine.Meter`): baseline records, bounded by `Refine.codecBound` of the
 //! records and edges the writer reads, never the owner's growth allowance;
 //! past the bound is `ownership_accounting_invariant`. Nothing reaches `out`
-//! before all of it is paid. Growth is only what a class adds: a second
-//! interpretation of a node (a position under another map, §3.6) and the
-//! κ reads and projections it makes, each on its class's declaration's
-//! charge (`Options.charges`). With R records and E their tokens, V and A
+//! before all of it is paid; the κ reads and projections it makes run on
+//! the lane too (`codecAccount`). Growth is only a class's own summary: the
+//! positions it reaches past one per node (a node under a second κ map,
+//! §3.6), counted as if the class were alone, on its declaration's charge
+//! (`Options.charges`). With R records and E their tokens, V and A
 //! the positions and their position parts, Q and T the places and their
 //! steps: describing is O(R + E) plus the κ reads; ranking is
 //! O((E + R) log R); the refinements are O((V + A) log V) and
@@ -161,8 +162,8 @@ pub fn below(summary: bool, s: Step) bool {
 /// How a block is written.
 pub const Options = struct {
     /// Each class's owning declaration's charge, one per class: the growth
-    /// a class's positions add (an interpretation of a node another already
-    /// has, §3.6) is its declaration's. Null: `env.charge` for all.
+    /// its own positions add (`classGrowth`) is its declaration's. Null:
+    /// `env.charge` for all.
     charges: ?[]const Ids.Charge = null,
     /// The codec lane's bound in place of `Refine.codecBound` (a test's).
     codec_cap: ?u64 = null,
@@ -183,19 +184,17 @@ pub fn writeWith(env: Env, sums: *Summary.Table, classes: []const ClassId, names
     defer w.deinit();
     var roots: std.ArrayList(u32) = .empty;
     defer roots.deinit(gpa);
-    // Each class and what it reaches first, so a record is the first
-    // class's to reach it; every owner and its values before the positions
-    // they reach.
+    // Every owner and its values before the positions they reach.
     var later: std.ArrayList(u32) = .empty;
     defer later.deinit(gpa);
-    for (classes, 0..) |c, i| {
-        w.current = @intCast(i);
+    for (classes) |c| {
         try roots.append(gpa, try w.rec(.class, c.int()));
         while (w.pending.pop()) |r| if (w.recs.items[r].kind == .node or w.recs.items[r].kind == .owner) try later.append(gpa, r) else try w.describe(r);
     }
     for (0..w.owners.items.len) |o| try w.entries(@intCast(o));
     try w.pending.appendSlice(gpa, later.items);
     while (w.pending.pop()) |r| try w.describe(r);
+    try w.classGrowth(roots.items);
     try w.canon();
     try w.components();
     for (roots.items) |r| try w.emitFrom(w.recs.items[r].scc);
@@ -244,8 +243,6 @@ const Rec = struct {
     /// The record's key from `canon`: canonical, and equal exactly when
     /// two records are the same structure.
     key: u32 = 0,
-    /// The class (its index in the roots) first to reach it.
-    decl: u32 = 0,
     scc: u32 = none,
     /// The record it is written as: its block's first member.
     rep: u32,
@@ -282,8 +279,6 @@ const Writer = struct {
     /// Each owner's κ map (null: the use shapes, whose cells are marks and
     /// carry no κ), one owner per map, and the values it holds.
     owners: std.ArrayList(?Cond.Kappas) = .empty,
-    /// Each owner's class, the first to reach it.
-    owner_decl: std.ArrayList(u32) = .empty,
     owner_index: Ids.FixedDict(1) = .{},
     roots: std.ArrayList(std.ArrayList(NodeId)) = .empty,
     /// `(node, class, owner)` → the projections a stored κ beyond the
@@ -315,11 +310,10 @@ const Writer = struct {
     /// and where each starts: no two may be equal (`distinct`).
     rel_out: std.ArrayList(u32) = .empty,
     rel_starts: std.ArrayList(u32) = .empty,
-    /// Each class's declaration's charge (`Options.charges`), the class
-    /// whose record is being described, and each node's position count.
+    /// Each class's declaration's charge (`Options.charges`).
     charges: ?[]const Ids.Charge,
-    current: u32 = 0,
-    node_pos: Ids.FixedDict(1) = .{},
+    /// The codec's κ reads and projections run on this (`codecAccount`).
+    codec: Ids.Account = .{},
 
     fn deinit(w: *Writer) void {
         const gpa = w.env.gpa;
@@ -328,7 +322,6 @@ const Writer = struct {
         w.pos_index.deinit(gpa);
         w.positions.deinit(gpa);
         w.owners.deinit(gpa);
-        w.owner_decl.deinit(gpa);
         w.owner_index.deinit(gpa);
         for (w.roots.items) |*l| l.deinit(gpa);
         w.roots.deinit(gpa);
@@ -349,7 +342,7 @@ const Writer = struct {
         w.out.deinit(gpa);
         w.rel_out.deinit(gpa);
         w.rel_starts.deinit(gpa);
-        w.node_pos.deinit(gpa);
+        w.codec.deinit(gpa);
     }
 
     /// Reserve `n` records and do them at once.
@@ -392,23 +385,73 @@ const Writer = struct {
         return got.value_ptr.*;
     }
 
-    /// The position of `n` at class `at_summary` under owner `owner`. The
-    /// first position of a node is the node's own record read; another (a
-    /// second interpretation, §3.6) is growth, on the class's declaration.
+    /// The position of `n` at class `at_summary` under owner `owner`.
     fn pos(w: *Writer, n: NodeId, at_summary: bool, who: u32) Error!u32 {
         if (n == .none) return none;
         try w.take(2);
         if (w.pos_index.get(.{ n.int(), @intFromBool(at_summary), who })) |r| return r;
-        if ((try w.node_pos.getOrPut(w.env.gpa, .{n.int()})).found_existing) try w.growth().reserve(w.env.gpa, .context, 1);
         try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who });
         const r = try w.fresh(.node, @intCast(w.positions.items.len - 1));
         (try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who })).value_ptr.* = r;
         return r;
     }
 
-    /// The charge of the declaration whose record is being described.
-    fn growth(w: *const Writer) Ids.Charge {
-        return if (w.charges) |cs| cs[w.current] else w.env.charge;
+    // ---- the codec's table reads -------------------------------------------------
+    /// The codec broke its own bound or shape: `ownership_accounting_invariant`
+    /// on the account, as `Meter.pay` records it.
+    fn invariant(w: *Writer) Error {
+        if (w.meter.account.failed == null) w.meter.account.failed = .{ .invariant = Refine.codec_lane };
+        return error.AccountingInvariant;
+    }
+
+    /// The account the codec's κ reads and projections run on: its
+    /// allowance the lane's room, so they stop before the lane's bound;
+    /// what they take is the lane's (`settle`), never the owner's growth.
+    fn codecAccount(w: *Writer) *Ids.Account {
+        const room = w.meter.ceiling() -| w.meter.paid;
+        w.codec.allowance = @intCast(@min(@as(u64, w.codec.growth) + room, std.math.maxInt(u32) - 1));
+        return &w.codec;
+    }
+
+    fn settle(w: *Writer, before: u32) void {
+        const d = w.codec.growth - before;
+        w.meter.paid += d;
+        w.meter.work += d;
+        w.meter.account.baseline += d;
+        w.meter.account.baseline_by[@backingInt(Ids.Category.inspection)] += d;
+    }
+
+    /// A failed codec read: past the lane, the codec's invariant; an input
+    /// limit, the caller's.
+    fn codecFailed(w: *Writer, before: u32, e: Error) Error {
+        w.settle(before);
+        const f = w.codec.failed orelse return e;
+        if (w.meter.account.failed == null) w.meter.account.failed = switch (f) {
+            .exhausted => .{ .invariant = Refine.codec_lane },
+            else => f,
+        };
+        return w.meter.account.failed.?.err();
+    }
+
+    fn kappaOf(w: *Writer, kappas: Cond.Kappas, n: NodeId, summary: bool) Error!CondId {
+        const before = w.codec.growth;
+        const k = w.env.conds.kappaOf(w.env.gpa, .growth(w.codecAccount()), w.env.view(), kappas, n, summary) catch |e| return w.codecFailed(before, e);
+        w.settle(before);
+        return k;
+    }
+
+    fn proj(w: *Writer, n: NodeId, s: Step) Error!?NodeId {
+        const before = w.codec.growth;
+        const c = w.env.shapes.proj(w.env.gpa, w.codecAccount(), w.env.places, w.env.cells, n, s) catch |e| return w.codecFailed(before, e);
+        w.settle(before);
+        return c;
+    }
+
+    fn flat(w: *Writer, k: CondId) Error!SetId {
+        const before = w.codec.growth;
+        const a = w.env.conds.flat(w.env.gpa, .growth(w.codecAccount()), k) catch |e| return w.codecFailed(before, e);
+        w.settle(before);
+        return a;
     }
 
     /// The owner of map `kappas` (null: the use shapes): maps are
@@ -419,7 +462,6 @@ const Writer = struct {
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.owners.items.len);
             try w.owners.append(w.env.gpa, kappas);
-            try w.owner_decl.append(w.env.gpa, w.current);
             try w.roots.append(w.env.gpa, .empty);
         }
         return got.value_ptr.*;
@@ -436,7 +478,7 @@ const Writer = struct {
     fn fresh(w: *Writer, kind: Kind, id: u32) Error!u32 {
         const r: u32 = @intCast(w.recs.items.len);
         w.meter.grow(1);
-        try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r, .decl = w.current });
+        try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r });
         try w.pending.append(w.env.gpa, r);
         return r;
     }
@@ -558,33 +600,30 @@ const Writer = struct {
             try w.tok(.ref, none);
         } else if (d.kind == .@"union" or d.kind == .positions) {
             try w.ref(.cond, if (conds.kappaGet(kappas.?, p.node, p.at_summary)) |k| k.int() else none);
-        } else try w.ref(.cond, (try conds.kappaOf(gpa, w.growth(), w.env.view(), kappas.?, p.node, p.at_summary)).int());
-        // The positions a read reaches by `proj` beyond the node's parts,
-        // and those that lead to a stored κ beyond them (`entries`).
+        } else try w.ref(.cond, (try w.kappaOf(kappas.?, p.node, p.at_summary)).int());
+        // The projections that lead to a stored κ beyond the node's parts
+        // (`entries`), each a position.
         var made: std.ArrayList(Over) = .empty;
         defer made.deinit(gpa);
-        var next: std.ArrayList([4]u32) = .empty;
-        defer next.deinit(gpa);
         try w.take(1);
-        const beyond = w.extra_index.get(.{ p.node.int(), @intFromBool(p.at_summary), p.owner });
-        try w.successors(p.node, p.at_summary, beyond != null, &next);
-        try w.take(next.items.len);
-        for (next.items) |e| {
-            if (e[3] == 0) continue;
-            if (e[3] == 2) for (w.extras_made.items[beyond.?].items) |x| {
-                try w.take(1);
-                if (x.word() == e[2]) break;
-            } else continue;
-            try made.append(gpa, .{ .step = Step.fromWord(e[2]), .rec = try w.pos(.from(e[0]), e[1] == 1, p.owner) });
+        if (w.extra_index.get(.{ p.node.int(), @intFromBool(p.at_summary), p.owner })) |beyond| {
+            const list = w.extras_made.items[beyond].items;
+            try w.take(list.len);
+            for (list) |s| {
+                const c = (try w.proj(p.node, s)) orelse return w.invariant();
+                try made.append(gpa, .{ .step = s, .rec = try w.pos(c, below(p.at_summary, s), p.owner) });
+            }
         }
         try w.steps(made.items);
     }
 
-    /// A node's successors `(node, class, step word, how)`: its parts (0),
-    /// the projections `position` writes (1: a step's that its parts do not
-    /// name, but under a leaf or a recast, or an empty one), and with `all`
-    /// every other projection a read may make (2). Each is reserved before
-    /// it is found.
+    /// A node's successors `(node, class, step word, how)`: its parts (0)
+    /// — the children it holds, a delta's base, a recast's inner, a union's
+    /// or a positions node's sides — and, with `all`, the projection at
+    /// every step of its place (2), `Cond.frontier`'s transitions. What a
+    /// block writes is the parts and the projections that lead to a stored
+    /// κ (`entries`): any other projection reads κ derived from structure the
+    /// reader rebuilds. Each is reserved before it is found.
     fn successors(w: *Writer, n: NodeId, summary: bool, all: bool, out: *std.ArrayList([4]u32)) Error!void {
         const gpa = w.env.gpa;
         const shapes = w.env.shapes;
@@ -607,13 +646,13 @@ const Writer = struct {
             .recast => try out.append(gpa, .{ d.a, sb, none, 0 }),
             .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0 }, .{ d.b, sb, none, 0 } }),
         }
+        if (!all) return;
         for (w.env.places.steps(d.place).steps) |s| {
-            if (!all and (d.kind == .leaf or d.kind == .recast)) break;
             try w.take(1);
-            const c = (try shapes.proj(gpa, w.growth().account, w.env.places, w.env.cells, n, s)) orelse continue;
+            w.meter.grow(1);
+            const c = (try w.proj(n, s)) orelse continue;
             if ((d.kind == .node or d.kind == .delta) and shapes.overGet(if (d.kind == .node) d.a else d.b, s) == c) continue;
-            const ruled = d.kind != .leaf and d.kind != .recast and !(shapes.kind(c) == .leaf and shapes.cells(c) == .none);
-            if (ruled or all) try out.append(gpa, .{ c.int(), @intFromBool(below(summary, s)), s.word(), if (ruled) 1 else 2 });
+            try out.append(gpa, .{ c.int(), @intFromBool(below(summary, s)), s.word(), 2 });
         }
     }
 
@@ -628,7 +667,6 @@ const Writer = struct {
     /// of the decoded class is the written one's.
     fn entries(w: *Writer, o: u32) Error!void {
         const gpa = w.env.gpa;
-        w.current = w.owner_decl.items[o];
         const kappas = w.owners.items[o] orelse return;
         if (kappas == .none) return;
         // The map's entries (its leaves), as `node << 1 | class`.
@@ -711,6 +749,45 @@ const Writer = struct {
         }
     }
 
+    /// Each class's growth as if it were alone in the block: the positions
+    /// it reaches past one per node (a node read under a second κ map, §3.6),
+    /// on its own declaration's charge. Nothing another class reaches, or
+    /// reaches first, changes it. The walks are the codec's.
+    fn classGrowth(w: *Writer, roots: []const u32) Error!void {
+        const gpa = w.env.gpa;
+        const n = w.recs.items.len;
+        try w.take(Refine.wordsCost(n));
+        const stamp = try gpa.alloc(u32, n);
+        defer gpa.free(stamp);
+        @memset(stamp, 0);
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        for (roots, 0..) |root, i| {
+            const mark: u32 = @intCast(i + 1);
+            var nodes: Ids.FixedDict(1) = .{};
+            defer nodes.deinit(gpa);
+            var positions: u32 = 0;
+            stamp[root] = mark;
+            try stack.append(gpa, root);
+            while (stack.pop()) |r| {
+                const ts = w.toksOf(r);
+                try w.take(2 + scan(ts.len));
+                w.meter.grow(1 + ts.len);
+                if (w.recs.items[r].kind == .node and w.owners.items[w.positions.items[w.recs.items[r].id].owner] != null) {
+                    positions += 1;
+                    _ = try nodes.getOrPut(gpa, .{w.positions.items[w.recs.items[r].id].node.int()});
+                }
+                // An owner names every class's values: not this class's reach.
+                if (w.recs.items[r].kind == .owner) continue;
+                for (ts) |t| if (isPart(t) and stamp[t.x] != mark) {
+                    stamp[t.x] = mark;
+                    try stack.append(gpa, t.x);
+                };
+            }
+            const charge = if (w.charges) |cs| cs[i] else w.env.charge;
+            try charge.reserve(gpa, .context, positions - nodes.count());
+        }
+    }
     fn extraMade(w: *Writer, n: NodeId, summary: bool, o: u32, s: Step) Error!void {
         try w.take(1);
         const got = try w.extra_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(summary), o });
@@ -723,7 +800,6 @@ const Writer = struct {
 
     fn describe(w: *Writer, r: u32) Error!void {
         const gpa = w.env.gpa;
-        w.current = w.recs.items[r].decl;
         const start: u32 = @intCast(w.toks.items.len);
         const kind = w.recs.items[r].kind;
         const id = w.recs.items[r].id;
@@ -822,7 +898,7 @@ const Writer = struct {
             .cond => {
                 const k: CondId = .from(id);
                 try w.word(@backingInt(w.env.conds.kind(k)));
-                if (k != Cond.yes and !Cond.Table.fails(k)) try w.ref(.atoms, (try w.env.conds.flat(gpa, w.growth(), k)).int());
+                if (k != Cond.yes and !Cond.Table.fails(k)) try w.ref(.atoms, (try w.flat(k)).int());
             },
             .atom => {
                 const a = w.env.conds.get(.from(id));
@@ -1070,7 +1146,7 @@ const Writer = struct {
                     const x = ts[f[1]];
                     f[1] += 1;
                     if (x.tag == .word or x.tag == .place or x.tag == .group or x.x == none or tier(w.recs.items[x.x].kind) != t) continue;
-                    if (height[x.x] == none - 1) return error.AccountingInvariant;
+                    if (height[x.x] == none - 1) return w.invariant();
                     if (height[x.x] == none) {
                         try w.take(1 + 2 * scan(w.toksOf(x.x).len));
                         height[x.x] = none - 1;
@@ -1267,7 +1343,7 @@ const Writer = struct {
         const gpa = w.env.gpa;
         const c = w.sccs.items[s];
         const ms = w.members.items[c.first..][0..c.len];
-        for (ms) |m| if (w.recs.items[m].kind != .node) return error.AccountingInvariant;
+        for (ms) |m| if (w.recs.items[m].kind != .node) return w.invariant();
         try w.sortDistinct(ms);
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(gpa);
@@ -1300,7 +1376,7 @@ const Writer = struct {
                 try w.take(1);
                 const got = try state.getOrPut(gpa, .{target});
                 if (got.found_existing) {
-                    if (got.value_ptr.* == 0) return error.AccountingInvariant;
+                    if (got.value_ptr.* == 0) return w.invariant();
                     continue;
                 }
                 got.value_ptr.* = 0;
@@ -1378,7 +1454,7 @@ const Writer = struct {
             rs[i] = r;
             i += 1;
         };
-        if (i != rs.len) return error.AccountingInvariant;
+        if (i != rs.len) return w.invariant();
     }
 
     fn sortByKey(w: *const Writer, rs: []u32) void {
@@ -1520,7 +1596,7 @@ const Writer = struct {
         try w.rel_starts.append(w.env.gpa, @intCast(w.rel_out.items.len));
         const r = try Refine.rank(&w.meter, w.rel_out.items, w.rel_starts.items);
         defer w.env.gpa.free(r.ranks);
-        if (r.count != w.units) return error.AccountingInvariant;
+        if (r.count != w.units) return w.invariant();
     }
 
     /// Every merged record spells its block's record's words, checked once
@@ -1543,7 +1619,7 @@ const Writer = struct {
             scratch.clearRetainingCapacity();
             try w.spell(x.rep, none, 0, &b, &scratch);
             try w.take(Refine.wordsCost(a.items.len));
-            if (!std.mem.eql(u32, a.items, b.items)) return error.AccountingInvariant;
+            if (!std.mem.eql(u32, a.items, b.items)) return w.invariant();
         }
     }
 };

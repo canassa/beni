@@ -40,7 +40,7 @@ pub const codec_lane: Ids.Lane = .{ .atom = 0, .role = .codec_index };
 
 /// The codec's constant (§4.1's `codec_factor`): a block of S records and
 /// edges costs at most `codec_factor`·(S + 16)·⌈log₂(S + 2)⌉ records; the
-/// tests reach 1.7, so 16 is a defect's margin, not a budget.
+/// tests reach 1.9, so 16 is a defect's margin, not a budget.
 pub const codec_factor: u64 = 16;
 
 pub fn codecBound(size: u64) u64 {

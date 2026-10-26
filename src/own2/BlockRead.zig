@@ -52,12 +52,9 @@ const Names = Block.Names;
 const below = Block.below;
 
 /// The classes of a block, built in `env`'s tables and appended to `out`;
-/// null when the words are not a block this version wrote. The block is
-/// decoded first into tables of its own, on the codec's lane, against
-/// the room in the caller's place table, and that work is the caller's
-/// baseline: a block that does not decode leaves `env`'s tables and
-/// `out` as they were, and one past the place room is `error.OwnershipLimit`
-/// before any of them is touched.
+/// null when the words are not a block this version wrote. Decoded first
+/// in tables of its own (the header): a block that does not decode leaves
+/// `env`'s tables and `out` as they were.
 pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, out: *std.ArrayList(ClassId)) ReadError!?void {
     const gpa = env.gpa;
     const owner = env.account();
@@ -2382,4 +2379,136 @@ test "a class whose interpretations grow past the allowance is refused loudly, o
     try testing.expect(accounts[0].growth >= 7 * 400);
     try testing.expectEqual(@as(u32, 0), accounts[1].growth);
     try testing.expectEqual(growth, t.account.growth);
+}
+
+/// A record of `f` fields, each its own place — with `nested`, each field
+/// a record of `f` fields itself. Numbered from 300 000.
+const Fields = struct {
+    const base = 300_000;
+    account: *Ids.Account,
+    f: u32,
+    nested: bool,
+
+    fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
+        const w: *Fields = @ptrCast(@alignCast(ctx));
+        const i = v - base;
+        if (i > (if (w.nested) w.f else 0)) return .{ .kind = .cross };
+        for (0..w.f) |j| {
+            const child: u32 = if (i == 0) base + 1 + @as(u32, @intCast(j)) else base + 1 + w.f + (i - 1) * w.f + @as(u32, @intCast(j));
+            try out.append(testing.allocator, .{ .step = Step.field(w.account, @intCast(j)) catch unreachable, .@"var" = child });
+        }
+        return .{ .kind = .record };
+    }
+
+    fn place(w: *Fields, t: *Tables) !PlaceId {
+        t.places.limits.type_places = @max(t.places.limits.type_places, t.places.count() + (w.f + 1) * (w.f + 1) + 8);
+        return t.places.of(testing.allocator, &t.account, .{ .ctx = w, .describe = describe }, base);
+    }
+};
+
+/// A node at record place `at` holding one field: a leaf with a site.
+fn oneField(t: *Tables, at: PlaceId, site_id: u32) !NodeId {
+    const gpa = testing.allocator;
+    const s = try Step.field(&t.account, 0);
+    const site = try t.cells.site(gpa, &t.account, site_id, at, .record);
+    const leaf = try t.shapes.leaf(gpa, &t.account, t.places.child(at, s).?, try t.cells.sets.insert(gpa, t.env().charge, .none, site.int(), 0));
+    return t.shapes.node(gpa, &t.account, at, .none, try t.shapes.overPut(gpa, &t.account, Ids.none_int, s, leaf));
+}
+
+test "a type's width costs the writer nothing: one node of a 30 000-field record, 340 nodes of a 100-field one, a 256 × 256 record, under the default allowance, no growth" {
+    const gpa = testing.allocator;
+    for (0..4) |case| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        var fields: Fields = .{ .account = &t.account, .f = switch (case) {
+            0 => 4000,
+            1 => 30_000,
+            2 => 100,
+            else => 256,
+        }, .nested = case == 3 };
+        const model = try fields.place(&t);
+        const c: ClassId = switch (case) {
+            0, 1 => try t.sums.add(t.env(), .{ .params = &.{}, .res = try oneField(&t, model, 1) }),
+            2 => blk: {
+                var params: [340]NodeId = undefined;
+                for (&params, 0..) |*p, i| p.* = try oneField(&t, model, @intCast(i + 1));
+                break :blk try t.sums.add(t.env(), .{ .params = &params, .res = params[0] });
+            },
+            else => blk: {
+                var over: u32 = Ids.none_int;
+                for (0..256) |j| {
+                    const s = try Step.field(&t.account, @intCast(j));
+                    over = try t.shapes.overPut(gpa, &t.account, over, s, try oneField(&t, t.places.child(model, s).?, @intCast(j + 1)));
+                }
+                break :blk try t.sums.add(t.env(), .{ .params = &.{}, .res = try t.shapes.node(gpa, &t.account, model, .none, over) });
+            },
+        };
+        var out: std.ArrayList(u32) = .empty;
+        defer out.deinit(gpa);
+        const before = t.account.growth;
+        try write(t.env(), &t.sums, &.{c}, .identity, &out);
+        try testing.expectEqual(before, t.account.growth);
+    }
+}
+
+test "the codec's work is O(S log S) whatever the width: P declarations of one node at a P-field record" {
+    const gpa = testing.allocator;
+    var ratios: [3]f64 = undefined;
+    for ([_]u32{ 128, 256, 512 }, 0..) |p, k| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = std.math.maxInt(u32) - 1;
+        var fields: Fields = .{ .account = &t.account, .f = p, .nested = false };
+        const model = try fields.place(&t);
+        const cs = try gpa.alloc(ClassId, p);
+        defer gpa.free(cs);
+        const accounts = try gpa.alloc(Ids.Account, p);
+        defer gpa.free(accounts);
+        const charges = try gpa.alloc(Ids.Charge, p);
+        defer gpa.free(charges);
+        for (cs, accounts, charges, 0..) |*c, *a, *ch, i| {
+            c.* = try t.sums.add(t.env(), .{ .params = &.{}, .res = try oneField(&t, model, @intCast(i + 1)) });
+            a.* = .{};
+            ch.* = .growth(a);
+        }
+        defer for (accounts) |*a| a.deinit(gpa);
+        var out: std.ArrayList(u32) = .empty;
+        defer out.deinit(gpa);
+        const before = t.account.baseline;
+        try Block.writeWith(t.env(), &t.sums, cs, .identity, &out, .{ .charges = charges });
+        for (accounts) |a| try testing.expectEqual(@as(u32, 0), a.growth);
+        // Against the block's words, which no measure of the writer's own
+        // can inflate.
+        const s: u64 = out.items.len;
+        ratios[k] = @as(f64, @floatFromInt(t.account.baseline - before)) / @as(f64, @floatFromInt((s + 16) * std.math.log2_int_ceil(u64, s + 2)));
+    }
+    for (ratios[1..]) |r| try testing.expect(r <= ratios[0] * 1.25);
+}
+
+test "a declaration's growth is its own: editing another that shares its records changes nothing of it" {
+    const gpa = testing.allocator;
+    var charged: [3]u32 = undefined;
+    for (0..3) |variant| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = std.math.maxInt(u32) - 1;
+        // B: eight maps over a 400-node chain. A: the chain under one map
+        // (variant 1) or under eight more (variant 2), first in the block.
+        const b = try manyMaps(&t, 8);
+        const a = if (variant == 2) try manyMaps(&t, 16) else try t.sums.add(t.env(), .{ .params = &.{.none}, .res = t.sums.get(b).res });
+        var accounts: [2]Ids.Account = .{ .{}, .{} };
+        defer for (&accounts) |*x| x.deinit(gpa);
+        var out: std.ArrayList(u32) = .empty;
+        defer out.deinit(gpa);
+        if (variant == 0) {
+            try Block.writeWith(t.env(), &t.sums, &.{b}, .identity, &out, .{ .charges = &.{.growth(&accounts[1])} });
+        } else try Block.writeWith(t.env(), &t.sums, &.{ a, b }, .identity, &out, .{ .charges = &.{ .growth(&accounts[0]), .growth(&accounts[1]) } });
+        charged[variant] = accounts[1].growth;
+    }
+    try testing.expect(charged[0] >= 7 * 400);
+    try testing.expectEqual(charged[0], charged[1]);
+    try testing.expectEqual(charged[0], charged[2]);
 }

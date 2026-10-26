@@ -57,10 +57,11 @@ const layers = [_]Entry{
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
     .{ .file = "Refine.zig", .layer = 10, .max_lines = 500 },
-    // §5 says 1 550 since #1065/#1066: positions with their read κ, closed under the
+    // §5 says 1 650 since #1065/#1066: positions with their read κ, closed under the
     // map's entries, and the shared format; the reader is `BlockRead`, the
-    // refinement `Refine`; the tiers ranked exactly and every step reserved.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1550 },
+    // refinement `Refine`; the tiers ranked exactly, every step reserved on
+    // the codec's lane, and each class's growth counted alone.
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1650 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
