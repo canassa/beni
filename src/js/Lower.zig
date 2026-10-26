@@ -4845,6 +4845,7 @@ pub const Lowerer = struct {
     /// by the `m` items just before that spread in the same pattern is
     /// the list that pattern matched from item `s - m`: at a scalar view,
     /// the offset `t - m`. Answers `t` and `m`, or null.
+    // ownership pin begin: listRecons (tests/corpus/ownership/word-bodies.txt: code that runs in place of `List.cons`, which `prepended` describes)
     fn reconsOf(l: *Lowerer, inst: Inst.Index) Allocator.Error!?struct { tail: u32, back: u32 } {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
@@ -4868,6 +4869,7 @@ pub const Lowerer = struct {
         if (!t.spread or h.spread or h.pattern != t.pattern or h.index + back + 1 != t.index) return null;
         return .{ .tail = tail, .back = back + 1 };
     }
+    // ownership pin end: listRecons
 
     fn listBinds(l: *Lowerer) Allocator.Error![]const ?ListBind {
         const decl = l.decl_index orelse return &.{};
@@ -5046,6 +5048,7 @@ pub const Lowerer = struct {
     /// desugars to — or null for any other instruction. Keyed on the core
     /// package, core's `List` module and the well-known `cons`, never on
     /// the spelling, exactly as `logicalOp` is.
+    // ownership pin begin: listConsTail (tests/corpus/ownership/word-bodies.txt: code that runs in place of `List.cons`, which `prepended` describes)
     fn consTail(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
@@ -5054,6 +5057,7 @@ pub const Lowerer = struct {
         if (args.len != 2 or l.rootsOf(inst).len != 0) return null;
         return args[1];
     }
+    // ownership pin end: listConsTail
 
     /// The argument of a call of core's `String.fromInt`, or null.
     fn fromIntArgument(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
@@ -5085,6 +5089,7 @@ pub const Lowerer = struct {
         return args[0];
     }
 
+    // ownership pin begin: listIsCons (tests/corpus/ownership/word-bodies.txt: code that runs in place of `List.cons`, which `prepended` describes)
     fn isListCons(l: *Lowerer, callee: Inst.Index) bool {
         const d = l.bir.instData(callee);
         const base: Symbol = switch (l.bir.instTag(callee)) {
@@ -5107,6 +5112,7 @@ pub const Lowerer = struct {
         };
         return base == InternPool.WellKnown.cons.symbol();
     }
+    // ownership pin end: listIsCons
 
     /// Whether this module's list writes go through the sanitiser
     /// (`Input.sanitize_lists`): only a module whose every demand was
@@ -5476,6 +5482,7 @@ pub const Lowerer = struct {
     /// and before the self-call's arguments**, which is the order the
     /// recursive version evaluates them in. A head that hoists statements
     /// (a `case`) emits them here, after the pushes written before it.
+    // ownership pin begin: listConsStep (tests/corpus/ownership/word-bodies.txt: code that runs in place of `List.cons`, which `prepended` describes)
     fn consStep(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
         var at = inst;
         while (true) {
@@ -5491,6 +5498,7 @@ pub const Lowerer = struct {
             return l.tailStmts(out, args[1], loop);
         }
     }
+    // ownership pin end: listConsStep
 
     /// A tail self-call: the argument expressions, the assignments to the
     /// carried slots in parameter order, and `continue <label>`. The
@@ -10341,6 +10349,7 @@ pub const Lowerer = struct {
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
         // list there, and nothing is prepended.
+        // ownership pin begin: listConsScalar (tests/corpus/ownership/word-bodies.txt: code that runs in place of `List.cons`, which `prepended` describes)
         if (try l.reconsOf(inst)) |recons| if (l.scalarOf(recons.tail)) |k| {
             const tail = try l.ident(try l.localName(recons.tail), p);
             const offset = try l.binary(.sub, tail, try l.intNode(recons.back, p), p);
@@ -10353,6 +10362,7 @@ pub const Lowerer = struct {
             }
             return l.materialise(k, offset, p);
         };
+        // ownership pin end: listConsScalar
 
         // `&&` and `||` before anything else, because they are the one place
         // where lowering an operator to a CALL would change the answer.
