@@ -18,6 +18,10 @@ pub const Error = Allocator.Error;
 
 /// One variable a `let` held at the enclosing rank rather than generalise
 /// (checker-v2.md §8.4); see `Env.monomorphic`.
+/// One variable a `let` value made by a call kept at the enclosing rank
+/// (checker-v2.md §8.4, amended 2026-10-26); see `Env.made_by_call`.
+pub const MadeByCall = struct { v: Var, binding: Symbol.Optional, decl: ?u32 };
+
 pub const Monomorphic = struct {
     v: Var,
     method: Symbol,
@@ -70,6 +74,10 @@ pub const Env = struct {
     /// this the hint on that message would tell the author to check their
     /// arithmetic.
     monomorphic: *std.ArrayList(Monomorphic),
+    /// Every variable `Generalize.holdExpansive` held back from a `let`
+    /// value made by a call (§8.4, amended 2026-10-26), with the binding:
+    /// for `type_mismatch`'s hint at a second use, as `monomorphic` is.
+    made_by_call: *std.ArrayList(MadeByCall),
     /// Another module's interface record, noted for the covered-read
     /// self-check (`reads.zig`, `plans/m4-3.md` §3.2 rows 17–22 and 25–27).
     ///

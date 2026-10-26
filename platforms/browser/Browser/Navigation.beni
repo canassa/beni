@@ -92,9 +92,11 @@ pub load : String, (Error → msg) → Cmd msg
 load url refused = command (λ⊤ → loadPage url) refused
 
 
---| Load the page again, when the command runs.
-pub reload : Cmd msg
-reload = Cmd.perform λ_ → reloadPage ⊤
+--| Load the page again, when the command runs. It takes `⊤`: making a
+--| command is impure, and a top-level value made by an impure call cannot
+--| keep the type variable `msg` (`docs/design/checker-v2.md` §8.4).
+pub reload : ⊤ → Cmd msg
+reload ⊤ = Cmd.perform λ_ → reloadPage ⊤
 
 
 -- A change made when the command runs, and its refusal sent: the change is

@@ -145,6 +145,67 @@ pub fn escape(
     try r.emit(.{ .code = .rigid_mismatch, .module = r.module, .region = region, .message = message });
 }
 
+/// §8.4, amended 2026-10-26: an annotated `let` value whose right-hand side
+/// is made by a call promises that `rigid` is any type, at a position a
+/// write could reach (`Generalize.holdExpansive`). `rigid_mismatch`, as an
+/// escape (§8.3) is, with its own reason.
+pub fn madeByCall(r: *Report, region: Bir.Inst.Index, binding: Symbol.Optional, scheme: Var, rigid: Var) Error!void {
+    const store = r.env.store;
+    const interner = r.env.interner;
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const name = if (binding.unwrap()) |s| interner.slice(s) else "this binding";
+    const variable = switch (store.content(store.find(rigid))) {
+        .rigid, .flex => |flags| if (flags.name.unwrap()) |s| interner.slice(s) else "a",
+        else => "a",
+    };
+    w.print("The type annotation of `{s}` promises more than its value can keep:\n\n    {s} : ", .{ name, name }) catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, scheme, .top) catch return error.OutOfMemory;
+    w.print(
+        \\
+        \\
+        \\The annotation says `{s}` can be ANY type, but the value of `{s}` is made by a
+        \\call, once, where it is written. A call can make something that holds a `{s}`,
+        \\such as a new `Ref`, and one such thing cannot hold every type: written as
+        \\one type and read as another, it would give a wrong answer.
+        \\
+        \\Hint: write the type `{s}` holds in the annotation instead of `{s}`, or give
+        \\`{s}` a parameter so that each call makes a new one.
+        \\
+    , .{ variable, name, variable, name, variable, name }) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .rigid_mismatch, .module = r.module, .region = region, .message = message });
+}
+
+/// §8.4, amended 2026-10-26: a top-level value whose evaluation is not pure
+/// and whose scheme leaves `variable` open where a write could reach it.
+pub fn impurePolymorphicValue(r: *Report, region: Bir.Inst.Index, token: u32, name: Symbol, scheme: Var, variable: Var) Error!void {
+    const interner = r.env.interner;
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const text = interner.slice(name);
+    w.print("`{s}` is computed by an impure call, once, when its module is loaded, but its\ntype is not one type:\n\n    {s} : ", .{ text, text }) catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, scheme, .top) catch return error.OutOfMemory;
+    w.writeAll("\n\nIt leaves `") catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, variable, .top) catch return error.OutOfMemory;
+    w.print(
+        \\` open. An impure call can make something that holds values, such
+        \\as a new `Ref`, and one such thing cannot hold every type: written as one type
+        \\and read as another, it would give a wrong answer.
+        \\
+        \\Hint: annotate `{s}` with the one type it holds, or give it a parameter so
+        \\that each call makes a new one.
+        \\
+    , .{text}) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .impure_polymorphic_value, .module = r.module, .region = region, .token = token, .message = message });
+}
 /// Which leg of a `?` failed (§8.6, §15.3; `checker.md` §8.6).
 pub const TryLeg = enum {
     /// The subject is not a `Result` or a `Maybe`.

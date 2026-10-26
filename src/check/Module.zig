@@ -72,6 +72,7 @@ const Markup = @import("Markup.zig");
 const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
 const Sync = @import("Sync.zig");
+const Generalize = @import("Generalize.zig");
 const CallStyle = @import("CallStyle.zig");
 const Prepend = @import("Prepend.zig");
 const EffectPlan = @import("EffectPlan.zig");
@@ -366,6 +367,9 @@ pub fn check(in: Input) Error!Check.Counters {
     // The `sync` check (transparent-effects-proposal.md §15.4), in a module
     // with no error so far: a poisoned type says nothing about a bit.
     if (!quiet and report.errors == 0) try Sync.check(&effects, .{ .cx = &cx, .report = &report, .decl_scheme = decl_scheme });
+    // The value restriction at the top level (checker-v2.md §8.4, amended
+    // 2026-10-26), on the same condition: it reads the bits.
+    if (!quiet and report.errors == 0) try Generalize.impureValues(&effects, &cx, &report, decl_scheme);
     // `suspicious_argument_order` (language.md §12.5), a warning for the
     // root package's modules, decided on a module that checked clean.
     if (!quiet and report.errors == 0 and informational and root) {

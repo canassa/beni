@@ -37,6 +37,7 @@ const DispatchTexts = @import("DispatchTexts.zig");
 const CallStyle = @import("CallStyle.zig");
 const PatternTexts = @import("PatternTexts.zig");
 const StatementTexts = @import("StatementTexts.zig");
+const LetTexts = @import("LetTexts.zig");
 
 const Diagnostics = @This();
 
@@ -204,7 +205,11 @@ pub const Reporter = struct {
         // mismatch — and the numeric hints below would tell the author to
         // check their arithmetic. This one names the binding and the
         // constraint instead, and says what to do.
-        if (try r.monomorphicLetHint(w, category)) {
+        if (try LetTexts.monomorphicLetHint(r, w, category)) {
+            try r.emit(.type_mismatch, region, &out);
+            return;
+        }
+        if (try LetTexts.madeByCallHint(r, w, expected, actual)) {
             try r.emit(.type_mismatch, region, &out);
             return;
         }
@@ -215,106 +220,6 @@ pub const Reporter = struct {
         }
         try r.typeHint(w, &namer, category, expected, actual);
         try r.emit(.type_mismatch, region, &out);
-    }
-
-    /// The A.30 hint, when the callee of this argument is a `let` binding
-    /// whose type carries a method constraint. False when it is not, and
-    /// then the ordinary hints apply.
-    fn monomorphicLetHint(r: *Reporter, w: *std.Io.Writer, category: Category) Error!bool {
-        if (category.tag != .call_arg) return false;
-        const call = category.owner.unwrap() orelse return false;
-        const bir = r.env.bir;
-        if (call.int() >= bir.insts.len) return false;
-        const callee: Bir.Inst.Index = switch (bir.instTag(call)) {
-            .call => @fromBackingInt(@intCast(bir.instData(call).lhs)),
-            else => return false,
-        };
-        if (callee.int() >= bir.insts.len or bir.instTag(callee) != .local) return false;
-        const index = bir.instData(callee).lhs;
-        const v = r.env.localVar(index) orelse return false;
-        const found = (try r.monomorphicMethod(v)) orelse return false;
-        const at = r.env.locals_base + index;
-        const name = if (at < bir.locals.len)
-            (if (bir.locals[at].name.unwrap()) |sym| r.env.interner.slice(bir.symbols[sym]) else "it")
-        else
-            "it";
-        const method = r.env.interner.slice(found.method);
-        // Why the binding has one type (checker-v2.md §8.4): every other
-        // constrained `let` function is generalised.
-        switch (found.why) {
-            .dot_call => w.print(
-                \\
-                \\Hint: `{s}` is a binding of a block whose type needs {s} `{s}` method only
-                \\through a dot-call, which could still turn out to call a record's field,
-                \\so the binding has ONE type inside the definition that holds it
-                \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
-                \\the second.
-                \\
-                \\Move `{s}` out to a top-level declaration and annotate it with
-                \\`where … .{s} : …` to use it at two.
-                \\
-            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
-            .value => w.print(
-                \\
-                \\Hint: `{s}` is a value of a block, with no parameters, whose type needs {s}
-                \\`{s}` method. A value is computed once, where it is written, so it has ONE
-                \\type inside the definition that holds it (`docs/design/checker-v2.md`
-                \\§8.4). The first use fixed the type; this is the second.
-                \\
-                \\Give `{s}` a parameter, or move it out to a top-level declaration
-                \\annotated with `where … .{s} : …`, to use it at two.
-                \\
-            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
-            .cap => w.print(
-                \\
-                \\Hint: `{s}` is a binding of a block whose type needs more than {d} methods, one
-                \\of them {s} `{s}` method, and past that many a binding of a block is not
-                \\generalised: it has ONE type inside the definition that holds it
-                \\(`docs/design/static-dispatch-spike.md` §10.11). The first use fixed the
-                \\type; this is the second.
-                \\
-                \\Move `{s}` out to a top-level declaration annotated with its `where`
-                \\clause to use it at two.
-                \\
-            , .{ name, Resolve.max_inferred_constraints, article(method), method, name }) catch return error.OutOfMemory,
-            .unreached => w.print(
-                \\
-                \\Hint: `{s}` is a binding of a block whose type needs {s} `{s}` method, and such a
-                \\binding is used at ONE type inside the definition that holds it
-                \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
-                \\the second.
-                \\
-                \\Move `{s}` out to a top-level declaration and annotate it with
-                \\`where … .{s} : …` to use it at two.
-                \\
-            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
-        }
-        return true;
-    }
-
-    /// The held variable that made `v`'s binding monomorphic, if any: a
-    /// variable inside `v`'s type that a `let` held back. The walk follows
-    /// `structural` successors to the bottom, each root once, on a stack
-    /// that grows: `Walk`'s rule, no fixed stack and no answer for giving up.
-    fn monomorphicMethod(r: *Reporter, v: Var) Error!?EnvFile.Monomorphic {
-        if (r.env.monomorphic.items.len == 0) return null;
-        const st = r.env.store;
-        const scratch = r.env.scratch;
-        const seen = st.nextMark();
-        var stack: std.ArrayList(Var) = .empty;
-        defer stack.deinit(scratch);
-        try stack.append(scratch, v);
-        while (stack.pop()) |next| {
-            const root = st.find(next);
-            if (st.mark(root) == seen) continue;
-            st.setMark(root, seen);
-            for (r.env.monomorphic.items) |m| {
-                if (st.find(m.v) == root) return m;
-            }
-            var n: u32 = 0;
-            while (Walk.child(st, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
-        }
-        return null;
     }
 
     /// Which side of a failed unification was the annotation's promise.
@@ -924,6 +829,8 @@ pub const Reporter = struct {
                 // A number literal where Elm's order puts it (§12.5).
                 if (try CallStyle.elmOrderHint(r, w, category, actual)) {
                     // said
+                } else if (try LetTexts.madeByCallHint(r, w, expected, actual)) {
+                    // said: the value made by a call is why the type is fixed
                 } else if (r.arithmeticOperand(category)) {
                     w.writeAll(
                         \\

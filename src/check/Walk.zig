@@ -766,6 +766,67 @@ pub fn reachesThroughRequirements(store: *TypeStore, stacks: *Stacks, gpa: Alloc
     return false;
 }
 
+/// Which variables `nonCovariant` collects: at a `let` frame, every root at
+/// rank `young` or above (a structure below it holds nothing young, so the
+/// walk stops there); in a scheme, the quantified roots (rank `generalized`).
+pub const Young = union(enum) { at_least: u32, quantified };
+
+/// The `flex` and `rigid` roots `from`'s type reaches at a NON-covariant
+/// position, each once, appended to `out` (checker-v2.md §8.4, amended
+/// 2026-10-26: the value restriction, relaxed). A position is covariant when
+/// the path to it passes only through tuple elements, record fields and a
+/// record's extension, a function's result, an alias's expansion and the
+/// argument of `list` (the session's `List`); a function's parameter and an
+/// argument of any other named type are not. Iterative, each root met at
+/// most once per polarity.
+pub fn nonCovariant(store: *TypeStore, gpa: Allocator, from: Var, list: TypeStore.TypeId, young: Young, out: *std.ArrayList(Var)) Error!void {
+    const Item = struct { v: Var, covariant: bool };
+    var stack: std.ArrayList(Item) = .empty;
+    defer stack.deinit(gpa);
+    // A root met covariantly carries `seen_co`; met otherwise, `seen_any`,
+    // which also covers the covariant visit.
+    const seen_co = store.nextMark();
+    const seen_any = store.nextMark();
+    try stack.append(gpa, .{ .v = from, .covariant = true });
+    while (stack.pop()) |item| {
+        const root = store.find(item.v);
+        const mark = store.mark(root);
+        if (mark == seen_any or (mark == seen_co and item.covariant)) continue;
+        store.setMark(root, if (item.covariant) seen_co else seen_any);
+        const rank = store.rank(root);
+        const is_young = switch (young) {
+            .at_least => |r| rank >= r,
+            .quantified => rank == TypeStore.generalized,
+        };
+        switch (store.content(root)) {
+            .err => {},
+            .flex, .rigid => if (!item.covariant and is_young) try out.append(gpa, root),
+            .alias => |a| {
+                if (!is_young and young == .at_least) continue;
+                try stack.append(gpa, .{ .v = a.actual, .covariant = item.covariant });
+            },
+            .structure => |flat| {
+                if (!is_young and young == .at_least) continue;
+                switch (flat) {
+                    .unit, .empty_record => {},
+                    .func => |f| {
+                        for (store.vars(f.params)) |c| try stack.append(gpa, .{ .v = c, .covariant = false });
+                        try stack.append(gpa, .{ .v = f.result, .covariant = item.covariant });
+                    },
+                    .app => |a| {
+                        const keeps = item.covariant and a.type == list;
+                        for (store.vars(a.args)) |c| try stack.append(gpa, .{ .v = c, .covariant = keeps });
+                    },
+                    .tuple => |t| for (store.vars(t)) |c| try stack.append(gpa, .{ .v = c, .covariant = item.covariant }),
+                    .record => |r| {
+                        for (store.fields(r.fields)) |f| try stack.append(gpa, .{ .v = f.value, .covariant = item.covariant });
+                        try stack.append(gpa, .{ .v = r.ext, .covariant = item.covariant });
+                    },
+                }
+            },
+        }
+    }
+}
 /// The variable roots (`flex`, `rigid`) reachable from `from` by
 /// `structural` successors, each once, appended to `out` (allocated with
 /// `scratch`).

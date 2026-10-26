@@ -1,0 +1,13 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). `r` is a
+-- value of a block made by a call, `Ref.make []`, so its type is not
+-- generalised over the variable inside `Ref`: one cell cannot be written as
+-- `List String` and read as `List Int`. Before the rule, `r` was
+-- `∀a. Ref (List a)` and the program printed `["x1"]`.
+import Ref
+
+
+pub cell : ⊤ → List Int
+cell ⊤ =
+    r = Ref.make []
+    Ref.set r [ "x" ]
+    List.map (Ref.get r) λk → k + 1

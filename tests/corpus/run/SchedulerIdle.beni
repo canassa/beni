@@ -47,7 +47,7 @@ main = Io.run λ⊤ →
         Task.withScheduler s λ⊤ →
             Task.spawn λ⊤ →
                 say "member parks"
-                _ = Deferred.wait gate
+                Deferred.wait gate
                 say "member goes on"
     Task.withScheduler s λ⊤ → Task.yieldNow ⊤
     busy "busy while a member parks" s

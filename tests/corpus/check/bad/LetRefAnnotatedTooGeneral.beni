@@ -1,0 +1,12 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). An annotation
+-- cannot make a block value made by a call general again: `r : Ref (List a)`
+-- promises a cell of every list type, which one cell cannot keep, so it is
+-- `rigid_mismatch` at the annotation. `r : Ref (List String)` checks.
+import Ref exposing (Ref)
+
+
+pub cell : ⊤ → List String
+cell ⊤ =
+    r : Ref (List a)
+    r = Ref.make []
+    Ref.get r

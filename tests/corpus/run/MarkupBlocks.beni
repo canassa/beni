@@ -55,7 +55,9 @@ view on =
     </div>
 
 
-ordered : Html msg
+-- `⊥`, not `msg`: the `Debug.log`s make evaluating `ordered` impure, and a
+-- top-level value made by an impure call keeps one type (checker-v2.md §8.4).
+ordered : Html ⊥
 ordered =
     <p title={Debug.log "1" "first"}>
         {Debug.log "2" "second"}<b id={Debug.log "3" "third"}>{Debug.log "4" "fourth"}</b>

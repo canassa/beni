@@ -64,7 +64,7 @@ update msg model =
             ( model, Navigation.load url (Refused "load" _) )
 
         Reload →
-            ( model, Navigation.reload )
+            ( model, Navigation.reload ⊤ )
 
         Refused label error →
             ( { model | lines = model.lines ++ [ "${label} refused: ${shown error}" ] }, Cmd.none )

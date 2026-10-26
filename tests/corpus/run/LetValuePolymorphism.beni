@@ -1,0 +1,50 @@
+-- run: checker-v2.md §8.4, amended 2026-10-26 (#1048). What the value
+-- restriction keeps general. A block value made by a call stays general
+-- over a variable it holds only covariantly (`xs : List a`, the pair of
+-- lists); a value by syntax (`none`, the tuple) and a lambda or placeholder
+-- application stay general too; and a function binding that makes a cell
+-- (`fresh`) is generalised, each call a new cell of its own type. A top-level
+-- pure value (`empties`) stays general as well.
+import Io
+import Node exposing (Program)
+import Ref
+import String
+
+
+empties : List a × List b
+empties = ( List.reverse [], [] )
+
+
+main : Program
+main = Io.run λ⊤ →
+    xs = List.reverse []
+    ( front, back ) = ( List.take [] 2, List.drop [] 1 )
+    none = Nothing
+    same = λx → x
+    lengths = List.map _ List.length
+    fresh ⊤ = Ref.make []
+    ints = fresh ⊤
+    words = fresh ⊤
+    Ref.set ints [ 1, 2 ]
+    Ref.set words [ "a" ]
+    Node.printLines
+        [ String.fromInt (List.length ([ 1, …xs ]))
+        , String.join (List.map xs String.toUpper) ","
+        , String.fromInt
+            (List.length (front ++ [ 1 ])
+                + List.length (back ++ [ "b" ])
+                + List.length (front ++ [ "c" ])
+            )
+        , Maybe.withDefault none "none"
+        , String.fromInt (Maybe.withDefault none 0 + same 1)
+        , same "same"
+        , String.join (List.map (lengths [ [ 1 ], [ 2, 3 ] ]) String.fromInt) ","
+        , String.join (List.map (lengths [ [ "a" ] ]) String.fromInt) ","
+        , String.fromInt (List.sum (Ref.get ints))
+        , String.join (Ref.get words) ","
+        , String.fromInt
+            (List.length (empties.0 ++ [ 1 ])
+                + List.length (empties.1 ++ [ "x" ])
+                + List.length (empties.0 ++ [ "y" ])
+            )
+        ]

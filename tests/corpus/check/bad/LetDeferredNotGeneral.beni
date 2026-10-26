@@ -1,0 +1,12 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). `cell` is made
+-- by a call, `Deferred.make ⊤`, so it is one deferred value of one type: it
+-- cannot be completed with a `String` and polled as an `Int`. Before the
+-- rule, `cell` was `∀a. Deferred a`.
+import Deferred
+
+
+pub polled : ⊤ → Int
+polled ⊤ =
+    cell = Deferred.make ⊤
+    _ = Deferred.complete cell "s"
+    Maybe.withDefault (Deferred.poll cell) 0 + 1

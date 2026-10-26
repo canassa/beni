@@ -472,6 +472,10 @@ pub const Code = enum {
     /// decimal literal, below the inherited allowance or above 2³²−2.
     /// Lowering's, at the attribute; an error.
     invalid_ownership_summary_size,
+    /// Appended on 2026-10-26 with the value restriction (checker-v2.md
+    /// §8.4, amended 2026-10-26): a top-level value computed by an impure
+    /// call whose type leaves a variable open where a write could reach it.
+    impure_polymorphic_value,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -658,6 +662,7 @@ pub fn title(code: Code) []const u8 {
         .top_level_record_changed => "TOP-LEVEL RECORD CHANGED",
         .record_may_be_shared => "RECORD MAY BE SHARED",
         .invalid_ownership_summary_size => "INVALID OWNERSHIP SUMMARY SIZE",
+        .impure_polymorphic_value => "IMPURE POLYMORPHIC VALUE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

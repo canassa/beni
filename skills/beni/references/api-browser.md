@@ -65,7 +65,7 @@ module Browser.Navigation
   value onUrlRequest : (UrlRequest → msg) → Sub msg  -- impure
   value push : Key, String → Result Error ⊤  -- impure
   value pushUrl : Key, String, (Error → msg) → Cmd msg  -- impure
-  value reload : Cmd msg
+  value reload : ⊤ → Cmd msg  -- impure
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure

@@ -1,0 +1,14 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). `box` is made
+-- by a call, `Queue.unbounded ⊤`, so it is one queue of one type: after a
+-- `String` is offered, an `Int` cannot be. Before the rule, `box` was
+-- `∀a. Queue a`, and a `String` offered could be taken as an `Int`:
+-- `n + 1` printed `"s1"`.
+import Queue
+
+
+pub first : ⊤ → Int
+first ⊤ =
+    box = Queue.unbounded ⊤
+    _ = Queue.offer box "s"
+    _ = Queue.offer box (String.length "t")
+    Maybe.withDefault (Queue.take box) 0 + 1

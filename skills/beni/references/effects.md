@@ -90,6 +90,33 @@ apart left right =
   a virtual clock with `Clock.run`.
 - `Duration`: `Duration.millis n`, `Duration.seconds n`, `Duration.minutes n`.
 
+A block value that a call makes has one type for a type variable inside a cell, a named type other
+than `List`, or a function parameter. The first use fixes it. `r = Ref.make []` is one cell of one
+list type, so a second use at another type is `type_mismatch`. An annotation cannot make it
+general again: `r : Ref (List a)` is `rigid_mismatch`. A function binding makes a new cell for
+each call, so it stays general: `fresh ⊤ = Ref.make []`. A value with no call, such as `[]`,
+`Nothing` or a `λ`, stays general, and so does a call whose type holds its variable only in a
+`List`, a tuple, a record or a function result, such as `xs = List.reverse []`.
+
+A top-level value is computed once, when its module is loaded. When that computation is impure
+and leaves such a type variable open, it is the error `impure_polymorphic_value`. Annotate the
+value at one type, or give it a parameter.
+
+```beni refused=impure_polymorphic_value
+import Ref exposing (Ref)
+
+
+pub cells = Ref.make []
+```
+
+```beni
+import Ref exposing (Ref)
+
+
+pub cells : Ref (List String)
+cells = Ref.make []
+```
+
 ## Permits: `Semaphore`
 
 A `Semaphore` limits how many fibers do one thing at the same time. `Semaphore.make n` makes
@@ -241,4 +268,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.3, §17.5, §17.7, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Queue.beni`; `core/Latch.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.3, §17.5, §17.7, §17.9; `docs/design/checker-v2.md` §8.4; `core/Task.beni`; `core/Semaphore.beni`; `core/Queue.beni`; `core/Latch.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
