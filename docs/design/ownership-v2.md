@@ -721,28 +721,52 @@ accepted, as v1 accepts it (`DeadDuplicateLive`, Appendix B). A class is per val
 with one root reference per supply; use shapes carry marks, not value κ. A frame holds `value → KappaId`, one persistent hash-consed root reference per
 value. Updating a binding path-copies the affected trie/map nodes; it does not mutate other references.
 
-**Within a value the key is `(NodeId, PathId)`**: the node and the canonical path at which the value reaches it,
-**relative to the value's own root**, reusing the canonical path nodes `Liveness` ranks. Two positions of one value
-that reach one interned node keep separate conditions: in `([ r ], [ r, r ])`, `.0[*]` reads its own `yes`, never
-`shared` from `.1[*]`'s store (`OnePairTwoPositions`, Appendix B). A path names its position class (whether it
-crosses `[*]` or `⟲`), so the key subsumes that split.
+**Within a value the key is `(NodeId, path)`**: the node and the path at which the value reaches it, **relative
+to the root of the snapshot that stores it** [M 2026-10-26, #1073]. Two positions of one value that reach one
+interned node keep separate conditions: in `([ r ], [ r, r ])`, `.0[*]` reads its own `yes`, never `shared` from
+`.1[*]`'s store (`OnePairTwoPositions`, Appendix B). A path names its position class (whether it crosses `[*]` or
+`⟲`), so the key subsumes that split. The path is the sequence of steps a read takes from that root, not a
+canonical `PathId`: canonical folding (§2.1) depends on the prefix above a value, so a child's canonical paths are
+not a suffix of its parent's wherever the child's step is on a cycle of the parent's place (`t = Node xs` with
+`type T = Node (List T)`: `xs`'s own `⟲` is `t`'s `⟲#Node.0`). A value built level by level therefore has a
+position per level, and a snapshot, being finite, has finitely many.
 
-**The snapshot is a trie over steps, so no binding is re-keyed.** A construction does not copy its children's
-bindings under the parent path: the new value's snapshot links each child's snapshot under that child's step, one
-persistent `(step, child KappaId)` record per written child, and the child's subtree is shared unchanged. A store
-adds one map node at its own path. A read of κ(v, q) walks q's steps through those links, one step per path step
-on the read's own prefix lanes (§2.7), so nesting depth costs the read its path length and nothing at
-construction: length stays baseline. `Shape.map` carries a snapshot through an instantiation by relabelling each
-binding's node, its paths unchanged because they are relative to the value's root, and the argument's snapshot
-is linked under the argument's path at the graft (S3b; relabelling is charged).
+**The snapshot is a trie over steps, so no binding is re-keyed.** A position is a trie node: the conditions it
+stores, by node, and its links, by step. A construction does not copy its children's bindings under the parent
+path: the new value's snapshot links each child's snapshot under that child's step, one persistent
+`(step, child KappaId)` record per written child, and the child's subtree is shared unchanged. Children at one
+step — a literal's items under `[*]` — are one position, the merge of their snapshots (a charged union joined
+where they bind one key). A store adds one map node at its own path. A read of κ(v, q) walks q's steps through
+those links, one step per path step on the read's own prefix lanes (§2.7): **a read crosses a link by re-rooting**,
+the linked child's paths being relative to its own root, which is the position it is linked at. Nesting depth
+costs the read its path length and nothing at construction: length stays baseline. `Shape.map` carries a
+snapshot through an instantiation by relabelling each binding's node, its paths unchanged because they are
+relative to the value's root, and the argument's snapshot is linked under the argument's path at the graft
+(relabelling and linking are charged).
+
+**`widen`, and only `widen`, folds a snapshot at recursive places** [M 2026-10-26, #1073]. A fixpoint unknown and
+a read-off widen their shape (§2.3); their snapshot is folded with it. In a folded snapshot, the position at
+which a route through the widened shape first meets a node it has already passed (a knot `widen` tied, at a
+recursive place) is a **fold**: every position below it is that position, its links lead back to itself, and its
+conditions are keyed by node alone. `propagate`, which builds every snapshot over a joined or widened shape,
+folds wherever the shape it walks cycles, joining (`alternatives`) every member position that folds into it; a
+shape cycles only where `widen` tied a knot, so every snapshot of that shape carries the widen's fold. **The fold never makes a
+read stronger than the read of any unfolded member position it covers:** the stored condition at the fold is the
+lattice join of theirs, and a join only weakens (`yes ⊑ and ⊑ lost ⊑ shared`); the derivation at the fold reads
+the widened node, whose cells include each folded level's (§2.3, `F(x) ⊑ widen(x)`), and the derivation is
+monotone in the cells. So folding can add a refusal and never removes one. Because the widened shape is finite
+and a fold has one position for all its levels, a fixpoint over folded snapshots terminates and `kappaLeq` on
+them is a finite simulation, as on folded shapes. A construction never folds: a recursive construction chain of
+n levels costs O(n) links, where re-keying each child into its parent's canonical paths would cost O(n²).
 
 **What S2 builds, and what S3a and S3b change.** In S2 a κ root (`Cond.Kappas`, an `Ids.KappaId`) is an immutable,
 hash-consed persistent radix map `(NodeId, position class) → CondId`, where the position class is whether the
 read's path crossed `[*]` or `⟲`. The holder owns it and threads it: `kappaSet` returns a new root and never
 changes the old one, a class carries one root for `res` and a supply carries the root of the value it hands.
 It is one map per value, with the coarser key, not yet the trie. The read rule below keeps the coarser key
-sound. S3a gives each frame value its own root (`value → KappaId`) and moves the key to the prefix-relative
-`(NodeId, PathId)` trie above; S3b adds the relabelling and the graft.
+sound. S3a gives each frame value its own root (`value → KappaId`) and moves the key to the trie above, with
+paths relative to the root of the snapshot that stores them and the fold in `widen`; S3b adds the relabelling
+through summarised declarations' grafts.
 
 **A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
 construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
@@ -766,10 +790,16 @@ including under leaves/recasts and at empty projections. Propagation, comparison
 all preserve this same frontier. `κ_a ⊑ κ_b` means inclusion at **every** such position; comparing the roots
 alone, or stopping because the left shape is a leaf, is insufficient. A join reads each operand under its
 own snapshot and retains every reachable constraint in the new interpretation. Extra stored constraints at
-empty shapes still matter to the read rule. A finite worklist over `(node, position class, interpretation)`
-and reachable map/trie entries closes the frontier; recursive paths use canonical place backreferences,
-not path-string enumeration. A trie transition must migrate all of these readers and the codec together.
-A position is a path, so the frontier's transitions are the projections along the place's steps. The other
+empty shapes still matter to the read rule. A finite worklist over `(node, position class, trie cursor)` per
+interpretation closes the frontier; a fold's links lead back to the fold, so recursive values end the walk
+(above), and nothing enumerates path strings. A trie transition must migrate all of these readers and the
+codec together.
+A position is a path, so the frontier's transitions are steps, and **the frontier is sparse**: from a position
+it takes the steps the structure names (a node's or a delta's overrides, a union's or a positions node's sides'
+named steps, a recast's inner's) and the steps the snapshots read there link (a member's in `propagate`, either
+operand's in `kappaLeq`). Every other step of the place reaches a projection whose read is derived from
+structure the reader already reads and where no snapshot stores anything, so it is omitted (§3.6's omission
+criterion): a type's width costs a read nothing. The other
 nodes at a position's path belong to it as follows. A union's and a positions node's sides are read by the read
 of the node itself, above. A recast changes the type, not the path, so a recast and its inner are **one
 position**: the read at the recast joins what is stored at either with the recast's derivation, and the inner's
@@ -778,7 +808,6 @@ nothing to the recast's derived read; §2.13.9's restoration reads the same entr
 position: a built node's read is the walk's certificate, so a constraint stored for the base alone is observable
 nowhere. `Cond.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
 else.
-
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
 at the same node remain separate states; revisiting a completed identical state reuses its answer.
@@ -1685,20 +1714,25 @@ Cond.Table (per walk)
 groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
 intern    : owner-local comparison tree (kind, a, b) → CondId
 kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a frame holds value → KappaId and
-            a class one root for res and each supply; use shapes carry marks, not value κ. Each is an immutable persistent hash-consed
-            map (NodeId, PathId) → CondId over that value's nodes, the PathId relative to the value's root, built as
-            a trie over steps whose child subtrees are the children's snapshots, linked, never re-keyed. S2 builds
-            the holder-owned root as one persistent radix map (NodeId, position class) → CondId per value
-            (`Kappas`; `kappaGet`, `kappaSet` returning the new root, `kappaOf` the read); S3a gives frame
-            values their own roots and moves the key to the trie; S3b relabels nodes through Shape.map and links
-            an argument's snapshot at the graft. It travels with its value and is joined only where
-            values join (a branch or fixpoint join, a union, a construction of its children), never mutated through another value; equal immutable roots may be shared
-            across values and remain shared after decode. Reads obey §2.9's kind-specific rule: stored
-            construction certificate (or lost) for node/delta; stored plus derived for a leaf/recast;
-            side reads, stored term and the appropriate set/multiset derivation for union/positions.
-            The observable frontier includes projected leaves and empty nodes. Every reader, join,
-            comparison, substitution and block codec uses that frontier. Read memos require the complete
-            immutable interpretation/context; never a mutable column NodeId → CondId
+            a class one root for res and each supply; use shapes carry marks, not value κ. Each is an immutable
+            persistent hash-consed trie: a position record `{ here, links, fold }`, `here` a radix map
+            NodeId → CondId (the conditions stored at this position), `links` a radix map step word → KappaId
+            (the position one step below; a child's snapshot linked at a construction, never re-keyed), `fold`
+            set on a position `widen` folded, whose links lead to itself. A key (NodeId, path) has its path
+            relative to the root of the snapshot that stores it; a reader holds a cursor (a KappaId) and moves it
+            by `kappaChild` along the steps it takes, re-rooting at a link. S2 built one radix map
+            (NodeId, position class) → CondId per value; S3a gives frame values their own roots and moves the key
+            to the trie (`kappaGet`/`kappaSet` at a cursor, `kappaSetAt` along steps from a root, `kappaLink`,
+            `kappaMerge`, `kappaFold`, `kappaOf` the read); S3b relabels nodes through Shape.map and links an
+            argument's snapshot at the graft of a summarised declaration. It travels with its value and is
+            joined only where values join (a branch or fixpoint join, a union, a construction of its children),
+            never mutated through another value; equal immutable roots may be shared across values and remain
+            shared after decode. Reads obey §2.9's kind-specific rule: stored construction certificate (or lost)
+            for node/delta; stored plus derived for a leaf/recast; side reads, stored term and the appropriate
+            set/multiset derivation for union/positions. The observable frontier includes projected leaves and
+            empty nodes, through the snapshot's links. Every reader, join, comparison, substitution and block
+            codec uses that frontier. Read memos require the complete immutable interpretation/context, the
+            cursor included; never a mutable column NodeId → CondId
 flat      : memo CondId → sorted atom run (print, compare, block)
 memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version) → CondId; `deep` walks per query and stores nothing in a root
 ```
@@ -1756,22 +1790,23 @@ reachable result/supply position, a decoded value must read the same κ as the e
 with the same aliases, multiplicity, effects and callback obligations. Test those reads directly; stable
 pretty-printing and write/read/write bytes alone cannot establish this property.
 
-**Positions and owners.** A value position is `(shape node, interpretation, position class)`; in the
-prefix-relative trie the interpretation includes that position's trie cursor. A use shape has mark cells
-and a separate non-value owner. A value owner names an immutable snapshot and all value roots using it.
-Equal snapshot roots share an owner and a decoded map; distinct values need not own distinct physical maps.
-Neither sharing a shape nor equal node ids permits sharing an interpretation with different facts.
+**Positions and owners.** A value position is `(shape node, trie cursor, position class)`: the cursor is the
+snapshot position the reader has reached from its owner's root (§2.9), so two positions of one value at one
+node are two records. A use shape has mark cells and a separate non-value owner. A value owner names an
+immutable snapshot and all value roots using it. Equal snapshot roots share an owner and a decoded snapshot;
+distinct values need not own distinct physical tries. Neither sharing a shape nor equal node ids permits
+sharing an interpretation with different facts.
 
-For each owner, close its roots under the transitions any κ reader uses (§2.9's frontier): `proj` along
-every valid place step, a recast's inner's projections included (the two are one position), with
-union/positions sides read with their node. Explicit parts, a delta's base among them, may be walked as
-structure; a base alone holds nothing observable. This includes projections under a leaf, under a recast
-and to an empty shape. Reachable stored constraints and the routes to them
-must be represented even if no explicit child names their node. The finite worklist uses canonical place
-states and exact interpretation keys, not unfolded paths. An implementation may omit a state only when
-its reads are derived entirely from preserved structure and no reachable stored entry affects them;
-this criterion is shared with `propagate`, `kappaLeq`, `deep` and substitution. Adding a reader requires
-updating this closure contract and its tests.
+For each owner, close its roots under the transitions any κ reader uses (§2.9's sparse frontier): the steps
+the structure names, a recast's inner's included (the two are one position), with union/positions sides read
+with their node, and the steps the owner's snapshot links at the cursor. Explicit parts, a delta's base among
+them, may be walked as structure; a base alone holds nothing observable. A link reaches stored constraints
+under a leaf, under a recast and at an empty shape, so the routes to them are the links themselves and need no
+search of a type's fields. The finite worklist keys states by `(node, cursor, class)`; a fold is one state for
+all its levels. An implementation may omit a state only when its reads are derived entirely from preserved
+structure and no reachable stored entry affects them; this criterion is shared with `propagate`, `kappaLeq`,
+`deep` and substitution. A written position also records whether its cursor is a fold, so the reader rebuilds
+the fold. Adding a reader requires updating this closure contract and its tests.
 
 Each written position encodes κ **as stored**: what the snapshot stores at that position and nothing
 derived (#1069). Every reader adds the derivation from the structure the block rebuilds, so the
@@ -1862,7 +1897,7 @@ under its map, from every class and supply of the block, and the reader builds O
 all of them and gives it to each, so the closure below, made per owner, is the reader's too. The positions are the owner's values,
 closed under the node's parts (the children it holds, a delta's base, a recast's inner, a union's or a positions
 node's sides — never the steps of its place type, so a type's width costs nothing), and **every entry of the owner's map that a read can reach**, with the
-projections that lead to it from those (found along `Cond.frontier`'s transitions, every step of a place, only while the map holds an entry not yet found: a map keyed by node gives no route from the entry; a map keyed by path will, S3a). That set is closed for every read: `kappaOf` at a `proj` path
+projections that lead to it from those (found along `Cond.frontier`'s transitions: as built in S2b every step of a place, while the map held an entry not yet found, a map keyed by node giving no route from the entry; since S3a's trie (#1073) the snapshot's own links, so a type's width costs nothing here either). That set is closed for every read: `kappaOf` at a `proj` path
 from a value, as `kappaLeq`, `propagate`, `join` and `map` make, and `dagKappa` through a union's sides,
 reaches either a written position, which carries the κ read there, or a node with nothing stored, whose κ
 is derived from the structure the block rebuilds alone, in the writer as in the reader. Each position
