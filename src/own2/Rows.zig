@@ -1,8 +1,7 @@
 //! L6: rows as data (`docs/design/ownership-v2.md` §2.13.1, §2.13.6,
 //! §2.13.13; oc §24.2): the classes that are not read off a body. A worded
-//! declaration's class comes from its ownership words (`fromWords`), a
-//! constructor's from its type (`ctorClass`), a derived `eq`/`compare`'s is
-//! read-only (`derivedClass`). Nothing here names a declaration, a type or
+//! constructor's from its type (`ctorClass`), a derived `eq`/`compare`'s
+//! composed of its components' (`derivedClass`). Nothing here names a declaration, a type or
 //! a module: the caller hands places, word bit sets and arities (§5's
 //! fence: no name is compared to text).
 //!
@@ -28,7 +27,7 @@
 //! | on the result | row |
 //! |---|---|
 //! | `fresh exclusive` | `fresh 1`, κ `yes` |
-//! | `fresh` | `fresh 1` at every path, approximate, κ `lost` (a recast: the call made it, its contents may be shared) |
+//! | `fresh` | `fresh 1` at every path, approximate (a recast: the call made it, its contents may be shared), κ `lost` only where objects sit below, `yes` for a list of plain values |
 //! | `escaped` | `esc 1` likewise, κ `lost` |
 //! | `unknown`, or none without a `returned` parameter | `⊤`, κ `lost` |
 //!
@@ -93,11 +92,10 @@ fn freshLeaf(env: Env, o: Cell.Origin, k: u32, at: PlaceId) Error!NodeId {
     return env.shapes.leaf(env.gpa, env.account(), at, try env.cells.sets.insert(env.gpa, env.charge, .none, c.int(), 0));
 }
 
+/// A leaf holding `⊤`: its κ derives as `lost` (§2.9) under any map.
 fn topLeaf(env: Env, at: PlaceId) Error!NodeId {
     const top = try env.cells.top(env.gpa, env.account());
-    const n = try env.shapes.leaf(env.gpa, env.account(), at, try env.cells.sets.insert(env.gpa, env.charge, .none, top.int(), 0));
-    _ = try env.conds.setKappa(env.gpa, env.charge, n, Cond.lost);
-    return n;
+    return env.shapes.leaf(env.gpa, env.account(), at, try env.cells.sets.insert(env.gpa, env.charge, .none, top.int(), 0));
 }
 
 fn crosses(env: Env, at: PlaceId) bool {
@@ -135,7 +133,13 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         var words = prm.words & ~entry_bit;
         if (words == 0) words = Word.escaped.bit();
         var use: NodeId = .none;
-        if (prm.fn_params) |fps| {
+        // A `List` of functions is a function slot only when its words say
+        // how often the elements are called (`once`, `many`, `unused`), as
+        // v1 reads it (oc §30.9); a `borrowed` list of functions is a plain
+        // parameter.
+        const as_function = prm.fn_params != null and (!prm.list_of_fns or has(words, .once) or has(words, .many) or has(words, .unused));
+        if (as_function) {
+            const fps = prm.fn_params.?;
             // A function (or a list of them): how often it is called, what
             // it is handed, whether JavaScript keeps it.
             const kept = has(words, .escaped);
@@ -151,7 +155,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
             if (calls != .zero) {
                 for (fps, 0..) |fp, k| {
                     const node = if (has(words, .owned)) try freshLeaf(env, .result, 0, fp) else try topLeaf(env, fp);
-                    try supplies.append(gpa, .{ .j = j, .k = @intCast(k), .node = node, .point = 0, .owned = has(words, .owned), .taken = false, .cond = if (has(words, .owned)) Cond.yes else Cond.lost });
+                    try supplies.append(gpa, .{ .j = j, .k = @intCast(k), .node = node, .label = .none, .owned = has(words, .owned), .taken = false, .kappa = .none });
                 }
             }
             // Supplies are appended to one list; the fun's slice is cut
@@ -235,7 +239,7 @@ pub fn ctorClass(env: Env, sums: *Summary.Table, type_place: PlaceId, steps: []c
     var params: std.ArrayList(NodeId) = .empty;
     defer params.deinit(gpa);
     var children: u32 = Ids.none_int;
-    var items: std.ArrayList(Cond.Table.Item) = .empty;
+    var items: std.ArrayList(Cond.Item) = .empty;
     defer items.deinit(gpa);
     for (arg_places, steps, 0..) |at, s, iu| {
         const i: u32 = @intCast(iu);
@@ -256,19 +260,41 @@ pub fn ctorClass(env: Env, sums: *Summary.Table, type_place: PlaceId, steps: []c
         cells = try env.cells.sets.insert(gpa, env.charge, .none, f.int(), 0);
     }
     const res = if (crosses(env, type_place)) try env.shapes.nothing(gpa, env.account(), type_place) else try env.shapes.node(gpa, env.account(), type_place, cells, children);
+    var kappas: Cond.Kappas = .none;
     if (!crosses(env, type_place)) {
         const k = try env.conds.apart(gpa, env.charge, env.cells, env.places, items.items, null);
-        _ = try env.conds.setKappa(gpa, env.charge, res, k);
+        kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, k)).ctx;
     }
-    return sums.add(env, .{ .params = params.items, .res = res, .origin = .asserted });
+    return sums.add(env, .{ .params = params.items, .res = res, .kappas = kappas, .origin = .asserted });
+}
+
+/// Whether a use shape carries the mark `m` anywhere (its `reach`).
+fn usesMark(env: Env, use: NodeId, m: Cell.Mark) Error!bool {
+    if (use == .none) return false;
+    const r = try env.shapes.reach(env.gpa, env.account(), &env.cells.sets, use);
+    return env.cells.sets.member(r, (try env.cells.mark(env.gpa, env.account(), m, 0)).int());
 }
 
 /// A derived `eq`/`compare`'s class (§2.13.6, §2.13.13): both arguments
-/// read deeply, nothing kept, a crossing result; origin `asserted`.
-pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId) Error!ClassId {
-    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .deep = true }, &.{});
+/// read deeply, a crossing result; origin `asserted`. The derived method
+/// calls the components' own `eq`/`compare` (`components`, the classes of
+/// the user-written ones), so it is what they are: a component that lets
+/// its argument escape (`E` anywhere in its use) makes the derived
+/// argument `E` deep, and a component that writes makes it `writes`
+/// (R-5.13.1's `comparison_changes_value` then fires through it). A
+/// comparison cannot keep its argument in its result (`Bool`/`Order`
+/// cross), so `A` never arises.
+pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const ClassId) Error!ClassId {
+    var escapes = false;
+    var writes = false;
+    for (components) |c| {
+        try env.charge.reserve(env.gpa, .inspection, 1);
+        writes = writes or sums.get(c).writes;
+        for (sums.paramUses(c)) |u| escapes = escapes or try usesMark(env, u, .e);
+    }
+    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .e = escapes, .deep = true }, &.{});
     const res = try env.shapes.nothing(env.gpa, env.account(), result_place);
-    return sums.add(env, .{ .params = &.{ use, use }, .res = res, .origin = .asserted });
+    return sums.add(env, .{ .params = &.{ use, use }, .res = res, .writes = writes, .origin = .asserted });
 }
 
 // ---------------------------------------------------------------------------
@@ -397,10 +423,11 @@ test "today's parameter and result words give oc §24.2's rows" {
     const c3 = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.consumed}) }, .{ .place = list, .words = bits(&.{.unused}) } }, .result = list, .result_words = bits(&.{ .fresh, .exclusive }) });
     try testing.expectEqualStrings("summary g: π1 RS; res fresh1 (words)", try f.text(c3, "g"));
     try testing.expect(f.sums.get(c3).writes and !f.sums.get(c1).writes);
-    try testing.expectEqual(Cond.yes, try f.conds.kappaOf(testing.allocator, env.charge, &f.shapes, &f.cells, f.sums.get(c3).res));
-    // fresh alone: the call made it, contents may be shared: a recast, lost.
+    try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(c3).kappas, f.sums.get(c3).res));
+    // fresh alone: the call made it, its contents may be shared: a recast,
+    // whose κ is lost only where objects sit below — a `List Int` is yes (G4).
     const c4 = try fromWords(env, &f.sums, .{ .params = &.{}, .result = list, .result_words = bits(&.{.fresh}) });
-    try testing.expectEqualStrings("summary h: res ~fresh1{lost} (words)", try f.text(c4, "h"));
+    try testing.expectEqualStrings("summary h: res ~fresh1 (words)", try f.text(c4, "h"));
     try testing.expectEqual(Shape.Kind.recast, f.shapes.kind(f.sums.get(c4).res));
     // aliased: RA and the parameter anywhere in the result, approximate;
     // a demand below the result still finds the parameter (an ancestor).
@@ -441,8 +468,14 @@ test "function parameters: calls, owned supplies, escaped, returned; a list of f
     // `many aliased List (⊤ → a)` (Task.raceOk): a slot at π1[*], its result
     // anywhere in the result, approximate.
     const c5 = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = funs, .words = bits(&.{ .many, .aliased }), .fn_params = &.{}, .list_of_fns = true }}, .result = list, .result_words = bits(&.{.fresh}) });
-    try testing.expectEqualStrings("summary s: π1 R; res ~cb(π1[*]) ~fresh1{lost}; π1[*] calls many (words)", try f.text(c5, "s"));
+    try testing.expectEqualStrings("summary s: π1 R; res ~cb(π1[*]) ~fresh1; π1[*] calls many (words)", try f.text(c5, "s"));
     try testing.expectEqual(@as(u32, 1), f.sums.get(c5).slots.len);
+    // v1's rule: without `once`/`many`/`unused` a `List` of functions is a
+    // plain parameter — `borrowed List (a → b)` is R, no slot, no calls.
+    const c6 = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = funs, .words = bits(&.{.borrowed}), .fn_params = &.{}, .list_of_fns = true }}, .result = list, .result_words = bits(&.{ .fresh, .exclusive }) });
+    try testing.expectEqualStrings("summary t: π1 R; res fresh1 (words)", try f.text(c6, "t"));
+    try testing.expectEqual(@as(u32, 0), f.sums.get(c6).slots.len);
+    try testing.expectEqual(@as(u32, 0), f.sums.funCount(c6));
 }
 
 test "a constructor's class and a derived method's class" {
@@ -466,12 +499,24 @@ test "a constructor's class and a derived method's class" {
     const fb = try Step.field(&f.account, 11);
     const ra = try ctorClass(env, &f.sums, rec, &.{ fa, fb }, &.{ list, list }, true);
     try testing.expectEqualStrings("summary R: π1 A, π2 A; res .a π1, .b π2, fresh1{apart [π1] [π2]} (asserted)", try f.text(ra, "R"));
-    // One tracked argument: no atom.
+    // One tracked argument: no atom; the class owns its κ.
     const one = try ctorClass(env, &f.sums, t, &.{ s0, s1 }, &.{ list, int }, false);
-    try testing.expectEqual(Cond.yes, try f.conds.kappaOf(testing.allocator, env.charge, &f.shapes, &f.cells, f.sums.get(one).res));
-    // eq/compare: both arguments read deeply, a crossing result.
-    const eq = try derivedClass(env, &f.sums, list, int);
+    try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(one).kappas, f.sums.get(one).res));
+    try testing.expectEqual(Cond.Kind.atom, f.conds.kind(try env.kappa(f.sums.get(c).kappas, f.sums.get(c).res)));
+    // eq/compare over components whose `eq` only reads: both arguments
+    // read deeply, a crossing result.
+    const reader = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.borrowed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
+    const eq = try derivedClass(env, &f.sums, list, int, &.{reader});
     try testing.expectEqualStrings("summary eq: π1 R, π2 R (asserted)", try f.text(eq, "eq"));
     try testing.expect(try Summary.Table.usedAt(env, f.sums.paramUses(eq)[0], &.{Step.elem}));
     try testing.expect(!f.sums.get(eq).writes);
+    // A user-written component `eq` that lets its argument escape (through
+    // a wordless foreign) or writes it: the derived class says so.
+    const escaper = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
+    const eq2 = try derivedClass(env, &f.sums, list, int, &.{ reader, escaper });
+    try testing.expectEqualStrings("summary eq2: π1 RE, π2 RE (asserted)", try f.text(eq2, "eq2"));
+    const writer = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.consumed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
+    const eq3 = try derivedClass(env, &f.sums, list, int, &.{writer});
+    try testing.expect(f.sums.get(eq3).writes);
+    try testing.expectEqualStrings("summary eq3: π1 R, π2 R (asserted)", try f.text(eq3, "eq3"));
 }
