@@ -222,6 +222,11 @@ leave s w =
     got : Int
     got = Js.to (Js.get w "got")
 
+    -- `queued` guards the links: unlinking a node already unlinked would
+    -- null `head` and `tail`. `Task.halt` and the shutdown deadline's
+    -- `abandon` each clear the fiber's `parked` wait before they run its
+    -- canceller, so no program is known to run one twice; the check keeps
+    -- that a property of this module, not of its callers.
     if got > 0 then
         give s got
     else if Js.to (Js.get w "queued") then

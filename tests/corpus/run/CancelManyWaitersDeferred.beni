@@ -1,0 +1,26 @@
+-- run: cancelling many waiters at once costs time linear in their number
+-- (transparent-effects-proposal.md §17.4). Fibers wait on a `Deferred`;
+-- closing their scope cancels them all. The `Deferred` still works
+-- afterwards: `complete` answers `True` with no waiter left to wake.
+import Deferred exposing (Deferred)
+import Io
+import List
+import Node exposing (Program)
+import Task
+
+
+count : Int
+count = 650000
+
+
+main : Program
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
+    Task.scope λscope →
+        _ = List.foldl (List.range 1 count) 0 λi n →
+            _ = Task.spawnIn scope λ⊤ → Deferred.wait d
+            n + i
+        Task.yieldNow ⊤
+    _ = Debug.log "complete" (Deferred.complete d 7)
+    _ = Debug.log "wait" (Deferred.wait d)
+    Node.print "done"
