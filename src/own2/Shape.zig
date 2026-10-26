@@ -419,10 +419,13 @@ pub const Table = struct {
                 out = try cellt.sets.insert(gpa, .growth(account), out, e.key, e.value);
                 continue;
             }
-            if (!o.isSymbolic()) continue;
-            const rec = cellt.get(cell);
+            // A refinement projects through its canonical position, the
+            // split forgotten (§2.2): `elem c·ι` below is `c[*]` below.
+            const sym = if (o.isRefinement()) (try cellt.unrefined(gpa, account, places, cell)) orelse continue else cell;
+            if (!cellt.origin(sym).isSymbolic()) continue;
+            const rec = cellt.get(sym);
             const child_path = (try places.extend(gpa, .growth(account), .from(rec.b), s)) orelse continue;
-            const child = try cellt.symbolic(gpa, account, places, o, rec.a, child_path, rec.c);
+            const child = try cellt.symbolic(gpa, account, places, rec.origin, rec.a, child_path, rec.c);
             out = try cellt.sets.insert(gpa, .growth(account), out, child.int(), e.value);
         }
         return t.leaf(gpa, account, child_place, out);
@@ -728,7 +731,10 @@ pub const Table = struct {
                 if (d.kind == .node) {
                     t.nodes.items(.a)[out.int()] = mapped;
                 } else {
-                    t.nodes.items(.a)[out.int()] = (try t.mapWalk(gpa, account, .from(d.a), ctx, f)).int();
+                    // The base first: mapping it may grow the table, and a
+                    // column read before the call would be the old one.
+                    const base = try t.mapWalk(gpa, account, .from(d.a), ctx, f);
+                    t.nodes.items(.a)[out.int()] = base.int();
                     t.nodes.items(.b)[out.int()] = mapped;
                 }
                 return out;
@@ -1770,4 +1776,37 @@ test "collect keeps positions: a repeated member stays two, proj and map keep th
     try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, xy, xx));
     // reach sees through both kinds.
     try testing.expectEqual(@as(u32, 2), f.cells.sets.count(try f.shapes.reach(gpa, &f.account, &f.cells.sets, j)));
+}
+
+test "map of a delta keeps its base when mapping the base grows the table" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lists = try f.placeOf(3);
+    // A delta over a built record, its base deep enough that mapping it
+    // appends many nodes: the base's image must land in the delta's record,
+    // not in the column the table had before (a column read before a call
+    // that grows it).
+    var base = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    var children = try f.one(try Place.Step.field(&f.account, 10), base);
+    children = try f.shapes.overPut(gpa, &f.account, children, try Place.Step.field(&f.account, 11), base);
+    const rec = try f.shapes.node(gpa, &f.account, lists, try f.site(2, lists, .record), children);
+    base = try f.shapes.leaf(gpa, &f.account, list, try f.site(3, list, .list));
+    const d = try f.shapes.delta(gpa, &f.account, rec, try f.one(try Place.Step.field(&f.account, 10), base));
+    const Relabel = struct {
+        fn relabel(fx: *Fixture, s: SetId) Error!SetId {
+            if (s == .none) return .none;
+            // Grow the node table on every call: new keys each time.
+            const first: u32 = 5000 + fx.shapes.count();
+            var i: u32 = 0;
+            while (i < 256) : (i += 1) _ = try fx.shapes.leaf(testing.allocator, &fx.account, try fx.placeOf(1), try fx.cells.sets.insert(testing.allocator, .growth(&fx.account), .none, first + i, 0));
+            return s;
+        }
+    };
+    const mapped = try f.shapes.map(gpa, &f.account, d, &f, Relabel.relabel);
+    try testing.expectEqual(Kind.delta, f.shapes.kind(mapped));
+    const mapped_base: NodeId = .from(f.shapes.get(mapped).a);
+    try testing.expectEqual(Kind.node, f.shapes.kind(mapped_base));
 }
