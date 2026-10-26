@@ -826,10 +826,16 @@ pub const Table = struct {
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
             .leaf => try t.derivedCells(gpa, charge, v, v.shapes.cells(n), at_summary, &.{}),
-            // A built node's κ is the walk's (O13): `lost` until set.
-            // In a collapsed fold an absent entry at one covered position
-            // read `lost` there, so the fold reads `lost` (§2.9).
-            .node, .delta => return if (t.isCollapsed(ctx)) lost else stored orelse lost,
+            // A built node's κ is the walk's (O13): `lost` until set; in a
+            // collapsed fold `lost` (§2.9). At a summary position its storage
+            // arrivals that stand for many positions owe `excl` as a leaf's do
+            // (§2.9, #1112), so a read never rests on where it was linked from.
+            .node, .delta => {
+                if (t.isCollapsed(ctx)) return lost;
+                const s = stored orelse return lost;
+                if (!at_summary or s == shared) return s;
+                return t.@"and"(gpa, charge, s, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(n)));
+            },
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
             .recast => blk: {
@@ -1407,6 +1413,10 @@ pub const Table = struct {
         const Write = struct { path: u32, node: NodeId, k: CondId };
         var outs: std.ArrayList(Write) = .empty;
         defer outs.deinit(gpa);
+        // The positions that are a member's own snapshot, linked as they are.
+        const Linked = struct { path: u32, at: Kappas };
+        var linked: std.ArrayList(Linked) = .empty;
+        defer linked.deinit(gpa);
         const root_route = try t.mapPut(gpa, charge, Ids.none_int, joined.int(), 0);
         try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary, .path = 0, .folded = false, .route = root_route });
         // Exact states: a run interned as a cons list of `(member, position)`
@@ -1434,6 +1444,31 @@ pub const Table = struct {
             if (state.found_existing) continue;
             state.value_ptr.* = 1;
             try t.traced(gpa, f.node, f.summary);
+            // One alternative, or alternatives all one member at its own
+            // node: the position IS that member's, a link (§2.9, #1112) —
+            // nothing below is walked, nothing is written.
+            // An alternative that is nothing (an empty leaf with nothing
+            // stored) adds nothing to a join, so it does not count.
+            if (f.len > 0 and (mode == .alternatives or f.len == 1)) {
+                var m0: NodeId = .none;
+                var c0: Kappas = .none;
+                var one = true;
+                for (0..f.len) |i| {
+                    const m = runs.items[f.first + i];
+                    const c = run_ctxs.items[f.first + i];
+                    if (mode == .alternatives and c == .none and nothingAt(v, m)) continue;
+                    if (m0 == .none) {
+                        m0 = m;
+                        c0 = c;
+                    } else one = one and m == m0 and c == c0;
+                }
+                one = one and m0 != .none and (f.node == m0 or (mode == .alternatives and try joinOfOne(gpa, charge, v, f.node, m0)));
+                if (one) {
+                    try charge.reserve(gpa, .inspection, 1);
+                    try linked.append(gpa, .{ .path = f.path, .at = c0 });
+                    continue;
+                }
+            }
             var k: CondId = yes;
             items.clearRetainingCapacity();
             for (0..f.len) |i| {
@@ -1545,6 +1580,17 @@ pub const Table = struct {
             const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
             here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
         }
+        // The linked positions by the output position they are at.
+        const link_head = try gpa.alloc(u32, paths.items.len);
+        defer gpa.free(link_head);
+        @memset(link_head, Ids.none_int);
+        const link_next = try gpa.alloc(u32, linked.items.len);
+        defer gpa.free(link_next);
+        for (linked.items, 0..) |l, li| {
+            const at = owner[l.path];
+            link_next[li] = link_head[at];
+            link_head[at] = @intCast(li);
+        }
         // Bottom up: a child after its parent in `paths`, so in reverse.
         const pos = try gpa.alloc(Kappas, paths.items.len);
         defer gpa.free(pos);
@@ -1557,12 +1603,39 @@ pub const Table = struct {
             i -= 1;
             if (owner[i] != i) continue;
             pos[i] = try t.makePos(gpa, charge, .{ .here = here[i], .links = if (fold_at.items[i]) fold_links[i] else links[i], .fold = if (fold_at.items[i]) fold_exact else 0 });
+            var li = link_head[i];
+            while (li != Ids.none_int) : (li = link_next[li]) pos[i] = try t.kappaMerge(gpa, charge, pos[i], linked.items[li].at);
             const p = paths.items[i];
             if (p.parent != Ids.none_int and pos[i] != .none) links[p.parent] = try t.mapPut(gpa, charge, links[p.parent], p.step, pos[i].int());
         }
         return t.kappaMerge(gpa, charge, out, pos[0]);
     }
 
+    /// An empty leaf: no object can be there.
+    fn nothingAt(v: View, n: NodeId) bool {
+        return v.shapes.kind(n) == .leaf and v.shapes.cells(n) == .none;
+    }
+
+    /// Whether `joined` is `m` joined with nothing but empty leaves: a union
+    /// DAG whose every other side is `m` or an empty leaf. A record per node.
+    fn joinOfOne(gpa: Allocator, charge: Charge, v: View, joined: NodeId, m: NodeId) Error!bool {
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, joined);
+        var found = false;
+        while (stack.pop()) |x| {
+            try charge.reserve(gpa, .inspection, 1);
+            if (x == m) {
+                found = true;
+                continue;
+            }
+            if (nothingAt(v, x)) continue;
+            if (v.shapes.kind(x) != .@"union") return false;
+            const d = v.shapes.get(x);
+            try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+        }
+        return found;
+    }
     /// `κ_a(a) ⊑ κ_b(b)` at every position the two structures put at one
     /// path (§2.9's sparse frontier): a simulation over PAIRS, each once
     /// per pair of positions, `b` projected in lockstep along every step
@@ -2996,7 +3069,9 @@ test "#1063: propagate, kappaLeq and deep read exactly one frontier" {
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), ctx, c.root, ctx, c.root, false));
         f.conds.trace = null;
         const want = traceSet(&lists[0]);
-        try testing.expectEqualSlices(u32, want, traceSet(&lists[1]));
+        // One alternative is its own snapshot, linked: `propagate` reads its
+        // root alone (#1112).
+        try testing.expectEqualSlices(u32, &.{c.root.int() << 1}, traceSet(&lists[1]));
         try testing.expectEqualSlices(u32, want, traceSet(&lists[2]));
         // A stored entry is at a position every reader reaches.
         if (stores) try testing.expect(traceCount(want, c.at, c.summary) == 1);
@@ -3477,4 +3552,57 @@ test "#1114 review: a join keeps what is stored below every inner of a recast of
         try testing.expectEqual(try f.conds.flat(gpa, f.charge(), want), try f.conds.flat(gpa, f.charge(), try f.conds.deep(gpa, f.charge(), v, out, j, false)));
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, km, r, out, j, false));
     }
+}
+
+test "#1112: a built node read at a summary position owes excl for a storage arrival standing for many" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // A node whose storage is `π1[*]` (one of a parameter's elements, a
+    // folded arrival), its certificate `yes`: at a plain position `yes`, at a
+    // summary position `excl π1[*]` — wherever it is linked from.
+    const pe = try f.param(0, 3, &.{Place.Step.elem});
+    const n = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{pe}), Ids.none_int);
+    const k = try f.setK(.none, n, yes);
+    try testing.expectEqual(yes, try f.kappa(k, n, false));
+    const at_summary = try f.kappa(k, n, true);
+    try testing.expectEqual(Kind.atom, f.conds.kind(at_summary));
+    try testing.expectEqual(AtomKind.excl, f.conds.get(at_summary).atom);
+    // `shared` stays `shared`; no certificate stays `lost`.
+    try testing.expectEqual(shared, try f.kappa(try f.setK(.none, n, shared), n, true));
+    try testing.expectEqual(lost, try f.kappa(.none, n, true));
+}
+
+test "#1112: a one-element literal and a join with an empty alternative are links: nothing below is walked" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // A deep member: a tower of `Rose [ … ]` levels.
+    const e = try f.leaf(6, &.{try f.param(0, 6, &.{})});
+    var node = e;
+    var k = try f.setK(.none, e, shared);
+    for (0..20) |i| {
+        const l = try listOver(&f, 7, @intCast(2 * i + 1), node, k);
+        const r = try roseOver(&f, @intCast(2 * i + 2), l.node, l.k);
+        node = r.node;
+        k = r.k;
+    }
+    var trace: std.ArrayList(u32) = .empty;
+    defer trace.deinit(gpa);
+    f.conds.trace = &trace;
+    // `[ tower ]`: the literal's `[*]` is the tower's snapshot itself.
+    const one = try f.conds.propagateFrom(gpa, f.charge(), f.view(), .none, node, &.{node}, &.{k}, .together, true, false, null);
+    try testing.expectEqual(@as(usize, 1), trace.items.len);
+    try testing.expectEqual(k, one);
+    // `if c then tower else <nothing>` at the root's place: the join is the
+    // tower's snapshot too.
+    trace.clearRetainingCapacity();
+    const nothing = try f.shapes.nothing(gpa, &f.account, try f.placeOf(6));
+    const j = try f.join2(node, nothing);
+    const alt = try f.propagate(.none, j, &.{ node, nothing }, &.{ k, .none }, .alternatives, false);
+    f.conds.trace = null;
+    try testing.expectEqual(@as(usize, 1), trace.items.len);
+    try testing.expectEqual(k, alt);
 }
