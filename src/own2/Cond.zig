@@ -136,6 +136,10 @@ pub const Table = struct {
     /// `sep`'s memo for an exact pair with no traversal context; a split's
     /// κ is fixed at its creation (S1), so the answer is too.
     memo_sep: Ids.FixedDict(2) = .{},
+    /// For tests: every position a reader (`deep`, `propagate`,
+    /// `kappaLeq`) reads, as `node << 1 | class`, so a test can compare
+    /// the frontiers they walk.
+    trace: ?*std.ArrayList(u32) = null,
 
     /// A table with its three constants, three records in `charge`.
     pub fn init(gpa: Allocator, charge: Charge) Error!Table {
@@ -644,6 +648,7 @@ pub const Table = struct {
             if (seen.get(f.node)) |s| if (s & bit != 0) continue;
             try seen.put(gpa, f.node, (seen.get(f.node) orelse 0) | bit);
             try charge.reserve(gpa, .inspection, 1);
+            try t.traced(gpa, f.node, f.summary);
             if (!f.explicit) {
                 // A projection the structure does not name: what the arrivals
                 // above claim (`excl` is deep) covers its derivation; only
@@ -775,38 +780,64 @@ pub const Table = struct {
 
     // ---- joins -------------------------------------------------------------
 
-    /// The positions a κ read can reach from `(n, summary)` (§2.9, *The
-    /// observable-position contract*; the closure `Block.Writer.entries`
-    /// writes): the explicit parts — a delta's base, a node's children and
-    /// a delta's overrides, a recast's inner, a union's or a positions
-    /// node's sides — and the projection along every step of the place,
-    /// under a leaf, under a recast and to an empty shape included, the
-    /// projected ones only when `projected` (a stored entry may sit there).
-    /// Appended as `(node, summary, step word or none)`; a step's child is
-    /// once, explicit or projected.
+    /// Record a position a reader reads (`trace`, for tests).
+    fn traced(t: *Table, gpa: Allocator, n: NodeId, summary: bool) Error!void {
+        if (t.trace) |l| try l.append(gpa, n.int() << 1 | @intFromBool(summary));
+    }
+
+    /// The positions a κ read reaches from `(n, summary)` (§2.9): a position
+    /// is a PATH, so the transitions are the projections along `n`'s place
+    /// steps, nothing else. Other nodes at `n`'s path are read by `kappaOf`
+    /// of `n`: a union's or positions node's sides by `dagKappa`; a delta's
+    /// base and a recast's inner never (a built node's κ is the walk's, O13;
+    /// a recast's is derived). `explicit`: `n`'s structure names something
+    /// at that step (`explicitAt`); the others and the empty ones are
+    /// followed only when `projected` (a snapshot may store there). The one
+    /// walk of `propagate`, `kappaLeq` and `deep`; Block writes a superset.
     pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true };
 
-    fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, out: *std.ArrayList(Next)) Error!void {
-        _ = t;
-        const shapes = v.shapes;
-        const d = shapes.get(n);
-        switch (d.kind) {
-            .leaf => {},
-            .node, .delta => {
-                if (d.kind == .delta) try out.append(gpa, .{ .node = .from(d.a), .summary = summary, .step = Ids.none_int });
-                var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                while (it.next()) |e| try out.append(gpa, .{ .node = e.node, .summary = summary or below(e.step), .step = e.step.word() });
-            },
-            .recast => try out.append(gpa, .{ .node = .from(d.a), .summary = summary, .step = Ids.none_int }),
-            .@"union", .positions => try out.appendSlice(gpa, &.{ .{ .node = .from(d.a), .summary = summary, .step = Ids.none_int }, .{ .node = .from(d.b), .summary = summary, .step = Ids.none_int } }),
-        }
-        if (!projected) return;
-        for (v.places.steps(d.place).steps) |s| {
+    pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, out: *std.ArrayList(Next)) Error!void {
+        for (v.places.steps(v.shapes.place(n)).steps) |s| {
             try charge.reserve(gpa, .inspection, 1);
-            if ((d.kind == .node or d.kind == .delta) and shapes.overGet(if (d.kind == .node) d.a else d.b, s) != null) continue;
-            const c = (try shapes.proj(gpa, charge.account, v.places, v.cells, n, s)) orelse continue;
-            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = false });
+            const c = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, n, s)) orelse continue;
+            const explicit = try t.explicitAt(gpa, charge, v, n, s);
+            const empty = v.shapes.kind(c) == .leaf and v.shapes.cells(c) == .none;
+            if (!projected and (!explicit or empty)) continue;
+            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = explicit });
         }
+    }
+
+    /// Whether `n`'s structure names something at step `s`: an override in
+    /// `n`, a delta's base or a side; a leaf or a recast names nothing (its
+    /// projections are derived). A record per own-path DAG node visited.
+    fn explicitAt(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, s: Step) Error!bool {
+        _ = t;
+        switch (v.shapes.kind(n)) {
+            .leaf, .recast => return false,
+            .node => return v.shapes.overGet(v.shapes.get(n).a, s) != null,
+            .delta, .@"union", .positions => {},
+        }
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (seen.contains(x)) continue;
+            try charge.reserve(gpa, .inspection, 1);
+            try seen.put(gpa, x, {});
+            const d = v.shapes.get(x);
+            switch (d.kind) {
+                .leaf, .recast => {},
+                .node => if (v.shapes.overGet(d.a, s) != null) return true,
+                .delta => {
+                    if (v.shapes.overGet(d.b, s) != null) return true;
+                    try stack.append(gpa, .from(d.a));
+                },
+                .@"union", .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            }
+        }
+        return false;
     }
 
     fn below(s: Step) bool {
@@ -850,8 +881,8 @@ pub const Table = struct {
         defer visited.deinit(gpa);
         var items: std.ArrayList(Item) = .empty;
         defer items.deinit(gpa);
-        var steps: std.ArrayList(Step) = .empty;
-        defer steps.deinit(gpa);
+        var next: std.ArrayList(Next) = .empty;
+        defer next.deinit(gpa);
         while (stack.pop()) |f| {
             var run: u32 = Ids.none_int;
             var r = f.len;
@@ -866,6 +897,7 @@ pub const Table = struct {
             const state = try visited.getOrPut(gpa, .{ f.node.int(), @intFromBool(f.summary), run });
             if (state.found_existing) continue;
             state.value_ptr.* = 1;
+            try t.traced(gpa, f.node, f.summary);
             var k: CondId = yes;
             items.clearRetainingCapacity();
             for (0..f.len) |i| {
@@ -889,18 +921,18 @@ pub const Table = struct {
             }
             if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
             if (mode == .alternatives and f.len == 0) k = lost;
-            ctx = (try t.kappaSet(gpa, charge, ctx, f.node, f.summary, k)).ctx;
-            // Children: every step of the place, the members projected
-            // along it; where the joined node has no explicit structure
-            // there, only while a snapshot may store something below.
-            const nk = v.shapes.kind(f.node);
-            const explicit_here = nk != .leaf and nk != .recast;
-            steps.clearRetainingCapacity();
-            try steps.appendSlice(gpa, v.places.steps(v.shapes.place(f.node)).steps);
-            for (steps.items) |s| {
-                const child = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, f.node, s)) orelse continue;
-                const empty = v.shapes.kind(child) == .leaf and v.shapes.cells(child) == .none;
-                if (!projected and (!explicit_here or empty)) continue;
+            // A leaf's read is the stored ⊔ the derivation, so a κ no
+            // stronger than the derivation stores nothing: what a reader
+            // derives there is the same before and after the join.
+            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaOf(gpa, charge, v, .none, f.node, f.summary));
+            if (!redundant) ctx = (try t.kappaSet(gpa, charge, ctx, f.node, f.summary, k)).ctx;
+            // Children: the joined node's frontier, the members projected
+            // along each step of it.
+            next.clearRetainingCapacity();
+            try t.frontier(gpa, charge, v, f.node, f.summary, projected, &next);
+            for (next.items) |e| {
+                const s = Step.fromWord(e.step);
+                const child = e.node;
                 const first: u32 = @intCast(runs.items.len);
                 for (0..f.len) |i| {
                     try charge.reserve(gpa, .inspection, 1);
@@ -910,7 +942,7 @@ pub const Table = struct {
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, c);
                 }
-                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = f.summary or below(s) });
+                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary });
             }
         }
         return ctx;
@@ -929,25 +961,23 @@ pub const Table = struct {
         const Frame = struct { a: NodeId, b: NodeId, summary: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        var next: std.ArrayList(Next) = .empty;
+        defer next.deinit(gpa);
         try stack.append(gpa, .{ .a = a, .b = b, .summary = at_summary });
         while (stack.pop()) |f| {
             try charge.reserve(gpa, .inspection, 1);
             const got = try seen.getOrPut(gpa, .{ f.a.int(), f.b.int(), @intFromBool(f.summary) });
             if (got.found_existing) continue;
             got.value_ptr.* = 1;
+            try t.traced(gpa, f.a, f.summary);
             const ka = try t.kappaOf(gpa, charge, v, ctx_a, f.a, f.summary);
             const kb = try t.kappaOf(gpa, charge, v, ctx_b, f.b, f.summary);
             if (!try t.leq(gpa, charge, ka, kb)) return false;
-            const kind_a = v.shapes.kind(f.a);
-            const explicit_here = kind_a != .leaf and kind_a != .recast;
-            if (!explicit_here and !projected) continue;
-            const steps = v.places.steps(v.shapes.place(f.a));
-            for (steps.steps) |s| {
-                const na = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, f.a, s)) orelse continue;
-                const empty = v.shapes.kind(na) == .leaf and v.shapes.cells(na) == .none;
-                if (empty and !projected) continue; // nothing is below anything
-                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, f.b, s)) orelse return false;
-                try stack.append(gpa, .{ .a = na, .b = nb, .summary = f.summary or below(s) });
+            next.clearRetainingCapacity();
+            try t.frontier(gpa, charge, v, f.a, f.summary, projected, &next);
+            for (next.items) |e| {
+                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, f.b, Step.fromWord(e.step))) orelse return false;
+                try stack.append(gpa, .{ .a = e.node, .b = nb, .summary = e.summary });
             }
         }
         return true;
@@ -1113,6 +1143,11 @@ const TestGraph = struct {
             7 => {
                 try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 6 });
                 return .{ .kind = .list, .head = 200 };
+            },
+            // 8 a record `{ a, b, c : List Int }`: three routes to one place.
+            8 => {
+                inline for (.{ 10, 11, 14 }) |name| try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, name) catch unreachable), .@"var" = 1 });
+                return .{ .kind = .record };
             },
             else => unreachable,
         }
@@ -1942,10 +1977,11 @@ test "red twin CallbackFieldPositionsBranch: a stored summary κ never weakens t
     const a2 = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, r2, fa)).?;
     // `if c then [ (g 1).a ] else [ (g 2).a ]`: two one-element lists; the
     // joined `[*]` is the leaf `{cb@ι₁·.a, cb@ι₂·.a}` with ONE position per
-    // branch, so the branch stores `yes` for it at a summary position.
+    // branch, so the branch's κ there is `yes` — no stronger than the
+    // leaf's derivation, so it stores nothing.
     const w = try f.join2(a1, a2);
     const m = try f.propagate(.none, w, &.{ a1, a2 }, &.{ .none, .none }, .alternatives, true);
-    try testing.expectEqual(yes, t.kappaGet(m, w, true).?);
+    try testing.expectEqual(@as(?CondId, null), t.kappaGet(m, w, true));
     // `[ g 1, g 2 ]` in the same frame: `[*].a` holds that leaf's cells at
     // TWO positions. The read joins the stored `yes` with the derivation at
     // the read's position: `apart`, and `rely` is `xreq`, never `ok` — for
@@ -2192,53 +2228,197 @@ test "#1063: kappaLeq compares below a leaf in both directions, and two roots of
     try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, .none, lit, at_empty, lit, false));
 }
 
-test "#1064: propagate reads its members by index across reallocation, and keeps two contexts at one node" {
+/// The positions a reader read, sorted and without repeats.
+fn traceSet(list: *std.ArrayList(u32)) []const u32 {
+    std.mem.sort(u32, list.items, {}, std.sort.asc(u32));
+    var n: usize = 0;
+    for (list.items) |x| {
+        if (n > 0 and list.items[n - 1] == x) continue;
+        list.items[n] = x;
+        n += 1;
+    }
+    list.shrinkRetainingCapacity(n);
+    return list.items;
+}
+
+/// How many times the reader read `(node, class)`.
+fn traceCount(list: []const u32, n: NodeId, summary: bool) usize {
+    var c: usize = 0;
+    for (list) |x| c += @intFromBool(x == (n.int() << 1 | @intFromBool(summary)));
+    return c;
+}
+
+test "#1063: a delta's base and a recast's inner are not positions: every reader agrees" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
-    // Many members, each a record `{ a, b }` of lists of lists (place 5's
-    // elements): every child step appends a run as large as the members,
-    // which reallocates the run list while it is being read.
-    const n_members = 64;
+    const gpa = testing.allocator;
+    const v = f.view();
+    // A delta over a leaf `{p}`, `a` overridden; the snapshot stores
+    // `shared` for the base. The base is not at a path of its own: the
+    // delta's κ is the walk's, so no reader reads it, and a join keeps
+    // what every reader reads (the review's probe (a)).
+    const p = try f.param(0, 0, &.{});
+    const q = try f.param(1, 1, &.{});
+    const base = try f.leaf(0, &.{p});
+    const fa = try Place.Step.field(&f.account, 10);
+    const m = try f.shapes.delta(gpa, &f.account, base, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{q})));
+    var ctx = try f.setK(.none, m, yes);
+    ctx = try f.setK(ctx, base, shared);
+    const out = try f.propagate(.none, m, &.{m}, &.{ctx}, .alternatives, false);
+    const d0 = try f.conds.deep(gpa, f.charge(), v, ctx, m, false);
+    try testing.expect(d0 != shared);
+    try testing.expectEqual(d0, try f.conds.deep(gpa, f.charge(), v, out, m, false));
+    try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, ctx, m, out, m, false));
+    try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, out, m, ctx, m, false));
+    // A recast to `Int` of a built node (the review's probe (b)): its κ is
+    // derived — nothing below an `Int` holds an object — so `deep` reads
+    // `yes`, never the inner node's unset `lost`.
+    const s = try f.cells.site(gpa, &f.account, 7, try f.placeOf(0), .record);
+    const x = try f.param(2, 1, &.{});
+    const inner = try f.shapes.node(gpa, &f.account, try f.placeOf(0), try f.set(&.{s}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{x})));
+    const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), inner);
+    try testing.expectEqual(yes, try f.kappa(.none, r, false));
+    try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, .none, r, false));
+    // `Rows`'s stored-into result (Rows.zig `storedInto`): a list node whose
+    // `[*]` carries a stored κ, recast to the signature's `Int` result.
+    const ls = try f.cells.site(gpa, &f.account, 8, try f.placeOf(1), .list);
+    const elems = try f.leaf(2, &.{});
+    const list = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{ls}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
+    const rl = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), list);
+    const kl = try f.setKAt(.none, elems, true, shared);
+    try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, kl, rl, false));
+    try testing.expectEqual(yes, try f.conds.deep(gpa, f.charge(), v, .none, rl, false));
+}
+
+test "#1063: propagate, kappaLeq and deep read exactly one frontier" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    // A delta over a leaf, a union of two nodes, a recast of a node, a
+    // Rose leaf (cyclic), a list of lists (a leaf): each with no snapshot
+    // and with one storing `lost` (never `shared`, so `deep` reads all).
+    const p = try f.param(0, 0, &.{});
+    const base = try f.leaf(0, &.{p});
+    const delta = try f.shapes.delta(gpa, &f.account, base, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{try f.param(1, 1, &.{})})));
+    const n1 = try f.shapes.node(gpa, &f.account, try f.placeOf(0), try f.set(&.{try f.cells.site(gpa, &f.account, 1, try f.placeOf(0), .record)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{try f.param(2, 1, &.{})})));
+    const n2 = try f.shapes.node(gpa, &f.account, try f.placeOf(0), try f.set(&.{try f.cells.site(gpa, &f.account, 2, try f.placeOf(0), .record)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, fb, try f.leaf(1, &.{try f.param(3, 1, &.{})})));
+    const un = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, n1, n2);
+    const rc = try f.shapes.recast(gpa, &f.account, try f.placeOf(3), n1);
+    const rose = try f.leaf(6, &.{try f.param(4, 6, &.{})});
+    const lol = try f.leaf(3, &.{try f.param(5, 3, &.{})});
+    const Case = struct { root: NodeId, at: NodeId, summary: bool };
+    const cases = [_]Case{
+        .{ .root = delta, .at = try f.projOf(delta, fb), .summary = false },
+        .{ .root = un, .at = try f.projOf(un, fa), .summary = false },
+        .{ .root = rc, .at = try f.projOf(rc, Place.Step.elem), .summary = true },
+        .{ .root = rose, .at = try f.projOf(rose, arg), .summary = false },
+        .{ .root = lol, .at = try f.projOf(try f.projOf(lol, Place.Step.elem), Place.Step.elem), .summary = true },
+    };
+    for (cases) |c| for ([_]bool{ false, true }) |stores| {
+        const ctx = if (stores) try f.setKAt(.none, c.at, c.summary, lost) else .none;
+        var lists: [3]std.ArrayList(u32) = @splat(.empty);
+        defer for (&lists) |*l| l.deinit(gpa);
+        f.conds.trace = &lists[0];
+        _ = try f.conds.deep(gpa, f.charge(), f.view(), ctx, c.root, false);
+        f.conds.trace = &lists[1];
+        _ = try f.propagate(.none, c.root, &.{c.root}, &.{ctx}, .alternatives, false);
+        f.conds.trace = &lists[2];
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), ctx, c.root, ctx, c.root, false));
+        f.conds.trace = null;
+        const want = traceSet(&lists[0]);
+        try testing.expectEqualSlices(u32, want, traceSet(&lists[1]));
+        try testing.expectEqualSlices(u32, want, traceSet(&lists[2]));
+        // A stored entry is at a position every reader reaches.
+        if (stores) try testing.expect(traceCount(want, c.at, c.summary) == 1);
+    };
+}
+
+test "#1064: propagate reads its members by index across reallocation" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // A built record `{ a, b }` joined over 128 members: the first child
+    // step appends a run as long as the members, which moves the run list
+    // while the second step still has to read them.
+    const n_members = 128;
     var members: [n_members]NodeId = undefined;
     var ctxs: [n_members]Kappas = undefined;
     for (&members, &ctxs, 0..) |*m, *c, i| {
-        const p = try f.param(@intCast(i), 5, &.{});
-        m.* = try f.leaf(5, &.{p});
+        m.* = try f.leaf(0, &.{try f.param(@intCast(i), 0, &.{})});
         c.* = .none;
     }
-    // The last member's snapshot stores `shared` at `[*].a`.
-    const elems = try f.projOf(members[n_members - 1], Place.Step.elem);
-    const field_a = try f.projOf(elems, try Place.Step.field(&f.account, 10));
-    ctxs[n_members - 1] = try f.setKAt(.none, field_a, true, shared);
-    var copy = members;
-    const joined = try f.shapes.join(testing.allocator, &f.account, &f.places, &f.cells, &copy);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    ctxs[n_members - 1] = try f.setK(.none, try f.projOf(members[n_members - 1], fb), lost);
+    const la = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 1, try f.placeOf(1), .list)});
+    const lb = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 2, try f.placeOf(1), .list)});
+    const site = try f.cells.site(gpa, &f.account, 3, try f.placeOf(0), .record);
+    const joined = try f.shapes.node(gpa, &f.account, try f.placeOf(0), try f.set(&.{site}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, la), fb, lb));
     const out = try f.propagate(.none, joined, &members, &ctxs, .alternatives, false);
-    const jf = try f.projOf(try f.projOf(joined, Place.Step.elem), try Place.Step.field(&f.account, 10));
-    try testing.expectEqual(shared, try f.kappa(out, jf, true));
-    // Two contexts at one joined node are two states: the same node met
-    // with another member run is propagated again, not skipped.
-    const x = try f.param(100, 3, &.{});
-    const y = try f.param(101, 3, &.{});
-    const lx = try f.leaf(3, &.{x});
-    const ly = try f.leaf(3, &.{y});
-    const lxy = try f.join2(lx, ly);
-    const kx = try f.setKAt(.none, try f.projOf(lx, Place.Step.elem), true, shared);
-    const first = try f.propagate(.none, lxy, &.{ lx, ly }, &.{ .none, .none }, .alternatives, false);
-    const second = try f.propagate(first, lxy, &.{ lx, ly }, &.{ kx, .none }, .alternatives, false);
-    try testing.expectEqual(shared, try f.kappa(second, try f.projOf(lxy, Place.Step.elem), true));
+    try testing.expectEqual(lost, try f.kappa(out, lb, false));
+    try testing.expectEqual(yes, try f.kappa(out, la, false));
 }
 
-test "#1064: a cyclic place ends propagation at a revisited exact state" {
+test "#1064: two contexts at one node in one propagation are two states, each once" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
-    // `Rose`: projections cycle through `⟲`; a stored entry makes the walk
-    // follow them, and the exact state set ends it.
-    const r = try f.param(0, 6, &.{});
-    const root = try f.leaf(6, &.{r});
-    const kids = try f.projOf(root, try f.places.ctorStep(testing.allocator, &f.account, 6, 0));
+    const gpa = testing.allocator;
+    // A record `{ a, b, c }` whose three fields are ONE built list `C`;
+    // the member's are `X`, `Y`, `X`, `X`'s snapshot `lost`. `C` is met
+    // with the runs `X`, `Y`, `X` in one call: two states, each read once,
+    // and `C` joins both.
+    const r = try f.placeOf(8);
+    const l = try f.placeOf(1);
+    var steps: [3]Place.Step = undefined;
+    for (&steps, [_]u32{ 10, 11, 14 }) |*s, name| s.* = try Place.Step.field(&f.account, name);
+    const cc = try f.shapes.node(gpa, &f.account, l, try f.set(&.{try f.cells.site(gpa, &f.account, 1, l, .list)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{})));
+    const x = try f.leaf(1, &.{try f.param(0, 1, &.{})});
+    const y = try f.leaf(1, &.{try f.param(1, 1, &.{})});
+    var jo: u32 = Ids.none_int;
+    var mo: u32 = Ids.none_int;
+    for (steps, [_]NodeId{ x, y, x }) |s, kid| {
+        jo = try f.shapes.overPut(gpa, &f.account, jo, s, cc);
+        mo = try f.shapes.overPut(gpa, &f.account, mo, s, kid);
+    }
+    const joined = try f.shapes.node(gpa, &f.account, r, try f.set(&.{try f.cells.site(gpa, &f.account, 2, r, .record)}), jo);
+    const member = try f.shapes.node(gpa, &f.account, r, try f.set(&.{try f.cells.site(gpa, &f.account, 3, r, .record)}), mo);
+    const ctx = try f.setK(.none, x, lost);
+    var trace: std.ArrayList(u32) = .empty;
+    defer trace.deinit(gpa);
+    f.conds.trace = &trace;
+    const out = try f.propagate(.none, joined, &.{member}, &.{ctx}, .alternatives, false);
+    f.conds.trace = null;
+    try testing.expectEqual(lost, try f.kappa(out, cc, false));
+    try testing.expectEqual(@as(usize, 2), traceCount(trace.items, cc, false));
+}
+
+test "#1064: a cyclic place with two contexts ends at the revisited exact states" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // `Rose`: projections cycle through `⟲`, and a stored entry makes the
+    // walk follow them. Two members, one storing at its children: every
+    // state of the cycle is read once, and the walk ends there.
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    const a = try f.leaf(6, &.{try f.param(0, 6, &.{})});
+    const b = try f.leaf(6, &.{try f.param(1, 6, &.{})});
+    const joined = try f.join2(a, b);
+    const kids = try f.projOf(a, arg);
     const stored = try f.setKAt(.none, kids, false, shared);
-    const out = try f.propagate(.none, root, &.{root}, &.{stored}, .alternatives, false);
-    try testing.expectEqual(shared, try f.kappa(out, kids, false));
+    var trace: std.ArrayList(u32) = .empty;
+    defer trace.deinit(gpa);
+    f.conds.trace = &trace;
+    const out = try f.propagate(.none, joined, &.{ a, b }, &.{ stored, .none }, .alternatives, false);
+    f.conds.trace = null;
+    try testing.expectEqual(shared, try f.kappa(out, try f.projOf(joined, arg), false));
+    const n = trace.items.len;
+    try testing.expectEqual(n, traceSet(&trace).len);
 }
