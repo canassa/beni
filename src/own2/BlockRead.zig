@@ -2140,7 +2140,7 @@ test "the codec's lane stops the writer before the work: a cold place with a lar
         try testing.expectEqual(@as(usize, 0), out.items.len);
         try testing.expect(r.baseline <= cap);
         // What the writer allocated is bounded by what it reserved.
-        if (r.bytes > 1024 * (@as(usize, cap) + 64)) {
+        if (@as(u64, r.bytes) > 1024 * (cap + 64)) {
             std.debug.print("cap {d}: {d} bytes allocated\n", .{ cap, r.bytes });
             return error.TestUnexpectedResult;
         }
@@ -2178,7 +2178,7 @@ test "the codec's lane stops the writer at every prefix: nothing written, no mem
         try testing.expectEqual(@as(?anyerror, error.AccountingInvariant), r.err);
         try testing.expectEqual(@as(usize, 0), out.items.len);
         try testing.expect(r.baseline <= cap);
-        if (r.bytes > 1024 * (@as(usize, cap) + 64)) {
+        if (@as(u64, r.bytes) > 1024 * (cap + 64)) {
             std.debug.print("cap {d}: {d} bytes allocated\n", .{ cap, r.bytes });
             return error.TestUnexpectedResult;
         }
