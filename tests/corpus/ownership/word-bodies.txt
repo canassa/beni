@@ -177,3 +177,10 @@ tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89
 # `half` and `length`: the code that runs in place of their siblings.
 src/Operator.zig                Operator.listPrimitives cd2e9bc2299beeb212262732d4d6420c0f265b5d4900a2a7282a8b0732cdd18a
 src/js/Lower.zig                Lower.listPrimitives 9c32196b6dd091c0fe5414feb3528e8e03f7d6b7f30b11f568fbba1f24599f77
+# The code generator's forms of `List.cons`: the re-cons of a scalar view and
+# the cons steps of a loop that builds, which run in place of its body.
+src/js/Lower.zig                Lower.listRecons     426b66d3ae9f008c345e1b6a837c3c417ca577210d5c6ccbcc95ada036eafb91
+src/js/Lower.zig                Lower.listConsTail   7c488b8a7cc81baeba74afa8d08b7e21304eb77f4b101363f275ae1f9053ee88
+src/js/Lower.zig                Lower.listIsCons     b627b7ce8a482e9629ccca3be970825edd07c92c2ca0e7d10fe30b021ea3279c
+src/js/Lower.zig                Lower.listConsStep   584c9d920d77481b7bb184d6a433e5272f45bf2d175ce927676f35b44125de2e
+src/js/Lower.zig                Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
