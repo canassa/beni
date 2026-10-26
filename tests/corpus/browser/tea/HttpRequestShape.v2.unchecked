@@ -1,0 +1,5 @@
+HttpRequestShape plain: lines 32-41 (not built: call)
+HttpRequestShape work: lines 45-90 (not built: call)
+HttpRequestShape update: lines 94-157 (not built: call)
+HttpRequestShape view: lines 177-183 (not built: local)
+HttpRequestShape main: lines 187-193 (not built: lambda)

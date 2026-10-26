@@ -1,0 +1,3 @@
+DetachedRowEvent update: lines 21-28 (not built: record_update)
+DetachedRowEvent view: lines 31-39 (not built: local)
+DetachedRowEvent main: lines 47-48 (not built: lambda)

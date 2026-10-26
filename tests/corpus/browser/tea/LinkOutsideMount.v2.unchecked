@@ -1,0 +1,3 @@
+LinkOutsideMount shell: lines 13-20 (not built: lambda)
+LinkOutsideMount mounted: lines 27-38 (not built: lambda)
+LinkOutsideMount main: lines 52-53 (not built: call)

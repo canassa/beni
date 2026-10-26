@@ -1,0 +1,3 @@
+DefectInViewReleases update: lines 21-46 (not built: lambda)
+DefectInViewReleases view: lines 49-56 (not built: call)
+DefectInViewReleases main: lines 60-66 (not built: lambda)

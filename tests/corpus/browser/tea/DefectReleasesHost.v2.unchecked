@@ -1,0 +1,5 @@
+DefectReleasesHost service: lines 30-35 (not built: local)
+DefectReleasesHost update: lines 44-70 (not built: record_update)
+DefectReleasesHost subscriptions: lines 73-79 (not built: lambda)
+DefectReleasesHost view: lines 82-87 (not built: local)
+DefectReleasesHost main: lines 91-97 (not built: lambda)

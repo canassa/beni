@@ -1,0 +1,3 @@
+DefectInValueHandler boom: lines 15-16 (not built: lambda)
+DefectInValueHandler view: lines 19-24 (not built: markup)
+DefectInValueHandler main: lines 28-29 (not built: lambda)

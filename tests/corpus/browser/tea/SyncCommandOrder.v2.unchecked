@@ -1,0 +1,7 @@
+SyncCommandOrder say: lines 77-81 (not built: call)
+SyncCommandOrder waiting: lines 84-89 (not built: call)
+SyncCommandOrder bodies: lines 60-65 (not built: local)
+SyncCommandOrder more: lines 69-74 (not built: local)
+SyncCommandOrder update: lines 30-48 (not built: lambda)
+SyncCommandOrder view: lines 92-98 (not built: markup)
+SyncCommandOrder main: lines 102-108 (not built: lambda)

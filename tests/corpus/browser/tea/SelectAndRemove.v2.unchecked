@@ -1,0 +1,4 @@
+SelectAndRemove without: lines 33-34 (not built: local)
+SelectAndRemove update: lines 37-62 (not built: record_update)
+SelectAndRemove view: lines 65-77 (not built: local)
+SelectAndRemove main: lines 85-101 (not built: lambda)

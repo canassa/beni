@@ -1,0 +1,4 @@
+OpaqueUpdate withLogging: lines 20-21 (not built: local)
+OpaqueUpdate update: lines 24-31 (not built: record_update)
+OpaqueUpdate view: lines 34-40 (not built: ctor)
+OpaqueUpdate main: lines 44-45 (not built: lambda)

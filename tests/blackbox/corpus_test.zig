@@ -445,7 +445,7 @@ fn splitBoth(out: []const u8) ![2][]const u8 {
 /// Core's own verdicts, v1 against v2 (§7.2), keyed `core …` as
 /// `bench/ownership-everywhere.mjs --diff=v1,v2` keys them: run once with
 /// the ownership kind, before its stale-entry check.
-fn coreParity(arena: std.mem.Allocator) !void {
+fn coreParity(arena: std.mem.Allocator, cfg: *const Config) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
@@ -454,6 +454,23 @@ fn coreParity(arena: std.mem.Allocator) !void {
         return error.CoreDumpFailed;
     }
     const both = try splitBoth(try arena.dupe(u8, r.stdout));
+    // Core's unchecked declarations are pinned as a fixture's are, and a
+    // limit in core is a failure (§7.2).
+    const golden = try std.fmt.allocPrint(arena, "{s}/ownership/core.v2.unchecked", .{cfg.root});
+    const text = try Case.uncheckedText(arena, "core", both[1], false);
+    const bless = blessing(arena) and (blessOnly(arena) == null or std.mem.indexOf(u8, golden, blessOnly(arena).?) != null);
+    if (bless) {
+        try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = golden, .data = text });
+    } else {
+        const expected = Io.Dir.cwd().readFileAlloc(testing.io, golden, arena, .limited(world.max_stream_bytes)) catch |err| {
+            std.debug.print("core: cannot read {s} ({t}); set BENI_WRITE_EXPECTED=1 to create it\n", .{ golden, err });
+            return error.MissingGolden;
+        };
+        if (!std.mem.eql(u8, expected, text)) {
+            std.debug.print("core: v2's unchecked declarations differ from {s}; set BENI_WRITE_EXPECTED=1 to bless\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ golden, expected, text });
+            return error.GoldenMismatch;
+        }
+    }
     try Case.parityOf(arena, "core", "core", both[0], both[1]);
 }
 
@@ -461,12 +478,14 @@ fn coreParity(arena: std.mem.Allocator) !void {
 /// kind, core's) that no case of a whole walk used: stale, a failure (the
 /// list never outlives what it excuses).
 fn staleKnown(kind: Kind, cfg: *const Config) !void {
-    if (kind != .ownership and kind != .run) return;
+    if (kind != .ownership and kind != .run and kind != .browser) return;
+    // Chrome runs pages and no parity (`runPage`).
+    if (cfg.chrome != null) return;
     if (cfg.only != null) return;
     if (kind == .ownership) {
         var arena: std.heap.ArenaAllocator = .init(testing.allocator);
         defer arena.deinit();
-        try coreParity(arena.allocator());
+        try coreParity(arena.allocator(), cfg);
     }
     const k = try knownDifferences();
     const prefix = try std.fmt.allocPrint(testing.allocator, "{s}/{s}/", .{ cfg.root, kind.sub() });
@@ -565,7 +584,7 @@ fn walk(kind: Kind) !void {
         return error.CorpusFailures;
     }
     // A justified difference no case of the whole kind used is stale.
-    if (cfg.mode != .pending and cfg.runs(kind.partOf(.dev))) try staleKnown(kind, &cfg);
+    if (cfg.v2Net() and cfg.runs(kind.partOf(.dev))) try staleKnown(kind, &cfg);
 }
 
 /// The Chrome `BENI_BROWSER=chrome` runs every page in, while a walk of
@@ -1098,6 +1117,14 @@ const Config = struct {
             if (std.mem.eql(u8, line.path, repo_path)) return line.signature;
         }
         return null;
+    }
+
+    /// Whether the v1/v2 parity net runs (ownership-v2.md §7.2): on the
+    /// repository's own corpus, whose roots the known list names, and never
+    /// in pending mode. A harness test's corpus in a temporary root is about
+    /// the harness, not about either checker.
+    fn v2Net(cfg: *const Config) bool {
+        return cfg.mode != .pending and std.mem.eql(u8, cfg.root, default_root);
     }
 
     /// Whether this process runs `part`.
@@ -2275,16 +2302,18 @@ const Case = struct {
     /// everywhere (§7.2's differential, in the gates): v2's demands against
     /// v1's, fail-closed, and its unchecked declarations against the
     /// fixture's `.v2.unchecked`.
-    fn runV2Parity(case: Case, platform_arg: []const u8, sources: anytype) !void {
+    fn runV2Parity(case: Case, platform_arg: []const u8, sources: anytype, own_platform: bool, page: ?browser.Harness) !void {
         // One file is dumped as that file, a project as its directory, in a
         // world of its own (no other fixture's files in it).
         var c = case;
         var own: ?World = null;
         defer if (own) |*w| w.deinit();
-        if (sources.len > 1 and !std.mem.eql(u8, platform_arg, "--platform=platform")) {
+        if (sources.len > 1 and !own_platform) {
             own = try World.init(testing.allocator, testing.io);
             c.w = &own.?;
             _ = try c.writeSources();
+            // A page's test platform, written beside it as `runPage` writes it.
+            if (page) |h| if (std.mem.eql(u8, platform_arg, "--platform=" ++ browser.platform_dir)) try browser.writePlatform(c.arena, c.w, h);
         }
         const paths: []const []const u8 = if (sources.len == 1) try buildPaths(c.arena, sources) else &.{ "--root=.", "." };
         // Both reports from one check (`--ownership-both`).
@@ -2312,7 +2341,7 @@ const Case = struct {
         }
         const platform_arg = if (platform) "--platform=platform" else "--platform=node";
         const sources = try c.writeSources();
-        if (c.cfg.mode != .pending and c.cfg.runs(Kind.run.partOf(.dev))) try c.runV2Parity(platform_arg, sources);
+        if (c.cfg.v2Net() and c.cfg.runs(Kind.run.partOf(.dev))) try c.runV2Parity(platform_arg, sources, platform, null);
 
         var dev: std.ArrayList([]const u8) = .empty;
         try dev.appendSlice(c.arena, &.{ "build", platform_arg, "--out=out" });
@@ -2762,6 +2791,8 @@ const Case = struct {
             break :blk "--platform=" ++ browser.platform_dir;
         };
         const sources = try c.writeSources();
+        // The v1/v2 parity of the page's program (§7.2), from one dump.
+        if (c.cfg.v2Net() and c.cfg.chrome == null and c.cfg.runs(Kind.browser.partOf(.dev))) try c.runV2Parity(platform_arg, sources, platform, h);
 
         // The steps, copied into the project under the name the driver
         // reports a step by.
@@ -3701,6 +3732,17 @@ const Case = struct {
     /// the parity never passes on an over-reported "not built". A limit is
     /// a failure, never an exemption, unless the fixture is about limits.
     fn v2Unchecked(c: Case, ext: []const u8, dump: []const u8, limits_allowed: bool) !void {
+        const text = try uncheckedText(c.arena, c.fixture.name, dump, limits_allowed);
+        // Nothing unchecked is no golden at all: blessing removes one that
+        // empties.
+        if (text.len == 0 and c.bless and c.goldenExists(ext)) try Io.Dir.cwd().deleteFile(testing.io, try c.goldenPath(ext));
+        if (text.len == 0 and !c.goldenExists(ext)) return;
+        try c.expectGolden(ext, text);
+    }
+
+    /// A v2 dump's `unchecked` lines as a `.v2.unchecked` golden holds them,
+    /// `<module> <name>: lines a-b (<why>)`; a limit fails unless allowed.
+    fn uncheckedText(arena: std.mem.Allocator, name: []const u8, dump: []const u8, limits_allowed: bool) ![]const u8 {
         var text: std.ArrayList(u8) = .empty;
         var lines = std.mem.splitScalar(u8, dump, '\n');
         var module: []const u8 = "";
@@ -3709,16 +3751,12 @@ const Case = struct {
             const t = std.mem.trim(u8, l, " ");
             if (!std.mem.startsWith(u8, t, "unchecked ")) continue;
             if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) {
-                detail("{s}: the checker v2 reached a limit: {s}\n", .{ c.fixture.name, t });
+                detail("{s}: the checker v2 reached a limit: {s}\n", .{ name, t });
                 return error.OwnershipV2Limit;
             }
-            try text.print(c.arena, "{s} {s}\n", .{ module, t["unchecked ".len..] });
+            try text.print(arena, "{s} {s}\n", .{ module, t["unchecked ".len..] });
         }
-        // Nothing unchecked is no golden at all: blessing removes one that
-        // empties.
-        if (text.items.len == 0 and c.bless and c.goldenExists(ext)) try Io.Dir.cwd().deleteFile(testing.io, try c.goldenPath(ext));
-        if (text.items.len == 0 and !c.goldenExists(ext)) return;
-        try c.expectGolden(ext, text.items);
+        return text.items;
     }
 
     /// v2's demands against v1's, demand by demand (§7.2, fail-closed):
@@ -3743,7 +3781,7 @@ const Case = struct {
                 } else if (y.unchecked(d.module, d.line)) continue;
                 const v1_verdict = if (side == 0) d.verdict else if (other) |o| o.verdict else "absent";
                 const v2_verdict = if (side == 1) d.verdict else if (other) |o| o.verdict else "absent";
-                const key = try std.fmt.allocPrint(arena, "{s} {s} {s} :: {s} :: {s} :: {s}", .{ root, d.module, d.pos, d.demand, v1_verdict, v2_verdict });
+                const key = try std.fmt.allocPrint(arena, "{s} {s} {s} #{d} :: {s} :: {s} :: {s}", .{ root, d.module, d.pos, d.k, d.demand, v1_verdict, v2_verdict });
                 if (known.use(key)) continue;
                 try wrong.print(arena, "{s}\n", .{key});
             }

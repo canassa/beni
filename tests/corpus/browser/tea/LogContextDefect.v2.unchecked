@@ -1,0 +1,4 @@
+LogContextDefect guarded: lines 20-21 (not built: lambda)
+LogContextDefect update: lines 24-36 (not built: lambda)
+LogContextDefect view: lines 41-45 (not built: markup)
+LogContextDefect main: lines 49-55 (not built: lambda)

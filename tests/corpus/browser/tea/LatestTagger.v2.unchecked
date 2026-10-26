@@ -1,0 +1,7 @@
+LatestTagger loop: lines 41-45 (not built: call)
+LatestTagger beat: lines 36-38 (not built: lambda)
+LatestTagger pulses: lines 32-33 (not built: local)
+LatestTagger update: lines 48-58 (not built: record_update)
+LatestTagger subscriptions: lines 61-62 (not built: local)
+LatestTagger view: lines 65-69 (not built: local)
+LatestTagger main: lines 73-79 (not built: lambda)
