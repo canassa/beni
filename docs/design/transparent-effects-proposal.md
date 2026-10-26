@@ -2993,9 +2993,10 @@ wait for a `resize`). A request for `n ≤ 0` takes nothing and does not wait. `
 them now **without passing anyone who waits**, else answers `Nothing` and runs nothing
 (`withPermitsIfAvailable`, `Semaphore.ts:461`, which does not have FIFO to respect). **`resize s
 n`** sets the number of permits (a negative `n` is 0), keeping those taken; waiters that now fit are
-served, in order (`Semaphore.ts:270`). **`available s`** is the free count. No bare `take` or
+served, in order (`Semaphore.ts:270`). **`available s`** is the free count. ~~No bare `take` or
 `release`: Effect documents them as not interruption-safe, and a permit leaked by a cancellation is
-the guarantee this module exists for (report 22 §8).
+the guarantee this module exists for (report 22 §8).~~ *Withdrawn 2026-10-26: the manual pair is
+offered, and Effect documents no such thing — the amendment at the end of this section.*
 
 **`Queue`** — values passed between fibers, first in, first out. **`bounded n`** parks an offer while
 the queue holds `n`; **`dropping n`** refuses the new value when full (`offer` answers `False`);
@@ -3033,6 +3034,56 @@ whether they changed anything; nothing here has needed it, and an `impure` `()` 
 `run/SemaphoreOversizeRequest`, `run/SemaphoreTryDoesNotJump`, `run/LatchRelease`,
 `run/LatchOpenClose`; and the retained-bytes check of research 48 §2.10 (*Leak freedom*) in
 `bench/fiber`: 100 000 cancelled waits on each primitive leave the heap where it started.
+
+*Amended 2026-10-26 (#1039; the owner, Cesar):* **`Semaphore` offers a manual `acquire` and
+`release`**, and the reading of Effect above is corrected. Five points:
+
+```elm
+-- core/Semaphore.beni — additions
+pub acquire : Semaphore, Int → ⊤
+pub release : Semaphore, Int → ⊤                            -- impure
+```
+
+1. **Manual `acquire` and `release` are offered.** The refusal above failed `CLAUDE.md` rule 7:
+   `Ref`, `Deferred` and `Task.callback` are public (§17.3, §17.4), so any program could already
+   write its own manual semaphore, and withholding the pair kept no guarantee — it only sent users
+   to a worse one of their own. A permit held across fibers is a real use: one taken when a ball
+   enters a machine and given back when it leaves, in another fiber. `withPermits` stays the
+   default and is documented first, and the documentation says plainly that a permit `acquire`d
+   and never `release`d is lost.
+2. **`acquire s n` joins the same FIFO queue as `withPermits`**, under every rule above — FIFO, the
+   head re-examination, the oversize request, `n ≤ 0` — and its wait can be cancelled like any
+   other, leaving nothing behind (§17.1 item 1). It returns once the permits are the caller's.
+3. **A waiter handed its permits but cancelled before it runs gives them back, and the queue is
+   examined again.** FIFO hands the permits directly to the head — they are counted as taken when
+   it is queued to go on, not when it runs — so a cancellation in between would otherwise lose
+   them. The kernel already reaches that moment: a fiber resumed but not yet run is still parked,
+   so `halt` drops the queued value and calls the wait's canceller (§17.3, `resume`), and the
+   canceller, seeing the hand-off, gives the permits back. Effect has no such duty: its waiters
+   race and each re-checks the count when it runs (`Semaphore.ts:207-223`).
+4. **`release s n` of more than are taken stops at zero taken.** Effect's `taken` goes negative
+   (`Semaphore.ts:257-268`), and every later request then fits. The documentation says that this
+   catches only the case where nothing is held: a `release` that gives back permits another holder
+   took cannot be told from a correct one. A `release` of `n ≤ 0` does nothing.
+5. **The citation of Effect above was wrong.** Effect does not document its manual operations as
+   not interruption-safe. It ships `take`, `takeIfAvailable`, `release` and `releaseAll`
+   (`Semaphore.ts:494-574`), and its one warning is that "manual `take` / `release` usage must
+   keep permit counts balanced" (`:541-545`). The sentence "No bare `take` or `release` …" above is
+   withdrawn; research 48's `Semaphore` row is corrected with it.
+
+Four points the text above left open, settled as built. **The oversize request** takes every
+permit there is — `permits`, not `n`, is counted as taken and given back — and needs at least one
+permit to exist: on a semaphore resized to 0 every request waits, as a closed one should, rather
+than passing because nothing is taken. **`available s`** is never negative: after a `resize` below
+the count taken it is 0 until enough are given back. **`make n`** with a negative `n` makes a
+semaphore of 0 permits, as `resize` does. **`tryWithPermits s n`** with `n ≤ 0` runs `work` and
+answers `Just`, as `withPermits` takes nothing and does not wait.
+
+**Fixtures** (added): `run/SemaphoreAcquireRelease` (permits taken in one fiber and given back in
+another), `run/SemaphoreHandoffCancelled` (point 3), `run/SemaphoreReleaseUnmatched` (point 4),
+`run/SemaphoreResize` (waiters served in order as `resize` makes room; the permits taken kept), and
+`run/SemaphoreAcquireCancelled` (a cancelled `acquire` leaves the queue and the count as they were),
+`run/SemaphoreNoPermits` (`n ≤ 0`, a negative `make` and `resize`, and a zero-permit semaphore).
 
 ### 17.10 A program that can never wake (decision 16; A8, Node)
 
