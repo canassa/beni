@@ -6123,6 +6123,84 @@ used to live in; building a rewrite for three sites is how a printer grows a pas
 `switch` labels that reach one body (Â§7's last bullet) is measured with this family and is **not
 built**: Â§7's `default:` rule already removes the case that would fire most.
 
+#### Item 6 — a forwarding lambda is its callee
+
+*Added 2026-10-26 (#1111; found by the review of #1116).* A method named as a value is written in
+beni only as a lambda that calls it: `comparer _ = λa b → a.compare b`. `Lower` turns the dot-call
+into a saturated call of the `where` clause's evidence, so the arrow is `(b,c)=>a(b,c)` where `a` is
+the evidence — one closure allocated at every evaluation, 8 raw bytes at every site, and a call
+through it is one frame deeper. The hand-written sibling it replaced stored `a` itself. On a page
+that makes 1 000 keys per message the closure is +3.2 % to +3.4 % of the release build's time, and 30
+of the 32 bytes `tea/LogCommandContext` grew by (#1116, its review's F1). The rule is **η-reduction
+under the conditions JavaScript needs**, and it runs in `Opt`, under `--release` only, as item 1 does:
+
+**The shape.** An `arrow` node of the plain kind (`arrow_plain`; never `arrow_depth`, whose last
+parameter is the derived comparison's depth, and never an `arrow_method`, whose `this` is its
+receiver) whose `Func` has parameters `p₁ … pₙ` (n ≥ 0, all distinct) and whose body is exactly one
+`return_stmt` of a `call` whose callee is an `ident` `f` and whose arguments are exactly the `ident`s
+`p₁ … pₙ`, in order, each once, and `f` is none of them. `new_call`, a `member` callee, a spread, a
+default, a parameter read anywhere else and an argument that is anything but the matching parameter
+all fail the shape; so does a body of two statements.
+
+**The callee.** `f` must denote the same function at every call of the arrow as at the arrow's
+evaluation, which is true of a name JavaScript never rebinds after its binding:
+
+- a **parameter** of the enclosing `func_decl` or `arrow` — evidence included, since `where`
+  evidence is a leading parameter (§6) — that no `assign_stmt` in that function targets. §8's
+  tail-call loop assigns its parameters on every iteration, so a parameter of a self-tail-calling
+  declaration is excluded by this test and by nothing else;
+- a **top-level `const` or function of the file, or another beni module's export** (a declaration
+  `Reach` kept), which no emitted statement assigns — a `const` cannot be, and module state is a
+  `let` — and `Opt` asserts it. **Never a function the build imports from a hand-written file** — a
+  `foreign`'s sibling export, the platform's runtime (*amended 2026-10-27, the review of #1127*): a
+  hand-written function may read `arguments` or `this` where emitted code never does, and a host
+  that holds the value may call it with more arguments than the lambda took — `then`, `replaceAll`,
+  a listener — which the lambda dropped and `f` would receive. An emitted function has no rest or
+  default parameter and reads neither `arguments` nor `this`, so it is the same function to every
+  caller; a sibling is not promised to be. Only the join knows which names are such imports (a
+  specifier whose imported name is not its local one, `Emit.markHandWritten`), so the veto is the
+  printer's: `Print.resolve` leaves an arrow whose recorded callee is one as the arrow it is.
+  `emit/release/core/JsCompare`'s `viaValue`, which forwards to the sibling's `lt` taken as a value,
+  stays a lambda;
+- a **local `const_decl`** of the enclosing function, in scope at the arrow. A `let_decl` (a `Js.Ref`, a
+  `case` result, a loop variable) is excluded: the arrow would read the name at its call, the lambda
+  read it at its evaluation.
+
+An `ident` that `Opt` item 1 already plans to substitute is read through the plan first, and **the
+tests above run on the name the printer writes**: `const g = f; … λa b → g a b` reduces to `f` when
+`f` passes them, whatever `g` is (*amended 2026-10-27*). The plan is final for that name when the
+arrow is visited: `planList` plans a list's bindings before it descends into their statements, so
+every binding in scope at the arrow was planned before the arrow.
+
+**The rewrite.** The `arrow` node is printed as the `ident` `f`. The arrow's node index joins the
+plan's node table (`Opt.Plan.inlined`, keyed by node and never by name, for the reason its comment
+gives), and the printer's `resolve` follows it at an `arrow` as it follows a substitution at an
+`ident` — at most two steps, an `ident` whose binding was a lambda made once and then that lambda's
+callee, each recorded resolved. Nothing else moves: the arrow built no value an effect could see, so
+the ordering rule has nothing to order.
+
+**What it may not change.** Beni has no function identity — no `==` on functions, no `eq` derived for
+them — so the one observable difference, that `λa b → f a b` evaluated twice gave two objects and `f`
+gives one, is visible to no program. Privileged code that compares functions with `Js.same` (none
+does today) compares the function it was handed, which is now `f`. Arity needs no check: beni's
+calls are saturated (§6), so `f` takes exactly the n the arrow took, and JavaScript would pass the
+same n either way. The development build does not run `Opt`, so it prints the lambda as before, and
+`run/` fixtures prove both builds print the same (*Testing*).
+
+**What it does not do.** It does not reduce `λa → f a b₀` (a partial application written out), `λa b →
+f b a`, `λa → g (f a)`, a lambda whose callee is a constructor (`λa → Just a` is `x=>({$:1,a:x})` and
+has no callee), or a lambda whose body is a method call `λa → o.m a`, whose `this` the reduction would
+lose. Each stays as written; a measurement, not a guess, may add one later.
+
+**Fixtures.** `emit/release/core/EtaReduce` pins every shape above: reduced through evidence, through a
+top-level name, through a local `const`, through an item-1 substitution; kept for a reordered,
+repeated, extra or missing argument, for a `let` callee, for a tail-loop parameter and for a method
+callee. `run/EtaReduce` stores such a lambda in a record and a list, calls it through the stored value
+in both builds, and prints the same under each; `tea/KeyOrder`'s release golden shows the key as
+`{t:b,c:a,v:c}`. Sizes: the `tea/` pages against the compiler before this item (`zig-out/scratch/pages.mjs`),
+and the speed page of #1116's review, `speed/Keys1000`, 300 clicks under happy-dom, which must tie
+the base within its spread.
+
 #### Throughput, and where the four passes sit
 
 Measured today on this machine, `bench -- --generate=100000`, ReleaseFast: emit is **54.15 ms for
