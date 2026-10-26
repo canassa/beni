@@ -550,6 +550,11 @@ pub const Dump = struct {
     /// (`ownership-checker.md` §24.6). A flip is
     /// `Module.name:<slot>:<from>><to>[+…]`, `<slot>` a parameter from 1 or
     /// `res`, a word or `-`.
+    /// `--ownership-skew-sites` — hidden, test-only: with
+    /// `--stage=ownership`, forget what the module check observed of each
+    /// target before the report is compared with it, so a test sees the
+    /// dump refuse to print verdicts the check did not compute.
+    ownership_skew_sites: bool = false,
     /// `--ownership-both` — hidden, test-only: with `--stage=ownership`,
     /// print v1's report, then the line `== ownership v2`, then v2's, from
     /// one check of the program (`ownership-v2.md` §7.2: the corpus
@@ -1345,6 +1350,7 @@ const DumpSpecific = struct {
     msg_types: bool = false,
     ownership_totals: bool = false,
     ownership_both: bool = false,
+    ownership_skew_sites: bool = false,
     ownership_flips: ?[]const u8 = null,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
@@ -1381,6 +1387,12 @@ const DumpSpecific = struct {
             // §16.11): the report's totals alone, for scripts.
             if (value != null) return noValue(name);
             self.ownership_totals = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--ownership-skew-sites")) {
+            // Hidden and test-only: the cross-check of the report against
+            // the module check, shown to fire.
+            if (value != null) return noValue(name);
+            self.ownership_skew_sites = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--ownership-both")) {
             // Hidden and test-only (ownership-v2.md §7.2): both checkers'
@@ -1422,6 +1434,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.msg_types and stage != .writes) return .{ .usage = .init("beni: --msg-types applies to --stage=writes only", .{}) };
     if (s.specific.ownership_totals and stage != .ownership) return .{ .usage = .init("beni: --ownership-totals applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_flips != null and stage != .ownership) return .{ .usage = .init("beni: --ownership-flips applies to --stage=ownership only", .{}) };
+    if (s.specific.ownership_skew_sites and stage != .ownership) return .{ .usage = .init("beni: --ownership-skew-sites applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership == .v2)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", .{}) };
     return .{ .command = .{ .dump = .{
@@ -1433,6 +1446,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .msg_types = s.specific.msg_types,
         .ownership_totals = s.specific.ownership_totals,
         .ownership_both = s.specific.ownership_both,
+        .ownership_skew_sites = s.specific.ownership_skew_sites,
         .ownership_flips = s.specific.ownership_flips,
         .file = s.positionals.items[0],
     } } };
@@ -1562,6 +1576,8 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: --ownership-totals applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-totals", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_both = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-both", "src" });
     try expectUsage("beni: --ownership-both applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-both", "M.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .ownership, .ownership_skew_sites = true, .file = "src" } }, &.{ "dump", "--stage=ownership", "--ownership-skew-sites", "src" });
+    try expectUsage("beni: --ownership-skew-sites applies to --stage=ownership only", &.{ "dump", "--stage=types", "--ownership-skew-sites", "M.beni" });
     try expectUsage("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2", &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership=v2", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });

@@ -72,14 +72,14 @@ module FoldKeepsInnerRefused
   summary spawned: res [*] ~esc2, [*][*] ~condition(fresh3), ~esc1
   summary record: res .n ~condition(fresh6), .rows ~condition(fresh5) ~esc1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh4), ~fresh501◦
   summary keepRow: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
-  summary mapped: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
-  summary indexed: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
+  summary mapped: res [*] ~condition(fresh3) ~esc2 ~fresh3, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh5
+  summary indexed: res [*] ~condition(fresh3) ~esc2 ~fresh3, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh5
   summary sameStep: res [*] ~esc1, [*][*] ~condition(fresh3), ~fresh2{lost}r{lost}
   summary bump: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq spine π1[*]
   summary laterStep: res [*] ~esc1, [*][*] ~esc3, ~fresh2
   summary afterUpdate: res [*] ~esc2, [*][*] ~esc3, ~fresh1
   summary afterFold: res [*] ~esc2, [*][*] ~esc3, ~fresh1
-  summary afterMap: res [*] ~condition(fresh4) ~esc1 ~fresh4, [*][*] ~condition(fresh5) ~esc2, fresh3
+  summary afterMap: res [*] ~condition(fresh3) ~esc1 ~fresh3, [*][*] ~condition(fresh4) ~esc2, fresh5
   summary afterDirect: res [*] ~esc2 ~fresh4, [*][*] ~esc3 ~fresh5, fresh1
   summary viaRows: π1 R, π2 R, π3 R; res cb3{excl cb3}; π2 calls ≤1, supply 1 π1 owned{excl π1}r{excl π1}; π3 calls ≤1, supply 1 cb2.rows owned{excl cb2.rows}
   summary keepTable: π1 RA, π1.rows R, π1.rows[*] RE; res π1

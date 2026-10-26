@@ -212,7 +212,6 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // facts of the module that declares it, so `--ownership-flips` checks
     // core from source.
     options.no_pack = dump.stage == .ownership and dump.ownership_flips != null;
-    options.keep_installed_ownership = dump.stage == .ownership;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -631,11 +630,15 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     var ins = beni.own.Enforce.inputs(gpa, session, &.{}) catch return fail(stderr, "beni: out of memory", .{});
     defer ins.deinit(gpa);
     const names = ins.names;
-    // A module installed from the checked core has no solved types here:
-    // its facts are its block, as in `check` (#1106).
-    for (ins.blocks, 0..) |*b, i| if (b.* == null and i < session.ownership_blocks.len) {
-        b.* = session.ownership_blocks[i];
-    };
+    // Every module's facts as an importer reads them, the public block of
+    // its interface (#1106): a module installed from the checked core has
+    // no solved types here, and `check` reads the same block for it.
+    for (ins.blocks, 0..) |*b, i| {
+        if (i >= session.resolution.interfaces.len) break;
+        if (!session.packCovers(session.graph.moduleFile(@fromBackingInt(@intCast(i))))) continue;
+        const public = session.resolution.interfaces[i].ownership;
+        if (public.len != 0) b.* = public;
+    }
     // The targets, in path order (fast-compiler.md §10).
     var targets: std.ArrayList(u32) = .empty;
     defer targets.deinit(gpa);
@@ -649,6 +652,14 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
     var input: Ownership.Input = ins.input(gpa, session);
     input.format_hoists = true;
+    // `--ownership-skew-sites`: the module check's observations of each
+    // target forgotten, as a check that computed other verdicts would leave
+    // them, so `checkVerdicts` must stop the dump (test-only).
+    if (dump.ownership_skew_sites) for (targets.items) |m| {
+        if (m >= session.ownership_sites.len) continue;
+        if (session.ownership_sites[m]) |sites| gpa.free(sites);
+        session.ownership_sites[m] = gpa.alloc([6]u64, 0) catch return fail(stderr, "beni: out of memory", .{});
+    };
     input.expected_sites = session.ownership_sites;
     // A totals-only report prints no summary line (#684); a flip compares
     // whole reports.

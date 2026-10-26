@@ -2868,7 +2868,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | R-7.11 | §6 | S9 |
 | R-7.12 | §3.9, §4.4; `p/AppliedLambdaRecursion` | S1, S3a |
 | R-7.13 | S6 | S6 |
-| R-7.14 | §3.7, §7 (hidden flags: `--ownership-totals`, `--ownership-flips`, `--ownership-records-lost`, `--sanitize-records`, `--sanitize-lists`, `--records-in-place`, `--ownership=v1\|v2`; `--ownership-everywhere` transitional, deleted at S10) | S0–S9 |
+| R-7.14 | §3.7, §7 (hidden flags: `--ownership-totals`, `--ownership-flips`, `--ownership-records-lost`, `--sanitize-records`, `--sanitize-lists`, `--records-in-place`, `--ownership=v1\|v2`, `--ownership-both` (one check, both reports, for §7.2's parity), `--ownership-skew-sites` (the dump's cross-check with the module check, shown to fire); `--ownership-everywhere` transitional, deleted at S10) | S0–S9 |
 | R-7.15 | §3.7 `Report` | S3a |
 | R-8.1–R-8.11 | §7, §8 | S9, S10 |
 
