@@ -32,9 +32,15 @@ pub const Use = struct {
     region: RegionId,
     /// `call` only: the callee's `use` node, projected lazily.
     use_node: NodeId,
-    /// The source occurrence that made the use — the operand's instruction
-    /// — unique in the owning declaration across its frames: the atom of
-    /// the use's `liveness_index` lane (§4.1).
+    /// The use OCCURRENCE: a number unique to this use in the owning
+    /// declaration, across its frames and phases, assigned by `Transfer`
+    /// when it emits the use and deterministic (the operand's instruction
+    /// and the ordinal of the field or capture it is used at, or the use's
+    /// position in the declaration's emission order: §3.8's pinned
+    /// schedule). One operand can make several uses — a record update
+    /// reads `r` at every untouched field, a consumption of a closure uses
+    /// every whole capture — and each gets its own atom. It keys the use's
+    /// `liveness_index` lane (§4.1); `Liveness.build` asserts uniqueness.
     atom: u32,
 };
 

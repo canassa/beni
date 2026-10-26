@@ -4,43 +4,31 @@
 //! exclusive: `yes`, a conjunction of atoms over arrivals, `shared` (fails
 //! exactly: one cell at two positions) or `lost` (fails approximately).
 //!
-//! **κ is owned by its holder, never by the node.** Nodes are interned
-//! structurally, so one node can stand in two values (or two rounds, or two
-//! classes) with two conditions. κ therefore lives in a `Kappas`: a
-//! persistent, hash-consed map `NodeId → CondId` that a frame's walk or a
-//! class owns and threads (`kappaSet` returns the new root). Reading κ of a
-//! node not in the map DERIVES it (`kappaOf`): a leaf of at most one arrival
-//! is `yes`; a leaf of two or more arrivals at a summary position (`[*]`,
-//! `⟲` on the way) is `apart` over its cells, computed and charged on
-//! demand; a leaf holding `⊤` or an approximate pair is `lost`; a union is
-//! the join of its sides, never stored; a recast is `lost` where its place
-//! holds objects below, else `yes`; a built node or a delta is `lost` until
-//! the walk sets it (O13). Nothing derived is memoised into the map, so
-//! nothing goes stale (O15).
-//!
-//! **Atoms are per path** (§2.9, R-4.6.4): `sep c d` and `apart{S}` say the
-//! objects named at the atom's own path are pairwise apart, and a write at
-//! a path relies on that path's κ only. `excl c` alone is deep (everything
-//! under the arrival `c` is exclusive), `within λ⋆` is §2.10's self-atom,
-//! `keep`/`writes cb_j` name a callback's facts. A caller discharges `sep`
-//! by comparing the two arrivals' cells at that path (`Interp`).
-//!
-//! **Two conjunctions.** `and` is the O(1) interned binary node a store
-//! forms; `join` is the lattice join `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost ⊑
-//! shared` in CANONICAL form (`ofSet`: one id per atom set), so a fixpoint
-//! sees `and(A, A) = A` and no new nesting (§2.12); `flat` is the charged
-//! flattening between them. **Stores.** `apart` decides a construction's
-//! multiset in one sort; `lower` is §2.9's rule made incremental (the base's
-//! group atom sits at the top of its κ and grows by insertion; W fresh
-//! stores are O(W log W)); `propagate` sets κ on a `Shape.join` result from
-//! its members (alternatives: the join; together: a summary position
-//! holding every member, the position itself over their `reach`);
-//! `instantiate`, `rely` and `kappaLeq` (the simulation `κ(a) ⊑ κ(b)` over
-//! node pairs) serve calls, writes and the lattice. Two `taken` elements of
-//! one container are apart only under §2.2's one-traversal rule, which the
-//! caller answers through `Traversal` (S4); `Cond` never calls up (§5).
-//! Every record is reserved on the caller's `Charge` before the work it
-//! stands for (§4.1, §4.4).
+//! **κ is owned by its holder, never by the node** (nodes are interned, so
+//! one node stands in two values with two conditions): a persistent map
+//! `(NodeId, position class) → CondId` (`Kappas`) a frame or a class owns
+//! and threads (`kappaSet` returns the new root). A κ the map lacks is
+//! DERIVED (`kappaOf`) and never stored: at a plain path a leaf is `yes`
+//! (one object); at a summary position (`[*]`/`⟲` on the way) its arrivals
+//! must be `apart` (two or more) and each arrival standing for many
+//! positions `excl`; `⊤` or an approximate pair is `lost`; a union is the
+//! join of its sides, read once per node per read; a recast is `lost` where
+//! its place holds objects below; a built node or delta is `lost` until the
+//! walk sets it (O13). **Atoms are per path** (§2.9, R-4.6.4): `sep`/`apart`
+//! speak of the atom's own path, a write relies on that path's κ only, and a
+//! caller discharges `sep` by comparing the two arrivals' cells there
+//! (`Interp`); `excl c` alone is deep. `and` is the O(1) binary node a store
+//! forms; `join` the lattice join `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost ⊑
+//! shared` in canonical form (`ofSet`, one id per atom set, so a fixpoint
+//! sees `and(A, A) = A`); `flat` the charged flattening. `apart` decides a
+//! construction's multiset in one sort; `lower` is §2.9's rule made
+//! incremental (W fresh stores O(W log W)); `propagate` sets κ on a
+//! `Shape.join` result from its members (alternatives: the join; together:
+//! a position holding every member, compared over their `reach`);
+//! `kappaLeq` simulates over node pairs. Two `taken` elements of one
+//! container are apart only under §2.2's one-traversal rule, the caller's
+//! `Traversal` (S4). Every record is reserved on the caller's `Charge`
+//! before the work it stands for (§4.1, §4.4).
 //!
 //! Obligations kept here: O13 (a construction's κ is `yes` only when the
 //! stored cells are pairwise apart at that path; a stored refinement of the
@@ -118,23 +106,13 @@ pub const Printer = struct {
     label: *const fn (ctx: *anyopaque, w: *std.Io.Writer, l: LabelId) std.Io.Writer.Error!void,
 };
 
-/// `rely`'s answer (§2.9, *Where κ is relied on*).
-pub const Rely = union(enum) {
-    ok,
-    /// The atoms the frame relied on: its class's `xreq`.
-    xreq: SetId,
-    refused: Exactness,
-};
+/// `rely`'s answer (§2.9): nothing, the atoms (the class's `xreq`), a refusal.
+pub const Rely = union(enum) { ok, xreq: SetId, refused: Exactness };
 
-/// How `propagate` reads the members of a joined node.
-pub const Mode = enum(u8) {
-    /// A branch: one member or another. κ is the lattice join (O15).
-    alternatives,
-    /// A summary position holding every member (a literal's elements, a
-    /// `[*]` after a store): `apart` across the members' cells at every
-    /// path, and every member's condition.
-    together,
-};
+/// How `propagate` reads a joined node's members: a branch (one or the
+/// other: the lattice join, O15) or a summary position holding every member
+/// (`apart` across their cells at every path, and every member's κ).
+pub const Mode = enum(u8) { alternatives, together };
 
 /// The tables `kappaOf` and its callers read; passed down, never stored.
 pub const View = struct {
@@ -165,8 +143,6 @@ pub const Table = struct {
     /// `sep`'s memo for an exact pair with no traversal context; a split's
     /// κ is fixed at its creation (S1), so the answer is too.
     memo_sep: Ids.FixedDict(2) = .{},
-    /// `kappaOf`'s guard against a cycle through unions.
-    visiting: stamped.Column(NodeId, void) = .{},
 
     /// A table with its three constants, three records in `charge`.
     pub fn init(gpa: Allocator, charge: Charge) Error!Table {
@@ -191,7 +167,6 @@ pub const Table = struct {
         t.of_set.deinit(gpa);
         t.memo_deep.deinit(gpa);
         t.memo_sep.deinit(gpa);
-        t.visiting.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -273,11 +248,10 @@ pub const Table = struct {
 
     // ---- flattening and the lattice ------------------------------------------
 
-    /// The atom set of `c`, which must not be a failure: `.none` for `yes`,
-    /// else the persistent set of its atoms' ids. An `and` tree is walked
-    /// once on an explicit stack, every node read one inspection, every
-    /// inner node memoised, so a chain of W stores flattens in O(W log W)
-    /// once and its prefixes are shared.
+    /// The atom set of `c` (not a failure): `.none` for `yes`, else the
+    /// persistent set of its atoms. An `and` tree is walked once on an
+    /// explicit stack, every inner node memoised: W stores flatten in
+    /// O(W log W) once, their prefixes shared.
     pub fn flat(t: *Table, gpa: Allocator, charge: Charge, c: CondId) Error!SetId {
         std.debug.assert(!fails(c));
         if (c == yes) return .none;
@@ -319,10 +293,9 @@ pub const Table = struct {
         return t.flat_memo.get(c).?;
     }
 
-    /// The canonical condition of an atom set: `yes` for the empty set, the
-    /// atom alone for one, else the left-nested `and` chain in ascending
-    /// atom id — one id per set (memoised), which is what makes a fixpoint's
-    /// `join` idempotent (§2.12). O(|S| log) once per set.
+    /// The canonical condition of an atom set: the left-nested `and` chain
+    /// in ascending atom id, one id per set (memoised), so a fixpoint's
+    /// `join` is idempotent (§2.12). O(|S| log) once per set.
     pub fn ofSet(t: *Table, gpa: Allocator, charge: Charge, s: SetId) Error!CondId {
         if (s == .none) return yes;
         if (t.of_set.get(.{s.int()})) |hit| return .from(hit);
@@ -389,14 +362,24 @@ pub const Table = struct {
             t.makeMap(gpa, charge, .{ .prefix = prefix, .mask = mask, .left = t1, .right = t0 });
     }
 
-    /// κ(n) as `ctx` has it set, or null. O(min(32, depth)) reads.
-    pub fn kappaGet(t: *const Table, ctx: Kappas, n: NodeId) ?CondId {
+    /// The map's key: the node AND its position class, so a plain-path κ
+    /// never answers a summary-path read (`if c then (g 1).a else (g 2).a`
+    /// is `yes`; `[ g 1, g 2 ]`'s `[*].a`, the same leaf, is `apart{…}`).
+    fn mapKey(n: NodeId, at_summary: bool) u32 {
+        std.debug.assert(n.int() < (1 << 31));
+        return (n.int() << 1) | @intFromBool(at_summary);
+    }
+
+    /// κ(n) at its position class as `ctx` has it set, or null. O(min(32,
+    /// depth)) reads.
+    pub fn kappaGet(t: *const Table, ctx: Kappas, n: NodeId, at_summary: bool) ?CondId {
+        const key = mapKey(n, at_summary);
         var at = ctx.int();
         while (at != Ids.none_int) {
             const m = t.mapNode(at);
-            if (m.mask == 0) return if (m.prefix == n.int()) CondId.from(m.left) else null;
-            if (!matches(n.int(), m.prefix, m.mask)) return null;
-            at = if (n.int() & m.mask == 0) m.left else m.right;
+            if (m.mask == 0) return if (m.prefix == key) CondId.from(m.left) else null;
+            if (!matches(key, m.prefix, m.mask)) return null;
+            at = if (key & m.mask == 0) m.left else m.right;
         }
         return null;
     }
@@ -424,25 +407,62 @@ pub const Table = struct {
 
     pub const Set = struct { ctx: Kappas, changed: bool };
 
-    /// `ctx` with κ(n) joined with `k` (monotone round to round, §2.12): the
-    /// new root, and whether κ(n) changed. The root is unchanged when
-    /// nothing did, so a fixpoint sees no difference where there is none.
-    pub fn kappaSet(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, n: NodeId, k: CondId) Error!Set {
-        const new = if (t.kappaGet(ctx, n)) |old| try t.join(gpa, charge, old, k) else k;
-        if (t.kappaGet(ctx, n)) |old| if (old == new) return .{ .ctx = ctx, .changed = false };
-        return .{ .ctx = .from(try t.mapPut(gpa, charge, ctx.int(), n.int(), new.int())), .changed = true };
+    /// `ctx` with κ(n) at its position class joined with `k` (monotone,
+    /// §2.12): the new root and whether κ(n) changed; the same root when not.
+    pub fn kappaSet(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!Set {
+        const new = if (t.kappaGet(ctx, n, at_summary)) |old| try t.join(gpa, charge, old, k) else k;
+        if (t.kappaGet(ctx, n, at_summary)) |old| if (old == new) return .{ .ctx = ctx, .changed = false };
+        return .{ .ctx = .from(try t.mapPut(gpa, charge, ctx.int(), mapKey(n, at_summary), new.int())), .changed = true };
     }
 
-    /// κ(n) in `ctx`, derived by the header's rules when unset.
-    /// `at_summary`: whether `n`'s path crossed a `[*]` or `⟲`. At a summary
-    /// position a leaf's arrivals must be pairwise apart (`apart`, two or
-    /// more) and each arrival that itself stands for many positions
-    /// (`isFolded`: a symbolic cell under `[*]`/`⟲`, a folded label) must
-    /// be exclusive there (`excl`, "a projected symbolic summary arrival
-    /// requires `excl` at the selected path"); at a plain path one object
-    /// sits there and κ is `yes`.
+    /// κ of a union, derived: the join of its sides', every node of the DAG
+    /// read ONCE per read (a seen column for this read alone: nothing
+    /// persists or goes stale, a shared sub-union is not walked per path). A
+    /// side in progress reads `yes`, the least solution. A record per node.
+    fn unionKappa(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, root: NodeId, at_summary: bool) Error!CondId {
+        var memo: stamped.Column(NodeId, CondId) = .{};
+        defer memo.deinit(gpa);
+        var done: stamped.Column(NodeId, void) = .{};
+        defer done.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .expanded = false });
+        while (stack.items.len > 0) {
+            const f = &stack.items[stack.items.len - 1];
+            const n = f.node;
+            if (done.contains(n)) {
+                _ = stack.pop();
+                continue;
+            }
+            try charge.reserve(gpa, .inspection, 1);
+            if (v.shapes.kind(n) != .@"union" or t.kappaGet(ctx, n, at_summary) != null) {
+                try memo.put(gpa, n, try t.kappaOf(gpa, charge, v, ctx, n, at_summary));
+                try done.put(gpa, n, {});
+                _ = stack.pop();
+                continue;
+            }
+            const d = v.shapes.get(n);
+            if (!f.expanded) {
+                // In progress: a side that comes back to `n` reads `yes`.
+                f.expanded = true;
+                try memo.put(gpa, n, yes);
+                try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
+                continue;
+            }
+            try memo.put(gpa, n, try t.join(gpa, charge, memo.get(.from(d.a)).?, memo.get(.from(d.b)).?));
+            try done.put(gpa, n, {});
+            _ = stack.pop();
+        }
+        return memo.get(root).?;
+    }
+
+    /// κ(n) in `ctx`, derived by the header's rules when unset; `at_summary`
+    /// is whether `n`'s path crossed a `[*]` or `⟲` (a leaf there: `apart`
+    /// over two or more arrivals, `excl` for each that stands for many
+    /// positions — `isFolded`; at a plain path one object, `yes`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        if (t.kappaGet(ctx, n)) |k| return k;
+        if (t.kappaGet(ctx, n, at_summary)) |k| return k;
         switch (v.shapes.kind(n)) {
             .leaf => {
                 if (!at_summary) {
@@ -462,17 +482,7 @@ pub const Table = struct {
             },
             .node, .delta => return lost,
             .recast => return if (holdsBelow(v.places, v.shapes.place(n))) lost else yes,
-            .@"union" => {
-                // A cycle through unions contributes nothing new (the least
-                // solution): the side being computed reads `yes`.
-                if (t.visiting.contains(n)) return yes;
-                try t.visiting.put(gpa, n, {});
-                defer t.visiting.remove(n);
-                const d = v.shapes.get(n);
-                const l = try t.kappaOf(gpa, charge, v, ctx, .from(d.a), at_summary);
-                const r = try t.kappaOf(gpa, charge, v, ctx, .from(d.b), at_summary);
-                return t.join(gpa, charge, l, r);
-            },
+            .@"union" => return t.unionKappa(gpa, charge, v, ctx, n, at_summary),
         }
     }
 
@@ -501,13 +511,10 @@ pub const Table = struct {
         };
     }
 
-    /// `sep(a, b)` (§2.9): are the objects of `a` and `b` apart at this
-    /// path? Two concrete cells distinct → `yes`; one unfolded cell twice →
-    /// `shared`, a folded one twice → `lost`; `⊤` or an approximate pair →
-    /// `lost`; two arrivals that `alias` tells apart (`no`) → the atom
-    /// `sep a b`, that it says may be one (`yes`) → `lost`; the two sides of
-    /// one split → the split's κ; two `taken` elements of one container →
-    /// the traversal rule, or `lost`.
+    /// `sep(a, b)` (§2.9) at this path: two distinct concrete cells `yes`;
+    /// one unfolded cell twice `shared`, a folded one `lost`; `⊤`/approximate
+    /// `lost`; arrivals `alias` tells apart the atom, that may be one `lost`;
+    /// a split's two sides its κ; two `taken` elements the traversal rule.
     pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
         try charge.reserve(gpa, .inspection, 1);
         if (approx or cellt.origin(a) == .top or cellt.origin(b) == .top) return lost;
@@ -531,13 +538,10 @@ pub const Table = struct {
         return out;
     }
 
-    /// §2.9's construction rule over the cells stored at one path, a
-    /// multiset: sorted once (every item one record), a duplicate decides
-    /// at once (`shared`, or `lost` for a folded cell), `⊤` and an
-    /// approximate pair are `lost`, the arrivals form one `apart` group, and
-    /// the pairs of arrivals over one base (a prefix, a split's sides, two
-    /// `taken` elements) are decided one by one, each charged. Concrete
-    /// cells are fresh and apart from everything else by construction.
+    /// §2.9's rule over the cells stored at one path, a multiset sorted once
+    /// (an item a record): a duplicate decides at once, `⊤`/approximate is
+    /// `lost`, the arrivals form ONE `apart` group, pairs over one base are
+    /// decided one by one; concrete cells are apart by construction.
     /// `items` is scratch and is reordered.
     pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
         try charge.reserve(gpa, .inspection, @intCast(items.len));
@@ -606,10 +610,9 @@ pub const Table = struct {
     }
 
     /// The deep condition of a node: κ of every node of its explicit
-    /// structure conjoined with `excl c` for every arrival among their
-    /// cells (`lost` for `⊤` or an approximate pair; a recast where its
-    /// place holds objects below). A walk with a visited stamp, every node
-    /// and cell one record, memoised per `(map root, node, position)`.
+    /// structure and `excl c` for every arrival among their cells. A walk
+    /// with a visited stamp, a record per node and cell, memoised per
+    /// `(map root, node, position)`.
     pub fn deep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
         const mkey = [3]u32{ ctx.int(), n.int(), @intFromBool(at_summary) };
         if (t.memo_deep.get(mkey)) |hit| return .from(hit);
@@ -697,14 +700,12 @@ pub const Table = struct {
     }
 
     /// §2.9's construction rule, incremental: the base's κ at the written
-    /// path lowered by a stored value. A stored cell the base already holds
-    /// is `shared` (`lost` if folded), found by one set lookup each; the
-    /// base's arrivals group — the `apart` atom `lower` keeps at the top of
-    /// κ — is extended by the stored arrivals, the base's cells scanned for
-    /// arrivals only when it has no group yet (at most twice per
-    /// container); each stored arrival is decided against the group's cells
-    /// of the same base, charged per cell read. Plus the stored value's deep
-    /// condition. A chain of W fresh stores costs O(W log W).
+    /// path lowered by a stored value. A stored cell the base holds is
+    /// `shared` (one set lookup); the base's arrivals group — the `apart`
+    /// atom kept at the top of κ — grows by insertion, the base scanned only
+    /// while it has no group (twice per container at most); a stored
+    /// arrival is decided against the group's same-base cells. Plus the
+    /// stored value's κ as a position. W fresh stores cost O(W log W).
     pub fn lower(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, base_kappa: CondId, base_cells: SetId, stored: NodeId, at_summary: bool, traversal: ?Traversal) Error!CondId {
         if (base_kappa == shared) return shared;
         const split = t.splitGroup(base_kappa);
@@ -775,14 +776,12 @@ pub const Table = struct {
 
     // ---- joins -------------------------------------------------------------
 
-    /// `out` with κ set on every node of `joined`'s explicit structure (a
-    /// `Shape.join` of `members`, widened or not) from the members' nodes at
-    /// the same path, projected in lockstep, each member read in its own
-    /// map `member_ctxs[i]`: as `alternatives`, the lattice join (O15); as
-    /// `together`, `apart` across the members' cells at the path and every
-    /// member's κ there. Leaves are set and not descended (the derived rule
-    /// covers their projections); a node met again with another member run
-    /// is joined again. Every node, projection and cell is a record.
+    /// `out` with κ set on every node of `joined` (a `Shape.join` of
+    /// `members`, widened or not) from the members' nodes at the same path,
+    /// projected in lockstep, each read in its own map: `alternatives` is
+    /// the lattice join (O15), `together` `apart` across the members' cells
+    /// and every member's κ. Leaves are set, not descended; a node met again
+    /// with another run is joined again. A record per node, projection, cell.
     pub fn propagate(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
         var ctx = out;
@@ -830,7 +829,7 @@ pub const Table = struct {
             }
             if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
             if (mode == .alternatives and ms.len == 0) k = lost;
-            ctx = (try t.kappaSet(gpa, charge, ctx, f.node, k)).ctx;
+            ctx = (try t.kappaSet(gpa, charge, ctx, f.node, f.summary, k)).ctx;
             if (v.shapes.kind(f.node) == .leaf or v.shapes.kind(f.node) == .recast) continue;
             // Children: every step of the place the joined node has
             // something at, the members projected along it.
@@ -851,10 +850,8 @@ pub const Table = struct {
         return ctx;
     }
 
-    /// `κ_a(a) ⊑ κ_b(b)` at every pair of nodes the two values' structures
-    /// put at one path (a simulation over the pairs, each pair once; `a`'s
-    /// explicit structure drives, `b` is projected in lockstep). One record
-    /// per pair and projection.
+    /// `κ_a(a) ⊑ κ_b(b)` at every pair of nodes the two structures put at one
+    /// path: a simulation over PAIRS, each once, `b` projected in lockstep.
     pub fn kappaLeq(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx_a: Kappas, a: NodeId, ctx_b: Kappas, b: NodeId, at_summary: bool) Error!bool {
         var seen: Ids.FixedDict(3) = .{};
         defer seen.deinit(gpa);
@@ -1106,7 +1103,11 @@ const Fixture = struct {
     }
 
     fn setK(f: *Fixture, ctx: Kappas, n: NodeId, k: CondId) !Kappas {
-        return (try f.conds.kappaSet(testing.allocator, f.charge(), ctx, n, k)).ctx;
+        return f.setKAt(ctx, n, false, k);
+    }
+
+    fn setKAt(f: *Fixture, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) !Kappas {
+        return (try f.conds.kappaSet(testing.allocator, f.charge(), ctx, n, at_summary, k)).ctx;
     }
 
     fn join2(f: *Fixture, a: NodeId, b: NodeId) !NodeId {
@@ -1114,8 +1115,8 @@ const Fixture = struct {
         return f.shapes.join(testing.allocator, &f.account, &f.places, &f.cells, &ms);
     }
 
-    fn propagate(f: *Fixture, out: Kappas, joined: NodeId, members: []const NodeId, ctxs: []const Kappas, mode: Mode) !Kappas {
-        return f.conds.propagate(testing.allocator, f.charge(), f.view(), out, joined, members, ctxs, mode, false, null);
+    fn propagate(f: *Fixture, out: Kappas, joined: NodeId, members: []const NodeId, ctxs: []const Kappas, mode: Mode, at_summary: bool) !Kappas {
+        return f.conds.propagate(testing.allocator, f.charge(), f.view(), out, joined, members, ctxs, mode, at_summary, null);
     }
 };
 
@@ -1350,7 +1351,7 @@ test "κ maps are functional and monotone; derived defaults; a union's κ is nev
     const m1 = try f.setK(.none, built, yes);
     try testing.expectEqual(yes, try f.kappa(m1, built, false));
     try testing.expectEqual(lost, try f.kappa(.none, built, false));
-    const same = try t.kappaSet(gpa, f.charge(), m1, built, yes);
+    const same = try t.kappaSet(gpa, f.charge(), m1, built, false, yes);
     try testing.expect(!same.changed and same.ctx == m1);
     const m2 = try f.setK(m1, built, e1);
     try testing.expect(m2 != m1);
@@ -1361,10 +1362,11 @@ test "κ maps are functional and monotone; derived defaults; a union's κ is nev
     // union reads shared (O15), with no memo to go stale.
     const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, l1, l2);
     try testing.expectEqual(yes, try f.kappa(.none, u, false));
-    const m3 = try f.propagate(.none, l1, &.{ l1, l1 }, &.{ .none, .none }, .together);
-    try testing.expectEqual(shared, try f.kappa(m3, l1, false));
-    try testing.expectEqual(shared, try f.kappa(m3, u, false));
-    try testing.expectEqual(yes, try f.kappa(.none, u, false));
+    const m3 = try f.propagate(.none, l1, &.{ l1, l1 }, &.{ .none, .none }, .together, true);
+    try testing.expectEqual(shared, try f.kappa(m3, l1, true));
+    try testing.expectEqual(shared, try f.kappa(m3, u, true));
+    try testing.expectEqual(yes, try f.kappa(.none, u, true));
+    try testing.expectEqual(yes, try f.kappa(m3, u, false)); // the plain position is another class
     // deep: the node's κ plus `excl` of every arrival inside, keyed by the
     // map, so a changed map is a new answer.
     const d = try t.deep(gpa, f.charge(), f.view(), m2, built, false);
@@ -1437,7 +1439,7 @@ test "lower is incremental: a chain of W fresh pushes is O(W log W), a group gro
     const built = try f.shapes.node(gpa, &f.account, lists, try f.set(&.{s9}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try lp.leaf(&f, p1)));
     const m = try f.setK(.none, built, lost);
     try testing.expectEqual(lost, try t.lower(gpa, f.charge(), v, m, yes, .none, built, true, null));
-    const m_ok = try f.setK(.none, built, yes);
+    const m_ok = try f.setKAt(.none, built, true, yes);
     const kb = try t.lower(gpa, f.charge(), v, m_ok, yes, .none, built, true, null);
     try testing.expectEqual(yes, kb); // the stored value's paths below are the children's business
 }
@@ -1460,17 +1462,18 @@ test "propagate: a branch joins κ; a literal's elements are apart per path, bel
     const mb = try f.setK(.none, b, lost);
     // A branch: κ is the join, lost; the members' maps are untouched.
     const j = try f.join2(a, b);
-    const mj = try f.propagate(.none, j, &.{ a, b }, &.{ ma, mb }, .alternatives);
+    const mj = try f.propagate(.none, j, &.{ a, b }, &.{ ma, mb }, .alternatives, false);
     try testing.expectEqual(lost, try f.kappa(mj, j, false));
     try testing.expectEqual(yes, try f.kappa(ma, a, false));
     // A literal `[ xs, ys ]`: together at `[*]`, apart{p3, p4} ∧ excl both.
     const elem = try f.join2(xs, ys);
-    const me = try f.propagate(.none, elem, &.{ xs, ys }, &.{ .none, .none }, .together);
+    const me = try f.propagate(.none, elem, &.{ xs, ys }, &.{ .none, .none }, .together, true);
     const fe = try t.flat(gpa, f.charge(), try f.kappa(me, elem, true));
     try testing.expectEqual(@as(u32, 1), t.atoms.count(fe)); // apart{p3, p4}: each is one object
     // `[ xs, xs ]`: shared, exact (I-κ's two positions).
     const dup = try f.join2(a, a);
-    const md = try f.propagate(.none, dup, &.{ a, a }, &.{ ma, ma }, .together);
+    const ma_t = try f.setKAt(ma, a, true, yes);
+    const md = try f.propagate(.none, dup, &.{ a, a }, &.{ ma_t, ma_t }, .together, true);
     try testing.expectEqual(shared, try f.kappa(md, dup, true));
     // The reviewer's probe: `[ p, q ]` of records. κ([*]) is apart{p, q};
     // the lazily projected `[*].b` derives apart{p.b, q.b} — a write there
@@ -1480,7 +1483,7 @@ test "propagate: a branch joins κ; a literal's elements are apart per path, bel
     const lp = try f.leaf(0, &.{p});
     const lq = try f.leaf(0, &.{q});
     const recs = try f.join2(lp, lq);
-    const mr = try f.propagate(.none, recs, &.{ lp, lq }, &.{ .none, .none }, .together);
+    const mr = try f.propagate(.none, recs, &.{ lp, lq }, &.{ .none, .none }, .together, true);
     try testing.expectEqual(AtomKind.apart, t.get(try f.kappa(mr, recs, true)).atom);
     const fb = try Place.Step.field(&f.account, 11);
     const child = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, recs, fb)).?;
@@ -1596,7 +1599,7 @@ test "a refused reservation leaves the condition table and the maps whole" {
     defer broke.deinit(gpa);
     const n = f.conds.count();
     try testing.expectError(error.OwnershipLimit, f.conds.excl(gpa, .growth(&broke), p1));
-    try testing.expectError(error.OwnershipLimit, f.conds.kappaSet(gpa, .growth(&broke), .none, l1, lost));
+    try testing.expectError(error.OwnershipLimit, f.conds.kappaSet(gpa, .growth(&broke), .none, l1, false, lost));
     try testing.expectEqual(n, f.conds.count());
     try testing.expectEqual(@as(usize, 0), f.conds.kmaps.len);
     const e = try f.conds.excl(gpa, f.charge(), p1);
@@ -1666,8 +1669,8 @@ test "the cross-path holder twin `[ (a, b), (b, a) ]`: the position is shared, e
     const s2 = try f.cells.result(gpa, &f.account, .result, .none, 2, rec, .record);
     const xy = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, lx), fb, ly));
     const yx = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, ly), fb, lx));
-    var m = try f.setK(.none, xy, yes);
-    m = try f.setK(m, yx, yes);
+    var m = try f.setKAt(.none, xy, true, yes);
+    m = try f.setKAt(m, yx, true, yes);
     const elem = try f.join2(xy, yx);
     const me = try f.conds.propagate(gpa, f.charge(), f.view(), m, elem, &.{ xy, yx }, &.{ m, m }, .together, true, null);
     // Per component, the positions are apart: `.a` holds x and y, `.b` holds
@@ -1685,7 +1688,7 @@ test "the cross-path holder twin `[ (a, b), (b, a) ]`: the position is shared, e
     const w = try f.param(4, 1, &.{});
     const s3 = try f.cells.result(gpa, &f.account, .result, .none, 3, rec, .record);
     const zw = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s3}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, try f.leaf(1, &.{z})), fb, try f.leaf(1, &.{w})));
-    const m2 = try f.setK(m, zw, yes);
+    const m2 = try f.setKAt(m, zw, true, yes);
     const elem2 = try f.join2(xy, zw);
     const me2 = try f.conds.propagate(gpa, f.charge(), f.view(), m2, elem2, &.{ xy, zw }, &.{ m2, m2 }, .together, true, null);
     try testing.expectEqual(AtomKind.apart, t.get(try f.kappa(me2, elem2, true)).atom);
@@ -1727,7 +1730,7 @@ test "fault injection: a refusal before any dictionary, memo or path operation l
                 0 => if (t.excl(gpa, ch, p2)) |_| {} else |e| e,
                 1 => if (t.flat(gpa, ch, a12)) |_| {} else |e| e,
                 2 => if (t.apart(gpa, ch, &f.cells, &f.places, &items, null)) |_| {} else |e| e,
-                3 => if (t.kappaSet(gpa, ch, .none, l12, lost)) |_| {} else |e| e,
+                3 => if (t.kappaSet(gpa, ch, .none, l12, false, lost)) |_| {} else |e| e,
                 4 => if (t.deep(gpa, ch, f.view(), .none, built, false)) |_| {} else |e| e,
                 5 => if (t.lower(gpa, ch, f.view(), .none, yes, try f.set(&.{p1}), l12, true, null)) |_| {} else |e| e,
                 else => if (t.propagate(gpa, ch, f.view(), .none, l12, &.{ l1, l12 }, &.{ .none, .none }, .together, true, null)) |_| {} else |e| e,
@@ -1752,4 +1755,68 @@ test "fault injection: a refusal before any dictionary, memo or path operation l
     const k = try t.lower(gpa, f.charge(), f.view(), .none, yes, try f.set(&.{p1}), l12, true, null);
     try testing.expectEqual(shared, k);
     try testing.expectEqual(e1, try t.excl(gpa, f.charge(), p1));
+}
+
+test "red twin CallbackFieldPositions: a plain-path κ never answers a summary-path read" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    var t = &f.conds;
+    // `g : Int → { a : List Int, b : List Int }` called twice: `cb@ι₁`, `cb@ι₂`.
+    const rec = try f.placeOf(0);
+    const fa = try Place.Step.field(&f.account, 10);
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    const l2 = try f.cells.label(gpa, &f.account, 41, .none, false);
+    const root = try f.places.rootPath(gpa, rec);
+    const g1 = try f.cells.symbolic(gpa, &f.account, &f.places, .cb, l1.int(), root, 0);
+    const g2 = try f.cells.symbolic(gpa, &f.account, &f.places, .cb, l2.int(), root, 0);
+    const r1 = try f.leaf(0, &.{g1});
+    const r2 = try f.leaf(0, &.{g2});
+    // `w = if c then (g 1).a else (g 2).a`: a branch at a plain path stores
+    // `yes` for the interned leaf `{cb@ι₁·.a, cb@ι₂·.a}`.
+    const a1 = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, r1, fa)).?;
+    const a2 = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, r2, fa)).?;
+    const w = try f.join2(a1, a2);
+    const m = try f.propagate(.none, w, &.{ a1, a2 }, &.{ .none, .none }, .alternatives, false);
+    try testing.expectEqual(yes, try f.kappa(m, w, false));
+    // `[ g 1, g 2 ]` in the same frame: `[*].a` projects to that same leaf.
+    const elem = try f.join2(r1, r2);
+    const me = try f.conds.propagate(gpa, f.charge(), f.view(), m, elem, &.{ r1, r2 }, &.{ m, m }, .together, true, null);
+    const ea = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, elem, fa)).?;
+    try testing.expectEqual(w, ea);
+    // Read at the summary position it is `apart{cb@ι₁·.a, cb@ι₂·.a}`, never
+    // the plain path's `yes`: a write at `[*].a` relies on the atom.
+    const ka = try f.kappa(me, ea, true);
+    try testing.expectEqual(AtomKind.apart, t.get(ka).atom);
+    try testing.expect((try t.rely(gpa, f.charge(), ka)) == .xreq);
+    try testing.expectEqual(yes, try f.kappa(me, w, false));
+}
+
+test "a union's κ is read once per node of a shared union DAG: depth 250, 500, 1000" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    f.account.allowance = 1 << 24;
+    var last: u64 = 0;
+    for ([_]u32{ 250, 500, 1000 }) |depth| {
+        // `u_k = if c then (if d then u_{k−1} else a_k) else (if e then u_{k−1} else b_k)`.
+        var u = try f.leaf(1, &.{try f.param(1, 1, &.{})});
+        var k: u32 = 0;
+        while (k < depth) : (k += 1) {
+            const a = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 100_000 * depth + 2 * k, list, .list)}));
+            const b = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 100_000 * depth + 2 * k + 1, list, .list)}));
+            const l = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, u, a);
+            const r = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, u, b);
+            u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, l, r);
+        }
+        const before = f.account.growth;
+        try testing.expectEqual(yes, try f.kappa(.none, u, false));
+        const cost = f.account.growth - before;
+        try testing.expect(cost <= 12 * depth);
+        if (last > 0) try testing.expect(cost * 2 < last * 5);
+        last = cost;
+    }
 }
