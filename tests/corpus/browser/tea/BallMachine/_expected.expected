@@ -160,23 +160,6 @@
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -420,7 +403,7 @@
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -444,7 +427,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -452,7 +435,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -460,7 +443,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="185.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="185.8" y1="91.9" x2="192.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="185.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="185.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="189.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -468,7 +451,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="193.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="194.3" y1="91.9" x2="200.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="194.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="194.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="197.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -662,23 +645,6 @@
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -922,7 +888,7 @@
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -946,7 +912,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -954,7 +920,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -962,7 +928,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="185.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="185.8" y1="91.9" x2="192.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="185.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="185.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="189.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -970,7 +936,7 @@
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="193.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="194.3" y1="91.9" x2="200.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="194.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="194.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="197.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1565,23 +1531,6 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -1825,7 +1774,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -1849,7 +1798,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1857,7 +1806,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1865,7 +1814,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="185.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="185.8" y1="91.9" x2="192.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="185.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="185.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="189.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1873,7 +1822,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="193.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="194.3" y1="91.9" x2="200.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="194.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="194.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="197.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1881,7 +1830,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="202.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="202.8" y1="91.9" x2="209.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="202.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="202.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="206.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1889,7 +1838,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="210.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="211.3" y1="91.9" x2="217.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="211.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="211.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="214.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1897,7 +1846,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="219.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="219.8" y1="91.9" x2="226.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="219.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="219.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="223.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1905,7 +1854,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="227.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="228.3" y1="91.9" x2="234.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="228.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="228.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="231.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -1931,103 +1880,143 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
       </svg:g>
       <svg:g>
         <svg:g transform="translate(131.0 123.2)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="visible"></svg:circle>
         </svg:g>
         <svg:g transform="translate(148.8 72.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(145.2 153.4)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(154.1 142.4)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(138.2 61.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(150.4 474.6)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(165.0 218.7)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(248.5 517.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(208.1 486.9)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(154.0 165.3)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.4 82.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(132.5 212.3)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(146.8 87.3)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(153.3 127.9)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(171.0 72.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(135.2 78.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.1 62.2)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(124.6 68.3)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(187.2 56.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(121.2 18.1)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>
@@ -2234,23 +2223,6 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -2494,7 +2466,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -2518,7 +2490,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2526,7 +2498,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2534,7 +2506,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="185.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="185.8" y1="91.9" x2="192.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="185.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="185.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="189.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2542,7 +2514,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="193.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="194.3" y1="91.9" x2="200.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="194.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="194.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="197.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2550,7 +2522,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="202.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="202.8" y1="91.9" x2="209.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="202.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="202.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="206.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2558,7 +2530,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="210.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="211.3" y1="91.9" x2="217.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="211.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="211.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="214.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2566,7 +2538,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="219.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="219.8" y1="91.9" x2="226.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="219.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="219.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="223.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2574,7 +2546,7 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="227.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="228.3" y1="91.9" x2="234.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="228.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="228.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="231.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -2600,103 +2572,143 @@ console.debug: retry: ball 3 went round 1 times before and waited 400 ms
       </svg:g>
       <svg:g>
         <svg:g transform="translate(131.0 123.2)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="visible"></svg:circle>
         </svg:g>
         <svg:g transform="translate(148.8 72.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(145.2 153.4)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(154.1 142.4)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(138.2 61.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(150.4 474.6)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(165.0 218.7)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(248.5 517.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(208.1 486.9)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(154.0 165.3)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.4 82.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(132.5 212.3)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(146.8 87.3)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(153.3 127.9)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(171.0 72.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(135.2 78.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.1 62.2)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(124.6 68.3)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(187.2 56.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(121.2 18.1)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>
@@ -2998,23 +3010,6 @@ console.debug: in: 2 of 2 in the machine
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -3258,7 +3253,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="1.4" opacity="0.25" stroke-dasharray="1.5 3"></svg:line>
@@ -3282,7 +3277,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -3290,7 +3285,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -3313,73 +3308,101 @@ console.debug: in: 2 of 2 in the machine
       </svg:g>
       <svg:g>
         <svg:g transform="translate(238.2 508.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(149.1 72.4)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(11.9 469.8)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(138.0 62.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(158.6 85.1)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(152.9 108.6)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(181.3 482.7)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(167.8 75.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(144.7 87.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.4 62.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(134.5 77.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(178.3 65.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(123.8 67.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(100.5 5.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>
@@ -3569,23 +3592,6 @@ console.debug: in: 2 of 2 in the machine
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -3829,7 +3835,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#FF5C5C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="1.4" opacity="0.25" stroke-dasharray="1.5 3"></svg:line>
@@ -3853,7 +3859,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -3861,7 +3867,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="hidden">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -3884,73 +3890,101 @@ console.debug: in: 2 of 2 in the machine
       </svg:g>
       <svg:g>
         <svg:g transform="translate(238.2 508.0)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(149.1 72.4)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(11.9 469.8)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(138.0 62.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(158.6 85.1)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(152.9 108.6)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="visible"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="visible"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(181.3 482.7)" opacity="1.0">
-          <svg:circle r="7.5" fill="url(#ballDone)" filter="url(#glow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0.25"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballDone)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(167.8 75.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(144.7 87.5)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(160.4 62.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(134.5 77.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballRed)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolRed)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballRed)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(178.3 65.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(123.8 67.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(100.5 5.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>
@@ -4134,23 +4168,6 @@ console.debug: in: 2 of 2 in the machine
           <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
           <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
           <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
           <svg:feComposite in2="blur" operator="in"></svg:feComposite>
           <svg:feMerge>
             <svg:feMergeNode></svg:feMergeNode>
@@ -4402,7 +4419,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -4426,7 +4443,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -4434,7 +4451,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -4634,23 +4651,6 @@ console.debug: in: 2 of 2 in the machine
             <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
           </svg:feMerge>
         </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
       </svg:defs>
       <!---->
       <svg:g>
@@ -4896,7 +4896,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="1.4" opacity="0.25" stroke-dasharray="1.5 3"></svg:line>
@@ -4920,7 +4920,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -4928,7 +4928,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -4937,18 +4937,24 @@ console.debug: in: 2 of 2 in the machine
       <svg:g class="trails" stroke-linecap="round" stroke="#F1EDF7"></svg:g>
       <svg:g>
         <svg:g transform="translate(99.3 7.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(193.3 5.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(122.5 4.4)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>
@@ -5132,23 +5138,6 @@ console.debug: in: 2 of 2 in the machine
           <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
           <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
           <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
           <svg:feComposite in2="blur" operator="in"></svg:feComposite>
           <svg:feMerge>
             <svg:feMergeNode></svg:feMergeNode>
@@ -5400,7 +5389,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
@@ -5424,7 +5413,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -5432,7 +5421,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -5626,23 +5615,6 @@ console.debug: in: 2 of 2 in the machine
           <svg:feGaussianBlur in="SourceAlpha" stdDeviation="2"></svg:feGaussianBlur>
           <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
           <svg:feFlood flood-color="#000000" flood-opacity="0.55"></svg:feFlood>
-          <svg:feComposite in2="blur" operator="in"></svg:feComposite>
-          <svg:feMerge>
-            <svg:feMergeNode></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <svg:feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></svg:feGaussianBlur>
-          <svg:feMerge>
-            <svg:feMergeNode in="blur"></svg:feMergeNode>
-            <svg:feMergeNode in="SourceGraphic"></svg:feMergeNode>
-          </svg:feMerge>
-        </svg:filter>
-        <svg:filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <svg:feGaussianBlur in="SourceAlpha" stdDeviation="1.5"></svg:feGaussianBlur>
-          <svg:feOffset dy="1.5" result="blur"></svg:feOffset>
-          <svg:feFlood flood-color="#000000" flood-opacity="0.5"></svg:feFlood>
           <svg:feComposite in2="blur" operator="in"></svg:feComposite>
           <svg:feMerge>
             <svg:feMergeNode></svg:feMergeNode>
@@ -5894,7 +5866,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:line x1="25.0" y1="136.1" x2="139.0" y2="136.1"></svg:line>
         </svg:g>
       </svg:g>
-      <svg:g filter="url(#glow)" stroke-linecap="round">
+      <svg:g stroke-linecap="round">
         <svg:line x1="139.0" y1="94.0" x2="161.0" y2="94.0" stroke="#B79CFF" stroke-width="2.6" opacity="1" stroke-dasharray="none"></svg:line>
         <!---->
         <svg:line x1="139.0" y1="172.0" x2="161.0" y2="172.0" stroke="#FF9A3C" stroke-width="1.4" opacity="0.25" stroke-dasharray="1.5 3"></svg:line>
@@ -5918,7 +5890,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="168.4" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="168.8" y1="91.9" x2="175.2" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="168.8" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="168.8" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="172.0" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -5926,7 +5898,7 @@ console.debug: in: 2 of 2 in the machine
           <svg:rect width="7.2" height="9.8" rx="1.8" fill="#15101D" stroke="rgba(183, 156, 255, 0.18)" stroke-width="0.5" x="176.9" y="82.1"></svg:rect>
           <svg:line stroke="rgba(255, 255, 255, 0.08)" stroke-width="0.5" x1="177.3" y1="91.9" x2="183.7" y2="91.9"></svg:line>
           <svg:g visibility="visible">
-            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" filter="url(#glow)" x="177.3" y="82.5"></svg:rect>
+            <svg:rect width="6.4" height="9" rx="1.6" fill="url(#chip)" x="177.3" y="82.5"></svg:rect>
             <svg:circle r="0.9" fill="rgba(23, 12, 40, 0.75)" cx="180.5" cy="84.8"></svg:circle>
           </svg:g>
         </svg:g>
@@ -5935,13 +5907,17 @@ console.debug: in: 2 of 2 in the machine
       <svg:g class="trails" stroke-linecap="round" stroke="#F1EDF7"></svg:g>
       <svg:g>
         <svg:g transform="translate(177.6 7.6)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
         <svg:g transform="translate(195.2 5.7)" opacity="0.8">
-          <svg:circle r="7.5" fill="url(#ballOrange)" filter="url(#ballShadow)"></svg:circle>
-          <svg:circle r="9.1" fill="none" filter="url(#glow)" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
+          <svg:circle r="15" fill="url(#poolOrange)" opacity="0"></svg:circle>
+          <svg:circle r="10.5" fill="none" stroke="rgba(183, 156, 255, 0.14)" stroke-width="3" visibility="hidden"></svg:circle>
+          <svg:circle r="7.5" fill="url(#ballOrange)"></svg:circle>
+          <svg:circle r="9.1" fill="none" stroke="rgba(183, 156, 255, 0.95)" stroke-width="0.9" visibility="hidden"></svg:circle>
           <svg:circle r="11.3" fill="none" stroke-width="1.2" transform="rotate(-90)" pathLength="1" stroke="#FF5C5C" stroke-dasharray="0.0 1" visibility="hidden"></svg:circle>
         </svg:g>
       </svg:g>

@@ -1,0 +1,25 @@
+{
+  "revision": "fe7af05f1909ce05732801dbe086ece18d91d187",
+  "version": "beni 0.1.0-m1 802be55e4ad5d8abb2642835ead351ca",
+  "seed": 20261026,
+  "source": "tests/corpus/browser/tea/BallMachine",
+  "runs": [
+    {
+      "name": "dev",
+      "flags": [],
+      "bytes": 106008
+    },
+    {
+      "name": "release",
+      "flags": [
+        "--release"
+      ],
+      "bytes": 77154
+    },
+    {
+      "name": "gradient",
+      "flags": [],
+      "bytes": 106596
+    }
+  ]
+}
