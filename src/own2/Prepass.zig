@@ -15,8 +15,7 @@
 //! type's method is told by its symbol against the interner's fixed
 //! `WellKnown` indices, never by spelling.
 //!
-//! **The spread table does not exist yet** (`Bir.Spread`, S2b): `spreads`
-//! is published empty until `Lower` records it.
+//! The spread chains are `Lower`'s `Bir.Spread` records, copied as they are.
 //!
 //! Source-proportional: every pass is one walk over the declaration's
 //! instructions, O(E) (§4.1's first row).
@@ -83,6 +82,15 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
     @memset(reader, none);
     var joins: std.ArrayList(Facts.Prepass.MaybeJoin) = .empty;
     defer joins.deinit(gpa);
+    var spreads: std.ArrayList(Facts.Prepass.Spread) = .empty;
+    defer spreads.deinit(gpa);
+    var spread_items: std.ArrayList(Facts.Prepass.SpreadItem) = .empty;
+    defer spread_items.deinit(gpa);
+    for (bir.decls) |d| for (bir.spreads(d)) |s| {
+        const items = bir.spreadItems(s);
+        try spreads.append(gpa, .{ .root = s.root, .items = .{ .start = @intCast(spread_items.items.len), .len = @intCast(items.len) } });
+        for (items) |it| try spread_items.append(gpa, .{ .inst = it[0], .is_spread = it[1] == 1 });
+    };
     var ops: std.ArrayList(Bir.Inst.Index) = .empty;
     defer ops.deinit(gpa);
     const tags = bir.insts.items(.tag);
@@ -179,7 +187,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
         .reader = reader,
         .method_of = method_of,
         .enclosing_frame = enclosing_frame,
-        .spreads = &.{},
+        .spreads = try arena.dupe(Facts.Prepass.Spread, spreads.items),
+        .spread_items = try arena.dupe(Facts.Prepass.SpreadItem, spread_items.items),
         .joins = try arena.dupe(Facts.Prepass.MaybeJoin, joins.items),
     };
 }
@@ -446,6 +455,29 @@ test "the pre-pass finds groups, alias chains, read counts, frames, methods and 
     try testing.expectEqual(Bir.Inst.Tag.lambda, l.bir.instTag(@fromBackingInt(pp.joins[0].f)));
     try testing.expectEqual(Bir.Inst.Tag.local, l.bir.instTag(@fromBackingInt(pp.joins[0].d)));
     try testing.expectEqual(@as(usize, 0), pp.spreads.len);
+}
+
+test "the pre-pass copies Lower's spread chains, an inner one first" {
+    var l = try lowerSource(
+        \\f xs ys =
+        \\    [ 0, …xs, …[ 1, …ys ] ]
+        \\
+    );
+    defer l.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const pp = try run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir });
+    try testing.expectEqual(@as(usize, 2), pp.spreads.len);
+    const inner = pp.spread_items[pp.spreads[0].items.start..][0..pp.spreads[0].items.len];
+    const outer = pp.spread_items[pp.spreads[1].items.start..][0..pp.spreads[1].items.len];
+    try testing.expectEqual(@as(usize, 2), inner.len);
+    try testing.expect(!inner[0].is_spread and inner[1].is_spread);
+    try testing.expectEqual(@as(usize, 3), outer.len);
+    try testing.expect(!outer[0].is_spread and outer[1].is_spread and outer[2].is_spread);
+    // The outer chain's last item is the inner chain's root, and its root
+    // is the declaration's body.
+    try testing.expectEqual(pp.spreads[0].root, outer[2].inst);
+    try testing.expectEqual(l.bir.decls[l.declNamed("f")].body.unwrap().?.int(), pp.spreads[1].root);
 }
 
 test "subtree starts: a post-ordered tree's first instruction" {
