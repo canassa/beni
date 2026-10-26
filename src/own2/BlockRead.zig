@@ -2170,7 +2170,7 @@ test "the codec's lane stops the writer at every prefix: nothing written, no mem
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(gpa);
     var cap: u64 = 0;
-    while (cap < paid) : (cap += if (cap < 400) 1 else paid / 64) {
+    while (cap < paid) : (cap += if (cap < 200) 1 else paid / 48) {
         const r = try writeCapped(&t, classes[0..], cap, &out);
         try testing.expectEqual(@as(?anyerror, error.AccountingInvariant), r.err);
         try testing.expectEqual(@as(usize, 0), out.items.len);
@@ -2349,18 +2349,22 @@ fn manyMaps(t: *Tables, k: u32) !ClassId {
 
 test "a class whose interpretations grow past the allowance is refused loudly, on its own declaration" {
     const gpa = testing.allocator;
+    // §4.4's default.
+    try testing.expectEqual(@as(u32, 65_536), Ids.Account.default_allowance);
     {
-        // 200 maps over 400 nodes: 80 000 positions, past 65 536.
+        // Eight maps over 400 nodes: 2 800 interpretations past one per
+        // node, against a declaration allowed 2 000.
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
         t.account.allowance = std.math.maxInt(u32) - 1;
-        const c = try manyMaps(&t, 200);
-        t.account.allowance = t.account.growth + Ids.Account.default_allowance;
+        const c = try manyMaps(&t, 8);
+        var small: Ids.Account = .{ .allowance = 2000 };
+        defer small.deinit(gpa);
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(gpa);
-        try testing.expectError(error.OwnershipLimit, write(t.env(), &t.sums, &.{c}, .identity, &out));
-        try testing.expect(t.account.failed.? == .exhausted);
+        try testing.expectError(error.OwnershipLimit, Block.writeWith(t.env(), &t.sums, &.{c}, .identity, &out, .{ .charges = &.{.growth(&small)} }));
+        try testing.expect(small.failed.? == .exhausted);
         try testing.expectEqual(@as(usize, 0), out.items.len);
     }
     // Two declarations in one block: each class's growth on its own.
