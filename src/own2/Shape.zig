@@ -96,6 +96,9 @@ pub const Table = struct {
     leq_provisional: std.ArrayList([2]u32) = .empty,
     leq_depth: u32 = 0,
     memo_map: stamped.Column(NodeId, NodeId) = .{},
+    /// `arrivals`' memo: the cells of a node's reach that are not apart
+    /// by construction (#1115's review).
+    arrivals_memo: stamped.Column(NodeId, SetId) = .{},
     /// `unionHas`'s visited stamp.
     union_seen: stamped.Column(NodeId, void) = .{},
 
@@ -110,6 +113,7 @@ pub const Table = struct {
         t.leq_provisional.deinit(gpa);
         t.union_seen.deinit(gpa);
         t.memo_map.deinit(gpa);
+        t.arrivals_memo.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -499,12 +503,28 @@ pub const Table = struct {
         return t.nodes.items(.reach)[n.int()];
     }
 
+    /// The cells of `n`'s reach that construction does not make apart: an
+    /// arrival (not a site, a result or an escape), `⊤`, or an approximate
+    /// cell, with its flag. What `apart` over the reach of one element
+    /// reads (§2.9): the rest is apart by construction. Memoised per node,
+    /// built as `reach` is, so a tower costs each level its own cells.
+    pub fn arrivals(t: *Table, gpa: Allocator, account: *Account, cellt: *const Cell.Table, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
+        try account.reserve(.memo, 1);
+        if (t.arrivals_memo.get(n)) |s| return s;
+        var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .filter = cellt };
+        defer r.deinit();
+        try r.run(n);
+        return t.arrivals_memo.get(n).?;
+    }
+
     /// Iterative Tarjan over the explicit children, on explicit stacks.
     const Reach = struct {
         t: *Table,
         gpa: Allocator,
         account: *Account,
         sets: *Cell.Radix,
+        /// Set: `arrivals`, into `arrivals_memo`, a node's own cells filtered.
+        filter: ?*const Cell.Table = null,
         index: stamped.Column(NodeId, u32) = .{},
         low: stamped.Column(NodeId, u32) = .{},
         on_stack: stamped.Column(NodeId, void) = .{},
@@ -544,6 +564,28 @@ pub const Table = struct {
             }
         }
 
+        fn settled(r: *Reach, k: NodeId) bool {
+            return if (r.filter != null) r.t.arrivals_memo.get(k) != null else r.t.nodes.items(.reach)[k.int()] != .none;
+        }
+
+        fn got(r: *Reach, k: NodeId) SetId {
+            return if (r.filter != null) r.t.arrivals_memo.get(k) orelse .none else r.t.nodes.items(.reach)[k.int()];
+        }
+
+        /// A member's own cells, filtered in `arrivals` mode: a record each.
+        fn own(r: *Reach, m: NodeId) Error!SetId {
+            const cellt = r.filter orelse return r.t.cells(m);
+            var out: SetId = .none;
+            var it = r.sets.iterate(r.t.cells(m));
+            while (it.next()) |e| {
+                try r.account.reserve(.inspection, 1);
+                const o = cellt.origin(.from(e.key));
+                if (e.value == 0 and (o == .site or o == .result or o == .esc)) continue;
+                out = try r.sets.insert(r.gpa, .growth(r.account), out, e.key, e.value);
+            }
+            return out;
+        }
+
         fn push(r: *Reach, n: NodeId) Error!void {
             try r.account.reserve(.memo, 1);
             try r.index.put(r.gpa, n, r.next_index);
@@ -564,7 +606,7 @@ pub const Table = struct {
                     const k = r.kids.items[f.cursor];
                     f.cursor += 1;
                     const n = f.node;
-                    if (r.t.nodes.items(.reach)[k.int()] != .none) continue; // settled elsewhere
+                    if (r.settled(k)) continue; // settled elsewhere
                     if (r.index.get(k) == null) {
                         try r.push(k);
                         continue;
@@ -593,11 +635,11 @@ pub const Table = struct {
                 while (i > 0) {
                     i -= 1;
                     const m = r.scc_stack.items[i];
-                    set = try r.sets.unionWith(r.gpa, .growth(r.account), set, r.t.cells(m));
+                    set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
                     const first: u32 = @intCast(r.kids.items.len);
                     try r.children(m);
                     for (r.kids.items[first..]) |k| {
-                        const s = r.t.nodes.items(.reach)[k.int()];
+                        const s = r.got(k);
                         if (s != .none) set = try r.sets.unionWith(r.gpa, .growth(r.account), set, s);
                     }
                     r.kids.shrinkRetainingCapacity(first);
@@ -606,7 +648,7 @@ pub const Table = struct {
                 while (r.scc_stack.items.len > 0) {
                     const m = r.scc_stack.pop().?;
                     r.on_stack.remove(m);
-                    r.t.nodes.items(.reach)[m.int()] = set;
+                    if (r.filter != null) try r.t.arrivals_memo.put(r.gpa, m, set) else r.t.nodes.items(.reach)[m.int()] = set;
                     if (m == n) break;
                 }
             }

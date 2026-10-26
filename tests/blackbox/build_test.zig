@@ -8305,6 +8305,46 @@ test "the checker v2's growth is linear in a recursive tower's height: a one-mem
     try testing.expect(growth[2] <= 14 * growth[1] + 200);
 }
 
+test "a one-element literal's [*] compares the objects its element holds at every path" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1115's review: the link of a one-element literal keeps the entry at
+    // its `[*]` that compares everything the element holds below (`apart`
+    // over its arrivals): `( a, b )`'s two parameters, and `( xs, x )` with
+    // `x` one of `xs`'s elements, one object at two paths.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub p10 : List Int, List Int → List (List Int × List Int)
+        \\p10 a b =
+        \\    [ ( a, b ) ]
+        \\
+        \\
+        \\pub p11 : List (List Int) → List (List (List Int) × List Int)
+        \\p11 xs =
+        \\    case xs of
+        \\        [ x, …_ ] →
+        \\            [ ( xs, x ) ]
+        \\
+        \\        _ →
+        \\            []
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p10: π1 RA, π2 RA; res [*] {apart [π1] [π2]}, [*].0 π1, [*].1 π2, fresh1\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: π1 RA, π1[*] RA; res [*] {lost}, [*].0 π1, [*].1 π1[*]{excl π1[*]}, fresh1 fresh2\n") != null);
+}
+
 test "the checker v2 gives each demand of one call its own query lane" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

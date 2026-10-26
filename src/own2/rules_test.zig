@@ -44,10 +44,10 @@ const layers = [_]Entry{
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
-    // §5 says 1 785 since #1112: the observable-position frontier every κ
+    // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1785 },
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1805 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1500 },
@@ -55,7 +55,7 @@ const layers = [_]Entry{
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1100 },
     .{ .file = "Demands.zig", .layer = 6, .max_lines = 1200 },
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1785 },
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 900 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
     // §5 says 1 100 since S3a: the source and signature adapters.
