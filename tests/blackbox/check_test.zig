@@ -1038,7 +1038,10 @@ const bodies_list = "tests/corpus/ownership/word-bodies.txt";
 /// `.beni` file the signature and definition (from `pub name :` or `name :`
 /// to the last indented line of the definition), for a `.js` sibling the
 /// export (`export const name = …` or the `const` an `export { x as name }`
-/// names, to its closing `;`). Whitespace runs fold to one space, so a
+/// names, to its closing `;`), for a `.zig` file the lines between
+/// `// ownership pin begin: name` and `// ownership pin end: name` (the
+/// code generator's own form of a primitive it inlines, which is the code
+/// that runs in place of the sibling). Whitespace runs fold to one space, so a
 /// reformatting that changes no token does not move it; a comment inside it
 /// does, which is on the safe side.
 fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: []const u8) !?[]const u8 {
@@ -1053,6 +1056,22 @@ fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: 
             if (!in) {
                 if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig)) in = true else continue;
             } else if (line.len != 0 and line[0] != ' ' and !std.mem.startsWith(u8, line, def)) break;
+            try out.appendSlice(arena, line);
+            try out.append(arena, '\n');
+        }
+    } else if (std.mem.endsWith(u8, file, ".zig")) {
+        // A span of the code generator that a primitive's words describe,
+        // because it writes the primitive in place: between two markers.
+        const begin = try std.fmt.allocPrint(arena, "// ownership pin begin: {s}", .{name});
+        const end = try std.fmt.allocPrint(arena, "// ownership pin end: {s}", .{name});
+        var in = false;
+        while (lines.next()) |line| {
+            const code = std.mem.trimStart(u8, line, " ");
+            if (!in) {
+                in = std.mem.startsWith(u8, code, begin);
+                continue;
+            }
+            if (std.mem.startsWith(u8, code, end)) break;
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
         }
@@ -1166,18 +1185,20 @@ const DumpDecl = struct {
     /// Words in the v2 column.
     v2: bool = false,
     taken_result: bool = false,
-    /// `%K = top N (name)`: instruction K names declaration `name`.
-    tops: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// `%K = call %M …`: the callee instruction of call K.
-    calls: std.StringHashMapUnmanaged([]const u8) = .empty,
-    body: []const u8 = "",
-    /// The module's declarations this one names (`refs`, `top N (name)`).
+    /// Every declaration this one names in its body, in any form (a call,
+    /// a lambda, a partial application, an alias), qualified: the `refs`
+    /// lines, `top N (name)` of its own module and `import_value M.name`
+    /// of another.
     refs: std.ArrayList([]const u8) = .empty,
+
+    fn key(d: DumpDecl, arena: std.mem.Allocator) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
+    }
 };
 
 /// Every declaration of the package the dump `args` lowers, from the BIR
-/// dump of its directory: no list of files, and the words as lowering
-/// recorded them (v1's column and the v2 one alike).
+/// dump: its module, its name, whether it is a value, whether its words are
+/// recorded (v1's column and the v2 one alike), and what it names.
 fn dumpDecls(w: *World, args: []const []const u8, out: *std.ArrayList(DumpDecl)) !void {
     const arena = w.arena.allocator();
     const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
@@ -1220,36 +1241,31 @@ fn dumpDecls(w: *World, args: []const []const u8, out: *std.ArrayList(DumpDecl))
             in_refs = true;
             continue;
         }
-        if (in_refs and std.mem.startsWith(u8, line, "    top ")) {
+        if (!in_refs) continue;
+        if (!std.mem.startsWith(u8, line, "    ")) {
+            in_refs = false;
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "    top ")) {
             const open = std.mem.indexOfScalar(u8, line, '(') orelse continue;
-            try d.refs.append(arena, line[open + 1 .. line.len - 1]);
-            continue;
-        }
-        if (!std.mem.startsWith(u8, line, "    ")) in_refs = false;
-        if (std.mem.startsWith(u8, line, "  body ")) {
-            d.body = line["  body ".len..];
-            continue;
-        }
-        if (std.mem.startsWith(u8, line, "  %")) {
-            const eq = std.mem.indexOf(u8, line, " = ") orelse continue;
-            const inst = line[2..eq];
-            const rhs = line[eq + 3 ..];
-            if (std.mem.startsWith(u8, rhs, "top ")) {
-                const open = std.mem.indexOfScalar(u8, rhs, '(') orelse continue;
-                try d.tops.put(arena, inst, rhs[open + 1 .. rhs.len - 1]);
-            } else if (std.mem.startsWith(u8, rhs, "call ")) {
-                const callee = rhs["call ".len..];
-                try d.calls.put(arena, inst, callee[0 .. std.mem.indexOfScalar(u8, callee, ' ') orelse callee.len]);
-            }
+            try d.refs.append(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, line[open + 1 .. line.len - 1] }));
+        } else if (std.mem.startsWith(u8, line, "    import_value ")) {
+            try d.refs.append(arena, line["    import_value ".len..]);
         }
     }
 }
 
-/// The packages that may write ownership words: core and every platform,
-/// shipped or a test's, found on disk.
-fn wordedPackages(w: *World, out: *std.ArrayList([]const []const u8)) !void {
+/// The packages that may write ownership words, found on disk: core and
+/// every platform under `platforms/` (shipped) and `tests/platforms/` (the
+/// tests'), each with the directory its pins' files lie under. A corpus
+/// fixture's own platform (`tests/corpus/**/platform`) is left out on
+/// purpose: those are trust-boundary fixtures, words a test hands the
+/// checker, not code a program runs.
+const Package = struct { dir: []const u8, args: []const []const u8 };
+
+fn wordedPackages(w: *World, out: *std.ArrayList(Package)) !void {
     const arena = w.arena.allocator();
-    try out.append(arena, &.{ "dump", "--stage=bir", "--core", "core" });
+    try out.append(arena, .{ .dir = "core", .args = &.{ "dump", "--stage=bir", "--core", "core" } });
     for ([_][]const u8{ "platforms", "tests/platforms" }) |root| {
         var dir = try std.Io.Dir.cwd().openDir(testing.io, root, .{ .iterate = true });
         defer dir.close(testing.io);
@@ -1269,9 +1285,67 @@ fn wordedPackages(w: *World, out: *std.ArrayList([]const []const u8)) !void {
         for (names.items) |name| {
             const path = try std.fs.path.join(arena, &.{ root, name });
             const platform = if (std.mem.eql(u8, root, "platforms")) name else path;
-            try out.append(arena, try arena.dupe([]const u8, &.{ "dump", "--stage=bir", try std.fmt.allocPrint(arena, "--platform={s}", .{platform}), path }));
+            try out.append(arena, .{ .dir = path, .args = try arena.dupe([]const u8, &.{ "dump", "--stage=bir", try std.fmt.allocPrint(arena, "--platform={s}", .{platform}), path }) });
         }
     }
+}
+
+/// The pins of `word-bodies.txt`: a qualified declaration name to the
+/// files whose rows name it. Two packages may have a module of one name
+/// (`Tea` in browser-tea and browser-inline), so a pin counts for a package
+/// only when its file lies under that package's directory.
+const Pins = struct {
+    files: std.StringHashMapUnmanaged(std.ArrayList([]const u8)) = .empty,
+
+    fn parse(arena: std.mem.Allocator, list: []const u8) !Pins {
+        var p: Pins = .{};
+        var rows = std.mem.splitScalar(u8, list, '\n');
+        while (rows.next()) |row| {
+            if (row.len == 0 or row[0] == '#') continue;
+            var fields = std.mem.tokenizeScalar(u8, row, ' ');
+            const file = fields.next() orelse continue;
+            const got = try p.files.getOrPut(arena, fields.next() orelse continue);
+            if (!got.found_existing) got.value_ptr.* = .empty;
+            try got.value_ptr.append(arena, file);
+        }
+        return p;
+    }
+
+    fn has(p: Pins, dir: []const u8, decl: []const u8) bool {
+        const files = p.files.get(decl) orelse return false;
+        for (files.items) |f| {
+            if (f.len > dir.len and std.mem.startsWith(u8, f, dir) and f[dir.len] == '/') return true;
+        }
+        return false;
+    }
+};
+
+test "ownership words: a pin counts for the package its file lies under, not for a module of the same name elsewhere" {
+    const arena = testing.allocator;
+    var state = std.heap.ArenaAllocator.init(arena);
+    defer state.deinit();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, state.allocator(), .limited(1 << 20));
+    const pins = try Pins.parse(state.allocator(), list);
+    try testing.expect(pins.has("platforms/browser-inline", "Tea.sandbox"));
+    try testing.expect(pins.has("platforms/browser-tea", "Tea.sandbox"));
+    try testing.expect(pins.has("tests/platforms/entry-shape", "Start.launch"));
+    // The same list without browser-inline's and entry-shape's rows: the
+    // namesakes' rows in browser-tea and entry do not stand in for them.
+    var kept: std.ArrayList(u8) = .empty;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (std.mem.startsWith(u8, row, "platforms/browser-inline/Tea.js") or std.mem.startsWith(u8, row, "tests/platforms/entry-shape/")) continue;
+        try kept.appendSlice(state.allocator(), row);
+        try kept.append(state.allocator(), '\n');
+    }
+    const fewer = try Pins.parse(state.allocator(), kept.items);
+    try testing.expect(!fewer.has("platforms/browser-inline", "Tea.sandbox"));
+    try testing.expect(!fewer.has("platforms/browser-inline", "Tea.element"));
+    try testing.expect(fewer.has("platforms/browser-tea", "Tea.sandbox"));
+    try testing.expect(!fewer.has("tests/platforms/entry-shape", "Start.launch"));
+    try testing.expect(fewer.has("tests/platforms/entry", "Start.launch"));
+    // A directory is a whole path segment: browser's rows are not browser-tea's.
+    try testing.expect(!fewer.has("platforms/browser", "Tea.sandbox"));
 }
 
 test "ownership words: every worded declaration, the helpers its body runs and every reader of a taken result have pinned bodies" {
@@ -1279,49 +1353,42 @@ test "ownership words: every worded declaration, the helpers its body runs and e
     defer w.deinit();
     const arena = w.arena.allocator();
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20));
-    var pinned: std.StringHashMapUnmanaged(void) = .empty;
-    var rows = std.mem.splitScalar(u8, list, '\n');
-    while (rows.next()) |row| {
-        if (row.len == 0 or row[0] == '#') continue;
-        var fields = std.mem.tokenizeScalar(u8, row, ' ');
-        _ = fields.next() orelse continue;
-        try pinned.put(arena, fields.next() orelse continue, {});
-    }
-    var packages: std.ArrayList([]const []const u8) = .empty;
+    const pins = try Pins.parse(arena, list);
+    var packages: std.ArrayList(Package) = .empty;
     try wordedPackages(&w, &packages);
     var ok = true;
-    for (packages.items) |args| {
+    for (packages.items) |package| {
         var decls: std.ArrayList(DumpDecl) = .empty;
-        try dumpDecls(&w, args, &decls);
-        // Per module: a declaration by name.
+        try dumpDecls(&w, package.args, &decls);
+        // A declaration by qualified name.
         var index: std.StringHashMapUnmanaged(usize) = .empty;
-        for (decls.items, 0..) |d, i| try index.put(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name }), i);
+        for (decls.items, 0..) |d, i| try index.put(arena, try d.key(arena), i);
         // What must be pinned, and why.
         var need: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
-        // The taken results and the wrappers that return one (§2.13.6's
-        // index obligation): a declaration whose body is a call of either.
-        var taken: std.StringHashMapUnmanaged(void) = .empty;
-        for (decls.items) |d| if (d.taken_result) try taken.put(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name }), {});
+        // The readers of a taken result (§2.13.6's index obligation), as a
+        // least fixpoint over the refs of every module of the package: a
+        // declaration with a `taken` result, and any declaration that names
+        // one in the set, in any form and from any module. It over-
+        // approximates (every caller of a fold is in it); it misses none.
+        var readers: std.StringHashMapUnmanaged(void) = .empty;
+        for (decls.items) |d| if (d.taken_result) try readers.put(arena, try d.key(arena), {});
         var grew = true;
         while (grew) {
             grew = false;
             for (decls.items) |d| {
-                const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
-                if (taken.contains(key) or d.body.len == 0) continue;
-                const callee = d.calls.get(d.body) orelse continue;
-                const target = d.tops.get(callee) orelse continue;
-                if (!taken.contains(try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, target }))) continue;
-                try taken.put(arena, key, {});
-                grew = true;
+                const key = try d.key(arena);
+                if (readers.contains(key)) continue;
+                for (d.refs.items) |r| {
+                    if (!readers.contains(r)) continue;
+                    try readers.put(arena, key, {});
+                    grew = true;
+                    break;
+                }
             }
         }
         for (decls.items) |d| {
-            const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
-            if (d.worded) try need.put(arena, key, "carries ownership words");
-            for (d.refs.items) |r| {
-                const target = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r });
-                if (taken.contains(target) and !std.mem.eql(u8, target, key)) try need.put(arena, key, "reads a container through a `taken` result");
-            }
+            const key = try d.key(arena);
+            if (d.worded) try need.put(arena, key, "carries ownership words") else if (readers.contains(key)) try need.put(arena, key, "reads a container through a `taken` result, or hands one on");
         }
         // A worded beni body of a module with v2 rows (the asserted rows of
         // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
@@ -1336,16 +1403,16 @@ test "ownership words: every worded declaration, the helpers its body runs and e
             if ((try seen.getOrPut(arena, i)).found_existing) continue;
             const d = decls.items[i];
             for (d.refs.items) |r| {
-                const j = index.get(try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r })) orelse continue;
-                if (!decls.items[j].value) continue;
-                const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, r });
-                if (!need.contains(key)) try need.put(arena, key, try std.fmt.allocPrint(arena, "is run by the worded {s}.{s}", .{ d.module, d.name }));
-                if (!decls.items[j].foreign) try stack.append(arena, j);
+                const j = index.get(r) orelse continue;
+                const target = decls.items[j];
+                if (!target.value or !std.mem.eql(u8, target.module, d.module)) continue;
+                if (!need.contains(r)) try need.put(arena, r, try std.fmt.allocPrint(arena, "is run by the worded {s}", .{try d.key(arena)}));
+                if (!target.foreign) try stack.append(arena, j);
             }
         }
         for (need.keys(), need.values()) |key, why| {
-            if (pinned.contains(key)) continue;
-            std.debug.print("{s} {s}, and {s} pins no body for it\n", .{ key, why, bodies_list });
+            if (pins.has(package.dir, key)) continue;
+            std.debug.print("{s} {s}, and {s} pins no body for it under {s}/\n", .{ key, why, bodies_list, package.dir });
             ok = false;
         }
     }

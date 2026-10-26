@@ -11291,6 +11291,8 @@ pub const Lowerer = struct {
             .int32_shiftLeft => l.binary(.shl, v[0], v[1], p),
             .int32_shiftRight => l.binary(.sar, v[0], v[1], p),
             .int32_shiftRightZero => l.binary(.bit_or, try l.binary(.shr, v[0], v[1], p), try zero.node(l, p), p),
+            // ownership pin begin: listPrimitives (tests/corpus/ownership/word-bodies.txt:
+            // the code List's `length`, `traverseAt` and `put` words describe)
             .list_at, .list_traverseAt => l.add(.index_get, p, v[0].int(), v[1].int()),
             .list_half => l.binary(.shr, v[0], try l.numberNode("1", p), p),
             .list_length => l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
@@ -11308,6 +11310,7 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
                 break :blk builder;
             },
+            // ownership pin end: listPrimitives
         };
     }
 

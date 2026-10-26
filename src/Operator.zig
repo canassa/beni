@@ -112,10 +112,13 @@ const int32 = [_]struct { []const u8, Which }{
     .{ "shiftRight", .int32_shiftRight }, .{ "shiftRightZero", .int32_shiftRightZero },
 };
 
+// ownership pin begin: listPrimitives (tests/corpus/ownership/word-bodies.txt:
+// List's `length`, `traverseAt` and `put` words describe this inlining)
 const list = [_]struct { []const u8, Which }{
     .{ "at", .list_at },     .{ "traverseAt", .list_traverseAt }, .{ "put", .list_put },
     .{ "half", .list_half }, .{ "length", .list_length },
 };
+// ownership pin end: listPrimitives
 
 /// The operator `inst` names, or null. `module` is the module `bir` is;
 /// `interner` is anything with `slice(Symbol) []const u8`.
