@@ -193,6 +193,8 @@ pub const own2 = struct {
     pub const Shape = @import("own2/Shape.zig");
     pub const Prepass = @import("own2/Prepass.zig");
     pub const Regions = @import("own2/Regions.zig");
+    pub const Cond = @import("own2/Cond.zig");
+    pub const Summary = @import("own2/Summary.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {

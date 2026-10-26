@@ -42,7 +42,8 @@ const layers = [_]Entry{
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     .{ .file = "Cond.zig", .layer = 4, .max_lines = 1000 },
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1200 },
+    // §5 says 1 400 since S2: the normal-form encoder and v1's print grammar.
+    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1400 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1100 },
     .{ .file = "Demands.zig", .layer = 6, .max_lines = 1200 },

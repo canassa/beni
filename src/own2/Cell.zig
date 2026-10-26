@@ -47,6 +47,9 @@ pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
 pub const CondId = Ids.CondId;
 pub const Account = Ids.Account;
+/// The place table `alias` reads, for a layer above that may not import
+/// `Place` itself (§5: only `Place` reads type children; the table is data).
+pub const Places = Place.Table;
 
 pub const Charge = Ids.Charge;
 pub const Error = Ids.ChargeError;
@@ -66,6 +69,13 @@ pub const Origin = enum(u8) {
     level,
     below,
     loan,
+    /// A use mark (§2.10's `use(i)`): not an object but a label `R`, `A`,
+    /// `E`, `W`, `S` or a written field, carried as a cell so a class's use
+    /// shape is an ordinary shape node and `join`/`leq`/`proj` serve it.
+    /// Concrete for `alias` (never one object with anything); projected as
+    /// `⊤` is — a LEAF of marks stands for every path below it (a deep read
+    /// or write), a `node` of marks for its own path alone.
+    mark,
 
     /// Symbolic origins stand for everything under them: projecting appends
     /// a step (§2.2).
@@ -112,6 +122,11 @@ pub const Kind = enum(u8) {
         };
     }
 };
+
+/// What a `mark` cell says of a parameter path (§2.10's `use(i)` labels):
+/// read, kept in the result, escaped, written, written deeply (`S`), or one
+/// written field (`W{F}`), whose rank is the cell's `b`.
+pub const Mark = enum(u8) { r, a, e, w, deep, field };
 
 /// One cell. `a`, `b`, `c` by origin (§3.2): `site`: the instruction;
 /// `result`/`esc`: label + k; `param`/`env`/`shared`/`msg`: index + path;
@@ -281,6 +296,18 @@ pub const Table = struct {
     /// `⊤`: an object the analysis cannot name (O10).
     pub fn top(t: *Table, gpa: Allocator, account: *Account) Error!CellId {
         return t.internCell(gpa, account, .top, .any, 0, 0, 0, .none, .none);
+    }
+
+    /// A use mark (`Mark`), with the field's rank for `field`; one cell per
+    /// distinct mark, at no place.
+    pub fn mark(t: *Table, gpa: Allocator, account: *Account, m: Mark, rank: u32) Error!CellId {
+        return t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
+    }
+
+    /// The mark a `mark` cell carries.
+    pub fn markOf(t: *const Table, c: CellId) Mark {
+        std.debug.assert(t.origin(c) == .mark);
+        return @fromBackingInt(@intCast(t.cells.items(.a)[c.int()]));
     }
 
     /// `result λ·k` or `esc λ·k`.

@@ -123,6 +123,9 @@ pub const Supply = struct {
     point: u32,
     owned: bool,
     taken: bool,
+    /// κ of the node handed (§2.10's `supply(k)`): what the callee relies
+    /// on when it writes what it was handed.
+    cond: CondId,
 };
 
 /// A keep edge (§2.11): `keep(j, k, kept path, written path)`.
