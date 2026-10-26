@@ -41,7 +41,8 @@
 //! program runs and nothing is recorded (`verified`, `record`). A record
 //! file that comes back into the corpus (`<fixture>.run-hash`,
 //! `.release-run-hash`, `.fuzz-run-hash`, or `tests/blackbox/run-hashes.txt`)
-//! fails the walk by name, with its fix (`corpus_test.zig`, `isRecordFile`).
+//! fails the walk, every one named, with its fix (`corpus_test.zig`,
+//! `isRecordFile`).
 //!
 //! **What a digest covers.** For a corpus `run/` build (`digest`): the
 //! build's name (`dev`, `release`, …), the Node version (`process.version`
