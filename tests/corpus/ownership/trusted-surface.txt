@@ -24,6 +24,10 @@ core       Js.same               ownership/core/JsWords.beni     -
 core       Js.isNull             ownership/core/JsWords.beni     -
 core       Js.isUndefined        ownership/core/JsWords.beni     -
 core       Js.isNullish          ownership/core/JsWords.beni     -
+core       Js.lt                 ownership/core/JsWords.beni     -
+core       Js.gt                 ownership/core/JsWords.beni     -
+core       Js.le                 ownership/core/JsWords.beni     -
+core       Js.ge                 ownership/core/JsWords.beni     -
 core       Js.typeOf             ownership/core/JsWords.beni     -
 core       Js.typeIs             ownership/core/JsWords.beni     -
 core       Js.fingerprint        ownership/core/JsWords.beni     -

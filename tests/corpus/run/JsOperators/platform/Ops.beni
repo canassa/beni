@@ -97,3 +97,17 @@ built pattern s = Js.to (Js.call (make Js.regExp pattern) "test" [ Js.from s ])
 
 make : (String, String → Js.Value), String → Js.Value
 make k pattern = k pattern ""
+
+
+--| The comparisons on two values of one kind: JavaScript's `<`, `>`, `<=`
+--| and `>=`, written in place. Two strings compare by their UTF-16 code
+--| units, so `"Z" < "a"`, and `"a\u{FFFF}"` is above `"a😀"` — a surrogate
+--| pair's first unit is below U+FFFF — where beni's `<` on `String`s, by
+--| code point, orders them the other way.
+pub compared : a, a → List Bool
+compared x y = [ Js.lt x y, Js.gt x y, Js.le x y, Js.ge x y ]
+
+
+--| The comparisons passed as values: the sibling's functions.
+pub comparedViaValues : Int, Int → List Bool
+comparedViaValues a b = List.map [ Js.lt, Js.gt, Js.le, Js.ge ] λf → f a b

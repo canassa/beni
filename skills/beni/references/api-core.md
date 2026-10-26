@@ -184,12 +184,16 @@ module Js
   value finally : (⊤ → a), (⊤ → ⊤) → a  -- impure
   value fingerprint : k, order → name where k.compare : k, k → order
   value from : a → Value
+  value ge : a, a → bool
   value get : Value, name → Value  -- impure
   value global : name → Value  -- impure
+  value gt : a, a → bool
   value instanceOf : Value, Value → bool  -- impure
   value isNull : Value → bool
   value isNullish : Value → bool
   value isUndefined : Value → bool
+  value le : a, a → bool
+  value lt : a, a → bool
   value maySuspend : f → bool
   value method : (Value → a) → Value
   value null : Value
