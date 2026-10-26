@@ -796,36 +796,74 @@ pub const Table = struct {
     /// union's or positions node's sides by `dagKappa`, a recast's inner
     /// beside the recast (a recast changes the type, not the path, so the
     /// two are one position, and the inner's own projections are the
-    /// position's too: `inner`); a delta's base never (a built node's κ is
-    /// the walk's, O13). `explicit`: the structure names something at that
-    /// step (`explicitAt`); the others and the empty ones are followed only
-    /// when `projected` (a snapshot may store there). The one walk of
-    /// `propagate`, `kappaLeq` and `deep`; Block writes a superset.
-    pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, inner: bool = false };
+    /// position's too: `via` names the inner, found through the sides of a
+    /// union or a positions node as well); a delta's base never (a built
+    /// node's κ is the walk's, O13). `explicit`: the structure names
+    /// something at that step (`explicitAt`); the others and the empty ones
+    /// are followed only when `projected` (a snapshot may store there). The
+    /// one walk of `propagate`, `kappaLeq` and `deep`; Block writes a superset.
+    pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, via: NodeId = .none };
 
     pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, out: *std.ArrayList(Next)) Error!void {
-        try t.steps(gpa, charge, v, n, summary, projected, false, out);
-        if (v.shapes.kind(n) == .recast) try t.steps(gpa, charge, v, .from(v.shapes.get(n).a), summary, projected, true, out);
+        try t.steps(gpa, charge, v, n, summary, projected, .none, out);
+        var inners: std.ArrayList(NodeId) = .empty;
+        defer inners.deinit(gpa);
+        try innersOf(gpa, charge, v, n, &inners);
+        for (inners.items) |i| try t.steps(gpa, charge, v, i, summary, projected, i, out);
     }
 
-    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, inner: bool, out: *std.ArrayList(Next)) Error!void {
+    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, projected: bool, via: NodeId, out: *std.ArrayList(Next)) Error!void {
         for (v.places.steps(v.shapes.place(n)).steps) |s| {
             try charge.reserve(gpa, .inspection, 1);
             const c = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, n, s)) orelse continue;
             // Through a recast's inner only what a snapshot stores is more:
             // an unstored inner adds nothing to the recast's derived read.
-            const explicit = !inner and try t.explicitAt(gpa, charge, v, n, s);
+            const explicit = via == .none and try t.explicitAt(gpa, charge, v, n, s);
             const empty = v.shapes.kind(c) == .leaf and v.shapes.cells(c) == .none;
             if (!projected and (!explicit or empty)) continue;
-            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = explicit, .inner = inner });
+            try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = s.word(), .explicit = explicit, .via = via });
         }
     }
 
-    /// A member's counterpart of `n` for a transition: itself, or for one
-    /// out of a recast's inner (`Next.inner`), its own inner when it is a
-    /// recast too.
-    fn side(v: View, m: NodeId, inner: bool) NodeId {
-        return if (inner and v.shapes.kind(m) == .recast) .from(v.shapes.get(m).a) else m;
+    /// The inners of the recasts at `n`'s path: `n`'s own, and those of its
+    /// union's or positions node's sides, each once. A record per node.
+    fn innersOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        switch (v.shapes.kind(n)) {
+            .recast => return out.append(gpa, .from(v.shapes.get(n).a)),
+            .@"union", .positions => {},
+            else => return,
+        }
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (seen.contains(x)) continue;
+            try charge.reserve(gpa, .inspection, 1);
+            try seen.put(gpa, x, {});
+            const d = v.shapes.get(x);
+            switch (d.kind) {
+                .recast => if (!seen.contains(.from(d.a))) {
+                    try seen.put(gpa, .from(d.a), {});
+                    try out.append(gpa, .from(d.a));
+                },
+                .@"union", .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                else => {},
+            }
+        }
+    }
+
+    /// A member's counterpart for a transition: itself, or for one out of a
+    /// recast's inner `via`, the inner of its own recasts at that place
+    /// (null: it has none, so nothing it stores is there).
+    fn side(gpa: Allocator, charge: Charge, v: View, m: NodeId, via: NodeId) Error!?NodeId {
+        if (via == .none) return m;
+        var inners: std.ArrayList(NodeId) = .empty;
+        defer inners.deinit(gpa);
+        try innersOf(gpa, charge, v, m, &inners);
+        for (inners.items) |i| if (v.shapes.place(i) == v.shapes.place(via)) return i;
+        return null;
     }
 
     /// Whether `n`'s structure names something at step `s`: an override in
@@ -959,7 +997,8 @@ pub const Table = struct {
                     try charge.reserve(gpa, .inspection, 1);
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
-                    const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, side(v, m, e.inner), s)) orelse continue;
+                    const sm = (try side(gpa, charge, v, m, e.via)) orelse continue;
+                    const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, sm, s)) orelse continue;
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, c);
                 }
@@ -997,7 +1036,8 @@ pub const Table = struct {
             next.clearRetainingCapacity();
             try t.frontier(gpa, charge, v, f.a, f.summary, projected, &next);
             for (next.items) |e| {
-                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, side(v, f.b, e.inner), Step.fromWord(e.step))) orelse return false;
+                const sb = (try side(gpa, charge, v, f.b, e.via)) orelse return false;
+                const nb = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, sb, Step.fromWord(e.step))) orelse return false;
                 try stack.append(gpa, .{ .a = e.node, .b = nb, .summary = e.summary });
             }
         }
@@ -2482,4 +2522,37 @@ test "#1063: a recast and its inner are one position: an entry stored below the 
     // nothing stored, the recast reads its derivation: `yes`.
     try testing.expectEqual(yes, try f.kappa(.none, r, false));
     try testing.expectEqual(k, try f.kappa(try f.setK(.none, inner, k), r, false));
+}
+
+test "#1063: a join keeps what is stored below a recast's inner, through a union's side" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const v = f.view();
+    // `Rows.storedInto`'s shape, `excl x` at the inner's `[*]`, joined with
+    // another alternative at the recast's place: the literal `0`, then a
+    // recast of a fresh list. The join is a union; its frontier reaches the
+    // inners of the recasts among its sides, each member through its own.
+    const x = try f.param(0, 1, &.{});
+    const k = try f.conds.excl(gpa, f.charge(), x);
+    for ([_]bool{ false, true }) |two_recasts| {
+        const s1 = try f.cells.site(gpa, &f.account, 3, try f.placeOf(1), .list);
+        const elems = try f.leaf(2, &.{});
+        const in1 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
+        const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in1);
+        const km = try f.setKAt(.none, elems, true, k);
+        const other = if (!two_recasts) try f.leaf(2, &.{}) else blk: {
+            const s2 = try f.cells.site(gpa, &f.account, 4, try f.placeOf(1), .list);
+            const in2 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{})));
+            break :blk try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in2);
+        };
+        const j = try f.join2(r, other);
+        const out = try f.propagate(.none, j, &.{ r, other }, &.{ km, .none }, .alternatives, false);
+        try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, km, r, false));
+        try testing.expectEqual(k, try f.conds.deep(gpa, f.charge(), v, out, j, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, km, r, out, j, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, .none, other, out, j, false));
+        try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, j, .none, j, false));
+    }
 }
