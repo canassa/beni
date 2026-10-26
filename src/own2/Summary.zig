@@ -394,7 +394,8 @@ pub const Table = struct {
 
     /// `⊤call` (§2.11, R-5.5.4): every parameter `RAEW` deep, the result
     /// `⊤` with κ `lost`, every function parameter in `fun_params` called
-    /// many times, unseen, its result needed; `refs` top; writes.
+    /// many times, unseen, its result needed and put back anywhere; `refs`
+    /// top; writes. It is the top of `leq`.
     pub fn unknown(t: *Table, env: Env, param_places: []const PlaceId, fun_params: []const u32, res_place: PlaceId) Error!ClassId {
         const gpa = env.gpa;
         var params: std.ArrayList(NodeId) = .empty;
@@ -691,6 +692,9 @@ pub const Table = struct {
         const cb = t.get(b);
         if (ca.params.len != cb.params.len) return false;
         try env.charge.reserve(gpa, .inspection, 1);
+        // `⊤call` is the top of the order: whatever another class supplies,
+        // keeps or puts back (its write-backs included), `⊤call` may do.
+        if (cb.origin == .unknown) return true;
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| if (!try leqUse(env, ua, ub)) return false;
         if (!try env.shapes.leq(gpa, env.account(), env.places, env.cells, ca.res, cb.res)) return false;
         if (!try env.conds.kappaLeq(gpa, env.charge, env.view(), ca.kappas, ca.res, cb.kappas, cb.res, false)) return false;
