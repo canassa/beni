@@ -3540,8 +3540,13 @@ const Case = struct {
         // `check --ownership=v2` agrees with v2's own report as v1's does with
         // v1's: on an enforcing chain it fails exactly when the report has a
         // rejected or pending list line or a limit, with ownership codes only.
-        const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v2" }, flags, &.{path} }));
-        if (enforces and (ownershipRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null)) {
+        // A single-file fixture has no chain of its own: it is checked on
+        // `node` with the check enforced everywhere, so its refusals must be
+        // the exit code too.
+        const single = flags.len == 0;
+        const check_flags: []const []const u8 = if (single) &.{ "--platform=node", "--ownership-everywhere" } else flags;
+        const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v2" }, check_flags, &.{path} }));
+        if ((enforces or single) and (ownershipRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null)) {
             try expectExit(1, checked);
             if (!ownershipOnly(checked.stderr)) {
                 detail("{s}: under --ownership=v2 the report's rejections must be the check's only errors\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });

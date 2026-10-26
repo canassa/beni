@@ -1,5 +1,5 @@
 module MaybeTreeAlias
-  19:23 List.push below: rejected alias: next holds it and is read at 19:21
+  19:23 List.push below: rejected alias: next#Just.0#T.1 holds it and is read at 19:21
   29:15 List.push own: accepted param
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

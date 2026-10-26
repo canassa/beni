@@ -1,0 +1,144 @@
+-- ownership: a write to an on-cycle list below a view of the list above
+-- (ownership-v2.md §2.8, the refinement chain read at each trie ancestor's
+-- canonical path). `kidsRest` takes `r`, a view of `k1` (`others(k1·ι)`),
+-- then `g`, the children of `r`'s first tree: `g` is inside `r`, so the
+-- push changes what `r` reads. Both fold to `π1⟲`, so neither the trie
+-- climb nor `g`'s own canonical path finds the holder; the chain at the
+-- canonical path of `g`'s ancestor `elem(k1·ι)` does. Every such write is
+-- refused; the view held directly and the off-cycle twins too.
+
+type Rose
+    = Rose (List Rose)
+
+
+pub tRest : Rose → List Rose × List Rose
+tRest t =
+    case t of
+        Rose k1 →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+
+pub kidsRest : List Rose → List Rose × List Rose
+kidsRest kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsRestK1 : List Rose → List Rose × List Rose
+kidsRestK1 kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), k1 )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsRestKids : List Rose → List Rose × List Rose
+kidsRestKids kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), kids )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsSecond : List Rose → List Rose × List Rose
+kidsSecond kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, Rose g, …_ ] →
+                    ( List.push g (Rose []), k1 )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsRestOfRest : List Rose → List Rose × List Rose
+kidsRestOfRest kids =
+    case kids of
+        [ _, …r0 ] →
+            case r0 of
+                [ Rose k1, …_ ] →
+                    case k1 of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r0 )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub kidsRestFresh : ⊤ → List Rose × List Rose
+kidsRestFresh ⊤ =
+    kids = [ Rose [ Rose [], Rose [ Rose [] ] ] ]
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )

@@ -180,8 +180,16 @@ const Live = struct {
     /// Per leaf node: its first anchor link, `none` when unlinked.
     leaf_anchor: std.ArrayList(u32) = .empty,
     stack: std.ArrayList(SetId) = .empty,
+    /// The refinement chains (§2.8) are kept per split: a member chain per
+    /// `(path, split)` in `anchors`, and per path a list of its non-empty
+    /// splits' groups, so a demand reads one member of its own split's
+    /// siblings, not each (they all answer `under` that split).
+    groups: std.ArrayList(Group) = .empty,
+    group_of: Ids.FixedDict(1) = .{},
+    group_heads: Ids.FixedDict(4) = .{},
 
     const AnchorLink = struct { leaf: SetId, chain: u32, next: u32, prev: u32, next_of_leaf: u32 };
+    const Group = struct { members: u32, split: Ids.SplitId, path: u32, next: u32, prev: u32 };
 
     fn deinit(l: *Live) void {
         const gpa = l.gpa;
@@ -193,6 +201,9 @@ const Live = struct {
         gpa.free(l.hnext);
         gpa.free(l.hprev);
         l.anchors.deinit(gpa);
+        l.groups.deinit(gpa);
+        l.group_of.deinit(gpa);
+        l.group_heads.deinit(gpa);
         l.anchor_links.deinit(gpa);
         l.leaf_anchor.deinit(gpa);
         l.stack.deinit(gpa);
@@ -315,19 +326,26 @@ const Live = struct {
         }
     }
 
-    /// The refinement chain key of a refinement's canonical path (§2.8):
-    /// `(origin·kind 2, index, canonical path, j)`, or null for a
-    /// refinement of a concrete cell (its contents are explicit children).
-    fn refinementKey(l: *Live, c: CellId) Error!?[4]u32 {
-        if (!l.env.cells.origin(c).isRefinement()) return null;
-        const sym = (try l.env.cells.unrefined(l.gpa, l.env.account(), l.env.places, c)) orelse return null;
-        return l.pathKey(sym, .from(l.env.cells.get(sym).b));
+    /// The refinement chain of a refinement (§2.8): its canonical path's
+    /// key, with its split (`(container, label)`) as the last word, and
+    /// the path's group-list key; null for a refinement of a concrete cell
+    /// (its contents are explicit children).
+    fn refinementKey(l: *Live, c: CellId) Error!?struct { members: [4]u32, path: [4]u32, split: Ids.SplitId } {
+        const cells = l.env.cells;
+        if (!cells.origin(c).isRefinement()) return null;
+        const sym = (try cells.unrefined(l.gpa, l.env.account(), l.env.places, c)) orelse return null;
+        const x = cells.get(c);
+        const split = cells.findSplit(x.parent, .from(x.b));
+        const path = l.pathKey(sym, .from(cells.get(sym).b));
+        const tag = (path[0] & ~@as(u32, 0xff)) | 2;
+        return .{ .members = .{ tag, path[1], path[2], split.int() }, .path = path, .split = split };
     }
 
-    /// The refinement chain key of symbolic cell `sym`'s origin at `path`.
+    /// The group-list key of symbolic cell `sym`'s origin at `path`.
     fn pathKey(l: *Live, sym: CellId, path: PathId) [4]u32 {
         const x = l.env.cells.get(sym);
-        return .{ (@as(u32, @backingInt(x.origin)) << 8) | 2, x.a, path.int(), x.c << 1 };
+        std.debug.assert(x.c < 1 << 16);
+        return .{ (@as(u32, @backingInt(x.origin)) << 8) | 3 | (x.c << 16), x.a, path.int(), 0 };
     }
 
     fn linkAnchors(l: *Live, leaf: SetId) Error!void {
@@ -335,18 +353,40 @@ const Live = struct {
         defer keys.deinit(l.gpa);
         const cell = l.leafCell(leaf);
         try l.anchorsOf(cell, &keys);
-        // A refinement is also in the chain of its canonical path (§2.8).
-        if (try l.refinementKey(cell)) |k| try keys.append(l.gpa, k);
-        for (keys.items) |key| {
+        // A refinement is also in the chain of its canonical path and split.
+        const rk = try l.refinementKey(cell);
+        if (rk) |k| try keys.append(l.gpa, k.members);
+        for (keys.items, 0..) |key, i| {
             try l.env.charge.reserve(l.gpa, .edge, 1);
             const got = try l.anchors.getOrPut(l.gpa, key);
             if (!got.found_existing) got.value_ptr.* = none;
+            const was_empty = got.value_ptr.* == none;
+            const chain = got.index;
             const id: u32 = @intCast(l.anchor_links.items.len);
-            try l.anchor_links.append(l.gpa, .{ .leaf = leaf, .chain = got.index, .next = got.value_ptr.*, .prev = none, .next_of_leaf = l.leaf_anchor.items[leaf.int()] });
+            try l.anchor_links.append(l.gpa, .{ .leaf = leaf, .chain = chain, .next = got.value_ptr.*, .prev = none, .next_of_leaf = l.leaf_anchor.items[leaf.int()] });
             if (got.value_ptr.* != none) l.anchor_links.items[got.value_ptr.*].prev = id;
             got.value_ptr.* = id;
             l.leaf_anchor.items[leaf.int()] = id;
+            // A split's chain at a path going live joins the path's list.
+            if (rk != null and i == keys.items.len - 1 and was_empty) try l.linkGroup(chain, rk.?.path, rk.?.split);
         }
+    }
+
+    fn linkGroup(l: *Live, chain: u32, path: [4]u32, split: Ids.SplitId) Error!void {
+        try l.env.charge.reserve(l.gpa, .edge, 1);
+        const g = try l.group_of.getOrPut(l.gpa, .{chain});
+        if (!g.found_existing) {
+            g.value_ptr.* = @intCast(l.groups.items.len);
+            try l.groups.append(l.gpa, .{ .members = chain, .split = split, .path = none, .next = none, .prev = none });
+        }
+        const id = g.value_ptr.*;
+        const h = try l.group_heads.getOrPut(l.gpa, path);
+        if (!h.found_existing) h.value_ptr.* = none;
+        l.groups.items[id].path = h.index;
+        l.groups.items[id].next = h.value_ptr.*;
+        l.groups.items[id].prev = none;
+        if (h.value_ptr.* != none) l.groups.items[h.value_ptr.*].prev = id;
+        h.value_ptr.* = id;
     }
 
     fn unlinkAnchors(l: *Live, leaf: SetId) void {
@@ -355,6 +395,12 @@ const Live = struct {
             const a = l.anchor_links.items[at];
             if (a.prev != none) l.anchor_links.items[a.prev].next = a.next else l.anchors.values.items[a.chain] = a.next;
             if (a.next != none) l.anchor_links.items[a.next].prev = a.prev;
+            // A split's chain going empty leaves its path's list.
+            if (l.anchors.values.items[a.chain] == none) if (l.group_of.get(.{a.chain})) |g| {
+                const x = l.groups.items[g];
+                if (x.prev != none) l.groups.items[x.prev].next = x.next else l.group_heads.values.items[x.path] = x.next;
+                if (x.next != none) l.groups.items[x.next].prev = x.prev;
+            };
             at = a.next_of_leaf;
         }
         l.leaf_anchor.items[leaf.int()] = none;
@@ -494,16 +540,19 @@ const Resolver = struct {
                 }
             }
             var path: PathId = .from(r.env.cells.get(u).b);
-            while (path != .none) : (path = r.env.places.pathParent(path)) {
-                try r.env.charge.reserve(r.gpa, .inspection, 1);
-                var link = r.live.anchors.get(r.live.pathKey(u, path)) orelse continue;
-                while (link != none) {
-                    try r.env.charge.reserve(r.gpa, .inspection, 1);
-                    const a = r.live.anchor_links.items[link];
-                    try out.append(r.gpa, r.live.leafCell(a.leaf));
-                    link = a.next;
-                }
-            }
+            while (path != .none) : (path = r.env.places.pathParent(path)) try r.chain(u, path, c, out);
+        }
+        // And at the canonical path of each refinement `c` lies in (§2.8: "at
+        // c's canonical path and at each of its trie ancestors"): a view's
+        // `others(k·ι)` holds the elements of `k` that a later position of
+        // the view took, so it CONTAINS what lies under that position, even
+        // when `⟲` folds both to one path. Upwards only: a holder below `c`
+        // is `conflict`'s to drop for a shallow demand.
+        at = r.env.cells.parent(c);
+        while (at != .none and r.env.cells.origin(at).isRefinement()) : (at = r.env.cells.parent(at)) {
+            try r.env.charge.reserve(r.gpa, .inspection, 1);
+            const ua = (try r.env.cells.unrefined(r.gpa, r.env.account(), r.env.places, at)) orelse continue;
+            try r.chain(ua, .from(r.env.cells.get(ua).b), at, out);
         }
         if (deep) {
             var stack: std.ArrayList(CellId) = .empty;
@@ -537,6 +586,33 @@ const Resolver = struct {
                 const a = r.live.anchor_links.items[link];
                 try out.append(r.gpa, r.live.leafCell(a.leaf));
                 link = a.next;
+            }
+        }
+    }
+
+    /// The live refinements at `sym`'s origin and `path` (§2.8), split by
+    /// split: of `own`'s split (`self`'s siblings and its view's `others`,
+    /// each answering `under` that one split) one member, never `self`;
+    /// of any other split, every member. O(splits at the path + members of
+    /// the other splits), not the number of siblings.
+    fn chain(r: *Resolver, sym: CellId, path: PathId, self: CellId, out: *std.ArrayList(CellId)) Error!void {
+        const cells = r.env.cells;
+        const own: Ids.SplitId = if (cells.origin(self).isRefinement()) cells.findSplit(cells.parent(self), .from(cells.get(self).b)) else .none;
+        try r.env.charge.reserve(r.gpa, .inspection, 1);
+        var g = r.live.group_heads.get(r.live.pathKey(sym, path)) orelse return;
+        while (g != none) : (g = r.live.groups.items[g].next) {
+            try r.env.charge.reserve(r.gpa, .inspection, 1);
+            const group = r.live.groups.items[g];
+            const one = own != .none and group.split == own;
+            var link = r.live.anchors.values.items[group.members];
+            while (link != none) {
+                try r.env.charge.reserve(r.gpa, .inspection, 1);
+                const a = r.live.anchor_links.items[link];
+                link = a.next;
+                const d = r.live.leafCell(a.leaf);
+                if (one and d == self) continue;
+                try out.append(r.gpa, d);
+                if (one) break;
             }
         }
     }

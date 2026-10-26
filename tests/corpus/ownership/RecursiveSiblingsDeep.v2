@@ -1,0 +1,1 @@
+S3a (ownership-v2.md §2.13.3, R-6.3): the fresh twoRFresh shares `xs` at both levels, which v2 knows exactly (v1: approximate `level`), and the second push waits for the first's operand (`held-operand`, v1: `call`).

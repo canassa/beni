@@ -1,0 +1,12 @@
+module ViewBelowWrites
+  22:31 List.push g: rejected alias: r[*] holds it and is read at 22:29
+  39:31 List.push g: rejected alias: r[*] holds it and is read at 39:29
+  59:31 List.push g: rejected alias: k1 holds it and is read at 59:29
+  79:31 List.push g: rejected alias: kids holds it and is read at 79:29
+  97:23 List.push g: rejected alias: k1 holds it and is read at 97:21
+  114:31 List.push g: rejected alias: r0[*] holds it and is read at 114:29
+  135:31 List.push g: rejected element: r holds it and is read at 135:29 (approx)
+  demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause alias 6
+cause element 1

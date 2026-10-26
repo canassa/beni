@@ -1,0 +1,19 @@
+module RecursiveSiblingsDeep
+  15:15 List.push a: rejected level: b may hold it at another level, and is read at 15:30 (approx)
+  15:30 List.push b: rejected call: the argument at 15:15, evaluated before it, holds it, and the call it waits for may read it (approx)
+  25:15 List.push a: accepted param
+  25:30 List.push b: accepted param
+  35:15 List.push a: accepted param
+  45:15 List.push a: accepted param
+  45:30 List.push b: accepted param
+  55:15 List.push a: accepted param
+  55:30 List.push b: accepted param
+  summary twoRFresh: res .0 condition(fresh2) fresh1 fresh2 ~condition(fresh5), .1 fresh6 ~condition(fresh3) ~fresh1, condition(fresh4){lost}r{lost}
+  summary twoR: π1 R, π1⟨Rose⟩#Rose.0 RAW[storage], π1⟨Rose⟩#Rose.0[*] A; res .0 fresh6 ~condition(fresh2) π1#Rose.0, .0[*] ~condition(fresh4) ~π1#Rose.0[*], .1 fresh7 ~condition(fresh3) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .1[*] ~condition(fresh5) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, condition(fresh1){sep π1#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0, sep π1#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0[*], sep π1#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*], sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.0[*]}r{sep π1#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}; xreq excl π1#Rose.1
+  summary twoRRead: π1 R, π1#Rose.0 RAW[storage], π1#Rose.0[*] A, π1⟨Rose⟩⁺#Rose.0 RA; res .0 condition(fresh2) fresh2 π1#Rose.0, .0[*] ~condition(fresh4) ~π1#Rose.0[*], .1 fresh5 ~condition(fresh3) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, condition(fresh1){sep π1#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0, sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.0[*]}
+  summary twoKids: π1 R, π1⟨Rose⟩⁺#Rose.0 RAW[storage], π1⟨Rose⟩⁺#Rose.0[*] A; res .0 fresh6 ~condition(fresh2) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .0[*] ~condition(fresh4) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, .1 fresh7 ~condition(fresh3) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .1[*] ~condition(fresh5) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, condition(fresh1){sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0, sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0[*], sep π1#Rose.1[*]⟨Rose⟩#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}r{sep π1#Rose.1[*]⟨Rose⟩#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}; xreq excl π1#Rose.1
+  summary twoKidsDeep: π1 R, π1⟨Rose⟩⁺#Rose.0 RAW[storage], π1⟨Rose⟩⁺#Rose.0[*] A; res .0 fresh6 ~condition(fresh2) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .0[*] ~condition(fresh4) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, .1 fresh7 ~condition(fresh3) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .1[*] ~condition(fresh5) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, condition(fresh1){sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0, sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0[*], sep π1#Rose.1[*]⟨Rose⟩#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}r{sep π1#Rose.1[*]⟨Rose⟩#Rose.0[*] π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}; xreq excl π1#Rose.1
+  demands 9: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 9: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause call 1
+cause level 1

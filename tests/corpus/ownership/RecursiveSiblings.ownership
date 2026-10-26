@@ -1,0 +1,15 @@
+module RecursiveSiblings
+  20:15 List.push a: accepted param
+  20:30 List.push b: accepted param
+  30:15 List.push a: accepted param
+  40:15 List.push a: accepted param
+  40:30 List.push b: accepted param
+  50:15 List.push a: accepted param
+  60:15 List.push a: accepted param
+  summary boxSib: π1 R, π1#B.0[*] RAW[storage], π1#B.0[*][*] A; res .0 fresh6 ~condition(fresh2) π1#B.0[*]{excl π1#B.0}r{excl π1#B.0}, .0[*] ~condition(fresh3) ~π1#B.0[*][*]{excl π1#B.0}r{excl π1#B.0}, .1 fresh7 ~condition(fresh4) π1#B.0[*]{excl π1#B.0}r{excl π1#B.0}, .1[*] ~condition(fresh5) ~π1#B.0[*][*]{excl π1#B.0}r{excl π1#B.0}, condition(fresh1){sep π1#B.0[*] π1#B.0[*], sep π1#B.0[*] π1#B.0[*][*], sep π1#B.0[*][*] π1#B.0[*][*]}r{sep π1#B.0[*] π1#B.0[*], sep π1#B.0[*] π1#B.0[*][*], sep π1#B.0[*][*] π1#B.0[*][*]}; xreq excl π1#B.0
+  summary boxSibRead: π1 R, π1#B.0[*] RAW[storage], π1#B.0[*][*] A; res .0 condition(fresh2) fresh2 π1#B.0[*]{excl π1#B.0}r{excl π1#B.0}, .0[*] ~condition(fresh3) ~π1#B.0[*][*]{excl π1#B.0}r{excl π1#B.0}, .1 fresh5 ~condition(fresh4) π1#B.0[*]{excl π1#B.0}r{excl π1#B.0}, condition(fresh1){sep π1#B.0[*] π1#B.0[*], sep π1#B.0[*] π1#B.0[*][*]}r{sep π1#B.0[*] π1#B.0[*], sep π1#B.0[*] π1#B.0[*][*]}; xreq excl π1#B.0
+  summary listSib: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 fresh6 ~condition(fresh2) π1[*]{excl π1}, .0[*] ~condition(fresh3) ~π1[*][*]{excl π1}, .1 fresh7 ~condition(fresh4) π1[*]{excl π1}, .1[*] ~condition(fresh5) ~π1[*][*]{excl π1}, condition(fresh1){sep π1[*] π1[*], sep π1[*] π1[*][*], sep π1[*][*] π1[*][*]}r{sep π1[*] π1[*], sep π1[*] π1[*][*], sep π1[*][*] π1[*][*]}; xreq excl π1
+  summary roseSibRead: π1 R, π1⟨Rose⟩⁺#Rose.0 RAW[storage], π1⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh2) fresh2 π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, .0[*] ~condition(fresh3) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.1}r{excl π1#Rose.1}, .1 fresh5 ~condition(fresh4) π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.1}, condition(fresh1){sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0, sep π1#Rose.1[*]⟨Rose⟩#Rose.0 π1#Rose.1[*]⟨Rose⟩#Rose.0[*]}; xreq excl π1#Rose.1
+  summary roseKidsSib: π1 R, π1⟨Rose⟩⁺#Rose.1 RAW[storage], π1⟨Rose⟩⁺#Rose.1[*] A; res .0 condition(fresh4) fresh4 π1⟨Rose⟩⁺#Rose.1{excl π1#Rose.1}r{excl π1#Rose.1}, .0[*] ~condition(fresh5) ~π1⟨Rose⟩⁺#Rose.1[*]{excl π1#Rose.1}r{excl π1#Rose.1}, .0[*]#Rose.0 ~fresh1, .0[*]#Rose.1 ~fresh2, .1 fresh7 ~condition(fresh6) π1⟨Rose⟩⁺#Rose.1{excl π1#Rose.1}r{excl π1#Rose.1}, condition(fresh3){sep π1#Rose.1[*]⟨Rose⟩#Rose.1 π1#Rose.1[*]⟨Rose⟩#Rose.1, sep π1#Rose.1[*]⟨Rose⟩#Rose.1 π1#Rose.1[*]⟨Rose⟩#Rose.1[*]}r{sep π1#Rose.1[*]⟨Rose⟩#Rose.1 π1#Rose.1[*]⟨Rose⟩#Rose.1, sep π1#Rose.1[*]⟨Rose⟩#Rose.1 π1#Rose.1[*]⟨Rose⟩#Rose.1[*]}; xreq excl π1#Rose.1
+  demands 7: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 7: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

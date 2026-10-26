@@ -8029,3 +8029,43 @@ test "the checker v2's dump names a shared value, a method call, and gives lists
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary same: π1 R, π2 R\n") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary less: π1 R, π2 R\n") != null);
 }
+
+test "the checker v2's work over live sibling positions is flat per position" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8, §4.1: `[ p1 … pn ]` taken from one list, every
+    // `pi` pushed inside one literal. Each position's siblings answer
+    // `under` one split, read once from the refinement chain's group for
+    // that split, and the literal's `apart` decides one split's run by one
+    // pair: the owner's records grow with n, not n².
+    var per: [4]u64 = undefined;
+    for ([_]u32{ 10, 20, 40, 80 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub f : List (List Int) → List (List Int)\nf xs =\n    case xs of\n        [ ");
+        for (1..n + 1) |i| try src.print(a, "{s}p{d}", .{ if (i == 1) "" else ", ", i });
+        try src.appendSlice(a, " ] →\n            [ ");
+        for (1..n + 1) |i| try src.print(a, "{s}List.push p{d} 1", .{ if (i == 1) "" else ", ", i });
+        try src.appendSlice(a, " ]\n\n        _ →\n            []\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+        per[run] = try accountTotal(dump.stdout, "f") / n;
+    }
+    // Flat per position: the largest within a quarter of the smallest (a
+    // pairwise scan grows it by half from 10 to 80).
+    try testing.expect(4 * std.mem.max(u64, &per) <= 5 * std.mem.min(u64, &per));
+}

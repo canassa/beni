@@ -1,0 +1,19 @@
+module ViewBelowWrites
+  22:31 List.push g: rejected alias: r[*]⟨Rose⟩#Rose.0 holds it and is read at 22:29
+  39:31 List.push g: rejected alias: r[*]⟨Rose⟩#Rose.0 holds it and is read at 39:29
+  59:31 List.push g: rejected alias: k1[*]⟨Rose⟩#Rose.0 holds it and is read at 59:29
+  79:31 List.push g: rejected alias: kids[*]#Rose.0[*]⟨Rose⟩#Rose.0 holds it and is read at 79:29
+  97:23 List.push g: rejected alias: k1[*]⟨Rose⟩#Rose.0 holds it and is read at 97:21
+  114:31 List.push g: rejected alias: r0[*]#Rose.0[*]⟨Rose⟩#Rose.0 holds it and is read at 114:29
+  135:31 List.push g: rejected level: r[*]⟨Rose⟩#Rose.0 may hold it at another level, and is read at 135:29 (approx)
+  summary tRest: π1 R, π1#Rose.0 RA, π1⟨Rose⟩⁺#Rose.0 RAW[storage], π1⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.0}r{excl π1#Rose.0}, .0[*] ~condition(fresh4) ~π1⟨Rose⟩⁺#Rose.0[*]{excl π1#Rose.0}r{excl π1#Rose.0}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1#Rose.0, condition(fresh2){lost}r{lost}; xreq excl π1#Rose.0
+  summary kidsRest: π1 R, π1[*]#Rose.0 RA, π1[*]⟨Rose⟩⁺#Rose.0 RAW[storage], π1[*]⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]⟨Rose⟩⁺#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1[*]#Rose.0{excl π1}r{excl π1}, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsRestK1: π1 R, π1[*]#Rose.0 RA, π1[*]⟨Rose⟩⁺#Rose.0 RAW[storage], π1[*]⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]⟨Rose⟩⁺#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1[*]#Rose.0{excl π1}r{excl π1}, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsRestKids: π1 RA, π1[*]#Rose.0 R, π1[*]⟨Rose⟩⁺#Rose.0 RAW[storage], π1[*]⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]⟨Rose⟩⁺#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsSecond: π1 R, π1[*]#Rose.0 RA, π1[*]⟨Rose⟩⁺#Rose.0 RAW[storage], π1[*]⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]⟨Rose⟩⁺#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1[*]#Rose.0{excl π1}r{excl π1}, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsRestOfRest: π1 RA, π1[*]#Rose.0 R, π1[*]⟨Rose⟩⁺#Rose.0 RAW[storage], π1[*]⟨Rose⟩⁺#Rose.0[*] A; res .0 condition(fresh3) fresh3 π1[*]⟨Rose⟩⁺#Rose.0{excl π1}r{excl π1}, .0[*] ~condition(fresh4) ~π1[*]⟨Rose⟩⁺#Rose.0[*]{excl π1}r{excl π1}, .0[*]#Rose.0 ~fresh1, .1 fresh6 ~condition(fresh5) π1, condition(fresh2){lost}r{lost}; xreq excl π1
+  summary kidsRestFresh: res .0 fresh9 ~condition(fresh5) ~fresh1, .0[*]#Rose.0 ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~condition(fresh7) ~fresh1, .0⟨Rose⟩#Rose.0 ~condition(fresh6) ~fresh1, .1 fresh2, .1[*]⟨Rose⟩#Rose.0 fresh1 ~condition(fresh8), condition(fresh4){lost}r{lost}
+  demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause alias 6
+cause level 1

@@ -1,0 +1,49 @@
+-- A write to an on-cycle list below a view of the list above
+-- (ownership-v2.md §2.8; tests/corpus/ownership/ViewBelowWrites). `g` lies
+-- inside `r[0]`, so written in place the size of `r`'s tree would print `2`;
+-- the answer, as built (the push copies), is `1`. The checker refuses the
+-- write, so it runs only as built.
+import List
+import Node exposing (Program)
+import String
+
+
+type Rose
+    = Rose (List Rose)
+
+
+kidsRest : List Rose → List Rose × List Rose
+kidsRest kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+size : Rose → Int
+size t =
+    case t of
+        Rose ks →
+            List.length ks
+
+
+main : Program
+main =
+    case kidsRest [ Rose [ Rose [], Rose [ Rose [] ] ] ] of
+        ( g, r ) →
+            Node.printLines
+                [ String.fromInt (List.length g)
+                , String.join (List.map r λx → String.fromInt (size x)) ","
+                ]
