@@ -1,0 +1,25 @@
+-- ownership (core): a signature that carries a word only the ownership
+-- checker v2 reads (`ownership-v2.md` §2.13.6) keeps all of its words in
+-- v2's column, and none in v1's, so v1, frozen (§8), reads `keeps` as a
+-- `foreign` with no words: its argument escapes (`ownership-checker.md`
+-- §24.5), the `borrowed` beside `stored` notwithstanding, and the edit after
+-- the call is rejected `escaped`. The same words without the v2 one stay
+-- v1's: `reads` only reads its argument, and the edit after it is accepted.
+pub foreign pure keeps : borrowed List Int, stored Int → Int
+
+
+pub foreign pure reads : borrowed List Int, Int → Int
+
+
+afterKeeps : List Int → Int
+afterKeeps xs =
+    n = keeps xs 1
+    ys = [ …xs, 1 ]
+    n + List.length ys
+
+
+afterReads : List Int → Int
+afterReads xs =
+    n = reads xs 1
+    ys = [ …xs, 1 ]
+    n + List.length ys

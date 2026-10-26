@@ -1,0 +1,10 @@
+module V2WordsHiddenFromV1
+  17:12 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  24:12 construction xs: accepted param
+  summary keeps: π1 RE, π2 RE; res ⊤{lost}r{lost}
+  summary reads: π1 R, π2 RE; res ⊤{lost}r{lost} (words)
+  summary afterKeeps: π1 REW
+  summary afterReads: π1 RW
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause escaped 1

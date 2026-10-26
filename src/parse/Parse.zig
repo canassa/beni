@@ -989,8 +989,17 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
     {
         header.crossing_token = .fromToken(p.next());
     }
-    if (p.peek() == .lower_ident and p.peekAt(1) == .keyword_foreign and p.isEquatableToken(p.tok_i)) {
+    if (p.peek() == .lower_ident and p.isEquatableToken(p.tok_i) and
+        (p.peekAt(1) == .keyword_foreign or (p.isOwnTypeWord(p.tok_i + 1) and p.peekAt(2) == .keyword_foreign)))
+    {
         header.equatable_token = .fromToken(p.next());
+    }
+    // A type word (ownership-v2.md §2.13.6) is contextual in the same way:
+    // the marker only directly before `foreign` or `type`, where nothing
+    // else may stand. Which word may go on which declaration, and in which
+    // package, is lowering's to decide.
+    if (p.isOwnTypeWord(p.tok_i) and (p.peekAt(1) == .keyword_foreign or p.peekAt(1) == .keyword_type)) {
+        header.own_type_token = .fromToken(p.next());
     }
     const opaque_token = header.opaque_token.unwrap();
 
@@ -1082,6 +1091,11 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
 
 fn isWord(p: *const Parse, token: TokenIndex, word: []const u8) bool {
     return p.tags[token] == .lower_ident and std.mem.eql(u8, p.tokenText(token), word);
+}
+
+/// `sequence`, `cell` or `sender` (`Ast.OwnTypeWord`).
+fn isOwnTypeWord(p: *const Parse, token: TokenIndex) bool {
+    return token < p.tags.len and p.tags[token] == .lower_ident and Ast.OwnTypeWord.fromText(p.tokenText(token)) != null;
 }
 
 /// SchemaDecl := 'schema' upper_ident lower_ident* SchemaBody (schema.md §2).
@@ -1567,6 +1581,15 @@ fn parseTypeDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     while (true) {
         switch (p.peek()) {
             .upper_ident => try p.pushScratch(try p.parseConstructor()),
+            // `failure` before a constructor (ownership-v2.md §2.13.6): the
+            // token before the `constructor` node's name, read by lowering.
+            .lower_ident => if (p.isWord(p.tok_i, "failure") and p.peekAt(1) == .upper_ident) {
+                _ = p.next();
+                try p.pushScratch(try p.parseConstructor());
+            } else {
+                try p.pushScratch(try p.unexpected(.error_constructor, .constructor));
+                p.recoverUnlessStructural();
+            },
             .invalid => try p.pushScratch(try p.invalidNode(.error_constructor)),
             else => {
                 try p.pushScratch(try p.unexpected(.error_constructor, .constructor));

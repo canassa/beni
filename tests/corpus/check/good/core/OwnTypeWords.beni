@@ -1,0 +1,19 @@
+-- check/good (core): the ownership checker v2's type words
+-- (`ownership-v2.md` §2.13.6) are published in the typed interface, the type
+-- row's word and the constructor row's `failure` mark, for an importer's
+-- ownership checker to read without a name test; they change no type, so
+-- each row is otherwise what it is without them.
+pub sequence foreign type Seq a
+
+
+pub opaque cell type Box a
+    = Box Int
+
+
+pub type Outcome e a
+    = Good a
+    | failure Bad e
+
+
+pub sender type alias Sender msg =
+    msg → ⊤

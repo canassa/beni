@@ -1,0 +1,17 @@
+-- fmt: the ownership checker v2's type words (`ownership-v2.md` §2.13.6)
+-- keep their place in a declaration's header, after `equatable` and before
+-- `foreign`, `type` or `type alias`, and `failure` stays in front of its
+-- constructor when the constructors go one per line.
+pub   equatable   sequence   foreign type Seq a
+
+
+pub opaque cell type Box a = Box Int
+
+
+pub type Outcome e a = Good a | failure Bad e
+
+
+pub sender type alias Sender msg = msg → ⊤
+
+
+pub foreign pure put : written   returned Seq a, borrowed Int, stored a → Seq a

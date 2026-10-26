@@ -1076,6 +1076,7 @@ fn declareValue(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) Allo
         const has_rung = l.tags[name_token - 1] == .lower_ident;
         if (has_rung) l.decls.items[index].rung = Bir.Rung.fromText(l.tokenText(name_token - 1)) orelse .pure;
         try l.checkForeign(header, name_token, if (has_rung) name_token - 2 else name_token - 1);
+        if (header.own_type_token.unwrap()) |t| try l.reportOwn(t, .own_type_word);
     }
 }
 
@@ -1092,6 +1093,7 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
     const index = try l.newDecl(kind, name_token, header);
     try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
     try l.declareName(&l.types, l.tokenSymbol(name_token), name_token, index, .duplicate_type, true);
+    if (header.own_type_token.unwrap()) |t| try l.recordOwnType(index, node, header, t);
     if (tag == .type_decl) {
         const d = l.tree.fullTypeDecl(node);
         l.decls.items[index].ctors_start = @intCast(l.ctors.items.len);
@@ -1113,6 +1115,7 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             try l.declareName(&l.ctor_names, l.tokenSymbol(ctor_token), ctor_token, ctor_index, .duplicate_constructor, false);
         }
         l.decls.items[index].ctors_end = @intCast(l.ctors.items.len);
+        try l.recordFailure(d.ctors, l.decls.items[index].ctors_start);
     }
     if (tag == .type_alias) {
         // A record alias declares a constructor of its own name, as in Elm
@@ -1148,6 +1151,64 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
                 try l.extra.appendSlice(l.gpa, &.{ Bir.own_type, Ast.OwnWord.crossing.bit() });
                 d.own_end = @intCast(l.extra.items.len);
             }
+        }
+    }
+}
+
+/// A type word (ownership-v2.md §2.13.5, §2.13.6), checked and kept as
+/// `Decl.own_kind`: core's and the platforms' alone; `sequence` on a unary
+/// `foreign type`; `cell` on a unary opaque `type` or `foreign type`;
+/// `sender` on a unary alias of a function of one argument returning `⊤`.
+/// A refused word is reported at the word and dropped.
+fn recordOwnType(l: *Lower, index: u32, node: NodeIndex, header: Ast.DeclHeader, token: TokenIndex) Allocator.Error!void {
+    if (!l.options.core and !l.options.platform) return l.reportOwn(token, .own_outside_platform);
+    const word = Ast.OwnTypeWord.fromText(l.tokenText(token)).?;
+    const ok = switch (l.tree.nodeTag(node)) {
+        .foreign_type => word != .sender and l.tree.fullForeignType(node).params.len == 1,
+        .type_decl => word == .cell and header.opaque_token != .none and l.tree.fullTypeDecl(node).params.len == 1,
+        .type_alias => word == .sender and blk: {
+            const ta = l.tree.fullTypeAlias(node);
+            if (ta.params.len != 1 or l.tree.nodeTag(ta.body) != .type_fn) break :blk false;
+            const f = l.tree.fullTypeFn(ta.body);
+            break :blk f.params.len == 1 and l.tree.nodeTag(f.result) == .type_unit;
+        },
+        else => false,
+    };
+    if (!ok) return l.reportOwn(token, .own_type_word);
+    l.decls.items[index].own_kind = switch (word) {
+        .sequence => .sequence,
+        .cell => .cell,
+        .sender => .sender,
+    };
+}
+
+/// `failure` before a constructor (ownership-v2.md §2.13.6): the lower
+/// identifier the token before its name is. It marks one of exactly two
+/// constructors, each with one argument; kept as `Ctor.failure`. A refused
+/// word is reported at the word and dropped.
+fn recordFailure(l: *Lower, ctors: []const NodeIndex, first: u32) Allocator.Error!void {
+    var marked: u32 = 0;
+    var unary: u32 = 0;
+    var count: u32 = 0;
+    for (ctors) |c| {
+        if (l.tree.nodeTag(c) != .constructor) continue;
+        count += 1;
+        if (l.tree.children(c).len == 1) unary += 1;
+        if (l.tags[l.tree.nodeMainToken(c) - 1] == .lower_ident) marked += 1;
+    }
+    if (marked == 0) return;
+    var k = first;
+    for (ctors) |c| {
+        if (l.tree.nodeTag(c) != .constructor) continue;
+        defer k += 1;
+        const name = l.tree.nodeMainToken(c);
+        if (l.tags[name - 1] != .lower_ident) continue;
+        if (!l.options.core and !l.options.platform) {
+            try l.reportOwn(name - 1, .own_outside_platform);
+        } else if (count != 2 or unary != 2 or marked != 1) {
+            try l.reportOwn(name - 1, .own_failure);
+        } else {
+            l.ctors.items[k].failure = true;
         }
     }
 }
@@ -2063,8 +2124,11 @@ fn reportOwn(l: *Lower, token: TokenIndex, reading: Diagnostics.Item.Markup) All
 }
 
 /// The words `own_seen` holds, checked against their positions and each
-/// other (§24.4), and kept as `Bir.OwnSlot` pairs on the declaration. A
-/// refused word is reported and dropped; the others stand.
+/// other (§24.4; ownership-v2.md §2.13.6 for v2's words), and kept as
+/// `Bir.OwnSlot` pairs on the declaration. A refused word is reported and
+/// dropped; the others stand. A signature that carries a word only v2
+/// reads keeps every word in the v2 column (`Bir.ownSlotsV2`) and none in
+/// v1's: v1, frozen, sees no signature it did not see before.
 fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
     const seen = l.own_seen.items;
     if (!l.options.core and !l.options.platform) {
@@ -2072,8 +2136,17 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
         return l.reportOwn(seen[0][2], .own_outside_platform);
     }
     const W = Ast.OwnWord;
-    const result_words = W.fresh.bit() | W.exclusive.bit() | W.unknown.bit();
+    // What only a result may carry; `escaped` stands on both, and so does
+    // `taken` (a function parameter's supply, or the result itself).
+    const result_words = W.fresh.bit() | W.exclusive.bit() | W.unknown.bit() |
+        W.lent.bit() | W.lentoptional.bit() | W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit();
     const fn_words = W.once.bit() | W.many.bit() | W.owned.bit();
+    // A result is one of these: what the call returns.
+    const results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit() | W.taken.bit() | W.lent.bit() | W.lentoptional.bit() |
+        W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit();
+    const v1_results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit();
+    // A parameter's cell operation is one of these.
+    const cell_ops = W.cellread.bit() | W.cellwrite.bit() | W.cellcomplete.bit();
     const is_fn_type = l.insts.items(.tag)[t.int()] == .type_fn;
     // Positions in order: every parameter's, then the result's.
     std.mem.sort([3]u32, seen, {}, struct {
@@ -2081,29 +2154,34 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
             return if (x[0] != y[0]) x[0] < y[0] else x[2] < y[2];
         }
     }.less);
+    // Each position's words and the token of each, for the companion
+    // rules below, which read one position's words from another's.
+    const Slot = struct { slot: u32, bits: u32, firsts: [32]TokenIndex };
+    var slots: std.ArrayList(Slot) = .empty;
+    defer slots.deinit(l.scratch_allocator);
     var i: usize = 0;
-    const mark = l.scratchMark();
-    defer l.shrinkScratch(mark);
     while (i < seen.len) {
         const slot = seen[i][0];
         var j = i;
         while (j < seen.len and seen[j][0] == slot) j += 1;
         defer i = j;
+        const param_type: ?u32 = if (slot != Bir.own_result and is_fn_type) blk: {
+            const at = l.insts.items(.data)[t.int()].lhs;
+            break :blk l.extra.items[l.extra.items[at] + slot];
+        } else null;
         // Whether the parameter is a function written out (`sync` included,
         // which lowers to the arrow it marks).
         // §30.9: a `List` of functions written out takes the words of a
         // function, which describe each of its elements.
-        const param_fn = slot != Bir.own_result and is_fn_type and blk: {
-            const at = l.insts.items(.data)[t.int()].lhs;
-            const inst = l.extra.items[l.extra.items[at] + slot];
-            break :blk l.insts.items(.tag)[inst] == .type_fn or l.isListOfFunctions(inst);
-        };
-        const param_entry = slot != Bir.own_result and is_fn_type and blk: {
-            const at = l.insts.items(.data)[t.int()].lhs;
-            break :blk l.entryRecord(l.extra.items[l.extra.items[at] + slot]);
-        };
+        const param_fn = if (param_type) |inst| l.insts.items(.tag)[inst] == .type_fn or l.isListOfFunctions(inst) else false;
+        // A function written out itself, not a `List` of them: what
+        // `taken`, `cellupdate` and `cellmodify` describe.
+        const param_arrow = if (param_type) |inst| l.insts.items(.tag)[inst] == .type_fn else false;
+        const param_sync = if (param_type) |inst| param_arrow and l.tags[l.insts.items(.main_token)[inst]] == .lower_ident and
+            std.mem.eql(u8, l.tokenText(l.insts.items(.main_token)[inst]), "sync") else false;
+        const param_entry = if (param_type) |inst| l.entryRecord(inst) else false;
         var bits: u32 = 0;
-        var firsts: [16]TokenIndex = undefined;
+        var firsts: [32]TokenIndex = undefined;
         for (seen[i..j]) |s| {
             const word: W = @fromBackingInt(@intCast(s[1]));
             const b = word.bit();
@@ -2113,7 +2191,7 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
                 continue;
             }
             if (slot == Bir.own_result) {
-                if (b & (result_words | W.escaped.bit()) == 0) {
+                if (b & (results | W.exclusive.bit()) == 0) {
                     try l.reportOwn(token, .own_parameter_word);
                     continue;
                 }
@@ -2126,17 +2204,35 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
                     try l.reportOwn(token, .own_not_function);
                     continue;
                 }
+                if (b & (W.taken.bit() | W.cellupdate.bit() | W.cellmodify.bit()) != 0 and !param_arrow) {
+                    try l.reportOwn(token, .own_not_function);
+                    continue;
+                }
+                if (b & (W.cellupdate.bit() | W.cellmodify.bit()) != 0 and !param_sync) {
+                    try l.reportOwn(token, .own_needs_sync);
+                    continue;
+                }
             }
             const alone = W.unused.bit() | W.borrowed.bit() | W.entry.bit();
-            const results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit();
             const impossible = bits & b != 0 or
                 (bits != 0 and (b & alone != 0 or bits & alone != 0)) or
                 (b | bits) & (W.aliased.bit() | W.returned.bit()) == (W.aliased.bit() | W.returned.bit()) or
                 (b == W.consumed.bit() and param_fn) or
                 (b | bits) & (W.once.bit() | W.many.bit()) == (W.once.bit() | W.many.bit()) or
-                (slot == Bir.own_result and @popCount((b | bits) & results) > 1);
+                (slot == Bir.own_result and @popCount((b | bits) & v1_results) > 1);
             if (impossible) {
                 try l.reportOwn(token, .own_impossible);
+                continue;
+            }
+            const conflict = (slot == Bir.own_result and @popCount((b | bits) & results) > 1) or
+                // A parameter does one thing to a cell.
+                @popCount((b | bits) & cell_ops) > 1 or
+                // `cellupdate` and `cellmodify` say once, taken and owned
+                // already, and are each other's alternative.
+                ((b | bits) & (W.cellupdate.bit() | W.cellmodify.bit()) != 0 and
+                    @popCount((b | bits) & (W.cellupdate.bit() | W.cellmodify.bit() | W.once.bit() | W.many.bit() | W.taken.bit() | W.owned.bit())) > 1);
+            if (conflict) {
+                try l.reportOwn(token, .own_conflict);
                 continue;
             }
             bits |= b;
@@ -2152,15 +2248,105 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
             bits &= ~W.exclusive.bit();
         }
         if (bits == 0) continue;
-        try l.pushScratch(slot);
-        try l.pushScratch(bits);
+        try slots.append(l.scratch_allocator, .{ .slot = slot, .bits = bits, .firsts = firsts });
+    }
+    try l.checkOwnCompanions(slots.items, l.typeFnArity(t));
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    var v2 = false;
+    for (slots.items) |s| {
+        if (s.bits == 0) continue;
+        v2 = v2 or s.bits & ~W.v1_mask != 0;
+        try l.pushScratch(s.slot);
+        try l.pushScratch(s.bits);
     }
     const pairs = l.scratchSince(mark);
     if (pairs.len == 0) return;
     const d = &l.decls.items[l.cur_decl];
-    d.own_start = @intCast(l.extra.items.len);
-    try l.extra.appendSlice(l.gpa, pairs);
-    d.own_end = @intCast(l.extra.items.len);
+    if (v2) {
+        d.own2_start = @intCast(l.extra.items.len);
+        try l.extra.appendSlice(l.gpa, pairs);
+        d.own2_end = @intCast(l.extra.items.len);
+    } else {
+        d.own_start = @intCast(l.extra.items.len);
+        try l.extra.appendSlice(l.gpa, pairs);
+        d.own_end = @intCast(l.extra.items.len);
+    }
+}
+
+/// The roles v2's words fix by position (ownership-v2.md §2.13.6's table):
+/// a cell operation is parameter 1's, what it stores or the callback it
+/// runs parameter 2's, and a result word that reads parameter 1 needs the
+/// word there that says so. A word whose companion is missing is reported
+/// at the word and dropped, in a fixed order: positions first, then the
+/// parameters' companions, then the result's.
+fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!void {
+    const W = Ast.OwnWord;
+    const S = struct {
+        fn at(all: anytype, slot: u32) u32 {
+            for (all) |s| if (s.slot == slot) return s.bits;
+            return 0;
+        }
+    };
+    // Positions: the word's parameter is fixed by the word.
+    for (slots) |*s| {
+        const first_only = W.cellread.bit() | W.cellwrite.bit() | W.cellcomplete.bit();
+        for ([_]W{ .cellread, .cellwrite, .cellcomplete, .cellstored, .cellupdate, .cellmodify }) |w| {
+            if (s.bits & w.bit() == 0) continue;
+            const want: u32 = if (w.bit() & first_only != 0) 0 else 1;
+            if (s.slot != want) {
+                try l.reportOwn(s.firsts[@backingInt(w)], .own_position);
+                s.bits &= ~w.bit();
+            }
+        }
+    }
+    // Parameters' companions.
+    for (slots) |*s| {
+        if (s.slot == Bir.own_result) continue;
+        const first = S.at(slots, 0);
+        if (s.bits & W.cellstored.bit() != 0 and (s.bits & W.consumed.bit() == 0 or first & (W.cellwrite.bit() | W.cellcomplete.bit()) == 0)) {
+            try l.reportOwn(s.firsts[@backingInt(W.cellstored)], .own_companion);
+            s.bits &= ~W.cellstored.bit();
+        }
+        for ([_]W{ .cellupdate, .cellmodify }) |w| {
+            if (s.bits & w.bit() != 0 and first & W.cellwrite.bit() == 0) {
+                try l.reportOwn(s.firsts[@backingInt(w)], .own_companion);
+                s.bits &= ~w.bit();
+            }
+        }
+    }
+    for (slots) |*s| {
+        if (s.slot != 0) continue;
+        const second = S.at(slots, 1);
+        if (s.bits & W.cellwrite.bit() != 0 and second & (W.cellstored.bit() | W.cellupdate.bit() | W.cellmodify.bit()) == 0) {
+            try l.reportOwn(s.firsts[@backingInt(W.cellwrite)], .own_companion);
+            s.bits &= ~W.cellwrite.bit();
+        }
+        if (s.bits & W.cellcomplete.bit() != 0 and second & W.cellstored.bit() == 0) {
+            try l.reportOwn(s.firsts[@backingInt(W.cellcomplete)], .own_companion);
+            s.bits &= ~W.cellcomplete.bit();
+        }
+    }
+    // The result's companions, read from parameter 1 (and 2).
+    for (slots) |*s| {
+        if (s.slot != Bir.own_result) continue;
+        const first = S.at(slots, 0);
+        const needs = [_]struct { w: W, ok: bool }{
+            .{ .w = .cellnew, .ok = first & W.consumed.bit() != 0 },
+            .{ .w = .cellempty, .ok = first & W.unused.bit() != 0 },
+            .{ .w = .lent, .ok = first & W.cellread.bit() != 0 },
+            .{ .w = .lentoptional, .ok = first & W.cellread.bit() != 0 },
+            .{ .w = .builderdone, .ok = first & (W.written.bit() | W.returned.bit()) == (W.written.bit() | W.returned.bit()) },
+            .{ .w = .concatenated, .ok = first & W.written.bit() != 0 and arity >= 2 },
+            .{ .w = .taken, .ok = arity >= 1 },
+        };
+        for (needs) |n| {
+            if (s.bits & n.w.bit() != 0 and !n.ok) {
+                try l.reportOwn(s.firsts[@backingInt(n.w)], .own_companion);
+                s.bits &= ~n.w.bit();
+            }
+        }
+    }
 }
 
 fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {

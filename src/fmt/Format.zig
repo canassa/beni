@@ -1589,7 +1589,7 @@ const Measurer = struct {
     /// The first token a declaration occupies: its visibility words in
     /// source order, else `fallback` (the keyword before the name).
     fn headerFirst(_: *const Measurer, h: Ast.DeclHeader, fallback: TokenIndex) TokenIndex {
-        return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.crossing_token.unwrap() orelse h.equatable_token.unwrap() orelse fallback;
+        return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.crossing_token.unwrap() orelse h.equatable_token.unwrap() orelse h.own_type_token.unwrap() orelse fallback;
     }
 
     fn tokenText(m: *const Measurer, t: TokenIndex) []const u8 {
@@ -1883,7 +1883,7 @@ const Measurer = struct {
             .type_alias => {
                 const a = tree.fullTypeAlias(n);
                 try m.measure(a.body);
-                m.set(n, no_fit, a.header.pub_token.unwrap() orelse main - 2, m.last(a.body));
+                m.set(n, no_fit, m.headerFirst(a.header, main - 2), m.last(a.body));
             },
             .type_decl => {
                 const t = tree.fullTypeDecl(n);
@@ -1892,10 +1892,15 @@ const Measurer = struct {
                     try m.measure(c);
                     last_tok = m.last(c);
                 }
-                const first_tok = t.header.pub_token.unwrap() orelse t.header.opaque_token.unwrap() orelse main - 1;
+                const first_tok = m.headerFirst(t.header, main - 1);
                 m.set(n, no_fit, first_tok, last_tok);
             },
-            .constructor => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
+            // `failure` before the name (ownership-v2.md §2.13.6) is the
+            // lower identifier the token before it is.
+            .constructor => if (m.tags[main - 1] == .lower_ident)
+                try m.headed(n, m.tokenWidth(main - 1) + 1 + m.tokenWidth(main), main - 1, main, tree.children(n), true)
+            else
+                try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
             .foreign_value => {
                 const f = tree.fullForeignValue(n);
                 try m.measure(f.type_expr);
@@ -2862,6 +2867,10 @@ const Printer = struct {
             try p.tok(t);
             try p.space();
         }
+        if (h.own_type_token.unwrap()) |t| {
+            try p.tok(t);
+            try p.space();
+        }
     }
 
     fn decl(p: *Printer, n: Index) Error!void {
@@ -3403,6 +3412,10 @@ const Printer = struct {
         // node, name included, so asking after printing it charges the name
         // twice and breaks a construct that fits (see `.type_con`).
         const one_line = p.fits(n);
+        if (p.tags[c.name - 1] == .lower_ident) {
+            try p.tok(c.name - 1); // `failure` (ownership-v2.md §2.13.6)
+            try p.space();
+        }
         try p.tok(c.name);
         try p.args(c.name, c.args, .type, one_line, indent);
     }

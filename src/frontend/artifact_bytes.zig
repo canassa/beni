@@ -120,7 +120,12 @@ pub const magic = "BENIFE\x00\x00";
 /// `type_own`, which shifted every later tag, and lowering has a new code,
 /// `misplaced_ownership_word`.
 /// 23 (2026-10-22): entry ownership words and their record diagnostics.
-pub const format_version: u32 = 23;
+/// 24 (2026-10-26): the ownership checker v2's words (ownership-v2.md
+/// §2.13.6) — a declaration row carries the v2 column `own2_start`/`own2_end`
+/// and the type word `own_kind`, a constructor row its `failure` mark, a
+/// declaration header the type word's token, and lowering's
+/// `misplaced_ownership_word` has six new readings.
+pub const format_version: u32 = 24;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -871,8 +876,10 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // came to.
     // 93 since a declaration carries a `foreign` value's rung, one byte.
     // 101 since it carries its ownership words' range, two words.
-    try testing.expectEqual(@as(u32, 101), rowBytes(Bir.Decl));
-    try testing.expectEqual(@as(u32, 20), rowBytes(Bir.Ctor));
+    // 110 since it carries the v2 column, two words, and the type word.
+    try testing.expectEqual(@as(u32, 110), rowBytes(Bir.Decl));
+    // 21 since a constructor carries its `failure` mark.
+    try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Local));
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Import));

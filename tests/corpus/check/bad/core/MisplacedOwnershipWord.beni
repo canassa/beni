@@ -83,3 +83,72 @@ pub foreign pure seventeen : many Box (Int → Int) → Int
 
 
 pub foreign pure eighteen : many Thunks → Int
+
+
+-- The ownership checker v2's words (`ownership-v2.md` §2.13.6). A
+-- parameter's word on the result (`nineteen`), a result's on a parameter
+-- (`twenty`); `taken` on a parameter that is not a function written out
+-- (`twentyOne`); `cellupdate` on a function not marked `sync` (`twentyTwo`,
+-- and then `cellwrite` has no companion); a cell word on the wrong
+-- parameter (`twentyThree`); `cellnew` without a `consumed` first parameter
+-- (`twentyFour`); two cell operations (`twentyFive`), two results
+-- (`twentySix`), and `cellupdate` with a word it already says
+-- (`twentySeven`).
+pub foreign pure nineteen : Int → written List Int
+
+
+pub foreign pure twenty : lent List Int → Int
+
+
+pub foreign pure twentyOne : taken List Int, Int → Int
+
+
+pub foreign pure twentyTwo : cellwrite Box a, cellupdate (a → a) → ⊤
+
+
+pub foreign pure twentyThree : Int, cellread Box a → Int
+
+
+pub foreign pure twentyFour : Box a → cellnew Box a
+
+
+pub foreign pure twentyFive : cellread cellwrite Box a, consumed cellstored a → ⊤
+
+
+pub foreign pure twentySix : written returned List a, Int → fresh builderdone List a
+
+
+pub foreign pure twentySeven : cellwrite Box a, once cellupdate sync (a → a) → ⊤
+
+
+-- The type words and `failure`, where they cannot stand: `sequence` on a
+-- type of two parameters, `cell` on a type of none and on a type that is
+-- not opaque, `sender` on an alias whose function does not return `⊤`,
+-- `sequence` on an alias and on a `foreign` value; `failure` on a type of
+-- three constructors.
+pub sequence foreign type Two a b
+
+
+pub opaque cell type NoParam
+    = NoParam Int
+
+
+cell type NotOpaque a
+    = NotOpaque a
+
+
+pub sender type alias NotUnit msg =
+    msg → Int
+
+
+pub sequence type alias Seq a =
+    List a
+
+
+sequence foreign pure twentyEight : Int → Int
+
+
+pub type Three e a
+    = One a
+    | failure Two e
+    | Other

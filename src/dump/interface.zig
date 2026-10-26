@@ -92,10 +92,12 @@ pub fn write(
             try w.print(" {s}", .{param});
         }
         if (t.is_equatable) try w.writeAll(" (equatable)");
+        if (t.own_kind != .none) try w.print(" ({t})", .{t.own_kind});
         try w.writeByte('\n');
         for (iface.ctors[t.ctors_start..t.ctors_end]) |c| {
             try w.print("    {s}", .{interner.slice(iface.symbol(c.name))});
             if (c.arity != 0) try w.print("/{d}", .{c.arity});
+            if (c.failure) try w.writeAll(" (failure)");
             try w.writeByte('\n');
         }
     }

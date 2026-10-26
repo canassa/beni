@@ -1,0 +1,7 @@
+module OwnTypeWords
+  opaque type Box a (cell)
+  type Outcome a b
+    Good/1
+    Bad/1 (failure)
+  alias Sender a (sender)
+  foreign type Seq a (sequence)
