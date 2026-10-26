@@ -1190,6 +1190,11 @@ const DumpDecl = struct {
     /// lines, `top N (name)` of its own module and `import_value M.name`
     /// of another.
     refs: std.ArrayList([]const u8) = .empty,
+    /// The body's instructions, `%N` → what follows `= `, the root and
+    /// each `let`'s value by local number: what `yields` follows.
+    insts: std.StringHashMapUnmanaged([]const u8) = .empty,
+    lets: std.StringHashMapUnmanaged([]const u8) = .empty,
+    body: []const u8 = "",
 
     fn key(d: DumpDecl, arena: std.mem.Allocator) ![]const u8 {
         return std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, d.name });
@@ -1199,9 +1204,9 @@ const DumpDecl = struct {
 /// Every declaration of the package the dump `args` lowers, from the BIR
 /// dump: its module, its name, whether it is a value, whether its words are
 /// recorded (v1's column and the v2 one alike), and what it names.
-fn dumpDecls(w: *World, args: []const []const u8, out: *std.ArrayList(DumpDecl)) !void {
+fn dumpDecls(w: *World, args: []const []const u8, in_repo: bool, out: *std.ArrayList(DumpDecl)) !void {
     const arena = w.arena.allocator();
-    const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const r = if (in_repo) try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit }) else try w.runWith(args, .{ .raw_diagnostics = true });
     if (r.exit_code != 0) {
         std.debug.print("{s} failed: {s}\n", .{ args[args.len - 1], r.stderr });
         return error.DumpFailed;
@@ -1239,6 +1244,21 @@ fn dumpDecls(w: *World, args: []const []const u8, out: *std.ArrayList(DumpDecl))
         }
         if (std.mem.eql(u8, line, "  refs")) {
             in_refs = true;
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "  body ")) {
+            d.body = line["  body ".len..];
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "  %")) {
+            const eq = std.mem.indexOf(u8, line, " = ") orelse continue;
+            const rhs = line[eq + 3 ..];
+            try d.insts.put(arena, line[2..eq], rhs);
+            if (std.mem.startsWith(u8, rhs, "let_def local ")) {
+                const n = rhs["let_def local ".len..];
+                const at = std.mem.lastIndexOf(u8, rhs, "= ") orelse continue;
+                try d.lets.put(arena, n[0 .. std.mem.indexOfScalar(u8, n, ' ') orelse n.len], rhs[at + 2 ..]);
+            }
             continue;
         }
         if (!in_refs) continue;
@@ -1348,6 +1368,134 @@ test "ownership words: a pin counts for the package its file lies under, not for
     try testing.expect(!fewer.has("platforms/browser", "Tea.sandbox"));
 }
 
+/// Whether instruction `inst` of `d`'s body is the result of calling a
+/// taken source: through a call of one (named directly, by an alias `let`,
+/// or by a lambda that yields), a `let`'s body, a let-bound local, a
+/// lambda's result (a partial application is one) or any branch of a case.
+fn yields(arena: std.mem.Allocator, d: DumpDecl, inst: []const u8, sources: *const std.StringHashMapUnmanaged(void), depth: u32) std.mem.Allocator.Error!bool {
+    if (depth > 256) return true;
+    const rhs = d.insts.get(inst) orelse return false;
+    if (std.mem.startsWith(u8, rhs, "call ")) {
+        const callee = rhs["call ".len..];
+        return isSource(arena, d, callee[0 .. std.mem.indexOfScalar(u8, callee, ' ') orelse callee.len], sources, depth + 1);
+    }
+    if (std.mem.startsWith(u8, rhs, "method_call ")) {
+        const dot = std.mem.indexOf(u8, rhs, " .") orelse return false;
+        const name = rhs[dot + 2 ..];
+        return methodSource(sources, name[0 .. std.mem.indexOfScalar(u8, name, ' ') orelse name.len]);
+    }
+    if (std.mem.startsWith(u8, rhs, "let ") or std.mem.startsWith(u8, rhs, "lambda ") or std.mem.startsWith(u8, rhs, "branch ")) {
+        const arrow = std.mem.lastIndexOf(u8, rhs, if (std.mem.startsWith(u8, rhs, "let ")) " in " else " -> ") orelse return false;
+        return yields(arena, d, rhs[arrow + 4 ..], sources, depth + 1);
+    }
+    if (std.mem.startsWith(u8, rhs, "case ")) {
+        const open = std.mem.indexOfScalar(u8, rhs, '[') orelse return false;
+        var it = std.mem.tokenizeAny(u8, rhs[open + 1 .. rhs.len - 1], ", ");
+        while (it.next()) |b| if (try yields(arena, d, b, sources, depth + 1)) return true;
+        return false;
+    }
+    if (std.mem.startsWith(u8, rhs, "local ")) {
+        const n = rhs["local ".len..];
+        const value = d.lets.get(n[0 .. std.mem.indexOfScalar(u8, n, ' ') orelse n.len]) orelse return false;
+        return yields(arena, d, value, sources, depth + 1);
+    }
+    return false;
+}
+
+/// Whether the function instruction `inst` names a taken source.
+fn isSource(arena: std.mem.Allocator, d: DumpDecl, inst: []const u8, sources: *const std.StringHashMapUnmanaged(void), depth: u32) std.mem.Allocator.Error!bool {
+    if (depth > 256) return true;
+    const rhs = d.insts.get(inst) orelse return false;
+    if (std.mem.startsWith(u8, rhs, "top ")) {
+        const open = std.mem.indexOfScalar(u8, rhs, '(') orelse return false;
+        return sources.contains(try std.fmt.allocPrint(arena, "{s}.{s}", .{ d.module, rhs[open + 1 .. rhs.len - 1] }));
+    }
+    for ([_][]const u8{ "import_value ", "qualified " }) |head| if (std.mem.startsWith(u8, rhs, head)) return sources.contains(rhs[head.len..]);
+    if (std.mem.startsWith(u8, rhs, "local ")) {
+        const n = rhs["local ".len..];
+        const value = d.lets.get(n[0 .. std.mem.indexOfScalar(u8, n, ' ') orelse n.len]) orelse return false;
+        return isSource(arena, d, value, sources, depth + 1);
+    }
+    if (std.mem.startsWith(u8, rhs, "lambda ")) {
+        const arrow = std.mem.lastIndexOf(u8, rhs, " -> ") orelse return false;
+        return yields(arena, d, rhs[arrow + 4 ..], sources, depth + 1);
+    }
+    return false;
+}
+
+/// A method call `.name` (static dispatch) is over-approximated by its
+/// name: any source of that name, in any module.
+fn methodSource(sources: *const std.StringHashMapUnmanaged(void), name: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return false;
+    var it = sources.keyIterator();
+    while (it.next()) |k| if (std.mem.endsWith(u8, k.*, name) and k.len > name.len and k.*[k.len - name.len - 1] == '.') return true;
+    return false;
+}
+
+/// What a package's declarations must have pinned, and why, into `need`;
+/// `sources` carries the taken sources of the packages before it.
+fn pinNeeds(arena: std.mem.Allocator, decls: []const DumpDecl, sources: *std.StringHashMapUnmanaged(void), need: *std.StringArrayHashMapUnmanaged([]const u8)) !void {
+    // A declaration by qualified name.
+    var index: std.StringHashMapUnmanaged(usize) = .empty;
+    for (decls, 0..) |d, i| try index.put(arena, try d.key(arena), i);
+    // The taken sources (§2.13.6's index obligation): a declaration with
+    // a `taken` result, and every forwarder, a declaration whose result
+    // IS one, in any form (`yields`) — a least fixpoint, across the
+    // modules of every package dumped so far. A body that names a
+    // source reads its result, or forwards it: both are pinned. A
+    // caller of `foldl` names no source (`foldlFrom` reads, `foldl`'s
+    // row covers its callers), so it is not.
+    for (decls) |d| if (d.taken_result) try sources.put(arena, try d.key(arena), {});
+    var grew = true;
+    while (grew) {
+        grew = false;
+        for (decls) |d| {
+            const key = try d.key(arena);
+            if (sources.contains(key) or d.body.len == 0) continue;
+            if (!try yields(arena, d, d.body, sources, 0)) continue;
+            try sources.put(arena, key, {});
+            grew = true;
+        }
+    }
+    for (decls) |d| {
+        const key = try d.key(arena);
+        if (d.worded) {
+            try need.put(arena, key, "carries ownership words");
+            continue;
+        }
+        var names = sources.contains(key);
+        for (d.refs.items) |r| names = names or sources.contains(r);
+        var it = d.insts.valueIterator();
+        while (it.next()) |rhs| {
+            if (!std.mem.startsWith(u8, rhs.*, "method_call ")) continue;
+            const dot = std.mem.indexOf(u8, rhs.*, " .") orelse continue;
+            const name = rhs.*[dot + 2 ..];
+            names = names or methodSource(sources, name[0 .. std.mem.indexOfScalar(u8, name, ' ') orelse name.len]);
+        }
+        if (names) try need.put(arena, key, if (sources.contains(key)) "forwards a `taken` result" else "reads a `taken` result");
+    }
+    // A worded beni body of a module with v2 rows (the asserted rows of
+    // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
+    // runs: every declaration of its module it reaches. v1's rows keep
+    // v1's rule, their own body (a `Task` row reaches the scheduler).
+    var v2_modules: std.StringHashMapUnmanaged(void) = .empty;
+    for (decls) |d| if (d.v2) try v2_modules.put(arena, d.module, {});
+    var stack: std.ArrayList(usize) = .empty;
+    for (decls, 0..) |d, i| if (d.worded and !d.foreign and v2_modules.contains(d.module)) try stack.append(arena, i);
+    var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
+    while (stack.pop()) |i| {
+        if ((try seen.getOrPut(arena, i)).found_existing) continue;
+        const d = decls[i];
+        for (d.refs.items) |r| {
+            const j = index.get(r) orelse continue;
+            const target = decls[j];
+            if (!target.value or !std.mem.eql(u8, target.module, d.module)) continue;
+            if (!need.contains(r)) try need.put(arena, r, try std.fmt.allocPrint(arena, "is run by the worded {s}", .{try d.key(arena)}));
+            if (!target.foreign) try stack.append(arena, j);
+        }
+    }
+}
+
 test "ownership words: every worded declaration, the helpers its body runs and every reader of a taken result have pinned bodies" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1357,59 +1505,12 @@ test "ownership words: every worded declaration, the helpers its body runs and e
     var packages: std.ArrayList(Package) = .empty;
     try wordedPackages(&w, &packages);
     var ok = true;
+    var sources: std.StringHashMapUnmanaged(void) = .empty;
     for (packages.items) |package| {
         var decls: std.ArrayList(DumpDecl) = .empty;
-        try dumpDecls(&w, package.args, &decls);
-        // A declaration by qualified name.
-        var index: std.StringHashMapUnmanaged(usize) = .empty;
-        for (decls.items, 0..) |d, i| try index.put(arena, try d.key(arena), i);
-        // What must be pinned, and why.
+        try dumpDecls(&w, package.args, true, &decls);
         var need: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
-        // The readers of a taken result (§2.13.6's index obligation), as a
-        // least fixpoint over the refs of every module of the package: a
-        // declaration with a `taken` result, and any declaration that names
-        // one in the set, in any form and from any module. It over-
-        // approximates (every caller of a fold is in it); it misses none.
-        var readers: std.StringHashMapUnmanaged(void) = .empty;
-        for (decls.items) |d| if (d.taken_result) try readers.put(arena, try d.key(arena), {});
-        var grew = true;
-        while (grew) {
-            grew = false;
-            for (decls.items) |d| {
-                const key = try d.key(arena);
-                if (readers.contains(key)) continue;
-                for (d.refs.items) |r| {
-                    if (!readers.contains(r)) continue;
-                    try readers.put(arena, key, {});
-                    grew = true;
-                    break;
-                }
-            }
-        }
-        for (decls.items) |d| {
-            const key = try d.key(arena);
-            if (d.worded) try need.put(arena, key, "carries ownership words") else if (readers.contains(key)) try need.put(arena, key, "reads a container through a `taken` result, or hands one on");
-        }
-        // A worded beni body of a module with v2 rows (the asserted rows of
-        // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
-        // runs: every declaration of its module it reaches. v1's rows keep
-        // v1's rule, their own body (a `Task` row reaches the scheduler).
-        var v2_modules: std.StringHashMapUnmanaged(void) = .empty;
-        for (decls.items) |d| if (d.v2) try v2_modules.put(arena, d.module, {});
-        var stack: std.ArrayList(usize) = .empty;
-        for (decls.items, 0..) |d, i| if (d.worded and !d.foreign and v2_modules.contains(d.module)) try stack.append(arena, i);
-        var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
-        while (stack.pop()) |i| {
-            if ((try seen.getOrPut(arena, i)).found_existing) continue;
-            const d = decls.items[i];
-            for (d.refs.items) |r| {
-                const j = index.get(r) orelse continue;
-                const target = decls.items[j];
-                if (!target.value or !std.mem.eql(u8, target.module, d.module)) continue;
-                if (!need.contains(r)) try need.put(arena, r, try std.fmt.allocPrint(arena, "is run by the worded {s}", .{try d.key(arena)}));
-                if (!target.foreign) try stack.append(arena, j);
-            }
-        }
+        try pinNeeds(arena, decls.items, &sources, &need);
         for (need.keys(), need.values()) |key, why| {
             if (pins.has(package.dir, key)) continue;
             std.debug.print("{s} {s}, and {s} pins no body for it under {s}/\n", .{ key, why, bodies_list, package.dir });
@@ -1417,6 +1518,94 @@ test "ownership words: every worded declaration, the helpers its body runs and e
         }
     }
     if (!ok) return error.WordedBodyUnpinned;
+}
+
+test "ownership words: a taken result is followed through every form that forwards it, and a fold's caller owes no pin" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.copyTreeInto("core", "core", "");
+    // Forwarders of `traverseAt` in each form, each with a caller that
+    // reads its result twice; a caller across modules; a fold's caller.
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, "core/List.beni", arena, .limited(1 << 22));
+    try w.write("core/List.beni", try std.mem.concat(arena, u8, &.{
+        list,
+        \\
+        \\
+        \\lamTake : List a, Int → a
+        \\lamTake = λa i → traverseAt a i
+        \\
+        \\
+        \\letTake : List a, Int → a
+        \\letTake a i =
+        \\    x = traverseAt a i
+        \\    x
+        \\
+        \\
+        \\partTake : List a → a
+        \\partTake = traverseAt _ 0
+        \\
+        \\
+        \\aliasTake : List a, Int → a
+        \\aliasTake a i =
+        \\    t = traverseAt
+        \\    t a i
+        \\
+        \\
+        \\pub pubTake : List a, Int → a
+        \\pubTake a i =
+        \\    if i < 0 then traverseAt a 0 else traverseAt a i
+        \\
+        \\
+        \\useLam : List a → a × a
+        \\useLam xs =
+        \\    ( lamTake xs 0, lamTake xs 0 )
+        \\
+        \\
+        \\useLet : List a → a × a
+        \\useLet xs =
+        \\    ( letTake xs 0, letTake xs 0 )
+        \\
+        \\
+        \\usePart : List a → a × a
+        \\usePart xs =
+        \\    ( partTake xs, partTake xs )
+        \\
+        \\
+        \\useAlias : List a → a × a
+        \\useAlias xs =
+        \\    ( aliasTake xs 0, aliasTake xs 0 )
+        \\
+    }));
+    const dict = try std.Io.Dir.cwd().readFileAlloc(testing.io, "core/Dict.beni", arena, .limited(1 << 22));
+    try w.write("core/Dict.beni", try std.mem.concat(arena, u8, &.{
+        dict,
+        \\
+        \\
+        \\useCross : List a → a × a
+        \\useCross xs =
+        \\    ( List.pubTake xs 0, List.pubTake xs 0 )
+        \\
+        \\
+        \\plainFold : List Int → Int
+        \\plainFold xs =
+        \\    List.foldl xs (λx acc → acc + x) 0
+        \\
+    }));
+    var decls: std.ArrayList(DumpDecl) = .empty;
+    try dumpDecls(&w, &.{ "dump", "--stage=bir", "--core", "core" }, false, &decls);
+    var sources: std.StringHashMapUnmanaged(void) = .empty;
+    var need: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
+    try pinNeeds(arena, decls.items, &sources, &need);
+    for ([_][]const u8{ "List.lamTake", "List.letTake", "List.partTake", "List.aliasTake", "List.pubTake" }) |k| {
+        try testing.expectEqualStrings("forwards a `taken` result", need.get(k) orelse return error.ForwarderMissed);
+    }
+    for ([_][]const u8{ "List.useLam", "List.useLet", "List.usePart", "List.useAlias", "Dict.useCross", "List.foldlFrom" }) |k| {
+        try testing.expectEqualStrings("reads a `taken` result", need.get(k) orelse return error.ReaderMissed);
+    }
+    // `foldlFrom` reads; `foldl`'s row covers its callers.
+    try testing.expect(!need.contains("Dict.plainFold"));
+    try testing.expect(!need.contains("List.foldl"));
 }
 
 fn expectCoreSurface() !void {
