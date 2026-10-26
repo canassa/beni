@@ -359,7 +359,7 @@ pub const Table = struct {
         for (param_places) |p| try params.append(gpa, try env.shapes.leaf(gpa, env.account(), p, all));
         const top = try env.cells.top(gpa, env.account());
         const res = try env.shapes.leaf(gpa, env.account(), res_place, try env.cells.sets.insert(gpa, env.charge, .none, top.int(), 0));
-        const kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, Cond.lost)).ctx;
+        const kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.lost)).ctx;
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
         for (fun_params) |j| try funs.append(gpa, .{ .j = j, .calls = .many, .need = true, .seen = false });
@@ -1485,7 +1485,11 @@ const Fixture = struct {
     }
 
     fn setK(f: *Fixture, ctx: Kappas, n: NodeId, k: CondId) !Kappas {
-        return (try f.conds.kappaSet(testing.allocator, .growth(&f.account), ctx, n, k)).ctx;
+        return f.setKAt(ctx, n, false, k);
+    }
+
+    fn setKAt(f: *Fixture, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) !Kappas {
+        return (try f.conds.kappaSet(testing.allocator, .growth(&f.account), ctx, n, at_summary, k)).ctx;
     }
 
     fn label(f: *Fixture, inst: u32) !LabelId {
@@ -1567,7 +1571,7 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
     const e3 = try f.conds.excl(gpa, env.charge, p3);
     const ap = try f.conds.apartAtom(gpa, env.charge, try f.set(&.{ p1e, p3 }));
     var m = try f.setK(.none, res, e1);
-    m = try f.setK(m, elem, try f.conds.@"and"(gpa, env.charge, ap, e3));
+    m = try f.setKAt(m, elem, true, try f.conds.@"and"(gpa, env.charge, ap, e3));
     const supply_node = try f.leaf(3, &.{p1});
     const kappa_e1 = try f.setK(.none, supply_node, e1);
     const c = try f.sums.add(env, .{
