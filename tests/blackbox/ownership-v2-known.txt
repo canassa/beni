@@ -1,0 +1,33 @@
+# The known, justified differences between --ownership=v1 and --ownership=v2
+# in `node bench/ownership-everywhere.mjs --diff=v1,v2` and in the corpus
+# harness's v2 parity of every ownership fixture (ownership-v2.md
+# §7.2): one per line, `<root> <module> <line:col>`, two spaces, why. The
+# diff fails on any other difference, and on an entry that no longer occurs.
+#
+# v2 accepts where v1 refused.
+tests/corpus/ownership/Copy.beni [node] Copy 24:27  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
+tests/corpus/ownership/Split.beni [node] Split 38:27  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
+tests/corpus/ownership/core/V2WordsHiddenFromV1.beni [node] V2WordsHiddenFromV1 17:12  the fixture's point: v1 reads none of v2's words
+tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 27:23  v1's documented `level` limit; v2 has no such cap
+tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 56:15  v1's documented `level` limit; v2 has no such cap
+#
+# v2 refuses where v1 accepted (S3a builds neither initialization transfer,
+# S7, nor record paths, S5).
+tests/corpus/browser/tea/InitializationTransfer Main 12:17  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 14:17  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 84:7  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 119:15  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 123:12  initialization transfer is S7
+tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 185:44  initialization transfer is S7
+tests/corpus/ownership/InitializationWide.beni [browser-inline] InitializationWide 77:8  initialization transfer is S7
+tests/corpus/ownership/DotFieldCall.beni [browser-inline] DotFieldCall 15:10  a record field's path is S5's (`r` read again whole)
+tests/corpus/ownership/PolyRecTuples.beni [node] PolyRecTuples 23:26  polymorphic recursion folds `a` and `b` to one place (PolyRec*, S4)
+tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
+#
+# A demand only one side reports.
+tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5  v2 words `Ref.set` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+core List 1745:20  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)

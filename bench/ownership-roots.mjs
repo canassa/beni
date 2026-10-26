@@ -32,7 +32,7 @@ function manifests(p) {
   });
 }
 
-export function o1Roots(repo, scratch) {
+export function o1Roots(repo, scratch, { allOwnership = false } = {}) {
   const programs = [];
   function project(p, platform, extra = [], dumpOnly = false) {
     let dir = p;
@@ -115,8 +115,8 @@ export function o1Roots(repo, scratch) {
         const golden = [`${base}.${token.split("/").at(-1)}.ownership`, `${base}.ownership`].find(existsSync);
         if (!golden) throw Error(`missing ownership golden ${base} ${token}`);
         const lines = readFileSync(golden, "utf8").split("\n");
-        if (lines.some((l) => { const m = l.match(/^\s+\d+:\d+ (.*): (rejected|pending)(?: |:|$)/); return m && !m[1].startsWith("update "); })) continue;
-        if (lines.some((l) => /ownership limit|limit exceeded/.test(l))) continue;
+        if (!allOwnership && lines.some((l) => { const m = l.match(/^\s+\d+:\d+ (.*): (rejected|pending)(?: |:|$)/); return m && !m[1].startsWith("update "); })) continue;
+        if (!allOwnership && lines.some((l) => /ownership limit|limit exceeded/.test(l))) continue;
         project(p, token.replace(/\+everywhere$/, ""), core ? ["--core"] : [], core);
         programs.at(-1).name += ` [${token}]`;
       }

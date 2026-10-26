@@ -209,15 +209,55 @@ function verdicts(out) {
     }
     const m = line.match(/^\s+(\d+:\d+) (.*?): (accepted|rejected|pending)\b(.*)$/);
     if (!m) continue;
+    // One demand however each checker spells it: v1 names a call of a
+    // summarised declaration `call X`, v2 the worded `X`; a call base is
+    // `<call>` or `<call X>`.
+    const demand = m[2].replace(/^call /, "").replace(/<call[^>]*>/g, "<call>");
     let k = 0;
-    while (at.has(`${module}\t${m[1]}\t${m[2]}\t#${k}`)) k++;
-    at.set(`${module}\t${m[1]}\t${m[2]}\t#${k}`, { refused: m[3] !== "accepted", line: line.trim() });
+    while (at.has(`${module}\t${m[1]}\t${demand}\t#${k}`)) k++;
+    at.set(`${module}\t${m[1]}\t${demand}\t#${k}`, { refused: m[3] !== "accepted", line: line.trim() });
   }
   return at;
 }
 
-/// Every root the diff dumps: O1's audit roots (`bench/ownership-roots.mjs`).
-const diffRoots = () => o1Roots(repo, scratch);
+/// The declarations a dump says it did not check (a construct not built, a
+/// limit): per module, the line spans of their `unchecked` lines.
+function unchecked(out) {
+  const spans = new Map();
+  let module = "";
+  for (const line of out.split("\n")) {
+    const header = line.match(/^module (\S+)/);
+    if (header) {
+      module = header[1];
+      continue;
+    }
+    const m = line.match(/^\s+unchecked (.*): lines (\d+)-(\d+)/);
+    if (!m) continue;
+    if (!spans.has(module)) spans.set(module, []);
+    spans.get(module).push({ name: m[1], from: Number(m[2]), to: Number(m[3]) });
+  }
+  return spans;
+}
+
+/// The known, justified differences (`tests/blackbox/ownership-v2-known.txt`,
+/// also the corpus harness's v2 parity list): one
+/// per line, `<root> <module> <line:col>  <why>`.
+function known() {
+  const path = join(repo, "tests/blackbox/ownership-v2-known.txt");
+  const out = new Map();
+  if (!existsSync(path)) return out;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const [key, why] = t.split(/\s{2,}/);
+    out.set(key, why ?? "");
+  }
+  return out;
+}
+
+/// Every root the diff dumps: O1's audit roots (`bench/ownership-roots.mjs`)
+/// and every ownership fixture, refused lines included.
+const diffRoots = () => o1Roots(repo, scratch, { allOwnership: true });
 
 async function diff(sides) {
   const roots = diffRoots();
@@ -242,11 +282,15 @@ async function diff(sides) {
   };
   await Promise.all(Array.from({ length: jobs }, work));
 
+  const allowed = known();
+  const used = new Set();
   const failed = [];
   const same = [];
   const accepts = [];
   const refuses = [];
+  const notBuilt = [];
   const oneSided = [];
+  const explained = [];
   for (const [i, root] of roots.entries()) {
     const [a, b] = dumped.map((d) => d[i]);
     const bad = [a, b].map((r, s) => (r.code === 0 ? null : `${sides[s]}: ${r.signal ?? `exit ${r.code}`} ${r.err.split("\n")[0]}`)).filter(Boolean);
@@ -256,12 +300,31 @@ async function diff(sides) {
     }
     const va = verdicts(a.out);
     const vb = verdicts(b.out);
+    const skipped = [unchecked(a.out), unchecked(b.out)];
     for (const key of [...new Set([...va.keys(), ...vb.keys()])].sort()) {
       const x = va.get(key);
       const y = vb.get(key);
       const [module, pos] = key.split("\t");
-      const row = { where: `${root.name} ${module} ${pos}`, a: x ? [x.line] : [], b: y ? [y.line] : [] };
-      if (!x || !y) oneSided.push(row);
+      const where = `${root.name} ${module} ${pos}`;
+      const row = { where, a: x ? [x.line] : [], b: y ? [y.line] : [] };
+      const line = Number(pos.split(":")[0]);
+      // A demand only one side reports, in a declaration the other did not
+      // check: counted and listed, never silent.
+      const missing = !x ? 0 : !y ? 1 : -1;
+      if (missing >= 0) {
+        const span = (skipped[missing].get(module) ?? []).find((s) => s.from <= line && line <= s.to);
+        if (span) {
+          notBuilt.push({ ...row, why: `${sides[missing]} did not check ${span.name}` });
+          continue;
+        }
+      }
+      const differs = missing >= 0 || x.refused !== y.refused;
+      if (differs && allowed.has(where)) {
+        used.add(where);
+        explained.push({ ...row, why: allowed.get(where) });
+        continue;
+      }
+      if (missing >= 0) oneSided.push(row);
       else if (x.refused === y.refused) same.push(row);
       else if (x.refused) accepts.push(row);
       else refuses.push(row);
@@ -272,7 +335,7 @@ async function diff(sides) {
     console.log(`\n## ${title}: ${rows.length}\n`);
     if (!lines) return;
     for (const r of rows) {
-      console.log(`- ${r.where}`);
+      console.log(`- ${r.where}${r.why ? ` (${r.why})` : ""}`);
       for (const l of r.a) console.log(`    ${a}: ${l}`);
       for (const l of r.b) console.log(`    ${b}: ${l}`);
       if (r.a.length === 0) console.log(`    ${a}: (no demand)`);
@@ -283,14 +346,20 @@ async function diff(sides) {
   show(same, "The same verdict", !!args.same);
   show(accepts, `${b} accepts where ${a} refused`, true);
   show(refuses, `${b} refuses where ${a} accepted`, true);
-  show(oneSided, "Demands only one side reports", true);
+  show(oneSided, "Demands only one side reports, in a declaration both checked", true);
+  show(explained, "Known differences (tests/blackbox/ownership-v2-known.txt)", true);
+  show(notBuilt, "Demands in a declaration one side did not check", !!args.unchecked);
+  const stale = [...allowed.keys()].filter((k) => !used.has(k));
+  if (stale.length) {
+    console.log(`\n## Known differences that no longer occur: ${stale.length}\n`);
+    for (const k of stale) console.log(`- ${k}`);
+  }
   if (failed.length) {
     console.log(`\n## Roots not dumped: ${failed.length}\n`);
     for (const f of failed) console.log(`- ${f}`);
   }
-  return failed.length || accepts.length || refuses.length || oneSided.length ? 1 : 0;
+  return failed.length || accepts.length || refuses.length || oneSided.length || stale.length ? 1 : 0;
 }
-
 if (args.diff) {
   const sides = String(args.diff).split(",");
   if (sides.length !== 2 || !sides.every((s) => s === "v1" || s === "v2")) {

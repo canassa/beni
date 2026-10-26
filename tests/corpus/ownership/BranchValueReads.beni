@@ -1,0 +1,91 @@
+-- ownership: a list read again as an arm's value (ownership-v2.md §2.7, the
+-- join's uses). `if flag then xs else grown` reads `xs` where the arm ends:
+-- a use in that arm, after `List.push xs 2`, so the push is refused
+-- `later-use` as v1 refuses it. The same through `case` on a `Maybe`, a
+-- parameter, an arm whose other side is a literal, an `if` inside a tuple,
+-- the other arm order, and a binding of the `if`.
+
+pub ifArm : Bool → List Int
+ifArm flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if flag then xs else grown
+
+
+pub maybeArm : Maybe Int → List Int
+maybeArm flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    case flag of
+        Just _ →
+            xs
+
+        Nothing →
+            grown
+
+
+pub maybeArmLen : Maybe Int → Int
+maybeArmLen flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    case flag of
+        Just _ →
+            List.length xs
+
+        Nothing →
+            List.length grown
+
+
+pub tupleAfter : ⊤ → List Int × List Int
+tupleAfter ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    ( xs, grown )
+
+
+pub paramIf : List Int, Bool → List Int
+paramIf xs flag =
+    grown = List.push xs 2
+    if flag then xs else grown
+
+
+pub paramIfLen : List Int, Bool → Int
+paramIfLen xs flag =
+    grown = List.push xs 2
+    if flag then List.length xs else List.length grown
+
+
+pub retOld : ⊤ → List Int
+retOld ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    xs
+
+
+pub ifOldEmpty : Bool → List Int
+ifOldEmpty flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if flag then xs else []
+
+
+pub ifOldOld : Bool → List Int × Int
+ifOldOld flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    ( if flag then xs else [], List.length grown )
+
+
+pub ifBoth : Bool → List Int
+ifBoth flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if flag then grown else xs
+
+
+pub nestedLet : Bool → List Int
+nestedLet flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    ys = if flag then xs else grown
+    List.push ys 3

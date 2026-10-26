@@ -1,0 +1,27 @@
+module BranchValueReads
+  11:13 List.push xs: rejected later-use: xs is read again at 12:18
+  18:13 List.push xs: rejected later-use: xs is read again at 21:13
+  30:13 List.push xs: rejected later-use: xs is read again at 33:13
+  42:13 List.push xs: rejected later-use: xs is read again at 43:5
+  48:13 List.push xs: rejected later-use: xs is read again at 49:18
+  54:13 List.push xs: rejected later-use: xs is read again at 55:18
+  61:13 List.push xs: rejected later-use: xs is read again at 62:5
+  68:13 List.push xs: rejected later-use: xs is read again at 69:18
+  75:13 List.push xs: rejected later-use: xs is read again at 76:20
+  82:13 List.push xs: rejected later-use: xs is read again at 83:29
+  89:13 List.push xs: rejected later-use: xs is read again at 90:23
+  91:5 List.push ys: accepted fresh
+  summary ifArm: res fresh1
+  summary maybeArm: res fresh1
+  summary maybeArmLen: unused
+  summary tupleAfter: res .0 condition(fresh3) fresh1, .1 condition(fresh4) fresh1, condition(fresh2){shared}r{shared}
+  summary paramIf: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  summary paramIfLen: π1 RW[storage], π1[*] R
+  summary retOld: res fresh1
+  summary ifOldEmpty: res fresh1
+  summary ifOldOld: res .0 fresh1
+  summary ifBoth: res fresh1
+  summary nestedLet: res fresh1
+  demands 12: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 11
+total 12: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 11
+cause later-use 11

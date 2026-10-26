@@ -519,6 +519,10 @@ const Resolver = struct {
     /// its named descendants for a deep demand, the live cells its cycle
     /// anchors name.
     fn candidates(r: *Resolver, c: CellId, deep: bool, out: *std.ArrayList(CellId)) Error!void {
+        // `⊤` may be any object: a live holder of it (a value an opaque
+        // result or a pessimistic call kept) may hold `c` (§2.2: `⊤`
+        // aliases everything).
+        try out.append(r.gpa, try r.env.cells.top(r.gpa, r.env.account()));
         var at = c;
         while (at != .none) : (at = r.env.cells.parent(at)) {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
@@ -722,8 +726,16 @@ const Resolver = struct {
                 while (at != .none and places.pathDepth(at) > places.pathDepth(u.path)) : (at = places.pathParent(at)) try steps.append(s.r.gpa, places.pathStep(at));
                 if (at != u.path) return true; // below the queried path: any read counts
                 std.mem.reverse(Step, steps.items);
-                const cells = try s.r.env.shapes.cellsAt(s.r.gpa, s.r.env.account(), places, s.r.env.cells, u.use_node, steps.items);
-                return cells != .none;
+                // The callee's use shape along the remainder: a path its place
+                // graph cannot follow (a recast, an opaque type on the way) is
+                // read as far as anyone knows; one it follows to no mark is not.
+                var node = u.use_node;
+                for (steps.items) |st| {
+                    try s.r.env.charge.reserve(s.r.gpa, .inspection, 1);
+                    if (s.r.env.shapes.kind(node) == .leaf) return s.r.env.shapes.cells(node) != .none;
+                    node = (try s.r.env.shapes.proj(s.r.gpa, s.r.env.account(), places, s.r.env.cells, node, st)) orelse return true;
+                }
+                return s.r.env.shapes.cells(node) != .none;
             }
         };
         var ctx: Ctx = .{ .r = r, .q = q };
@@ -885,7 +897,7 @@ const Resolver = struct {
                     }
                     if (h.kind == .pending) {
                         if (!(h.start < dm.point and dm.point < h.end and r.compatible(h.start, dm.point))) continue;
-                        try r.note(&found, .{ .holder = hi, .path = .none, .point = h.start, .cause = .held_operand, .approx = e.value == 1, .use = .none }, ci);
+                        try r.note(&found, .{ .holder = hi, .path = .none, .point = h.start, .cause = .held_operand, .approx = e.value == 1 or cellt.origin(d) == .top, .use = .none }, ci);
                         continue;
                     }
                     holds.clearRetainingCapacity();
@@ -898,7 +910,7 @@ const Resolver = struct {
                         // `element`). A holder above every level `c` may be
                         // holds them all: exact.
                         const summary = (r.env.places.isSummary(hold.path) or stands(cellt, r.env.places, hold.d)) and !isMaterialised(cellt, c);
-                        const approx = hold.approx or e.value == 1 or summary;
+                        const approx = hold.approx or e.value == 1 or summary or cellt.origin(hold.d) == .top;
                         const own = h.who == dm.base_local and (dm.base_path == .none or overlaps(r.env.places, hold.path, dm.base_path));
                         const cause: Facts.Cause = if (approx) .element else if (own) .later_use else .alias;
                         const several_held = hold.several and !r.env.places.isSummary(hold.path);

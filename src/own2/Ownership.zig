@@ -73,9 +73,23 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             .ctx = mod,
             .decl_of = Groups.Module.declOfCtx,
         };
+        // A worded declaration's class is its words (an asserted row):
+        // its body is not checked here (§2.13.6's pins check it).
+        if (in.format_summaries) for (mi.bir.decls, 0..) |d, di| {
+            if (d.kind != .value or d.body == .none or mi.bir.ownSlotsV2(d).len == 0) continue;
+            const span = declLines(in.names, mi, d);
+            try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} (row)", .{ in.names.declName(mi.module, @intCast(di)), span[0], span[1] }));
+        };
         for (mod.results.items) |*dr| {
             const d = mi.bir.decls[dr.decl];
             const name = in.names.declName(mi.module, dr.decl);
+            // A declaration v2 does not check (a construct not built yet, a
+            // limit) names its lines, so a verdict diff can tell a demand it
+            // did not check from one it missed (`bench/ownership-everywhere.mjs`).
+            if (in.format_summaries and (dr.failure != null or dr.unbuilt != Ids.none_int)) {
+                const span = declLines(in.names, mi, d);
+                try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s})", .{ name, span[0], span[1], if (dr.failure != null) "limit" else "not built" }));
+            }
             if (dr.failure) |f| {
                 limits += 1;
                 try others.append(arena, try std.fmt.allocPrint(arena, "limit {s}: {s}", .{ name, switch (f) {
@@ -137,6 +151,20 @@ comptime {
     _ = Walk;
 }
 
+/// The first and last source lines of declaration `d`: its name and every
+/// instruction's main token.
+fn declLines(names: Message.Names, mi: *const Groups.Input, d: @import("../bir/Bir.zig").Decl) [2]u32 {
+    var lo = names.position(names.ctx, mi.module, d.name_token).line;
+    var hi = lo;
+    const tokens = mi.bir.insts.items(.main_token);
+    var i = d.inst_start.int();
+    while (i < d.inst_end.int()) : (i += 1) {
+        const line = names.position(names.ctx, mi.module, tokens[i]).line;
+        lo = @min(lo, line);
+        hi = @max(hi, line);
+    }
+    return .{ lo, hi };
+}
 /// The string table a published block's names index (§3.6: no session id
 /// in the bytes): heads as `package·module·type`, field names, values as
 /// `Module.name`, each text once, numbered in the order the writer asks.
