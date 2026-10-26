@@ -1837,9 +1837,9 @@ node, its position class and its owner's map (one owner per hash-consed map, so 
 share their positions; a use shape is no value and carries none). An `owner` record names every value
 under its map, from every class and supply of the block, and the reader builds ONE map for the owner from
 all of them and gives it to each, so the closure below, made per owner, is the reader's too. The positions are the owner's values,
-closed under the node's parts and its projections at every step of its place (a union's and a node's,
-not a leaf's or an empty one), and **every entry of the owner's map that a read can reach**, with the
-projections that lead to it from those. That set is closed for every read: `kappaOf` at a `proj` path
+closed under the node's parts (the children it holds, a delta's base, a recast's inner, a union's or a positions
+node's sides — never the steps of its place type, so a type's width costs nothing), and **every entry of the owner's map that a read can reach**, with the
+projections that lead to it from those (found along `Cond.frontier`'s transitions, every step of a place, only while the map holds an entry not yet found: a map keyed by node gives no route from the entry; a map keyed by path will, S3a). That set is closed for every read: `kappaOf` at a `proj` path
 from a value, as `kappaLeq`, `propagate`, `join` and `map` make, and `dagKappa` through a union's sides,
 reaches either a written position, which carries the κ read there, or a node with nothing stored, whose κ
 is derived from the structure the block rebuilds alone, in the writer as in the reader. Each position
@@ -1871,9 +1871,9 @@ write. Each edge is read O(log n) times; the refinements are O((V + A) log V) an
 ranking O((E + R) log R). Records of one key are one record, and a final sort checks that no two units
 spell the same words. Every lookup, token, scan, sort and word is reserved before it is done (#1066) on the
 codec's lane (§4.1, `codec_factor`), and nothing reaches the output before all of it is paid: a refused
-write leaves no output and no memo the next write would read. The owner's growth sees only what a class
-adds — a second interpretation of a node, and the κ reads and projections it makes — each on its own
-declaration's charge. The table is a post-order walk from the classes. The reader builds a
+write leaves no output and no memo the next write would read. The κ reads and projections run on the lane; the
+owner's growth sees only a class's second interpretations of a node, counted as if the class were alone, on
+its own declaration's charge. The table is a post-order walk from the classes. The reader builds a
 knot's nodes and deltas as nodes no constructor interns and ties their child maps when the knot is read;
 everything else is its constructor's, and a node no constructor makes (sides at two places, a child at a
 place its step does not reach) is no block. It decodes into tables of its own first, on the codec's lane:
@@ -1981,12 +1981,12 @@ baseline records (B_f) on one codec lane per block, each reserved before its ste
 `codec_factor`·(S + 16)·⌈log₂(S + 2)⌉ records, where S counts the records and edges the writer reads from the
 tables — including the source-derived place graph, so a type's depth or width never spends R_f — or the words a
 reader decodes. `codec_factor` is **16**. The algorithm's own bound is O(S log S) (the refinements and the
-ranking's sorts above), and the measured maximum over the block tests is 1.7·(S + 16)·⌈log₂(S + 2)⌉, so 16 is
+ranking's sorts above), and the measured maximum over the block tests is 1.9·(S + 16)·⌈log₂(S + 2)⌉, so 16 is
 margin for a defect, not a budget. Past the bound the writer stops with `ownership_accounting_invariant` (the
-codec broke its own bound), and the reader returns no block (no writer makes those bytes). Only what a class adds
-while it is written is growth, on its own declaration's account: a second interpretation of a node — a position
-under another κ map (§3.6) — and the κ reads and projections it makes. A many-map class still meets the limit
-loudly.
+codec broke its own bound), and the reader returns no block (no writer makes those bytes). The κ reads and
+projections the writer makes are on the lane too. The only growth is a class's own summary, counted as if
+the class were alone in the block (so editing another declaration never changes it): the positions it reaches
+past one per node — a node under another κ map (§3.6). A many-map class still meets the limit loudly.
 
 **Fresh-fragment certificate and algorithm.** For a settled result-template DAG whose every tracked origin
 is a fresh allocation k, with no parameter/capture/shared/unknown/feedback dependency, certify that property
@@ -2393,7 +2393,7 @@ L0  Ids
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 10 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 550 |
+| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 650 |
 | `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 800 |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
