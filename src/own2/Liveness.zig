@@ -900,7 +900,7 @@ test "compatibility is a rank₂ threshold: a query from an arm skips the siblin
     defer lowered.deinit();
     const bir = &lowered.bir;
     const d = bir.decls[lowered.declNamed("g")];
-    var tree = try Regions.build(gpa, bir, d, null);
+    var tree = try Regions.build(gpa, &f.account, .inference, bir, d, null);
     defer tree.deinit(gpa);
     // The outer case's two arms: a point in each (the branch's body), and
     // the case instruction itself, past both.
@@ -955,14 +955,15 @@ test "ancestry: binary lifting agrees with the region tree's climb on a lowered 
     defer lowered.deinit();
     const bir = &lowered.bir;
     const d = bir.decls[lowered.declNamed("g")];
-    var tree = try Regions.build(gpa, bir, d, null);
-    defer tree.deinit(gpa);
     var account: Ids.Account = .{};
     defer account.deinit(gpa);
+    var tree = try Regions.build(gpa, &account, .inference, bir, d, null);
+    defer tree.deinit(gpa);
     var anc = try Ancestry.build(gpa, &account, .inference, &tree);
     defer anc.deinit(gpa);
     try testing.expect(tree.count() >= 5);
-    try testing.expectEqual(anc.levels, account.laneUsed(.{ .atom = 0, .role = .transfer_settlement }));
+    // The region's source-settlement lane: `base₂` and the ancestor slots.
+    try testing.expectEqual(anc.levels + 1, account.laneUsed(.{ .atom = 0, .role = .transfer_settlement }));
     try testing.expectEqual(@as(u32, 0), account.laneUsed(.{ .atom = 0, .role = .direct_demand_query }));
     var p = d.inst_start.int();
     while (p < d.inst_end.int()) : (p += 1) {

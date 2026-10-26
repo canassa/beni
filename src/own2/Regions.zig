@@ -155,16 +155,23 @@ pub const Tree = struct {
 
     /// `base₂` of every region (§2.5): the root keeps the point order; a
     /// `let` body or frame keeps its offset in its parent; the arms of one
-    /// case (consecutive ids, one parent) tile their span in REVERSE, each
-    /// placed after the arms that start later. Parents precede children by
-    /// id, so one pass; O(arms²) per case for the reversal.
-    fn secondOrder(t: *Tree) void {
+    /// case (consecutive ids in source order, one parent) tile their span in
+    /// REVERSE, each placed after the arms that follow it — one suffix sum
+    /// over the group. Parents precede children by id, so one pass, O(regions),
+    /// each region's `base₂` one record in its source-settlement lane
+    /// (§4.1: "`base₂` per region … charging them to its source settlement
+    /// lane", beside `Ancestry`'s slots).
+    fn secondOrder(t: *Tree, gpa: Allocator, account: *Ids.Account, phase: Ids.Phase) Ids.ChargeError!void {
         const kinds = t.regions.items(.kind);
         const starts = t.regions.items(.start);
         const ends = t.regions.items(.end);
         const parents = t.regions.items(.parent);
         const cases = t.regions.items(.case_inst);
         const base2 = t.regions.items(.base2);
+        for (0..t.regions.len) |i| {
+            const lane: Ids.Charge = .in(account, .{ .atom = @intCast(i), .role = .transfer_settlement, .phase = phase });
+            try lane.reserve(gpa, .region, 1);
+        }
         base2[0] = starts[0];
         var i: usize = 1;
         while (i < t.regions.len) {
@@ -176,14 +183,14 @@ pub const Tree = struct {
             }
             var j = i + 1;
             while (j < t.regions.len and cases[j] == cases[i] and (kinds[j] == .arm or kinds[j] == .virtual_arm)) j += 1;
-            var span_start = starts[i];
-            for (i..j) |k| span_start = @min(span_start, starts[k]);
-            for (i..j) |k| {
-                var later: u32 = 0;
-                for (i..j) |l| if (starts[l] > starts[k]) {
-                    later += ends[l] - starts[l] + 1;
-                };
-                base2[k] = base2[p] + (span_start - starts[p]) + later;
+            // The arms were opened in source order, so the first starts the span.
+            var later: u32 = 0;
+            var k = j;
+            while (k > i) {
+                k -= 1;
+                if (std.debug.runtime_safety and k > i) std.debug.assert(starts[k - 1] < starts[k]);
+                base2[k] = base2[p] + (starts[i] - starts[p]) + later;
+                later += ends[k] - starts[k] + 1;
             }
             i = j;
         }
@@ -191,8 +198,10 @@ pub const Tree = struct {
 };
 
 /// Build the tree of declaration `d`, which must have a body. `prepass`
-/// supplies the virtual arms (`joins`); O(instructions of `d`).
-pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Facts.Prepass) Allocator.Error!Tree {
+/// supplies the virtual arms (`joins`); O(instructions of `d`). The tree
+/// is source input (§4.1); `base₂` is the one charged part, a record per
+/// region in its source-settlement lane under `phase`.
+pub fn build(gpa: Allocator, account: *Ids.Account, phase: Ids.Phase, bir: *const Bir, d: Bir.Decl, prepass: ?*const Facts.Prepass) Ids.ChargeError!Tree {
     var t: Tree = .{ .inst_start = d.inst_start.int() };
     errdefer t.deinit(gpa);
     const n = d.inst_end.int() - d.inst_start.int();
@@ -271,7 +280,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, d: Bir.Decl, prepass: ?*const Fact
         try bir.operands(gpa, f.inst, &ops);
         for (ops.items) |o| try stack.append(gpa, .{ .inst = o, .region = pinned.get(o.int()) orelse region });
     }
-    t.secondOrder();
+    try t.secondOrder(gpa, account, phase);
     // The innermost region of every instruction: a sweep over the laminar
     // ranges, regions sorted by (start, -end).
     const order = try gpa.alloc(u32, t.regions.len);
@@ -346,8 +355,13 @@ test "arms of one case are incompatible, everything else compatible; guards and 
     var l = try Prepass.lowerSource(module_text);
     defer l.deinit();
     const d = l.bir.decls[l.declNamed("g")];
-    var t = try build(testing.allocator, &l.bir, d, null);
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    var t = try build(testing.allocator, &account, .inference, &l.bir, d, null);
     defer t.deinit(testing.allocator);
+    // `base₂` is one record per region in the region's source-settlement lane.
+    try testing.expectEqual(@as(u32, 1), account.laneUsed(.{ .atom = 0, .role = .transfer_settlement }));
+    try testing.expectEqual(@as(u64, t.count()), account.baseline);
     var arms: std.ArrayList(u32) = .empty;
     defer arms.deinit(testing.allocator);
     try branches(&l.bir, d, &arms);
@@ -413,7 +427,9 @@ test "withDefault (map m f) d is two virtual arms of one case" {
     const pp = try Prepass.run(testing.allocator, arena_state.allocator(), .{ .bir = &l.bir, .joins = &targets });
     try testing.expectEqual(@as(usize, 1), pp.joins.len);
     const d = l.bir.decls[l.declNamed("j")];
-    var t = try build(testing.allocator, &l.bir, d, &pp);
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    var t = try build(testing.allocator, &account, .inference, &l.bir, d, &pp);
     defer t.deinit(testing.allocator);
     const j = pp.joins[0];
     // `f`'s body (the lambda's) is in the first virtual arm; `d` in the second.
@@ -444,13 +460,12 @@ fn expectRank2Agrees(t: *const Tree, lo: u32, hi: u32, skip: ?u32) !void {
     }
 }
 
-test "rank₂ agrees with compatible around a virtual case, whose inner call belongs to the f arm" {
-    var l = try Prepass.lowerSource(
-        \\module Main exposing (j)
-        \\
-        \\j mm dd =
-        \\    Maybe.withDefault (Maybe.map mm (λx → x)) dd
-    );
+/// One `withDefault (map m f) d` declaration `j`, lowered alone (the
+/// in-process `qualifiedTarget` matches one occurrence's symbol slots, so
+/// each form gets its own module): the join is found, the inner call is in
+/// the f arm, and `rank₂` agrees with the climb on every pair of points.
+fn checkVirtualCase(source: [:0]const u8, expect_gap: bool) !void {
+    var l = try Prepass.lowerSource(source);
     defer l.deinit();
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
@@ -462,7 +477,9 @@ test "rank₂ agrees with compatible around a virtual case, whose inner call bel
     try testing.expectEqual(@as(usize, 1), pp.joins.len);
     {
         const d = l.bir.decls[l.declNamed("j")];
-        var t = try build(testing.allocator, &l.bir, d, &pp);
+        var account: Ids.Account = .{};
+        defer account.deinit(testing.allocator);
+        var t = try build(testing.allocator, &account, .inference, &l.bir, d, &pp);
         defer t.deinit(testing.allocator);
         const j = pp.joins[0];
         const f_body = l.bir.instData(@fromBackingInt(j.f)).rhs;
@@ -478,7 +495,30 @@ test "rank₂ agrees with compatible around a virtual case, whose inner call bel
         // reference the pipeline form lowers between them.
         const rd = t.get(t.regionOf(j.d));
         const gap: ?u32 = if (rd.start == j.inner + 1) null else j.inner + 1;
-        if (gap) |g| try testing.expectEqual(rd.start, g + 1);
+        try testing.expectEqual(expect_gap, gap != null);
+        if (gap) |g| {
+            try testing.expectEqual(rd.start, g + 1);
+            try testing.expectEqual(Kind.body, t.get(t.regionOf(g)).kind);
+        }
         try expectRank2Agrees(&t, d.inst_start.int(), d.inst_end.int(), gap);
     }
+}
+
+test "rank₂ agrees with compatible around a virtual case, whose inner call belongs to the f arm" {
+    try checkVirtualCase(
+        \\module Main exposing (j)
+        \\
+        \\j mm dd =
+        \\    Maybe.withDefault (Maybe.map mm (λx → x)) dd
+    , false);
+}
+
+test "the pipeline form is the same join: two virtual arms, with the withDefault reference between them as the one gap point" {
+    // `▷` lowers to the same `call`; only the reference's position differs.
+    try checkVirtualCase(
+        \\module Main exposing (j)
+        \\
+        \\j mm dd =
+        \\    mm ▷ Maybe.map (λx → x) ▷ Maybe.withDefault dd
+    , true);
 }
