@@ -1333,15 +1333,21 @@ pub const Table = struct {
     }
 
     /// A member's counterpart for a transition: itself, or for one out of a
-    /// recast's inner `via`, the inner of its own recasts at that place
-    /// (null: it has none, so nothing it stores is there).
+    /// recast's inner `via`, the join of the inners of its own recasts at
+    /// that place (null: it has none, so nothing it stores is there).
     fn side(gpa: Allocator, charge: Charge, v: View, m: NodeId, via: NodeId) Error!?NodeId {
         if (via == .none) return m;
         var inners: std.ArrayList(NodeId) = .empty;
         defer inners.deinit(gpa);
         try innersOf(gpa, charge, v, m, &inners);
-        for (inners.items) |i| if (v.shapes.place(i) == v.shapes.place(via)) return i;
-        return null;
+        // Every inner at that place, joined: a union's recasts' inners are
+        // alternatives at one position, each read (#1114's review).
+        var at: std.ArrayList(NodeId) = .empty;
+        defer at.deinit(gpa);
+        for (inners.items) |i| if (v.shapes.place(i) == v.shapes.place(via)) try at.append(gpa, i);
+        if (at.items.len == 0) return null;
+        if (at.items.len == 1) return at.items[0];
+        return try v.shapes.join(gpa, charge.account, v.places, v.cells, at.items);
     }
 
     /// A sort of `n` items: n·⌈log₂(n + 1)⌉ comparisons, each a record.
@@ -3419,7 +3425,7 @@ test "#1101: a recast whose inner is a union of recasts keeps what is stored bel
     const s2 = try f.cells.site(gpa, &f.account, 4, try f.placeOf(1), .list);
     const elems = try f.leaf(2, &.{});
     const in1 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems));
-    const in2 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{})));
+    const in2 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{try f.cells.site(gpa, &f.account, 9, try f.placeOf(2), .list)})));
     const ra = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in1);
     const rb = try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in2);
     const u = try f.join2(ra, rb);
@@ -3438,4 +3444,37 @@ test "#1101: a recast whose inner is a union of recasts keeps what is stored bel
     try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, j, .none, j, false));
     // What is stored at a nested inner itself is read at the outer recast.
     try testing.expectEqual(k, try f.kappa(try f.setK(.none, in1, k), r, false));
+}
+
+test "#1114 review: a join keeps what is stored below every inner of a recast of a union of recasts" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const v = f.view();
+    // Two inners with DIFFERENT `[*]` nodes under one recast of a union of
+    // recasts; a join with another list projects every inner of the member
+    // at the inners' place, never the first one alone.
+    const ky = try f.conds.excl(gpa, f.charge(), try f.param(0, 1, &.{}));
+    const kx = try f.conds.excl(gpa, f.charge(), try f.param(1, 1, &.{}));
+    const elems1 = try f.leaf(2, &.{});
+    const elems2 = try f.leaf(2, &.{try f.cells.site(gpa, &f.account, 9, try f.placeOf(2), .list)});
+    try testing.expect(elems1 != elems2);
+    const s1 = try f.cells.site(gpa, &f.account, 3, try f.placeOf(1), .list);
+    const s2 = try f.cells.site(gpa, &f.account, 4, try f.placeOf(1), .list);
+    const in1 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems1));
+    const in2 = try f.shapes.node(gpa, &f.account, try f.placeOf(1), try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, elems2));
+    const u = try f.join2(try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in1), try f.shapes.recast(gpa, &f.account, try f.placeOf(2), in2));
+    const r = try f.shapes.recast(gpa, &f.account, try f.placeOf(1), u);
+    const other = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 7, try f.placeOf(1), .list)});
+    const j = try f.join2(r, other);
+    // Stored at `in1[*]` only, then at both.
+    const one = try f.setKPath(.none, &.{Place.Step.elem}, elems1, ky);
+    const both = try f.setKPath(one, &.{Place.Step.elem}, elems2, kx);
+    for ([_]Kappas{ one, both }, [_]CondId{ ky, try f.conds.@"and"(gpa, f.charge(), kx, ky) }) |km, want| {
+        try testing.expectEqual(try f.conds.flat(gpa, f.charge(), want), try f.conds.flat(gpa, f.charge(), try f.conds.deep(gpa, f.charge(), v, km, r, false)));
+        const out = try f.propagate(.none, j, &.{ r, other }, &.{ km, .none }, .alternatives, false);
+        try testing.expectEqual(try f.conds.flat(gpa, f.charge(), want), try f.conds.flat(gpa, f.charge(), try f.conds.deep(gpa, f.charge(), v, out, j, false)));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, km, r, out, j, false));
+    }
 }
