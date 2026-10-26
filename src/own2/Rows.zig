@@ -43,11 +43,11 @@
 //! | `taken` (function parameter) | its supply is `elem(π₁·ρ)`, taken and owned |
 //! | `taken` (result) | `elem(π₁·ρ)`, π₁ `A` at `[*]`, the split recorded with `excl π₁` |
 //! | `builderdone` | parameter 1's node itself |
-//! | `concatenated` | storage π₁ or fresh, `[*]` both inputs', κ lost for list-kind elements, `apart`∧`excl` for records |
+//! | `concatenated` | storage π₁ (`A` at ε) or fresh, `[*]` both inputs', κ lost for list-kind elements, `apart`∧`excl` for records |
 //! | `cellread` + `lent` / `lentoptional` | π₁ `R`, its handle in `refs`; `loan(π₁◆·ρ)`, at the carrier's payload step for the second |
 //! | `cellwrite`/`cellcomplete` | π₁ `R`, `W` at `◆`, in `refs` |
 //! | `consumed cellstored` | `RS`: the value goes behind the barrier |
-//! | `cellupdate`/`cellmodify` | called once, its supply `π₁◆` taken and owned; `cellmodify` returns its `.0` or a loan of the slot |
+//! | `cellupdate`/`cellmodify` | called once, its supply `π₁◆` taken and owned, its answer put back so `need` owned (the whole answer: `cellmodify`'s `.1` alone is #1052's); `cellmodify` returns its `.0` or a loan of the slot |
 //! | `cellnew` / `cellempty` | a fresh handle, `◆ ↦ π₁` or empty |
 //!
 //! The slot relation's versions and the loan lifetimes are S8's (§2.13.7);
@@ -218,7 +218,9 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
             }
             // Supplies are appended to one list; the fun's slice is cut
             // below, once the list is complete.
-            try funs.append(gpa, .{ .j = j, .calls = calls, .seen = !kept });
+            // `cellupdate`/`cellmodify` put the callback's answer back in the slot:
+            // it must be owned there (`need`), as `cellstored` asks of a value.
+            try funs.append(gpa, .{ .j = j, .calls = calls, .seen = !kept, .need = takes_contents });
             try fun_runs.append(gpa, .{ run_start, @intCast(supplies.items.len - run_start) });
             if (kept) {
                 use = try Summary.Table.markUse(env, .none, prm.place, &.{}, .{ .r = true, .e = true }, &.{});
@@ -247,6 +249,8 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         var m: Summary.Marks = .{};
         if (!has(words, .unused)) m.r = true;
         if (has(words, .aliased) or has(words, .returned) or has(words, .stored)) m.a = true;
+        // `concatenated`: the result may be parameter 1's storage, so it is kept.
+        if (i == 0 and has(sig.result_words, .concatenated)) m.a = true;
         if (has(words, .escaped)) m.e = true;
         if (has(words, .consumed)) {
             m.w = true;
@@ -1152,9 +1156,9 @@ test "v2's words: sequence writes and stores, a taken element, a builder's done,
     const done = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = int, .words = bits(&.{.borrowed}) } }, .result = lists, .result_words = bits(&.{.builderdone}) });
     try testing.expectEqualStrings("summary done: π1 RAW; res π1 (words)", try f.text(done, "done"));
     const app = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{.written}) }, .{ .place = lists, .words = bits(&.{.borrowed}) } }, .result = lists, .result_words = bits(&.{.concatenated}) });
-    try testing.expectEqualStrings("summary append: π1 RW, π1[*] A, π2 R, π2[*] A; res [*] π1[*] π2[*]{lost}, fresh1 π1 (words)", try f.text(app, "append"));
+    try testing.expectEqualStrings("summary append: π1 RAW, π1[*] A, π2 R, π2[*] A; res [*] π1[*] π2[*]{lost}, fresh1 π1 (words)", try f.text(app, "append"));
     const appr = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = recs, .words = bits(&.{.written}) }, .{ .place = recs, .words = bits(&.{.borrowed}) } }, .result = recs, .result_words = bits(&.{.concatenated}) });
-    try testing.expectEqualStrings("summary append: π1 RW, π1[*] A, π2 R, π2[*] A; res [*] π1[*] π2[*]{apart [π1[*]] [π2[*]], excl π1[*], excl π2[*]}, fresh1 π1 (words)", try f.text(appr, "append"));
+    try testing.expectEqualStrings("summary append: π1 RAW, π1[*] A, π2 R, π2[*] A; res [*] π1[*] π2[*]{apart [π1[*]] [π2[*]], excl π1[*], excl π2[*]}, fresh1 π1 (words)", try f.text(appr, "append"));
 }
 
 test "v2's words: a cell's make, read, write, update, modify and completion; an optional loan" {
@@ -1180,9 +1184,9 @@ test "v2's words: a cell's make, read, write, update, modify and completion; an 
     const set = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = list, .words = bits(&.{ .consumed, .cellstored }) } }, .result = int });
     try testing.expectEqualStrings("summary set: π1 R, π1◆ W, π2 RS (words)", try f.text(set, "set"));
     const update = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{.cellupdate}), .fn_params = &.{list} } }, .result = int });
-    try testing.expectEqualStrings("summary update: π1 R, π1◆ W, π2 R; π2 calls ≤1, supply 1 π1◆ owned taken (words)", try f.text(update, "update"));
+    try testing.expectEqualStrings("summary update: π1 R, π1◆ W, π2 R; π2 calls ≤1, need owned, supply 1 π1◆ owned taken (words)", try f.text(update, "update"));
     const modify = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{.cellmodify}), .fn_params = &.{list} } }, .result = list });
-    try testing.expectEqualStrings("summary modify: π1 R, π1◆ W, π2 R; res loan(π1◆·λ) ~cb2; π2 calls ≤1, supply 1 π1◆ owned taken (words)", try f.text(modify, "modify"));
+    try testing.expectEqualStrings("summary modify: π1 R, π1◆ W, π2 R; res loan(π1◆·λ) ~cb2; π2 calls ≤1, need owned, supply 1 π1◆ owned taken (words)", try f.text(modify, "modify"));
     const complete = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellcomplete}) }, .{ .place = list, .words = bits(&.{ .consumed, .cellstored }) } }, .result = int });
     try testing.expectEqualStrings("summary complete: π1 R, π1◆ W, π2 RS (words)", try f.text(complete, "complete"));
     const wrong = try fromWords(env, &f.sums, .{ .params = &.{.{ .place = list, .words = bits(&.{.cellread}) }}, .result = list, .result_words = bits(&.{.lent}) });
@@ -1221,4 +1225,48 @@ test "v2's words read the place's kind, never its name: a renamed sequence and c
     try testing.expect(!f.sums.get(get).writes and f.cells.sets.count(f.sums.get(get).refs) == 1);
     const set = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = list, .words = bits(&.{ .consumed, .cellstored }) } }, .result = int });
     try testing.expect(f.sums.get(set).writes and f.sums.get(set).refs == f.sums.get(get).refs);
+}
+
+test "v2's words: stores into one sequence keep one arrivals group, and n stores make one group" {
+    // Two stored parameters: one `apart` group over the base's elements and
+    // both values, not a group per store.
+    {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const env = f.env();
+        const lists = try f.placeOf(2);
+        const list = try f.placeOf(0);
+        const two = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = lists, .words = bits(&.{ .written, .returned }) }, .{ .place = list, .words = bits(&.{.stored}) }, .{ .place = list, .words = bits(&.{.stored}) } }, .result = lists });
+        try testing.expectEqualStrings("summary put2: π1 RAW, π2 RA, π3 RA; res [*] π1[*] π2 π3{apart [π1[*]] [π2] [π3], excl π1[*], excl π2, excl π3}, π1 (words)", try f.text(two, "put2"));
+    }
+    // n stored parameters: still one group (the quadratic form had n). The
+    // row's total cost is `Cond.lower`'s, quadratic in arrivals of distinct
+    // bases (#1054), so it is not asserted here.
+    for ([_]u32{ 8, 64 }) |n| {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const lists = try f.placeOf(2);
+        const list = try f.placeOf(0);
+        const params = try testing.allocator.alloc(Param, n + 1);
+        defer testing.allocator.free(params);
+        params[0] = .{ .place = lists, .words = bits(&.{ .written, .returned }) };
+        for (params[1..]) |*p| p.* = .{ .place = list, .words = bits(&.{.stored}) };
+        const c = try fromWords(f.env(), &f.sums, .{ .params = params, .result = lists });
+        var it = f.shapes.overEntries(f.shapes.get(f.sums.get(c).res).a);
+        const elems = it.next().?.node;
+        const k = try f.conds.kappaOf(testing.allocator, f.env().charge, f.env().view(), f.sums.get(c).kappas, elems, true);
+        var groups: u32 = 0;
+        var members: u32 = 0;
+        var at = f.conds.atoms.iterate(try f.conds.flat(testing.allocator, f.env().charge, k));
+        while (at.next()) |e| {
+            const a = f.conds.get(.from(e.key));
+            if (a.atom != .apart) continue;
+            groups += 1;
+            members = f.cells.sets.count(.from(a.a));
+        }
+        try testing.expectEqual(@as(u32, 1), groups);
+        try testing.expectEqual(n + 1, members);
+    }
 }
