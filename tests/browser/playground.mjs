@@ -365,6 +365,7 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
     check(looks[name] !== undefined, `sample ${name} has a look to check`);
     if (looks[name] !== undefined) await checkLook(page, name, looks[name]);
     if (name === "Ball machine") {
+      check(await page.inFrame(`document.querySelector('.cabinet rect[height="334"][width="112"]') !== null && document.querySelector('.exit-light') !== null && document.querySelector('.trails') !== null`), "the ball machine uses the updated cabinet, exit light and trail drawing");
       for (const [width, height] of [[1280, 800], [390, 900]]) {
         await page.size(width, height);
         const visible = `['#at-once', '#per-batch', '#again'].every((selector) => { const el = document.querySelector(selector); if (!el) return false; const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.width > 0; })`;
