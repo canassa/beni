@@ -533,9 +533,12 @@ test "a constructor's class and a derived method's class" {
 // frame's own group folds, two different labels folding into one emit
 // `within`) — and let S2's own operations do the rest: §2.9's construction
 // rule (`Cond.lower`), the instantiation (`Cond.instantiate`), the joins of
-// the two arms (`Summary.Table.joinRes`), the order (`Cond.leq`) and the
-// class table. Each round's κ at `res[*]` is compared with the table's
-// row, and the fixpoint is the round whose κ the next round reproduces.
+// the two arms (`Cond.join`, `Summary.Table.joinRes`) and the order
+// (`Cond.leq`). Each round's κ (and, for foldlFrom, `res` and the feedback
+// supply) is compared with the table's row, and the fixpoint is the round
+// the next round reproduces. What the tests do NOT check: the uses, calls
+// and supplies of mapHelp's class, which only a walker reads off (S3b);
+// and the fold rule itself, which the test applies as C.2 states it.
 
 /// The derivation's cells and labels: `π₁ a`, `π₄ acc`, `π₆ b` and the
 /// callback's results `cb₅@ℓ` at `res[*]` (mapHelp) or `res` (foldlFrom).
@@ -553,6 +556,8 @@ const Derivation = struct {
     /// the recursive call, before the read-off folds them.
     l_rec_f_star: Ids.LabelId,
     l_rec_rec_star: Ids.LabelId,
+    /// `ι_rec·ι_f`: the callee's unfolded callback label (foldlFrom).
+    l_rec_f: Ids.LabelId,
 
     const i_f: u32 = 10;
     const i_rec: u32 = 11;
@@ -575,6 +580,7 @@ const Derivation = struct {
             .l_rec_star = rec_star,
             .l_rec_f_star = try f.cells.label(gpa, &f.account, i_rec, f_star, false),
             .l_rec_rec_star = try f.cells.label(gpa, &f.account, i_rec, rec_star, false),
+            .l_rec_f = try f.cells.label(gpa, &f.account, i_rec, try f.cells.label(gpa, &f.account, i_f, .none, false), false),
         };
     }
 
@@ -621,7 +627,7 @@ fn foldCell(d: *Derivation, c: CellId, fold_direct: bool) !CellId {
     const cells = &d.f.cells;
     if (cells.origin(c) != .cb) return c;
     const l: Ids.LabelId = .from(cells.get(c).a);
-    if (l == d.l_rec_f_star or l == d.l_rec_rec_star) return d.cb(d.l_rec_star, cells.place(c) != d.lists and fold_direct);
+    if (l == d.l_rec_f_star or l == d.l_rec_rec_star or l == d.l_rec_f) return d.cb(d.l_rec_star, cells.place(c) != d.lists and fold_direct);
     if (l == d.l_f and fold_direct) return d.cb(d.l_f_star, true);
     return c;
 }
@@ -633,7 +639,8 @@ fn foldCell(d: *Derivation, c: CellId, fold_direct: bool) !CellId {
 /// into one label is that label's `within` (§2.10's read-off).
 const Instantiation = struct {
     d: *Derivation,
-    /// π₆[*] ↦ these cells, and their condition at `[*]`.
+    /// The parameter cell the call substitutes (π₆[*] for mapHelp, π₄ for
+    /// foldlFrom) ↦ these cells, and their condition there.
     p6e: CellId,
     p6e_to: []const CellId,
     p6e_kappa: Ids.CondId,
@@ -654,7 +661,7 @@ const Instantiation = struct {
         const cells = &in.d.f.cells;
         if (cells.origin(c) == .cb) {
             const l: Ids.LabelId = .from(cells.get(c).a);
-            const prefixed = if (l == in.d.l_f_star) in.d.l_rec_f_star else if (l == in.d.l_rec_star) in.d.l_rec_rec_star else if (l == in.d.l_f) try in.d.f.cells.label(testing.allocator, &in.d.f.account, Derivation.i_rec, in.d.l_f, false) else l;
+            const prefixed = if (l == in.d.l_f_star) in.d.l_rec_f_star else if (l == in.d.l_rec_star) in.d.l_rec_rec_star else if (l == in.d.l_f) in.d.l_rec_f else l;
             const out = try in.d.f.arena.allocator().alloc(CellId, 1);
             out[0] = try in.d.cb(prefixed, cells.place(c) != in.d.lists);
             return out;
@@ -772,58 +779,18 @@ test "Appendix C.2: mapHelp's κ at res[*] reaches the table's row at round 4 an
     // `lost` (one folded label twice, §2.9): `within` is the read-off's,
     // owed by S3b (C.10).
     try testing.expectEqual(Cond.lost, try f.conds.sep(gpa, env.charge, &f.cells, &f.places, cb_rec_star, cb_rec_star, false, null));
-
-    // The class C.2 reads off, through the class table: π₁ R, π₅ R called
-    // many times with one taken, owned supply per folded label, π₆ RAW at
-    // ε and A at `[*]`, res ε {π₆}, `[*]` {π₆[*], ι_f⋆, ι_rec⋆} with
-    // round 4's κ. It prints in v1's grammar, whose `sep cb5 cb5` is v2's
-    // `sep(ι_f⋆, ι_rec⋆) ∧ within(ι_rec⋆)`.
-    const p1 = try d.param(0, false);
-    const p6 = try d.param(5, false);
-    const l_t = try f.cells.label(gpa, &f.account, Derivation.i_t, .none, false);
-    _ = try f.cells.split(gpa, &f.account, p1, Derivation.i_t, l_t, try d.excl(p1));
-    const elem = try f.cells.refine(gpa, &f.account, .elem, p1, l_t, 0, d.list, .list);
-    const elem_leaf = try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{elem}));
-    const kappa_supply = (try f.conds.kappaSet(gpa, env.charge, .none, elem_leaf, false, try d.excl(p1))).ctx;
-    var use1 = try Summary.Table.markUse(env, .none, d.lists, &.{}, .{ .r = true }, &.{});
-    use1 = try Summary.Table.markUse(env, use1, d.lists, &.{Step.elem}, .{ .r = true }, &.{});
-    const use5 = try Summary.Table.markUse(env, .none, try f.placeOf(3), &.{}, .{ .r = true }, &.{});
-    var use6 = try Summary.Table.markUse(env, .none, d.lists, &.{}, .{ .r = true, .a = true, .w = true }, &.{});
-    use6 = try Summary.Table.markUse(env, use6, d.lists, &.{Step.elem}, .{ .a = true }, &.{});
-    const res_elem = try f.shapes.leaf(gpa, &f.account, d.list, try d.set(&.{ p6e, cb_f_star, cb_rec_star }));
-    const res = try f.shapes.node(gpa, &f.account, d.lists, try d.set(&.{p6}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Step.elem, res_elem));
-    var kappas = (try f.conds.kappaSet(gpa, env.charge, .none, res_elem, true, rounds[4])).ctx;
-    kappas = (try f.conds.kappaSet(gpa, env.charge, kappas, res, false, try d.excl(p6))).ctx;
-    const supplies = [_]Summary.Supply{
-        .{ .j = 4, .k = 0, .node = elem_leaf, .label = d.l_f_star, .owned = true, .taken = true, .kappa = kappa_supply },
-        .{ .j = 4, .k = 0, .node = elem_leaf, .label = d.l_rec_star, .owned = true, .taken = true, .kappa = kappa_supply },
-    };
-    const c = try f.sums.add(env, .{
-        .params = &.{ use1, .none, .none, .none, use5, use6 },
-        .res = res,
-        .kappas = kappas,
-        .funs = &.{.{ .j = 4, .calls = .many, .supplies = &supplies }},
-        .writes = true,
-    });
-    const text = try f.text(c, "mapHelp");
-    // The same facts as v1's row (C.2's **v1** paragraph).
-    for ([_][]const u8{ "π1 R", "π5 R", "π6 RAW", "π6[*] A", "π5 calls many", "owned", "taken{excl π1}", "within" }) |want| {
-        if (std.mem.indexOf(u8, text, want) == null) {
-            std.debug.print("mapHelp's class lacks `{s}`: {s}\n", .{ want, text });
-            return error.TestUnexpectedResult;
-        }
-    }
 }
 
-test "Appendix C.4: foldlFrom's res and κ reach the table's row at round 3 and round 4 reproduces it" {
+test "Appendix C.4: foldlFrom's res, κ and feedback supply reach the table's row at round 3 and round 4 reproduces it" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
     var d = try Derivation.init(&f);
     const gpa = testing.allocator;
     const env = f.env();
-    // foldlFrom's res is at ε: π₄ acc and the callback's answers, which a
-    // direct call not under `[*]` does not fold (C.4, round 2).
+    // foldlFrom's res is at ε: π₄ acc and the callback's answers. A direct
+    // callback call not under `[*]` does not fold; the recursive call's
+    // labels do (C.4, round 2).
     const p4 = try d.param(3, false);
     const cb_f = try d.cb(d.l_f, false);
     const cb_rec_star = try d.cb(d.l_rec_star, false);
@@ -837,38 +804,52 @@ test "Appendix C.4: foldlFrom's res and κ reach the table's row at round 3 and 
             return (try ff.conds.kappaSet(testing.allocator, ff.env().charge, .none, n, false, k)).ctx;
         }
     }.of;
+    // The call at ι_rec hands the callback's answer back as the
+    // accumulator: π₄ ↦ cb₅@ι_f, whose condition there is its own `excl`.
+    var in: Instantiation = .{ .d = &d, .p6e = p4, .p6e_to = &.{cb_f}, .p6e_kappa = try d.excl(cb_f), .fold_direct = false };
+    const interp: Cond.Interp = .{ .ctx = &in, .atom = Instantiation.atom };
     // The else arm: res π₄, κ excl π₄.
     const else_node = try leafOf(&d, &.{p4});
     const else_k = try withK(&f, else_node, try d.excl(p4));
-    // Each round's then arm is the callee's previous res with π₄ ↦ cb₅@ι_f
-    // (the call's own answer handed back as the accumulator) and every
-    // callee label prefixed with ι_rec, then folded: ι_rec·ℓ is ι_rec⋆.
-    const Round = struct { node: NodeId, kappas: Cond.Kappas };
+    const Round = struct { node: NodeId, kappas: Cond.Kappas, feedback: SetId };
     var rounds: [5]Round = undefined;
-    rounds[1] = .{ .node = else_node, .kappas = else_k };
+    // Round 1: A(ι_rec) = ∅; no recursive label has a supply yet.
+    rounds[1] = .{ .node = else_node, .kappas = else_k, .feedback = .none };
     var r: usize = 2;
     while (r <= 4) : (r += 1) {
         const prev = rounds[r - 1];
+        // The then arm: the callee's res mapped through the substitution and
+        // folded, its κ instantiated by `Cond.instantiate`.
         var cells: std.ArrayList(CellId) = .empty;
         defer cells.deinit(gpa);
         var it = f.cells.sets.iterate(f.shapes.cells(prev.node));
-        while (it.next()) |e| {
-            const c: CellId = .from(e.key);
-            try cells.append(gpa, if (c == p4) cb_f else cb_rec_star);
-        }
-        var k = Cond.yes;
-        for (cells.items) |c| k = try f.conds.@"and"(gpa, env.charge, k, try d.excl(c));
+        while (it.next()) |e| for (try in.image(.from(e.key))) |x| try cells.append(gpa, try foldCell(&d, x, false));
         const then_node = try leafOf(&d, cells.items);
-        const joined = try Summary.Table.joinRes(env, else_node, else_k, then_node, try withK(&f, then_node, k));
-        rounds[r] = .{ .node = joined.node, .kappas = joined.kappas };
+        const then_k = try f.conds.instantiate(gpa, env.charge, try env.kappa(prev.kappas, prev.node), interp);
+        const joined = try Summary.Table.joinRes(env, else_node, else_k, then_node, try withK(&f, then_node, then_k));
+        // The feedback supply (§2.11 item 5): what the callback is handed
+        // back as its accumulator at the folded label ι_rec⋆. At ι_rec·ι_f it
+        // is π₄'s image; at ι_rec·ι_rec⋆ the callee's own feedback, mapped and
+        // folded. Both labels fold into ι_rec⋆.
+        var fb = try d.set(in.p6e_to);
+        var fit = f.cells.sets.iterate(prev.feedback);
+        while (fit.next()) |e| for (try in.image(.from(e.key))) |x| {
+            fb = try f.cells.sets.insert(gpa, env.charge, fb, (try foldCell(&d, x, false)).int(), 0);
+        };
+        rounds[r] = .{ .node = joined.node, .kappas = joined.kappas, .feedback = fb };
     }
-    // Round 2: res {π₄, cb₅@ι_f} (approximate), κ excl π₄ ∧ excl(ι_f).
+    // Round 2: res {π₄, cb₅@ι_f} (approximate), κ excl π₄ ∧ excl(ι_f); ι_rec⋆'s
+    // feedback {cb₅@ι_f}.
     try testing.expectEqual(try d.set(&.{ p4, cb_f }), f.shapes.cells(rounds[2].node));
     try testing.expect(try d.same(try env.kappa(rounds[2].kappas, rounds[2].node), try d.all(&.{ try d.excl(p4), try d.excl(cb_f) })));
-    // Round 3: res {π₄, ι_f, ι_rec⋆}, κ ∧ excl(ι_rec⋆).
+    try testing.expectEqual(try d.set(&.{cb_f}), rounds[2].feedback);
+    // Round 3: res {π₄, ι_f, ι_rec⋆}, κ ∧ excl(ι_rec⋆); the feedback supply
+    // {cb₅@ι_f, cb₅@ι_rec⋆}, C.4's supply 2.
     try testing.expectEqual(try d.set(&.{ p4, cb_f, cb_rec_star }), f.shapes.cells(rounds[3].node));
     try testing.expect(try d.same(try env.kappa(rounds[3].kappas, rounds[3].node), try d.all(&.{ try d.excl(p4), try d.excl(cb_f), try d.excl(cb_rec_star) })));
+    try testing.expectEqual(try d.set(&.{ cb_f, cb_rec_star }), rounds[3].feedback);
     // Round 4: nothing new, the fixpoint.
     try testing.expectEqual(rounds[3].node, rounds[4].node);
     try testing.expect(try d.same(try env.kappa(rounds[4].kappas, rounds[4].node), try env.kappa(rounds[3].kappas, rounds[3].node)));
+    try testing.expectEqual(rounds[3].feedback, rounds[4].feedback);
 }
