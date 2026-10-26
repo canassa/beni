@@ -458,7 +458,10 @@ pub const Table = struct {
             try done.put(gpa, n, {});
             _ = stack.pop();
         }
-        return memo.get(root).?;
+        // At a summary position, the leaf rule over the union's own cells (its
+        // sides' united): arrivals in different sides are compared too. Once.
+        if (!at_summary) return memo.get(root).?;
+        return t.@"and"(gpa, charge, memo.get(root).?, try t.derivedCells(gpa, charge, v, v.shapes.cells(root), true));
     }
 
     /// κ(n) in `ctx`, derived by the header's rules when unset; `at_summary`
@@ -469,7 +472,7 @@ pub const Table = struct {
         const stored = t.kappaGet(ctx, n, at_summary);
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
-            .leaf => try t.derivedLeaf(gpa, charge, v, n, at_summary),
+            .leaf => try t.derivedCells(gpa, charge, v, v.shapes.cells(n), at_summary),
             // A built node's κ is the walk's (O13): `lost` until set.
             .node, .delta => return stored orelse lost,
             .recast => if (holdsBelow(v.places, v.shapes.place(n))) lost else yes,
@@ -478,11 +481,10 @@ pub const Table = struct {
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
     }
 
-    /// A leaf's κ from its cells alone at the read's position (header's
-    /// rules), charged per read, never memoised.
-    fn derivedLeaf(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, at_summary: bool) Error!CondId {
+    /// A leaf's κ from its cells at the read's position (header), charged per read.
+    fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool) Error!CondId {
         if (!at_summary) {
-            var it = v.cells.sets.iterate(v.shapes.cells(n));
+            var it = v.cells.sets.iterate(cells);
             while (it.next()) |e| {
                 try charge.reserve(gpa, .inspection, 1);
                 if (e.value == 1 or v.cells.origin(.from(e.key)) == .top) return lost;
@@ -491,13 +493,13 @@ pub const Table = struct {
         }
         var items: std.ArrayList(Item) = .empty;
         defer items.deinit(gpa);
-        var it = v.cells.sets.iterate(v.shapes.cells(n));
+        var it = v.cells.sets.iterate(cells);
         while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
-        const k = try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(n));
+        const k = try t.summaryExcl(gpa, charge, v.cells, v.places, cells);
         return t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, null));
     }
 
-    /// Whether anything below place `p` may hold an object.
+    /// Whether anything below `p` may hold an object.
     fn holdsBelow(places: *const Cell.Places, p: Ids.PlaceId) bool {
         for (places.steps(p).children) |c| if (!places.holds(c).isEmpty()) return true;
         return false;
@@ -663,8 +665,7 @@ pub const Table = struct {
         while (it.next()) |e| try stack.append(gpa, .{ .node = e.node, .summary = summary or e.step.kind == .elem or e.step.kind == .level });
     }
 
-    /// At a summary position: `excl c` for every arrival of a cell set that
-    /// stands for many positions (`isFolded`), `lost` for `⊤`/approximate.
+    /// At a summary position: `excl c` per arrival standing for many positions.
     fn summaryExcl(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
         var acc: CondId = yes;
         var it = cellt.sets.iterate(cells);
@@ -1100,6 +1101,11 @@ const Fixture = struct {
         return f.conds.apart(testing.allocator, f.charge(), &f.cells, &f.places, items.items, null);
     }
 
+    fn firstCell(f: *Fixture, s: SetId) CellId {
+        var it = f.cells.sets.iterate(s);
+        return .from(it.next().?.key);
+    }
+
     fn kappa(f: *Fixture, ctx: Kappas, n: NodeId, at_summary: bool) !CondId {
         return f.conds.kappaOf(testing.allocator, f.charge(), f.view(), ctx, n, at_summary);
     }
@@ -1367,7 +1373,7 @@ test "κ maps are functional and monotone; derived defaults; a union's κ is nev
     const m3 = try f.propagate(.none, l1, &.{ l1, l1 }, &.{ .none, .none }, .together, true);
     try testing.expectEqual(shared, try f.kappa(m3, l1, true));
     try testing.expectEqual(shared, try f.kappa(m3, u, true));
-    try testing.expectEqual(yes, try f.kappa(.none, u, true));
+    try testing.expectEqual(AtomKind.apart, t.get(try f.kappa(.none, u, true)).atom); // two arrivals across the sides
     try testing.expectEqual(yes, try f.kappa(m3, u, false)); // the plain position is another class
     // deep: the node's κ plus `excl` of every arrival inside, keyed by the
     // map, so a changed map is a new answer.
@@ -1862,4 +1868,40 @@ test "red twin CallbackFieldPositionsBranch: a stored summary κ never weakens t
     // A stored constraint is kept: `shared` stored at the position stays.
     const ms = try f.setKAt(.none, w, true, shared);
     try testing.expectEqual(shared, try f.kappa(ms, w, true));
+}
+
+test "red twin CallbackFieldPositionsUnion: an unstored union at a summary position compares cells across sides" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    var t = &f.conds;
+    // `[ { a = (g 1).a }, { a = (g 2).a } ]`: two records, `[*].a` is the
+    // union of the one-cell leaves `{cb@ι₁·.a}` and `{cb@ι₂·.a}` — a union
+    // the walk never stored (as `Shape.map` makes at an instantiation).
+    const rec = try f.placeOf(0);
+    const fa = try Place.Step.field(&f.account, 10);
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    const l2 = try f.cells.label(gpa, &f.account, 41, .none, false);
+    const root = try f.places.rootPath(gpa, rec);
+    const g1 = try f.cells.symbolic(gpa, &f.account, &f.places, .cb, l1.int(), root, 0);
+    const g2 = try f.cells.symbolic(gpa, &f.account, &f.places, .cb, l2.int(), root, 0);
+    const a1 = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, try f.leaf(0, &.{g1}), fa)).?;
+    const a2 = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, try f.leaf(0, &.{g2}), fa)).?;
+    const s1 = try f.cells.result(gpa, &f.account, .result, .none, 1, rec, .record);
+    const s2 = try f.cells.result(gpa, &f.account, .result, .none, 2, rec, .record);
+    const r1 = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, a1));
+    const r2 = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s2}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, a2));
+    const elem = try f.join2(r1, r2);
+    try testing.expectEqual(Shape.Kind.@"union", f.shapes.kind(elem));
+    const ea = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, elem, fa)).?;
+    try testing.expectEqual(Shape.Kind.@"union", f.shapes.kind(ea));
+    // Read from an empty map at the summary position: `apart` over the two
+    // sides' cells, as the one leaf `{cb@ι₁·.a, cb@ι₂·.a}` derives; at a
+    // plain path `yes`.
+    const ka = try f.kappa(.none, ea, true);
+    try testing.expectEqual(AtomKind.apart, t.get(ka).atom);
+    try testing.expectEqual(ka, try f.kappa(.none, try f.leaf(1, &.{ f.firstCell(f.shapes.cells(a1)), f.firstCell(f.shapes.cells(a2)) }), true));
+    try testing.expectEqual(yes, try f.kappa(.none, ea, false));
+    try testing.expect((try t.rely(gpa, f.charge(), ka)) == .xreq);
 }
