@@ -138,10 +138,10 @@ Not writes (they read their operands):
 - R-3.5 R-3.1 holds across modules, cached builds, the checked core, function values, recursion, polymorphism,
   casts through `Js.Value`, and every platform.
 - R-3.6 The guarantee assumes only the trusted surface (R-5.10.7): asserted rows, words, `entry` obligations
-  P1–P4 and P7, the runtimes' forwarding of sends, the schema engine's obligation, the pinned callers of a
+  P1–P4 and P7, the runtimes' forwarding of sends, the schema engine's obligation, the pinned readers and forwarders of a
   `taken` result (read once per index in one direction, no competing read while materialised), and P-sync
   (no synchronous re-entry observing a Ref loan/write; suspension is checked separately).
-  [O 2026-10-25] The pinning/gate discipline of R-5.10.7 covers these callers and each platform's P-sync body. (oc §20.9, §23.9, §24.6, §30.10)
+  [O 2026-10-25] The pinning/gate discipline of R-5.10.7 covers these readers/forwarders and each platform's P-sync body. (oc §20.9, §23.9, §24.6, §30.10)
 - R-3.7 No bound of the analysis ever produces an acceptance (R-7.3–R-7.5).
 
 ## 4. Precision: values, liveness and sharing
@@ -771,16 +771,23 @@ Not writes (they read their operands):
   [O 2026-10-25] The new sender/sequence/cell/failure and slot-protocol words use their separately validated
   type/constructor/parameter/result placements in ownership-v2.md §2.13.5–§2.13.6; these are explicit exceptions
   to the old signature-only placement list, never permission for arbitrary nested words.
+  [O 2026-10-26] Result `elementof`, `copyof`, `prepended` and callback-parameter `stored` select exactly
+  the result/retention paths specified in ownership-v2.md §2.13.6. Cellmodify's stored result is .1 only;
+  an ordinary sequence store propagates loans, a store into ◆ requires no loans. Invalid kinds, destinations
+  or companion words are errors; no approximate word substitutes for the declared row.
 - R-5.10.7 The trusted surface is everything the guarantee assumes. Each worded or asserted declaration has a pinning
   fixture, a report change for each unsafe-direction flip, and a pinned hash of the source it was justified against
-  (beni body, or sibling export and its same-file helpers); an unlisted declaration, missing fixture, flip with no
+  (beni body, or sibling export, and the helper bodies on which the asserted contract relies); an unlisted declaration, missing fixture, flip with no
   effect or changed body fails the gates. The schema engine is trusted: each decoding worker builds what it hands
   `forward` from fresh values, and one reusing a list across runs declares it. (oc §24.6, §30.10;
   o/trusted-surface.txt, o/word-bodies.txt)
-  [O 2026-10-25] Include every caller of a `taken`-result primitive (its single-direction, once-per-index
-  obligation while a materialisation is in force) and each platform runtime's P-sync obligation
-  (ownership-v2.md §2.13.6–§2.13.7). Pin their bodies and tests by the same mechanism; an added unlisted
-  caller or changed body fails the gate. They are explicit assumptions, not inferred proofs.
+  [O 2026-10-25; O 2026-10-26] Include bodies that read a `taken` result and forwarders whose result is
+  that taken value, transitively across modules/packages, not every caller of a fold. Their obligation is
+  single-direction, once-per-index reading with no competing read while materialised. Pin each platform's
+  P-sync body too. Pin identities include the package, and inlined primitives pin the codegen that actually
+  executes them. The helper closure crosses module/package boundaries up to independently justified pinned
+  contracts/foreign leaves; Task's scheduler and Deferred's Task helpers are no exemption (#1061, S8).
+  A new unlisted reader/forwarder or changed body fails the gate; these are assumptions, not inferred proofs.
 - R-5.10.8 Asserted, not inferred: the `List` array primitives, `traverseAt`, `List.focus`, `Dict.focus` and §4.10's
   `Dict` rows, the sequence/cell/failure metadata and Ref/Deferred/Builder slot-protocol rows
   (ownership-v2.md §2.13.6, pinned under R-5.10.7), `Send.to`'s consumed word [O 2026-10-25; R-5.9.9], the entry protocols, schema runs (§5.11).

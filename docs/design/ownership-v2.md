@@ -691,6 +691,15 @@ or a level above is held, and a deep demand on an on-cycle container while a lev
 the one used first, ties to the earlier binding. The result of every writer, construction, append and update **is
 its base's object** (R-0.1, R-4.10.1): a `delta` or the base's node, so the next holder is the new version.
 
+**Record lowering boundary (S5).** A write authorization is tied to a settled demand, the receiver's
+value version, written fields and phase. A hoist names the old value version, field/constructor path and
+placement dominating the read but after its binding. Branch/loop compatibility and pending operands are
+part of that proof, not reconstructed by the emitter from source names. `Hoists` publishes an immutable,
+versioned channel only for a clean checked module; a refused, pending or exhausted module publishes no
+write authorization. Test mutation through a stale field holder after a join, closure capture before the
+write, and hoists across constructor projections. `--ownership-records-lost` changes record facts only and
+must not leak into list acceptance or a cache built without that mode.
+
 ### 2.9 Conditions: exclusive contents
 
 A value interpretation is `(shape root, κ snapshot)`. Its **condition at path q**, κ(v,q), says that the
@@ -702,15 +711,15 @@ and `sep`/holder checks; a fresh record with two fields containing `x` still con
 
 **No shape node owns a mutable fact**, neither a condition nor a use label (`mark` cells, §2.2). Nodes are
 interned structurally, so one node stands in several values, rounds and classes; a fact keyed by the node
-alone would leak between them. A κ snapshot is therefore immutable and belongs to **one value**: a value
+alone would leak between them. A κ snapshot is therefore immutable and is selected by **each value interpretation**: a value
 interpretation is `(shape root, κ snapshot)`. The snapshot travels with its value through bindings, operands,
 projections, results and supplies, and is joined only where values join: a branch or fixpoint join, a union, and
-a construction, which combines its children's snapshots and joins them where they bind one key. It is never
-shared by the other values of a frame or class. So a dead `a = [ r, r ]` stores `shared` for the leaf `{site r}`
+a construction, which combines its children's snapshots and joins them where they bind one key. It is never mutated through another value. Values may share the same immutable map root;
+that sharing is preserved when the values cross a block boundary (§3.6). So a dead `a = [ r, r ]` stores `shared` for the leaf `{site r}`
 in `a`'s snapshot only; a live `b = [ r ]` reads its own snapshot, `yes`, and a write into `b`'s element is
 accepted, as v1 accepts it (`DeadDuplicateLive`, Appendix B). A class is per value already: its κ is `res`'s,
-with one root per supply and use value. A frame holds `value → KappaId`, one persistent hash-consed root per
-value, so a store costs one map node.
+with one root reference per supply; use shapes carry marks, not value κ. A frame holds `value → KappaId`, one persistent hash-consed root reference per
+value. Updating a binding path-copies the affected trie/map nodes; it does not mutate other references.
 
 **Within a value the key is `(NodeId, PathId)`**: the node and the canonical path at which the value reaches it,
 **relative to the value's own root**, reusing the canonical path nodes `Liveness` ranks. Two positions of one value
@@ -735,11 +744,14 @@ It is one map per value, with the coarser key, not yet the trie. The read rule b
 sound. S3a gives each frame value its own root (`value → KappaId`) and moves the key to the prefix-relative
 `(NodeId, PathId)` trie above; S3b adds the relabelling and the graft.
 
-**A read of κ(v, q) is the join of v's stored condition for (n, q) with the condition derived at the read's
-position from n's cells**: `apart` over its arrivals, `excl` for an arrival that stands for many positions, `yes`
-at a plain path, `lost` for `⊤` or an approximate cell. A stored condition can only add constraints; it never
-replaces or weakens the derivation, so no key granularity can make a read unsound, and the derivation is charged
-per read and never memoised. A union reads as the join of its sides' reads and of what v stored for the union
+**A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
+construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
+A leaf joins its stored condition with the condition derived at that position: `apart` over its arrivals,
+`excl` for an arrival standing for many positions, `yes` at a plain path, `lost` for `⊤` or an approximate
+cell. A recast derives `lost` wherever the reinterpreted place holds objects below it, otherwise `yes`. For leaves/recasts a stored condition can only add constraints; it never weakens the derivation.
+Construction certificates must themselves obey the construction rule. A missing entry is thus not uniformly
+`yes`: treating it as such changes the meaning of built nodes. Derivation is charged per read; any cache of
+a completed read must key the complete immutable interpretation, position and traversal context. A union reads as the join of its sides' reads and of what v stored for the union
 itself; at a summary position it also derives the leaf rule over its united cell set (`CallbackFieldPositionsUnion`,
 Appendix B). A positional collection derives `apart` over the multiset of its sides' arrivals instead: wherever it
 sits, its read is one at a summary position, and each cell held by both sides of a positions node in the DAG counts
@@ -748,6 +760,20 @@ once more (below). The key is a precision split only: a constraint stored at one
 snapshot. A join returns a new snapshot and changes neither operand. S3b adds a substitution's invocation and
 supply roots to the snapshot's key, with `Shape.map`'s correspondence. Split conditions refer to settled
 snapshots; a fixpoint weakening creates a new version and reschedules its dependants.
+
+**The observable-position contract.** A stored constraint is observable wherever projection can reach it,
+including under leaves/recasts and at empty projections. Propagation, comparison, substitution and encoding
+all preserve this same frontier. `κ_a ⊑ κ_b` means inclusion at **every** such position; comparing the roots
+alone, or stopping because the left shape is a leaf, is insufficient. A join reads each operand under its
+own snapshot and retains every reachable constraint in the new interpretation. Extra stored constraints at
+empty shapes still matter to the read rule. A finite worklist over `(node, position class, interpretation)`
+and reachable map/trie entries closes the frontier; recursive paths use canonical place backreferences,
+not path-string enumeration. A trie transition must migrate all of these readers and the codec together.
+
+Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
+exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
+at the same node remain separate states; revisiting a completed identical state reuses its answer.
+This is a required repair to S2's propagation/comparison before S3b relies on it (#1063, #1064).
 
 **Unions and positional collections.** A `union` node means **alternatives** (§2.3): a control-flow or fixpoint
 join, where one run takes one side, so a cell repeated across sides is one position. A `positions` node is a
@@ -846,7 +872,8 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 | `xreq` | the atoms the body relied on |
 | `fun(j)` | `calls ∈ {0, ≤1, many}`; `supply(λ, k)`: per callback label λ and argument index k, the node handed as πⱼ's `k`th argument at λ, with `owned`, `taken` and κ; `need`; `seen`; `keeps`: the keep edges of §2.11 |
 | `classes` | **a summary-local class table**: every `closure` node in `res`, `supply` or `use` (a lambda returned, a lambda handed on, a closure in a record) carries a `ClassId` into it, normalised by Block for publication (R-5.4.8, R-5.4.9, R-5.5.9); the fixpoint joins classes pointwise |
-| `slots` | versioned cell-slot reads/writes and callback write-back transformations (§2.13.7), preserved on substitution and joins |
+| `slots` | function-typed parameter ports, including a list of callbacks, keyed by parameter and path; separate from mutable cell slots |
+| `effects` | selected callback-result write-backs (§2.13.6) and the ordered versioned cell-slot transformations (§2.13.7), preserved by substitution, joins and blocks |
 | `refs` | stable `(handle origin, ◆)` slot identities the body may operate on, independent of currently stored value; top for unknown calls (directly or through a callee), for §2.13.7's re-entry rule |
 | `writes` | one bit: the body or a callee has `W`/`S` on a parameter path, a capture, a `shared` cell or lets one escape — a write of something that *arrived*; a `Builder`'s fresh stores do not set it (R-5.13.1) |
 | `once` | per function-typed result place; exhaustion is a terminal error, never a published class |
@@ -975,6 +1002,23 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    instantiated the same way. Crossing → `∅`.
 7. **Conditions**: κ(res) instantiated; `S.xreq` discharged on the arguments, reported on that call's line (R-4.6.6).
 
+**Instantiation boundary (S3b).** Instantiate a **value interpretation**, never a shape followed by
+an unrelated κ copy. The correspondence hook maps source semantic positions to destination positions
+under one immutable substitution/supply context, including projected leaves, empty nodes and knot
+backreferences. It is not merely a NodeId→NodeId map. For each source read, substitute its atoms and retain
+that obligation at the mapped position; derive the destination read there too. Grafted arguments keep their
+original origins, captures, loan regions and snapshot subtree. Two template uses under different supplies
+cannot share an interpretation memo; repeated uses under the same immutable inputs can. An identity map
+preserves every observable read. Callback-result labels are freshened only by invocation; captured cells
+are never freshened. Map cyclic nodes with a transaction-local explicit worklist, tie once and publish the
+correspondence only after success; nested substitutions cannot reset an outer call's memo.
+
+`Groups` owns the resolver and versioned dependencies; `Calls` consumes its passed-down interface, never
+starts an uncontrolled recursive `ensureClass`. A changed result, κ, write-back, keep or `refs` fact wakes
+its exact consumers. Use exact context keys and compare the full summary, not local normal-form words.
+Before a group is accepted, joins must be upper bounds at every observable position (#1063), and validation
+must check all equations and pending obligations against the same settled generation (§2.12).
+
 **Calling a function parameter** πⱼ in the body (the rule v1 lacked where #982, #1000, #1001 lived): the result is
 the leaf `{cb j@ι·ε}` (ι the call instruction, §2.2); each argument's value `Nₖ` is recorded as a supply `(j, ι, k, Nₖ, κₖ, p)`, its cells used at `ε`. The retained supply key includes the call's label and argument index;
 point p locates diagnostics only, and does not identify calls across wrappers.
@@ -992,6 +1036,16 @@ so the kept path `[*]` and the written `r` alias through `reach`; `p/RecordInner
 `i = o.inner` is a demand whose cell is `param o·.inner`, a trie descendant of the supplied `param o·ε`); a known
 non-writer discharges a keep whose only possible writer is another function parameter (R-5.2.4); a record written
 *before* it is handed and returned beside the kept answer records no edge (`p/RecordWriteBeforeKeep`, R-4.8.11).
+
+**Carried-class boundary (S4).** Class table identity is `(code, canonical port, preserved ordinary
+context)`; a table index or matching array length is not identity. Join alternatives by that key, including
+ones appearing in only one branch, then solve recursive class pairs by a worklist with backreferences.
+`Summary.join`'s current equal-length positional nested arrays are S2 scaffolding, not an implementation
+of this rule. Read-off produces `within` only from a recorded pair of distinct pre-fold labels; neither
+`Cond.sep(c,c)` nor an imported self atom can invent that provenance. Serialize the pair's folded proof
+obligation and traversal certificate together. Whole-graph coinductive equality is never evidence of
+freshness. All pending proof requests carry immutable input generations; failure cannot leave a proved
+answer in a shared memo.
 
 **Once use is affine by closure identity (R-5.4.2).** The closure allocation/result occurrence, not its local
 name, owns a consumption token. Copying/aliasing/projecting it preserves that token. A direct call consumes it;
@@ -1103,7 +1157,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    a tuple's and constructor's cells are `∅`): then `{site ι}` alone (R-4.4.3, `p/PrependFreshRecord`); a scalar, parameter,
    capture, taken element, top-level value or callback result keeps the base's cells (`call (a)`). Anything after
    the first spread is a `construction` demand with base = the first spread's operand, each stored item lowering κ,
-   a spread literal inside another's last spread its own write. `[ …xs ]` is `xs`; a literal is a fresh `site`
+   a spread literal inside another's last spread its own write. `[ …xs ]` is `xs` and records no spread fact (including nested single spreads);
+   every recorded root is a distinct call made by that literal. A literal is a fresh `site`
    (R-4.10.5); `++` chains per R-2.2. The emitted prepend writes no existing array (R-4.4.4): the lowering's
    obligation, asserted under runtime safety.
 3. **Patterns and views** (R-2.14, R-4.5): `[ x, …rest ]` on `n`: `x ↦ elem(c·ι)` per container cell
@@ -1143,10 +1198,15 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    form; `src/own/` is never edited. Until switch-over, existing platforms/corpus keep `Send msg = msg → ⊤`
    and `send message`, so the whole-corpus v1 diff baseline is unchanged. A v2-only contextual type word
    marks the protocol source: `pub sender type alias Send msg = msg → ⊤` in core/platform packages. It is
-   validated as a one-argument function alias returning ⊤. The frontend publishes a separate ownership-role
-   column (not a new tag in v1's row enum), carrying `sender` on the original alias-use ports before expansion;
+   validated as a one-argument function alias returning ⊤. The frontend preserves `sender` type metadata and original alias-use terms before expansion
+   (not a new tag in v1's row enum); S7 resolves the protocol role from those terms;
    type equivalence and emitted runtime code stay unchanged. S2b's compatibility test requires the old v1
    inputs/outputs byte-identical, with no adapter in `src/own/`.
+
+   The S7 adapter reads unexpanded BIR alias references and interface alias terms before type erasure
+   (#1056), then publishes a v2 callable-port role on its protocol row. If a frontend path cannot retain
+   that provenance, add the role column there; never recover it from `msg → ⊤` or a type name. Cold/warm and
+   cross-package tests must include wrappers annotated with the expanded function type.
 
    Entry/platform protocol rows use those marked ports to supply a known callable class with `S` on its sole
    argument, crossing result and no retained payload. The authority is the pinned runtime dispatch protocol,
@@ -1164,27 +1224,34 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    nominal Send. R-5.9.9 and the rule above describe the final API; this temporary alias provenance is an
    implementation bridge inside v2, removed with the switch-over.
 6. **Foreign words and rows as data** (R-5.10): `Rows.fromWords` builds a class from oc §24.2's words, defaults
-   pessimistic (R-5.10.3). **The initial four words, followed by the type/value selectors below, are added** so that every row R-5.10.8 asserts is written beside its type
+   pessimistic (R-5.10.3). **The words and selectors below** express every row R-5.10.8 asserts beside its type
    and `Rows.zig` names no declaration: parameter `written` (`W` at `ε` only: a storage write, R-4.10.9);
-   parameter `stored` (retained at the result's `[*]`, taking part in §2.9's construction rule: `Dict.insert`'s
-   value, `put`'s); `taken`, on a function parameter (the supply is a materialised element of the first container
+   parameter `stored` (a value retained at the result's `[*]`, or a callback whose selected result is
+   stored as specified below; both take part in §2.9's construction rule); `taken`, on a function parameter (the supply is a materialised element of the first container
    argument: `List.focus`, `Dict.focus`, `Dict.update`) **and on a result** (`foreign pure traverseAt : List a, Int →
    taken a`: the result is a materialised element of parameter 1, in force for the rest of the frame); result
    `lent` (a loan of parameter 1's `◆`: `Ref.get`). A `taken` element is owned iff the container is exclusive, owned, and
    has no holder of the *element* outside the call — a holder of the container holds `others`, not the taken
    element, while the split is in force (§2.2), so `mapHelp`'s pending `a` does not borrow it; and an owned item
    does not make an accumulator outliving the call owned (R-5.3.4).
-   **The index obligation**: a body that calls a `taken`-result primitive reads the container only through it, once
-   per index, moving one way (`core/List.beni:516-521`); every such body (`mapHelp`, `foldlFrom`, …) is listed with
-   a body hash in `o/word-bodies.txt` and a gate fails when one is added unlisted or changes — R-5.10.7's mechanism
-   extended to the callers of a `taken` result; these pinned bodies *are* part of the trusted surface, and R-3.6 and
-   R-5.10.7 name them and P-sync (§2.13.7) [O 2026-10-25]. Derived `eq`/`compare` have no body and
-   compose the component eq/compare classes (§2.13.13), including their effects. Every worded declaration keeps its pinning fixture and flip report; a wordless
-   `foreign` lets every argument escape and answers `⊤` unless crossing (R-5.10.1); words erase only from runtime representation; checking metadata remains in interfaces
-   (R-5.10.5); `misplaced_ownership_word` gains the new words' placement rules (`taken` only on a function parameter
-   or a result; `lent` only on a result; `written`/`stored` only on parameters). `Js.maySuspend f`: `f` `unused`
-   (R-5.12.5). `Log.annotate`/`span`/`withSink`'s `work` is `once` (R-5.12.2, `p/LogAnnotateUpdate`);
-   `Task.keepLogContext` `returned` (#774).
+   **The index obligation and pins [O 2026-10-26].** A body that reads a `taken` result reads that
+   container only through the certified traversal, once per index in one direction. Pin the primitive,
+   every body reading its result, and every forwarder of that result, across modules and packages. Find
+   forwarders as a least fixpoint over result flow through calls, aliases, lets, lambdas/partial applications
+   and case arms, including resolved dispatch. A caller of a completed fold does not owe a pin merely
+   because the fold reads taken elements. The gate keys pins by package plus declaration, not `Module.name`.
+   Pin the implementation that executes: codegen-inlined primitives include the `Operator` dispatch and
+   `js/Lower` lowering regions, not only their unused sibling exports. Every row retains its pinning fixture
+   and unsafe-direction flip report (R-5.10.7). Helpers on which an asserted body relies are followed across
+   module/package boundaries to a separately justified pinned contract; an unworded beni helper is not a
+   trust boundary. Foreign siblings and P-sync remain explicit trusted leaves. This closes Task/Deferred's
+   helper gap (#1061) in S8 without editing v1. Derived eq/compare compose component classes (§2.13.13).
+   Wordless `foreign` is pessimistic (R-5.10.1). Words erase only from runtime representation; checked metadata
+   survives interfaces. `misplaced_ownership_word` validates the placement/companions below; the S3a signature
+   adapter additionally rejects a resolved type that lacks the required kind, rather than silently treating
+   an invalid asserted word as absent (#1056).
+   `Js.maySuspend f` gives `f` `unused`; Log's work is `once`; `Task.keepLogContext` is `returned`. Their
+   v2 wording and Dict's rows land at S8 (#1053), with v1's input columns and verdicts unchanged.
    **Type metadata, published as data (S2b).** These are contextual ownership words, permitted only in core/
    platform declarations, parsed/lowered with `misplaced_ownership_word`, erased from runtime types but retained
    in typed interfaces, checked core and ownership blocks. `Rows`/`Place` switch on enum metadata, never a
@@ -1216,17 +1283,39 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 
    | Word / placement | Exact row semantics; declarations carrying it |
    |---|---|
+   | result `elementof` | Parameter 1 is a sequence with element type equal to the result; result `π₁[*]`, π₁ `R` at ε and `A` at `[*]`. No split, no `taken`, no ownership transfer. `at`/`unsafeGet`: `borrowed List a, borrowed Int → elementof a`. The root `borrowed` does not suppress the word's element `A`. Additional parameters have explicit words. |
+   | result `copyof` | Parameter 1 and result are sequences with the same element type. Result storage fresh, `[*] = π₁[*]`; π₁ `R`, `[*]` `A`. List-kind descendant κ is `lost`; record-kind descendant κ is the corresponding `excl π₁` path, not unconditional `yes`; crossing paths are `yes`. Copying storage removes only that root's loan tag. `copy`, `sliceOf`, pinned `sortWith` (its comparator additionally `many`, borrowed supplies). Companion π₁ `borrowed`; reject `fresh`, `exclusive`, `returned` or another result selector beside it. |
+   | result `prepended` | Exactly two parameters: `stored a, returned List a → prepended List a`. Result storage `π₂` or fresh (re-cons), π₂ `RA`, π₁ `RA`; contents are the positional collection of π₁ and π₂[*], not a branch union. At each path κ is `excl π₁ ∧ excl π₂[*] ∧ sep(π₁,π₂[*])`, with the construction's cross-path comparisons. No existing storage write is demanded: prepend allocates or reconstructs a view. Surface prepend's fresh-front refinement is §2.13.2, never a name test for `cons`. |
+   | callback parameter `stored` | Store its **result**, not the closure. Without a cell selector, require `once taken (a → a)` and parameter 1 as the sole `written returned` sequence destination, with element type a; replace its selected element and join the returned value into `res[*]`, deriving κ with the remainder. `focus` carries `once taken stored`. With `cellupdate`, store result ε at π₁◆; with `cellmodify`, store only result .1 at π₁◆ and return .0 under the loan/disjointness rule below. These selectors require `stored sync` and imply once/taken/owned; reject duplicate/conflicting invocation or destination words. |
    | result `cellnew` | Result is a fresh `cell` handle, ◆ initially parameter 1; require parameter 1 `consumed`. `Ref.make : consumed a → cellnew Ref a`. Inspect the payload for loans **before** installing the barrier. |
    | result `cellempty` | Fresh `cell` handle with initially empty ◆, no payload; unit argument `unused`. `Deferred.make`. Empty is an initial state, not the result of later reads. |
    | parameter `cellread` + result `lent` | First parameter must be `cell`; record its stable slot in `refs`, no write, return a loan of the current ◆ at the resolved result payload path. `Ref.get`, `Deferred.wait`; the latter may suspend and the loan is born at return. |
    | parameter `cellread` + result `lentoptional` | Same, but result is a resolved Maybe-like two-constructor carrier (one nullary, one unary matching contents); empty alternative or loan at its unary payload path. `Deferred.poll`. No name test; validate the shape and publish the path. |
    | parameter `cellread` + crossing result | Read only, no loan in the result; `Deferred.isDone`. |
    | parameter 1 `cellwrite`, parameter 2 `consumed cellstored` | Update parameter 1's ◆ with parameter 2; shallow write of handle is **not** this operation. `Ref.set`. The payload has a deep Known/no-loan demand before the barrier store, then ownership/holder checks. |
-   | parameter 1 `cellwrite`, parameter 2 `cellupdate sync` | Second parameter is a→a, invoked once with taken owned contents under κ; while focused it must have no possibly-aliasing `refs`. Put its result back into the same slot. `Ref.update`. `cellupdate` implies once/taken/owned, cannot duplicate those words. |
-   | parameter 1 `cellwrite`, parameter 2 `cellmodify sync` | Callback a→(b×a) is once/taken/owned; .1 is put back, .0 returned. Compare .0's reachable cells with the stored .1 and remaining slot contents: any overlapping or unknown component returns as a **loan of that slot**; only proved disjoint transferred/fresh components return ordinary origins. `Ref.modify`. Thus `(xs,xs)` cannot export unloaned contents. |
+   | parameter 1 `cellwrite`, parameter 2 `cellupdate stored sync` | Second parameter is a→a, invoked once with taken owned contents under κ; while focused it must have no possibly-aliasing `refs`. Its `stored` effect puts the whole callback result back into the same slot, with a deep no-loan/consumed demand on that result. `Ref.update`. `cellupdate` implies once/taken/owned, cannot duplicate those words. |
+   | parameter 1 `cellwrite`, parameter 2 `cellmodify stored sync` | Callback a→(b×a) is once/taken/owned; `stored` puts .1 back with the deep no-loan/consumed demand **only on .1**, and .0 is returned. Compare .0's reachable cells with the stored .1 and remaining slot contents: any overlapping or unknown component returns as a **loan of that slot**; only proved disjoint transferred/fresh components return ordinary origins. `Ref.modify`. Thus `(xs,xs)` cannot export unloaned contents. |
    | parameter 1 `cellcomplete`, parameter 2 `consumed cellstored` | Single-assignment cell: join already-completed/no-store and empty/store alternatives; first accepted payload stays the slot's contents. Bool result crosses. `Deferred.complete`; callbacks/resumptions get loans, not ownership of independent copies. |
    | result `builderdone` | Unary sequence storage in parameter 1 is returned as the result sequence with **the same cells, children and κ**; changes only nominal wrapper and logical length. `List.done`; not fresh exclusive. Parameter 1 is `written returned` (setting the logical length is a storage write at `ε`), length parameter crossing/borrowed. |
    | result `concatenated` | Two sequence parameters, result storage may be parameter 1 or fresh; contents are the union of both `[*]` shapes. List-kind descendant κ is lost, record-kind κ preserved only if both inputs are exclusive and mutually apart. `List.append`; no `List.append` name test. Both inputs get their read/use rows, with the existing write demand on the first storage argument at EVERY call, direct or through an alias/wrapper/method (R-2.2/R-2.7); the `written` companion is mandatory. Spread/`++` fusion lowers that same demand once per surface construction. |
+
+   **Write-back is a summary effect, not a Boolean `need`.** Retain a flat effect record
+   `(callback label/port, selected result path, destination parameter/path, mode)` with mode `sequence`
+   or `cell`. `Calls` instantiates the callback once, projects that path with its κ, records retention at
+   the destination and applies its store rule. Carry effects through forwarding, joins and blocks even
+   when the enclosing result crosses. Ordinary `stored` preserves loan tags; a cell write-back first
+   demands no loans and consumable ownership. `cellmodify` never demands ownership of the unrelated .0;
+   `.0` aliasing `.1` is returned loan-tagged, not silently transferred. Sequence focus removes the taken
+   position before comparing the replacement with the remainder; returning the taken value is permitted,
+   returning another held element loses exclusivity. A callback `need` on its entire answer cannot encode
+   these effects (#1052). `Rows.Signature` must expose the callback result place as well as its arguments. The no-call alternative
+   (an out-of-range focus index) returns the original sequence unchanged; `once` means at most once.
+
+   The new result selectors are mutually exclusive, result-only, and cannot be combined with `taken`,
+   `lent`, `unknown`, `escaped` or other storage selectors. A source parameter cannot be `unused`/`escaped`.
+   Validate element and callback-result types after solving, including through aliases; reject ambiguous
+   destinations and `stored` on a list of callbacks. These selectors are new v2 syntax (#1052), not claims about S2b's parsed word set. Word metadata is versioned separately from v1; adding
+   these v2 words moves all of that declaration's ownership words to the v2 column. Runtime code is unchanged.
 
    `cellstored` is a destination-specific store word: it means parameter 1's ◆, unlike `stored`, which means
    the result sequence's `[*]`. `cellstored` creates a deep no-loan payload demand even when the result crosses.
@@ -1235,8 +1324,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    Later consumption/escape/suspension of that collection checks the retained tags. `cellnew`, `cellwrite`, `cellupdate`, `cellmodify`, `cellcomplete` and `cellread` use the
    versioned slot relation in §2.13.7. A row missing mandatory companion words/arity/types, or using both
    `fresh exclusive` and `builderdone`, is rejected during word validation. These are specified new syntax,
-   not assertions that origin/master already parses it. S2b updates the parser, formatter, published type/row
-   metadata, cache versions, diagnostic catalogue, `language.md` and `skills/beni/` together.
+   not assertions that origin/master already parses it. The slice introducing each word updates parser, formatter, published type/row metadata, cache versions,
+   diagnostic catalogue, `language.md` and `skills/beni/` together (S2b baseline, S3a #1052 completion).
 
    **Builder derivation.** `builder : unused Int → fresh exclusive Builder a` starts with empty `[*]`;
    `put : written returned Builder a, borrowed Int, stored a → Builder a` stores parameter 3 into `[*]`,
@@ -1299,6 +1388,14 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    inferred result has no such tags; if no finite fix is known, give a manual “copy these borrowed paths”
    explanation without a bogus automatic JSON edit. Never claim a shallow outer copy discharges deep tags.
 
+   **S8 boundary.** A callback's selected write-back and its returned projection are evaluated under
+   one snapshot before slot mutation. Slot effects form an ordered graph of alternatives: sequential
+   writes compose; branch joins union alternatives; they are not an unordered set of writes. `refs` is a
+   may-touch set keyed by handle/slot, not current payload identity. Cell/loan overlays, original region
+   variables, store destinations and that order survive forwarding and disk blocks. Re-entry and may-suspend
+   tests consume effect/class facts from the same settled generation; no syntactic-last-use shortcut.
+   `Deferred.complete`'s no-op branch does not transfer ownership anew or erase live loans.
+
 8. **Markup** (R-1.6, R-5.8.9, R-5.8.12): a `markup` instruction is a call of a row synthesised from the lowering's
    slot kinds: render slots `R`; event slots `A` into the result's `⟨event⟩` slot as borrowed payloads (`payload
    (a)` on an `update` write reaching them); a `For` row callback's parameter supplied borrowed (`read-only`,
@@ -1308,7 +1405,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    makes `recast(place(a), inner)`; a later read **of the recast node itself** (no step taken since) at a place
    structurally identical to `inner`'s restores `inner` exactly; a projection of a recast is a recast over the same
    inner, approximate, never restored, so a child of a recast recursive value is not taken for its root
-   (R-4.11.2); `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.
+   (R-4.11.2). Retain the inner value interpretation, including its snapshot and loan overlay, not only its
+   shape: an unstepped restoration restores those facts together, while a stepped recast cannot recover
+   a stronger certificate by finding a structurally equal type later; `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.
 10. **Schemas** (R-4.7.10, R-5.11): a run is a call of a row derived from the resolved schema plan
     (`check/SchemaPlan.zig`): `res` fresh at every place the direction builds, holding conversions' captured or
     top-level cells where a conversion runs (a conversion placing one list twice makes the answer `⊤`, R-5.11.2),
@@ -1369,14 +1468,14 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     over an exclusive source keep κ as a storage permutation and a view (R-4.10.11, §2.13.3).
 16. **Core's library**: every function of `core/` not asserted (R-5.10.8) is inferred from its body (R-1.10).
     `List.base`, `offset`, `unsafeGet` and `sliceOf` read the runtime representation, so they are **`List` array
-    primitives** under R-5.10.8. They are asserted with existing words and pinned under R-5.10.7 (decided
+    primitives** under R-5.10.8. They are asserted with the result selectors below and pinned under R-5.10.7 (decided
     2026-10-25, Appendix C.9):
     - `base : returned List a → List a`: π₁ `RA`, res π₁.
     - `offset : borrowed List a → Int`: π₁ `R`, crossing.
-    - `unsafeGet` takes `at`'s words: π₁ `R`, `[*]` `A`, res π₁`[*]`.
-    - `sliceOf` takes `copy`'s: fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁`.
+    - `unsafeGet` and `at` use result `elementof`: π₁ `R`, `[*]` `A`, res π₁`[*]`.
+    - `sliceOf` and `copy` use result `copyof`: fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁`.
 
-    **`sortWith` is asserted with a pinned body [O 2026-10-26]** (R-5.10.8, C.9): fresh storage,
+    **`sortWith` is asserted with `copyof` and a pinned body [O 2026-10-26]** (R-5.10.8, C.9): fresh storage,
     `[*]` aliases π₁[*], list κ `lost`, record κ `excl π₁`, comparator many with borrowed supplies.
     **Fold accumulator element κ remains `lost` [O 2026-10-26]** unless S4 independently proves C.9
     gap 3's narrowed rule; a storage-write proof alone cannot strengthen that condition.
@@ -1520,7 +1619,7 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
   place    : PlaceId
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
   children : Range    into `child_cells`: the trie children in first-sight order (the descendants of a cell the program named)
-intern     : owner-local comparison tree (origin, kind, a, b) → CellId
+intern     : owner-local comparison tree (origin, kind, a, b, c, place) → CellId
 sets       : persistent compressed binary radix sets of (CellId, approx), u32 keys; at most 33 nodes per insertion
              union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order);
              `Radix`: insert, member, unionWith, subset, intersection (the common keys, approximate when either
@@ -1566,23 +1665,20 @@ Cond.Table (per walk)
 groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
 intern    : owner-local comparison tree (kind, a, b) → CondId
 kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a frame holds value → KappaId and
-            a class one root for res and for each supply/use value. Each is an immutable persistent hash-consed
+            a class one root for res and each supply; use shapes carry marks, not value κ. Each is an immutable persistent hash-consed
             map (NodeId, PathId) → CondId over that value's nodes, the PathId relative to the value's root, built as
             a trie over steps whose child subtrees are the children's snapshots, linked, never re-keyed. S2 builds
             the holder-owned root as one persistent radix map (NodeId, position class) → CondId per value
             (`Kappas`; `kappaGet`, `kappaSet` returning the new root, `kappaOf` the read); S3a gives frame
             values their own roots and moves the key to the trie; S3b relabels nodes through Shape.map and links
             an argument's snapshot at the graft. It travels with its value and is joined only where
-            values join (a branch or fixpoint join, a union, a construction of its children), never shared
-            across a frame's values. A read joins the stored condition with the one derived at the read's
-            position from the node's cells (apart over its arrivals, excl per arrival standing for many
-            positions, yes at a plain path, lost for ⊤ or an approximate cell, lost for a built node with
-            nothing stored; a union at a summary position also derives over its united cell set; a positions
-            node, wherever it sits, over that set with each cell both sides hold counted once more, by
-            `dagKappa`, one walk of the DAG), charged per read and never memoised: the stored part only
-            adds constraints, and the key is a precision split only (§2.9). S3b adds the substitution context
-            (invocation and supply roots) to the root's key with Shape.map's correspondence. Never a mutable
-            column NodeId → CondId
+            values join (a branch or fixpoint join, a union, a construction of its children), never mutated through another value; equal immutable roots may be shared
+            across values and remain shared after decode. Reads obey §2.9's kind-specific rule: stored
+            construction certificate (or lost) for node/delta; stored plus derived for a leaf/recast;
+            side reads, stored term and the appropriate set/multiset derivation for union/positions.
+            The observable frontier includes projected leaves and empty nodes. Every reader, join,
+            comparison, substitution and block codec uses that frontier. Read memos require the complete
+            immutable interpretation/context; never a mutable column NodeId → CondId
 flat      : memo CondId → sorted atom run (print, compare, block)
 memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version) → CondId; `deep` walks per query and stores nothing in a root
 ```
@@ -1615,7 +1711,8 @@ Class
   xreq     : Range   atoms
   funs     : Range   { calls: u2, need: u1, seen: u1, supply: Range of { label: LabelId, k, node, taken: u1, kappa: KappaId, owned: u1, port }, keeps: Range of { k, kept_path: PathId, written_path: PathId, writer: u32 } }
   classes  : Range   into the summary-local class table: ClassId per closure node reachable from res/supply/use
-  slots    : Range   stable handle/◆ identities and versioned read/write transformations
+  slots    : Range   function-typed parameter ports {param, path}
+  effects  : Range   selected callback result write-backs and ordered versioned handle/◆ transformations
   refs     : SetId   stable handle/◆ slots touched; top bit for unknown
   writes   : u1
   once     : Range
@@ -1634,73 +1731,104 @@ not interface semantics; §4.4 defines its charging and lifetime.
 
 ### 3.6 Blocks (`Block.zig`)
 
-The format writes every semantic graph record once and every edge as a local id. A class table is flat:
-classes and environments refer to table entries, not recursively embedded class copies. Canonicalise semantic member/supply order before assigning ordinals. Nominal heads and field/constructor
-steps use names/semantic ranks, never session TypeId, InternPool id or an interned-step index. Constructor
-steps encode their (constructor, argument) pair, not the local 28-bit payload. Recompute SCCs on decoding
-places so cyclic overlap agrees with an uncached graph. Assign canonical ids
-before writing children; an already numbered child is a backreference, including a cycle. Application views
-store template, invocation and supply references. Normalisation, comparison, hashing and decoding obey §4.1
-accounting; they may not expand a graph into paths. The first import of a callee's complete semantic table is
-registered in the baseline import lane once to each consuming owner, even if immutable bytes are physically shared.
-Instantiating new identities/contexts from those records is growth, not a renewed import lane. Unknown bytes never imply
-an empty class. Analysis memo tasks are not serialized as callable semantics; the block records the resource
-policy/version, effective growth allowance and measured baseline/growth/category totals for cache diagnostics. The effective allowance
-and accounting-policy version participate in the cache key; a formerly successful larger allowance cannot
-bypass a smaller one. Same-module and cached/imported calls consume the same canonical semantic table API.
-Operation memos are owner-local: no free reuse of a callee's transient inference memo is allowed. A cached
-complete owner reuses its recorded computation only with the matching inputs, policy and allowance.
+The block is a serialization of **observable class meaning**, not a dump of the tables. At every
+reachable result/supply position, a decoded value must read the same κ as the exported value under §2.9,
+with the same aliases, multiplicity, effects and callback obligations. Test those reads directly; stable
+pretty-printing and write/read/write bytes alone cannot establish this property.
 
-One block per module, in the interface record (`Interface.ownership`, hashed with it: R-5.7.2) and in the cache
-entry (R-5.7.4); format `OWN2` v2 (includes traversal marks), bumped by every rule change. Names nothing by session id: modules by package and
-dotted name; declarations by qualified name and canonical ordinal; constructors by module/type/constructor name
-and canonical ordinal (including schema constructors: oc §28.4), mapped back to BIR ids at the boundary; **places structurally** (`kind`, head as `package·module·type` or field names or
-arity, children) so a reader re-interns them onto its own graph; paths as canonical steps; opaque slots by number.
+**Positions and owners.** A value position is `(shape node, interpretation, position class)`; in the
+prefix-relative trie the interpretation includes that position's trie cursor. A use shape has mark cells
+and a separate non-value owner. A value owner names an immutable snapshot and all value roots using it.
+Equal snapshot roots share an owner and a decoded map; distinct values need not own distinct physical maps.
+Neither sharing a shape nor equal node ids permits sharing an interpretation with different facts.
 
-```
-head       : "OWN2", version, module table, string table, place table (structural)
-directory  : per declaration (canonical name/ordinal, offset, length) — summaries read lazily, one at a time (oc §28.4 #814)
-summary    : cells (origin, kind, a, b over the local numbering), labels (own instruction, callee module·declaration·label index, folded ∈ {no, ordinary, recursive}, supplies), traversal marks of `taken` refinements (`single`, `entry`), sets, conds/atoms/groups, nodes
-             (kind, place#, set#, children/overrides/union), immutable κ bindings/derivations, the flat class/environment table (id edges and backreferences), the Class record
-value facts: per parameterless value whether it may hold a cell (R-5.7.5)
-```
+For each owner, close its roots under the transitions any κ reader uses: explicit parts, delta bases,
+recast inners, union/positions sides, and `proj` along every valid place step. This includes projections
+under a leaf, under a recast and to an empty shape. Reachable stored constraints and the routes to them
+must be represented even if no explicit child names their node. The finite worklist uses canonical place
+states and exact interpretation keys, not unfolded paths. An implementation may omit a state only when
+its reads are derived entirely from preserved structure and no reachable stored entry affects them;
+this criterion is shared with `propagate`, `kappaLeq`, `deep` and substitution. Adding a reader requires
+updating this closure contract and its tests.
 
-**Traversal marks** (§2.2). Every `taken` refinement publishes the settled traversal certificate.
-Every `elem` and `others` cell record carries:
+Each written position encodes κ **as read**, including `lost` for a built node lacking its construction
+certificate. For union/positions nodes it may encode the stored term plus references to the sides and
+multiplicity derivation, provided the reconstructed read is identical. Do not interpret absent stored κ
+as a uniform bottom. Initial refinement colours include these read facts, place, kind, cells, step labels
+and position class: structurally equal knots with different κ are not the same semantic position.
 
-- `single`: one bit, the settled value after solving.
-- `entry`: the index, in this block's label table, of the label that ends the split's entry prefix. That is
-  the label whose last link is the call that last entered the G whose `traverseAt` made the split. It is
-  `none` when the split was made in this declaration's own G frame ("this traversal").
+An owner record names the union of all its roots and reachable constraints; every class/supply using it
+names that record. Decode its complete map once, then give the same immutable root to each member. Closing
+per owner but decoding separately per value loses a constraint when a second root reaches it by another
+route (#1060 fifth review). If shape interning absorbs a union or merges pure nodes, retain separate
+interpretation positions where their reads differ; never strengthen one by dropping a stored constraint,
+and do not silently weaken another through accidental map-key collision. The path trie provides that
+precision independently of structural sharing. A new interpreter key requires a block version bump.
 
-The importer instantiates `entry` like any label, by prepending its call instruction, and compares the
-results by interned identity. `folded` records the fold kind, because "recursive wins" when an importer's
-fold merges an imported label with its own. With all three, the importer applies §2.2 exactly as the
-defining module would.
+**One canonical graph, including cycles.** Write each place, path, label, split, cell, set, condition,
+position, owner, supply, keep, write-back effect, class and environment record once, with ordinal edges.
+Canonicalise the whole reachable place graph and whole position graph, not one knot or one DFS root at a
+time. Global partition refinement identifies equal labelled structure/read facts; a cycle's length or a
+mapped copy outside its SCC cannot affect its quotient. Nominal heads, fields and constructors use
+package-qualified names and canonical semantic ranks; ctor steps encode the pair, not its intern index.
+Use exact signatures to distinguish equal hashes: hashes alone neither prove equality nor order ties.
+Canonical ordinals follow semantic root/member/supply order after refinement; they are never discovery,
+worker, session or intern ids. Local `Summary.normalize` words are not this form.
 
-**Determinism.** The marks are written after solving, with the canonical ids that this section assigns
-before children are written. `entry` is such an id, and a reader resolves it in one pass. The bits come from
-settled facts only, never from discovery order, so `--jobs=1` and `--jobs=8` write the same bytes.
+A knot group reserves all its members before edges are tied. Cycles may cross typed child/projection
+edges and class/environment backreferences; unions, recasts and other constructors may not point to
+unfinished non-child inputs unless a corresponding constructor explicitly supports that knot. Readers
+check this grammar, node/child/base/cell places, tag/range/arity, supplied projection correspondence and
+mark/value separation before invoking operations that assume them. Recompute place SCCs after decoding.
+A source cell is interned with its place as part of its interpretation (#1055); type variables of a block
+have a separate namespace, never a base chosen from the reader's highest *queried* type id.
 
-**Other §2.2 state, checked.**
+**Cost and sharing.** Let V and A count distinct reached position states and edges across distinct
+snapshot owners; Q and T count the shared place graph; B the other bounded records and bytes. Repeated
+supplies under one owner add only their reference records, not another walk of its value. Different
+interpretations really can cost their product with shape size; this is charged growth, not source-linear
+by assertion. Position discovery costs O(V+A+B) charged transitions plus the invoked κ/projection tasks.
+Canonical refinement targets O((V+A+Q+T) log(V+Q+2)+B) with explicit stacks: smaller-half scheduling moves
+each predecessor edge O(log(V+Q+2)) times; fixed-word radix grouping orders `(predecessor,label)` and
+`(block,signature)` runs in linear work per moved edge. Exact variable signatures use shared tries/runs
+charged per word; never re-encode an entire reachable place graph for each place key. General κ derivation
+work remains in §4.1's N_f, not hidden in this refinement bound. Comparison-sorting every splitter adds an
+extra log factor and is unfinished work (#1065), not the proved target algorithm. Every scan, sort,
+dictionary access, trial decode and commit is reserved **before** its work, including failed decoding.
 
-| State | Where an importer gets it |
-|---|---|
-| a refinement's parent and split | the cell record's `a` and `b` |
-| a supply's `taken` flag, owned bit and κ | the Class record |
-| `sep`/`within` atoms | conds and atoms |
-| a label's supplies | the label record |
-| the fold kind | `folded` |
-| the frame's `taken` set and its materialisations in force | frame-local and never published: a caller sees a split only as a cell |
+**Module and cache boundary (S6).** One versioned `OWN2` block per module contains a shared record table,
+canonical declaration directory and per-parameterless-value holding facts. Directory entries refer into
+the shared table; a lazy read resolves only its reachable graph with a block-local ordinal memo. Reading
+several declarations must not copy a shared class/environment table per root. Package-qualified import
+names and declaration/local occurrence ordinals are resolved at the adapter, never by module basename.
+The format version changes with semantics; do not hardcode the end-state version as S2b's version.
 
-§3.7's inputs already include the imports' blocks, and nothing else in §3.7 carries ownership facts across a
-module.
+`Interface.ownership` hashes only canonical semantic sections. Resource policy, allowance, baseline/growth
+measurements and category counters belong to the cache envelope, not the public class hash: a body-only
+change in inference work must not invalidate clients whose exported class is unchanged. Cache keys include
+compiler/ownership format, input and imported semantic hashes, effective allowance, accounting policy and
+engine selection; lowering channels have their own version. A cached success under a larger allowance
+cannot bypass a smaller one. Same-session core, fresh dependencies and disk imports use the same class API;
+no importer may see a producer's provisional tables or analysis memos. Register consumed semantic records
+once per owning declaration's import lane, even when immutable storage is physically shared.
 
-**Decoding.** A missing mark, an `entry` out of range, or a `single` set on a cell that is not a `taken`
-refinement is a decode failure: the summary is unknown (`⊤`, every split cleared). It is never defaulted to
-`single`.
+Decode into isolated scratch state and reserve a validated remap/commit plan before touching live tables.
+The plan accounts actual destination operations as well as the trial; do not assume a replay into a
+populated table costs the same as a fresh-table trial. Publish roots atomically after validation, never a
+partially tied class. Malformed/truncated/old-version bytes are a cache miss (or unknown imported summary,
+R-5.7.4), not an empty class; a genuine resource exhaustion is the named loud error. For source available
+locally, a cache miss recomputes. A missing/corrupt dependency cannot authorize a write. Neither case may
+leave cells, splits or a completed memo that contaminates a later successful read.
 
-A declaration whose summary does not decode is unknown; a block that does not decode is no block (R-5.7.4).
+**Traversal marks** (§2.2). Every taken refinement carries its settled `single` bit and `entry` label;
+`none` entry means this recursive group's entry. Labels carry their fold kind (`no`, `ordinary`,
+`recursive`), and recursive wins when folding. Supplies retain their `taken`, owned and κ fields; splits
+retain parent/container, label and projected condition; `sep`/`within` and callback write-back effects
+retain the same label references. Instantiate entry labels by prepending the calling instruction exactly
+as for other labels. The frame's in-force materialisation set stays local. Missing/inconsistent marks,
+out-of-range entries and `single` on a non-taken cell are decode failure, never default `single`.
+Marks are numbered and written only after solving. The S4 block extension is required before a carried
+callback/traversal crosses a module; S6 adds disk/lazy infrastructure, not delayed soundness.
 
 **As built in S2b (the minimal block).** `Block.zig` writes and `BlockRead.zig` reads (§5). A class means
 κ *as read* (§2.9: stored ⊔ derived at the position), so its shape nodes are written as **positions**: a
@@ -1735,6 +1863,15 @@ everything else is its constructor's, and a node no constructor makes (sides at 
 place its step does not reach) is no block. It decodes into tables of its own first, against the caller's
 allowance and place room, charges that work once, and only then builds in the caller's tables, with the
 block's places in a namespace of their own.
+
+**Where S2b's block is short of the contract above.** The note describes the code; the text before it is
+the target. (1) S2b reads κ as stored ⊔ derived at every position; the target is §2.9's kind-specific rule
+and its observable frontier, repaired before S3b (#1063, #1064). (2) The absorbed-union merge is
+conservative under S2's coarser `(NodeId, position class)` key; the path-trie precision above arrives with
+S3a's trie. (3) `Refine.zig` comparison-sorts each splitter's edges, an extra log factor over the radix
+target (#1065). (4) `Block` and `Refine` do variable work before they reserve it; the target reserves every
+scan, sort, trial decode and commit first (#1066). The record table also holds `owner` records
+(`Block.Kind.owner`), which the list in the note leaves out.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
@@ -1810,6 +1947,12 @@ contexts and derived indexes is not hidden in E. An input string/name is interne
 | persistent `reach`, cell/κ sets, inverted index, general liveness/resolution, joins and shape comparisons | O(N_f log(N_f+2)) per owner | the retained operation graph and proof below include failed/zero-growth work, all live-parent routes, projected paths and all intermediate nodes |
 | recursive groups, feedback, entry | O(N_f log(N_f+2)) per owner | all deliveries, union tasks, affected-transfer continuations and validation belong to the same account; no fresh budget per round or class |
 | normalisation and block write/read | O(N_f log(N_f+2)) per owner plus bytes read/written | graph references, no recursive unfolding; inferred order/comparison work charged; fixed-size record encoding linear once ordered |
+
+These are bounds for the specified completed algorithms, not measurements proving all S2 kernels meet
+them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
+members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
+need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
+keys must meet §3.6 (#1065), with pre-work reservations (#1066). Their current charged superlinear work is not made source-linear by the limit.
 
 **Fresh-fragment certificate and algorithm.** For a settled result-template DAG whose every tracked origin
 is a fresh allocation k, with no parameter/capture/shared/unknown/feedback dependency, certify that property
@@ -2438,33 +2581,38 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints same, v2-only accepts, v2-only refuses and one-sided demands | — | S1, S2 | 7 |
 | S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked owner-original-atom/role/phase lane counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 10 |
 | S2 | **Conditions and summaries** | `Cond` (per-value immutable κ snapshots (NodeId, position class) → CondId that travel with their value's shape root, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions, the `positions` kind and its κ rule, a multiset `apart` (§2.3, §2.9)), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 8 |
-| S2b | **Words, the spread fact, core in-process** | all §2.13.6 type/value words and the temporary §2.13.5 `sender` alias-port metadata in separate v2 columns through lexer/parser/lowering, typed interfaces and formatter with `misplaced_ownership_word`'s rules; `Bir.Spread` recorded by `Lower`; `core/List.beni`'s array primitives worded as R-5.10.8 asserts them (`push`, `set`, `swap`, `pop`, `insertAt`, `removeAt`, `append`, `cons`, `copy`, `length`, `at`, `view`, `put`, `traverseAt`, `focus`, the pinned `sortWith` row [O 2026-10-26], and the representation readers `base`, `offset`, `unsafeGet`, `sliceOf` with the words of §2.13.16), the `Js.*` surface of R-5.10.9, `Dict.beni`, `Ref.beni`, `Deferred.beni`, `Log.beni`, `Task.beni` worded; `o/word-bodies.txt` extended to `taken` callers; `Rows.fromWords` taught all new words, including sequence/cell/failure metadata, Ref/Deferred slot rows, Builder/`done`/`concatenated`, and renamed-type/value tests; the worked derivation of `mapHelp`/`foldlFrom` in §2.13.16 (on paper in Appendix C; its decisions in C.9 include the pinned sortWith row and conservative fold-element κ); **a minimal `Block`** (write/read of a normal-form class with structural places, no lazy directory, no cache section) published through the existing hook so core's inferred classes reach an application module in the same session; Bump the frontend artifact/BIR, typed-interface and affected cache payload/key versions for spread facts, ownership metadata and the attribute; old bytes are cache misses, cold/warm inputs identical. Raise-attribute grammar, placement, formatting, cache input and diagnostics (§4.4), `OwnershipSummarySizeRaised`, `language.md` and `skills/beni/`; **instrumentation:** record B_f/G_f/S_f/N_f and per-category high-water sizes on corpus and research apps, generator-deduplicated, report G_f ≥10% of default growth allowance to owner. Initially record supported constructs, never call unsupported zero; repeat in S4/S7. Minimal blocks already encode class/environment backreferences. | `zig build gates` green under v1 (runtime types/code unchanged by words; ownership metadata is retained, R-5.10.5); `cb/core/MisplacedOwnershipWord` extended; the derivation reviewed; a block round-trips | S2 | — | 15 |
-| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed `(NodeId, PathId)` (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5 | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseKidsHeld, RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 6 |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red | S3a | — | 10 |
-| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 20 |
-| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 7 |
-| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh. | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8 | S5 | S7 | 6 |
-| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast` | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 8 |
-| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified | DictFocus, DictValueWritten, DictTupleFocus*, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, #961 | S6, S7 | 11 |
-| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6, S7 | 8 |
-| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — | 10 |
+| S2b | **Words, the spread fact, core in-process** | Frontend type/value ownership columns, placement/companion validation, Builder/List/Ref/Deferred words implemented by #1057–#1059; type `sender` metadata without an alias-use port column; `Bir.Spread` and verification (single-spread identity has no fact); package-qualified body-pin gate, taken readers/forwarders and codegen pins; Appendix C construction/instantiation tests with read-off supplied explicitly; minimal `Block`/`BlockRead`/`Refine` with observable κ positions and shared owners (§3.6), no disk directory; `@ownership_summary_size` grammar/formatting/BIR and skills. Log/Task/Js/Dict wording belongs to S8 (#1053); missing result selectors/write-back belong to S3a (#1052). Hook publication, type-kind errors, behavioural raise test and real-owner instrumentation are S3a (#1056); structural place re-interning is S6 (#1055). | gates under unchanged v1; column isolation and frontend/cache version bumps; every #1060 round-trip test compares observable κ, shared-owner and cyclic/build-order twins; the derivation tests do not claim walker inference; BIR raise fixture only | S2 | — | 18 |
+| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed `(NodeId, PathId)` (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Repair pre-work codec reservations (#1066) before publication. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice, Spreads, SelfSpreads, Split, ViewAliases, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseKidsHeld, RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 12 |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off creates within from distinct pre-fold sep labels: C.2–C.5 must be derived by the walker, not supplied by a test. | ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces*, AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  κLeafJoin, κEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. | S3a | — | 15 |
+| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1.  Replace S2 positional nested-class arrays with the keyed code/port/context graph; selected callback stored effects; exact run/worklist keys; constructor-supported cyclic class/environment codec and traversal marks before any import, with canonical cross-module twins. | Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 22 |
+| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 9 |
+| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and radix grouping (#1065), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 | 12 |
+| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 10 |
+| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9). Implement selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7); no blanket ownership demand on .0. | DictFocus, DictValueWritten, DictTupleFocus*, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, S7, #961 | S6 | 14 |
+| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 | 10 |
+| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — | 12 |
 | S10 | **Switch-over and deletion** | §8.2 pre-migration criteria met; nominal Send/Send.to migration of platforms/callers, compare migrated v2 results to the frozen alias-form corpus results; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — | 5 |
 
-The reference estimate is **131 implementer-days across 14 slices**, with a **110-day dependency path**
-(S1→S2→S2b→S3a→S3b→S4→S5→S8→S8b→S9→S10). It is a scope/risk allocation, not a delivery forecast:
-agent implementation and review overlap, and elapsed pace cannot be inferred by converting these days to
-calendar weeks. S0/S1's completed scope accounts for 17 reference days; the remaining allocation is 114,
-including 8 in S2 under review. S3a's 6-day allocation must cover both adapters, cyclic trie matching and
-holder indexing; re-estimate it at its interface review. S4's 20 days protect the independent recursive and
-callback proof work. S6 and S7 can run alongside S8; S9 waits for S8b's list lowering.
+The planning allocation is **164 reference implementer-days across 14 slices**, with a **145-day
+reference dependency path** (S1→S2→S2b→S3a→S3b→S4→S5→S7→S8→S8b→S9→S10). S6 runs from S5 alongside
+S7/S8; S8 waits for S7's effect/protocol integration, and S9 waits for S6 and S8b. The merged S0/S1/S2
+scope accounts for 25 reference days; the remaining 139 include S2b's final codec review and deferrals.
+These numbers allocate implementation/review scope, **not elapsed agent days**. The repository records
+S1 starting 2026-10-25 22:27 and the S2b pin correction at 2026-10-26 09:31 (+0100); overlapping work and
+review compressed much of the old allocation into less than a day. There is no measured agent-hours
+series from which to fit a reliable calendar multiplier. Five block reviews also show that the old S6
+six-day allocation omitted semantic closure, canonicalisation and sharing decisions. S3a rises to 12
+for its adapters, word gaps and accounting; S3b to 15 for observable-state transport; S6 to 12 for the
+package/disk boundary; S4's 22 protects the independent recursive proofs. Re-estimate at each slice's
+integration review using actual active/review time and unresolved witnesses, never just changed lines.
 S9 may uncover v1 defects needing requirement decisions; report those as issues, never weaken parity.
 
 ### 8.1 Risks and what de-risks each
 
 | Risk | De-risked by |
 |---|---|
-| growth beyond source/import lanes reaches the chosen allowance on real code | S2b/S4/S7 category measurements and §7.6 fail-fast tests; report ≥10% growth headroom use, no silent cap or default change |
-| implementation does not reproduce Appendix C's map/fold classes | S2b/S4 reproduce the derivation with pinned representation primitives; sortWith is asserted and fold-element κ stays lost as decided. Any further mismatch is reported to the owner, not repaired by a new implicit trusted row |
+| growth beyond source/import lanes reaches the chosen allowance on real code | S3a/S4/S7 category measurements and §7.6 fail-fast tests; report ≥10% growth headroom use, no silent cap or default change |
+| implementation does not reproduce Appendix C's map/fold classes | S2b checks construction under supplied substitutions; S3b/S4 reproduce the derivation with pinned representation primitives; sortWith is asserted and fold-element κ stays lost as decided. Any further mismatch is reported to the owner, not repaired by a new implicit trusted row |
 | the rotate-`update` family's Θ(N²) facts cost time on a real app | `test-perf` at N = 64/256; sharing keeps the representation O(N); no real TEA app in the corpus has it |
 | `recast` loses exactness core's `Schema` needs | S7 runs core's `Schema` under the diff first; structural place identity covers core; a miss is a refusal of core, which fails beni's build loudly (R-1.10) |
 | the nominal `Send` churns the platforms and corpus | S7 handles both inputs inside v2; S9 keeps the old API/corpus diff intact; S10 migrates the API and checks the recorded semantic baseline before deleting v1 |
@@ -2493,10 +2641,18 @@ header pointing here (never renumbered: rule 2).
 
 ## 9. Open design questions
 
-The representation, words, nominal `Send` with its v2-only transition, exact index-exchange shapes and
+The semantic representation, final rows, nominal `Send` with its v2-only transition, exact index-exchange shapes and
 resource policy are specified in §2–§4; they are not open forks. The trusted surface is R-3.6/R-5.10.7–8.
 [O 2026-10-25] Precise ordinary labels, pre-work growth reservations and loud exhaustion remain mandatory.
 [O 2026-10-26] `sortWith` uses its pinned asserted row; a fold accumulator's element condition stays `lost`.
+
+One source-metadata choice remains for S8 (#1053): existing-word-only assertions on Log/Task/Js must
+populate only v2's ownership column while v1 still supplies S9's comparison baseline. The recommended
+spelling is a core/platform-only `@ownership_v2` declaration attribute that routes that signature's words
+to `own2` without changing runtime or v1 metadata. Its adoption is an owner decision in the docs PR;
+S8 may not instead change frozen v1's column or smuggle a semantically unrelated v2 word into the row.
+If adopted, parser/formatter/placement diagnostics, interface/cache versions and skills change together.
+This staging choice does not reopen the decided final rows.
 
 The remaining proof question is whether the **narrowed** current-taken-element versus earlier-feedback
 rule in C.9 gap 3 can preserve I-κ. S4 must obtain an independent proof/verifier result against every C.11
@@ -2523,7 +2679,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | R-1.8 | §3.7 | S3a, S6 |
 | R-1.9 | §3.7 | — |
 | R-1.10 | §2.13.16, §8 S6 publication / S9 full verdict | S6, S9 |
-| R-1.11 | §2.14 O9, §2.13.6 | S2b |
+| R-1.11 | §2.14 O9, §2.13.6 | S2b, S8 |
 | R-1.12 | §3.7 channel | S5 |
 | R-2.1–R-2.4 | §2.8, §2.13.2, §2.13.6 (`written`) | S3a, S8 |
 | R-2.5 | §2.6 `record_update`, §2.8 | S5 |
@@ -2541,7 +2697,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | R-3.3 | §2.8 Unescaped | S3a, S7 |
 | R-3.4 | §2.14 O10 | S3a |
 | R-3.5 | §2.14, §3.6, §2.12, §2.13.9 | S6 |
-| R-3.6 | §2.14 O9, §2.13.4, §2.13.7 (P-sync), §2.13.10 | S7, S8 |
+| R-3.6 | §2.14 O9, §2.13.6 pins, §2.13.4, §2.13.7 (P-sync), §2.13.10 | S2b, S7, S8 |
 | R-3.7 | §2.14 O11, §4.4 | S3a |
 | R-4.1.1 | §2.6, §2.7 | S3a |
 | R-4.1.2 | §2.1, §2.7 (uses by path) | S3a |
@@ -2643,7 +2799,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | R-5.8.12 | §2.13.4, §2.13.8 (the lowering interface's slot kinds) | S7 |
 | R-5.9.1–R-5.9.9 | §2.13.5 | S7 |
 | R-5.9.8 | §2.13.5, §2.10 `classes` (the `Expect` decoder's class travels in the summary) | S7 |
-| R-5.10.1–R-5.10.11 | §2.13.6 | S2b |
+| R-5.10.1–R-5.10.11 | §2.13.6 (words, resolved placements and pins) | S2b, S3a, S8 |
 | R-5.10.12 | §2.13.6, §2.13.7 | S8 |
 | R-5.11.1–R-5.11.6 | §2.13.10 | S7 |
 | R-5.12.1 | §2.13.7 | S4 |
@@ -2788,15 +2944,26 @@ slice; foundation unit tests do not replace the direct/imported corpus pair.
 | `AccountBeforeQuery` | Fault-inject failure before interning, a path/region climb and a cyclic projection: no completed memo, partial published graph or follow-up work. Distinct local functions use unique owner atoms and real phases; declaration renaming preserves lanes. | R-3.7, R-7.4, R-7.7 | S1, S2, S3a, S9 |
 | `CanonicalOwnershipBlock` | Vary intern ids, union insertion order and declaration order: semantic-equal classes have identical published bytes and hashes. Supply keys are sorted before ordinals; corrupt traversal marks decode unknown. | R-5.7.2, R-5.7.4, R-7.7 | S2b, S6 |
 
+| `KappaLeafJoin`, `KappaEmptyProjection`, `IdentityMapKappa` | Propagation, comparison and identity substitution preserve stored constraints below leaves/recasts and empty nodes; both shared-owner routes survive. Red until #1063/#1064 and S3b. | R-3.1, R-4.6.4, R-5.7.4 | S3b, S6 |
+| `StoredCallbackResult`, `ModifyResultPaths` | Focus puts a returned capture into the sequence (later captured-holder write refused); returning the taken item stays precise. Modify .1 is consumed/no-loan; independent .0 remains returnable, aliased .0 is a loan. | R-4.6.10, R-5.12.3 | S4, S8 |
+| `BlockSharedOwner`, `BlockPositionClosure`, `BlockGlobalKnots` | Compare semantic κ at paths after decode, not only bytes: leaf/empty/projected paths, two roots of one map, distinct-map equal shapes, unequal rings and map/widen copies. Corrupt/effect/traversal records never authorize a write. | R-5.7.2, R-5.7.4, R-7.7 | S2b, S4, S6 |
+| `BlockFirewallBodyOnly`, `BlockPlacesShared` | A body-only cost change leaves an unchanged semantic interface hash; nested place suffixes and repeated lazy imports are processed once, not expanded per class. | R-5.7.3, R-7.2, R-7.4 | S6 |
+
 ## Appendix C. Worked derivations of the core loops (S2b, before walker code)
 
-*Part of #1014; §8.1's first risk. Done on paper with §2's rules alone, against `core/List.beni` at
+*Part of #1014; §8.1's derivation risk. Done on paper with §2's rules alone, against `core/List.beni` at
 `7013ed4ac`. C.9 records the decisions for the three inference gaps. C.10 states the obligations used by these
 derivations.* Notation as §2: `excl(c)` is the condition of an arrival `c` at the selected path, `sep`/`within` as §2.9–§2.10.
 Instructions are named by role: `ι_t` the `traverseAt`, `ι_f` the call of the function parameter, `ι_p` the
 `put`, `ι_rec` the recursive call, `ι_d` the `done`. **Rounds count from ⊥**: round k is the class after the
 k-th walk under the class of round k − 1. §2.12's propagation computes the same limit, and §2.12's prose
 counts its rounds from the first walk that crosses the self-edge, which is round 2 here.
+
+S2b's tests exercise `Cond.lower`, `instantiate`, joins and `leq` against this derivation; the tests supply
+the call substitution and read-off fold. They do **not** infer uses, calls, supplies or `within`. S3b's
+walker/read-off must produce those classes; S4 then discharges them for actual callbacks. In particular,
+`Cond.sep` on an already folded self pair returns `lost`; only a distinct pre-fold `sep` supplies `within`.
+The verdicts below are conditional derivations, not evidence that end-to-end inference is already built.
 
 ### C.1 Rows taken as given
 
@@ -2967,6 +3134,11 @@ those contracts for `base`, `offset`, `unsafeGet`, `sliceOf` and `sortWith`.
 callback that writes its element is refused `unknown`. That is against R-4.10.2, R-4.10.6, R-5.2.9 and
 R-5.3.2. C.2–C.6 hold only when `base` and `offset` have v1's rows, which the decision on gap 1 gives them.
 
+`elementof` is the no-split `at`/`unsafeGet` row; `copyof` is the fresh-storage, aliased-elements row
+of `copy`/`sliceOf`/pinned `sortWith`; `prepended` names cons's parameter-2-or-fresh storage. Callback `stored`
+records focus's put-back explicitly. Inferring those primitives with an approximate `aliased` recast or
+making `at` taken does not substitute for these contracts (#1052).
+
 ### C.8 Verdicts
 
 | Function | Verdict | Reason |
@@ -2980,7 +3152,8 @@ R-5.3.2. C.2–C.6 hold only when `base` and `offset` have v1's rows, which the 
 | `sliceOf` | **weaker when inferred; decided: asserted** (gap 1) | Inferred, π₁ `E` and res `⊤`. Required: a fresh read with aliased elements that keeps record exclusivity (R-4.10.6, R-4.10.7) |
 | `sortWith` | **asserted with pinned body** [O 2026-10-26] | Body inference gives record κ `lost`; the pinned row gives `excl π₁`. Required: "`sortWith` keeps it" (R-4.10.7, R-4.10.8, `o/RecordSortWith`) |
 
-**No unsound inferred core row was found. A caller's discharge is sound with §2.2's *Traversals* rule (#1029, C.11).** Each inferred class
+**The paper derivation requires every obligation in C.10. A caller's discharge additionally needs
+§2.2's *Traversals* rule (#1029, C.11).** Each inferred class
 contains its body's behaviour (O5). Each acceptance in C.6 rests on an atom that a run-time fact discharges.
 C.11 gives the required refusal witnesses for separate and repeated traversals.
 
@@ -2999,21 +3172,21 @@ read the runtime representation. No rule of §2 can see through a host read:
 
 They are representation readers, as `view` and `copy` are, so they are `List` array primitives. R-5.10.8
 already asserts those without enumerating them. The decision names them in §2.13.16 and in §8's S2b list,
-with existing words, each pinned under R-5.10.7:
+with §2.13.6's exact selectors, each pinned under R-5.10.7:
 
 | Function | Words | Row |
 |---|---|---|
 | `base` | `returned List a → List a` | π₁ `RA`, res π₁ |
 | `offset` | `borrowed List a → Int` | π₁ `R`, crossing |
-| `unsafeGet` | `at`'s | π₁ `R`, `[*]` `A`, res π₁`[*]` |
-| `sliceOf` | `copy`'s | fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁` |
+| `unsafeGet` | `borrowed List a, borrowed Int → elementof a` | π₁ `R`, `[*]` `A`, res π₁`[*]` |
+| `sliceOf` | π₁ `borrowed`, crossing indices `borrowed`, result `copyof List a` | fresh storage, `[*]` π₁`[*]`, list κ `lost`, record κ `excl π₁` |
 
 These are v1's rows, so C.2–C.6 hold. No requirement changes. No body change removes the need: `traverseAt`
 reads `a[i]` of an array that `base` returned.
 
 **Gap 2 — `sortWith`: asserted with pinned body [O 2026-10-26], #1014.** Its merge-sort body does
 not establish that each original position is stored exactly once in this domain: `at` makes no split and
-the two halves both project to π₁[*]. Assert v1's row: result fresh, `[*]` π₁[*], list κ `lost`, record κ
+the two halves both project to π₁[*]. Assert v1's row with result `copyof`: storage fresh, `[*]` π₁[*], list κ `lost`, record κ
 `excl π₁`, comparator called many times with borrowed supplies. Pin the body and row under R-5.10.7;
 R-5.10.8 names this exception. Do not add index arithmetic or replace the sorting algorithm to infer it.
 
