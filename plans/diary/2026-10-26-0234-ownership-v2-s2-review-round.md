@@ -1,4 +1,4 @@
-## 2026-10-26 03:30 CET — Ownership v2 S2: the review round
+## 2026-10-26 02:34 CET — Ownership v2 S2: the review round
 
 **What I did.** Answered the adversarial reviews of #1036 and #1037 and the
 direction review's S2 items in two commits. κ left the `NodeId` column for
