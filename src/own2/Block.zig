@@ -11,13 +11,15 @@
 //! and carries none) — each with the κ read there (a union's or a positions
 //! node's: what is stored there, as its sides are read with it), its node's
 //! parts, and the positions `proj` makes that its structure does not name.
-//! The set is closed by construction (`entries`): the owner's values, their
+//! An `owner` record names every value under one map, and the reader builds
+//! that one map for all of them. The set is closed by construction
+//! (`entries`): the owner's values, their
 //! parts and projections, and every stored entry a read can reach with the
 //! projections that lead to it. The reader stores exactly that κ at exactly
 //! those positions, so every read of the decoded class is the written one's.
 //!
 //! **Every record once.** A label, a path, a cell, a split, a cell set, an
-//! atom set, a condition, an atom, a position, a supply, a keep, a slot and
+//! atom set, a condition, an atom, a position, an owner, a supply, a keep, a slot and
 //! a class are each one record, named by its ordinal everywhere else. A
 //! record follows its parts, but in a knot: the positions of a cycle are
 //! one `group` record whose members are numbered together, so a child step
@@ -35,7 +37,7 @@
 //! 64-bit key: a hash of its own words, its places' encodings and its
 //! parts' keys (a set's sorted). The positions are partitioned once, all of
 //! the block's together (`Refine`: Hopcroft's algorithm, counting a
-//! union's two sides, O(E log n)), from their kind, place, cells, read κ
+//! union's two sides, O(E log n · log E)), from their kind, place, cells, read κ
 //! and steps; two positions are one block exactly when they are bisimilar
 //! with equal κ everywhere, and one block is one record. Every choice of
 //! the refinement depends on block numbers and splitting signatures only,
@@ -83,13 +85,13 @@ pub const ReadError = Error || error{BlockConflict};
 /// `"OWN2"`, little-endian.
 pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
-pub const version: u32 = 4;
+pub const version: u32 = 5;
 
 pub const none: u32 = Ids.none_int;
 
 /// A record's kind, which is its tag in the table; `group` opens a knot.
 /// A `node` record is a position.
-pub const Kind = enum(u8) { label, path, cell, split, set, atoms, cond, atom, node, supply, keep, slot, class, group };
+pub const Kind = enum(u8) { label, path, cell, split, set, atoms, cond, atom, node, owner, supply, keep, slot, class, group };
 
 /// How the writer names what no session id may spell (§3.6).
 pub const Names = struct {
@@ -153,7 +155,7 @@ pub fn write(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Na
     // Every owner and its values first, then the positions they reach.
     var later: std.ArrayList(u32) = .empty;
     defer later.deinit(gpa);
-    while (w.pending.pop()) |r| if (w.recs.items[r].kind == .node) try later.append(gpa, r) else try w.describe(r);
+    while (w.pending.pop()) |r| if (w.recs.items[r].kind == .node or w.recs.items[r].kind == .owner) try later.append(gpa, r) else try w.describe(r);
     for (0..w.owners.items.len) |o| try w.entries(@intCast(o));
     try w.pending.appendSlice(gpa, later.items);
     while (w.pending.pop()) |r| try w.describe(r);
@@ -712,7 +714,9 @@ const Writer = struct {
                 try w.put(&.{ s.k, @as(u32, @intFromBool(s.owned)) | (@as(u32, @intFromBool(s.taken)) << 1) });
                 try w.ref(.label, s.label.int());
                 // The handed value under its own snapshot.
-                try w.tok(.ref, try w.value(s.node, try w.owner(s.kappa)));
+                const o = try w.owner(s.kappa);
+                try w.tok(.ref, try w.value(s.node, o));
+                try w.ref(.owner, o);
             },
             .keep => {
                 const k = w.extras.items[id].keep;
@@ -725,6 +729,17 @@ const Writer = struct {
                 const s = w.extras.items[id].slot;
                 try w.word(s.param);
                 try w.ref(.path, s.path.int());
+            },
+            .owner => {
+                // Every value under the map, from every class and supply of
+                // the block: the reader builds the owner's one map from them.
+                var list: std.ArrayList(u32) = .empty;
+                defer list.deinit(gpa);
+                for (w.roots.items[id].items) |n| {
+                    const x = try w.pos(n, false, id);
+                    if (std.mem.indexOfScalar(u32, list.items, x) == null) try list.append(gpa, x);
+                }
+                try w.group(list.items);
             },
             .class => try w.class(.from(id)),
             .group => unreachable,
@@ -741,6 +756,7 @@ const Writer = struct {
         const o = try w.owner(k.kappas);
         try w.put(&.{ k.params.len, @as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2), @backingInt(k.origin) });
         try w.tok(.ref, try w.value(k.res, o));
+        try w.ref(.owner, o);
         const uses = try w.owner(null);
         for (w.sums.paramUses(c)) |u| try w.tok(.ref, try w.pos(u, false, uses));
         try w.ref(.atoms, k.xreq.int());
@@ -827,7 +843,8 @@ const Writer = struct {
         defer stack.deinit(gpa);
         for (0..2) |round| {
             for (0..n) |root| {
-                const owners_round = w.recs.items[root].kind == .class or w.recs.items[root].kind == .supply;
+                const kind = w.recs.items[root].kind;
+                const owners_round = kind == .class or kind == .supply or kind == .owner;
                 if (done[root] or w.recs.items[root].kind == .node or owners_round != (round == 1)) continue;
                 try stack.append(gpa, .{ @intCast(root), 0 });
                 while (stack.items.len > 0) {

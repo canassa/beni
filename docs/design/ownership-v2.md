@@ -1705,7 +1705,9 @@ A declaration whose summary does not decode is unknown; a block that does not de
 **As built in S2b (the minimal block).** `Block.zig` writes and `BlockRead.zig` reads (§5). A class means
 κ *as read* (§2.9: stored ⊔ derived at the position), so its shape nodes are written as **positions**: a
 node, its position class and its owner's map (one owner per hash-consed map, so supplies that share a map
-share their positions; a use shape is no value and carries none). The positions are the owner's values,
+share their positions; a use shape is no value and carries none). An `owner` record names every value
+under its map, from every class and supply of the block, and the reader builds ONE map for the owner from
+all of them and gives it to each, so the closure below, made per owner, is the reader's too. The positions are the owner's values,
 closed under the node's parts and its projections at every step of its place (a union's and a node's,
 not a leaf's or an empty one), and **every entry of the owner's map that a read can reach**, with the
 projections that lead to it from those. That set is closed for every read: `kappaOf` at a `proj` path
@@ -1724,8 +1726,8 @@ supplies, keeps, slots and classes, each written once and named by its ordinal. 
 except in a knot: the positions of one cycle are one `group` record whose members are numbered together;
 a child step or a projected position may name any member, every other part an earlier record. The order is
 canonical. A record that is not a position is keyed by a hash of its words and its parts' keys. All of the
-block's positions are partitioned once by Hopcroft's algorithm (`Refine.zig`) (counting a union's two sides as one label,
-O(E log n)), from their kind, class, place, cells, κ and steps. Every choice of the refinement depends on
+block's positions are partitioned once by Hopcroft's algorithm (`Refine.zig`; a union's two sides count as one label;
+O(E log n · log E), as each edge moves O(log n) times and a splitter's edges are sorted by comparison) from their kind, class, place, cells, κ and steps. Every choice of the refinement depends on
 block numbers and splitting signatures only, so the final numbers are canonical; they are the positions'
 keys, and one block is one record. The table is a post-order walk from the classes. The reader builds a
 knot's nodes and deltas as nodes no constructor interns and ties their child maps when the knot is read;

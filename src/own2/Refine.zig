@@ -7,7 +7,8 @@
 //! keys, touched blocks in number order, parts in signature order, the
 //! untouched part keeping its block, the largest part (the first of equal
 //! sizes) not queued. So the numbers are a function of the structure.
-//! O(E log n), each edge moved charged.
+//! Each edge is moved O(log n) times and each splitter's edges are sorted
+//! by comparison, so O(E log n · log E) in all, every edge and sort charged.
 //!
 //! Obligations kept here: none.
 
