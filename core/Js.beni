@@ -64,9 +64,10 @@ pub foreign pure isNullish : unused Value → fresh bool
 
 
 --| `a < b`: JavaScript's comparison, written in place. Two numbers compare
---| by value and two strings by their UTF-16 code units; anything else is
---| coerced as JavaScript coerces it, so a caller hands two values of one
---| kind (`boundary.md` §4.2, *The comparisons*).
+--| by value and two strings by their UTF-16 code units. Hand it nothing
+--| else: two objects compare as their text (`le` and `ge` are both true of
+--| two records), and a null-prototype object or a `Symbol` throws
+--| `TypeError` (`boundary.md` §4.2, *The comparisons*).
 pub foreign pure lt : unused a, unused a → fresh bool
 
 
