@@ -8069,3 +8069,60 @@ test "the checker v2's work over live sibling positions is flat per position" {
     // pairwise scan grows it by half from 10 to 80).
     try testing.expect(4 * std.mem.max(u64, &per) <= 5 * std.mem.min(u64, &per));
 }
+
+/// The number after `field ` on `owner`'s `account` line.
+fn accountField(dump: []const u8, owner: []const u8, field: []const u8) !u64 {
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "account ")) continue;
+        if (!std.mem.startsWith(u8, t["account ".len..], owner) or t["account ".len + owner.len] != ':') continue;
+        var key_buf: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&key_buf, " {s} ", .{field});
+        const at = std.mem.indexOf(u8, t, key) orelse return error.NoField;
+        const digits = t[at + key.len ..];
+        const end = std.mem.indexOfNone(u8, digits, "0123456789") orelse digits.len;
+        return std.fmt.parseInt(u64, digits[0..end], 10);
+    }
+    return error.NoAccount;
+}
+
+test "the checker v2 charges an instruction's records to its source lanes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1: an instruction's transfer, a call's view, a
+    // written demand's query and a holder's registration are kernels of
+    // their source atoms, baseline, never growth. What growth remains per
+    // statement of `x_k = List.push x_{k-1} k` is the graft of the
+    // callee's class at each call, named growth until S3b's call view by
+    // reference (#1097): it stays constant per statement, and twice the
+    // statements is twice the growth.
+    var growth: [2]u64 = undefined;
+    for ([_]u32{ 100, 200 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub chain : ⊤ → Int\nchain ⊤ =\n    x0 = [ 0 ]\n");
+        for (1..n + 1) |i| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ i, i - 1, i });
+        try src.print(a, "    List.length x{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        growth[run] = try accountField(dump.stdout, "chain", "growth");
+        const baseline = try accountField(dump.stdout, "chain", "baseline");
+        try testing.expect(growth[run] <= 20 * n);
+        try testing.expect(baseline >= 4 * growth[run]);
+    }
+    try testing.expect(growth[1] <= 2 * growth[0] + 40);
+}

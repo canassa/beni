@@ -92,11 +92,12 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             }
             if (dr.failure) |f| {
                 limits += 1;
-                try others.append(arena, try std.fmt.allocPrint(arena, "limit {s}: {s}", .{ name, switch (f) {
-                    .exhausted => "ownership_summary_size",
-                    .limit => |l| @tagName(l),
-                    .invariant => "ownership_accounting_invariant",
-                } }));
+                try others.append(arena, switch (f) {
+                    .exhausted => try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size", .{name}),
+                    .limit => |l| try std.fmt.allocPrint(arena, "limit {s}: {t}", .{ name, l }),
+                    // The lane past its ceiling (§4.1): a defect, named for its fix.
+                    .invariant => |l| try std.fmt.allocPrint(arena, "limit {s}: ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ name, l.role, l.atom, l.phase }),
+                });
                 continue;
             }
             var frame = frame_base;

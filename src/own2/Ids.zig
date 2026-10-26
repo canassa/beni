@@ -241,6 +241,10 @@ pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference };
 /// not an instruction: the two kinds share a role without colliding.
 pub const atom_path_bit: u32 = 1 << 31;
 
+/// The bit of a lane atom that is a local (a binding, a pattern variable),
+/// not an instruction.
+pub const atom_local_bit: u32 = 1 << 30;
+
 /// §4.4's input and format limits, each its own named `ownership_limit`.
 pub const Limit = enum(u8) {
     /// `step_payload` is a step past 28 bits: nothing written reaches it under the limits above, so it is the format's.
@@ -307,6 +311,10 @@ pub const Account = struct {
     /// §4.4, which makes every later reservation fail at once.
     failed: ?Failure = null,
     lanes: FixedDict(3) = .{},
+    /// The kernel the walk is in (§4.1), `lanes`' slot of `lane` or growth
+    /// (`none_int`): where a reservation naming no lane goes (`enter`).
+    lane_slot: u32 = none_int,
+    lane: Lane = .{ .atom = 0, .role = .direct_data },
 
     pub const default_allowance: u32 = 65_536;
 
@@ -319,8 +327,47 @@ pub const Account = struct {
         return a.baseline + a.growth;
     }
 
-    /// Reserve `n` growth records before doing the work they stand for.
+    /// The kernel `enter` left, to `leave` back to.
+    pub const Kernel = struct { slot: u32, lane: Lane };
+
+    /// Run the next reservations in `lane` (null: growth) until `leave`.
+    /// The slot is made here, so a reservation never allocates.
+    pub fn enter(a: *Account, gpa: Allocator, lane: ?Lane) ChargeError!Kernel {
+        const prev: Kernel = .{ .slot = a.lane_slot, .lane = a.lane };
+        if (a.failed) |f| return f.err();
+        const l = lane orelse {
+            a.lane_slot = none_int;
+            return prev;
+        };
+        const got = try a.lanes.getOrPut(gpa, .{ l.atom, @backingInt(l.role), @backingInt(l.phase) });
+        if (!got.found_existing) got.value_ptr.* = 0;
+        a.lane_slot = got.index;
+        a.lane = l;
+        return prev;
+    }
+
+    pub fn leave(a: *Account, k: Kernel) void {
+        a.lane_slot = k.slot;
+        a.lane = k.lane;
+    }
+
+    /// Reserve `n` records in the kernel `enter` named, or growth.
     pub fn reserve(a: *Account, category: Category, n: u32) AccountError!void {
+        if (a.lane_slot == none_int) return a.reserveGrowth(category, n);
+        if (a.failed) |f| return f.err();
+        const slot = &a.lanes.values.items[a.lane_slot];
+        const next = @as(u64, slot.*) + n;
+        if (next > a.lane.role.ceiling()) {
+            a.failed = .{ .invariant = a.lane };
+            return error.AccountingInvariant;
+        }
+        slot.* = @intCast(next);
+        a.baseline += n;
+        a.baseline_by[@backingInt(category)] += n;
+    }
+
+    /// Reserve `n` growth records first: a product, a general task.
+    pub fn reserveGrowth(a: *Account, category: Category, n: u32) AccountError!void {
         if (a.failed) |f| return f.err();
         const next = @as(u64, a.growth) + n;
         if (next > a.allowance) {
