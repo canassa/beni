@@ -367,15 +367,17 @@ pub const Table = struct {
     /// positions node projects both sides, its kind kept. Null when the
     /// place has no such step.
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
-        // The memo is written only once the answer exists: a refusal in the
-        // middle leaves no "no such step" for another owner to read.
+        // Reserved before the memo is touched, a hit charged like a miss
+        // (§2.3 *Memo safety*); the memo is written only once the answer
+        // exists, so a refusal in the middle leaves no "no such step" for
+        // another owner to read.
+        try account.reserve(.memo, 1);
         if (t.memo_proj.get(.{ n.int(), s.word() })) |hit| return if (hit == Ids.none_int) null else NodeId.from(hit);
         const d = t.get(n);
         const child_place = places.child(d.place, s) orelse {
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = Ids.none_int;
             return null;
         };
-        try account.reserve(.memo, 1);
         const out: NodeId = switch (d.kind) {
             .leaf => try t.projectLeaf(gpa, account, places, cellt, d.cells, child_place, s),
             .node => t.overGet(d.a, s) orelse try t.nothing(gpa, account, child_place),
@@ -560,6 +562,7 @@ pub const Table = struct {
             const x = @min(members[0].int(), members[1].int());
             const y = @max(members[0].int(), members[1].int());
             if (x == y) return members[0];
+            try account.reserve(.memo, 1); // before the memo, a hit charged too
             if (t.memo_join.get(.{ x, y })) |hit| return .from(hit);
             const out = try t.joinUncached(gpa, account, places, cellt, members);
             (try t.memo_join.getOrPut(gpa, .{ x, y })).value_ptr.* = out.int();
@@ -739,6 +742,9 @@ pub const Table = struct {
             };
             t.leq_provisional.clearRetainingCapacity();
         };
+        // Reserved BEFORE the memo is touched, a hit charged like a miss (§2.3
+        // *Memo safety*, §4.1).
+        try account.reserve(.memo, 1);
         const got = try t.memo_leq.getOrPut(gpa, .{ n.int(), m.int() });
         if (got.found_existing and got.value_ptr.* != leq_unknown) return got.value_ptr.* != leq_false;
         // The coinductive assumption: the pair holds while it is being
@@ -748,7 +754,6 @@ pub const Table = struct {
         // assumption only ever makes an answer more true).
         got.value_ptr.* = leq_assumed;
         try t.leq_provisional.append(gpa, .{ n.int(), m.int() });
-        try account.reserve(.memo, 1);
         var ok = try cellt.sets.subset(gpa, .growth(account), t.cells(n), t.cells(m));
         if (ok) {
             const steps = places.steps(t.place(n));
@@ -1685,6 +1690,21 @@ test "a refused projection or inclusion leaves no answer behind for the next own
     try testing.expectError(error.OwnershipLimit, f.shapes.leq(gpa, &tight, &f.places, &f.cells, x, y));
     try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, y));
     try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x, x));
+    // A memo HIT is reserved before it is read and charged like a miss (§2.3
+    // *Memo safety*): owner C, with nothing to spend, is refused the answers
+    // owner B paid for — `leq(x, y)`, `proj(r, .a)`, `join(x, y)` — and owner
+    // D pays one record for each.
+    var members = [_]NodeId{ x, y };
+    const j = try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &members);
+    try testing.expectError(error.OwnershipLimit, f.shapes.leq(gpa, &broke, &f.places, &f.cells, x, y));
+    try testing.expectError(error.OwnershipLimit, f.shapes.proj(gpa, &broke, &f.places, &f.cells, r, fa));
+    try testing.expectError(error.OwnershipLimit, f.shapes.join(gpa, &broke, &f.places, &f.cells, &members));
+    var paying: Account = .{ .allowance = 3 };
+    defer paying.deinit(gpa);
+    try testing.expect(!try f.shapes.leq(gpa, &paying, &f.places, &f.cells, x, y));
+    try testing.expectEqual(a, (try f.shapes.proj(gpa, &paying, &f.places, &f.cells, r, fa)).?);
+    try testing.expectEqual(j, try f.shapes.join(gpa, &paying, &f.places, &f.cells, &members));
+    try testing.expectEqual(@as(u32, 3), paying.growth);
 }
 
 test "collect keeps positions: a repeated member stays two, proj and map keep the kind, join makes only unions" {
