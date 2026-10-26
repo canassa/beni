@@ -1584,7 +1584,7 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
         .origin = .words,
     });
     try testing.expectEqualStrings(
-        "summary push: π1 RAW, π1[*] A, π3 A; res [*] π1[*] π3{apart [π1[*]] [π3], excl π3}, π1{excl π1}; π2 calls ≤1, supply 1 π1 owned{excl π1}; xreq excl π1 (words)",
+        "summary push: π1 RAW, π1[*] A, π3 A; res [*] π1[*] π3{apart [π1[*]] [π3], excl π1[*], excl π3}, π1{excl π1}; π2 calls ≤1, supply 1 π1 owned{excl π1}; xreq excl π1 (words)",
         try f.text(c, "push"),
     );
     const nothing = try f.sums.add(env, .{ .params = &.{.none}, .res = try f.shapes.nothing(gpa, &f.account, list) });
