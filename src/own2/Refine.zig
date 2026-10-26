@@ -1,38 +1,33 @@
 //! L10: canonical ranks and partition refinement for `Block`
-//! (`docs/design/ownership-v2.md` §3.6), each step reserved before it is
-//! done (§4.1, §4.4).
+//! (`docs/design/ownership-v2.md` §3.6), each step reserved first on the
+//! codec's lane (§4.1): baseline, bounded by `codecBound` of the block's
+//! size, never the owner's growth. A record is one task of O(1) words: a
+//! comparison, a member's step, or 16 words read or written.
 //!
-//! **A record** is one task of O(1) words: a comparison, a dictionary
-//! probe, a member's step, or a chunk of 16 words read or written.
+//! `rank` numbers variable-length keys by their words alone — a merge sort,
+//! each comparison reserved, equal neighbours one rank; no hash is read.
 //!
-//! `rank` numbers variable-length keys exactly: an exact dictionary makes
-//! equal words one rank (its hash only finds candidates), and the distinct
-//! keys are ranked in (hash, length, words) order by a merge sort, a hash
-//! tie ordered by the words — so the ranks are a function of the keys and
-//! no collision merges two of them or orders a tie. O(words + d log d).
-//!
-//! `blocks` is Hopcroft's algorithm on an unlabelled graph whose edges are
-//! counted, as for lumping (Valmari and Franceschinis): a label is the
+//! `blocks` is Hopcroft's algorithm on an unlabelled graph with counted
+//! edges, as for lumping (Valmari and Franceschinis); a label is the
 //! caller's, a port state per labelled part, so a predecessor's signature
-//! against a splitter is one word, its count. The touched predecessors are
+//! against a splitter is one word, its count. Touched predecessors are
 //! grouped by block and by count through lists threaded through per-state
-//! and per-count arrays, never a comparison sort of a splitter's edges.
-//! Every choice depends on block numbers and counts only, never on an
-//! element's index: the blocks that split are taken in number order (a sort
-//! of at most one per new block), a block's untouched members keep its
-//! number and its touched ones follow in count order (a sort of at most two
-//! per new block), new numbers are given in that order, and every part is
-//! queued if the block was, else all but the largest (the first of equal
-//! sizes). So the numbers are a function of the structure. A state is in a
-//! processed splitter O(log n) times and each of its edges is read then,
-//! so with the two sorts the refinement is O((n + E) log n).
+//! and per-count arrays, never a sort of a splitter's edges. Every choice
+//! depends on block numbers and counts only: the blocks that split are taken
+//! in number order (a sort of at most one per new block), a block's
+//! untouched members keep its number and its touched ones follow in count
+//! order (at most two per new block), and every part is queued if the block
+//! was, else all but the largest (the first of equal sizes). Those numbers
+//! follow the split history, which copies of a state steer, so the quotient
+//! — one state per block — is refined once more and its numbers are the
+//! answer: bisimilar graphs get equal numbers. A state is in a processed
+//! splitter O(log n) times, its edges read then: O((n + E) log n).
 //!
-//! **Reservations.** `Meter.pay` reserves before the work it stands for —
-//! a splitter's member before its predecessors are read, each grouping
-//! before it is made, each sort before it runs — and `spend` counts the
+//! `Meter.pay` reserves before the work it stands for; `spend` counts the
 //! work done, which may never pass what was paid.
 //!
 //! Obligations kept here: none.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
@@ -40,19 +35,50 @@ const Ids = @import("Ids.zig");
 pub const Error = Ids.ChargeError;
 const none: u32 = std.math.maxInt(u32);
 
-/// A charge with a ledger: records reserved (`paid`) and records of work
-/// done (`work`); work past what was reserved is a defect.
+/// The codec's lane (§4.1, *codec/import index*).
+pub const codec_lane: Ids.Lane = .{ .atom = 0, .role = .codec_index };
+
+/// The codec's constant (§4.1's `codec_factor`): a block of S records and
+/// edges costs at most `codec_factor`·(S + 16)·⌈log₂(S + 2)⌉ records; the
+/// tests reach 1.7, so 16 is a defect's margin, not a budget.
+pub const codec_factor: u64 = 16;
+
+pub fn codecBound(size: u64) u64 {
+    return codec_factor * (size + 16) * std.math.log2_int_ceil(u64, size + 2);
+}
+
+/// The codec lane's ledger: records reserved (`paid`, in the account's
+/// baseline), never past the bound of the block's size so far (or `cap`, a
+/// test's) — past it is `ownership_accounting_invariant` — and work done.
 pub const Meter = struct {
     gpa: Allocator,
-    charge: Ids.Charge,
+    account: *Ids.Account,
+    /// The block's records and edges met so far.
+    size: u64 = 0,
+    cap: ?u64 = null,
     paid: u64 = 0,
     work: u64 = 0,
+
+    pub fn ceiling(m: *const Meter) u64 {
+        return m.cap orelse codecBound(m.size);
+    }
+
+    /// Count `n` more records or edges of the block.
+    pub fn grow(m: *Meter, n: u64) void {
+        m.size += n;
+    }
 
     /// Reserve `n` records before the work they stand for.
     pub fn pay(m: *Meter, n: u64) Error!void {
         if (n == 0) return;
-        try m.charge.reserve(m.gpa, .inspection, std.math.cast(u32, n) orelse std.math.maxInt(u32));
+        if (m.account.failed) |f| return f.err();
+        if (m.paid + n > m.ceiling()) {
+            m.account.failed = .{ .invariant = codec_lane };
+            return error.AccountingInvariant;
+        }
         m.paid += n;
+        m.account.baseline += n;
+        m.account.baseline_by[@backingInt(Ids.Category.inspection)] += n;
     }
 
     /// Count `n` records of the work reserved.
@@ -81,98 +107,43 @@ pub fn wordsCost(n: usize) u64 {
     return 1 + n / 16;
 }
 
-/// A key's hash: the order's first word, never its equality.
-fn keyHash(words: []const u32) u64 {
-    if (comptime std.mem.littleToNative(u32, 1) == 1) return std.hash.Wyhash.hash(0x6f776e32, std.mem.sliceAsBytes(words));
-    var h = std.hash.Wyhash.init(0x6f776e32);
-    for (words) |x| h.update(&std.mem.toBytes(std.mem.nativeToLittle(u32, x)));
-    return h.final();
-}
-
-const Keys = struct {
-    words: []const u32,
-    starts: []const u32,
-    hashes: []const u64,
-    tie: bool,
-
-    fn of(k: Keys, i: u32) []const u32 {
-        return k.words[k.starts[i]..k.starts[i + 1]];
-    }
-
-    pub fn eql(k: Keys, a: u32, b: u32) bool {
-        return std.mem.eql(u32, k.of(a), k.of(b));
-    }
-
-    pub fn hash(k: Keys, i: u32) u64 {
-        return if (k.tie) 0 else k.hashes[i];
-    }
-
-    /// (hash, length, words): a hash orders, its ties are the words'.
-    fn order(k: Keys, m: *Meter, a: u32, b: u32) Error!std.math.Order {
-        const ha = k.hash(a);
-        const hb = k.hash(b);
-        if (ha != hb) return std.math.order(ha, hb);
-        const p = k.of(a);
-        const q = k.of(b);
-        if (p.len != q.len) return std.math.order(p.len, q.len);
-        try m.take(wordsCost(p.len));
-        return std.mem.order(u32, p, q);
-    }
-};
-
-/// The keys `words[starts[i]..starts[i + 1]]`, ranked: equal words one rank
-/// (an exact dictionary, whose hash only finds candidates), the ranks in
-/// (hash, length, words) order by a merge sort, a comparison one record
-/// and a hash tie's words more. `tie` makes every hash 0 (a test's).
-pub fn rank(m: *Meter, words: []const u32, starts: []const u32, tie: bool) Error!Ranks {
+/// The keys `words[starts[i]..starts[i + 1]]`, ranked: sorted by their
+/// words (shorter first on a common prefix) by a merge sort, each
+/// comparison reserved before it reads, and equal neighbours one rank.
+/// No hash is read, so the ranks are a function of the words alone.
+pub fn rank(m: *Meter, words: []const u32, starts: []const u32) Error!Ranks {
     const gpa = m.gpa;
     const n = starts.len - 1;
-    // Hashing, then interning (a candidate's words compared): each key
-    // read twice.
-    var cost: u64 = 1;
-    for (0..n) |i| cost += 2 * wordsCost(starts[i + 1] - starts[i]);
-    try m.pay(cost);
-    const hashes = try gpa.alloc(u64, n);
-    defer gpa.free(hashes);
-    for (hashes, 0..) |*h, i| {
-        m.spend(wordsCost(starts[i + 1] - starts[i]));
-        h.* = keyHash(words[starts[i]..starts[i + 1]]);
-    }
-    const k: Keys = .{ .words = words, .starts = starts, .hashes = hashes, .tie = tie };
-    // An index stands for its key's words: hashed and compared by them.
-    var dict: std.HashMapUnmanaged(u32, u32, Keys, std.hash_map.default_max_load_percentage) = .empty;
-    defer dict.deinit(gpa);
-    const id = try gpa.alloc(u32, n);
-    defer gpa.free(id);
-    var reps: std.ArrayList(u32) = .empty;
-    defer reps.deinit(gpa);
-    for (0..n) |i| {
-        m.spend(wordsCost(starts[i + 1] - starts[i]));
-        const got = try dict.getOrPutContext(gpa, @intCast(i), k);
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(reps.items.len);
-            try reps.append(gpa, @intCast(i));
+    const K = struct {
+        words: []const u32,
+        starts: []const u32,
+        fn of(k: @This(), i: u32) []const u32 {
+            return k.words[k.starts[i]..k.starts[i + 1]];
         }
-        id[i] = got.value_ptr.*;
-    }
-    // The distinct keys in order: a bottom-up merge sort.
-    const d = reps.items.len;
-    try m.pay(1 + sortCost(d) + d);
-    var a = try gpa.dupe(u32, reps.items);
+        fn order(k: @This(), mm: *Meter, a: u32, b: u32) Error!std.math.Order {
+            const p = k.of(a);
+            const q = k.of(b);
+            try mm.take(wordsCost(@min(p.len, q.len)));
+            return std.mem.order(u32, p, q);
+        }
+    };
+    const k: K = .{ .words = words, .starts = starts };
+    try m.take(1 + wordsCost(3 * n));
+    var a = try gpa.alloc(u32, n);
     defer gpa.free(a);
-    var b = try gpa.alloc(u32, d);
+    var b = try gpa.alloc(u32, n);
     defer gpa.free(b);
+    for (a, 0..) |*x, i| x.* = @intCast(i);
     var width: usize = 1;
-    while (width < d) : (width *= 2) {
+    while (width < n) : (width *= 2) {
         var lo: usize = 0;
-        while (lo < d) : (lo += 2 * width) {
-            const mid = @min(lo + width, d);
-            const hi = @min(lo + 2 * width, d);
+        while (lo < n) : (lo += 2 * width) {
+            const mid = @min(lo + width, n);
+            const hi = @min(lo + 2 * width, n);
             var i = lo;
             var j = mid;
             var o = lo;
             while (o < hi) : (o += 1) {
-                m.spend(1);
                 const left = j == hi or (i < mid and try k.order(m, a[i], a[j]) != .gt);
                 b[o] = if (left) a[i] else a[j];
                 if (left) i += 1 else j += 1;
@@ -180,23 +151,58 @@ pub fn rank(m: *Meter, words: []const u32, starts: []const u32, tie: bool) Error
         }
         std.mem.swap([]u32, &a, &b);
     }
-    // `a` holds key indices; their distinct ids' ranks.
-    const of_id = try gpa.alloc(u32, d);
-    defer gpa.free(of_id);
-    for (a, 0..) |x, r| {
-        m.spend(1);
-        of_id[id[x]] = @intCast(r);
-    }
-    try m.take(wordsCost(n));
     const ranks = try gpa.alloc(u32, n);
-    for (ranks, id) |*r, x| r.* = of_id[x];
-    return .{ .ranks = ranks, .count = @intCast(d) };
+    errdefer gpa.free(ranks);
+    var count: u32 = 0;
+    for (a, 0..) |x, i| {
+        if (i > 0 and try k.order(m, a[i - 1], x) != .eq) count += 1;
+        ranks[x] = count;
+    }
+    return .{ .ranks = ranks, .count = if (n == 0) 0 else count + 1 };
 }
 
 /// The coarsest partition of `initial.len` states that refines `initial`
 /// (canonical block numbers below `count`) and is stable under `edges`
-/// `(target, predecessor)`, counted: each state's block number, canonical.
+/// `(target, predecessor)`, counted: each state's block number, a function
+/// of the quotient alone. The refinement's numbers follow its history,
+/// which multiplicities in the input steer, so the quotient — one state per
+/// block, its first member's edges — is refined once more, and its numbers
+/// are the answer: bisimilar graphs, however many copies they hold, get the
+/// same numbers.
 pub fn blocks(m: *Meter, initial: []const u32, count: u32, edges: []const [2]u32) Error![]u32 {
+    const gpa = m.gpa;
+    const first = try refine(m, initial, count, edges);
+    defer gpa.free(first);
+    var nb: u32 = 0;
+    for (first) |x| nb = @max(nb, x + 1);
+    try m.take(1 + wordsCost(4 * (initial.len + nb)) + edges.len);
+    // The blocks that hold a state, in number order; each one's first.
+    const rep = try gpa.alloc(u32, nb);
+    defer gpa.free(rep);
+    @memset(rep, none);
+    for (first, 0..) |x, i| if (rep[x] == none) {
+        rep[x] = @intCast(i);
+    };
+    const state = try gpa.alloc(u32, nb);
+    defer gpa.free(state);
+    var q_initial: std.ArrayList(u32) = .empty;
+    defer q_initial.deinit(gpa);
+    for (rep, state) |r, *s| {
+        s.* = @intCast(q_initial.items.len);
+        if (r != none) try q_initial.append(gpa, initial[r]);
+    }
+    var q_edges: std.ArrayList([2]u32) = .empty;
+    defer q_edges.deinit(gpa);
+    for (edges) |e| if (rep[first[e[1]]] == e[1]) try q_edges.append(gpa, .{ state[first[e[0]]], state[first[e[1]]] });
+    const second = try refine(m, q_initial.items, count, q_edges.items);
+    defer gpa.free(second);
+    const out = try gpa.alloc(u32, initial.len);
+    for (out, first) |*o, x| o.* = second[state[x]];
+    return out;
+}
+
+/// One refinement: the coarsest stable partition, numbered by its history.
+fn refine(m: *Meter, initial: []const u32, count: u32, edges: []const [2]u32) Error![]u32 {
     const gpa = m.gpa;
     const n = initial.len;
     try m.pay(1 + n + edges.len + count);
@@ -463,7 +469,7 @@ pub const Graph = struct {
 
     /// The block of each of the `n` states (then of each port). A state
     /// with one labelled part needs no port: its words fix the label.
-    pub fn refine(g: *Graph, m: *Meter, n: u32, tie: bool) Error![]u32 {
+    pub fn refine(g: *Graph, m: *Meter, n: u32) Error![]u32 {
         const gpa = m.gpa;
         try m.take(1 + g.ports.items.len + wordsCost(g.targets.items.len));
         var next_port = n;
@@ -486,7 +492,7 @@ pub const Graph = struct {
             q = e;
         }
         try g.starts.append(gpa, @intCast(g.words.items.len));
-        const ranks = try rank(m, g.words.items, g.starts.items, tie);
+        const ranks = try rank(m, g.words.items, g.starts.items);
         defer gpa.free(ranks.ranks);
         return blocks(m, ranks.ranks, ranks.count, g.edges.items);
     }
@@ -494,18 +500,21 @@ pub const Graph = struct {
 
 const testing = std.testing;
 
-/// `blocks` over `n` states with one initial block per `initial` entry,
-/// under an account of `allowance`: the blocks, or the error, and the work.
-fn run(initial: []const u32, count: u32, edges: []const [2]u32, allowance: u32) !struct { blocks: ?[]u32, growth: u32, work: u64 } {
-    var account: Ids.Account = .{ .allowance = allowance };
+/// `blocks` with the codec lane capped at `cap`: the blocks (null past the
+/// cap), what was paid and the work done.
+fn run(initial: []const u32, count: u32, edges: []const [2]u32, cap: u64) !struct { blocks: ?[]u32, paid: u64, work: u64, growth: u32 } {
+    var account: Ids.Account = .{};
     defer account.deinit(testing.allocator);
-    var m: Meter = .{ .gpa = testing.allocator, .charge = .growth(&account) };
+    var m: Meter = .{ .gpa = testing.allocator, .account = &account, .cap = cap };
     const got = blocks(&m, initial, count, edges) catch |e| switch (e) {
-        error.OwnershipLimit => null,
+        error.AccountingInvariant => null,
         else => return e,
     };
-    return .{ .blocks = got, .growth = account.growth, .work = m.work };
+    if (got == null) try testing.expect(account.failed.? == .invariant);
+    return .{ .blocks = got, .paid = m.paid, .work = m.work, .growth = account.growth };
 }
+
+const unbounded = std.math.maxInt(u64);
 
 /// A ring of `n` states, state 0 marked, each naming the next.
 fn markedRing(n: u32) !struct { initial: []u32, edges: [][2]u32 } {
@@ -526,9 +535,8 @@ test "blocks are the structure's: any numbering of the states gives the same blo
     for (&initial) |*b| b.* = rnd.uintLessThan(u32, 3);
     var edges: [3 * n][2]u32 = undefined;
     for (&edges) |*e| e.* = .{ rnd.uintLessThan(u32, n), rnd.uintLessThan(u32, n) };
-    const a = (try run(&initial, 3, &edges, std.math.maxInt(u32) - 1)).blocks.?;
+    const a = (try run(&initial, 3, &edges, unbounded)).blocks.?;
     defer testing.allocator.free(a);
-    // The same graph with its states renumbered and its edges reordered.
     var perm: [n]u32 = undefined;
     for (&perm, 0..) |*p, i| p.* = @intCast(i);
     rnd.shuffle(u32, &perm);
@@ -537,14 +545,49 @@ test "blocks are the structure's: any numbering of the states gives the same blo
     var edges2 = edges;
     for (&edges2) |*e| e.* = .{ perm[e[0]], perm[e[1]] };
     rnd.shuffle([2]u32, &edges2);
-    const b = (try run(&initial2, 3, &edges2, std.math.maxInt(u32) - 1)).blocks.?;
+    const b = (try run(&initial2, 3, &edges2, unbounded)).blocks.?;
     defer testing.allocator.free(b);
     for (0..n) |i| try testing.expectEqual(a[i], b[perm[i]]);
-    // Coarsest: two states share a block exactly when their counted
-    // successor blocks do.
-    var distinct: usize = 0;
-    for (a) |x| distinct = @max(distinct, x + 1);
-    try testing.expect(distinct > 3 and distinct <= n);
+}
+
+test "blocks are the quotient's: a bisimilar copy of a state changes no number" {
+    // The smallest case found: 0→2, 1→0, 2→1, 3→1, with 1→0 sent to a copy
+    // 4 of 0.
+    {
+        const a = (try run(&.{ 0, 0, 1, 0 }, 2, &.{ .{ 2, 0 }, .{ 0, 1 }, .{ 1, 2 }, .{ 1, 3 } }, unbounded)).blocks.?;
+        defer testing.allocator.free(a);
+        const b = (try run(&.{ 0, 0, 1, 0, 0 }, 2, &.{ .{ 2, 0 }, .{ 4, 1 }, .{ 1, 2 }, .{ 1, 3 }, .{ 2, 4 } }, unbounded)).blocks.?;
+        defer testing.allocator.free(b);
+        try testing.expectEqualSlices(u32, a, b[0..4]);
+        try testing.expectEqual(b[0], b[4]);
+    }
+    // Random functional graphs, one state copied and some of its in-edges
+    // moved to the copy.
+    var prng: std.Random.DefaultPrng = .init(0xc0b1e5);
+    const rnd = prng.random();
+    for (0..300) |_| {
+        const n = 2 + rnd.uintLessThan(u32, 12);
+        var initial: [16]u32 = undefined;
+        var next: [16]u32 = undefined;
+        for (0..n) |i| {
+            initial[i] = rnd.uintLessThan(u32, 2);
+            next[i] = rnd.uintLessThan(u32, n);
+        }
+        var edges: [16][2]u32 = undefined;
+        for (0..n) |i| edges[i] = .{ next[i], @intCast(i) };
+        const c = rnd.uintLessThan(u32, n);
+        var edges2: [17][2]u32 = undefined;
+        for (0..n) |i| edges2[i] = if (next[i] == c and rnd.boolean()) .{ n, @intCast(i) } else edges[i];
+        edges2[n] = .{ next[c], n };
+        var initial2 = initial;
+        initial2[n] = initial[c];
+        const a = (try run(initial[0..n], 2, edges[0..n], unbounded)).blocks.?;
+        defer testing.allocator.free(a);
+        const b = (try run(initial2[0 .. n + 1], 2, edges2[0 .. n + 1], unbounded)).blocks.?;
+        defer testing.allocator.free(b);
+        try testing.expectEqualSlices(u32, a, b[0..n]);
+        try testing.expectEqual(b[c], b[n]);
+    }
 }
 
 test "blocks cost O((n + E) log n), counted: marked rings, and a path of equal states" {
@@ -562,9 +605,9 @@ test "blocks cost O((n + E) log n), counted: marked rings, and a path of equal s
                 @memset(g.initial, 0);
                 edges = edges[0 .. edges.len - 1];
             }
-            const r = try run(g.initial, 2, edges, std.math.maxInt(u32) - 1);
+            const r = try run(g.initial, 2, edges, unbounded);
             defer testing.allocator.free(r.blocks.?);
-            // Every state ends alone.
+            // Every state ends alone, and nothing is the owner's growth.
             var seen = try testing.allocator.alloc(bool, size + 2);
             defer testing.allocator.free(seen);
             @memset(seen, false);
@@ -572,55 +615,46 @@ test "blocks cost O((n + E) log n), counted: marked rings, and a path of equal s
                 try testing.expect(!seen[b]);
                 seen[b] = true;
             }
-            const bound = 8 * @as(u64, size + @as(u32, @intCast(edges.len))) * std.math.log2_int_ceil(u32, size);
-            if (r.growth > bound) {
-                std.debug.print("family {d}, n {d}: {d} records, bound {d}\n", .{ family, size, r.growth, bound });
+            try testing.expectEqual(@as(u32, 0), r.growth);
+            const bound = 16 * @as(u64, size + @as(u32, @intCast(edges.len))) * std.math.log2_int_ceil(u32, size);
+            if (r.paid > bound) {
+                std.debug.print("family {d}, n {d}: {d} records, bound {d}\n", .{ family, size, r.paid, bound });
                 return error.TestUnexpectedResult;
             }
-            if (last > 0) try testing.expect(r.growth * 10 <= last * 23);
-            last = r.growth;
+            if (last > 0) try testing.expect(r.paid * 10 <= last * 23);
+            last = r.paid;
         }
     }
 }
 
-test "blocks stop at every prefix of the allowance before the work it would pay for" {
+test "blocks stop at every prefix of the codec lane before the work it would pay for" {
     const g = try markedRing(48);
     defer testing.allocator.free(g.initial);
     defer testing.allocator.free(g.edges);
-    const full = try run(g.initial, 2, g.edges, std.math.maxInt(u32) - 1);
+    const full = try run(g.initial, 2, g.edges, unbounded);
     defer testing.allocator.free(full.blocks.?);
-    var a: u32 = 0;
-    while (a < full.growth) : (a += 1) {
+    var cap: u64 = 0;
+    while (cap < full.paid) : (cap += 1) {
         // `spend` panics if any work ran past what was paid.
-        const r = try run(g.initial, 2, g.edges, a);
+        const r = try run(g.initial, 2, g.edges, cap);
         try testing.expect(r.blocks == null);
-        try testing.expect(r.growth <= a);
-        try testing.expect(r.work <= r.growth);
+        try testing.expect(r.paid <= cap);
+        try testing.expect(r.work <= r.paid);
     }
-    const r = try run(g.initial, 2, g.edges, full.growth);
+    const r = try run(g.initial, 2, g.edges, full.paid);
     defer testing.allocator.free(r.blocks.?);
     try testing.expectEqualSlices(u32, full.blocks.?, r.blocks.?);
 }
 
-test "rank: equal words one rank, distinct words never, and a forced hash tie ordered by the words" {
-    var account: Ids.Account = .{ .allowance = std.math.maxInt(u32) - 1 };
+test "rank: equal words one rank, distinct words never, in the words' order" {
+    var account: Ids.Account = .{};
     defer account.deinit(testing.allocator);
-    var m: Meter = .{ .gpa = testing.allocator, .charge = .growth(&account) };
+    var m: Meter = .{ .gpa = testing.allocator, .account = &account, .cap = unbounded };
     // Keys: [1 2], [3], [1 2], [], [1 3], [3].
     const words = [_]u32{ 1, 2, 3, 1, 2, 1, 3, 3 };
     const starts = [_]u32{ 0, 2, 3, 5, 5, 7, 8 };
-    for ([_]bool{ false, true }) |tie| {
-        const r = try rank(&m, &words, &starts, tie);
-        defer testing.allocator.free(r.ranks);
-        try testing.expectEqual(@as(u32, 4), r.count);
-        try testing.expectEqual(r.ranks[0], r.ranks[2]);
-        try testing.expectEqual(r.ranks[1], r.ranks[5]);
-        var distinct: [4]bool = @splat(false);
-        for ([_]usize{ 0, 1, 3, 4 }) |i| {
-            try testing.expect(!distinct[r.ranks[i]]);
-            distinct[r.ranks[i]] = true;
-        }
-        // Every hash 0: (length, words) alone.
-        if (tie) try testing.expectEqualSlices(u32, &.{ 2, 1, 2, 0, 3, 1 }, r.ranks);
-    }
+    const r = try rank(&m, &words, &starts);
+    defer testing.allocator.free(r.ranks);
+    try testing.expectEqual(@as(u32, 4), r.count);
+    try testing.expectEqualSlices(u32, &.{ 1, 3, 1, 0, 2, 3 }, r.ranks);
 }

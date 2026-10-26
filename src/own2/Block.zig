@@ -33,36 +33,40 @@
 //! ordinal. Instruction ids (a label's, a site's) are the module's own, and
 //! a reader puts them in a namespace of its own (`Remap.inst`).
 //!
-//! **The order is the structure's; no hash decides it alone** (`canon`).
-//! Every key is exact: a dictionary makes equal words one key, and a hash
-//! orders only keys whose words differ, its ties ordered by the words
-//! (`Refine.rank`; a test ties every hash). The places the records name,
-//! closed under their children, are refined once as one graph — Hopcroft's
-//! algorithm, `Refine.blocks` — so a place's rank is its structure's and
-//! every key that names it shares it: no place is encoded once per key.
-//! The records no position reaches are then ranked a height at a time,
-//! each naming its parts by their keys; the positions — the only records
-//! that make cycles — are refined from their own words, a port per
-//! labelled part (a union's two sides a count, not an order), so two
-//! positions are one key exactly when they are bisimilar with equal κ
-//! everywhere; and the owners, supplies and classes that name positions
-//! are ranked last, by height. Records of one key are written as the first
-//! of them. The table is then a post-order walk from the classes, a set's
+//! **The order is the structure's, and no hash reaches it** (`canon`).
+//! Every key is exact and ordered by its words (`Refine.rank`, a merge
+//! sort). The places the records name, closed under their children, are
+//! refined once as one graph (`Refine.blocks`), so a place's rank is its
+//! structure's and every key that names it shares it: no place is encoded
+//! once per key. The records no position reaches are then ranked a height
+//! at a time, each naming its parts by their keys; the positions — the only
+//! records that make cycles — are refined from their own words, a port per
+//! labelled part (a union's two sides a count, not an order); and the
+//! owners, supplies and classes that name positions are ranked last, by
+//! height. Refinement numbers its quotient, so two positions are one key
+//! exactly when they are bisimilar with equal κ everywhere, and a copy of a
+//! value outside its knot changes no number. Records of one key are written
+//! as the first of them, and no two units spell the same words (`distinct`,
+//! a sort). The table is then a post-order walk from the classes, a set's
 //! parts in key order: ordinals, place numbers and bytes follow from the
-//! structure alone.
+//! quotient alone, and write ∘ read ∘ write is write.
 //!
 //! **Reading** is `BlockRead`'s, one layer up (§5): this file holds the
 //! format both sides share.
 //!
-//! **Cost.** Every lookup, token, scan, sort and word is reserved on the
-//! writer's `Refine.Meter` before it is done (§4.1, §4.4; a record is one
-//! task of O(1) words, a run 16 words a record), and nothing reaches `out`
-//! before all of it is paid. With R records and E their tokens, V and A the
-//! positions and their position parts, Q and T the places and their steps:
-//! describing is O(R + E) plus the κ reads and projections; ranking is
-//! O(E + R log R) (each height sorted); the two refinements are
-//! O((V + A) log V) and O((Q + T) log Q); writing is O(E) plus each set's
-//! sort.
+//! **Cost** (§4.1, §4.4). The codec's work — every lookup, token, scan,
+//! sort and output word — is reserved before it is done on the codec's lane
+//! (`Refine.Meter`): baseline records, bounded by `Refine.codecBound` of the
+//! records and edges the writer reads, never the owner's growth allowance;
+//! past the bound is `ownership_accounting_invariant`. Nothing reaches `out`
+//! before all of it is paid. Growth is only what a class adds: a second
+//! interpretation of a node (a position under another map, §3.6) and the
+//! κ reads and projections it makes, each on its class's declaration's
+//! charge (`Options.charges`). With R records and E their tokens, V and A
+//! the positions and their position parts, Q and T the places and their
+//! steps: describing is O(R + E) plus the κ reads; ranking is
+//! O((E + R) log R); the refinements are O((V + A) log V) and
+//! O((Q + T) log Q); writing is O(E) plus each set's sort.
 //!
 //! Obligations kept here: none (a faithful encoding: every κ read of what
 //! is read is the κ read of what was written).
@@ -137,7 +141,8 @@ pub const Remap = struct {
     }
 };
 
-const sortCost = Refine.sortCost;
+pub const sortCost = Refine.sortCost;
+pub const codecBound = Refine.codecBound;
 
 /// What a scan of `n` tokens is charged: two words each, 16 to a record.
 fn scan(n: usize) u64 {
@@ -153,11 +158,14 @@ pub fn below(summary: bool, s: Step) bool {
 // Writing
 // ---------------------------------------------------------------------------
 
-/// How a block is written; the default is the only production one.
+/// How a block is written.
 pub const Options = struct {
-    /// Every hash of the writer's dictionary of written words is 0, so a
-    /// test sees that no equality and no order rests on a hash.
-    tie_hashes: bool = false,
+    /// Each class's owning declaration's charge, one per class: the growth
+    /// a class's positions add (an interpretation of a node another already
+    /// has, §3.6) is its declaration's. Null: `env.charge` for all.
+    charges: ?[]const Ids.Charge = null,
+    /// The codec lane's bound in place of `Refine.codecBound` (a test's).
+    codec_cap: ?u64 = null,
 };
 
 /// Write `classes` as one block: header, place table, records, roots.
@@ -165,17 +173,26 @@ pub fn write(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Na
     return writeWith(env, sums, classes, names, out, .{});
 }
 
+/// `write`, the codec's records on its lane (§4.1): baseline in
+/// `env.charge`'s account, bounded by the block's size, and only the
+/// growth a class's own positions add on its declaration's charge.
 pub fn writeWith(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Names, out: *std.ArrayList(u32), options: Options) Error!void {
     const gpa = env.gpa;
-    var w: Writer = .{ .env = env, .sums = sums, .names = names, .seen_keys = .init(gpa), .meter = .{ .gpa = gpa, .charge = env.charge }, .seen_ctx = .{ .tie = options.tie_hashes } };
+    if (options.charges) |cs| std.debug.assert(cs.len == classes.len);
+    var w: Writer = .{ .env = env, .sums = sums, .names = names, .charges = options.charges, .meter = .{ .gpa = gpa, .account = env.charge.account, .cap = options.codec_cap } };
     defer w.deinit();
     var roots: std.ArrayList(u32) = .empty;
     defer roots.deinit(gpa);
-    for (classes) |c| try roots.append(gpa, try w.rec(.class, c.int()));
-    // Every owner and its values first, then the positions they reach.
+    // Each class and what it reaches first, so a record is the first
+    // class's to reach it; every owner and its values before the positions
+    // they reach.
     var later: std.ArrayList(u32) = .empty;
     defer later.deinit(gpa);
-    while (w.pending.pop()) |r| if (w.recs.items[r].kind == .node or w.recs.items[r].kind == .owner) try later.append(gpa, r) else try w.describe(r);
+    for (classes, 0..) |c, i| {
+        w.current = @intCast(i);
+        try roots.append(gpa, try w.rec(.class, c.int()));
+        while (w.pending.pop()) |r| if (w.recs.items[r].kind == .node or w.recs.items[r].kind == .owner) try later.append(gpa, r) else try w.describe(r);
+    }
     for (0..w.owners.items.len) |o| try w.entries(@intCast(o));
     try w.pending.appendSlice(gpa, later.items);
     while (w.pending.pop()) |r| try w.describe(r);
@@ -183,6 +200,7 @@ pub fn writeWith(env: Env, sums: *Summary.Table, classes: []const ClassId, names
     try w.components();
     for (roots.items) |r| try w.emitFrom(w.recs.items[r].scc);
     try w.check();
+    try w.distinct();
     // The places the records named, closed under their children, one per
     // rank, each record `kind, head, holds, n, (step…, child)×n`.
     var places: std.ArrayList(u32) = .empty;
@@ -225,7 +243,9 @@ const Rec = struct {
     len: u32 = 0,
     /// The record's key from `canon`: canonical, and equal exactly when
     /// two records are the same structure.
-    key: u64 = 0,
+    key: u32 = 0,
+    /// The class (its index in the roots) first to reach it.
+    decl: u32 = 0,
     scc: u32 = none,
     /// The record it is written as: its block's first member.
     rep: u32,
@@ -246,18 +266,6 @@ const Extra = union(enum) {
 /// knot of positions.
 const Scc = struct { first: u32, len: u32, knot: bool, state: enum(u8) { new, open, done } = .new };
 
-/// The written words' dictionary: a hash finds the candidates, the words
-/// decide.
-const SeenCtx = struct {
-    tie: bool,
-    pub fn hash(c: SeenCtx, k: []const u8) u64 {
-        return if (c.tie) 0 else std.hash.Wyhash.hash(0, k);
-    }
-    pub fn eql(_: SeenCtx, a: []const u8, b: []const u8) bool {
-        return std.mem.eql(u8, a, b);
-    }
-};
-
 const Writer = struct {
     env: Env,
     sums: *Summary.Table,
@@ -274,6 +282,8 @@ const Writer = struct {
     /// Each owner's κ map (null: the use shapes, whose cells are marks and
     /// carry no κ), one owner per map, and the values it holds.
     owners: std.ArrayList(?Cond.Kappas) = .empty,
+    /// Each owner's class, the first to reach it.
+    owner_decl: std.ArrayList(u32) = .empty,
     owner_index: Ids.FixedDict(1) = .{},
     roots: std.ArrayList(std.ArrayList(NodeId)) = .empty,
     /// `(node, class, owner)` → the projections a stored κ beyond the
@@ -301,9 +311,15 @@ const Writer = struct {
     units: u32 = 0,
     next: u32 = 0,
     /// A record's words (a knot's, its members' relative) → its ordinal.
-    seen: std.HashMapUnmanaged([]const u8, u32, SeenCtx, std.hash_map.default_max_load_percentage) = .empty,
-    seen_ctx: SeenCtx,
-    seen_keys: std.heap.ArenaAllocator,
+    /// Each unit's words as `emit` checks them (a knot's members relative),
+    /// and where each starts: no two may be equal (`distinct`).
+    rel_out: std.ArrayList(u32) = .empty,
+    rel_starts: std.ArrayList(u32) = .empty,
+    /// Each class's declaration's charge (`Options.charges`), the class
+    /// whose record is being described, and each node's position count.
+    charges: ?[]const Ids.Charge,
+    current: u32 = 0,
+    node_pos: Ids.FixedDict(1) = .{},
 
     fn deinit(w: *Writer) void {
         const gpa = w.env.gpa;
@@ -312,6 +328,7 @@ const Writer = struct {
         w.pos_index.deinit(gpa);
         w.positions.deinit(gpa);
         w.owners.deinit(gpa);
+        w.owner_decl.deinit(gpa);
         w.owner_index.deinit(gpa);
         for (w.roots.items) |*l| l.deinit(gpa);
         w.roots.deinit(gpa);
@@ -330,8 +347,9 @@ const Writer = struct {
         w.place_local.deinit(gpa);
         w.place_order.deinit(gpa);
         w.out.deinit(gpa);
-        w.seen.deinit(gpa);
-        w.seen_keys.deinit();
+        w.rel_out.deinit(gpa);
+        w.rel_starts.deinit(gpa);
+        w.node_pos.deinit(gpa);
     }
 
     /// Reserve `n` records and do them at once.
@@ -357,6 +375,7 @@ const Writer = struct {
         const got = try w.place_state.getOrPut(w.env.gpa, .{p.int()});
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.place_list.items.len);
+            w.meter.grow(1 + w.env.places.steps(p).steps.len);
             try w.place_list.append(w.env.gpa, p);
         }
     }
@@ -373,16 +392,23 @@ const Writer = struct {
         return got.value_ptr.*;
     }
 
-    /// The position of `n` at class `at_summary` under owner `owner`.
+    /// The position of `n` at class `at_summary` under owner `owner`. The
+    /// first position of a node is the node's own record read; another (a
+    /// second interpretation, §3.6) is growth, on the class's declaration.
     fn pos(w: *Writer, n: NodeId, at_summary: bool, who: u32) Error!u32 {
         if (n == .none) return none;
-        try w.take(1);
-        const got = try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who });
-        if (!got.found_existing) {
-            try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who });
-            got.value_ptr.* = try w.fresh(.node, @intCast(w.positions.items.len - 1));
-        }
-        return got.value_ptr.*;
+        try w.take(2);
+        if (w.pos_index.get(.{ n.int(), @intFromBool(at_summary), who })) |r| return r;
+        if ((try w.node_pos.getOrPut(w.env.gpa, .{n.int()})).found_existing) try w.growth().reserve(w.env.gpa, .context, 1);
+        try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who });
+        const r = try w.fresh(.node, @intCast(w.positions.items.len - 1));
+        (try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who })).value_ptr.* = r;
+        return r;
+    }
+
+    /// The charge of the declaration whose record is being described.
+    fn growth(w: *const Writer) Ids.Charge {
+        return if (w.charges) |cs| cs[w.current] else w.env.charge;
     }
 
     /// The owner of map `kappas` (null: the use shapes): maps are
@@ -393,6 +419,7 @@ const Writer = struct {
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.owners.items.len);
             try w.owners.append(w.env.gpa, kappas);
+            try w.owner_decl.append(w.env.gpa, w.current);
             try w.roots.append(w.env.gpa, .empty);
         }
         return got.value_ptr.*;
@@ -408,7 +435,8 @@ const Writer = struct {
     /// A new record, its reservation its caller's.
     fn fresh(w: *Writer, kind: Kind, id: u32) Error!u32 {
         const r: u32 = @intCast(w.recs.items.len);
-        try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r });
+        w.meter.grow(1);
+        try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r, .decl = w.current });
         try w.pending.append(w.env.gpa, r);
         return r;
     }
@@ -426,6 +454,7 @@ const Writer = struct {
             w.tok_credit = 8;
         }
         w.tok_credit -= 1;
+        w.meter.grow(1);
         try w.toks.append(w.env.gpa, .{ .tag = tag, .x = x });
     }
 
@@ -529,7 +558,7 @@ const Writer = struct {
             try w.tok(.ref, none);
         } else if (d.kind == .@"union" or d.kind == .positions) {
             try w.ref(.cond, if (conds.kappaGet(kappas.?, p.node, p.at_summary)) |k| k.int() else none);
-        } else try w.ref(.cond, (try conds.kappaOf(gpa, w.env.charge, w.env.view(), kappas.?, p.node, p.at_summary)).int());
+        } else try w.ref(.cond, (try conds.kappaOf(gpa, w.growth(), w.env.view(), kappas.?, p.node, p.at_summary)).int());
         // The positions a read reaches by `proj` beyond the node's parts,
         // and those that lead to a stored κ beyond them (`entries`).
         var made: std.ArrayList(Over) = .empty;
@@ -561,6 +590,9 @@ const Writer = struct {
         const shapes = w.env.shapes;
         const d = shapes.get(n);
         const sb: u32 = @intFromBool(summary);
+        // Every edge found is one the codec reads.
+        const start = out.items.len;
+        defer w.meter.grow(out.items.len - start);
         switch (d.kind) {
             .leaf => {},
             .node, .delta => {
@@ -578,7 +610,7 @@ const Writer = struct {
         for (w.env.places.steps(d.place).steps) |s| {
             if (!all and (d.kind == .leaf or d.kind == .recast)) break;
             try w.take(1);
-            const c = (try shapes.proj(gpa, w.env.account(), w.env.places, w.env.cells, n, s)) orelse continue;
+            const c = (try shapes.proj(gpa, w.growth().account, w.env.places, w.env.cells, n, s)) orelse continue;
             if ((d.kind == .node or d.kind == .delta) and shapes.overGet(if (d.kind == .node) d.a else d.b, s) == c) continue;
             const ruled = d.kind != .leaf and d.kind != .recast and !(shapes.kind(c) == .leaf and shapes.cells(c) == .none);
             if (ruled or all) try out.append(gpa, .{ c.int(), @intFromBool(below(summary, s)), s.word(), if (ruled) 1 else 2 });
@@ -596,6 +628,7 @@ const Writer = struct {
     /// of the decoded class is the written one's.
     fn entries(w: *Writer, o: u32) Error!void {
         const gpa = w.env.gpa;
+        w.current = w.owner_decl.items[o];
         const kappas = w.owners.items[o] orelse return;
         if (kappas == .none) return;
         // The map's entries (its leaves), as `node << 1 | class`.
@@ -633,6 +666,7 @@ const Writer = struct {
                 const got = try seen.getOrPut(gpa, .{n.int() << 1});
                 if (got.found_existing) continue;
                 got.value_ptr.* = @intCast(states.items.len);
+                w.meter.grow(1);
                 try states.append(gpa, .{ .key = n.int() << 1, .parent = none - 1, .step = none });
             }
             var at: usize = 0;
@@ -655,6 +689,7 @@ const Writer = struct {
                     const got = try seen.getOrPut(gpa, .{key});
                     if (got.found_existing) continue;
                     got.value_ptr.* = @intCast(states.items.len);
+                    w.meter.grow(1);
                     try states.append(gpa, .{ .key = key, .parent = @intCast(at), .step = if (e[3] == 2) e[2] else none });
                     // An entry beyond the written positions: the chain of
                     // projections from a written one, each written.
@@ -688,6 +723,7 @@ const Writer = struct {
 
     fn describe(w: *Writer, r: u32) Error!void {
         const gpa = w.env.gpa;
+        w.current = w.recs.items[r].decl;
         const start: u32 = @intCast(w.toks.items.len);
         const kind = w.recs.items[r].kind;
         const id = w.recs.items[r].id;
@@ -786,7 +822,7 @@ const Writer = struct {
             .cond => {
                 const k: CondId = .from(id);
                 try w.word(@backingInt(w.env.conds.kind(k)));
-                if (k != Cond.yes and !Cond.Table.fails(k)) try w.ref(.atoms, (try w.env.conds.flat(gpa, w.env.charge, k)).int());
+                if (k != Cond.yes and !Cond.Table.fails(k)) try w.ref(.atoms, (try w.env.conds.flat(gpa, w.growth(), k)).int());
             },
             .atom => {
                 const a = w.env.conds.get(.from(id));
@@ -956,7 +992,7 @@ const Writer = struct {
                 try g.port(gpa, @intCast(j), @intCast(i), &.{w.place_state.get(.{c.int()}).?});
             }
         }
-        const block = try g.refine(&w.meter, np, w.seen_ctx.tie);
+        const block = try g.refine(&w.meter, np);
         defer gpa.free(block);
         try w.take(1 + np);
         try w.place_rank.appendSlice(gpa, block[0..np]);
@@ -1085,7 +1121,7 @@ const Writer = struct {
                 try w.keyWords(&g, 0, ts, false);
             }
             try g.starts.append(gpa, @intCast(g.words.items.len));
-            const ranks = try Refine.rank(&w.meter, g.words.items, g.starts.items, w.seen_ctx.tie);
+            const ranks = try Refine.rank(&w.meter, g.words.items, g.starts.items);
             defer gpa.free(ranks.ranks);
             const firsts = try gpa.alloc(u32, ranks.count);
             defer gpa.free(firsts);
@@ -1124,7 +1160,7 @@ const Writer = struct {
             try g.open(gpa);
             try w.keyWords(&g, @intCast(i), ts, true);
         }
-        const block = try g.refine(&w.meter, @intCast(states.items.len), w.seen_ctx.tie);
+        const block = try g.refine(&w.meter, @intCast(states.items.len));
         defer gpa.free(block);
         try w.take(Refine.wordsCost(4 * states.items.len));
         const firsts = try gpa.alloc(u32, block.len);
@@ -1320,13 +1356,13 @@ const Writer = struct {
     fn sortDistinct(w: *Writer, rs: []u32) Error!void {
         if (rs.len < 2) return;
         try w.take(Refine.wordsCost(rs.len));
-        var lo: u64 = std.math.maxInt(u64);
-        var hi: u64 = 0;
+        var lo: u32 = std.math.maxInt(u32);
+        var hi: u32 = 0;
         for (rs) |r| {
             lo = @min(lo, w.recs.items[r].key);
             hi = @max(hi, w.recs.items[r].key);
         }
-        const range = hi - lo + 1;
+        const range: usize = hi - lo + 1;
         const dense = 1 + rs.len + Refine.wordsCost(2 * range);
         if (dense >= sortCost(rs.len)) {
             try w.take(sortCost(rs.len));
@@ -1450,9 +1486,9 @@ const Writer = struct {
         try rel.append(gpa, if (x != none and w.recs.items[x].scc == s) (o - base) | rel_bit else o);
     }
 
-    /// Write a closed component: one record, or a knot's group; a record
-    /// with the words of one written before is that one. A record merged
-    /// into its block's must spell that record's words (`check`).
+    /// Write a closed component: one record, or a knot's group. A record
+    /// merged into its block's must spell that record's words (`check`),
+    /// and no two units spell the same (`distinct`).
     fn emit(w: *Writer, s: u32) Error!void {
         const gpa = w.env.gpa;
         const c = w.sccs.items[s];
@@ -1468,18 +1504,23 @@ const Writer = struct {
         if (c.knot) try abs.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
         if (c.knot) try rel.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
         for (ms) |m| try w.spell(m, s, base, &abs, &rel);
-        // The lookup hashes and compares the words, and a new key is kept
-        // and written.
-        try w.take(3 * Refine.wordsCost(abs.items.len));
-        const key = std.mem.sliceAsBytes(rel.items);
-        if (w.seen.getContext(key, w.seen_ctx)) |found| {
-            for (ms, 0..) |m, i| w.recs.items[m].ordinal = found + @as(u32, @intCast(i));
-            return;
-        }
-        try w.seen.putContext(gpa, try w.seen_keys.allocator().dupe(u8, key), base, w.seen_ctx);
+        // Kept for `distinct`, and written.
+        try w.take(2 * Refine.wordsCost(abs.items.len));
+        try w.rel_starts.append(gpa, @intCast(w.rel_out.items.len));
+        try w.rel_out.appendSlice(gpa, rel.items);
         w.next += c.len;
         w.units += 1;
         try w.out.appendSlice(gpa, abs.items);
+    }
+
+    /// No two units spell the same words: the refinement merged every
+    /// equal structure, so a repeat would be the codec's defect. Checked by
+    /// sorting the units' words, never by a hash.
+    fn distinct(w: *Writer) Error!void {
+        try w.rel_starts.append(w.env.gpa, @intCast(w.rel_out.items.len));
+        const r = try Refine.rank(&w.meter, w.rel_out.items, w.rel_starts.items);
+        defer w.env.gpa.free(r.ranks);
+        if (r.count != w.units) return error.AccountingInvariant;
     }
 
     /// Every merged record spells its block's record's words, checked once
