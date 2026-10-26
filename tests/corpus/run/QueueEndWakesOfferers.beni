@@ -1,0 +1,29 @@
+-- run: `end` answers every parked offer `False`, its value not accepted,
+-- and a parked `offerAll` gets back the values not yet accepted
+-- (transparent-effects-proposal.md §17.9). On a full `bounded 1` holding
+-- "held", an `offer` of "x", an `offerAll` of [ "y", "z" ] and an `offer`
+-- of "w" wait, in that order. One take makes room for "x"; then the queue
+-- ends. The `offerAll` answers [ "y", "z" ], the offer of "w" answers
+-- `False`, and only "x" is left to take before `Nothing`.
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.bounded 1
+    _ = Queue.offer q "held"
+    one = Task.spawn λ⊤ → Debug.log "offer x" (Queue.offer q "x")
+    two = Task.spawn λ⊤ → Debug.log "offerAll left" (Queue.offerAll q [ "y", "z" ])
+    three = Task.spawn λ⊤ → Debug.log "offer w" (Queue.offer q "w")
+    Task.yieldNow ⊤
+    _ = Debug.log "took" (Queue.take q)
+    Queue.end q
+    _ = Task.join one
+    _ = Task.join two
+    _ = Task.join three
+    _ = Debug.log "took" (Queue.take q)
+    _ = Debug.log "took" (Queue.take q)
+    Node.print "done"

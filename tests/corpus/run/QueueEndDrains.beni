@@ -1,0 +1,54 @@
+-- run: after `end`, the values held are still taken, and then `take`
+-- answers `Nothing`, so a consumer's loop ends (transparent-effects-proposal.md
+-- §17.9, decision 9). Two consumers loop until `Nothing`; together they see
+-- every value once, in order. A taker parked on an empty queue at the `end`
+-- gets `Nothing` at once. An offer after the `end` answers `False`, and a
+-- second `end` does nothing.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task exposing (Fiber)
+
+
+consume : Queue Int, String → ⊤
+consume q name =
+    case Queue.take q of
+        Just v →
+            _ = Debug.log "${name} took" v
+            Task.yieldNow ⊤
+            consume q name
+
+        Nothing →
+            Debug.log "${name} saw the end" ⊤
+
+
+consumer : Queue Int, String → Fiber ⊤
+consumer q name = Task.spawn λ⊤ → consume q name
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    _ = Queue.offerAll q [ 1, 2, 3, 4, 5 ]
+    Queue.end q
+    _ = Debug.log "offer after the end" (Queue.offer q 6)
+    Queue.end q
+    a = consumer q "a"
+    b = consumer q "b"
+    _ = Task.joinAll [ a, b ]
+    _ = Debug.log "size" (Queue.size q)
+
+    empty = Queue.bounded 4
+    waiting = Task.spawn λ⊤ →
+        _ = Debug.log "parked taker got" (Queue.take empty)
+        ⊤
+    waitingAll = Task.spawn λ⊤ →
+        _ = Debug.log "parked takeAll got" (Queue.takeAll empty)
+        ⊤
+    Task.yieldNow ⊤
+    Queue.end empty
+    _ = Task.joinAll [ waiting, waitingAll ]
+    _ = Debug.log "take after the end" (Queue.take empty)
+    _ = Debug.log "takeAll after the end" (Queue.takeAll empty)
+    _ = Debug.log "poll after the end" (Queue.poll empty)
+    Node.print "done"

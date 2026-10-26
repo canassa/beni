@@ -1,0 +1,45 @@
+-- run: a taker cancelled while it waits leaves the line at once, is never
+-- handed a value, and does not block the takers behind it
+-- (transparent-effects-proposal.md §17.9, §17.1 item 1). On an empty
+-- queue a, b and c wait to take, in that order, and b is cancelled: two
+-- offers go to a and c, and nothing is left. Then a `takeN` for 3 waits at
+-- the head with one value held, and a `take` waits behind it; cancelling
+-- the `takeN` lets the `take` through at once.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task exposing (Fiber)
+
+
+taker : Queue Int, String → Fiber ⊤
+taker q name = Task.spawn λ⊤ →
+    _ = Task.onExit (λ⊤ → Debug.log "${name} took" (Queue.take q)) λ_ → Debug.log "${name} ended" ⊤
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    a = taker q "a"
+    b = taker q "b"
+    c = taker q "c"
+    Task.yieldNow ⊤
+    Task.cancel b
+    _ = Queue.offer q 1
+    _ = Queue.offer q 2
+    _ = Task.joinAll [ a, c ]
+    _ = Debug.log "size" (Queue.size q)
+
+    many = Task.spawn λ⊤ →
+        _ = Debug.log "takeN took" (Queue.takeN q 3)
+        ⊤
+    Task.yieldNow ⊤
+    one = taker q "one"
+    Task.yieldNow ⊤
+    _ = Queue.offer q 3
+    Task.yieldNow ⊤
+    _ = Debug.log "size while takeN waits" (Queue.size q)
+    Task.cancel many
+    Task.join one
+    _ = Debug.log "size at the end" (Queue.size q)
+    Node.print "done"

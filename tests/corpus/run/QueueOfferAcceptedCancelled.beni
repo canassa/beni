@@ -1,0 +1,37 @@
+-- run: an offer that was accepted stays accepted when its fiber is then
+-- cancelled, and an offer cancelled before it was accepted leaves nothing
+-- behind (transparent-effects-proposal.md §17.9, amended 2026-10-26). On a
+-- full `bounded 1` holding "held", offers of "x" and "y" wait. A take
+-- makes room, so "x" is moved in and its offer resumed; the offer is
+-- cancelled in that turn, before it runs. "x" is in the queue once.
+-- "y" is cancelled while it still waits and never enters. A parked
+-- `offerAll` cancelled after some of its values were accepted keeps those
+-- and drops the rest.
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.bounded 1
+    _ = Queue.offer q "held"
+    x = Task.spawn λ⊤ → Debug.log "x offered" (Queue.offer q "x")
+    y = Task.spawn λ⊤ → Debug.log "y offered" (Queue.offer q "y")
+    Task.yieldNow ⊤
+    _ = Debug.log "took" (Queue.take q)
+    Task.cancel x
+    Task.cancel y
+    _ = Debug.log "size" (Queue.size q)
+    _ = Debug.log "took" (Queue.take q)
+    _ = Debug.log "poll" (Queue.poll q)
+
+    _ = Queue.offer q "a"
+    many = Task.spawn λ⊤ → Debug.log "offerAll left" (Queue.offerAll q [ "b", "c", "d" ])
+    Task.yieldNow ⊤
+    _ = Debug.log "took" (Queue.take q)
+    Task.cancel many
+    _ = Debug.log "took" (Queue.take q)
+    _ = Debug.log "poll" (Queue.poll q)
+    Node.print "done"

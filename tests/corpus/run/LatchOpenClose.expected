@@ -1,0 +1,9 @@
+open at the start: True
+open after close: False
+a passed: ⊤
+c passed: ⊤
+b ended: Just Cancelled
+d passed: ⊤
+late still waits: True
+late passed: ⊤
+done

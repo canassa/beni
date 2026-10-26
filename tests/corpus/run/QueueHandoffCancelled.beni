@@ -1,0 +1,49 @@
+-- run: a taker handed values but cancelled before it runs gives them back
+-- to the front of the queue, and the next taker gets them first
+-- (transparent-effects-proposal.md §17.9, amended 2026-10-26). An offer of
+-- 1 goes straight to the parked taker a; 2 is offered behind it; a is
+-- cancelled in the same turn. 1 goes back in front of 2, and the takes
+-- after see 1, then 2. When another taker waits behind the cancelled one,
+-- the value given back goes straight to it: `next` gets 3, not 4. A
+-- `takeAll` and a `takeN` handed several values give them back in their
+-- order.
+import Io
+import Node exposing (Program)
+import Queue
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.unbounded ⊤
+    a = Task.spawn λ⊤ → Debug.log "a took" (Queue.take q)
+    Task.yieldNow ⊤
+    _ = Queue.offer q 1
+    _ = Queue.offer q 2
+    Task.cancel a
+    _ = Debug.log "size after the cancel" (Queue.size q)
+    _ = Debug.log "took" (Queue.take q)
+    _ = Debug.log "took" (Queue.take q)
+
+    first = Task.spawn λ⊤ → Debug.log "first took" (Queue.take q)
+    next = Task.spawn λ⊤ → Debug.log "next took" (Queue.take q)
+    Task.yieldNow ⊤
+    _ = Queue.offer q 3
+    Task.cancel first
+    _ = Queue.offer q 4
+    _ = Debug.log "next got" (Task.join next)
+    _ = Debug.log "left" (Queue.takeAll q)
+
+    all = Task.spawn λ⊤ → Debug.log "takeAll took" (Queue.takeAll q)
+    Task.yieldNow ⊤
+    _ = Queue.offerAll q [ 5, 6 ]
+    _ = Queue.offer q 7
+    Task.cancel all
+    _ = Debug.log "after takeAll's cancel" (Queue.takeAll q)
+
+    some = Task.spawn λ⊤ → Debug.log "takeN took" (Queue.takeN q 2)
+    Task.yieldNow ⊤
+    _ = Queue.offerAll q [ 8, 9, 10 ]
+    Task.cancel some
+    _ = Debug.log "after takeN's cancel" (Queue.takeAll q)
+    Node.print "done"

@@ -1,0 +1,28 @@
+-- run: a `Task.forever` whose work never waits does not starve other
+-- fibers or timers, and can be cancelled (transparent-effects-proposal.md
+-- §17.3, amended 2026-10-26). After each run the loop yields, as
+-- `Task.yieldNow` does: another fiber that is ready runs between two runs,
+-- and the scheduler's budget of 64 resumptions a turn lets a real 1 ms
+-- timer fire while the loop spins. Then the loop is cancelled.
+import Duration
+import Io
+import Node exposing (Program)
+import Ref
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    runs = Ref.make 0
+    loop = Task.spawn λ⊤ → Task.forever λ⊤ → Ref.update runs λn → n + 1
+    other = Task.spawn λ⊤ →
+        _ = Debug.log "other ran after runs" (Ref.get runs)
+        Task.yieldNow ⊤
+        _ = Debug.log "other ran again after runs" (Ref.get runs)
+        ⊤
+    Task.join other
+    Task.sleep (Duration.millis 1)
+    _ = Debug.log "the timer fired while the loop ran" (Ref.get runs > 2)
+    Task.cancel loop
+    _ = Debug.log "loop ended" (Task.poll loop)
+    Node.print "done"

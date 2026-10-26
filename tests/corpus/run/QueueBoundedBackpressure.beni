@@ -1,0 +1,56 @@
+-- run: a full bounded queue makes an offer wait, and parked offers are
+-- accepted in order as takes make room (transparent-effects-proposal.md
+-- §17.9). On `bounded 2`, a producer offers 1 to 5 and a second producer
+-- offers 10 once the first waits. The first waits at 3, the second behind
+-- it. Each take makes room for the oldest parked offer. 10 began to wait
+-- before the first producer offered 4, so the values come out 1, 2, 3, 10,
+-- 4, 5, and each producer goes on only once its value is in. A capacity
+-- below 1 is 1.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+produce : Queue Int, List Int → ⊤
+produce q values =
+    case values of
+        [] →
+            ⊤
+
+        [ v, …rest ] →
+            ok = Queue.offer q v
+            _ = Debug.log "offered ${String.fromInt v}" ok
+            produce q rest
+
+
+main : Program
+main = Io.run λ⊤ →
+    q = Queue.bounded 2
+    first = Task.spawn λ⊤ → produce q [ 1, 2, 3, 4, 5 ]
+    Task.yieldNow ⊤
+    second = Task.spawn λ⊤ → produce q [ 10 ]
+    Task.yieldNow ⊤
+    _ = Debug.log "size while full" (Queue.size q)
+    drain q 6
+    _ = Task.joinAll [ first, second ]
+
+    one = Queue.bounded 0
+    _ = Queue.offer one "a"
+    late = Task.spawn λ⊤ →
+        ok = Queue.offer one "b"
+        Debug.log "b accepted" ok
+    Task.yieldNow ⊤
+    _ = Debug.log "capacity 0 holds" (Queue.size one)
+    _ = Debug.log "took" (Queue.take one)
+    _ = Task.join late
+    _ = Debug.log "took" (Queue.take one)
+    Node.print "done"
+
+
+drain : Queue Int, Int → ⊤
+drain q n =
+    if n > 0 then
+        _ = Debug.log "took" (Queue.take q)
+        Task.yieldNow ⊤
+        drain q (n - 1)

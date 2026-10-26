@@ -1147,6 +1147,23 @@ pub never : ⊤ → a
 never ⊤ = callback λ_ → λ⊤ → ⊤
 
 
+--| Run `work` again and again. It ends only when the fiber is cancelled,
+--| and then the cleanup of the run in progress runs, as for any other
+--| cancelled work. After each run it lets every other ready fiber run
+--| first, as `yieldNow` does, so a `work` that never waits cannot starve
+--| them and can still be cancelled. A loop of any length uses no stack.
+--| Effect's `forever`.
+--|
+--|     _ = Task.spawn λ⊤ → Task.forever λ⊤ →
+--|         job = Queue.take jobs
+--|         handle job
+pub forever : (⊤ → a) → b
+forever work =
+    _ = work ⊤
+    yieldNow ⊤
+    forever work
+
+
 --| How a fiber ended, `Just` once it has and `Nothing` while it runs,
 --| without waiting. A fiber that is cancelled but still running its cleanup
 --| is running.

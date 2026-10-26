@@ -34,6 +34,7 @@ A fiber is one line of execution; many fibers take turns on one thread. `Task` i
 | `Task.timeout duration (λ⊤ → work)` | `Just` the value, or `Nothing` after the duration |
 | `Task.race left right` | the first of two to finish; the other is cancelled at once and does not run again |
 | `Task.retry schedule (λ⊤ → attempt)` | repeats a `Result` attempt as a `Schedule` says |
+| `Task.forever (λ⊤ → work)` | runs `work` again and again; only a cancel stops it. It lets other fibers run after each run, and uses no stack |
 
 Nothing a fiber starts outlives what started it, unless it is joined first. Cancellation is
 delivered only where a fiber can wait.
@@ -130,6 +131,63 @@ pub leave : Semaphore → ⊤
 leave slots = Semaphore.release slots 1
 ```
 
+## Values between fibers: `Queue`
+
+A `Queue a` passes values from fibers that offer to fibers that take, first in, first out.
+
+- `Queue.bounded n` holds at most `n` values. An offer to a full queue waits for room.
+- `Queue.dropping n` refuses a new value when it is full. `Queue.sliding n` drops the oldest
+  value to make room. `Queue.unbounded ⊤` is never full. A capacity below 1 is 1.
+- `Queue.offer q v` answers `True` when the queue accepts `v`. It answers `False` when a
+  `dropping` queue refuses `v`, or when the queue has ended. `Queue.offerAll q vs` answers the
+  values that it did not accept.
+- `Queue.take q` waits while the queue is empty and answers `Just` the oldest value.
+  `Queue.takeAll q` waits while the queue is empty and then takes every value.
+  `Queue.takeN q n` waits until there are `n` values, or the queue is full, or it has ended.
+- `Queue.poll q` and `Queue.size q` do not wait.
+- `Queue.end q` ends the queue. Later offers answer `False`. The values in the queue are still
+  taken. After them, `take` answers `Nothing`. A loop that takes until `Nothing` stops there.
+- Fibers that wait to take get values in the order they started to wait. A take never goes before
+  a fiber that waits.
+- A cancelled wait loses no value. A taker that was given a value but was cancelled before it ran
+  puts the value back at the front. An offer that the queue accepted stays in the queue.
+
+## Gates: `Latch`
+
+A `Latch` is a gate. `Latch.make False` makes a closed latch, and `Latch.make True` an open one.
+
+- `Latch.wait l` returns at once when `l` is open. Otherwise it waits.
+- `Latch.open l` opens it and lets every waiting fiber go on, in order. `Latch.close l` closes it.
+- `Latch.release l` lets the waiting fibers go on but keeps the latch closed. A later wait waits.
+- `Latch.isOpen l` tells which.
+
+```beni
+import Latch exposing (Latch)
+import Queue exposing (Queue)
+import Task exposing (Fiber)
+
+
+pub work : Queue String, (String → ⊤) → ⊤
+work jobs handle =
+    case Queue.take jobs of
+        Just job →
+            handle job
+            work jobs handle
+
+        Nothing →
+            ⊤
+
+
+pub worker : Queue String, (String → ⊤) → Fiber ⊤
+worker jobs handle = Task.spawn λ⊤ → work jobs handle
+
+
+pub ticker : Latch, (⊤ → ⊤) → ⊤
+ticker gate tick = Task.forever λ⊤ →
+    Latch.wait gate
+    tick ⊤
+```
+
 ## Where a program can wait
 
 `main` is evaluated once, when the program starts, and must not wait.
@@ -183,4 +241,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5, §17.7, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.3, §17.5, §17.7, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Queue.beni`; `core/Latch.beni`; `core/Log.beni`; `platforms/node/Io.beni`.

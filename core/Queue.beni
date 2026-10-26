@@ -1,0 +1,429 @@
+--! Values passed between fibers, first in, first out
+--! (`transparent-effects-proposal.md` §17.9): Effect's `Queue`.
+--!
+--!     jobs = Queue.bounded 16
+--!     _ = Task.spawn λ⊤ → Task.forever λ⊤ → Queue.offer jobs (next ⊤)
+--!     job = Queue.take jobs
+--!
+--! **Four kinds**, which differ only in what an offer to a full queue does:
+--! `bounded` waits for room, `dropping` refuses the new value, `sliding`
+--! drops the oldest value, and `unbounded` is never full.
+--!
+--! **First come, first served.** Fibers that wait to take are served in
+--! the order they began to wait, and so are fibers that wait to offer. A
+--! value goes straight to the fiber that waits longest, and a take never
+--! passes a fiber that waits to take.
+--!
+--! **Cancelling a wait loses nothing.** A fiber cancelled while it waits
+--! leaves the queue at once. A taker that was handed values but was
+--! cancelled before it ran gives them back to the front of the queue, so
+--! the next taker gets them first. An offer that was accepted stays
+--! accepted when its fiber is cancelled: the value is in the queue once.
+--!
+--! **`end` ends the queue.** Later offers are refused, the values held are
+--! still taken, and then `take` answers `Nothing`, so a consumer's loop
+--! ends there.
+--!
+--! Nothing here is `foreign`: it is beni over `Task.callback` and
+--! `Task.resume`.
+
+import Js
+import Task
+
+
+--| A queue of values of type `a`, and the fibers that wait on it.
+pub opaque type Queue a
+    = Queue Js.Value
+
+
+--| A queue that holds at most `capacity` values; an offer to a full queue
+--| waits until there is room. Fewer than 1 is 1. Each call makes a new one.
+pub bounded : Int → Queue a
+bounded capacity = make 0 capacity
+
+
+--| A queue that holds at most `capacity` values; an offer to a full queue
+--| is refused and answers `False`. Fewer than 1 is 1.
+pub dropping : Int → Queue a
+dropping capacity = make 1 capacity
+
+
+--| A queue that holds at most `capacity` values; an offer to a full queue
+--| drops the oldest value to make room. Fewer than 1 is 1.
+pub sliding : Int → Queue a
+sliding capacity = make 2 capacity
+
+
+--| A queue that is never full.
+pub unbounded : ⊤ → Queue a
+unbounded ⊤ = make 3 1
+
+
+--| Put `value` at the end of the queue, and answer `True` when it was
+--| accepted. A full `bounded` queue waits for room first. The answer is
+--| `False` when a full `dropping` queue refuses the value, and when the
+--| queue has ended, also while the offer waits.
+pub offer : Queue a, a → Bool
+offer (Queue q) value =
+    if ended q then
+        False
+    else if not (full q) && sizeOf (Js.get q "offers") == 0 then
+        push q (Js.from value)
+        serve q
+        True
+    else
+        mode : Int
+        mode = Js.to (Js.get q "mode")
+
+        if mode == 1 then
+            False
+        else if mode == 2 then
+            slide q
+            push q (Js.from value)
+            serve q
+            True
+        else
+            Task.callback λresume → wait q (Js.array [ Js.from value ]) True resume
+
+
+--| Offer each value in turn, and answer the values that were not
+--| accepted, in order. A full `bounded` queue waits for room, keeping its
+--| place in line for every value left; when the queue ends while it
+--| waits, the values not yet accepted are the answer.
+pub offerAll : Queue a, List a → List a
+offerAll (Queue q) values =
+    vs = List.foldl values (Js.array []) λv arr →
+        _ = Js.call arr "push" [ Js.from v ]
+        arr
+    mode : Int
+    mode = Js.to (Js.get q "mode")
+
+    if ended q then
+        values
+    else if mode == 0 then
+        at = if sizeOf (Js.get q "offers") == 0 then fillServing q vs 0 else 0
+
+        if at == len vs then
+            []
+        else
+            Task.callback λresume → wait q (Js.call vs "slice" [ Js.from at ]) False resume
+    else
+        rest = Js.array []
+        Js.each vs λv →
+            if not (full q) then
+                push q v
+            else if mode == 2 then
+                slide q
+                push q v
+            else
+                Js.to (Js.call rest "push" [ v ])
+        serve q
+        Js.to rest
+
+
+--| The oldest value. While the queue is empty this waits. `Nothing` once
+--| the queue has ended and is empty.
+--|
+--|     drain q = case Queue.take q of
+--|         Just v → handle v; drain q
+--|         Nothing → ⊤
+pub take : Queue a → Maybe a
+take (Queue q) =
+    if sizeOf (Js.get q "takers") == 0 && count q > 0 then
+        v = pop q
+        refill q
+        Just (Js.to v)
+    else if sizeOf (Js.get q "takers") == 0 && ended q then
+        Nothing
+    else
+        Task.callback λresume → park q 1 1 False resume
+
+
+--| Every value held, oldest first. While the queue is empty this waits.
+--| `[]` only once the queue has ended and is empty.
+pub takeAll : Queue a → List a
+takeAll (Queue q) = takeList q 1 all
+
+
+--| Up to `n` values, oldest first. This waits until `n` values are held,
+--| or the queue ends. On a queue that holds fewer than `n`, it waits until
+--| the queue is full. `n` of 0 or fewer answers `[]` and does not wait.
+pub takeN : Queue a, Int → List a
+takeN (Queue q) n =
+    if n ≤ 0 then
+        []
+    else
+        need = if Js.to (Js.get q "mode") == 3 then n else min n (Js.to (Js.get q "cap"))
+        takeList q need n
+
+
+--| The oldest value, or `Nothing` when there is none, without waiting.
+--| It does not pass a fiber that waits to take: while one waits, the
+--| answer is `Nothing`.
+pub poll : Queue a → Maybe a
+poll (Queue q) =
+    if sizeOf (Js.get q "takers") == 0 && count q > 0 then
+        v = pop q
+        refill q
+        Just (Js.to v)
+    else
+        Nothing
+
+
+--| How many values the queue holds now.
+pub size : Queue a → Int
+size (Queue q) = count q
+
+
+--| End the queue. Later offers answer `False`. The values held are still
+--| taken; fibers that wait to take from an empty queue get `Nothing`, and
+--| fibers that wait to offer get `False`, their values not accepted. A
+--| second `end` does nothing.
+pub end : Queue a → ⊤
+end (Queue q) =
+    if not (ended q) then
+        Js.set q "ended" (Js.from True)
+        offers = Js.get q "offers"
+        Js.set q "offers" (Js.construct (Js.global "Set") [])
+        Js.each offers λo →
+            vs = Js.get o "vs"
+            if Js.to (Js.get o "single") then
+                Task.resume (Js.to (Js.get o "resume")) False
+            else
+                Task.resume
+                    (Js.to (Js.get o "resume"))
+                    (Js.to (Js.call vs "slice" [ Js.get o "at" ]))
+        serve q
+
+
+-- ---- The state -------------------------------------------------------------
+--
+-- `q` is `{ mode, cap, items, head, takers, offers, ended }`. `mode` is 0
+-- bounded, 1 dropping, 2 sliding, 3 unbounded. The values held are
+-- `items` from `head` on. `takers` and `offers` are `Set`s, which keep the
+-- order things were added and delete in O(1).
+--
+-- A taker is `{ need, most, list, got, resume }`: it is served once
+-- `need` values are held, or the queue has ended, and then takes up to
+-- `most`. Serving it moves its values into `got` and resumes its fiber — a
+-- hand-off, so no later take gets them first. Its canceller sees `got`: a
+-- taker served but cancelled before it ran gives its values back to the
+-- front. While a taker waits the queue holds fewer than it needs, so a
+-- take never passes it.
+--
+-- An offer that waits is `{ vs, at, single, done, resume }`: the values
+-- `vs` from `at` on are not yet accepted. When room is made they move in,
+-- in order; `done` is set when the last one has, and then nothing is
+-- undone: an accepted value stays in the queue.
+
+all : Int
+all = 9007199254740991
+
+
+make : Int, Int → Queue a
+make mode capacity =
+    Queue
+        (Js.from
+            { mode = mode
+            , cap = max 1 capacity
+            , items = Js.array []
+            , head = 0
+            , takers = Js.construct (Js.global "Set") []
+            , offers = Js.construct (Js.global "Set") []
+            , ended = False
+            }
+        )
+
+
+ended : Js.Value → Bool
+ended q = Js.to (Js.get q "ended")
+
+
+sizeOf : Js.Value → Int
+sizeOf set = Js.to (Js.get set "size")
+
+
+len : Js.Value → Int
+len array = Js.to (Js.get array "length")
+
+
+count : Js.Value → Int
+count q = Js.to (Js.get (Js.get q "items") "length") - Js.to (Js.get q "head")
+
+
+full : Js.Value → Bool
+full q = Js.to (Js.get q "mode") ≠ 3 && count q ≥ Js.to (Js.get q "cap")
+
+
+first : Js.Value → Js.Value
+first set = Js.get (Js.call (Js.call set "values" []) "next" []) "value"
+
+
+push : Js.Value, Js.Value → ⊤
+push q v = Js.to (Js.call (Js.get q "items") "push" [ v ])
+
+
+-- Take the oldest value off. The array is reset when it empties, and its
+-- taken front cut off once it is most of the array.
+pop : Js.Value → Js.Value
+pop q =
+    items = Js.get q "items"
+
+    h : Int
+    h = Js.to (Js.get q "head")
+    v = Js.at items h
+    Js.setAt items h Js.null
+    advance q (h + 1)
+    v
+
+
+advance : Js.Value, Int → ⊤
+advance q h =
+    items = Js.get q "items"
+
+    n : Int
+    n = Js.to (Js.get items "length")
+
+    if h ≥ n then
+        Js.set items "length" (Js.from 0)
+        Js.set q "head" (Js.from 0)
+    else if h ≥ 1024 && h * 2 ≥ n then
+        _ = Js.call items "splice" [ Js.from 0, Js.from h ]
+        Js.set q "head" (Js.from 0)
+    else
+        Js.set q "head" (Js.from h)
+
+
+-- Up to `most` of the oldest values, as a new array.
+popUpTo : Js.Value, Int → Js.Value
+popUpTo q most =
+    items = Js.get q "items"
+
+    h : Int
+    h = Js.to (Js.get q "head")
+    n = min most (count q)
+    got = Js.call items "slice" [ Js.from h, Js.from (h + n) ]
+    _ = Js.call items "fill" [ Js.null, Js.from h, Js.from (h + n) ]
+    advance q (h + n)
+    got
+
+
+-- Put values back at the front, in their order. Only a cancelled taker
+-- does it, so it copies.
+unshift : Js.Value, Js.Value → ⊤
+unshift q got =
+    items = Js.get q "items"
+    Js.set q "items" (Js.call got "concat" [ Js.call items "slice" [ Js.get q "head" ] ])
+    Js.set q "head" (Js.from 0)
+
+
+-- Make room in a full sliding queue by dropping the oldest values.
+slide : Js.Value → ⊤
+slide q =
+    if count q ≥ Js.to (Js.get q "cap") then
+        _ = pop q
+        slide q
+
+
+-- Move values of `vs` from `at` on into a bounded queue while it has
+-- room; answer where it stopped.
+fill : Js.Value, Js.Value, Int → Int
+fill q vs at =
+    if at < len vs && not (full q) then
+        push q (Js.at vs at)
+        fill q vs (at + 1)
+    else
+        at
+
+
+-- ---- Waiting ----------------------------------------------------------------
+
+takeList : Js.Value, Int, Int → List a
+takeList q need most =
+    if sizeOf (Js.get q "takers") == 0 && (count q ≥ need || ended q) then
+        got = popUpTo q most
+        refill q
+        Js.to got
+    else
+        Task.callback λresume → park q need most True resume
+
+
+-- Join the takers. The canceller gives back what the taker was handed, or
+-- takes it out of line.
+park : Js.Value, Int, Int, Bool, Task.Resume b → (⊤ → ⊤)
+park q need most list resume =
+    w = Js.from { need = need, most = most, list = list, got = Js.null, resume = Js.from resume }
+    _ = Js.call (Js.get q "takers") "add" [ w ]
+    λ⊤ →
+        got = Js.get w "got"
+        if Js.isNull got then
+            _ = Js.call (Js.get q "takers") "delete" [ w ]
+            serve q
+        else
+            unshift q got
+            serve q
+
+
+-- Join the offers that wait. The canceller takes it out of line unless all
+-- its values were accepted.
+wait : Js.Value, Js.Value, Bool, Task.Resume b → (⊤ → ⊤)
+wait q vs single resume =
+    o = Js.from { vs = vs, at = 0, single = single, done = False, resume = Js.from resume }
+    _ = Js.call (Js.get q "offers") "add" [ o ]
+    λ⊤ → if not (Js.to (Js.get o "done")) then Js.to (Js.call (Js.get q "offers") "delete" [ o ])
+
+
+-- Hand values to the takers at the head of the line, in order, while they
+-- can be served.
+serve : Js.Value → ⊤
+serve q =
+    takers = Js.get q "takers"
+
+    if sizeOf takers > 0 then
+        w = first takers
+
+        need : Int
+        need = Js.to (Js.get w "need")
+
+        if count q ≥ need || ended q then
+            _ = Js.call takers "delete" [ w ]
+            got = popUpTo q (Js.to (Js.get w "most"))
+            Js.set w "got" got
+            if Js.to (Js.get w "list") then
+                Task.resume (Js.to (Js.get w "resume")) (Js.to got)
+            else if Js.to (Js.get got "length") == 0 then
+                Task.resume (Js.to (Js.get w "resume")) Nothing
+            else
+                Task.resume (Js.to (Js.get w "resume")) (Just (Js.at got 0))
+            refill q
+            serve q
+
+
+-- Move the values of the offers that wait into a bounded queue while it
+-- has room, in order, and resume each offer whose values are all in.
+refill : Js.Value → ⊤
+refill q =
+    offers = Js.get q "offers"
+
+    if sizeOf offers > 0 && not (full q) then
+        o = first offers
+        vs = Js.get o "vs"
+        at = fill q vs (Js.to (Js.get o "at"))
+        Js.set o "at" (Js.from at)
+
+        if at == len vs then
+            _ = Js.call offers "delete" [ o ]
+            Js.set o "done" (Js.from True)
+            if Js.to (Js.get o "single") then
+                Task.resume (Js.to (Js.get o "resume")) True
+            else
+                Task.resume (Js.to (Js.get o "resume")) []
+            refill q
+
+
+-- `fill`, and serve the takers, again while that makes room.
+fillServing : Js.Value, Js.Value, Int → Int
+fillServing q vs at =
+    next = fill q vs at
+    serve q
+    if next > at && next < len vs then fillServing q vs next else next

@@ -1,0 +1,39 @@
+-- run: a full `dropping` queue refuses the new value, and a full `sliding`
+-- queue drops the oldest to make room (transparent-effects-proposal.md
+-- §17.9). On capacity 2, offers of 1, 2, 3 answer True, True, False on
+-- `dropping`, which keeps 1 and 2; and True three times on `sliding`, which
+-- keeps 2 and 3. `offerAll` answers the values a `dropping` queue refused
+-- and nothing for `sliding`. An offer to an empty queue with a taker
+-- waiting goes to the taker. A capacity below 1 is 1.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+offers : Queue Int, String → ⊤
+offers q name =
+    _ = Debug.log "${name} offer 1" (Queue.offer q 1)
+    _ = Debug.log "${name} offer 2" (Queue.offer q 2)
+    _ = Debug.log "${name} offer 3" (Queue.offer q 3)
+    _ = Debug.log "${name} holds" (Queue.takeAll q)
+    _ = Debug.log "${name} offerAll left" (Queue.offerAll q [ 4, 5, 6, 7 ])
+    _ = Debug.log "${name} holds" (Queue.takeAll q)
+    taker = Task.spawn λ⊤ → Queue.take q
+    Task.yieldNow ⊤
+    _ = Debug.log "${name} offer to a taker" (Queue.offer q 8)
+    _ = Debug.log "${name} taker got" (Task.join taker)
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    offers (Queue.dropping 2) "dropping"
+    offers (Queue.sliding 2) "sliding"
+    zero = Queue.sliding 0
+    _ = Queue.offerAll zero [ 1, 2, 3 ]
+    _ = Debug.log "sliding 0 holds" (Queue.takeAll zero)
+    none = Queue.dropping (0 - 5)
+    _ = Queue.offerAll none [ 1, 2, 3 ]
+    _ = Debug.log "dropping -5 holds" (Queue.takeAll none)
+    Node.print "done"

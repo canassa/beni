@@ -1,0 +1,15 @@
+offer after the end: False
+a took: 1
+b took: 2
+a took: 3
+b took: 4
+a took: 5
+b saw the end: ⊤
+a saw the end: ⊤
+size: 0
+parked taker got: Nothing
+parked takeAll got: []
+take after the end: Nothing
+takeAll after the end: []
+poll after the end: Nothing
+done

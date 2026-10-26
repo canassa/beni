@@ -1,0 +1,32 @@
+-- run: `release` wakes every fiber waiting at a closed latch, in the order
+-- they began to wait, without opening it (transparent-effects-proposal.md
+-- §17.9). a and b wait and are released; the latch stays closed, so c,
+-- which begins to wait after the release, waits on until `open`.
+import Io
+import Latch exposing (Latch)
+import Node exposing (Program)
+import Task exposing (Fiber)
+
+
+waiter : Latch, String → Fiber ⊤
+waiter l name = Task.spawn λ⊤ →
+    Latch.wait l
+    Debug.log "${name} passed" ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    l = Latch.make False
+    a = waiter l "a"
+    b = waiter l "b"
+    Task.yieldNow ⊤
+    Latch.release l
+    _ = Debug.log "open after the release" (Latch.isOpen l)
+    _ = Task.joinAll [ a, b ]
+    c = waiter l "c"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "c still waits" (Task.poll c == Nothing)
+    Latch.open l
+    Task.join c
+    Node.print "done"

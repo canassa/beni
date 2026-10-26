@@ -1,0 +1,11 @@
+did a: ⊤
+run released: ⊤
+did b: ⊤
+run released: ⊤
+did c: ⊤
+run released: ⊤
+queue empty: 0
+run released: ⊤
+loop ended: ⊤
+worker ended: Just Cancelled
+done

@@ -1,0 +1,39 @@
+-- run: `Task.forever` ends only when its fiber is cancelled, and then the
+-- cleanup of the run in progress runs, and the cleanup around the loop
+-- (transparent-effects-proposal.md §17.3, amended 2026-10-26). A worker
+-- takes jobs from a queue forever, each run in a `bracket`; after three
+-- jobs it waits on an empty queue and is cancelled there. Its last run's
+-- release and the loop's `onExit` both run before `cancel` returns.
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    jobs : Queue String
+    jobs = Queue.unbounded ⊤
+
+    worker = Task.spawn λ⊤ →
+        Task.onExit
+            (λ⊤ →
+                Task.forever λ⊤ →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "run released" ⊤) λ_ →
+                        case Queue.take jobs of
+                            Just job →
+                                Debug.log "did ${job}" ⊤
+
+                            Nothing →
+                                ⊤
+            )
+            λ_ → Debug.log "loop ended" ⊤
+    _ = Queue.offerAll jobs [ "a", "b", "c" ]
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    _ = Debug.log "queue empty" (Queue.size jobs)
+    Task.cancel worker
+    _ = Debug.log "worker ended" (Task.poll worker)
+    Node.print "done"

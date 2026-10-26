@@ -1,0 +1,58 @@
+-- run: `Task.forever` uses no stack, however long it runs
+-- (transparent-effects-proposal.md §17.3, amended 2026-10-26). A loop whose
+-- work never waits runs 100 000 times; on the last run the work completes
+-- a `Deferred`, and the main fiber, which waits for it, cancels the loop.
+-- A second loop takes 100 000 values from a `bounded 1` queue, waiting for
+-- each one, while a producer offers them one at a time.
+import Deferred
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Ref
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    count = Ref.make 0
+    reached = Deferred.make ⊤
+
+    loop = Task.spawn λ⊤ →
+        Task.forever λ⊤ →
+            Ref.update count λn → n + 1
+            if Ref.get count == 100000 then
+                _ = Deferred.complete reached ⊤
+                ⊤
+    Deferred.wait reached
+    Task.cancel loop
+    _ = Debug.log "runs" (Ref.get count)
+
+    q : Queue Int
+    q = Queue.bounded 1
+    producer = Task.spawn λ⊤ → produce q 1
+    sum = Ref.make 0
+    drained = Deferred.make ⊤
+
+    taker = Task.spawn λ⊤ →
+        Task.forever λ⊤ →
+            case Queue.take q of
+                Just v →
+                    Ref.update sum λs → s + v
+                    if v == 100000 then
+                        _ = Deferred.complete drained ⊤
+                        ⊤
+
+                Nothing →
+                    ⊤
+    Deferred.wait drained
+    Task.cancel taker
+    Task.join producer
+    _ = Debug.log "sum" (Ref.get sum)
+    Node.print "done"
+
+
+produce : Queue Int, Int → ⊤
+produce q v =
+    if v ≤ 100000 then
+        _ = Queue.offer q v
+        produce q (v + 1)
