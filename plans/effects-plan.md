@@ -752,10 +752,14 @@ under `restore`, the work under `onExit`. Fixtures, both builds: `run/SemaphoreP
 `run/SemaphoreFifo` (both on `Clock.virtual`), `run/SemaphoreHeadCancelled`,
 `run/SemaphoreOversizeRequest`, `run/SemaphoreTryDoesNotJump`, `run/SemaphoreAcquireRelease`,
 `run/SemaphoreHandoffCancelled`, `run/SemaphoreReleaseUnmatched`, `run/SemaphoreResize`,
-`run/SemaphoreAcquireCancelled` and `run/SemaphoreNoPermits`. Each fails with the module removed,
-and each obligation was also broken on its own in a copy of core (`--core-root`) and turned at
-least one fixture red. The one exception is the `max 0` in `make` and `resize`, which no program
-can observe: a negative count behaves as 0 on every path. **Against Effect v4** (`bench/fiber`,
+`run/SemaphoreAcquireCancelled`, `run/SemaphoreNoPermits`, `run/SemaphoreOversizeThenResize`,
+`run/SemaphoreTryNegativeSize`, `run/SemaphoreMiddleCancelled` and `run/SemaphoreTryCancelled`.
+Each fails with the module removed, and each obligation was also broken on its own in a copy of
+core (`--core-root`) and turned at least one fixture red. An oversize request counts `n` as taken,
+not `permits`, so a manual `release s n` balances. The `max 0` in `make` and `resize` is
+observable: without it, the first module's `tryWithPermits` on a semaphore below 0 took a negative
+count and ran (`run/SemaphoreTryNegativeSize`). Today `grant` and the `got ≤ 0` guard each refuse
+that case as well. **Against Effect v4** (`bench/fiber`,
 `node --expose-gc node.mjs --group=semaphore`, a development library build, median of 9 after 3
 warm-ups, ns per operation, two runs, load average about 1): an uncontended `withPermit` 92–96
 against Effect's 268–273 (`Semaphore.make(1)`, `s.withPermit` of `Effect.succeed`); 1 000 fibers
