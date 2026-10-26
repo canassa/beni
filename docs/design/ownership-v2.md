@@ -376,7 +376,7 @@ Structurally interned per owning summary with deterministic comparison trees (th
 | `delta` | `base: NodeId` (never a delta), `over: OverId` — a persistent sorted tree of `(step, NodeId)`, path-copied, O(log F) insert and lookup, structure shared along a chain of updates | the base written: at `ε` the base's cells, at `s` the override or the base's child; a chain of k updates costs O(k log F) |
 | `recast` | `place`, `inner: NodeId` | `inner` read at another type (§2.13.9): `inner`'s cells, approximate, at every path |
 | `union` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | the lazy join of **alternatives** (control-flow and fixpoint joins): `cellsAt` the union, `proj` the union of projections, both memoised per `(union, step)`; a cell repeated across sides is one position |
-| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened), `folded: u1` | a **positional collection**: the elements under one built value's `[*]` (a literal's elements, a spread's combined positions), all present at once; `proj` keeps the kind and `cellsAt` is the multiset of the sides' cells (below), so a cell repeated across sides is two positions and `apart` runs over the multiset of the sides' arrivals (§2.9); `folded` is set when `widen` tied its sides into one class, and a repeat across folded sides is `lost`, never `shared` |
+| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | a **positional collection**: the elements under one built value's `[*]` (a literal's elements, a spread's combined positions), all present at once; `proj` keeps the kind and `cellsAt` is the set of the sides' cells, while the κ read counts a cell that both sides hold once more (below), so a cell repeated across sides is two positions and `apart` runs over the multiset of the sides' arrivals (§2.9) |
 | `cyclic` | a `node` whose child names an ancestor | a widened recursive value (§2.12); no special kind, the knot is in the table |
 
 Operations, memoised on their node arguments:
@@ -392,29 +392,43 @@ Operations, memoised on their node arguments:
   one `delta(base, s ↦ join(overrides present, base's child))`, O(k + T log(T+2)) grouping/sorting work for T=Σ|Oᵢ| before recursive child joins and set unions; leaves with no children → one leaf with
   the set union; the groups left (one per distinct base, plus leaves) → a balanced `union` DAG over them,
   O(groups) outer nodes; inner work uses §4.1 accounting. A join can have product query work; a projection through a union costs O(groups) once per `(union, step)`.
-- `collect(n₁…nₖ)`: a built value's elements under `[*]` → a balanced `positions` DAG, never deduplicated, built
-  like `join`'s outer DAG; `join` itself only ever makes `union`. `map` and `propagate` preserve the kind.
+- `collect(n₁…nₖ)` (`Shape.collect`): a built value's elements under `[*]` → a balanced `positions` DAG, never
+  deduplicated or absorbed, built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
+  `union`. `map` and `propagate` preserve the kind.
 - `proj(positions(a, b), s) = positions(proj(a, s), proj(b, s))`: projection keeps the kind and so the
-  multiplicity, and `cellsAt` of a `positions` node is the multiset of its sides' cells. Answering it as a union
-  would drop a repeated argument's second arrival and accept `PositionsRepeatArg` (unsound).
-- `leq` across kinds: `x ≤ union(a, b)` iff `x ≤ a` or `x ≤ b`, and `union(a, b) ≤ y` iff `a ≤ y` and `b ≤ y`, so
-  every member is below its join (O4) and §2.12's `F(x) ⊑ x` is decidable whatever kinds the members have.
-  `positions(A) ≤ positions(B)` compares members as **multisets**, order-insensitive and independent of the
-  balanced tree's shape: it holds iff each member of A can be matched to a distinct member of B it is `≤`; the matching is a charged §4.1 comparison task, reserved before it runs (its cost can exceed the members' count, so it is growth beyond their baseline). A
-  `positions` node is `≤` a `leaf` or `node` only through their own rules for the cells it reaches.
-- `widen` across kinds: a congruence class that holds members of both kinds is emitted as a `union` over its
-  members, each keeping its own kind; widen never unifies two sides pairwise. When widen ties sides of one
-  `positions` node into one class — folding recursion does it: `Rose [ Rose [], Rose [] ]` read off a recursive
-  value gives `positions(self, self)` — the node gets its `folded` bit. A repeat across the sides of a folded
-  `positions` node reads `lost` (approximate), as a folded label does (§2.2), never exact `shared`
-  (`FoldedPositionsLost`, Appendix B).
+  multiplicity. `cellsAt` of a `positions` node is the **set** of its sides' cells, as for a union; the multiset
+  belongs to the κ read (`Cond`'s `dagKappa`, §2.9), the one reader of multiplicity, which counts each cell held by
+  both sides of a positions node once more (`Radix.intersection` of the sides' cell sets, one descent per node).
+  Reading a positions node as a union would drop a repeated argument's second arrival and accept
+  `PositionsRepeatArg` (unsound).
+- `leq` is **γ-inclusion and kind-blind**: `n ≤ m` iff `cells(n) ⊆ cells(m)` and `proj(n, s) ≤ proj(m, s)` at
+  every step `s` of n's place, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
+  below `y` when both its sides are (every member is below its join, O4), and two `positions` nodes compare by
+  their cells per path, independent of their members' order and of the balanced tree's shape. Multiplicity is not
+  part of γ: it is compared only through κ, by `Cond.kappaLeq` (§2.9). A structural rule — `x ≤ union(a, b)` iff
+  `x ≤ a` or `x ≤ b`, with two `positions` nodes matched member to member as multisets — cannot settle §2.12's
+  `F(x) ⊑ x` under `widen`: widen keeps a collection as a side beside its class image (below), so
+  `positions(x, x) ≤ union(image, positions(a, b))` would need `x ≤ a`, which is false although γ holds, and the
+  fixpoint would keep growing. γ-inclusion settles `F(x) ⊑ x` in one step for `Rose [ x, x ]` over the widened
+  value, at the coinductive pair cost and with no matching task.
+- `widen` across kinds: widen never expands a `union`'s or a `positions` node's sides and never unifies two
+  sides pairwise. A member of a congruence class that is not explicit structure rides beside the class image:
+  the class's leaves (and a delta's leaf base) fold into one leaf, and a recast, union or positions member stays
+  as it is; these are the sides of a `union` with the image. A class with no explicit member is its side alone.
+  The image is a newly built `node`, so it has no stored κ, and a read through it derives `lost` (§2.9's rule for
+  a built node). Folding recursion ties the children of `Rose [ Rose [], Rose [] ]` to the root class, so a repeat
+  across them reads `lost` (approximate), as a folded label does (§2.2), never exact `shared`
+  (`FoldedPositionsLost`, Appendix B). This is coarser than exact for a non-repeat, which also reads `lost` there
+  where an exact `apart` would hold. **Invariant: no stored κ reaches a widened image at a summary position**; a
+  condition set there is that position's own derivation (the read-off's, S3a), never one carried from a member's
+  snapshot.
 - `put(n, s, m)`: `delta(n, [(s, m)])` when the `ε` object is the same after the write (an update), else a copy
   with one child changed (a construction's fresh base).
 - `map(n, f)`: relabel cells once per node per immutable substitution context, so a DAG stays a DAG
   (`w5`: 17 steps, #856). Its correspondence hook reports old/new node and child edges, including backedges;
   `Cond` transports the associated κ snapshot through that mapping in S3b. Shape sharing alone never selects
   or overwrites a condition.
-- `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality, memoised per immutable-version pair with a **shape-only** coinductive assumption on
+- `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality (the kind-blind γ-inclusion above), memoised per immutable-version pair with a **shape-only** coinductive assumption on
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
   along a re-entering step sits at the same place is joined into that ancestor and the edge tied back to it, so
@@ -711,9 +725,15 @@ adds one map node at its own path. A read of κ(v, q) walks q's steps through th
 on the read's own prefix lanes (§2.7), so nesting depth costs the read its path length and nothing at
 construction: length stays baseline. `Shape.map` carries a snapshot through an instantiation by relabelling each
 binding's node, its paths unchanged because they are relative to the value's root, and the argument's snapshot
-is linked under the argument's path at the graft (S3b; relabelling is charged). S2 builds the coarser key
-`(NodeId, position class)` within one map; the read rule below keeps that sound, and S3a moves frame values to
-per-value roots and the key to the prefix-relative `(NodeId, PathId)` trie.
+is linked under the argument's path at the graft (S3b; relabelling is charged).
+
+**What S2 builds, and what S3a and S3b change.** In S2 a κ root (`Cond.Kappas`, an `Ids.KappaId`) is an immutable,
+hash-consed persistent radix map `(NodeId, position class) → CondId`, where the position class is whether the
+read's path crossed `[*]` or `⟲`. The holder owns it and threads it: `kappaSet` returns a new root and never
+changes the old one, a class carries one root for `res` and a supply carries the root of the value it hands.
+It is one map per value, with the coarser key, not yet the trie. The read rule below keeps the coarser key
+sound. S3a gives each frame value its own root (`value → KappaId`) and moves the key to the prefix-relative
+`(NodeId, PathId)` trie above; S3b adds the relabelling and the graft.
 
 **A read of κ(v, q) is the join of v's stored condition for (n, q) with the condition derived at the read's
 position from n's cells**: `apart` over its arrivals, `excl` for an arrival that stands for many positions, `yes`
@@ -721,7 +741,9 @@ at a plain path, `lost` for `⊤` or an approximate cell. A stored condition can
 replaces or weakens the derivation, so no key granularity can make a read unsound, and the derivation is charged
 per read and never memoised. A union reads as the join of its sides' reads and of what v stored for the union
 itself; at a summary position it also derives the leaf rule over its united cell set (`CallbackFieldPositionsUnion`,
-Appendix B). A positional collection derives `apart` over the multiset of its sides' arrivals instead (below). The key is a precision split only: a constraint stored at one position never tightens another
+Appendix B). A positional collection derives `apart` over the multiset of its sides' arrivals instead: wherever it
+sits, its read is one at a summary position, and each cell held by both sides of a positions node in the DAG counts
+once more (below). The key is a precision split only: a constraint stored at one position never tightens another
 (`CallbackFieldPositions`, `CallbackFieldPositionsBranch`). Projection returns both the projected shape and the
 snapshot. A join returns a new snapshot and changes neither operand. S3b adds a substitution's invocation and
 supply roots to the snapshot's key, with `Shape.map`'s correspondence. Split conditions refer to settled
@@ -729,14 +751,15 @@ snapshots; a fixpoint weakening creates a new version and reschedules its depend
 
 **Unions and positional collections.** A `union` node means **alternatives** (§2.3): a control-flow or fixpoint
 join, where one run takes one side, so a cell repeated across sides is one position. A `positions` node is a
-**positional collection**: the elements under one built value's `[*]` (a literal's elements, the combined
-positions of a spread), where every side is present at once, so a cell repeated across sides is two positions and
+**positional collection**, built by `Shape.collect`: the elements under one built value's `[*]` (a literal's
+elements, the combined positions of a spread), where every side is present at once, so a cell repeated across sides is two positions and
 `apart` runs over the multiset of the sides' arrivals. `f a b = [ { a = a }, { a = b } ]` called as `f x x`
 reaches `[*].a` through `positions(leaf{π₁}, leaf{π₂})`, and instantiation makes both sides `x`: the multiset
 `{x, x}` is `shared`, so an element write is refused `exclusive` (`PositionsRepeatArg`, Appendix B). But
 `if c then [ x ] else [ x ]` joins two one-position literals into `union`, and κ at `[*]` stays `yes`: a write
-into the element is accepted (`BranchSameElement`). `Shape.map`, `widen`, `leq` and `propagate` preserve the kind;
-nothing turns a `positions` node into a `union`.
+into the element is accepted (`BranchSameElement`). `proj`, `Shape.map` and `propagate` preserve the kind, and
+`widen` keeps a positions member as it is (§2.3); nothing turns a `positions` node into a `union`. `leq` is
+kind-blind, so the multiplicity a positions node carries is compared through κ only (`Cond.kappaLeq`).
 
 A **single-arrival leaf** may default to `yes` at its own ordinary occurrence. A projected symbolic
 summary arrival requires `excl` at the selected path. This is what makes `List.map xs λl → …` record
@@ -1499,7 +1522,9 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
   children : Range    into `child_cells`: the trie children in first-sight order (the descendants of a cell the program named)
 intern     : owner-local comparison tree (origin, kind, a, b) → CellId
 sets       : persistent compressed binary radix sets of (CellId, approx), u32 keys; at most 33 nodes per insertion
-             union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order)
+             union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order);
+             `Radix`: insert, member, unionWith, subset, intersection (the common keys, approximate when either
+             is; one descent, O(min) nodes: the κ read's repeated cells, §2.3)
 splits     : MultiArrayList { container: CellId, inst: u32, label: LabelId, cond }   (S1)
              the split instruction, its label chain and the container's projected interpretation; immutable per version
              S4 adds single: u1 and entry: LabelId (§2.2 *Traversals*); .none entry = this recursive group's entry
@@ -1513,7 +1538,7 @@ Shape.Table (per walk)
   kind     : u8        leaf | node | delta | recast | union | positions
   place    : PlaceId
   cells    : SetId     (delta: the base's)
-  a, b     : u32       node: Range into child_tab; delta: base NodeId + OverId; recast: inner; union, positions: left, right (positions: + folded bit)
+  a, b     : u32       node: Range into child_tab; delta: base NodeId + OverId; recast: inner; union, positions: left, right
   reach    : SetId     memo, persistent (.none until asked)
 child_tab  : []NodeId          dense per node in the place's step order
 over_tab   : MultiArrayList { step, child: NodeId, left, right: OverId }   persistent sorted tree
@@ -1543,14 +1568,18 @@ intern    : owner-local comparison tree (kind, a, b) → CondId
 kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a frame holds value → KappaId and
             a class one root for res and for each supply/use value. Each is an immutable persistent hash-consed
             map (NodeId, PathId) → CondId over that value's nodes, the PathId relative to the value's root, built as
-            a trie over steps whose child subtrees are the children's snapshots, linked, never re-keyed (S2 keys
-            (NodeId, position class); S3a moves to the trie; S3b relabels nodes through Shape.map and links an
-            argument's snapshot at the graft). It travels with its value and is joined only where
+            a trie over steps whose child subtrees are the children's snapshots, linked, never re-keyed. S2 builds
+            the holder-owned root as one persistent radix map (NodeId, position class) → CondId per value
+            (`Kappas`; `kappaGet`, `kappaSet` returning the new root, `kappaOf` the read); S3a gives frame
+            values their own roots and moves the key to the trie; S3b relabels nodes through Shape.map and links
+            an argument's snapshot at the graft. It travels with its value and is joined only where
             values join (a branch or fixpoint join, a union, a construction of its children), never shared
             across a frame's values. A read joins the stored condition with the one derived at the read's
             position from the node's cells (apart over its arrivals, excl per arrival standing for many
-            positions, yes at a plain path, lost for ⊤ or an approximate cell; a union at a summary position
-            also derives over its united cell set), charged per read and never memoised: the stored part only
+            positions, yes at a plain path, lost for ⊤ or an approximate cell, lost for a built node with
+            nothing stored; a union at a summary position also derives over its united cell set; a positions
+            node, wherever it sits, over that set with each cell both sides hold counted once more, by
+            `dagKappa`, one walk of the DAG), charged per read and never memoised: the stored part only
             adds constraints, and the key is a precision split only (§2.9). S3b adds the substitution context
             (invocation and supply roots) to the root's key with Shape.map's correspondence. Never a mutable
             column NodeId → CondId
@@ -1593,8 +1622,9 @@ Class
   account  : SummaryAccountId   -- owner declaration, inherited by every nested class
 ```
 
-A supply is keyed by `(label, k)`. S2 builds the record `(label, k, node, taken)`; the other fields arrive with
-the slices that compute them, and S4 adds the receiving `port` of a carried class (§2.10) to the key.
+In S2 a supply is keyed by `(label, k, node, taken)`: a fun's supplies are sorted by that key, and a join
+merges two supplies only when the whole key is equal. The S2 record also carries `j`, `owned` and the handed
+value's κ root (`Facts.Supply`); S4 adds the receiving `port` of a carried class (§2.10) to the key.
 
 Summaries live in the module arena as immutable local graphs. Local normalisation orders graph references
 and supply keys for comparison/printing; its words still contain owner-local ids and are neither hashed
@@ -2134,12 +2164,12 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 700 |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 000 |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Set.{union,member,insert}` | Ids, Place | ≤ 800 |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection}` | Ids, Place | ≤ 800 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 300 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's explicit structure; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, `atom`, `kappa`, `deep`, `sep`, `lower`, `instantiate`, `rely`, `flat` | Ids, Facts, Cell, Shape | ≤ 1 000 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's explicit structure; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 000 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 400 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
@@ -2614,7 +2644,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | *to write, red twins found by the S1 review (§2.2's `⟲` matching):* RoseAlias (`type Rose = Rose (List Rose)`: a write through the root's children list with a subtree held → refused `alias`; the prefix reading of `⟲` accepted it), MaybeTreeAlias (`type T = T (Maybe T) (List Int)`: the same through `Maybe`), MutualAlias (`type A = A B | …`, `type B = B (List A)`: a write to `B`'s list with an `A` below held). In all three the write is under `⟲` or the demand is deep; a shallow storage write of the container while a level below is held is accepted (§2.8 *Holders across a cycle*) | R-4.7.1, R-4.7.4 | S3a |
 | *to write, green twin of §2.9's per-value snapshots:* DeadDuplicateLive (`r = [ 1 ]; a = [ r, r ]; b = [ r ]` with `a` dead, then `List.update b 0 (λl → List.push l 9)` and `b` returned: accepted, as v1 accepts it; `a`'s `shared` lives in `a`'s snapshot and never reaches `b`'s) | R-4.6.7, R-8.3 | S4 |
 | *to write, twins of §2.9's positional collections:* PositionsRepeatArg (`f a b = [ { a = a }, { a = b } ]` called as `f x x`, then an element write at `[*].a`: the `positions` node's multiset `{x, x}` is `shared`; refused `exclusive`), BranchSameElement (green: `if c then [ x ] else [ x ]` is a `union` of alternatives, κ at `[*]` stays `yes`, a write into the element is accepted) | R-4.6.2, R-4.6.7 | S4 |
-| *to write, twin of §2.3's folded positions:* FoldedPositionsLost (a recursive function over `type Rose = Rose (List Rose)` building `Rose [ Rose [], Rose [] ]`-shaped values, whose read-off widens the children into `positions(self, self)`, then a write into one child's list: never refused `shared` (exact); where the fold leaves no proof the cause is `exclusive (a)`, approximate, and where the written path needs no exclusivity the write is accepted) | R-4.7.5, R-6.3 | S3b |
+| *to write, twin of §2.3's folded positions:* FoldedPositionsLost (a recursive function over `type Rose = Rose (List Rose)` building `Rose [ Rose [], Rose [] ]`-shaped values, whose read-off widens the children into the root class, the collection kept as a side of a `union` beside the class image (§2.3), then a write into one child's list: never refused `shared` (exact); where the fold leaves no proof the cause is `exclusive (a)`, approximate, and where the written path needs no exclusivity the write is accepted) | R-4.7.5, R-6.3 | S3b |
 | *to write, green twin of §2.9's `(NodeId, PathId)` key:* OnePairTwoPositions (`r = [ 1 ]; p = ( [ r ], [ r, r ] )`, then a write into `p.0`'s element through `List.update (Tuple.first p) 0 (λl → List.push l 9)` with `p.1` dead: accepted; `.1[*]`'s `shared` is stored at its own path and never answers `.0[*]`) | R-4.6.4, R-8.3 | S4 |
 | *to write, red twin of §2.9's union read:* CallbackFieldPositionsUnion (`[ { a = (g 1).a }, { a = (g 2).a } ]`, whose `[*].a` is `union(leaf{cb@ι₁·.a}, leaf{cb@ι₂·.a})` read from an empty snapshot, as an instantiation's fresh union is, then an element write at `[*].a` with `g = λ_ → shared`: the read derives `apart` over the united cells, never `yes`; refused `exclusive`) | R-4.6.2, R-4.6.4 | S5 |
 | *to write, red twin of §2.9's position-exact key:* CallbackFieldPositions (`w = if c then (g 1).a else (g 2).a` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })` with `g = λ_ → shared`: the branch's `yes` at a plain path must not answer the element write at `[*].a`, which reads the same interned leaf under a summary position; refused `exclusive`. S2 pins the κ half as a unit test), CallbackFieldPositionsBranch (`if c then [ (g 1).a ] else [ (g 2).a ]` beside `List.update [ g 1, g 2 ] 0 (λr → { r \| a = … })`: the leaf `{cb@ι₁·.a, cb@ι₂·.a}` stored `yes` at a summary position in one branch is the same interned leaf as `[ g 1, g 2 ]`'s `[*].a`; the read derives `apart` over its arrivals and records `xreq`, never the stored `yes`; refused `exclusive` with `g = λ_ → shared`) | R-4.6.2, R-4.6.4 | S5 |
