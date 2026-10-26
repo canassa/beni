@@ -77,6 +77,7 @@ staged: std.ArrayList(Item) = .empty,
 env: EnvFile.Env = undefined,
 texts: Diagnostics.Reporter = undefined,
 monomorphic: std.ArrayList(EnvFile.Monomorphic) = .empty,
+made_by_call: std.ArrayList(EnvFile.MadeByCall) = .empty,
 /// The messages `renderLate` redraws (`noMethodsOnShapeLate`).
 late: std.ArrayList(Late) = .empty,
 
@@ -107,6 +108,7 @@ pub fn init(
         .decl_scheme = decl_scheme,
         .local_var = &.{},
         .monomorphic = &r.monomorphic,
+        .made_by_call = &r.made_by_call,
     };
     r.texts = .{ .gpa = cx.gpa, .env = &r.env, .items = &r.staged };
 }
@@ -118,6 +120,7 @@ pub fn deinit(r: *Report) void {
     r.failed_patterns.deinit(r.gpa);
     r.error_regions.deinit(r.gpa);
     r.monomorphic.deinit(r.env.scratch);
+    r.made_by_call.deinit(r.env.scratch);
     r.late.deinit(r.gpa);
 }
 

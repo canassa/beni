@@ -3963,6 +3963,10 @@ back the segments it was built from. `custom`'s fragment is written as given.
 are renamed `push`, `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`. Every rule below is the
 direct form's.*
 
+*Amended 2026-10-26 (#1048, `checker-v2.md` §8.4 as amended that day): the command `reload` takes
+`⊤`, `reload : ⊤ → Cmd msg`. Making a command is impure, and a top-level value made by an impure
+call is not generalised over a variable inside a named type, so `reload : Cmd msg` would be refused.*
+
 ```elm
 -- module Browser.Navigation (browser), re-exported by browser-tea
 pub type Key                                                    -- opaque, equatable: a model may hold it

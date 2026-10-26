@@ -28,6 +28,11 @@ const Walk = @import("Walk.zig");
 const Messages = @import("Messages.zig");
 const Obligations = @import("Obligations.zig");
 const Solve = @import("Solve.zig");
+const Effects = @import("Effects.zig");
+const Context = @import("Context.zig");
+const Report = @import("Report.zig");
+const EnvFile = @import("Env.zig");
+const Graph = @import("../resolve/Graph.zig");
 
 pub const Var = TypeStore.Var;
 pub const Error = Allocator.Error;
@@ -331,6 +336,132 @@ fn captureOf(s: *Solve, rigid: Var) Error!?Bir.Inst.Index {
     return null;
 }
 
+// ---------------------------------------------------------------------------
+// Step 5, at a `let` frame: the value restriction, relaxed (§8.4, amended
+// 2026-10-26)
+// ---------------------------------------------------------------------------
+
+/// Before `quantify` at a `let` frame of rank `rank`: for every value
+/// header (a `let_def` with no parameters whose right-hand side is not a
+/// `lambda`, annotated or not, or a `let` pattern) whose right-hand side is
+/// EXPANSIVE (`isValue` says no), every young root its type reaches at a
+/// non-covariant position (`Walk.nonCovariant`) is not generalised: a flex
+/// is lowered with what rides on it to the enclosing rank, as `holdLet`
+/// holds a constrained one; a rigid is the annotation's broken promise,
+/// reported once per binding as `rigid_mismatch` and poisoned with its
+/// scheme, so step 6 does not report it again.
+pub fn holdExpansive(s: *Solve, rank: u32, binders: []const u32, annotated: []const u32) Error!void {
+    const st = s.store();
+    const bir = s.cx.bir;
+    const scratch = s.cx.scratch;
+    const list = s.cx.types.well_known.list;
+    var held: std.ArrayList(Var) = .empty;
+    defer held.deinit(scratch);
+    for (binders) |i| {
+        const b = s.tree.binders.items[i];
+        if (!b.header) continue;
+        const rhs = valueRhs(bir, b.region) orelse continue;
+        if (try isValue(&s.report.env, scratch, rhs)) continue;
+        held.clearRetainingCapacity();
+        try Walk.nonCovariant(st, scratch, b.v, list, .{ .at_least = rank }, &held);
+        var reported = false;
+        for (held.items) |v| {
+            const root = st.find(v);
+            if (st.rank(root) < rank) continue;
+            switch (st.content(root)) {
+                .flex => |flags| {
+                    // A constrained root is `holdLet`'s (rule 2), which holds it
+                    // the same way and names its method in the hint.
+                    if (Walk.constraints(flags).count(st) != 0) continue;
+                    try s.report.made_by_call.append(scratch, .{ .v = root, .binding = b.name, .decl = b.decl });
+                    try Walk.lowerTo(st, &s.stacks, s.cx.gpa, root, rank - 1);
+                },
+                .rigid => {
+                    const a = annotationOf(s, annotated, root) orelse continue;
+                    if (!reported) {
+                        reported = true;
+                        s.report.at(a.decl);
+                        try Messages.madeByCall(s.report, a.annotation, a.name, a.scheme, root);
+                        try s.poison(a.scheme);
+                    }
+                    try s.poison(root);
+                },
+                else => {},
+            }
+        }
+    }
+}
+
+/// The right-hand side of a `let` value binding or pattern at `region`, or
+/// null for a function binding (parameters, or a `lambda`) and anything
+/// that is not a `let` binding.
+fn valueRhs(bir: *const Bir, region: Bir.Inst.Index) ?Bir.Inst.Index {
+    if (region.int() >= bir.insts.len) return null;
+    const data = bir.instData(region);
+    const rhs: Bir.Inst.Index = @fromBackingInt(@intCast(data.rhs));
+    switch (bir.instTag(region)) {
+        .let_def => {
+            const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
+            if (def.params_end != def.params_start) return null;
+        },
+        .let_pattern => {},
+        else => return null,
+    }
+    if (rhs.int() >= bir.insts.len or bir.instTag(rhs) == .lambda) return null;
+    return rhs;
+}
+
+/// The frame's annotated binding one of whose rigids is `root`.
+fn annotationOf(s: *Solve, annotated: []const u32, root: Var) ?Annotated {
+    const st = s.store();
+    for (annotated) |i| {
+        const a = s.tree.annotated.items[i];
+        for (s.tree.vars(a.rigids_start, a.rigids_len)) |r| {
+            if (st.find(r) == root) return a;
+        }
+    }
+    return null;
+}
+
+/// Whether `inst` is a value by syntax alone (§8.4, amended 2026-10-26):
+/// it runs no call when evaluated, so it makes nothing a write could reach.
+/// A literal, a reference, a `lambda`, and a tuple, list or record of
+/// values, a record update of values, or a field or tuple index read of
+/// one, and a call to one of core's four transparent functions —
+/// `Js.to` and `Js.from`, compiled to nothing, `Debug.log`, which returns
+/// its argument, and `Debug.todo`, which never returns — whose arguments
+/// are values. Everything else — any other call, a method call, an
+/// operator, a constructor application, an interpolation, `case`, a block,
+/// `?`, markup — is expansive. Iterative.
+pub fn isValue(env: *const EnvFile.Env, scratch: Allocator, inst: Bir.Inst.Index) Error!bool {
+    const bir = env.bir;
+    var stack: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer stack.deinit(scratch);
+    try stack.append(scratch, inst);
+    while (stack.pop()) |next| {
+        if (next.int() >= bir.insts.len) return false;
+        const data = bir.instData(next);
+        switch (bir.instTag(next)) {
+            .local, .top, .ctor, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {},
+            .int, .float, .char, .string, .unit, .lambda => {},
+            // Reported where it was made; a value here adds no message.
+            .@"error" => {},
+            .tuple, .list => try stack.appendSlice(scratch, bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)),
+            .record => for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| try stack.append(scratch, f.value),
+            .record_update => {
+                try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+                for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| try stack.append(scratch, f.value);
+            },
+            .field_access, .tuple_index => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
+            .call => {
+                if (!transparent(env, @fromBackingInt(@intCast(data.lhs)))) return false;
+                try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index));
+            },
+            else => return false,
+        }
+    }
+    return true;
+}
 // ---------------------------------------------------------------------------
 // Rank adjustment and quantification
 // ---------------------------------------------------------------------------
@@ -708,4 +839,67 @@ fn adjustDeepType() !void {
     try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, &pool, 3, true);
     // Every level holds the outer variable, so none of them is young any more.
     try testing.expectEqual(@as(u32, 1), store.rank(v));
+}
+
+/// After `Effects.run` (§8.4, amended 2026-10-26): a top-level value with no
+/// parameters is not held at its boundary, which has no enclosing rank, and
+/// by now its evaluation class is solved. One whose evaluation is not `pure`
+/// and whose scheme quantifies a variable at a non-covariant position is
+/// `impure_polymorphic_value` — unless what it evaluates to is a value by
+/// syntax (`isValue`, after the bindings and statements of its blocks) and
+/// no variable a `let` of its body held back (`holdExpansive`,
+/// `made_by_call`) was generalised after all, by the declaration or by a
+/// `let` function of it: then the evaluation made nothing a write could
+/// reach at a quantified type. An annotated declaration's scheme is
+/// not the reading its body was checked against, so the held variable is
+/// asked for its rank, not looked for in the scheme. Attributed to no declaration, as the
+/// `sync` check is: it sets no failure bit P7 or P8 reads.
+pub fn impureValues(e: *Effects, cx: *const Context, report: *Report, decl_scheme: []const Var.Optional) Error!void {
+    const bir = cx.bir;
+    const st = cx.store;
+    const list = cx.types.well_known.list;
+    var held: std.ArrayList(Var) = .empty;
+    defer held.deinit(cx.scratch);
+    for (bir.decls, 0..) |d, i| {
+        if (i >= e.eval.len or i >= decl_scheme.len) break;
+        const ev = e.eval[i].unwrap() orelse continue;
+        const node = e.nodeOf(ev) orelse continue;
+        if (e.levelOf(node) == .pure) continue;
+        const scheme = decl_scheme[i].unwrap() orelse continue;
+        const body = d.body.unwrap() orelse continue;
+        held.clearRetainingCapacity();
+        try Walk.nonCovariant(st, cx.scratch, scheme, list, .quantified, &held);
+        if (held.items.len == 0) continue;
+        var tail = body;
+        while (tail.int() < bir.insts.len and bir.instTag(tail) == .let) tail = @fromBackingInt(@intCast(bir.instData(tail).rhs));
+        const culprit: Var = if (!try isValue(&report.env, cx.scratch, tail))
+            held.items[0]
+        else culprit: {
+            for (report.made_by_call.items) |m| {
+                if (m.decl != @as(u32, @intCast(i))) continue;
+                const root = st.find(m.v);
+                if (st.rank(root) == TypeStore.generalized) break :culprit root;
+            }
+            continue;
+        };
+        report.at(null);
+        try Messages.impurePolymorphicValue(report, body, d.name_token, bir.symbol(d.name), scheme, culprit);
+    }
+}
+
+/// Whether `callee` names `Js.to`, `Js.from`, `Debug.log` or `Debug.todo`
+/// of core (`isValue`): a call to one makes nothing its arguments did not.
+fn transparent(env: *const EnvFile.Env, callee: Bir.Inst.Index) bool {
+    const bir = env.bir;
+    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return false;
+    const data = bir.instData(callee);
+    const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
+    if (env.graph.modulePackage(module) != .core) return false;
+    const iface = env.iface(module);
+    if (data.rhs >= iface.values.len) return false;
+    const name = env.interner.slice(iface.symbols[@backingInt(iface.values[data.rhs].name)]);
+    const module_name = env.interner.slice(env.graph.moduleName(module));
+    if (std.mem.eql(u8, module_name, "Js")) return std.mem.eql(u8, name, "to") or std.mem.eql(u8, name, "from");
+    if (std.mem.eql(u8, module_name, "Debug")) return std.mem.eql(u8, name, "log") or std.mem.eql(u8, name, "todo");
+    return false;
 }

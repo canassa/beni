@@ -993,6 +993,9 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // generalise (no function binding reaches it, a value binding does,
     // or only dot-calls ride on it) stays at the enclosing rank, with its
     // method types.
+    // First, a value binding made by a call keeps no young variable a write
+    // could reach (§8.4, amended 2026-10-26).
+    if (!top) try Generalize.holdExpansive(s, rank, binders, annotated);
     if (!top and requirements) try Resolve.holdLet(s, rank, binders);
     s.carriers.clearRetainingCapacity();
     s.resolver.wanters.clearRetainingCapacity();

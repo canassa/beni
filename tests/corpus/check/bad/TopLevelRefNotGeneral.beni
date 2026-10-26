@@ -1,0 +1,15 @@
+-- check/bad: checker-v2.md §8.4, amended 2026-10-26 (#1048). A top-level
+-- value is computed once, when its module is loaded, and `Ref.make []` is
+-- impure, so `cells : Ref (List a)` would be one cell of every list type:
+-- `impure_polymorphic_value`. Annotated `cells : Ref (List String)`, it
+-- checks; a pure value stays general.
+import Ref
+
+
+cells = Ref.make []
+
+
+pub read : ⊤ → List Int
+read ⊤ =
+    Ref.set cells [ "x" ]
+    List.map (Ref.get cells) λk → k + 1

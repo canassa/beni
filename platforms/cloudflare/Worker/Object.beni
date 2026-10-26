@@ -403,7 +403,6 @@ noContent resolve = Js.from λ_ →
 -- the protocol's schema, or answered `unparsed` at once.
 received : V, String, V, V, V → ⊤
 received instance text chain askId resolve =
-    schema : Schema e msg
     schema = Js.to (Js.get instance "schema")
     Js.write parsingIn instance
     parsed = Schema.parse schema text
@@ -1022,7 +1021,6 @@ post ref message =
                 ]
         wake own
     else
-        schema : Schema e msg
         schema = Js.to (Js.get r "schema")
         Js.write printingTo (Js.get r "stub")
         printed = Schema.print schema message
@@ -1063,7 +1061,6 @@ ask ref schema wrap =
     if not (Js.isNullish (Js.get r "self")) then
         Err Cycle
     else
-        protocol : Schema pe msg
         protocol = Js.to (Js.get r "schema")
         askId = Js.call (Js.global "crypto") "randomUUID" []
         replyHandle = Js.from { id = askId, instance = Js.null, schema = Js.from schema }
@@ -1159,7 +1156,6 @@ reply channel value =
             Js.undefined
         else
             Js.call (Js.get instance "asks") "get" [ Js.get h "id" ]
-    schema : Schema e a
     schema = Js.to (Js.get h "schema")
     if Js.isUndefined entry then
         Log.warn

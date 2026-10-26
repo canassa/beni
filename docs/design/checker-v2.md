@@ -1501,9 +1501,12 @@ at one type and read at another, a silent wrong answer. `Queue.unbounded ⊤` an
   annotated or not — or a `let` pattern is **expansive** when its right-hand side is not, by
   syntax alone, a value. A value is a literal, a reference (a local, a declaration, a
   constructor not applied), a `lambda` (a placeholder application `f a _` is one), or a tuple, a
-  list or a record of values, a record update of values, or a field or tuple index read of one.
-  Every other form — a call, a method call, an operator, a constructor application, an
-  interpolation, `case`/`if`, a block, `?`, markup — is expansive. For an expansive header, every
+  list or a record of values, a record update of values, a field or tuple index read of one, or a
+  call of values to one of core's four transparent functions: `Js.to` and `Js.from`, compiled to
+  nothing, `Debug.log`, which returns its argument, and `Debug.todo`, which never returns. Every
+  other form — any other call, a method call, an operator, a constructor application, an
+  interpolation, `case`/`if`, a block, `?`, markup — is expansive. (So a `Js.to` cast under a
+  polymorphic annotation stays general, as it was; `Js.to (Js.get o "f")` does not.) For an expansive header, every
   young root (flex or rigid) the header's type reaches at a **non-covariant position** is held:
   lowered with its method types to the enclosing rank (`Walk.lowerTo`), as rule 2 holds a
   constrained root. A position is covariant when the path to it from the header's root passes
@@ -1551,8 +1554,10 @@ cell": a `Debug.log` makes an evaluation impure, and a named type other than `Li
 invariant, a `foreign type` (`Html msg`, `Hosted.Job msg`) included. So a top-level `Html msg`
 whose markup logs, or `Navigation.reload : Cmd msg` (`Cmd.perform` reads the log context), is
 refused although it makes no cell: the corpus's `run/MarkupBlocks` says `Html ⊥`, and the
-`browser` platform's `reload` takes `⊤` (`boundary.md` §9.8.13 (c), amended 2026-10-26). Variance
-published per type, with a declared one for a `foreign type`, would lift both; it is not built.
+`browser` platform's `reload` takes `⊤` (`boundary.md` §9.8.13 (c), amended 2026-10-26). At a
+`let`, four `Js.to (Js.get …)` casts of the `cloudflare` platform lost a polymorphic annotation
+they did not need (`Js.get` is a call). Variance published per type, with a declared one for a
+`foreign type`, would lift the top level's cases; it is not built.
 *Rule 7.* The restriction refuses only a block value, made by a
 call, used at two types through a variable inside a named type other than `List` or a function's
 parameter — the case it exists to refuse, give or take that conservatism — and the escape hatch
