@@ -288,6 +288,41 @@ test "a run that fails writes no digest, and the runs beside it that passed writ
     _ = try expectDigests(&w, 2);
 }
 
+test "a lists pass that does not crash as its golden says writes no digest" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The lists pass (`out-lists`, `runOnceCrash` with `.sanitize-lists-crash`)
+    // must record only after its own verdict, like every pass that shares
+    // the function with it. The development pass passes and writes its
+    // digest; the lists pass must crash, does not, and writes none. The
+    // walk stops at the failing pass, so the release pass does not run.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Hello.beni", hello);
+    try w.write("corpus/run/Hello.expected", "hello\n");
+    try w.write("corpus/run/Hello.sanitize-lists", "a lists pass that must crash and does not\n");
+    try w.write("corpus/run/Hello.sanitize-lists-crash", "the list sanitiser trapped\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walker(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(1, r);
+    // The development pass and the lists pass ran; neither was verified before.
+    try expectCounts(&w, 0, 2);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One digest: the development pass's.
+    _ = try expectDigests(&w, 1);
+}
+
 fn expectReported(r: world.Result, text: []const u8) !void {
     if (std.mem.indexOf(u8, r.stderr, text) == null) {
         std.debug.print("the walker's report lacks:\n{s}\n--- stderr ---\n{s}\n", .{ text, r.stderr });
@@ -304,9 +339,14 @@ test "a record file that comes back into the corpus fails the walk by name, with
     try w.write("corpus/run/Good.beni", hello);
     try w.write("corpus/run/Good.expected", "hello\n");
     try w.write("corpus/run/Good.run-hash", "dev abc\n");
+    try w.write("corpus/run/Good.release-run-hash", "release abc\n");
     const r = try walker(&w);
     try expectExit(1, r);
+    // Every record file is named in one walk, with the command that lists
+    // them: a rebase can leave hundreds.
     try expectReported(r, "corpus/run/Good.run-hash: a run-hash record file; the records left git for the run-hash cache (#881): delete it");
+    try expectReported(r, "corpus/run/Good.release-run-hash: a run-hash record file");
+    try expectReported(r, "2 run-hash record files left in the corpus (`git ls-files '*run-hash' tests/blackbox/run-hashes.txt` lists them): delete every one");
     // Nothing ran: no digest.
     try testing.expect(!w.exists("cache"));
 }
