@@ -206,8 +206,13 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // `--msg-types` reads the checker's scheme of each program's `update`.
     options.keep_type_stores = dump.stage == .types or dump.stage == .ownership or dump.msg_types;
     // A summary is read off solved types, which only a module this run
-    // checks keeps: the ownership report checks core too (§16.9).
-    options.no_pack = dump.stage == .ownership;
+    // checks keeps (§16.9). A module the report prints is checked here;
+    // every other one installed from the checked core keeps its ownership
+    // block, read as `check` reads it (#1106). A flip of a word changes the
+    // facts of the module that declares it, so `--ownership-flips` checks
+    // core from source.
+    options.no_pack = dump.stage == .ownership and dump.ownership_flips != null;
+    options.keep_installed_ownership = dump.stage == .ownership;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.
@@ -626,6 +631,11 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     var ins = beni.own.Enforce.inputs(gpa, session, &.{}) catch return fail(stderr, "beni: out of memory", .{});
     defer ins.deinit(gpa);
     const names = ins.names;
+    // A module installed from the checked core has no solved types here:
+    // its facts are its block, as in `check` (#1106).
+    for (ins.blocks, 0..) |*b, i| if (b.* == null and i < session.ownership_blocks.len) {
+        b.* = session.ownership_blocks[i];
+    };
     // The targets, in path order (fast-compiler.md §10).
     var targets: std.ArrayList(u32) = .empty;
     defer targets.deinit(gpa);
@@ -691,6 +701,12 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         return fail(stderr, "beni: out of memory", .{});
     session.profile.end(0, token, .ownership, beni.Profile.Event.no_file, 0);
     beni.dump.ownership.write(stdout, reports, names, .{ .totals_only = dump.ownership_totals }) catch return 2;
+    // `--ownership-both`: v2's report on the same check (§7.2).
+    if (dump.ownership_both) {
+        stdout.writeAll("== ownership v2\n") catch return 2;
+        const code = dumpOwnershipV2(gpa, session, stdout, stderr, dump);
+        if (code != 0) return code;
+    }
     if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
     return 0;
 }

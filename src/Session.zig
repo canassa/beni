@@ -368,6 +368,11 @@ pub const Options = struct {
     /// module's solved types, which only a module this run checks keeps
     /// (`ownership-checker.md` §16.9). No `check` or `build` sets it.
     no_pack: bool = false,
+    /// `dump --stage=ownership`: keep the ownership block of every module
+    /// installed from the checked core (or a cache entry) in
+    /// `ownership_blocks`, so the report reads those modules' facts as
+    /// `check` does instead of checking them again from source.
+    keep_installed_ownership: bool = false,
     /// `check` and `build`: enforce the ownership check on the module
     /// check when the chain says `"lists": "in-place"`, and make what it
     /// rejects errors (`ownership-checker.md` §28.3). On any other chain it
@@ -2244,6 +2249,8 @@ fn checkSerial(session: *Session) RunError!void {
     for (cached, 0..) |*slot, i| if (slot.*) |*l| {
         session.checked.hoists[i] = l.hoists;
         l.hoists = .empty;
+        if (session.options.keep_installed_ownership and l.ownership.len != 0 and session.ownership_blocks[i] == null)
+            session.ownership_blocks[i] = try gpa.dupe(u8, l.ownership);
     };
     // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
     // §8). They are summed from the per-module flags the workers set, because
