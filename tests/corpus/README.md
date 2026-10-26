@@ -93,9 +93,10 @@ passes, compared with the golden it just wrote as always, are verified and
 recorded. A cache that cannot be read or written prints one warning, and
 every build runs and nothing is recorded. A record file that comes back
 into the corpus — `<fixture>.run-hash`, `.release-run-hash`,
-`.fuzz-run-hash`, or `tests/blackbox/run-hashes.txt` — fails the walk by
-name, with the fix: delete it, and for a `browser/tea` page's value fuzz add
-the `.value-fuzz` marker. The cache is the
+`.fuzz-run-hash`, or `tests/blackbox/run-hashes.txt` — fails the walk,
+every one named, with the fix: delete it (`git ls-files '*run-hash'
+tests/blackbox/run-hashes.txt` lists them), and for a `browser/tea` page's
+value fuzz add the `.value-fuzz` marker. The cache is the
 directory `BENI_RUN_HASH_DIR` names — the dev shells set
 `~/.cache/beni-run-hashes`, one directory for every worktree, which is safe
 because the digest covers every input of the verdict; empty means no cache.
