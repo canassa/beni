@@ -56,7 +56,6 @@ core       String.words          ownership/Words.beni            -
 core       String.lines          ownership/Words.beni            -
 core       String.toList         ownership/Words.beni            -
 core       String.indexes        ownership/Words.beni            -
-browser    Hosted.keyOf          ownership/WordsBrowser.beni     2:aliased>borrowed     Cmd.keyed
 # crossing is the unsafe end already: taking it away claims less
 html       Html.Event            ownership/WordsBrowser.beni     -
 html       Html.Pointer          ownership/WordsBrowser.beni     -

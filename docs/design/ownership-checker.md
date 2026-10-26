@@ -3972,7 +3972,7 @@ rejected `escaped` (`T29`; `browser/tea/SyncCommandOrder` pins the order at run 
 ### 23.9 The trusted surface
 
 §20.9 gains, approved by the manager on 2026-10-12 on condition that each row names the runtime code that
-justifies it. The browser runtime is beni over `Js` (`platforms/browser/Hosted.js` holds only the keys), so the
+justifies it. The browser runtime is beni over `Js` (`platforms/browser/Hosted.js` held only the keys, and since 2026-10-26 is gone), so the
 references are to its beni functions:
 
 | Row (§23.3) | What it asserts | Justified by |
@@ -4265,7 +4265,7 @@ names the fixture that pins each (§24.6).
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5). Re-read 2026-10-15: a compiled schema's decoding worker also returns its conversions' answers, so the answer is still unknown |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
-| `Hosted.keyOf` | `String, aliased k → fresh Key` | `Hosted.js`: `({ t: type, c: compare, v: value })`, a new object holding the value |
+| ~~`Hosted.keyOf`~~ | — | *Withdrawn 2026-10-26 (#877): the keys are beni over `Js` (`Hosted.key`, no words: `Js.from k` is `returned` and `Js.object` holds its fields `aliased`, so the checker reads the value as held by the key), and `Hosted.js` is gone. |
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
 | `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
 | `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
@@ -4284,8 +4284,9 @@ the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (s
 event) — has nothing a word could say. Each whose honest row is the thesis's — `Js.global`, `get`, `set`, `call`,
 `apply`, `construct`, `at`, `setAt`, `instanceOf`, `method` (a getter, a method or a constructor of the host may keep
 what it is handed), `Io.finish` and `Io.startRead` (kept by the runtime) — keeps the default, which is that row.
-`Hosted.compareKeys` only reads, but only the runtime's own key comparisons reach it, where every key has already
-escaped with its command (§20.4): no verdict depends on its row, so it keeps the default, which is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
+`Hosted.compareKeys` only read (a `foreign` until 2026-10-26; since then the comparison is beni, `Hosted.compare`, its
+row inferred from `Js` reads that keep the default), and only the runtime's own key comparisons reach it, where every
+key has already escaped with its command (§20.4): no verdict depends on its row, and the default is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
 keep their rows in the checker (§24.5).
 
 *Entry-word audit, 2026-10-22 (#750).* The entry word is a protocol, not a

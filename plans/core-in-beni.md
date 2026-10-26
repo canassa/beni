@@ -1002,3 +1002,50 @@ program grows **+424** (91 smaller, 113 larger, worst `bench/corpus` +45, `Schem
 spec amendment stays unwritten, and `NestingEvidence` +34, `ListElementEq` +6 and
 `ConsPatterns` +1 stand as the residue for the owner. *Accepted by the owner, 2026-10-02*
 ("merge them"): the port landed with these three, against a release total of −6 845 B brotli.
+
+
+## Step 4b — the `browser` platform's keys (2026-10-26)
+
+**What moved.** `platforms/browser/Hosted.js` is gone (#877): `keyOf` and `compareKeys`, its last two
+exports, are beni over `Js`. `key` builds `{ t, c, v }` with `Js.object` — the type's identity
+(`Js.fingerprint`), the type's `compare` as a lambda over the `where` clause (`comparer`), the value —
+and `compare` orders two keys of different types by their identities with `Js.lt` (#882, the
+intrinsic the owner decided on 2026-10-02 for this piece), two keys of one type through the stored
+`compare` with `Js.apply`, under `Js.pure` as the sibling was `foreign pure`. `Key` stays a
+`foreign type`; the three keys are plain properties no beni record spells, so they pin no field name.
+
+**What it needed.** `Js.lt` (#1110). Nothing else: the `where` clause's evidence reaches the lambda,
+and the release optimiser specialises `key` per call site as it did `keyOf`'s caller.
+
+**Ownership.** `keyOf`'s trusted row (`String, aliased k → fresh Key`) is withdrawn; `key`'s row is
+inferred — `Js.from k` is `returned`, `Js.object` holds its fields `aliased` — and the `WordsBrowser`
+goldens did not move. The fixture's flips test is retired: its remaining rows are `crossing`, with no
+flip; the browser platforms' flips are the entry rows (`HostedEntry`, `EntryInitProgram`).
+
+**Sizes** (release, brotli 11, the whole bundle; #1110's compiler against this step, the same sources,
+`zig-out/scratch/pages.mjs` over `tests/corpus/browser/` and `bench/size.mjs`):
+
+| | #1110 (`Js.lt`) | this branch | |
+|---|--:|--:|--:|
+| the 218 `tea/` pages, release brotli | 832 434 | **831 186** | −1 248 (−0.15 %) |
+| the 78 other `browser/` pages | 176 204 | 176 204 | 0 |
+| `bench/size.mjs`'s 19 pages and apps | 106 224 | **105 861** | −363 (−0.34 %) |
+| TodoMVC, bike-wars, conduit, steer | 9 007, 9 145, 27 852, 4 278 | **8 993, 9 056, 27 820, 4 248** | −14, −89, −32, −30 |
+| the 642 node lines | 1 345 352 | 1 345 352 | 0 |
+
+Of the 218 `tea/` pages, 52 are smaller (−1 to −76 B), 165 equal (they reach no key) and one larger,
+by 32 B at fewer raw bytes:
+
+| page | raw | brotli |
+|---|--:|--:|
+| `tea/LogCommandContext` | 29805 → 29785 (-20) | 9777 → 9809 (+32) |
+
+Every other line is byte for byte #1110's. What goes is the sibling file and its import glue; what
+comes is `key` and `compare` in the hoisted file beside their callers.
+
+**Shape.** The release key constructor of `tea/KeyOrder`: `{t:b,c:(b,c)=>a(b,c),v:c}`, `a` the
+evidence, against the sibling's `{ t: type, c: compare, v: value }`. The lambda is not eta-reduced,
+so a key costs one closure more than before — one allocation beside the key's own object, per keyed
+command or subscription per `update`. Issue #1111 asks the optimiser for the reduction, spec first.
+`compare` is the sibling's three branches: `===` on the keys, `!==` then `<` on the identities, the
+stored `compare` otherwise.

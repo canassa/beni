@@ -58,7 +58,6 @@ core/Js.js                      Js.catchIf          761a837beb982dc19efa35c98a94
 core/Js.js                      Js.pure             d26c91d0e718d417966b583cd06490d4165ec975b74b76eaa30594b47366893d
 core/Js.js                      Js.fingerprint      30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
 core/Js.js                      Js.suspending       4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
-platforms/browser/Hosted.js     Hosted.keyOf        02fe44a29c74a774ed38492ad5b42731a0eaea6857a103cbaebd90a25c7d1bb0
 platforms/node/Node.js          Node.spine          fd1ebdf431275a32ad587ffd29f818d512b258bcf6572ecf1e1cad0a8eada4a4
 platforms/node/Node.js          Node.print          a10b7db6541292679a3e959151c1bae95eab61202c4f4a8d45b5361f83573911
 platforms/node/Node.js          Node.printLines     6e0c6a75d11138ad964ed9579e8e5d2dd0f41685106561b7e5ba69baa51cb8e1

@@ -22,7 +22,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
-| 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
+| 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -864,7 +864,7 @@ identities' text, and in beni `<` on two `String`s is `String.compare`'s code-po
 a page that compares no strings otherwise never ships. Written so, 12 of the 54 `tea/` pages grew
 (`DirectEvents` +50, the TodoMVC of the time +12). The identities are ASCII, where
 JavaScript's `<` orders them alike, but `Js` has no operator for it: a `Js` comparison is what
-moving the keys waits for.
+moving the keys waits for. *Moved 2026-10-26, over `Js.lt` (#882): `plans/core-in-beni.md`, step 4b.*
 
 **Sizes** (`--release`, brotli 11, the whole bundle): TodoMVC **8 515 → 8 416**; `bench/size.mjs`'s
 pages `navigation` 3 905 → 3 836, `links` 3 742 → 3 699, `application` 4 129 → 4 065, `effects`

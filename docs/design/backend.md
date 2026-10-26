@@ -6647,7 +6647,8 @@ constructors are all nullary is the bare integer. A type keeps its string tags w
   are built by beni code, and neither is in the boundary on their account â `Http` hands its fiber
   the answer through a type variable, which is opaque at the door)*
 - it is core's `Order` or `Bool` â `Order`'s `"LT"`/`"EQ"`/`"GT"` are written by siblings
-  (`List.compare`, `String.compare`, `Hosted.compareKeys`) and by every derived `compare`, and `Bool`
+  (`List.compare`, `String.compare`; `Hosted.compare` reads one back with `Js.to` at `Order` since
+  2026-10-26, which pins it the same way, `boundary.md` §4) and by every derived `compare`, and `Bool`
   is `true`/`false`;
 - the build is a `--library` build or reaches `Debug`, as for fields.
 
@@ -6749,8 +6750,12 @@ keeps a type's string tags keeps its object:
   development, `{$: "Meters", a}`: a sibling reads `.$` and `.a`, and builds the object. A value
   handed through a type variable is opaque (`boundary.md` Â§4, *What JavaScript may read of a beni
   value*), so its type may be unboxed; JavaScript may store it, hand it back and compare it with
-  `===`, none of which reads the object. A type a reflective order compares (`Hosted.key`) is in
-  the boundary already.
+  `===`, none of which reads the object. A type a reflective order compared (`Hosted.keyOf`,
+  with `where k.compare`) was in the boundary until 2026-10-26. `Hosted.key` is beni since then:
+  it hands the key's value to `Js.from` at its quantifier `k`, and `Hosted.compare` reads it back
+  with `Js.to` at `k` in the same build, so the key's type is opaque at the door and a release
+  build may unbox it. `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and
+  its compare on two strings (*amended 2026-10-26*).
 - **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
 - **Markup.** A selector probe (Â§15.5) of such a type is the value itself, which is the field the
   probe would have read; nothing else a lowering writes reads a beni constructor.
