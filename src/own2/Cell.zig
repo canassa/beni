@@ -376,7 +376,7 @@ pub const Table = struct {
         return t.splits.get(s.int());
     }
 
-    fn findSplit(t: *const Table, container: CellId, l: LabelId) SplitId {
+    pub fn findSplit(t: *const Table, container: CellId, l: LabelId) SplitId {
         return if (t.split_intern.get(.{ container.int(), l.int() })) |s| .from(s) else .none;
     }
 

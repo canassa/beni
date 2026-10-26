@@ -197,6 +197,7 @@ pub const own2 = struct {
     pub const Summary = @import("own2/Summary.zig");
     pub const Liveness = @import("own2/Liveness.zig");
     pub const Rows = @import("own2/Rows.zig");
+    pub const Block = @import("own2/Block.zig");
     pub const rules_test = @import("own2/rules_test.zig");
 };
 pub const dump = struct {
