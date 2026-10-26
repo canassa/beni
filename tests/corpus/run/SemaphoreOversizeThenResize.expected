@@ -1,0 +1,10 @@
+after acquire 5 on 2, available: 0
+after resize 10, available: 5
+three in: ⊤
+three in, eight waits, available: 2
+after release 5, eight waits: True
+after release 5, available: 7
+eight in: ⊤
+eight holds, available: 2
+available at the end: 10
+done

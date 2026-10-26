@@ -17,7 +17,8 @@
 --! at once, and the requests behind it are examined again.
 --!
 --! **A request for more permits than there are** is served when every
---! permit is free, and takes them all. A request for 0 or fewer takes
+--! permit is free. It counts all `n` as taken, so none is free while it
+--! holds, and giving back `n` balances it. A request for 0 or fewer takes
 --! nothing and does not wait.
 --!
 --! **`acquire` and `release` are the manual pair**, for a permit that one
@@ -74,7 +75,7 @@ tryWithPermits (Semaphore s) n work =
     else
         got = if Js.to (Js.get (Js.get s "waiters") "length") == 0 then grant s n else 0
 
-        if got == 0 then
+        if got ≤ 0 then
             Nothing
         else
             Js.set s "taken" (Js.from (takenOf s + got))
@@ -88,7 +89,13 @@ tryWithPermits (Semaphore s) n work =
 --|
 --| Give the permits back with `release`, from this fiber or another. A
 --| permit you `acquire` and never `release` is lost. Prefer `withPermits`
---| when the permits are given back where they were taken.
+--| when the permits are given back where they were taken. Inside
+--| `Task.race` or `Task.timeout`, use `withPermits` and not `acquire`: a
+--| losing branch can still take the permits as it is cancelled, and then
+--| nothing gives them back.
+--|
+--| A request for more permits than there are counts all `n` as taken, so
+--| `release` the same `n`.
 --|
 --|     -- a ball enters the machine
 --|     Semaphore.acquire slots 1
@@ -141,7 +148,7 @@ takenOf s = Js.to (Js.get s "taken")
 
 
 -- What a request for `n > 0` takes now, or 0 when it must wait. A request
--- for more than there are takes every permit once all are free, and waits
+-- for more than there are takes `n` once every permit is free, and waits
 -- while there are none.
 grant : Js.Value, Int → Int
 grant s n =
@@ -150,8 +157,8 @@ grant s n =
 
     if n ≤ p then
         if p - t ≥ n then n else 0
-    else if t == 0 then
-        p
+    else if t == 0 && p ≥ 1 then
+        n
     else
         0
 

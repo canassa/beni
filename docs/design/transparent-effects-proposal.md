@@ -3071,19 +3071,27 @@ pub release : Semaphore, Int → ⊤                            -- impure
    keep permit counts balanced" (`:541-545`). The sentence "No bare `take` or `release` …" above is
    withdrawn; research 48's `Semaphore` row is corrected with it.
 
-Four points the text above left open, settled as built. **The oversize request** takes every
-permit there is — `permits`, not `n`, is counted as taken and given back — and needs at least one
-permit to exist: on a semaphore resized to 0 every request waits, as a closed one should, rather
-than passing because nothing is taken. **`available s`** is never negative: after a `resize` below
+Four points the text above left open, settled as built. **The oversize request** (decided on review of #1039) is served
+only when nothing is taken and at least one permit exists, and it counts **`n`** as taken, not
+`permits`: so the `release s n` of a manual holder, and `withPermits`'s give-back, balance
+exactly, and a later `resize` sees the true holdings — with 5 counted on a semaphore of 2,
+`resize s 10` leaves 5 free, not 8. "Takes them all" above is read that way: while it holds, none
+is free. On a semaphore resized to 0 every request waits, as a closed one should, rather than
+passing because nothing is taken. **`available s`** is never negative: after a `resize` below
 the count taken it is 0 until enough are given back. **`make n`** with a negative `n` makes a
 semaphore of 0 permits, as `resize` does. **`tryWithPermits s n`** with `n ≤ 0` runs `work` and
 answers `Just`, as `withPermits` takes nothing and does not wait.
 
 **Fixtures** (added): `run/SemaphoreAcquireRelease` (permits taken in one fiber and given back in
 another), `run/SemaphoreHandoffCancelled` (point 3), `run/SemaphoreReleaseUnmatched` (point 4),
-`run/SemaphoreResize` (waiters served in order as `resize` makes room; the permits taken kept), and
+`run/SemaphoreResize` (waiters served in order as `resize` makes room; the permits taken kept),
 `run/SemaphoreAcquireCancelled` (a cancelled `acquire` leaves the queue and the count as they were),
-`run/SemaphoreNoPermits` (`n ≤ 0`, a negative `make` and `resize`, and a zero-permit semaphore).
+`run/SemaphoreNoPermits` (`n ≤ 0`, a negative `make` and `resize`, and a zero-permit semaphore),
+`run/SemaphoreOversizeThenResize` (an oversize holder counts `n`, so a `resize` and its `release`
+leave the true free count), `run/SemaphoreTryNegativeSize` (a try on a semaphore made or resized
+below 0 answers `Nothing`), `run/SemaphoreMiddleCancelled` (a waiter cancelled in the middle of
+the queue leaves it, and those on either side are served in order) and `run/SemaphoreTryCancelled`
+(a holder cancelled inside `tryWithPermits` gives its permits back).
 
 ### 17.10 A program that can never wake (decision 16; A8, Node)
 
