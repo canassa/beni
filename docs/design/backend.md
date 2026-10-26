@@ -6751,10 +6751,11 @@ keeps a type's string tags keeps its object:
   value*), so its type may be unboxed; JavaScript may store it, hand it back and compare it with
   `===`, none of which reads the object. A type a reflective order compared (`Hosted.keyOf`,
   with `where k.compare`) was in the boundary until 2026-10-26. `Hosted.key` is beni since then:
-  it hands the key's value to `Js.from` at its quantifier `k`, and `Hosted.compare` reads it back
-  with `Js.to` at `k` in the same build, so the key's type is opaque at the door and a release
-  build may unbox it. `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and
-  its compare on two strings (*amended 2026-10-26*).
+  it hands the key's value to `Js.from` at its quantifier `k`, the comparer the key stores reads
+  it back with `Js.to` at `k` in the same build, and `Hosted.compare` reads only that comparer's
+  answer, at `Order`; so the key's type is opaque at the door and a release build may unbox it.
+  `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and its compare on two
+  strings (*amended 2026-10-26*).
 - **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
 - **Markup.** A selector probe (Â§15.5) of such a type is the value itself, which is the field the
   probe would have read; nothing else a lowering writes reads a beni constructor.

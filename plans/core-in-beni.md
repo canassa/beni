@@ -1018,9 +1018,12 @@ intrinsic the owner decided on 2026-10-02 for this piece), two keys of one type 
 and the release optimiser specialises `key` per call site as it did `keyOf`'s caller.
 
 **Ownership.** `keyOf`'s trusted row (`String, aliased k → fresh Key`) is withdrawn; `key`'s row is
-inferred — `Js.from k` is `returned`, `Js.object` holds its fields `aliased` — and the `WordsBrowser`
-goldens did not move. The fixture's flips test is retired: its remaining rows are `crossing`, with no
-flip; the browser platforms' flips are the entry rows (`HostedEntry`, `EntryInitProgram`).
+inferred — `Js.from k` is `returned`, `Js.object` holds its fields `aliased`. The `WordsBrowser`
+goldens under `browser-tea` move their `keysHeld` summary, since the key now also holds its
+comparer; no verdict changes, and under `browser` they do not move. The fixture's flips test is
+retired: its remaining rows are `crossing`, with no flip; the `browser` platform's flips are the
+entry rows (`HostedEntry`, `EntryInitProgram`), and the other platforms' entry rows have no test
+that runs them (#1118).
 
 **Sizes** (release, brotli 11, the whole bundle; #1110's compiler against this step, the same sources,
 `zig-out/scratch/pages.mjs` over `tests/corpus/browser/` and `bench/size.mjs`):
