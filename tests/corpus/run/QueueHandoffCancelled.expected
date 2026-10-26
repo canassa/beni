@@ -6,4 +6,6 @@ next got: Just 3
 left: [4]
 after takeAll's cancel: [5,6,7]
 after takeN's cancel: [8,9,10]
+sliding 1 holds after the give-back: 2
+sliding 1 after one more offer: [4]
 done

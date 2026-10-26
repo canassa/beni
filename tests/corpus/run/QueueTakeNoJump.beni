@@ -2,7 +2,9 @@
 -- (transparent-effects-proposal.md §17.9, amended 2026-10-26). A `takeN`
 -- for 3 waits with two values held. A `take` that begins later waits
 -- behind it, and `poll` answers `Nothing`, though values are held. The
--- third value serves the `takeN`; then the `take` waits for the next.
+-- third value serves the `takeN`; then the `take` waits for the next. A
+-- `takeAll` that begins while a `takeN` waits with two values held waits
+-- too, and gets only the value offered after the `takeN` is served.
 import Io
 import Node exposing (Program)
 import Queue
@@ -24,4 +26,16 @@ main = Io.run λ⊤ →
     _ = Debug.log "take still waits" (Task.poll one == Nothing)
     _ = Queue.offer q 4
     _ = Task.join one
+
+    r = Queue.unbounded ⊤
+    many = Task.spawn λ⊤ → Debug.log "takeN again took" (Queue.takeN r 3)
+    Task.yieldNow ⊤
+    _ = Queue.offerAll r [ 1, 2 ]
+    every = Task.spawn λ⊤ → Debug.log "takeAll took" (Queue.takeAll r)
+    Task.yieldNow ⊤
+    _ = Debug.log "takeAll waits" (Task.poll every == Nothing)
+    _ = Queue.offer r 3
+    _ = Task.join many
+    _ = Queue.offer r 4
+    _ = Task.join every
     Node.print "done"
