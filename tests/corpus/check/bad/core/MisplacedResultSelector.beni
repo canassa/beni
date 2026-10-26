@@ -1,0 +1,52 @@
+-- check/bad (core): `misplaced_ownership_word` for the result selectors and
+-- the stored callback (`ownership-v2.md` §2.13.6), lowering's, at the word,
+-- and the word dropped. A selector on a parameter (`one`); two selectors
+-- (`two`), or one beside `fresh` (`three`); `elementof` over an `unused`
+-- first parameter (`four`); `copyof` over a first parameter that is not
+-- `borrowed` (`five`); `prepended` over three parameters (`six`) and without
+-- a `returned` second one (`seven`). A stored callback without `once taken`
+-- (`eight`), into a first parameter that is not `written returned`
+-- (`nine`), that is also `many` (`ten`), and on a `List` of callbacks
+-- (`eleven`); `cellupdate` and `cellmodify` without `stored` (`twelve`,
+-- `thirteen`, and then `cellwrite` has no companion either).
+type Box a
+    = Box a
+
+
+pub foreign pure one : elementof List a, Int → a
+
+
+pub foreign pure two : borrowed List a → copyof elementof List a
+
+
+pub foreign pure three : borrowed List a → fresh copyof List a
+
+
+pub foreign pure four : unused List a, Int → elementof a
+
+
+pub foreign pure five : returned List a → copyof List a
+
+
+pub foreign pure six : stored a, returned List a, Int → prepended List a
+
+
+pub foreign pure seven : stored a, borrowed List a → prepended List a
+
+
+pub foreign pure eight : written returned List a, Int, stored (a → a) → List a
+
+
+pub foreign pure nine : borrowed List a, Int, once taken stored (a → a) → List a
+
+
+pub foreign pure ten : written returned List a, Int, many taken stored (a → a) → List a
+
+
+pub foreign pure eleven : written returned List a, once stored List (a → a) → List a
+
+
+pub foreign pure twelve : cellwrite Box a, cellupdate sync (a → a) → ⊤
+
+
+pub foreign pure thirteen : cellwrite Box a, cellmodify sync (a → b × a) → b

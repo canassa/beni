@@ -1,0 +1,16 @@
+-- fmt: the result selectors and the stored callback (`ownership-v2.md`
+-- §2.13.6) are words like the others: one space after each, in the order
+-- written.
+pub foreign pure at : borrowed   List a, borrowed Int →   elementof a
+
+
+pub foreign pure copy : borrowed List a → copyof   List a
+
+
+pub foreign pure cons : stored a,   returned List a → prepended List a
+
+
+pub foreign pure focus : written returned List a, borrowed Int, once   taken   stored (a → a) → List a
+
+
+pub foreign pure modify : cellwrite Box a, cellmodify   stored sync (a → b × a) → b

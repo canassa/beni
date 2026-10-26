@@ -65,10 +65,10 @@ pub foreign pure isSet : cellread Box a → Bool
 pub foreign pure set : cellwrite Box a, consumed cellstored a → ⊤
 
 
-pub foreign pure update : cellwrite Box a, cellupdate sync (a → a) → ⊤
+pub foreign pure update : cellwrite Box a, cellupdate stored sync (a → a) → ⊤
 
 
-pub foreign pure modify : cellwrite Box a, cellmodify sync (a → b × a) → b
+pub foreign pure modify : cellwrite Box a, cellmodify stored sync (a → b × a) → b
 
 
 pub foreign pure complete : cellcomplete Box a, consumed cellstored a → Bool

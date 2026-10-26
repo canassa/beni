@@ -102,8 +102,8 @@ core/List.js                  List.put            286a8b1d168b66f275712e15239f53
 core/Ref.beni                 Ref.make            c9b05c32082ff83273a53acac9fab0877995071b310cb0292881f2f1e4c6cabd
 core/Ref.beni                 Ref.get             969b4f392da46ec630cc3122e1f1ef829c00b0b5e057582c2f2badde6888ebd8
 core/Ref.beni                 Ref.set             a233d3b602fda8b5d21391117431a4035df04f0802d201141aba7568ef998aec
-core/Ref.beni                 Ref.update          b01fd591216bd61aa5ca88b41e4ff47b1d74c242dcce5eeca68a17717326d14c
-core/Ref.beni                 Ref.modify          085a2c747f0e69bf3f4237dba18414fdb662c430b57dc727d814d8f887524ab0
+core/Ref.beni                 Ref.update          8a45f5e191c5dce5afde8c5c9a576b4c211562126923d95801ec6a08e084f401
+core/Ref.beni                 Ref.modify          31543018ac32428a5ab69a8a2efc19402d2c45dae43f00ae836c1f099a63d902
 core/Deferred.beni            Deferred.make       fd3ad4364257fdcd93473fcb9e3230d1f73c0f3c77c0d05c6b836172f0184574
 core/Deferred.beni            Deferred.wait       0fd1fc2cab0c05d7c85a302622b729a1b96c05f1129259338bd8ca200ef0daa1
 core/Deferred.beni            Deferred.complete   5240fc4c43112afc24e2da942985a7e844c2f8bde0ed346e5d968b0917f8a8cd
