@@ -2762,7 +2762,7 @@ test "#1073: a folded snapshot round-trips: its fold, and every read at and belo
     const w = try widenedTree(&a);
     var unfolded = (try a.conds.kappaSet(gpa, env.charge, .none, w, Cond.yes)).ctx;
     unfolded = try a.conds.kappaSetAt(gpa, env.charge, unfolded, &.{s0}, try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, w, s0) orelse return error.NoChild, Cond.shared);
-    const km = try a.conds.propagate(gpa, env.charge, env.view(), .none, w, &.{w}, &.{unfolded}, .alternatives, false, null);
+    const km = try a.conds.propagate(gpa, env.charge, env.view(), .none, w, &.{ w, w }, &.{ unfolded, .none }, .alternatives, false, null);
     const c = try a.sums.add(env, .{ .params = &.{.none}, .res = w, .kappas = km });
     var b: Tables = .{};
     try b.init();

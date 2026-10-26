@@ -44,10 +44,10 @@ const layers = [_]Entry{
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
     .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
-    // §5 says 1 715 since #1101: the observable-position frontier every κ
-    // reader walks, exact propagation states, and the snapshot trie (its
-    // links, merges, folds and relabelling).
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1715 },
+    // §5 says 1 800 since #1112: the observable-position frontier every κ
+    // reader walks, exact propagation states, the snapshot trie (its
+    // links, merges, folds and relabelling) and the one-alternative link.
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1800 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1500 },

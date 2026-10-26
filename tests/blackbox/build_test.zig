@@ -8264,6 +8264,47 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1⟲ RA, π1⟲#Rose.0 RAW; res .0 fresh2, .0 π1⟲#Rose.0, .0[*] π1⟲{excl π1⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
 }
 
+test "the checker v2's growth is linear in a recursive tower's height: a one-member literal is its member's snapshot" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1112: `r_k = Rose [ r_{k-1} ]` walked the whole tower below each
+    // literal, so its growth was quadratic and 100 levels hit the default
+    // allowance. A one-member literal is a link to its member's snapshot
+    // (§2.9), so each level costs a constant. The allowance is raised so
+    // the tallest tower is measured, not refused; what remains per level
+    // is read-off's and the holders', growth until #1098 lanes them.
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 100, 1000 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 262144)\n\n\ntype Rose =\n    Rose (List Rose)\n\n\npub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n");
+        for (1..n + 1) |i| try src.print(a, "    r{d} = Rose [ r{d} ]\n", .{ i, i - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+    }
+    // A constant per level, up to the persistent sets' depth (n log n,
+    // §4.1): ten times the levels, at most 14 times the growth. The old
+    // walk was quadratic: 100 times.
+    try testing.expect(growth[1] <= 14 * growth[0] + 200);
+    try testing.expect(growth[2] <= 14 * growth[1] + 200);
+}
+
 test "the checker v2 gives each demand of one call its own query lane" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
