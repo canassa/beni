@@ -57,7 +57,7 @@ import Js
 --|     [ 1, …[ 2, 3 ] ]
 --|
 --| Equatable when the element type is.
-pub equatable foreign type List a
+pub equatable sequence foreign type List a
 
 
 --| What a loop of this module builds its result in: a fresh array that only
@@ -65,7 +65,7 @@ pub equatable foreign type List a
 --| once by `done` as a plain list (`backend.md` §4, invariant 5). Nothing
 --| outside this module can name one, and each is used linearly, so the
 --| write is never observable.
-foreign type Builder a
+sequence foreign type Builder a
 
 
 --| Add an element to the front of a list.
@@ -146,7 +146,7 @@ pushFrom b i c =
 --| `[ …xs, x ]` costs what `push xs x` does. Otherwise the result is a
 --| fresh list, O(length of both) — `append xs []` and `append [] ys`
 --| included, which are copies and never the list itself.
-pub append : List a, List a → List a
+pub append : written List a, borrowed List a → concatenated List a
 append xs ys = Js.pure λ⊤ →
     n = length xs
     m = length ys
@@ -181,7 +181,7 @@ plainOf x =
 --| Determine the length of a list. O(1).
 --|
 --|     length [ 1, 2, 3 ] == 3
-pub foreign pure length : List a → Int
+pub foreign pure length : borrowed List a → Int
 
 
 --| Two lists are equal when they have the same elements, in the same order,
@@ -256,7 +256,7 @@ compareFrom a i b j =
 --|
 --| A copy up to 256 elements; above, near O(1) after one O(n) conversion
 --| per list.
-pub set : List a, Int, a → List a
+pub set : written returned List a, borrowed Int, stored a → List a
 set xs i v = Js.pure λ⊤ →
     n = length xs
     if outside i n then
@@ -284,7 +284,7 @@ set xs i v = Js.pure λ⊤ →
 --| per list. Pushing twice onto one version (after an undo) copies at most
 --| 31 elements, never the list. A loop that builds a list with `push` keeps
 --| the order the elements arrived in, so it needs no `reverse`.
-pub push : List a, a → List a
+pub push : written returned List a, stored a → List a
 push xs v = Js.pure λ⊤ →
     if isTrie (Js.from xs) then
         Js.to (triePush (Js.from xs) (Js.from v))
@@ -304,7 +304,7 @@ push xs v = Js.pure λ⊤ →
 --|     pop [ 1, 2, 3 ] == [ 1, 2 ]
 --|
 --| The cost of `set`.
-pub pop : List a → List a
+pub pop : written returned List a → List a
 pop xs = Js.pure λ⊤ →
     n = length xs
     if n == 0 then
@@ -386,7 +386,7 @@ sliceOf xs from to =
 --|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
 --|
 --| O(n), a fresh list.
-pub insertAt : List a, Int, a → List a
+pub insertAt : written returned List a, borrowed Int, stored a → List a
 insertAt xs i v =
     n = length xs
     if outside i (n + 1) then
@@ -409,7 +409,7 @@ insertAt xs i v =
 --|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
 --|
 --| O(n), a fresh list.
-pub removeAt : List a, Int → List a
+pub removeAt : written returned List a, borrowed Int → List a
 removeAt xs i =
     n = length xs
     if outside i n then
@@ -430,7 +430,7 @@ removeAt xs i =
 --|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
 --|
 --| Two `set`s.
-pub swap : List a, Int, Int → List a
+pub swap : written returned List a, borrowed Int, borrowed Int → List a
 swap xs i j =
     n = length xs
     if outside i n || outside j n || i == j then
@@ -467,7 +467,7 @@ outside i n = Js.shiftRightZero i 0 ≠ i || i ≥ n
 --| The list without its first `k` elements, `0 ≤ k ≤ length`: the list
 --| itself at 0, `[]` at the end, O(1) otherwise. What a pattern's
 --| `[ x, …rest ]` binds `rest` to; the code generator imports it.
-view : List a, Int → List a
+view : returned List a, borrowed Int → List a
 view xs k = Js.pure λ⊤ →
     if k == 0 then
         xs
@@ -483,7 +483,7 @@ view xs k = Js.pure λ⊤ →
 --| (`backend.md` §8, *Scalar views*): the list itself and 0, a view's
 --| backing array and offset, a trie's plain copy (made once) and 0. Every
 --| loop below reads its list through these two and `at`.
-base : List a → List a
+base : returned List a → List a
 base xs = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v then
@@ -494,7 +494,7 @@ base xs = Js.pure λ⊤ →
         Js.to (Js.get v "b")
 
 
-offset : List a → Int
+offset : borrowed List a → Int
 offset xs = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v || Js.isUndefined (Js.get v "o") then
@@ -519,27 +519,27 @@ foreign pure at : List a, Int → a
 --| the list is unique, exclusive and dead after the loop. The obligation it
 --| carries, which every loop below meets: the body that calls it reads `a`
 --| only through it, once per index, at an index that moves one way.
-foreign pure traverseAt : List a, Int → a
+foreign pure traverseAt : borrowed List a, borrowed Int → taken a
 
 
 --| A builder with room for `n` elements: a loop that knows how many it will
 --| write fills them by index with `put`, which builds in a third of the
 --| time pushing takes at 100 000 elements, where an array grown by `push`
 --| is copied as it grows.
-builder : Int → Builder a
+builder : unused Int → fresh exclusive Builder a
 builder n = Js.pure λ⊤ →
     Js.to (Js.construct (Js.global "Array") [ Js.from (if n > 0 then n else 0) ])
 
 
 --| Element `i` of the builder written, `i` below the room it was made with.
 --| Written in place, as `at` is: `b[i] = x`.
-foreign pure put : Builder a, Int, a → Builder a
+foreign pure put : written returned Builder a, borrowed Int, stored a → Builder a
 
 
 --| The builder handed over as a list of its first `n` elements: `n` is
 --| how many a loop `put`, so a builder made with more room
 --| than it needed — `filter`'s — is cut to what it holds.
-done : Builder a, Int → List a
+done : written returned Builder a, borrowed Int → builderdone List a
 done b n = Js.pure λ⊤ →
     v = Js.from b
     if Js.to (Js.get v "length") == n then

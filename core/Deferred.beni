@@ -25,12 +25,12 @@ import Task
 
 
 --| A value that is completed once, and may be waited for until it is.
-pub opaque type Deferred a
+pub opaque cell type Deferred a
     = Deferred Js.Value
 
 
 --| A new `Deferred`, not completed. Each call makes a new one.
-pub make : ⊤ → Deferred a
+pub make : unused ⊤ → cellempty Deferred a
 make ⊤ =
     Deferred
         (Js.from { done = False, value = Js.null, waiters = Js.construct (Js.global "Set") [] })
@@ -39,7 +39,7 @@ make ⊤ =
 --| The value, once the `Deferred` is completed: at once when it already is,
 --| and otherwise when `complete` is called. Cancelling the fiber that waits
 --| ends the wait.
-pub wait : Deferred a → a
+pub wait : cellread Deferred a → lent a
 wait (Deferred d) =
     if Js.to (Js.get d "done") then
         Js.to (Js.get d "value")
@@ -58,7 +58,7 @@ wait (Deferred d) =
 --| waiting goes on with it, in the order they began to wait, each at a
 --| later turn — never inside this call. When it was already completed,
 --| nothing changes and the answer is `False`.
-pub complete : Deferred a, a → Bool
+pub complete : cellcomplete Deferred a, consumed cellstored a → Bool
 complete (Deferred d) value =
     if Js.to (Js.get d "done") then
         False
@@ -73,10 +73,10 @@ complete (Deferred d) value =
 
 --| `Just` the value once the `Deferred` is completed, `Nothing` before,
 --| without waiting.
-pub poll : Deferred a → Maybe a
+pub poll : cellread Deferred a → lentoptional Maybe a
 poll (Deferred d) = if Js.to (Js.get d "done") then Just (Js.to (Js.get d "value")) else Nothing
 
 
 --| Whether the `Deferred` has been completed.
-pub isDone : Deferred a → Bool
+pub isDone : cellread Deferred a → Bool
 isDone (Deferred d) = Js.to (Js.get d "done")

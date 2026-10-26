@@ -76,3 +76,48 @@ tests/platforms/page/runtime.js              Page.renderAttributes    b997814327
 tests/platforms/page/runtime.js              Page.create              4bfd151d7726aa70d50f176fc43e97f00cd3c775c0a32133e5ad84082ee0b9e6
 tests/platforms/page/runtime.js              Page.patch               a1d3fea2925b61dbfde073736cb98369f987cd972481713293a964ec33bfd96d
 tests/platforms/page/runtime.js              Page.run                 94db922d68d939f36a1aeef52018c9d92dd4d4805cd06f80a3a61c4eb2925ff8
+#
+# The ownership checker v2's rows (ownership-v2.md §2.13.6, §2.13.16):
+# `core/List.beni`'s array primitives and the Builder, `Ref` and
+# `Deferred`, each worded beside its type (R-5.10.8), and the pinned
+# `sortWith` row with the helpers its body runs [O 2026-10-26].
+core/List.beni                List.append         6e39f6d0822a5711c55490f1af9c28f48d9406020dbfd9fdd9b8d263eecc9f14
+core/List.beni                List.set            9f93fd9937b4c6ab335fa31ed78e8806ba643b081c4f034b5d451e8da9b347d9
+core/List.beni                List.push           2170601ff25beadcb284fcde4d942dc9646300cf7f53795fac00a5e7ad681af2
+core/List.beni                List.pop            9eed252fc467416fb0eae7e896899864320851572d47fb1a150b9a97da36fef0
+core/List.beni                List.insertAt       e85544e8292143165cd9627aac47c4eed1a9f5c4d099b679dc2bf9a9cc5ad52b
+core/List.beni                List.removeAt       58e6091a22f3e50a8418265c5b1ea2a01e16a66402b326edd53beb9ad8954073
+core/List.beni                List.swap           25c180116d3a51ce152742b494cf7df403eb2040c1ac5742179b894d57be93cd
+core/List.beni                List.view           d8483a0041b930940b988b6fe81d33d206d19b6298ce283610d5db29ac0c2161
+core/List.beni                List.base           f7b4ab9953b93387b3b97c7a208e8e482369c9ab143ce2a269f3e44de0fb3e6d
+core/List.beni                List.offset         5948d15f79c5fcf2e08b0551efa79a14e510ec0f2692d484eb87af0031b2be42
+core/List.beni                List.builder        645a748dd8bcb4c54c0ca308e90a5dedc3eee2dbc75853b3f06dfc88fdbb1457
+core/List.beni                List.done           8de0b0d2c17f15f08179cbffbf02c3d0d1919f43051421bc7906293d01106e56
+core/List.beni                List.sortWith       90c95d87855f2cbdeb2597e9aea6eb1dac01d74efb53bd7b69cccb7dc385607f
+core/List.beni                List.sortRange      0134063b20980d610914834d38143a1b4228099b304f737e9855d3e55b26da76
+core/List.beni                List.merge          0da98002cbed9a8d853f8e63667c3e92b9936c31bebaff553292a0e76575eac9
+core/List.js                  List.length         d29c060851c95a74574b0b333e8a30676150e7f03f8914826cb37d5e931beaa4
+core/List.js                  List.traverseAt     8e37c3054d1fd83ee4fce3469d405f5a1041944123dd2de56e7c82456d8af8f0
+core/List.js                  List.put            286a8b1d168b66f275712e15239f53e9781f4a1afcde2ffd894895b8f281d006
+core/Ref.beni                 Ref.make            c9b05c32082ff83273a53acac9fab0877995071b310cb0292881f2f1e4c6cabd
+core/Ref.beni                 Ref.get             969b4f392da46ec630cc3122e1f1ef829c00b0b5e057582c2f2badde6888ebd8
+core/Ref.beni                 Ref.set             a233d3b602fda8b5d21391117431a4035df04f0802d201141aba7568ef998aec
+core/Ref.beni                 Ref.update          b01fd591216bd61aa5ca88b41e4ff47b1d74c242dcce5eeca68a17717326d14c
+core/Ref.beni                 Ref.modify          085a2c747f0e69bf3f4237dba18414fdb662c430b57dc727d814d8f887524ab0
+core/Deferred.beni            Deferred.make       502c3793684f61980f3cf8b57dbd7792682060759994464ac197ca8aa30ef812
+core/Deferred.beni            Deferred.wait       56b9952654de3f1197bd699c4cdd41cc368362cd1c1dfdde0b91c1697c2c5c23
+core/Deferred.beni            Deferred.complete   aa1d813a05ad61c8fe6c8775551d6e511085330046b95c08e13723ae9a4b1610
+core/Deferred.beni            Deferred.poll       9286e70f17e95d2be61f79072690c0746ca29c891569dbdbd8b9c9162c079d46
+core/Deferred.beni            Deferred.isDone     d9cfc7ce6721be29aa4de6e445f580e49b777719476070be540a97483bfa3963
+#
+# The index obligation (ownership-v2.md §2.13.6, R-5.10.7): every body that
+# reads a container through a `taken` result — `traverseAt` — reads it only
+# through it, once per index, moving one way. These bodies are part of the
+# trusted surface; `check_test.zig` fails when one is added unlisted.
+core/List.beni                List.foldlFrom      f0b148d0d9015b8e667c55e3fc93a70c81af4fe2861a2d5388cc15748c5e5d79
+core/List.beni                List.foldrFrom      6c1acdf587f102ca159cc714c16c615cbe29e3da4a61f6a95b913326749d8926
+core/List.beni                List.mapHelp        68604fb212552a4aa63591248c9e4ebbee794cfc731b6b74a102eb648c7b278e
+core/List.beni                List.indexedMapHelp d60439e211641fd2cd3d2e74adc335786d7359b43e191529a30e3f4c59f690da
+core/List.beni                List.filterHelp     b3c6634ee320ca247cc44ef2cf82e62578064cd9fa17605c88943c9f337e5649
+core/List.beni                List.filterMapHelp  4ad55f3b748451bd6f7db626320a64bfcba66a8ab67dbf3881c130b4e0d70438
+core/List.beni                List.reverseHelp    e3c86a01f586b5e0413bff340f6c7d7039b933dd00f2f5c55fac86d08b874df6

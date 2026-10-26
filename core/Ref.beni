@@ -25,29 +25,29 @@ import Js
 
 
 --| A mutable cell holding an `a`.
-pub opaque type Ref a
+pub opaque cell type Ref a
     = Ref Js.Value
 
 
 --| A new cell holding `value`. Each call makes a new one.
-pub make : a → Ref a
+pub make : consumed a → cellnew Ref a
 make value = Ref (Js.array [ Js.from value ])
 
 
 --| What the cell holds now.
-pub get : Ref a → a
+pub get : cellread Ref a → lent a
 get (Ref cell) = Js.to (Js.at cell 0)
 
 
 --| Make the cell hold `value`.
-pub set : Ref a, a → ⊤
+pub set : cellwrite Ref a, consumed cellstored a → ⊤
 set (Ref cell) value = Js.setAt cell 0 (Js.from value)
 
 
 --| Replace the value with what `f` makes of it. `f` must not suspend: no
 --| other fiber runs between the read and the write, so no update is lost.
 --| `f` may write the cell itself; then this write, which comes last, wins.
-pub update : Ref a, sync (a → a) → ⊤
+pub update : cellwrite Ref a, cellupdate sync (a → a) → ⊤
 update ref f = set ref (f (get ref))
 
 
@@ -56,7 +56,7 @@ update ref f = set ref (f (get ref))
 --|
 --|     -- the old value, and the cell now holds 0
 --|     Ref.modify counter λn → ( n, 0 )
-pub modify : Ref a, sync (a → b × a) → b
+pub modify : cellwrite Ref a, cellmodify sync (a → b × a) → b
 modify ref f =
     ( result, next ) = f (get ref)
     set ref next
