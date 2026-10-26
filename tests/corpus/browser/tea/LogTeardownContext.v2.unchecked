@@ -1,0 +1,4 @@
+LogTeardownContext guarded: lines 24-25 (not built: lambda)
+LogTeardownContext update: lines 28-39 (not built: lambda)
+LogTeardownContext view: lines 43-47 (not built: markup)
+LogTeardownContext main: lines 51-57 (not built: lambda)
