@@ -85,13 +85,13 @@ pub const ReadError = Error || error{BlockConflict};
 /// `"OWN2"`, little-endian.
 pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
-pub const version: u32 = 5;
+pub const version: u32 = 6;
 
 pub const none: u32 = Ids.none_int;
 
 /// A record's kind, which is its tag in the table; `group` opens a knot.
 /// A `node` record is a position.
-pub const Kind = enum(u8) { label, path, cell, split, set, atoms, cond, atom, node, owner, supply, keep, slot, class, group };
+pub const Kind = enum(u8) { label, path, cell, split, set, atoms, cond, atom, node, owner, supply, keep, slot, class, group, back };
 
 /// How the writer names what no session id may spell (§3.6).
 pub const Names = struct {
@@ -213,6 +213,7 @@ const Extra = union(enum) {
     supply: Summary.Supply,
     keep: Summary.Keep,
     slot: Summary.Slot,
+    back: Summary.Back,
 };
 
 /// A strongly connected component of the written records: one record, or a
@@ -730,6 +731,12 @@ const Writer = struct {
                 try w.word(s.param);
                 try w.ref(.path, s.path.int());
             },
+            .back => {
+                const b = w.extras.items[id].back;
+                try w.put(&.{ b.dest_param, @as(u32, @backingInt(b.mode)) | (@as(u32, @intFromBool(b.removes)) << 8) });
+                try w.ref(.path, b.selected.int());
+                try w.ref(.path, b.dest.int());
+            },
             .owner => {
                 // Every value under the map, from every class and supply of
                 // the block: the reader builds the owner's one map from them.
@@ -771,6 +778,9 @@ const Writer = struct {
             try w.group(list.items);
             list.clearRetainingCapacity();
             for (0..f.keeps.len) |s| try list.append(gpa, try w.extra(.keep, .{ .keep = w.sums.keepOf(f, @intCast(s)) }));
+            try w.group(list.items);
+            list.clearRetainingCapacity();
+            for (0..f.backs.len) |s| try list.append(gpa, try w.extra(.back, .{ .back = w.sums.backOf(f, @intCast(s)) }));
             try w.group(list.items);
         }
         list.clearRetainingCapacity();
