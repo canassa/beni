@@ -69,6 +69,7 @@ const allowlist = [_]Allowed{
     .{ .path = "bir/Lower.zig", .needle = "summaries: std.AutoArrayHashMapUnmanaged(u32, Summary)", .why = "markup rows only: the functions a row's analysis reaches, iterated in the order reached" },
     .{ .path = "bir/Lower.zig", .needle = "set: U32Set", .why = "a record's field names, only past 16 fields" },
     .{ .path = "u32_set.zig", .needle = "var set: U32Set = .{};", .why = "the set's own test" },
+    .{ .path = "own2/Refine.zig", .needle = "var dict: std.HashMapUnmanaged(u32, u32, Keys,", .why = "an index stands for its key's words, hashed and compared by them: interning by content, which a column of indices cannot do" },
     .{ .path = "check/Edges.zig", .needle = "var seen: U32Set", .why = "the evidence terms one edge walk reaches, a few of the session's" },
     .{ .path = "check/Report.zig", .needle = "error_regions: U32Set", .why = "the error path: the instructions already reported" },
     .{ .path = "js/Lower.zig", .needle = "calls: U32Set", .why = "the calls one derived body makes" },

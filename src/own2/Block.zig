@@ -33,27 +33,36 @@
 //! ordinal. Instruction ids (a label's, a site's) are the module's own, and
 //! a reader puts them in a namespace of its own (`Remap.inst`).
 //!
-//! **The order is the structure's.** A record that is not a position has a
-//! 64-bit key: a hash of its own words, its places' encodings and its
-//! parts' keys (a set's sorted). The positions are partitioned once, all of
-//! the block's together (`Refine`: Hopcroft's algorithm, counting a
-//! union's two sides, O(E log n · log E)), from their kind, place, cells, read κ
-//! and steps; two positions are one block exactly when they are bisimilar
-//! with equal κ everywhere, and one block is one record. Every choice of
-//! the refinement depends on block numbers and splitting signatures only,
-//! never on an id, so the final block numbers are canonical and are the
-//! positions' keys. The table is then a post-order walk from the classes,
-//! a set's parts in key order: ordinals, place numbers and bytes follow
-//! from the structure alone. Two records with equal words are one record;
-//! equal hashes of different local signatures (a 64-bit collision) are
-//! refused, never merged.
+//! **The order is the structure's; no hash decides it alone** (`canon`).
+//! Every key is exact: a dictionary makes equal words one key, and a hash
+//! orders only keys whose words differ, its ties ordered by the words
+//! (`Refine.rank`; a test ties every hash). The places the records name,
+//! closed under their children, are refined once as one graph — Hopcroft's
+//! algorithm, `Refine.blocks` — so a place's rank is its structure's and
+//! every key that names it shares it: no place is encoded once per key.
+//! The records no position reaches are then ranked a height at a time,
+//! each naming its parts by their keys; the positions — the only records
+//! that make cycles — are refined from their own words, a port per
+//! labelled part (a union's two sides a count, not an order), so two
+//! positions are one key exactly when they are bisimilar with equal κ
+//! everywhere; and the owners, supplies and classes that name positions
+//! are ranked last, by height. Records of one key are written as the first
+//! of them. The table is then a post-order walk from the classes, a set's
+//! parts in key order: ordinals, place numbers and bytes follow from the
+//! structure alone.
 //!
 //! **Reading** is `BlockRead`'s, one layer up (§5): this file holds the
 //! format both sides share.
 //!
-//! **Cost.** Every record is reserved on the writer's and the reader's
-//! charge before it is read or made (§4.1); a sort of n members is charged
-//! n·⌈log₂ n⌉, the refinement per edge it moves.
+//! **Cost.** Every lookup, token, scan, sort and word is reserved on the
+//! writer's `Refine.Meter` before it is done (§4.1, §4.4; a record is one
+//! task of O(1) words, a run 16 words a record), and nothing reaches `out`
+//! before all of it is paid. With R records and E their tokens, V and A the
+//! positions and their position parts, Q and T the places and their steps:
+//! describing is O(R + E) plus the κ reads and projections; ranking is
+//! O(E + R log R) (each height sorted); the two refinements are
+//! O((V + A) log V) and O((Q + T) log Q); writing is O(E) plus each set's
+//! sort.
 //!
 //! Obligations kept here: none (a faithful encoding: every κ read of what
 //! is read is the κ read of what was written).
@@ -66,7 +75,6 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
-const stamped = @import("../stamped.zig");
 const Refine = @import("Refine.zig");
 
 pub const ClassId = Ids.ClassId;
@@ -129,10 +137,11 @@ pub const Remap = struct {
     }
 };
 
-fn chargeSort(env: Env, n: usize) Error!void {
-    if (n < 2) return;
-    const log: u32 = std.math.log2_int_ceil(usize, n);
-    try env.charge.reserve(env.gpa, .inspection, @intCast(@min(n * log, std.math.maxInt(u32))));
+const sortCost = Refine.sortCost;
+
+/// What a scan of `n` tokens is charged: two words each, 16 to a record.
+fn scan(n: usize) u64 {
+    return Refine.wordsCost(2 * n);
 }
 
 /// The position class of the child at `s` of a position of class `summary`.
@@ -144,10 +153,21 @@ pub fn below(summary: bool, s: Step) bool {
 // Writing
 // ---------------------------------------------------------------------------
 
+/// How a block is written; the default is the only production one.
+pub const Options = struct {
+    /// Every hash of the writer's dictionary of written words is 0, so a
+    /// test sees that no equality and no order rests on a hash.
+    tie_hashes: bool = false,
+};
+
 /// Write `classes` as one block: header, place table, records, roots.
 pub fn write(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Names, out: *std.ArrayList(u32)) Error!void {
+    return writeWith(env, sums, classes, names, out, .{});
+}
+
+pub fn writeWith(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Names, out: *std.ArrayList(u32), options: Options) Error!void {
     const gpa = env.gpa;
-    var w: Writer = .{ .env = env, .sums = sums, .names = names, .seen_keys = .init(gpa) };
+    var w: Writer = .{ .env = env, .sums = sums, .names = names, .seen_keys = .init(gpa), .meter = .{ .gpa = gpa, .charge = env.charge }, .seen_ctx = .{ .tie = options.tie_hashes } };
     defer w.deinit();
     var roots: std.ArrayList(u32) = .empty;
     defer roots.deinit(gpa);
@@ -159,35 +179,39 @@ pub fn write(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Na
     for (0..w.owners.items.len) |o| try w.entries(@intCast(o));
     try w.pending.appendSlice(gpa, later.items);
     while (w.pending.pop()) |r| try w.describe(r);
-    try w.keys();
+    try w.canon();
+    try w.components();
     for (roots.items) |r| try w.emitFrom(w.recs.items[r].scc);
     try w.check();
-    // The places the records named, closed under their children, each
-    // record `kind, head, holds, n, (step…, child)×n`.
+    // The places the records named, closed under their children, one per
+    // rank, each record `kind, head, holds, n, (step…, child)×n`.
     var places: std.ArrayList(u32) = .empty;
     defer places.deinit(gpa);
     var at: usize = 0;
     while (at < w.place_order.items.len) : (at += 1) {
         const p = w.place_order.items[at];
-        try env.charge.reserve(gpa, .inspection, 1);
         const k = env.places.kind(p);
         const steps = env.places.steps(p);
+        try w.meter.take(1 + steps.steps.len);
         try places.appendSlice(gpa, &.{ @backingInt(k), if (k == .tuple or k == .record) env.places.head(p) else names.place.head(names.place.ctx, env.places.head(p)), env.places.holds(p).bits(), @intCast(steps.steps.len) });
         for (steps.steps, steps.children) |s, child| {
             try w.stepWords(s, &places);
             try places.append(gpa, try w.placeLocal(child));
         }
     }
-    try out.appendSlice(gpa, &.{ magic, version, @intCast(w.place_order.items.len) });
-    try out.appendSlice(gpa, places.items);
-    try out.append(gpa, w.units);
-    try out.appendSlice(gpa, w.out.items);
-    try out.append(gpa, @intCast(roots.items.len));
-    for (roots.items) |r| try out.append(gpa, w.ordinalOf(r));
+    // Nothing reaches `out` before all of it is paid for.
+    try w.meter.take(Refine.wordsCost(5 + places.items.len + w.out.items.len + roots.items.len));
+    try out.ensureUnusedCapacity(gpa, 5 + places.items.len + w.out.items.len + roots.items.len);
+    out.appendSliceAssumeCapacity(&.{ magic, version, @intCast(w.place_order.items.len) });
+    out.appendSliceAssumeCapacity(places.items);
+    out.appendAssumeCapacity(w.units);
+    out.appendSliceAssumeCapacity(w.out.items);
+    out.appendAssumeCapacity(@intCast(roots.items.len));
+    for (roots.items) |r| out.appendAssumeCapacity(w.ordinalOf(r));
 }
 
 /// One word of a record's description: a word as written, a place (its
-/// local number in the block, its encoding in the key), a part (`ref`, or
+/// local number in the block, its rank in the key), a part (`ref`, or
 /// `knot` for a child step or a projected position, which may name its own
 /// knot), or the count of the unordered parts that follow.
 const Tok = struct { tag: enum(u8) { word, place, ref, knot, group }, x: u32 };
@@ -199,9 +223,11 @@ const Rec = struct {
     id: u32,
     toks: u32 = 0,
     len: u32 = 0,
+    /// The record's key from `canon`: canonical, and equal exactly when
+    /// two records are the same structure.
     key: u64 = 0,
     scc: u32 = none,
-    /// The record a position is written as: its block's first member.
+    /// The record it is written as: its block's first member.
     rep: u32,
     ordinal: u32 = none,
 };
@@ -220,10 +246,25 @@ const Extra = union(enum) {
 /// knot of positions.
 const Scc = struct { first: u32, len: u32, knot: bool, state: enum(u8) { new, open, done } = .new };
 
+/// The written words' dictionary: a hash finds the candidates, the words
+/// decide.
+const SeenCtx = struct {
+    tie: bool,
+    pub fn hash(c: SeenCtx, k: []const u8) u64 {
+        return if (c.tie) 0 else std.hash.Wyhash.hash(0, k);
+    }
+    pub fn eql(_: SeenCtx, a: []const u8, b: []const u8) bool {
+        return std.mem.eql(u8, a, b);
+    }
+};
+
 const Writer = struct {
     env: Env,
     sums: *Summary.Table,
     names: Names,
+    meter: Refine.Meter,
+    /// Tokens reserved and not yet written.
+    tok_credit: u8 = 0,
     recs: std.ArrayList(Rec) = .empty,
     /// `(kind, table id)` → record.
     index: std.AutoHashMapUnmanaged(u64, u32) = .empty,
@@ -245,7 +286,14 @@ const Writer = struct {
     sccs: std.ArrayList(Scc) = .empty,
     /// The members of each component, a knot's in its written order.
     members: std.ArrayList(u32) = .empty,
-    place_hash: stamped.Column(PlaceId, u64) = .{},
+    /// The places the records name, closed under their children (place →
+    /// its index), and each one's rank (`canon`).
+    place_state: Ids.FixedDict(1) = .{},
+    place_list: std.ArrayList(PlaceId) = .empty,
+    place_rank: std.ArrayList(u32) = .empty,
+    /// A position record's state in `refinePositions`.
+    state_of: std.ArrayList(u32) = .empty,
+    /// A rank → its local number, and the place written for each number.
     place_local: Ids.FixedDict(1) = .{},
     place_order: std.ArrayList(PlaceId) = .empty,
     /// The record table as written, and how many records and knots.
@@ -253,7 +301,8 @@ const Writer = struct {
     units: u32 = 0,
     next: u32 = 0,
     /// A record's words (a knot's, its members' relative) → its ordinal.
-    seen: std.StringHashMapUnmanaged(u32) = .empty,
+    seen: std.HashMapUnmanaged([]const u8, u32, SeenCtx, std.hash_map.default_max_load_percentage) = .empty,
+    seen_ctx: SeenCtx,
     seen_keys: std.heap.ArenaAllocator,
 
     fn deinit(w: *Writer) void {
@@ -274,7 +323,10 @@ const Writer = struct {
         w.pending.deinit(gpa);
         w.sccs.deinit(gpa);
         w.members.deinit(gpa);
-        w.place_hash.deinit(gpa);
+        w.place_state.deinit(gpa);
+        w.place_list.deinit(gpa);
+        w.place_rank.deinit(gpa);
+        w.state_of.deinit(gpa);
         w.place_local.deinit(gpa);
         w.place_order.deinit(gpa);
         w.out.deinit(gpa);
@@ -282,9 +334,16 @@ const Writer = struct {
         w.seen_keys.deinit();
     }
 
+    /// Reserve `n` records and do them at once.
+    fn take(w: *Writer, n: u64) Error!void {
+        return w.meter.take(n);
+    }
+
+    /// Place `p`'s local number: one per rank, in the order first named.
     fn placeLocal(w: *Writer, p: PlaceId) Error!u32 {
-        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
-        const got = try w.place_local.getOrPut(w.env.gpa, .{p.int()});
+        try w.take(1);
+        const r = w.place_rank.items[w.place_state.get(.{p.int()}).?];
+        const got = try w.place_local.getOrPut(w.env.gpa, .{r});
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.place_order.items.len);
             try w.place_order.append(w.env.gpa, p);
@@ -292,25 +351,23 @@ const Writer = struct {
         return got.value_ptr.*;
     }
 
-    /// A place's key: its canonical encoding from it, once per place,
-    /// charged by the encoding's length.
-    fn placeHash(w: *Writer, p: PlaceId) Error!u64 {
-        if (w.place_hash.get(p)) |h| return h;
-        var words: std.ArrayList(u32) = .empty;
-        defer words.deinit(w.env.gpa);
-        try w.env.places.encode(w.env.gpa, p, w.names.place, &words);
-        try w.env.charge.reserve(w.env.gpa, .inspection, @intCast(words.items.len + 1));
-        const h = std.hash.Wyhash.hash(1, std.mem.sliceAsBytes(words.items));
-        try w.place_hash.put(w.env.gpa, p, h);
-        return h;
+    /// `p` among the places `canon` refines.
+    fn placeState(w: *Writer, p: PlaceId) Error!void {
+        try w.take(1);
+        const got = try w.place_state.getOrPut(w.env.gpa, .{p.int()});
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(w.place_list.items.len);
+            try w.place_list.append(w.env.gpa, p);
+        }
     }
 
     // ---- describing ------------------------------------------------------------
 
     /// The record of table id `id` of `kind`, made and queued on first
-    /// sight; `none` for no record.
+    /// sight; `none` for no record. The lookup is reserved, hit or miss.
     fn rec(w: *Writer, kind: Kind, id: u32) Error!u32 {
         if (id == none) return none;
+        try w.take(1);
         const got = try w.index.getOrPut(w.env.gpa, (@as(u64, @backingInt(kind)) << 32) | id);
         if (!got.found_existing) got.value_ptr.* = try w.fresh(kind, id);
         return got.value_ptr.*;
@@ -319,6 +376,7 @@ const Writer = struct {
     /// The position of `n` at class `at_summary` under owner `owner`.
     fn pos(w: *Writer, n: NodeId, at_summary: bool, who: u32) Error!u32 {
         if (n == .none) return none;
+        try w.take(1);
         const got = try w.pos_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(at_summary), who });
         if (!got.found_existing) {
             try w.positions.append(w.env.gpa, .{ .node = n, .at_summary = at_summary, .owner = who });
@@ -330,6 +388,7 @@ const Writer = struct {
     /// The owner of map `kappas` (null: the use shapes): maps are
     /// hash-consed, so values under one map are one owner's, described once.
     fn owner(w: *Writer, kappas: ?Cond.Kappas) Error!u32 {
+        try w.take(1);
         const got = try w.owner_index.getOrPut(w.env.gpa, .{if (kappas) |k| k.int() else none - 1});
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.owners.items.len);
@@ -341,12 +400,13 @@ const Writer = struct {
 
     /// A value of owner `o`: its position, recorded as a root of `o`'s walk.
     fn value(w: *Writer, n: NodeId, o: u32) Error!u32 {
+        const x = try w.pos(n, false, o);
         if (n != .none) try w.roots.items[o].append(w.env.gpa, n);
-        return w.pos(n, false, o);
+        return x;
     }
 
+    /// A new record, its reservation its caller's.
     fn fresh(w: *Writer, kind: Kind, id: u32) Error!u32 {
-        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
         const r: u32 = @intCast(w.recs.items.len);
         try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r });
         try w.pending.append(w.env.gpa, r);
@@ -354,11 +414,18 @@ const Writer = struct {
     }
 
     fn extra(w: *Writer, kind: Kind, e: Extra) Error!u32 {
+        try w.take(1);
         try w.extras.append(w.env.gpa, e);
         return w.fresh(kind, @intCast(w.extras.items.len - 1));
     }
 
+    /// A token, reserved a chunk of eight (16 words, §4.1) at a time.
     fn tok(w: *Writer, comptime tag: @FieldType(Tok, "tag"), x: u32) Error!void {
+        if (w.tok_credit == 0) {
+            try w.take(1);
+            w.tok_credit = 8;
+        }
+        w.tok_credit -= 1;
         try w.toks.append(w.env.gpa, .{ .tag = tag, .x = x });
     }
 
@@ -407,6 +474,7 @@ const Writer = struct {
         defer sorted.deinit(gpa);
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(gpa);
+        try w.take(list.len);
         for (list) |o| {
             words.clearRetainingCapacity();
             try w.stepWords(o.step, &words);
@@ -414,7 +482,7 @@ const Writer = struct {
             @memcpy(three[0..words.items.len], words.items);
             try sorted.append(gpa, .{ .words = three, .n = @intCast(words.items.len), .rec = o.rec });
         }
-        try chargeSort(w.env, sorted.items.len);
+        try w.take(sortCost(sorted.items.len));
         std.mem.sort(Entry, sorted.items, {}, struct {
             fn less(_: void, a: Entry, b: Entry) bool {
                 return std.mem.order(u32, &a.words, &b.words) == .lt;
@@ -468,11 +536,14 @@ const Writer = struct {
         defer made.deinit(gpa);
         var next: std.ArrayList([4]u32) = .empty;
         defer next.deinit(gpa);
+        try w.take(1);
         const beyond = w.extra_index.get(.{ p.node.int(), @intFromBool(p.at_summary), p.owner });
         try w.successors(p.node, p.at_summary, beyond != null, &next);
+        try w.take(next.items.len);
         for (next.items) |e| {
             if (e[3] == 0) continue;
             if (e[3] == 2) for (w.extras_made.items[beyond.?].items) |x| {
+                try w.take(1);
                 if (x.word() == e[2]) break;
             } else continue;
             try made.append(gpa, .{ .step = Step.fromWord(e[2]), .rec = try w.pos(.from(e[0]), e[1] == 1, p.owner) });
@@ -483,7 +554,8 @@ const Writer = struct {
     /// A node's successors `(node, class, step word, how)`: its parts (0),
     /// the projections `position` writes (1: a step's that its parts do not
     /// name, but under a leaf or a recast, or an empty one), and with `all`
-    /// every other projection a read may make (2).
+    /// every other projection a read may make (2). Each is reserved before
+    /// it is found.
     fn successors(w: *Writer, n: NodeId, summary: bool, all: bool, out: *std.ArrayList([4]u32)) Error!void {
         const gpa = w.env.gpa;
         const shapes = w.env.shapes;
@@ -492,15 +564,20 @@ const Writer = struct {
         switch (d.kind) {
             .leaf => {},
             .node, .delta => {
+                try w.take(1);
                 if (d.kind == .delta) try out.append(gpa, .{ d.a, sb, none, 0 });
                 var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                while (it.next()) |e| try out.append(gpa, .{ e.node.int(), @intFromBool(below(summary, e.step)), e.step.word(), 0 });
+                while (it.next()) |e| {
+                    try w.take(1);
+                    try out.append(gpa, .{ e.node.int(), @intFromBool(below(summary, e.step)), e.step.word(), 0 });
+                }
             },
             .recast => try out.append(gpa, .{ d.a, sb, none, 0 }),
             .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0 }, .{ d.b, sb, none, 0 } }),
         }
         for (w.env.places.steps(d.place).steps) |s| {
             if (!all and (d.kind == .leaf or d.kind == .recast)) break;
+            try w.take(1);
             const c = (try shapes.proj(gpa, w.env.account(), w.env.places, w.env.cells, n, s)) orelse continue;
             if ((d.kind == .node or d.kind == .delta) and shapes.overGet(if (d.kind == .node) d.a else d.b, s) == c) continue;
             const ruled = d.kind != .leaf and d.kind != .recast and !(shapes.kind(c) == .leaf and shapes.cells(c) == .none);
@@ -529,13 +606,13 @@ const Writer = struct {
         try walk.append(gpa, kappas.int());
         const maps = w.env.conds.kmaps;
         while (walk.pop()) |m| {
-            try w.env.charge.reserve(gpa, .inspection, 1);
+            try w.take(1);
             if (maps.items(.mask)[m] == 0) {
                 (try stored.getOrPut(gpa, .{maps.items(.prefix)[m]})).value_ptr.* = 0;
             } else try walk.appendSlice(gpa, &.{ maps.items(.left)[m], maps.items(.right)[m] });
         }
         // The positions `position` writes anyway, from the values.
-        const State = struct { key: u32, parent: u32, step: u32 };
+        const State = struct { key: u32, parent: u32, step: u32, chained: bool = false };
         var states: std.ArrayList(State) = .empty;
         defer states.deinit(gpa);
         var seen: Ids.FixedDict(1) = .{};
@@ -546,8 +623,13 @@ const Writer = struct {
         for (0..2) |pass| {
             if (pass == 1) {
                 if (remaining == 0) return;
-                for (states.items) |*x| x.parent = none - 1;
+                try w.take(states.items.len);
+                for (states.items) |*x| {
+                    x.parent = none - 1;
+                    x.chained = false;
+                }
             } else for (w.roots.items[o].items) |n| {
+                try w.take(1);
                 const got = try seen.getOrPut(gpa, .{n.int() << 1});
                 if (got.found_existing) continue;
                 got.value_ptr.* = @intCast(states.items.len);
@@ -556,7 +638,7 @@ const Writer = struct {
             var at: usize = 0;
             while (at < states.items.len) : (at += 1) {
                 const x = states.items[at];
-                try w.env.charge.reserve(gpa, .inspection, 1);
+                try w.take(1);
                 if (pass == 0) {
                     if (stored.get(.{x.key})) |v| if (v == 0) {
                         (try stored.getOrPut(gpa, .{x.key})).value_ptr.* = 1;
@@ -565,6 +647,8 @@ const Writer = struct {
                 }
                 next.clearRetainingCapacity();
                 try w.successors(.from(x.key >> 1), x.key & 1 == 1, pass == 1, &next);
+                // Each successor's two lookups and its state.
+                try w.take(next.items.len);
                 for (next.items) |e| {
                     if (pass == 0 and e[3] == 2) continue;
                     const key = (e[0] << 1) | e[1];
@@ -579,7 +663,9 @@ const Writer = struct {
                     (try stored.getOrPut(gpa, .{key})).value_ptr.* = 1;
                     remaining -= 1;
                     var c = states.items.len - 1;
-                    while (states.items[c].parent != none - 1) {
+                    while (states.items[c].parent != none - 1 and !states.items[c].chained) {
+                        states.items[c].chained = true;
+                        try w.take(1);
                         const link = states.items[c];
                         const p = states.items[link.parent];
                         if (link.step != none) try w.extraMade(.from(p.key >> 1), p.key & 1 == 1, o, Step.fromWord(link.step));
@@ -591,6 +677,7 @@ const Writer = struct {
     }
 
     fn extraMade(w: *Writer, n: NodeId, summary: bool, o: u32, s: Step) Error!void {
+        try w.take(1);
         const got = try w.extra_index.getOrPut(w.env.gpa, .{ n.int(), @intFromBool(summary), o });
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(w.extras_made.items.len);
@@ -620,7 +707,10 @@ const Writer = struct {
                 var list: std.ArrayList(Step) = .empty;
                 defer list.deinit(gpa);
                 var at: PathId = .from(id);
-                while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try list.append(gpa, places.pathStep(at));
+                while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+                    try w.take(1);
+                    try list.append(gpa, places.pathStep(at));
+                }
                 try w.word(@intCast(list.items.len));
                 try w.tok(.place, places.pathPlace(at).int());
                 var i = list.items.len;
@@ -739,12 +829,17 @@ const Writer = struct {
             },
             .owner => {
                 // Every value under the map, from every class and supply of
-                // the block: the reader builds the owner's one map from them.
+                // the block, once: the reader builds the owner's one map
+                // from them.
                 var list: std.ArrayList(u32) = .empty;
                 defer list.deinit(gpa);
+                var once: Ids.FixedDict(1) = .{};
+                defer once.deinit(gpa);
                 for (w.roots.items[id].items) |n| {
                     const x = try w.pos(n, false, id);
-                    if (std.mem.indexOfScalar(u32, list.items, x) == null) try list.append(gpa, x);
+                    try w.take(1);
+                    if ((try once.getOrPut(gpa, .{x})).found_existing) continue;
+                    try list.append(gpa, x);
                 }
                 try w.group(list.items);
             },
@@ -752,7 +847,6 @@ const Writer = struct {
             .group => unreachable,
         }
         const len: u32 = @intCast(w.toks.items.len - start);
-        try w.env.charge.reserve(gpa, .inspection, len);
         w.recs.items[r].toks = start;
         w.recs.items[r].len = len;
     }
@@ -795,7 +889,7 @@ const Writer = struct {
         try w.ref(.set, k.refs.int());
     }
 
-    // ---- keys ------------------------------------------------------------------
+    // ---- canonical keys ----------------------------------------------------------
 
     fn toksOf(w: *const Writer, r: u32) []const Tok {
         const x = w.recs.items[r];
@@ -806,126 +900,243 @@ const Writer = struct {
         return (t.tag == .ref or t.tag == .knot) and t.x != none;
     }
 
-    /// A record's key from its parts' keys: its kind, its words, its places'
-    /// encodings, its parts' keys, a group's sorted. A position's parts that
-    /// are positions count only as their place in the record (`refine`
-    /// follows them).
-    fn keyOf(w: *Writer, r: u32, scratch: *std.ArrayList(u64)) Error!u64 {
-        var h = std.hash.Wyhash.init(0x6f776e34);
-        const local = w.recs.items[r].kind == .node;
-        h.update(&.{@backingInt(w.recs.items[r].kind)});
-        const ts = w.toksOf(r);
-        var i: usize = 0;
-        while (i < ts.len) : (i += 1) {
-            const t = ts[i];
-            const v: u64 = switch (t.tag) {
-                .word => t.x,
-                .place => try w.placeHash(.from(t.x)),
-                .ref, .knot => if (t.x == none) 0 else if (local and w.recs.items[t.x].kind == .node) 1 else w.recs.items[t.x].key,
-                .group => {
-                    scratch.clearRetainingCapacity();
-                    for (ts[i + 1 ..][0..t.x]) |m| try scratch.append(w.env.gpa, if (local) 1 else w.recs.items[m.x].key);
-                    try chargeSort(w.env, scratch.items.len);
-                    std.mem.sort(u64, scratch.items, {}, std.sort.asc(u64));
-                    h.update(std.mem.asBytes(&@as(u64, t.x)));
-                    for (scratch.items) |k| h.update(std.mem.asBytes(&k));
-                    i += t.x;
-                    continue;
-                },
-            };
-            h.update(std.mem.asBytes(&v));
-        }
-        return h.final();
+    /// A record's tier: the records no position reaches (0), the positions
+    /// (1), and those that name positions (2). Only positions make cycles.
+    fn tier(kind: Kind) u2 {
+        return switch (kind) {
+            .node => 1,
+            .owner, .supply, .class => 2,
+            else => 0,
+        };
     }
 
-    /// Every record's key, parts first, by an explicit stack: the records a
-    /// position names (cells, conditions) first, then the positions by
-    /// `refine`, then the owners (supplies, classes) that name positions.
-    fn keys(w: *Writer) Error!void {
+    /// Every record's key and every place's rank, exact and canonical, in
+    /// a numbering of their own that grows in this order: the places, by a
+    /// refinement of the graph they make (`refinePlaces`); the records of
+    /// tier 0, then of tier 2, by height (`rankTier`); the positions between
+    /// them, by a refinement of theirs (`refinePositions`). A record merged
+    /// with another of its key is written as the first of them.
+    fn canon(w: *Writer) Error!void {
+        try w.refinePlaces();
+        var next: u32 = 0;
+        try w.rankTier(0, &next);
+        try w.refinePositions(&next);
+        try w.rankTier(2, &next);
+    }
+
+    /// The places the records name, closed under their children, refined
+    /// from their kind, head, holds and step words, a port per step: two
+    /// places are one rank exactly when they are one structure.
+    fn refinePlaces(w: *Writer) Error!void {
+        const gpa = w.env.gpa;
+        const places = w.env.places;
+        try w.take(scan(w.toks.items.len));
+        for (w.toks.items) |t| if (t.tag == .place) try w.placeState(.from(t.x));
+        var at: usize = 0;
+        while (at < w.place_list.items.len) : (at += 1) {
+            const children = places.steps(w.place_list.items[at]).children;
+            try w.take(1 + children.len);
+            for (children) |c| try w.placeState(c);
+        }
+        const np: u32 = @intCast(w.place_list.items.len);
+        var g: Refine.Graph = .{};
+        defer g.deinit(gpa);
+        var step_words: std.ArrayList(u32) = .empty;
+        defer step_words.deinit(gpa);
+        for (w.place_list.items, 0..) |p, j| {
+            const s = places.steps(p);
+            try w.take(1 + s.steps.len);
+            const kind = places.kind(p);
+            try g.open(gpa);
+            try g.put(gpa, &.{ 2, @backingInt(kind), if (kind == .tuple or kind == .record) places.head(p) else w.names.place.head(w.names.place.ctx, places.head(p)), places.holds(p).bits(), @intCast(s.steps.len) });
+            for (s.steps, s.children, 0..) |st, c, i| {
+                step_words.clearRetainingCapacity();
+                try w.stepWords(st, &step_words);
+                try g.put(gpa, step_words.items);
+                try g.port(gpa, @intCast(j), @intCast(i), &.{w.place_state.get(.{c.int()}).?});
+            }
+        }
+        const block = try g.refine(&w.meter, np, w.seen_ctx.tie);
+        defer gpa.free(block);
+        try w.take(1 + np);
+        try w.place_rank.appendSlice(gpa, block[0..np]);
+    }
+
+    /// The local words of a token of a record being ranked: a word, a
+    /// place's rank, a part's key (or, with `ports`, a port to a position
+    /// part); a group's members' keys sorted.
+    fn keyWords(w: *Writer, g: *Refine.Graph, state: u32, ts: []const Tok, ports: bool) Error!void {
+        const gpa = w.env.gpa;
+        var k: usize = 0;
+        while (k < ts.len) : (k += 1) {
+            const t = ts[k];
+            switch (t.tag) {
+                .word => try g.put(gpa, &.{ 0, t.x }),
+                .place => {
+                    try w.take(1);
+                    try g.put(gpa, &.{ 1, w.place_rank.items[w.place_state.get(.{t.x}).?] });
+                },
+                .ref, .knot => if (t.x == none) {
+                    try g.put(gpa, &.{if (t.tag == .ref) 2 else 3});
+                } else if (ports and tier(w.recs.items[t.x].kind) == 1) {
+                    try g.put(gpa, &.{if (t.tag == .ref) 5 else 7});
+                    try g.port(gpa, state, @intCast(k), &.{w.state_of.items[t.x]});
+                } else try g.put(gpa, &.{ 4, @intCast(w.recs.items[t.x].key) }),
+                .group => {
+                    // The members are a multiset: positions a port's count,
+                    // the others their sorted keys.
+                    const ms = ts[k + 1 ..][0..t.x];
+                    k += t.x;
+                    var keyed: std.ArrayList(u32) = .empty;
+                    defer keyed.deinit(gpa);
+                    var targets: std.ArrayList(u32) = .empty;
+                    defer targets.deinit(gpa);
+                    for (ms) |m| {
+                        if (m.x == none) {
+                            try keyed.append(gpa, none);
+                        } else if (ports and tier(w.recs.items[m.x].kind) == 1) {
+                            try targets.append(gpa, w.state_of.items[m.x]);
+                        } else try keyed.append(gpa, @intCast(w.recs.items[m.x].key));
+                    }
+                    try w.take(sortCost(keyed.items.len));
+                    std.mem.sort(u32, keyed.items, {}, std.sort.asc(u32));
+                    try g.put(gpa, &.{ 6, t.x, @intCast(keyed.items.len) });
+                    try g.put(gpa, keyed.items);
+                    if (targets.items.len > 0) try g.port(gpa, state, @intCast(k - t.x), targets.items);
+                },
+            }
+        }
+    }
+
+    /// The records of `tier` 0 or 2, which make no cycle: ranked a height
+    /// at a time, a record's words naming its parts by their keys, so equal
+    /// records are one key and the keys follow the structure.
+    fn rankTier(w: *Writer, t: u2, next: *u32) Error!void {
         const gpa = w.env.gpa;
         const n = w.recs.items.len;
-        const done = try gpa.alloc(bool, n);
-        defer gpa.free(done);
-        @memset(done, false);
-        var scratch: std.ArrayList(u64) = .empty;
-        defer scratch.deinit(gpa);
+        try w.take(Refine.wordsCost(2 * n));
+        var height = try gpa.alloc(u32, n);
+        defer gpa.free(height);
+        @memset(height, none);
+        // Heights by an explicit stack, parts of the tier first.
         var stack: std.ArrayList([2]u32) = .empty;
         defer stack.deinit(gpa);
-        for (0..2) |round| {
-            for (0..n) |root| {
-                const kind = w.recs.items[root].kind;
-                const owners_round = kind == .class or kind == .supply or kind == .owner;
-                if (done[root] or w.recs.items[root].kind == .node or owners_round != (round == 1)) continue;
-                try stack.append(gpa, .{ @intCast(root), 0 });
-                while (stack.items.len > 0) {
-                    const f = &stack.items[stack.items.len - 1];
-                    const ts = w.toksOf(f[0]);
-                    if (f[1] < ts.len) {
-                        const t = ts[f[1]];
-                        f[1] += 1;
-                        if (isPart(t) and !done[t.x] and w.recs.items[t.x].kind != .node) try stack.append(gpa, .{ t.x, 0 });
-                        continue;
+        var levels: u32 = 0;
+        for (0..n) |root| {
+            if (tier(w.recs.items[root].kind) != t or height[root] != none) continue;
+            try w.take(1 + 2 * scan(w.toksOf(@intCast(root)).len));
+            try stack.append(gpa, .{ @intCast(root), 0 });
+            height[root] = none - 1;
+            while (stack.items.len > 0) {
+                const f = &stack.items[stack.items.len - 1];
+                const ts = w.toksOf(f[0]);
+                if (f[1] < ts.len) {
+                    const x = ts[f[1]];
+                    f[1] += 1;
+                    if (x.tag == .word or x.tag == .place or x.tag == .group or x.x == none or tier(w.recs.items[x.x].kind) != t) continue;
+                    if (height[x.x] == none - 1) return error.AccountingInvariant;
+                    if (height[x.x] == none) {
+                        try w.take(1 + 2 * scan(w.toksOf(x.x).len));
+                        height[x.x] = none - 1;
+                        try stack.append(gpa, .{ x.x, 0 });
                     }
-                    const r = f[0];
-                    _ = stack.pop();
-                    if (done[r]) continue;
-                    w.recs.items[r].key = try w.keyOf(r, &scratch);
-                    done[r] = true;
+                    continue;
                 }
+                const r = f[0];
+                _ = stack.pop();
+                var h: u32 = 0;
+                for (ts) |x| {
+                    if (x.tag == .word or x.tag == .place or x.tag == .group or x.x == none or tier(w.recs.items[x.x].kind) != t) continue;
+                    h = @max(h, height[x.x] + 1);
+                }
+                height[r] = h;
+                levels = @max(levels, h + 1);
             }
-            if (round == 0) try w.refine(&scratch);
         }
-        try w.components();
+        // The records of each height, by a counting sort.
+        const level_start = try gpa.alloc(u32, levels + 1);
+        defer gpa.free(level_start);
+        @memset(level_start, 0);
+        var count: u32 = 0;
+        for (0..n) |r| if (tier(w.recs.items[r].kind) == t) {
+            level_start[height[r] + 1] += 1;
+            count += 1;
+        };
+        for (1..levels + 1) |i| level_start[i] += level_start[i - 1];
+        const by_level = try gpa.alloc(u32, count);
+        defer gpa.free(by_level);
+        {
+            const at = try gpa.dupe(u32, level_start[0..levels]);
+            defer gpa.free(at);
+            for (0..n) |r| if (tier(w.recs.items[r].kind) == t) {
+                by_level[at[height[r]]] = @intCast(r);
+                at[height[r]] += 1;
+            };
+        }
+        for (0..levels) |h| {
+            const rs = by_level[level_start[h]..level_start[h + 1]];
+            var g: Refine.Graph = .{};
+            defer g.deinit(gpa);
+            for (rs) |r| {
+                const ts = w.toksOf(r);
+                try w.take(Refine.wordsCost(4 * ts.len));
+                try g.open(gpa);
+                try g.put(gpa, &.{@backingInt(w.recs.items[r].kind)});
+                try w.keyWords(&g, 0, ts, false);
+            }
+            try g.starts.append(gpa, @intCast(g.words.items.len));
+            const ranks = try Refine.rank(&w.meter, g.words.items, g.starts.items, w.seen_ctx.tie);
+            defer gpa.free(ranks.ranks);
+            const firsts = try gpa.alloc(u32, ranks.count);
+            defer gpa.free(firsts);
+            @memset(firsts, none);
+            try w.take(Refine.wordsCost(2 * rs.len));
+            for (rs, ranks.ranks) |r, k| {
+                if (firsts[k] == none or firsts[k] > r) firsts[k] = r;
+            }
+            for (rs, ranks.ranks) |r, k| {
+                w.recs.items[r].key = next.* + k;
+                w.recs.items[r].rep = firsts[k];
+            }
+            next.* += ranks.count;
+        }
     }
 
-    /// Hopcroft's partition refinement over every position of the block
-    /// (counting edges, as for lumping, so a union's two sides are one
-    /// label), from the positions' own keys. Every decision depends on
-    /// block numbers and signatures only, so the final numbers are canonical:
-    /// they become the positions' keys, and each block's first member its
-    /// record.
-    fn refine(w: *Writer, scratch: *std.ArrayList(u64)) Error!void {
+    /// The positions, refined from their local words (tier-0 parts by
+    /// key), a port per part that is a position: two positions are one key
+    /// exactly when they are bisimilar with equal words everywhere.
+    fn refinePositions(w: *Writer, next: *u32) Error!void {
         const gpa = w.env.gpa;
+        try w.take(Refine.wordsCost(2 * w.recs.items.len));
+        try w.state_of.resize(gpa, w.recs.items.len);
         var states: std.ArrayList(u32) = .empty;
         defer states.deinit(gpa);
-        for (w.recs.items, 0..) |x, r| if (x.kind == .node) try states.append(gpa, @intCast(r));
-        const n = states.items.len;
-        if (n == 0) return;
-        const state_of = try gpa.alloc(u32, w.recs.items.len);
-        defer gpa.free(state_of);
-        for (states.items, 0..) |r, i| state_of[r] = @intCast(i);
-        // Local keys, and the edges by target: (predecessor, label).
-        const local = try gpa.alloc(u64, n);
-        defer gpa.free(local);
-        var edges: std.ArrayList([3]u32) = .empty;
-        defer edges.deinit(gpa);
+        for (w.recs.items, 0..) |x, r| if (x.kind == .node) {
+            w.state_of.items[r] = @intCast(states.items.len);
+            try states.append(gpa, @intCast(r));
+        };
+        if (states.items.len == 0) return;
+        var g: Refine.Graph = .{};
+        defer g.deinit(gpa);
         for (states.items, 0..) |r, i| {
-            local[i] = try w.keyOf(r, scratch);
-            // A part's label is its place in the record; a group's parts
-            // share the group's (a union's sides are counted, not ordered).
             const ts = w.toksOf(r);
-            var k: usize = 0;
-            while (k < ts.len) : (k += 1) {
-                const t = ts[k];
-                const run = if (t.tag == .group) ts[k + 1 ..][0..t.x] else ts[k..][0..1];
-                for (run) |m| if (isPart(m) and w.recs.items[m.x].kind == .node) try edges.append(gpa, .{ state_of[m.x], @intCast(i), @intCast(k) });
-                if (t.tag == .group) k += t.x;
-            }
+            try w.take(Refine.wordsCost(4 * ts.len));
+            try g.open(gpa);
+            try w.keyWords(&g, @intCast(i), ts, true);
         }
-        const block = try Refine.blocks(gpa, w.env.charge, local, edges.items);
+        const block = try g.refine(&w.meter, @intCast(states.items.len), w.seen_ctx.tie);
         defer gpa.free(block);
-        // The canonical numbers, and each block's first member written.
-        var count: usize = 0;
-        for (block) |b| count = @max(count, b + 1);
-        const firsts = try gpa.alloc(u32, count);
+        try w.take(Refine.wordsCost(4 * states.items.len));
+        const firsts = try gpa.alloc(u32, block.len);
         defer gpa.free(firsts);
         @memset(firsts, none);
         for (states.items, 0..) |r, i| {
             const b = block[i];
             if (firsts[b] == none) firsts[b] = r;
-            w.recs.items[r].key = b;
+            w.recs.items[r].key = next.* + b;
             w.recs.items[r].rep = firsts[b];
         }
+        next.* += @intCast(block.len);
     }
 
     // ---- components ---------------------------------------------------------------
@@ -936,11 +1147,12 @@ const Writer = struct {
 
     const Frame = struct { r: u32, cursor: u32 };
 
-    /// Tarjan's components over the written records (a merged position is
-    /// its block's record), by an explicit stack.
+    /// Tarjan's components over the written records (a merged record is
+    /// its block's), by an explicit stack.
     fn components(w: *Writer) Error!void {
         const gpa = w.env.gpa;
         const n = w.recs.items.len;
+        try w.take(Refine.wordsCost(8 * n) + scan(w.toks.items.len));
         const index = try gpa.alloc(u32, n);
         defer gpa.free(index);
         const low = try gpa.alloc(u32, n);
@@ -1000,7 +1212,7 @@ const Writer = struct {
                 if (w.sccs.items[w.sccs.items.len - 1].knot) try w.order(@intCast(w.sccs.items.len - 1));
             }
         }
-        // A merged position is in its record's component.
+        // A merged record is in its block's component.
         for (w.recs.items) |*x| x.scc = w.recs.items[x.rep].scc;
     }
 
@@ -1008,6 +1220,8 @@ const Writer = struct {
         for (w.toksOf(r)) |t| if (isPart(t) and w.repOf(t.x) == r) return true;
         return false;
     }
+
+    const OFrame = struct { r: u32, first: u32, len: u32, cursor: u32 };
 
     /// A knot's members in written order: by key, every part that is not a
     /// child step after what it names (a post-order walk of those parts from
@@ -1018,45 +1232,55 @@ const Writer = struct {
         const c = w.sccs.items[s];
         const ms = w.members.items[c.first..][0..c.len];
         for (ms) |m| if (w.recs.items[m].kind != .node) return error.AccountingInvariant;
-        w.sortByKey(ms);
+        try w.sortDistinct(ms);
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(gpa);
         // A member's walk: 0 open, 1 done.
         var state: Ids.FixedDict(1) = .{};
         defer state.deinit(gpa);
-        var stack: std.ArrayList([2]u32) = .empty;
+        var stack: std.ArrayList(OFrame) = .empty;
         defer stack.deinit(gpa);
-        var out_parts: std.ArrayList(u32) = .empty;
-        defer out_parts.deinit(gpa);
+        var kids: std.ArrayList(u32) = .empty;
+        defer kids.deinit(gpa);
         for (ms) |root| {
+            try w.take(1);
             const top = try state.getOrPut(gpa, .{root});
             if (top.found_existing) continue;
             top.value_ptr.* = 0;
-            try stack.append(gpa, .{ root, 0 });
+            try w.openParts(root, &kids, &stack);
             while (stack.items.len > 0) {
                 const f = &stack.items[stack.items.len - 1];
-                out_parts.clearRetainingCapacity();
-                try w.parts(f[0], &out_parts, true);
-                if (f[1] == out_parts.items.len) {
-                    (try state.getOrPut(gpa, .{f[0]})).value_ptr.* = 1;
-                    try out.append(gpa, f[0]);
+                if (f.cursor == f.len) {
+                    try w.take(1);
+                    (try state.getOrPut(gpa, .{f.r})).value_ptr.* = 1;
+                    try out.append(gpa, f.r);
+                    kids.shrinkRetainingCapacity(f.first);
                     _ = stack.pop();
                     continue;
                 }
-                const target = out_parts.items[f[1]];
-                f[1] += 1;
-                try w.env.charge.reserve(gpa, .inspection, 1);
+                const target = kids.items[f.first + f.cursor];
+                f.cursor += 1;
                 if (w.recs.items[target].scc != s) continue;
+                try w.take(1);
                 const got = try state.getOrPut(gpa, .{target});
                 if (got.found_existing) {
                     if (got.value_ptr.* == 0) return error.AccountingInvariant;
                     continue;
                 }
                 got.value_ptr.* = 0;
-                try stack.append(gpa, .{ target, 0 });
+                try w.openParts(target, &kids, &stack);
             }
         }
         @memcpy(ms, out.items);
+    }
+
+    /// `order`'s frame for `r`, its strict parts listed once.
+    fn openParts(w: *Writer, r: u32, kids: *std.ArrayList(u32), stack: *std.ArrayList(OFrame)) Error!void {
+        const first: u32 = @intCast(kids.items.len);
+        try w.parts(r, kids, true);
+        // Each part is looked at once, a chunk at a time.
+        try w.take(Refine.wordsCost(kids.items.len - first));
+        try stack.append(w.env.gpa, .{ .r = r, .first = first, .len = @intCast(kids.items.len - first), .cursor = 0 });
     }
 
     // ---- emitting -------------------------------------------------------------
@@ -1071,6 +1295,7 @@ const Writer = struct {
     fn parts(w: *Writer, r: u32, out: *std.ArrayList(u32), strict: bool) Error!void {
         const gpa = w.env.gpa;
         const ts = w.toksOf(r);
+        try w.take(scan(ts.len));
         var i: usize = 0;
         while (i < ts.len) : (i += 1) {
             const t = ts[i];
@@ -1081,11 +1306,43 @@ const Writer = struct {
                 .group => {
                     const start = out.items.len;
                     for (ts[i + 1 ..][0..t.x]) |m| try out.append(gpa, w.repOf(m.x));
+                    try w.take(sortCost(t.x));
                     w.sortByKey(out.items[start..]);
                     i += t.x;
                 },
             }
         }
+    }
+
+    /// Records of distinct keys in key order: by comparison, or — when the
+    /// keys lie close — by one pass over the range they span, whichever is
+    /// charged less.
+    fn sortDistinct(w: *Writer, rs: []u32) Error!void {
+        if (rs.len < 2) return;
+        try w.take(Refine.wordsCost(rs.len));
+        var lo: u64 = std.math.maxInt(u64);
+        var hi: u64 = 0;
+        for (rs) |r| {
+            lo = @min(lo, w.recs.items[r].key);
+            hi = @max(hi, w.recs.items[r].key);
+        }
+        const range = hi - lo + 1;
+        const dense = 1 + rs.len + Refine.wordsCost(2 * range);
+        if (dense >= sortCost(rs.len)) {
+            try w.take(sortCost(rs.len));
+            return w.sortByKey(rs);
+        }
+        try w.take(dense);
+        const slot = try w.env.gpa.alloc(u32, range);
+        defer w.env.gpa.free(slot);
+        @memset(slot, none);
+        for (rs) |r| slot[w.recs.items[r].key - lo] = r;
+        var i: usize = 0;
+        for (slot) |r| if (r != none) {
+            rs[i] = r;
+            i += 1;
+        };
+        if (i != rs.len) return error.AccountingInvariant;
     }
 
     fn sortByKey(w: *const Writer, rs: []u32) void {
@@ -1132,7 +1389,9 @@ const Writer = struct {
         for (w.members.items[c.first..][0..c.len]) |m| {
             const start = kids.items.len;
             try w.parts(m, kids, false);
-            // A knot's own members are not its parts.
+            // A knot's own members are not its parts; each kept part is
+            // visited once.
+            try w.take(Refine.wordsCost(kids.items.len - start));
             var keep = start;
             for (kids.items[start..]) |x| {
                 if (w.recs.items[x].scc == s) continue;
@@ -1151,9 +1410,10 @@ const Writer = struct {
     /// `rel` and its ordinal in `abs`), a group's by key.
     fn spell(w: *Writer, r: u32, s: u32, base: u32, abs: *std.ArrayList(u32), rel: *std.ArrayList(u32)) Error!void {
         const gpa = w.env.gpa;
+        const ts = w.toksOf(r);
+        try w.take(Refine.wordsCost(6 * ts.len));
         try abs.append(gpa, @backingInt(w.recs.items[r].kind));
         try rel.append(gpa, @backingInt(w.recs.items[r].kind));
-        const ts = w.toksOf(r);
         var i: usize = 0;
         while (i < ts.len) : (i += 1) {
             const t = ts[i];
@@ -1172,7 +1432,7 @@ const Writer = struct {
                     var g: std.ArrayList(u32) = .empty;
                     defer g.deinit(gpa);
                     for (ts[i + 1 ..][0..t.x]) |m| try g.append(gpa, w.repOf(m.x));
-                    try chargeSort(w.env, g.items.len);
+                    try w.take(sortCost(g.items.len));
                     w.sortByKey(g.items);
                     try abs.append(gpa, t.x);
                     try rel.append(gpa, t.x);
@@ -1191,9 +1451,8 @@ const Writer = struct {
     }
 
     /// Write a closed component: one record, or a knot's group; a record
-    /// with the words of one written before is that one. A position merged
-    /// into its block's record must spell that record: equal local keys of
-    /// different positions (a collision) are refused.
+    /// with the words of one written before is that one. A record merged
+    /// into its block's must spell that record's words (`check`).
     fn emit(w: *Writer, s: u32) Error!void {
         const gpa = w.env.gpa;
         const c = w.sccs.items[s];
@@ -1204,24 +1463,27 @@ const Writer = struct {
         const base = w.next;
         if (base + c.len >= rel_bit) return error.OwnershipLimit;
         const ms = w.members.items[c.first..][0..c.len];
+        try w.take(Refine.wordsCost(ms.len));
         for (ms, 0..) |m, i| w.recs.items[m].ordinal = base + @as(u32, @intCast(i));
         if (c.knot) try abs.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
         if (c.knot) try rel.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
         for (ms) |m| try w.spell(m, s, base, &abs, &rel);
-        try w.env.charge.reserve(gpa, .inspection, @intCast(abs.items.len));
+        // The lookup hashes and compares the words, and a new key is kept
+        // and written.
+        try w.take(3 * Refine.wordsCost(abs.items.len));
         const key = std.mem.sliceAsBytes(rel.items);
-        if (w.seen.get(key)) |found| {
+        if (w.seen.getContext(key, w.seen_ctx)) |found| {
             for (ms, 0..) |m, i| w.recs.items[m].ordinal = found + @as(u32, @intCast(i));
             return;
         }
-        try w.seen.put(gpa, try w.seen_keys.allocator().dupe(u8, key), base);
+        try w.seen.putContext(gpa, try w.seen_keys.allocator().dupe(u8, key), base, w.seen_ctx);
         w.next += c.len;
         w.units += 1;
         try w.out.appendSlice(gpa, abs.items);
     }
 
-    /// Every merged position spells its record's words, checked once the
-    /// table is written.
+    /// Every merged record spells its block's record's words, checked once
+    /// the table is written: the refinement merged only equal structure.
     fn check(w: *Writer) Error!void {
         const gpa = w.env.gpa;
         var a: std.ArrayList(u32) = .empty;
@@ -1230,14 +1492,16 @@ const Writer = struct {
         defer b.deinit(gpa);
         var scratch: std.ArrayList(u32) = .empty;
         defer scratch.deinit(gpa);
+        try w.take(Refine.wordsCost(w.recs.items.len));
         for (w.recs.items, 0..) |x, r| {
-            if (x.kind != .node or x.rep == r) continue;
+            if (x.rep == r) continue;
             a.clearRetainingCapacity();
             b.clearRetainingCapacity();
             scratch.clearRetainingCapacity();
             try w.spell(@intCast(r), none, 0, &a, &scratch);
             scratch.clearRetainingCapacity();
             try w.spell(x.rep, none, 0, &b, &scratch);
+            try w.take(Refine.wordsCost(a.items.len));
             if (!std.mem.eql(u32, a.items, b.items)) return error.AccountingInvariant;
         }
     }

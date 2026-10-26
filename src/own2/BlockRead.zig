@@ -265,6 +265,7 @@ const Reader = struct {
             r.at += 4;
             var j: u32 = 0;
             while (j < n) : (j += 1) {
+                try r.env.charge.reserve(gpa, .inspection, 1);
                 _ = try r.stepOf();
                 if (try r.get() >= n_places) return error.Malformed;
             }
@@ -338,6 +339,8 @@ const Reader = struct {
         }
         const k = try r.count();
         if (k == 0) return error.Malformed;
+        // The members made, then each tied: a record each, reserved first.
+        try r.env.charge.reserve(gpa, .inspection, 2 * k);
         const base = r.vals.items.len;
         var i: u32 = 0;
         while (i < k) : (i += 1) {
@@ -389,12 +392,15 @@ const Reader = struct {
         defer absorbed.deinit(gpa);
         for (roots) |o| try stack.append(gpa, r.pos_of.items[o]);
         while (stack.pop()) |i| {
-            if ((try seen.getOrPut(gpa, .{i})).found_existing) continue;
             try r.env.charge.reserve(gpa, .inspection, 1);
+            if ((try seen.getOrPut(gpa, .{i})).found_existing) continue;
             const p = r.infos.items[i];
             // A value holds objects, never a use shape's marks.
             var it = r.env.cells.sets.iterate(r.env.shapes.cells(p.node));
-            while (it.next()) |e| if (r.env.cells.origin(.from(e.key)) == .mark) return error.Malformed;
+            while (it.next()) |e| {
+                try r.env.charge.reserve(gpa, .inspection, 1);
+                if (r.env.cells.origin(.from(e.key)) == .mark) return error.Malformed;
+            }
             if (p.absorbed != .none) {
                 try absorbed.append(gpa, i);
             } else if (p.kappa != .none) ctx = (try r.env.conds.kappaSet(gpa, r.env.charge, ctx, p.node, p.at_summary, p.kappa)).ctx;
@@ -1979,4 +1985,283 @@ test "a block built in another order writes the same bytes: two values of one ow
         try write(env, &a.sums, &.{c}, .identity, &out[flip]);
     }
     try testing.expectEqualSlices(u32, out[0].items, out[1].items);
+}
+
+/// A chain of `depth` distinct nested lists, `List (List (… Int))`: place
+/// `v` holds place `v + 1` at `[*]`, numbered from 1 000 so they never meet
+/// `Graph`'s.
+const Deep = struct {
+    const base = 1000;
+    depth: u32,
+
+    fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
+        const d: *Deep = @ptrCast(@alignCast(ctx));
+        if (v == base + d.depth) return .{ .kind = .cross };
+        try out.append(testing.allocator, .{ .step = Step.elem, .@"var" = v + 1 });
+        return .{ .kind = .list, .head = 200 };
+    }
+
+    /// The places, outermost first.
+    fn places(d: *Deep, t: *Tables) ![]PlaceId {
+        const gpa = testing.allocator;
+        t.places.limits.type_places = @max(t.places.limits.type_places, t.places.count() + d.depth + 64);
+        const out = try gpa.alloc(PlaceId, d.depth + 1);
+        out[0] = try t.places.of(gpa, &t.account, .{ .ctx = d, .describe = describe }, base);
+        for (out[1..], 1..) |*p, i| p.* = t.places.child(out[i - 1], Step.elem).?;
+        return out;
+    }
+
+    /// A value that names every place: a node at each with `[*]` the next,
+    /// a marked leaf at the innermost.
+    fn chain(d: *Deep, t: *Tables) !ClassId {
+        const gpa = testing.allocator;
+        const ps = try d.places(t);
+        defer gpa.free(ps);
+        const site = try t.cells.site(gpa, &t.account, 1, ps[d.depth - 1], .list);
+        var v = try t.shapes.leaf(gpa, &t.account, ps[d.depth - 1], try t.cells.sets.insert(gpa, t.env().charge, .none, site.int(), 0));
+        var i = d.depth - 1;
+        while (i > 0) : (i -= 1) v = try t.shapes.node(gpa, &t.account, ps[i - 1], .none, try t.shapes.overPut(gpa, &t.account, Ids.none_int, Step.elem, v));
+        return t.sums.add(t.env(), .{ .params = &.{}, .res = v });
+    }
+};
+
+test "many distinct nested places cost n log n: a place's key never re-encodes what it reaches" {
+    try expectLinearithmic(&.{ 250, 500, 1000, 2000 }, struct {
+        fn make(t: *Tables, n: u32) anyerror!ClassId {
+            var d: Deep = .{ .depth = n };
+            return d.chain(t);
+        }
+    }.make);
+}
+
+/// Write `c` with `a` records left in `t`'s allowance, counting what the
+/// writer allocates; the account's growth and the allocation are returned.
+fn writeWithin(t: *Tables, cs: []const ClassId, a: u32, out: *std.ArrayList(u32)) !struct { err: ?anyerror, growth: u32, bytes: usize } {
+    var counting = std.testing.FailingAllocator.init(testing.allocator, .{});
+    var env = t.env();
+    env.gpa = counting.allocator();
+    t.account.allowance = t.account.growth + a;
+    t.account.failed = null;
+    const before = t.account.growth;
+    const err: ?anyerror = if (write(env, &t.sums, cs, .identity, out)) null else |e| e;
+    return .{ .err = err, .growth = t.account.growth - before, .bytes = counting.allocated_bytes };
+}
+
+test "an exhausted account stops the writer before the work: a cold place with a large reachable graph" {
+    const gpa = testing.allocator;
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    // One leaf at the outermost of 20 000 nested places: its key reaches
+    // them all.
+    var d: Deep = .{ .depth = 20_000 };
+    const ps = try d.places(&t);
+    defer gpa.free(ps);
+    const site = try t.cells.site(gpa, &t.account, 1, ps[0], .list);
+    const leaf = try t.shapes.leaf(gpa, &t.account, ps[0], try t.cells.sets.insert(gpa, t.env().charge, .none, site.int(), 0));
+    const c = try t.sums.add(t.env(), .{ .params = &.{}, .res = leaf });
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(gpa);
+    var a: u32 = 0;
+    while (a < 64) : (a += 1) {
+        const r = try writeWithin(&t, &.{c}, a, &out);
+        if (r.err == null) break;
+        try testing.expectEqual(@as(?anyerror, error.OwnershipLimit), r.err);
+        try testing.expectEqual(@as(usize, 0), out.items.len);
+        try testing.expect(r.growth <= a);
+        // What the writer allocated is bounded by what it reserved.
+        if (r.bytes > 1024 * (@as(usize, a) + 64)) {
+            std.debug.print("allowance {d}: {d} bytes allocated\n", .{ a, r.bytes });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+/// Three classes besides `rows`: 48 nested places, a marked ring of 24,
+/// and eight supplies sharing one map — built in `t` in either order, so
+/// every id differs between the two.
+fn mixed(t: *Tables, flip: bool) ![11]ClassId {
+    const gpa = testing.allocator;
+    var out: [11]ClassId = undefined;
+    for (0..2) |k| {
+        if ((k == 0) == flip) {
+            out[0..8].* = try rows(t, flip);
+            continue;
+        }
+        for (0..3) |j| {
+            const which = if (flip) 2 - j else j;
+            switch (which) {
+                0 => {
+                    var d: Deep = .{ .depth = 48 };
+                    out[8] = try d.chain(t);
+                },
+                1 => {
+                    const sets = try gpa.alloc(SetId, 24);
+                    defer gpa.free(sets);
+                    @memset(sets, .none);
+                    sets[0] = (try siteSets(t, 1))[0];
+                    const ns = try ring(t, sets);
+                    defer gpa.free(ns);
+                    out[9] = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = ns[if (flip) 0 else 0] });
+                },
+                else => {
+                    const env = t.env();
+                    const tree = try t.place(8);
+                    const s0 = try t.places.ctorStep(gpa, &t.account, 0, 0);
+                    var v = try t.shapes.nothing(gpa, &t.account, tree);
+                    var km: Cond.Kappas = .none;
+                    for (0..12) |i| {
+                        const site = try t.cells.site(gpa, &t.account, @intCast(i + 40), tree, .list);
+                        v = try t.shapes.node(gpa, &t.account, tree, try t.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try t.shapes.overPut(gpa, &t.account, Ids.none_int, s0, v));
+                        km = (try t.conds.kappaSet(gpa, env.charge, km, v, false, if (i % 3 == 0) Cond.shared else Cond.yes)).ctx;
+                    }
+                    var sups: [8]Summary.Supply = undefined;
+                    for (&sups, 0..) |*s, i| s.* = .{ .j = 0, .k = @intCast(i), .node = v, .label = .none, .owned = true, .taken = false, .kappa = km };
+                    out[10] = try t.sums.add(env, .{ .params = &.{.none}, .res = v, .kappas = km, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &sups }} });
+                },
+            }
+        }
+    }
+    return out;
+}
+
+fn writeMixed(flip: bool, options: Block.Options, out: *std.ArrayList(u32)) !void {
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    t.account.allowance = std.math.maxInt(u32) - 1;
+    const classes = try mixed(&t, flip);
+    try Block.writeWith(t.env(), &t.sums, &classes, .identity, out, options);
+}
+
+test "a block built in another order writes the same bytes: nested places, a marked ring, shared owners, the rows" {
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |tie| {
+        var out: [2]std.ArrayList(u32) = .{ .empty, .empty };
+        defer for (&out) |*o| o.deinit(gpa);
+        for (0..2) |flip| try writeMixed(flip == 1, .{ .tie_hashes = tie }, &out[flip]);
+        try testing.expectEqualSlices(u32, out[0].items, out[1].items);
+    }
+}
+
+test "no equality and no order rests on a hash: every hash tied, the block is still the structure's" {
+    const gpa = testing.allocator;
+    var plain: std.ArrayList(u32) = .empty;
+    defer plain.deinit(gpa);
+    var tied: std.ArrayList(u32) = .empty;
+    defer tied.deinit(gpa);
+    try writeMixed(false, .{}, &plain);
+    try writeMixed(false, .{ .tie_hashes = true }, &tied);
+    // Ties order keys by their words, so the order may change, but nothing
+    // merges: the same number of records and words.
+    try testing.expectEqual(plain.items.len, tied.items.len);
+    // The tied block decodes, and written again tied gives its words back.
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    b.account.allowance = std.math.maxInt(u32) - 1;
+    var back: std.ArrayList(ClassId) = .empty;
+    defer back.deinit(gpa);
+    try testing.expect(try read(b.env(), &b.sums, tied.items, .identity, &back) != null);
+    var again: std.ArrayList(u32) = .empty;
+    defer again.deinit(gpa);
+    try Block.writeWith(b.env(), &b.sums, back.items, .identity, &again, .{ .tie_hashes = true });
+    try testing.expectEqualSlices(u32, tied.items, again.items);
+    // The rings `c d` and `c d e`, tied, in either order.
+    var rings: [2]std.ArrayList(u32) = .{ .empty, .empty };
+    defer for (&rings) |*o| o.deinit(gpa);
+    for (0..2) |flip| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const cs = try siteSets(&a, 3);
+        const first = try ring(&a, if (flip == 0) &.{ cs[0], cs[1] } else &.{ cs[0], cs[1], cs[2] });
+        defer gpa.free(first);
+        const second = try ring(&a, if (flip == 0) &.{ cs[0], cs[1], cs[2] } else &.{ cs[0], cs[1] });
+        defer gpa.free(second);
+        const u = try a.shapes.@"union"(gpa, &a.account, &a.cells.sets, first[0], second[0]);
+        try Block.writeWith(a.env(), &a.sums, &.{try a.sums.add(a.env(), .{ .params = &.{.none}, .res = u })}, .identity, &rings[flip], .{ .tie_hashes = true });
+    }
+    try testing.expectEqualSlices(u32, rings[0].items, rings[1].items);
+}
+
+fn tableCounts(t: *Tables) [5]u32 {
+    return .{ t.places.count(), t.cells.count(), t.shapes.count(), t.conds.count(), t.sums.count() };
+}
+
+test "an exhausted account stops the writer before the work, at every prefix: nothing written, no memo left behind" {
+    const gpa = testing.allocator;
+    var full: std.ArrayList(u32) = .empty;
+    defer full.deinit(gpa);
+    var total: u32 = 0;
+    var full_counts: [5]u32 = undefined;
+    {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = std.math.maxInt(u32) - 1;
+        const classes = try mixed(&t, false);
+        const before = t.account.growth;
+        try write(t.env(), &t.sums, &classes, .identity, &full);
+        total = t.account.growth - before;
+        full_counts = tableCounts(&t);
+    }
+    // Every prefix refused in one set of tables, one after another.
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    t.account.allowance = std.math.maxInt(u32) - 1;
+    const classes = try mixed(&t, false);
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(gpa);
+    var a: u32 = 0;
+    while (a < total) : (a += if (a < 400) 1 else total / 64) {
+        const r = try writeWithin(&t, classes[0..], a, &out);
+        try testing.expectEqual(@as(?anyerror, error.OwnershipLimit), r.err);
+        try testing.expectEqual(@as(usize, 0), out.items.len);
+        try testing.expect(r.growth <= a);
+        if (r.bytes > 1024 * (@as(usize, a) + 64)) {
+            std.debug.print("allowance {d}: {d} bytes allocated\n", .{ a, r.bytes });
+            return error.TestUnexpectedResult;
+        }
+        // What the refused writes left in the tables, one full write makes.
+        for (tableCounts(&t), full_counts) |x, y| try testing.expect(x <= y);
+    }
+    // And the next write, with room, is the one fresh tables make.
+    t.account.allowance = std.math.maxInt(u32) - 1;
+    t.account.failed = null;
+    try write(t.env(), &t.sums, &classes, .identity, &out);
+    try testing.expectEqualSlices(u32, full.items, out.items);
+}
+
+test "an exhausted account stops the reader at every prefix: the limit, never no block, and the tables as they were" {
+    const gpa = testing.allocator;
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(gpa);
+    try writeMixed(false, .{}, &words);
+    var cost: u32 = 0;
+    {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = std.math.maxInt(u32) - 1;
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(gpa);
+        const before = t.account.growth;
+        try testing.expect(try read(t.env(), &t.sums, words.items, .identity, &back) != null);
+        cost = t.account.growth - before;
+    }
+    var a: u32 = 0;
+    while (a < cost) : (a += if (a < 12) 1 else cost / 24) {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = t.account.growth + a;
+        const counts = tableCounts(&t);
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(gpa);
+        try testing.expectError(error.OwnershipLimit, read(t.env(), &t.sums, words.items, .identity, &back));
+        try testing.expectEqualSlices(u32, &counts, &tableCounts(&t));
+        try testing.expectEqual(@as(usize, 0), back.items.len);
+    }
 }
