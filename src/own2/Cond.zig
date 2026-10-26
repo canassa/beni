@@ -412,6 +412,102 @@ pub const Table = struct {
         return .{ .ctx = .from(try t.mapPut(gpa, charge, ctx.int(), mapKey(n, at_summary), new.int())), .changed = true };
     }
 
+    /// Two snapshots combined (§2.9: a construction combines its children's
+    /// snapshots and joins them where they bind one key): the union of the
+    /// maps, a key both bind joined. Persistent: `a` when `b` adds nothing,
+    /// so a merge of a snapshot with itself is the snapshot. Every node pair
+    /// inspected is a record; the recursion is the key width, 33 frames.
+    pub fn kappaMerge(t: *Table, gpa: Allocator, charge: Charge, a: Kappas, b: Kappas) Error!Kappas {
+        return .from(try t.mapUnion(gpa, charge, a.int(), b.int()));
+    }
+
+    fn mapUnion(t: *Table, gpa: Allocator, charge: Charge, a: u32, b: u32) Error!u32 {
+        if (a == Ids.none_int) return b;
+        if (b == Ids.none_int or a == b) return a;
+        try charge.reserve(gpa, .inspection, 1);
+        const na = t.mapNode(a);
+        const nb = t.mapNode(b);
+        if (nb.mask == 0) {
+            const old: ?CondId = if (t.kappaGetRaw(a, nb.prefix)) |x| x else null;
+            const v: CondId = if (old) |o| try t.join(gpa, charge, o, .from(nb.left)) else .from(nb.left);
+            if (old != null and old.? == v) return a;
+            return t.mapPut(gpa, charge, a, nb.prefix, v.int());
+        }
+        if (na.mask == 0) {
+            const old: ?CondId = if (t.kappaGetRaw(b, na.prefix)) |x| x else null;
+            const v: CondId = if (old) |o| try t.join(gpa, charge, o, .from(na.left)) else .from(na.left);
+            if (old != null and old.? == v) return b;
+            return t.mapPut(gpa, charge, b, na.prefix, v.int());
+        }
+        if (na.mask == nb.mask and na.prefix == nb.prefix) {
+            const l = try t.mapUnion(gpa, charge, na.left, nb.left);
+            const r = try t.mapUnion(gpa, charge, na.right, nb.right);
+            if (l == na.left and r == na.right) return a;
+            if (l == nb.left and r == nb.right) return b;
+            return t.makeMap(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = r });
+        }
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
+            if (nb.prefix & na.mask == 0) {
+                const l = try t.mapUnion(gpa, charge, na.left, b);
+                return if (l == na.left) a else t.makeMap(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = na.right });
+            }
+            const r = try t.mapUnion(gpa, charge, na.right, b);
+            return if (r == na.right) a else t.makeMap(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = na.left, .right = r });
+        }
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+            if (na.prefix & nb.mask == 0) {
+                const l = try t.mapUnion(gpa, charge, a, nb.left);
+                return if (l == nb.left) b else t.makeMap(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = l, .right = nb.right });
+            }
+            const r = try t.mapUnion(gpa, charge, a, nb.right);
+            return if (r == nb.right) b else t.makeMap(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = nb.left, .right = r });
+        }
+        return t.mapJoin(gpa, charge, na.prefix, a, nb.prefix, b);
+    }
+
+    fn kappaGetRaw(t: *const Table, root: u32, key: u32) ?CondId {
+        var at = root;
+        while (at != Ids.none_int) {
+            const m = t.mapNode(at);
+            if (m.mask == 0) return if (m.prefix == key) CondId.from(m.left) else null;
+            if (!matches(key, m.prefix, m.mask)) return null;
+            at = if (key & m.mask == 0) m.left else m.right;
+        }
+        return null;
+    }
+
+    /// The entries of a snapshot, `(node, at_summary, condition)`, in key
+    /// order: a leaf walk on a stack of at most 34 entries. Iterating a
+    /// whole snapshot is the caller's charged task (§4.1).
+    pub const KappaIterator = struct {
+        t: *const Table,
+        stack: [34]u32 = undefined,
+        depth: usize = 0,
+
+        pub const Entry = struct { node: NodeId, at_summary: bool, cond: CondId };
+
+        pub fn next(it: *KappaIterator) ?Entry {
+            while (it.depth > 0) {
+                it.depth -= 1;
+                const m = it.t.mapNode(it.stack[it.depth]);
+                if (m.mask == 0) return .{ .node = .from(m.prefix >> 1), .at_summary = m.prefix & 1 == 1, .cond = .from(m.left) };
+                it.stack[it.depth] = m.right;
+                it.stack[it.depth + 1] = m.left;
+                it.depth += 2;
+            }
+            return null;
+        }
+    };
+
+    pub fn kappaEntries(t: *const Table, ctx: Kappas) KappaIterator {
+        var it: KappaIterator = .{ .t = t };
+        if (ctx != .none) {
+            it.stack[0] = ctx.int();
+            it.depth = 1;
+        }
+        return it;
+    }
+
     /// κ of a union or a positions node: the join of its sides' and the
     /// stored, every node of the DAG (both kinds) read ONCE per read (a seen
     /// column for this read alone, nothing goes stale; a side in progress
@@ -2555,4 +2651,33 @@ test "#1063: a join keeps what is stored below a recast's inner, through a union
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, .none, other, out, j, false));
         try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, j, .none, j, false));
     }
+}
+
+test "kappaMerge: the union of two snapshots, a shared key joined, a snapshot with itself the same" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const t = &f.conds;
+    const p = try f.param(0, 1, &.{});
+    const q = try f.param(1, 1, &.{});
+    const lp = try f.leaf(1, &.{p});
+    const lq = try f.leaf(1, &.{q});
+    const e = try t.excl(gpa, f.charge(), p);
+    const a = try f.setK(.none, lp, e);
+    const b = try f.setK(.none, lq, lost);
+    const m = try t.kappaMerge(gpa, f.charge(), a, b);
+    try testing.expectEqual(e, t.kappaGet(m, lp, false).?);
+    try testing.expectEqual(lost, t.kappaGet(m, lq, false).?);
+    try testing.expectEqual(a, try t.kappaMerge(gpa, f.charge(), a, a));
+    try testing.expectEqual(a, try t.kappaMerge(gpa, f.charge(), a, .none));
+    try testing.expectEqual(b, try t.kappaMerge(gpa, f.charge(), .none, b));
+    // One key in both: joined (lost wins over an atom).
+    const c = try f.setK(.none, lp, lost);
+    try testing.expectEqual(lost, t.kappaGet(try t.kappaMerge(gpa, f.charge(), a, c), lp, false).?);
+    // The entries, every one once.
+    var it = t.kappaEntries(m);
+    var n: u32 = 0;
+    while (it.next()) |x| : (n += 1) try testing.expect(!x.at_summary);
+    try testing.expectEqual(@as(u32, 2), n);
 }

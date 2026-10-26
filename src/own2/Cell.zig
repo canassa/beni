@@ -459,9 +459,12 @@ pub const Table = struct {
             const xb = t.get(rb);
             if (xa.b == xb.b) {
                 // One split, two sides.
+                // Two positions one list pattern takes (`[ a, b, …rest ]`)
+                // are two sides as well: `c` is the position.
                 const sides = (xa.origin == .elem and xb.origin == .others) or (xa.origin == .others and xb.origin == .elem) or
                     (xa.origin == .level and xb.origin == .below) or (xa.origin == .below and xb.origin == .level) or
-                    (xa.origin == .below and xb.origin == .below and xa.c != xb.c);
+                    (xa.origin == .below and xb.origin == .below and xa.c != xb.c) or
+                    (xa.origin == .elem and xb.origin == .elem and xa.c != xb.c);
                 if (!sides) return .yes;
                 const s = t.findSplit(xa.parent, .from(xa.b));
                 return if (s == .none) .yes else .{ .under = s };
@@ -494,6 +497,90 @@ pub const Table = struct {
             ch.len += 1;
         }
         return ch;
+    }
+
+    /// Whether `d` stands only for objects strictly BELOW `c` (§2.8): a trie
+    /// descendant of it (a path below, a refinement of it), or, over one
+    /// symbolic origin, levels under it — `d` re-enters a place with `⟲`
+    /// where `c` steps onto that place's cycle (`Rose`'s subtrees under its
+    /// children list). A list storage write of `c` never counts against
+    /// such a `d`: it is an element. O(path length).
+    pub fn below(t: *const Table, places: *const Place.Table, d: CellId, c: CellId) bool {
+        if (d == c) return false;
+        var at = t.parent(d);
+        while (at != .none) : (at = t.parent(at)) if (at == c) return true;
+        const x = t.get(d);
+        const y = t.get(c);
+        if (x.origin != y.origin or !x.origin.isSymbolic() or x.origin == .top or x.a != y.a or x.c != y.c) return false;
+        var p: PathId = .from(x.b);
+        var q: PathId = .from(y.b);
+        var below_p: PathId = .none;
+        var below_q: PathId = .none;
+        while (places.pathDepth(p) > places.pathDepth(q)) {
+            below_p = p;
+            p = places.pathParent(p);
+        }
+        while (places.pathDepth(q) > places.pathDepth(p)) {
+            below_q = q;
+            q = places.pathParent(q);
+        }
+        while (p != q) {
+            below_p = p;
+            below_q = q;
+            p = places.pathParent(p);
+            q = places.pathParent(q);
+        }
+        if (below_q == .none) return below_p != .none; // `c`'s path is a prefix of `d`'s
+        if (below_p == .none) return false;
+        const sp = places.pathStep(below_p);
+        const sq = places.pathStep(below_q);
+        return sp.kind == .level and sq.kind != .level and places.sameCycle(places.pathPlace(below_p), places.pathPlace(below_q));
+    }
+
+    /// The steps from `d` down to its trie descendant `c` (a symbolic step
+    /// per path node, `[*]` per `elem`/`others`, nothing for a `level` or a
+    /// `loan`), appended root first; false when `c`'s chain does not reach
+    /// `d`. O(depth).
+    pub fn stepsTo(t: *const Table, places: *const Place.Table, d: CellId, c: CellId, gpa: Allocator, out: *std.ArrayList(Place.Step)) Allocator.Error!bool {
+        const first = out.items.len;
+        var at = c;
+        while (at != d) : (at = t.parent(at)) {
+            if (at == .none) {
+                out.shrinkRetainingCapacity(first);
+                return false;
+            }
+            const x = t.get(at);
+            switch (x.origin) {
+                .elem, .others => try out.append(gpa, Place.Step.elem),
+                .level, .loan => {},
+                .below => try out.append(gpa, Place.Step.level),
+                else => if (x.origin.isSymbolic()) try out.append(gpa, places.pathStep(.from(x.b))),
+            }
+        }
+        std.mem.reverse(Place.Step, out.items[first..]);
+        return true;
+    }
+
+    /// The symbolic cell at a refinement's canonical position, the split
+    /// forgotten (`elem c·ι` is `c[*]`, `level c·ι` is `c`, `below` is
+    /// `c⟲`): what a refinement projects through (§2.2: a refinement's
+    /// projection is its parent's, refined). Null when the base is
+    /// concrete, whose contents are explicit children.
+    pub fn unrefined(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, c: CellId) Error!?CellId {
+        const x = t.get(c);
+        if (!x.origin.isRefinement()) return if (x.origin.isSymbolic() and x.origin != .top) c else null;
+        const inner = (try t.unrefined(gpa, account, places, x.parent)) orelse return null;
+        const y = t.get(inner);
+        const step: ?Place.Step = switch (x.origin) {
+            .elem, .others => Place.Step.elem,
+            .below => Place.Step.level,
+            .level => null,
+            .loan => return inner,
+            else => unreachable,
+        };
+        const s = step orelse return inner;
+        const path = (try places.extend(gpa, .growth(account), .from(y.b), s)) orelse return null;
+        return try t.symbolic(gpa, account, places, y.origin, y.a, path, y.c);
     }
 };
 
@@ -582,6 +669,23 @@ pub const Radix = struct {
 
     pub fn member(r: *const Radix, root: SetId, key: u32) bool {
         return r.get(root, key) != null;
+    }
+
+    /// The leaf node of `(key, value)` if any set ever held it (hash-consing
+    /// makes it one node): what an inverted index keyed by a cell starts
+    /// from (§2.8's `set_head`). Allocates nothing.
+    pub fn leafOf(r: *const Radix, key: u32, value: u1) ?SetId {
+        return if (r.intern.get(.{ key, 0, value, Ids.none_int })) |id| .from(id) else null;
+    }
+
+    pub fn nodeCount(r: *const Radix) u32 {
+        return @intCast(r.nodes.len);
+    }
+
+    /// The two children of a branch, or null for a leaf.
+    pub fn branches(r: *const Radix, id: SetId) ?[2]SetId {
+        const n = r.node(id);
+        return if (n.mask == 0) null else .{ n.left, n.right };
     }
 
     /// `root` with `(key, value)`; the same root when it holds a pair at
@@ -1256,4 +1360,63 @@ test "intersection is the common keys, approximate when either is, and skips wha
     const before = a.growth;
     try testing.expectEqual(SetId.none, try r.intersection(gpa, g, s, far));
     try testing.expect(a.growth - before <= 4);
+}
+
+test "below, stepsTo and unrefined: containment by the trie, by refinement and through ⟲" {
+    var places: Place.Table = .{};
+    defer places.deinit(testing.allocator);
+    var cells: Table = .{};
+    defer cells.deinit(testing.allocator);
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    const gpa = testing.allocator;
+    var g: CycleGraph = .{ .table = &places, .account = &account, .gpa = gpa };
+    const source: Place.Source = .{ .ctx = &g, .describe = CycleGraph.describe };
+    const rose = try places.of(gpa, &account, source, 0);
+    const r0 = try places.ctorStep(gpa, &account, 0, 0);
+    const Ctx = struct {
+        places: *Place.Table,
+        cells: *Table,
+        account: *Ids.Account,
+        fn param(c: @This(), root: Place.PlaceId, steps: []const Place.Step) !CellId {
+            var at = try c.places.rootPath(testing.allocator, root);
+            for (steps) |s| at = (try c.places.extend(testing.allocator, .growth(c.account), at, s)).?;
+            return c.cells.symbolic(testing.allocator, c.account, c.places, .param, 0, at, 0);
+        }
+    };
+    const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
+    const root = try cx.param(rose, &.{});
+    const kids = try cx.param(rose, &.{r0});
+    const subtrees = try cx.param(rose, &.{ r0, Place.Step.elem }); // r⟲
+    const deep_kids = try cx.param(rose, &.{ r0, Place.Step.elem, r0 }); // r⟲#Rose.0
+    // A trie descendant is below its ancestor, never the other way.
+    try testing.expect(cells.below(&places, kids, root));
+    try testing.expect(!cells.below(&places, root, kids));
+    try testing.expect(!cells.below(&places, kids, kids));
+    // Through `⟲`: the subtrees and their lists are below the children list,
+    // which is not below them.
+    try testing.expect(cells.below(&places, subtrees, kids));
+    try testing.expect(cells.below(&places, deep_kids, kids));
+    try testing.expect(!cells.below(&places, kids, deep_kids));
+    // stepsTo: the trie's steps; none through a `⟲` relation.
+    var steps: std.ArrayList(Place.Step) = .empty;
+    defer steps.deinit(gpa);
+    try testing.expect(try cells.stepsTo(&places, root, deep_kids, gpa, &steps));
+    try testing.expectEqual(@as(usize, 2), steps.items.len);
+    try testing.expectEqual(Place.StepKind.level, steps.items[0].kind);
+    steps.clearRetainingCapacity();
+    try testing.expect(!try cells.stepsTo(&places, kids, deep_kids, gpa, &steps));
+    // A refinement: an element of the children list is below it, its steps
+    // `[*]`, its canonical position the subtrees.
+    const l = try cells.label(gpa, &account, 40, .none, false);
+    const e = try cells.refine(gpa, &account, .elem, kids, l, 0, places.child(places.child(rose, r0).?, Place.Step.elem).?, .none);
+    try testing.expect(cells.below(&places, e, kids));
+    steps.clearRetainingCapacity();
+    try testing.expect(try cells.stepsTo(&places, kids, e, gpa, &steps));
+    try testing.expectEqual(@as(usize, 1), steps.items.len);
+    try testing.expectEqual(subtrees, (try cells.unrefined(gpa, &account, &places, e)).?);
+    // Two positions one pattern takes are two sides of its split.
+    const e2 = try cells.refine(gpa, &account, .elem, kids, l, 1, places.child(places.child(rose, r0).?, Place.Step.elem).?, .none);
+    const s = try cells.split(gpa, &account, kids, 40, l, .none);
+    try testing.expectEqual(Alias{ .under = s }, cells.alias(&places, e, e2));
 }
