@@ -2,7 +2,9 @@
 -- sign, `|` `^` `<<` `>>` wrap to 32 bits, `>>>` answers unsigned, the same
 -- through the sibling's functions; `typeof` and `instanceof`; and a regular
 -- expression literal — made once or in place, with a `/` and a line feed in
--- its pattern, with a flag, empty, and built from a string by the sibling.
+-- its pattern, with a flag, empty, and built from a string by the sibling;
+-- and the four comparisons, on numbers and on strings, in place and as
+-- values (`boundary.md` §4.2, *The comparisons*).
 import Node
 import Ops
 
@@ -46,4 +48,8 @@ main =
         , "caseless " ++ bools [ Ops.caseless "ABC", Ops.caseless "abd" ]
         , "empty " ++ String.join (Ops.empty "xyz") ","
         , "built " ++ bools [ Ops.built "^a/b$" "a/b", Ops.built "^a/b$" "ab" ]
+        , "lt-ints " ++ bools (Ops.compared 1 2 ++ Ops.compared 2 2 ++ Ops.compared 3 2)
+        , "lt-strings "
+            ++ bools (Ops.compared "Z" "a" ++ Ops.compared "a\u{FFFF}" "a😀" ++ Ops.compared "b" "b")
+        , "lt-values " ++ bools (Ops.comparedViaValues 1 2)
         ]

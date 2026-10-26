@@ -4249,6 +4249,7 @@ names the fixture that pins each (§24.6).
 |---|---|---|
 | `Js.from`, `Js.to` | `returned a → Value`, `returned Value → a` | `Js.js`: `(v) => v`, compiled to nothing |
 | `Js.same`, `isNull`, `isUndefined`, `isNullish` | `unused` arguments, `fresh` result | `a === b`, `v === null`, `v == null`: a reference compared, nothing dereferenced, a boolean made |
+| `Js.lt`, `gt`, `le`, `ge` (2026-10-23, #882) | `unused` arguments, `fresh` result | `a < b` and its three siblings: two values compared, neither kept, a boolean made |
 | `Js.typeOf`, `Js.typeIs` | `unused Value` (`borrowed name`), `fresh` | `typeof v` reads the value's tag, not its contents |
 | `Js.fingerprint` | `unused k, unused order → fresh name` | the compiler writes the type's identity in place; `x` is evaluated and not read (its doc comment) |
 | `Js.array`, `Js.object` | `aliased … → fresh Value` | `args(xs)`, `Object.fromEntries(…)`: a new array or object holding the elements or field values |

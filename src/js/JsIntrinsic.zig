@@ -26,6 +26,11 @@ pub const Which = enum {
     isNull,
     isUndefined,
     isNullish,
+    /// `<`, `>`, `<=` and `>=` (`boundary.md` §4.2, *The comparisons*).
+    lt,
+    gt,
+    le,
+    ge,
     bitAnd,
     /// `|`, `^`, `<<`, `>>`, `>>>` and `%` (`boundary.md` §4.2, the
     /// operators core's arithmetic is written over).
