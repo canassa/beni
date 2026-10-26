@@ -687,7 +687,7 @@ pub const Module = struct {
         if (target) |t| {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
-            if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst) };
+            if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, owner, owner.decls[t[1]]) };
             // A container's `eq`/`compare` with no words (`List.eq`, written
             // in JavaScript over its element evidence): the derived class when
             // no evidence it is handed is written by hand (§2.13.13).
@@ -744,7 +744,7 @@ pub const Module = struct {
 
     /// A worded declaration's class at this call (§5's signature adapter):
     /// its words over the call's own argument and result places.
-    fn wordedClass(mod: *Module, words: []const [2]u32, args: []const u32, inst: u32) Error!ClassId {
+    fn wordedClass(mod: *Module, words: []const [2]u32, args: []const u32, inst: u32, owner: *const Bir, decl: Bir.Decl) Error!ClassId {
         const gpa = mod.gpa;
         var params: std.ArrayList(Rows.Param) = .empty;
         defer params.deinit(gpa);
@@ -755,7 +755,7 @@ pub const Module = struct {
             for (words) |s| if (s[0] == k) {
                 w = s[1];
             };
-            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null });
+            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(owner, decl, k) });
         }
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
@@ -882,7 +882,7 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
                 result = f.result.toOptional();
                 for (store.vars(f.params)) |p| {
                     const at = try mod.adapter.placeOfVar(p.toOptional());
-                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null });
+                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in.bir, d, params.items.len) });
                 }
             },
             else => {},
@@ -896,6 +896,16 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
         if (s[0] < params.items.len) params.items[s[0]].words = s[1];
     }
     return try Rows.fromWords(mod.env(), &mod.sums, .{ .params = params.items, .result = try mod.adapter.placeOfVar(result), .result_words = result_words });
+}
+
+/// Whether parameter `k` of `d`'s annotation is a bare type variable
+/// (`borrowed a`): its value may hold any structure, and the callee may read
+/// any of it, so its words apply at every depth (§2.13.6, #1105).
+fn paramIsTypeVariable(owner: *const Bir, d: Bir.Decl, k: usize) bool {
+    const ann = d.annotation.unwrap() orelse return false;
+    if (owner.instTag(ann) != .type_fn) return false;
+    const ps = owner.extraSlice(owner.subRange(@fromBackingInt(owner.instData(ann).lhs)), Bir.Inst.Index);
+    return k < ps.len and owner.instTag(ps[k]) == .type_var;
 }
 
 /// A v2 word on a place without the kind it reads (#1056 item 4): lowering

@@ -1,6 +1,10 @@
--- ownership (core): `ys` holds `xs` at `ys[*]` and goes to a `foreign` whose
--- parameter is a type variable. v1 refuses the edit of `xs` before it; v2
--- reads `borrowed a` at `ε` only and accepts it (#1105, undecided).
+-- ownership (core): a word on a parameter whose declared type is a bare type
+-- variable applies at every depth (`ownership-v2.md` §2.13.6, #1105). `ys`
+-- holds `xs` at `ys[*]`, and `look` and `Js.from` may read all of `ys`, so
+-- the edit of `xs` before them is refused, as v1 refuses it.
+import Js
+
+
 pub foreign pure look : borrowed a → Int
 
 
@@ -9,3 +13,24 @@ heldIntoVar xs =
     ys = [ xs ]
     zs = [ …xs, 1 ]
     [ look ys, …zs ]
+
+
+heldIntoFrom : List Int → Js.Value
+heldIntoFrom xs =
+    ys = [ xs ]
+    zs = [ …xs, 1 ]
+    Js.array [ Js.from ys, Js.from zs ]
+
+
+-- A `List a` parameter is not a bare variable: `borrowed` reads its `ε`.
+pub foreign pure size : borrowed List a → Int
+
+
+sizeAfter : List (List Int) → Int
+sizeAfter rows =
+    case rows of
+        [ r, …_ ] →
+            List.length [ …r, 0 ] + size rows
+
+        _ →
+            0

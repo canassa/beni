@@ -13,10 +13,10 @@
 # v2 accepts where v1 refused.
 tests/corpus/ownership/Copy.beni [node] Copy 24:27 :: construction first :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
 tests/corpus/ownership/Split.beni [node] Split 38:27 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
+tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariable 33:27 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `borrowed List a` reads the outer list only; the contrast to a bare `a` (#1105)
 tests/corpus/ownership/core/V2WordsHiddenFromV1.beni [node] V2WordsHiddenFromV1 17:12 :: construction xs :: rejected :: accepted  the fixture's point: v1 reads none of v2's words
 tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 27:23 :: List.push xs :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
 tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 56:15 :: List.push a :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
-tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariable 10:12 :: construction xs :: rejected :: accepted  #1105, undecided: `borrowed a` marks `R` at `ε` only, so v2 does not read `ys[*]`
 #
 # v2 refuses where v1 accepted (S3a builds neither initialization transfer,
 # S7, nor record paths, S5).
