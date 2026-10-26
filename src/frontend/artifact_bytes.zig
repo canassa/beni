@@ -131,7 +131,11 @@ pub const magic = "BENIFE\x00\x00";
 /// gained `at_sign` and `Ast.Node.Tag` `attribute`, which shifted later
 /// tags; the flags section carries the module's raise and a declaration
 /// row its own, `summary_size`; lowering has a new code.
-pub const format_version: u32 = 26;
+/// 27 (2026-10-26): the result selectors `elementof`, `copyof` and
+/// `prepended` and the stored callback (ownership-v2.md §2.13.6) — three new
+/// word bits in a declaration's v2 column, and `misplaced_ownership_word`
+/// has two new readings, which shifted the later ones.
+pub const format_version: u32 = 27;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

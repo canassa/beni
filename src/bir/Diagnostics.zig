@@ -108,6 +108,11 @@ pub const Item = struct {
         own_conflict,
         own_type_word,
         own_failure,
+        /// The result selectors and stored callbacks (ownership-v2.md §2.13.6): a callback whose answer
+        /// is `stored` without the words that say where, or with one that
+        /// contradicts it; a result selector without its parameters' words.
+        own_stored_callback,
+        own_selector,
         /// `invalid_ownership_summary_size` (ownership-v2.md §4.4): why.
         attr_unknown,
         attr_module_late,
@@ -256,7 +261,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\and this function type is not marked `sync`.
                 \\
                 \\No other fiber may run while the callback holds the cell's contents. Mark the
-                \\function type itself: `cellupdate sync (a → a)`.
+                \\function type itself: `cellupdate stored sync (a → a)`.
             , .{text}),
             .own_position => try w.print(
                 \\`{s}` stands in front of the wrong parameter.
@@ -284,8 +289,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\The ownership word `{s}` cannot hold together with another word written here.
                 \\
                 \\A result is one of `fresh`, `escaped`, `unknown`, `taken`, `lent`,
-                \\`lentoptional`, `cellnew`, `cellempty`, `builderdone` and `concatenated`. A
-                \\parameter does one thing to a cell: `cellread`, `cellwrite` or `cellcomplete`.
+                \\`lentoptional`, `cellnew`, `cellempty`, `builderdone`, `concatenated`,
+                \\`elementof`, `copyof` and `prepended`. A parameter does one thing to a cell:
+                \\`cellread`, `cellwrite` or `cellcomplete`.
                 \\`cellupdate` and `cellmodify` say already that the callback is called once and
                 \\is handed the contents owned, so they stand without `once`, `many`, `taken`,
                 \\`owned` and each other.
@@ -298,6 +304,32 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`foreign type`, with one parameter: `pub opaque cell type Ref a = Ref Js.Value`.
                 \\`sender` stands before an alias of a function of one argument that returns
                 \\`⊤`: `pub sender type alias Send msg = msg → ⊤`.
+            , .{text}),
+            .own_stored_callback => try w.print(
+                \\`{s}` describes a callback whose answer is stored, and a word it needs is
+                \\missing or another word contradicts it.
+                \\
+                \\`stored` in front of a function parameter stores what the callback returns.
+                \\Without a cell word the answer goes back where the element it was handed came
+                \\from: the callback is `once taken stored` and the first parameter is `written
+                \\returned`, as in `focus : written returned List a, borrowed Int, once taken
+                \\stored (a → a) → List a`. With a cell word the answer goes back into the cell,
+                \\and the cell word needs `stored`: `cellupdate stored sync (a → a)` stores the
+                \\whole answer, `cellmodify stored sync (a → b × a)` its second part. The
+                \\callback is one function written out, not a `List` of them, and it is not
+                \\also `many`, `returned`, `aliased`, `escaped` or `unused`.
+            , .{text}),
+            .own_selector => try w.print(
+                \\`{s}` needs words on the parameters, and one is missing or contradicts it.
+                \\
+                \\`elementof` says that the result is an element of the first parameter, read
+                \\in place, so the first parameter is read and is not `unused`, `escaped` or
+                \\`consumed`: `at : borrowed List a, borrowed Int → elementof a`. `copyof` says
+                \\that the result is a fresh copy of the first parameter's storage, so the first
+                \\parameter is `borrowed`: `copy : borrowed List a → copyof List a`. `prepended`
+                \\says that the result is the first parameter put in front of the second, so
+                \\there are exactly two parameters: `cons : stored a, returned List a →
+                \\prepended List a`.
             , .{text}),
             .own_failure => try w.writeAll(
                 \\`failure` marks the failure constructor of a type with two constructors, and it

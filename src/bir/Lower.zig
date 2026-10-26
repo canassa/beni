@@ -2245,12 +2245,16 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
     const W = Ast.OwnWord;
     // What only a result may carry; `escaped` stands on both, and so does
     // `taken` (a function parameter's supply, or the result itself).
+    const selectors = W.elementof.bit() | W.copyof.bit() | W.prepended.bit();
     const result_words = W.fresh.bit() | W.exclusive.bit() | W.unknown.bit() |
-        W.lent.bit() | W.lentoptional.bit() | W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit();
+        W.lent.bit() | W.lentoptional.bit() | W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit() | selectors;
     const fn_words = W.once.bit() | W.many.bit() | W.owned.bit();
     // A result is one of these: what the call returns.
     const results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit() | W.taken.bit() | W.lent.bit() | W.lentoptional.bit() |
-        W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit();
+        W.cellnew.bit() | W.cellempty.bit() | W.builderdone.bit() | W.concatenated.bit() | selectors;
+    // What a callback whose answer is `stored` cannot also be: its answer
+    // goes back into the destination, nowhere else, and it runs at most once.
+    const not_with_stored = W.many.bit() | W.returned.bit() | W.aliased.bit() | W.escaped.bit() | W.unused.bit();
     const v1_results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit();
     // A parameter's cell operation is one of these.
     const cell_ops = W.cellread.bit() | W.cellwrite.bit() | W.cellcomplete.bit();
@@ -2263,7 +2267,7 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
     }.less);
     // Each position's words and the token of each, for the companion
     // rules below, which read one position's words from another's.
-    const Slot = struct { slot: u32, bits: u32, firsts: [32]TokenIndex };
+    const Slot = struct { slot: u32, bits: u32, firsts: [32]TokenIndex, arrow: bool };
     var slots: std.ArrayList(Slot) = .empty;
     defer slots.deinit(l.scratch_allocator);
     var i: usize = 0;
@@ -2319,6 +2323,16 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
                     try l.reportOwn(token, .own_needs_sync);
                     continue;
                 }
+                // `stored` on a function stores its answer (§2.13.6): one
+                // function written out, never a `List` of them.
+                if (word == .stored and param_fn and !param_arrow) {
+                    try l.reportOwn(token, .own_stored_callback);
+                    continue;
+                }
+                if (param_arrow and (b | bits) & W.stored.bit() != 0 and (b | bits) & not_with_stored != 0) {
+                    try l.reportOwn(token, .own_stored_callback);
+                    continue;
+                }
             }
             const alone = W.unused.bit() | W.borrowed.bit() | W.entry.bit();
             const impossible = bits & b != 0 or
@@ -2355,7 +2369,7 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
             bits &= ~W.exclusive.bit();
         }
         if (bits == 0) continue;
-        try slots.append(l.scratch_allocator, .{ .slot = slot, .bits = bits, .firsts = firsts });
+        try slots.append(l.scratch_allocator, .{ .slot = slot, .bits = bits, .firsts = firsts, .arrow = param_arrow });
     }
     try l.checkOwnCompanions(slots.items, l.typeFnArity(t));
     const mark = l.scratchMark();
@@ -2427,6 +2441,25 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
             try l.reportOwn(s.firsts[@backingInt(W.taken)], .own_companion);
             s.bits &= ~W.taken.bit();
         }
+        // A callback whose answer is `stored` (§2.13.6): into the cell with
+        // `cellupdate`/`cellmodify`, which need it; else back at the element
+        // it was handed, so it is `once taken` and parameter 1, the one
+        // destination, is `written returned`.
+        if (!s.arrow) continue;
+        const cell_cb = W.cellupdate.bit() | W.cellmodify.bit();
+        if (s.bits & cell_cb != 0 and s.bits & W.stored.bit() == 0) {
+            for ([_]W{ .cellupdate, .cellmodify }) |w| if (s.bits & w.bit() != 0) {
+                try l.reportOwn(s.firsts[@backingInt(w)], .own_stored_callback);
+                s.bits &= ~w.bit();
+            };
+        }
+        const into = W.written.bit() | W.returned.bit();
+        if (s.bits & W.stored.bit() != 0 and s.bits & cell_cb == 0 and
+            (s.slot == 0 or s.bits & (W.once.bit() | W.taken.bit()) != (W.once.bit() | W.taken.bit()) or first & into != into))
+        {
+            try l.reportOwn(s.firsts[@backingInt(W.stored)], .own_stored_callback);
+            s.bits &= ~W.stored.bit();
+        }
     }
     for (slots) |*s| {
         if (s.slot != 0) continue;
@@ -2458,6 +2491,20 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
         for (needs) |n| {
             if (s.bits & n.w.bit() != 0 and !n.ok) {
                 try l.reportOwn(s.firsts[@backingInt(n.w)], .own_companion);
+                s.bits &= ~n.w.bit();
+            }
+        }
+        // The result selectors (§2.13.6): `elementof` reads parameter 1 in
+        // place, `copyof` copies a `borrowed` parameter 1, `prepended` puts
+        // a `stored` parameter 1 in front of a `returned` parameter 2.
+        const selectors = [_]struct { w: W, ok: bool }{
+            .{ .w = .elementof, .ok = arity >= 1 and first & (W.unused.bit() | W.escaped.bit() | W.consumed.bit()) == 0 },
+            .{ .w = .copyof, .ok = arity >= 1 and first == W.borrowed.bit() },
+            .{ .w = .prepended, .ok = arity == 2 and first & W.stored.bit() != 0 and S.at(slots, 1) & W.returned.bit() != 0 },
+        };
+        for (selectors) |n| {
+            if (s.bits & n.w.bit() != 0 and !n.ok) {
+                try l.reportOwn(s.firsts[@backingInt(n.w)], .own_selector);
                 s.bits &= ~n.w.bit();
             }
         }

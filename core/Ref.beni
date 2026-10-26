@@ -47,7 +47,7 @@ set (Ref cell) value = Js.setAt cell 0 (Js.from value)
 --| Replace the value with what `f` makes of it. `f` must not suspend: no
 --| other fiber runs between the read and the write, so no update is lost.
 --| `f` may write the cell itself; then this write, which comes last, wins.
-pub update : cellwrite Ref a, cellupdate sync (a → a) → ⊤
+pub update : cellwrite Ref a, cellupdate stored sync (a → a) → ⊤
 update ref f = set ref (f (get ref))
 
 
@@ -56,7 +56,7 @@ update ref f = set ref (f (get ref))
 --|
 --|     -- the old value, and the cell now holds 0
 --|     Ref.modify counter λn → ( n, 0 )
-pub modify : cellwrite Ref a, cellmodify sync (a → b × a) → b
+pub modify : cellwrite Ref a, cellmodify stored sync (a → b × a) → b
 modify ref f =
     ( result, next ) = f (get ref)
     set ref next

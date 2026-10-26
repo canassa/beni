@@ -1,0 +1,45 @@
+-- BIR (core): the result selectors and the stored callback
+-- (`ownership-v2.md` §2.13.6), checked by lowering and kept in the v2
+-- column (`own2`), erased from the types. `at` reads an element in place
+-- (`elementof`), `copy` and `sortWith` copy the storage (`copyof`), `cons`
+-- puts its first parameter in front of its second (`prepended`), `focus`
+-- puts its callback's answer back at the element position (`once taken
+-- stored`), and `focusMaybe` puts back `Just`'s payload of a `Maybe` answer.
+-- `update` and `modify` put the answer, or its second part, into the cell
+-- (`cellupdate stored`, `cellmodify stored`).
+import Js
+
+
+pub sequence foreign type Seq a
+
+
+pub opaque cell type Box a
+    = Box Js.Value
+
+
+pub foreign pure at : borrowed Seq a, borrowed Int → elementof a
+
+
+pub foreign pure copy : borrowed Seq a → copyof Seq a
+
+
+pub foreign pure sortWith : borrowed Seq a, many (a, a → Order) → copyof Seq a
+
+
+pub foreign pure cons : stored a, returned Seq a → prepended Seq a
+
+
+pub foreign pure focus : written returned Seq a, borrowed Int, once taken stored (a → a) → Seq a
+
+
+pub foreign pure focusMaybe :
+      written returned Seq a
+    , borrowed Int
+    , once taken stored (Maybe a → Maybe a)
+    → Seq a
+
+
+pub foreign pure update : cellwrite Box a, cellupdate stored sync (a → a) → ⊤
+
+
+pub foreign pure modify : cellwrite Box a, cellmodify stored sync (a → b × a) → b

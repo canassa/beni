@@ -204,7 +204,7 @@ decl 16: pub foreign value pure set
   interface foreign value set
 
 decl 17: pub foreign value pure update
-  own2 π1 cellwrite, π2 cellupdate
+  own2 π1 cellwrite, π2 stored cellupdate
   %0 = type_top 2 (Box)
   %1 = type_var a
   %2 = type_app %0 [%1]
@@ -219,7 +219,7 @@ decl 17: pub foreign value pure update
   interface foreign value update
 
 decl 18: pub foreign value pure modify
-  own2 π1 cellwrite, π2 cellmodify
+  own2 π1 cellwrite, π2 stored cellmodify
   %0 = type_top 2 (Box)
   %1 = type_var a
   %2 = type_app %0 [%1]

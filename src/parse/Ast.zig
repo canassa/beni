@@ -676,6 +676,12 @@ pub const OwnWord = enum(u5) {
     cellcomplete,
     builderdone,
     concatenated,
+    // The result selectors (ownership-v2.md §2.13.6): an element
+    // of parameter 1 read in place, a fresh copy of parameter 1's storage,
+    // parameter 1 put in front of parameter 2. `enum(u5)` is full with them.
+    elementof,
+    copyof,
+    prepended,
 
     /// The word a signature's identifier is, `crossing` excepted: that one
     /// is read only in front of `foreign`.

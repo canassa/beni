@@ -9,7 +9,8 @@ words than v1:
   `cellupdate`, `cellmodify`, `cellcomplete`;
 - on a function parameter or the result: `taken`;
 - on the result: `lent`, `lentoptional`, `cellnew`, `cellempty`,
-  `builderdone`, `concatenated`;
+  `builderdone`, `concatenated`, `elementof`, `copyof`, `prepended`;
+- on a function parameter: `stored`, which stores what the callback returns;
 - before a type declaration: `sequence` (a unary `foreign type`), `cell` (a
   unary opaque `type` or `foreign type`), `sender` (an alias of a function of
   one argument that returns `⊤`);
@@ -17,7 +18,26 @@ words than v1:
 
 Some words fix the role of another parameter. For example, `cellwrite` needs
 a second parameter that is `cellstored`, `cellupdate` or `cellmodify`, and
-`cellupdate` needs a `sync` function. The words do not change a type or the
+`cellupdate` needs a `stored sync` function.
+
+The result selectors and a stored callback need these words:
+
+- `elementof`: the result is an element of the first parameter, read in
+  place. The first parameter is not `unused`, `escaped` or `consumed`:
+  `at : borrowed List a, borrowed Int → elementof a`.
+- `copyof`: the result is a fresh copy of the storage of the first
+  parameter, which is `borrowed`: `copy : borrowed List a → copyof List a`.
+- `prepended`: the result is the first parameter in front of the second.
+  There are exactly two parameters: `cons : stored a, returned List a →
+  prepended List a`.
+- `stored` on a callback: the answer goes back where the element came from.
+  The callback is `once taken stored`, and the first parameter is `written
+  returned`: `focus : written returned List a, borrowed Int, once taken
+  stored (a → a) → List a`. With `cellupdate stored sync` the answer goes
+  into the cell, and with `cellmodify stored sync` its second part goes into
+  the cell.
+
+The words do not change a type or the
 emitted code. Other packages cannot use them. A word in another package, at
 an incorrect position, or without its companion word causes
 `misplaced_ownership_word`.
@@ -25,6 +45,11 @@ an incorrect position, or without its companion word causes
 ```beni refused=misplaced_ownership_word
 pub keep : stored Int → List Int
 keep n = [ n ]
+```
+
+```beni refused=misplaced_ownership_word
+pub keepAll : borrowed List a → copyof List a
+keepAll xs = List.copy xs
 ```
 
 
