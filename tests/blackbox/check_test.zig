@@ -1019,9 +1019,12 @@ test "ownership words: flipping Debug's words is noticed" {
     try expectFlips("ownership/JsPure.beni", &.{});
 }
 
-test "ownership words: flipping the browser platforms' words is noticed" {
-    try expectFlips("ownership/WordsBrowser.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });
-}
+// `ownership/WordsBrowser.beni` pinned `Hosted.keyOf`'s `aliased` until
+// 2026-10-26, when the keys became beni over `Js` (#877) and the word is
+// inferred; its remaining rows, `Html.Event` and `Html.Pointer`, are
+// `crossing`, the unsafe end already, so they have no flip (`-`). The
+// browser platforms' flips are the entry rows, pinned below by
+// `HostedEntry` and `EntryInitProgram`.
 
 test "ownership words: flipping Task's words is noticed" {
     try expectFlips("ownership/TaskWords.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });

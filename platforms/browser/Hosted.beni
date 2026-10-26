@@ -48,28 +48,53 @@ pub foreign type Key
 --| every function generic over the key with nothing written.
 pub key : k → Key
     where k.compare : k, k → Order
-key k = keyOf (Js.fingerprint k EQ) k
+key k =
+    -- `{ t, c, v }`: the identity of the key's type
+    -- (`static-dispatch-spike.md` §8.6), the type's own `compare`, and the
+    -- value (`boundary.md` §9.8.3). The three keys are plain properties no
+    -- beni record spells, so they pin no field name (`backend.md` §9).
+    Js.to
+        (Js.object
+            [ ( "t", Js.fingerprint k EQ ), ( "c", Js.from (comparer k) ), ( "v", Js.from k ) ]
+        )
 
 
--- Hand-written: a beni `<` on the identities is `String.compare`'s
--- code-point order, which ships that function to a page that had none,
--- where JavaScript's `<`, which `Js` cannot write, orders them alike.
-foreign pure keyOf : String, aliased k → fresh Key
+-- The type's `compare` as a value, for the key to carry. The parameter is
+-- read for its type alone: a method is named through a call of it.
+comparer : k → (k, k → Order)
     where k.compare : k, k → Order
-
-
-foreign pure compareKeys : Key, Key → Order
+comparer _ = λa b → a.compare b
 
 
 --| The order of two keys: by their types' identities, then, for two keys
---| of one type, by that type's `compare`.
+--| of one type, by that type's `compare`. Two keys of one identity are of
+--| one type, so either's `compare` orders both. Keys of two types are
+--| ordered by their identities' text with JavaScript's `<` (`Js.lt`): the
+--| identities are ASCII, where it agrees with `String.compare`, which a
+--| page that compares no other string then never ships. Reading the
+--| key's fields and calling its `compare` run no effect, so the body is
+--| `Js.pure`, as the sibling was `foreign pure`.
 pub compare : Key, Key → Order
-compare a b = compareKeys a b
+compare a b = Js.pure λ⊤ →
+    if Js.same a b then
+        EQ
+    else
+        ta = Js.get (Js.from a) "t"
+        tb = Js.get (Js.from b) "t"
+        if Js.same ta tb then
+            Js.to
+                (Js.apply (Js.get (Js.from a) "c")
+                    [ Js.get (Js.from a) "v", Js.get (Js.from b) "v" ]
+                )
+        else if Js.lt ta tb then
+            LT
+        else
+            GT
 
 
 --| Whether two keys are the same value.
 pub eq : Key, Key → Bool
-eq a b = compareKeys a b == EQ
+eq a b = compare a b == EQ
 
 
 --| Where a running body's messages go: its program, until it is closed.
