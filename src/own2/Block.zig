@@ -1,34 +1,57 @@
 //! L11: the ownership block (`docs/design/ownership-v2.md` §3.6), minimal:
 //! classes to words and back, with places written structurally. S2b builds
 //! the class table and its records — a header (`OWN2`, the version), the
-//! place table, then each class by one canonical walk — and nothing of S6's:
+//! place table, the record table, the root classes — and nothing of S6's:
 //! no lazy directory, no cache section, no traversal marks.
+//!
+//! **Every record once.** A label, a path, a cell, a split, a cell set, an
+//! atom set, a condition, an atom, a shape node, a κ entry and a κ map, a
+//! supply, a keep, a slot and a class are each one record of the table,
+//! and every other record names it by its ordinal. A record's ordinal is
+//! after its parts' (its parts are written first), but in a knot: the
+//! nodes of a cycle (`widen`'s, `map`'s) are one `group` record whose
+//! members are numbered together, so a child step may name any member and
+//! every other part of a member names an earlier one — every cycle passes
+//! through a step, as every cycle the constructors can make does.
 //!
 //! **No session id in the bytes.** A place is its kind, its head and its
 //! children (a head, a field's rank — a use mark's too — through the
 //! writer's `Names`), a shared value's declaration its qualified name and
-//! ordinal, a cell its origin and canonical path, a node its first-visit
-//! ordinal per κ map (an already numbered node is a backreference).
-//! Instruction ids (a label's, a site's) are the module's own, and a reader
-//! puts them in a namespace of its own (`Remap.inst`).
+//! ordinal. Instruction ids (a label's, a site's) are the module's own, and
+//! a reader puts them in a namespace of its own (`Remap.inst`).
 //!
-//! **Canonical order in O(n log n).** Every set, a union's two sides, a
-//! node's children, a fun's supplies and keeps, a class's slots, nested
-//! classes and once paths are written in the order of their members'
-//! structural hashes, each computed once per record (a node's per κ map) and
-//! memoised: no subtree is spelled twice to sort it. Two members with equal
-//! hashes keep their table order; equal hashes of different records (a
-//! 64-bit collision) are the one case that order shows.
+//! **The order is the structure's.** Each record has a 64-bit key: a hash
+//! of its own words, its places' canonical encodings and its parts' keys (a
+//! set's, a union's and a group of members' sorted). A knot's keys are
+//! partition refinement over the knot (Moore's: rounds until the partition
+//! is stable), so two members are one key exactly when they are
+//! bisimilar, and bisimilar members are one record. The table is then a
+//! post-order walk from the classes, a record's parts in their written
+//! order and a set's by key, so the ordinals, the place numbers and the
+//! bytes follow from the structure alone, never from the order the tables
+//! were built in. Two records with equal words are one record; equal keys
+//! of different records (a 64-bit collision) are the one case the build
+//! order can show, and in a knot a collision is refused, never merged.
 //!
-//! **Reading.** `read` decodes into tables of its own first; a block that
-//! does not decode is no block (null, R-5.7.4) and the caller's tables are
-//! untouched. Only a block that decoded is then built in the caller's tables,
-//! and there a split that exists with another condition is a conflict
-//! (`error.BlockConflict`), never a silent change of meaning.
+//! **κ maps.** A class's map and a supply's are each written as the stored
+//! κ of every node its values reach (`kentry` records), not as the map's
+//! own tree; entries for nodes a block merged are joined by the reader
+//! (κ only grows, §2.12).
 //!
-//! Every record a class reaches is reserved on the writer's and the
-//! reader's charge before it is read or made (§4.1); a sort of n members is
-//! charged n·⌈log₂ n⌉.
+//! **Reading.** `read` decodes into tables of its own first, against the
+//! caller's allowance and the room left in its place table, and charges
+//! that work to the caller once. A block that does not decode is no block
+//! (null, R-5.7.4) and the caller's tables are untouched; one that exceeds
+//! a limit is the caller's `OwnershipLimit`. Only then is it built in the
+//! caller's tables, uncharged, where it cannot meet a limit; its places are
+//! a namespace of their own (`Place.Table.ofBlock`), so it meets nothing of
+//! the module's. A split that exists with another condition is
+//! `error.BlockConflict`, never a silent change of meaning.
+//!
+//! **Cost.** Every record a class reaches is reserved on the writer's and
+//! the reader's charge before it is read or made (§4.1); a sort of n
+//! members is charged n·⌈log₂ n⌉; a knot of k nodes costs its rounds,
+//! at most k, times its size, each round charged.
 //!
 //! Obligations kept here: none (a faithful encoding: what is read is what
 //! was written).
@@ -41,6 +64,7 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
+const stamped = @import("../stamped.zig");
 
 pub const ClassId = Ids.ClassId;
 pub const NodeId = Ids.NodeId;
@@ -58,11 +82,12 @@ pub const ReadError = Error || error{BlockConflict};
 /// `"OWN2"`, little-endian.
 pub const magic: u32 = 0x324e574f;
 /// The minimal block's format. S6's directory and traversal marks bump it.
-pub const version: u32 = 2;
+pub const version: u32 = 3;
 
 const none: u32 = Ids.none_int;
 
-const Tag = enum(u32) { class, node_new, node_ref, none_node, cell, set, cond, atom, fun, supply, keep, slot, path, label };
+/// A record's kind, which is its tag in the table; `group` opens a knot.
+const Kind = enum(u8) { label, path, cell, split, set, atoms, cond, atom, node, kentry, kmap, supply, keep, slot, class, group };
 
 /// How the writer names what no session id may spell (§3.6).
 pub const Names = struct {
@@ -106,93 +131,121 @@ fn chargeSort(env: Env, n: usize) Error!void {
     try env.charge.reserve(env.gpa, .inspection, @intCast(@min(n * log, std.math.maxInt(u32))));
 }
 
+/// A stored κ: the node, its position class, the condition.
+const KEntry = struct { node: NodeId, at_summary: bool, cond: CondId };
+
 // ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
 
-/// Write `classes` as one block: header, place table, classes.
+/// Write `classes` as one block: header, place table, records, roots.
 pub fn write(env: Env, sums: *Summary.Table, classes: []const ClassId, names: Names, out: *std.ArrayList(u32)) Error!void {
     const gpa = env.gpa;
-    var w: Writer = .{ .env = env, .sums = sums, .names = names };
+    var w: Writer = .{ .env = env, .sums = sums, .names = names, .seen_keys = .init(gpa) };
     defer w.deinit();
-    var body: std.ArrayList(u32) = .empty;
-    defer body.deinit(gpa);
-    w.out = &body;
-    try w.put(@intCast(classes.len));
-    for (classes) |c| try w.class(c);
-    // The places the classes named, closed under their children, each
+    var roots: std.ArrayList(u32) = .empty;
+    defer roots.deinit(gpa);
+    for (classes) |c| try roots.append(gpa, try w.rec(.class, c.int()));
+    while (w.pending.pop()) |r| try w.describe(r);
+    try w.keys();
+    for (roots.items) |r| try w.emitFrom(w.recs.items[r].scc);
+    // The places the records named, closed under their children, each
     // record `kind, head, holds, n, (step…, child)×n`.
-    var at: usize = 0;
     var places: std.ArrayList(u32) = .empty;
     defer places.deinit(gpa);
-    w.out = &places;
+    var at: usize = 0;
     while (at < w.place_order.items.len) : (at += 1) {
         const p = w.place_order.items[at];
         try env.charge.reserve(gpa, .inspection, 1);
         const k = env.places.kind(p);
         const steps = env.places.steps(p);
-        try w.put(@backingInt(k));
-        try w.put(if (k == .tuple or k == .record) env.places.head(p) else names.place.head(names.place.ctx, env.places.head(p)));
-        try w.put(env.places.holds(p).bits());
-        try w.put(@intCast(steps.steps.len));
+        try places.appendSlice(gpa, &.{ @backingInt(k), if (k == .tuple or k == .record) env.places.head(p) else names.place.head(names.place.ctx, env.places.head(p)), env.places.holds(p).bits(), @intCast(steps.steps.len) });
         for (steps.steps, steps.children) |s, child| {
-            try w.step(s);
-            try w.put(try w.placeLocal(child));
+            try w.stepWords(s, &places);
+            try places.append(gpa, try w.placeLocal(child));
         }
     }
     try out.appendSlice(gpa, &.{ magic, version, @intCast(w.place_order.items.len) });
     try out.appendSlice(gpa, places.items);
-    try out.appendSlice(gpa, body.items);
+    try out.append(gpa, w.units);
+    try out.appendSlice(gpa, w.out.items);
+    try out.append(gpa, @intCast(roots.items.len));
+    for (roots.items) |r| try out.append(gpa, w.ordinalOf(r));
 }
 
-/// What a hash memo is keyed by.
-const HashKind = enum(u8) { place, path, label, cell, set, atom, cond, node, kappa, class };
+/// One word of a record's description: a word as written, a place (its
+/// local number in the block, its encoding in the key), a part (`ref`, or
+/// `knot` for a node's child step, which may name its own knot), or the
+/// count of the unordered parts that follow.
+const Tok = struct { tag: enum(u8) { word, place, ref, knot, group }, x: u32 };
+
+const Rec = struct {
+    kind: Kind,
+    /// The table id, or the index of `extras` for a record of a class's
+    /// own (a supply, a keep, a slot, a κ map or entry).
+    id: u32,
+    toks: u32 = 0,
+    len: u32 = 0,
+    key: u64 = 0,
+    scc: u32 = none,
+    /// The member a knot's bisimilar member is written as.
+    rep: u32,
+    ordinal: u32 = none,
+};
+
+const Extra = union(enum) {
+    supply: Summary.Supply,
+    keep: Summary.Keep,
+    slot: Summary.Slot,
+    kentry: KEntry,
+    /// A run of `entries`.
+    kmap: [2]u32,
+};
+
+/// A strongly connected component of the records: one record, or a knot.
+const Scc = struct { first: u32, len: u32, all: u32, knot: bool, state: enum(u8) { new, open, done } = .new };
 
 const Writer = struct {
     env: Env,
     sums: *Summary.Table,
     names: Names,
-    out: *std.ArrayList(u32) = undefined,
-    ctx: Cond.Kappas = .none,
-    /// `(node, map local)` → first-visit ordinal: one node under two maps
-    /// is two records, each with its own κ.
-    ordinal: Ids.FixedDict(2) = .{},
-    next: u32 = 0,
-    /// A κ map's local number, in first-use order: what a node's ordinal is
-    /// keyed by and what a class or a supply names its map by, so a reader
-    /// shares a map exactly where the writer did.
-    ctx_local: Ids.FixedDict(1) = .{},
-    ctx_next: u32 = 0,
+    recs: std.ArrayList(Rec) = .empty,
+    /// `(kind, table id)` → record.
+    index: std.AutoHashMapUnmanaged(u64, u32) = .empty,
+    toks: std.ArrayList(Tok) = .empty,
+    extras: std.ArrayList(Extra) = .empty,
+    entries: std.ArrayList(u32) = .empty,
+    pending: std.ArrayList(u32) = .empty,
+    sccs: std.ArrayList(Scc) = .empty,
+    /// The members of each component, a knot's in its written order.
+    members: std.ArrayList(u32) = .empty,
+    place_hash: stamped.Column(PlaceId, u64) = .{},
     place_local: Ids.FixedDict(1) = .{},
     place_order: std.ArrayList(PlaceId) = .empty,
-    /// The structural hashes, once per record (a node's and its κ's per
-    /// map): `(kind, id, map)` → hash.
-    hashes: std.AutoHashMapUnmanaged([3]u32, u64) = .empty,
+    /// The record table as written, and how many records and knots.
+    out: std.ArrayList(u32) = .empty,
+    units: u32 = 0,
+    next: u32 = 0,
+    /// A record's words (a knot's, its members' relative) → its ordinal.
+    seen: std.StringHashMapUnmanaged(u32) = .empty,
+    seen_keys: std.heap.ArenaAllocator,
 
     fn deinit(w: *Writer) void {
         const gpa = w.env.gpa;
-        w.ordinal.deinit(gpa);
-        w.ctx_local.deinit(gpa);
+        w.recs.deinit(gpa);
+        w.index.deinit(gpa);
+        w.toks.deinit(gpa);
+        w.extras.deinit(gpa);
+        w.entries.deinit(gpa);
+        w.pending.deinit(gpa);
+        w.sccs.deinit(gpa);
+        w.members.deinit(gpa);
+        w.place_hash.deinit(gpa);
         w.place_local.deinit(gpa);
         w.place_order.deinit(gpa);
-        w.hashes.deinit(gpa);
-    }
-
-    fn put(w: *Writer, x: u32) Error!void {
-        try w.out.append(w.env.gpa, x);
-    }
-
-    fn tag(w: *Writer, t: Tag) Error!void {
-        try w.put(@backingInt(t));
-    }
-
-    fn ctxLocal(w: *Writer, k: Cond.Kappas) Error!u32 {
-        const got = try w.ctx_local.getOrPut(w.env.gpa, .{k.int()});
-        if (!got.found_existing) {
-            got.value_ptr.* = w.ctx_next;
-            w.ctx_next += 1;
-        }
-        return got.value_ptr.*;
+        w.out.deinit(gpa);
+        w.seen.deinit(gpa);
+        w.seen_keys.deinit();
     }
 
     fn placeLocal(w: *Writer, p: PlaceId) Error!u32 {
@@ -205,520 +258,758 @@ const Writer = struct {
         return got.value_ptr.*;
     }
 
-    // ---- structural hashes -------------------------------------------------
-
-    fn memo(w: *Writer, kind: HashKind, id: u32, map: u32) Error!?u64 {
-        if (w.hashes.get(.{ @backingInt(kind), id, map })) |h| return h;
-        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
-        return null;
-    }
-
-    fn remember(w: *Writer, kind: HashKind, id: u32, map: u32, h: u64) Error!u64 {
-        try w.hashes.put(w.env.gpa, .{ @backingInt(kind), id, map }, h);
-        return h;
-    }
-
-    fn mix(words: []const u64) u64 {
-        return std.hash.Wyhash.hash(0x6f776e32, std.mem.sliceAsBytes(words));
-    }
-
-    /// A place's hash: its canonical encoding from it, once per place,
+    /// A place's key: its canonical encoding from it, once per place,
     /// charged by the encoding's length.
     fn placeHash(w: *Writer, p: PlaceId) Error!u64 {
-        if (try w.memo(.place, p.int(), 0)) |h| return h;
+        if (w.place_hash.get(p)) |h| return h;
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(w.env.gpa);
         try w.env.places.encode(w.env.gpa, p, w.names.place, &words);
-        try w.env.charge.reserve(w.env.gpa, .inspection, @intCast(words.items.len));
-        return w.remember(.place, p.int(), 0, std.hash.Wyhash.hash(1, std.mem.sliceAsBytes(words.items)));
+        try w.env.charge.reserve(w.env.gpa, .inspection, @intCast(words.items.len + 1));
+        const h = std.hash.Wyhash.hash(1, std.mem.sliceAsBytes(words.items));
+        try w.place_hash.put(w.env.gpa, p, h);
+        return h;
     }
 
-    fn stepWords(w: *Writer, s: Step) [3]u64 {
-        return switch (s.kind) {
-            .field => .{ @backingInt(s.kind), w.names.place.field(w.names.place.ctx, s.payload), 0 },
-            .ctor_arg => blk: {
+    // ---- describing ------------------------------------------------------------
+
+    /// The record of table id `id` of `kind`, made and queued on first
+    /// sight; `none` for no record.
+    fn rec(w: *Writer, kind: Kind, id: u32) Error!u32 {
+        if (id == none) return none;
+        const got = try w.index.getOrPut(w.env.gpa, (@as(u64, @backingInt(kind)) << 32) | id);
+        if (!got.found_existing) got.value_ptr.* = try w.fresh(kind, id);
+        return got.value_ptr.*;
+    }
+
+    fn fresh(w: *Writer, kind: Kind, id: u32) Error!u32 {
+        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
+        const r: u32 = @intCast(w.recs.items.len);
+        try w.recs.append(w.env.gpa, .{ .kind = kind, .id = id, .rep = r });
+        try w.pending.append(w.env.gpa, r);
+        return r;
+    }
+
+    fn extra(w: *Writer, kind: Kind, e: Extra) Error!u32 {
+        try w.extras.append(w.env.gpa, e);
+        return w.fresh(kind, @intCast(w.extras.items.len - 1));
+    }
+
+    fn tok(w: *Writer, comptime tag: @FieldType(Tok, "tag"), x: u32) Error!void {
+        try w.toks.append(w.env.gpa, .{ .tag = tag, .x = x });
+    }
+
+    fn word(w: *Writer, x: u32) Error!void {
+        try w.tok(.word, x);
+    }
+
+    fn put(w: *Writer, xs: []const u32) Error!void {
+        for (xs) |x| try w.word(x);
+    }
+
+    fn ref(w: *Writer, kind: Kind, id: u32) Error!void {
+        try w.tok(.ref, try w.rec(kind, id));
+    }
+
+    /// An unordered group of records.
+    fn group(w: *Writer, rs: []const u32) Error!void {
+        try w.tok(.group, @intCast(rs.len));
+        for (rs) |r| try w.tok(.ref, r);
+    }
+
+    fn stepWords(w: *Writer, s: Step, out: *std.ArrayList(u32)) Error!void {
+        switch (s.kind) {
+            .field => try out.appendSlice(w.env.gpa, &.{ @backingInt(s.kind), w.names.place.field(w.names.place.ctx, s.payload) }),
+            .ctor_arg => {
                 const pair = w.env.places.ctorArgOf(s);
-                break :blk .{ @backingInt(s.kind), pair[0], pair[1] };
+                try out.appendSlice(w.env.gpa, &.{ @backingInt(s.kind), pair[0], pair[1] });
             },
-            else => .{ @backingInt(s.kind), s.payload, 0 },
-        };
-    }
-
-    fn pathHash(w: *Writer, p: PathId) Error!u64 {
-        if (p == .none) return 0;
-        if (try w.memo(.path, p.int(), 0)) |h| return h;
-        const places = w.env.places;
-        const parent = places.pathParent(p);
-        const h = if (parent == .none)
-            mix(&.{ 1, try w.placeHash(places.pathPlace(p)) })
-        else blk: {
-            const s = w.stepWords(places.pathStep(p));
-            break :blk mix(&.{ 2, try w.pathHash(parent), s[0], s[1], s[2] });
-        };
-        return w.remember(.path, p.int(), 0, h);
-    }
-
-    fn labelHash(w: *Writer, l: LabelId) Error!u64 {
-        if (l == .none) return 0;
-        if (try w.memo(.label, l.int(), 0)) |h| return h;
-        const d = w.env.cells.labelOf(l);
-        return w.remember(.label, l.int(), 0, mix(&.{ 3, d.inst, @intFromBool(d.folded), try w.labelHash(d.callee_label) }));
-    }
-
-    fn cellHash(w: *Writer, c: CellId) Error!u64 {
-        if (try w.memo(.cell, c.int(), 0)) |h| return h;
-        const cells = w.env.cells;
-        const d = cells.get(c);
-        const o: u64 = @backingInt(d.origin);
-        const k: u64 = @backingInt(d.kind);
-        const h = switch (d.origin) {
-            .site => mix(&.{ 4, o, k, d.a, try w.placeHash(d.place) }),
-            .result, .esc => mix(&.{ 4, o, k, try w.labelHash(.from(d.a)), d.b, try w.placeHash(d.place) }),
-            .shared => blk: {
-                const name = w.names.decl(w.names.ctx, d.a);
-                break :blk mix(&.{ 4, o, k, name[0], name[1], try w.pathHash(.from(d.b)), d.c });
-            },
-            .param, .env, .msg => mix(&.{ 4, o, k, d.a, try w.pathHash(.from(d.b)), d.c }),
-            .cb => mix(&.{ 4, o, k, try w.labelHash(.from(d.a)), try w.pathHash(.from(d.b)), d.c }),
-            .top => mix(&.{ 4, o }),
-            .elem, .others, .level, .below, .loan => blk: {
-                const s = cells.findSplit(.from(d.a), .from(d.b));
-                const split: u64 = if (s == .none) 0 else try w.condHash(cells.splitOf(s).cond);
-                break :blk mix(&.{ 4, o, k, try w.cellHash(.from(d.a)), try w.labelHash(.from(d.b)), d.c, try w.placeHash(d.place), split });
-            },
-            .mark => mix(&.{ 4, o, d.a, if (d.a == @backingInt(Cell.Mark.field)) w.names.place.field(w.names.place.ctx, d.b) else d.b }),
-        };
-        return w.remember(.cell, c.int(), 0, h);
-    }
-
-    /// An unordered set's hash: its members' hashes, sorted, mixed.
-    fn sortedMix(w: *Writer, seed: u64, hs: []u64) Error!u64 {
-        try chargeSort(w.env, hs.len);
-        std.mem.sort(u64, hs, {}, std.sort.asc(u64));
-        var acc = seed;
-        for (hs) |h| acc = mix(&.{ acc, h });
-        return acc;
-    }
-
-    fn setHash(w: *Writer, s: SetId) Error!u64 {
-        if (try w.memo(.set, s.int(), 0)) |h| return h;
-        var hs: std.ArrayList(u64) = .empty;
-        defer hs.deinit(w.env.gpa);
-        var it = w.env.cells.sets.iterate(s);
-        while (it.next()) |e| try hs.append(w.env.gpa, mix(&.{ try w.cellHash(.from(e.key)), e.value }));
-        return w.remember(.set, s.int(), 0, try w.sortedMix(5, hs.items));
-    }
-
-    fn atomHash(w: *Writer, id: CondId) Error!u64 {
-        if (try w.memo(.atom, id.int(), 0)) |h| return h;
-        const a = w.env.conds.get(id);
-        const kind: u64 = @backingInt(a.atom);
-        const h = switch (a.atom) {
-            .excl => mix(&.{ 6, kind, try w.cellHash(.from(a.a)) }),
-            .sep => blk: {
-                var two = [2]u64{ try w.cellHash(.from(a.a)), try w.cellHash(.from(a.b)) };
-                break :blk try w.sortedMix(mix(&.{ 6, kind }), &two);
-            },
-            .within => mix(&.{ 6, kind, try w.labelHash(.from(a.a)) }),
-            .apart => mix(&.{ 6, kind, try w.setHash(.from(a.a)) }),
-            .keep, .writes => mix(&.{ 6, kind, a.a }),
-        };
-        return w.remember(.atom, id.int(), 0, h);
-    }
-
-    fn atomSetHash(w: *Writer, s: SetId) Error!u64 {
-        var hs: std.ArrayList(u64) = .empty;
-        defer hs.deinit(w.env.gpa);
-        var it = w.env.conds.atoms.iterate(s);
-        while (it.next()) |e| try hs.append(w.env.gpa, try w.atomHash(.from(e.key)));
-        return w.sortedMix(7, hs.items);
-    }
-
-    fn condHash(w: *Writer, k: CondId) Error!u64 {
-        if (try w.memo(.cond, k.int(), 0)) |h| return h;
-        const kind = w.env.conds.kind(k);
-        const h = if (k == Cond.yes or Cond.Table.fails(k)) mix(&.{ 8, @backingInt(kind) }) else mix(&.{ 8, @backingInt(kind), try w.atomSetHash(try w.env.conds.flat(w.env.gpa, w.env.charge, k)) });
-        return w.remember(.cond, k.int(), 0, h);
-    }
-
-    /// The κ the current map stores for a node, if any: the one fact of a
-    /// node's κ a reader cannot derive again from its structure.
-    fn stored(w: *Writer, id: NodeId, at_summary: bool) ?CondId {
-        return w.env.conds.kappaGet(w.ctx, id, at_summary);
-    }
-
-    const Over = struct { step: Step, node: NodeId, at_summary: bool, key: u64 };
-
-    /// A node's children map, sorted by their steps' spelling.
-    fn overList(w: *Writer, root: u32, at_summary: bool, out: *std.ArrayList(Over)) Error!void {
-        var it = w.env.shapes.overEntries(root);
-        while (it.next()) |e| {
-            const s = w.stepWords(e.step);
-            try out.append(w.env.gpa, .{ .step = e.step, .node = e.node, .at_summary = at_summary or e.step.kind == .elem or e.step.kind == .level, .key = mix(&.{ s[0], s[1], s[2] }) });
+            else => try out.appendSlice(w.env.gpa, &.{ @backingInt(s.kind), s.payload }),
         }
-        try chargeSort(w.env, out.items.len);
-        std.mem.sort(Over, out.items, {}, struct {
-            fn less(_: void, a: Over, b: Over) bool {
-                return a.key < b.key;
-            }
-        }.less);
     }
-
-    fn nodeHash(w: *Writer, id: NodeId, at_summary: bool) Error!u64 {
-        if (id == .none) return 0;
-        const map = try w.ctxLocal(w.ctx);
-        const key = (id.int() << 1) | @intFromBool(at_summary);
-        if (try w.memo(.node, key, map)) |h| return h;
-        const d = w.env.shapes.get(id);
-        const own_cells: u64 = if (d.kind == .leaf or d.kind == .node) try w.setHash(d.cells) else 0;
-        const stored_k: u64 = if (w.stored(id, at_summary)) |k| try w.condHash(k) else 0;
-        var acc = mix(&.{ 9, @backingInt(d.kind), @intFromBool(at_summary), try w.placeHash(d.place), own_cells, stored_k });
-        switch (d.kind) {
-            .leaf => {},
-            .node, .delta => {
-                if (d.kind == .delta) acc = mix(&.{ acc, try w.nodeHash(.from(d.a), at_summary) });
-                var overs: std.ArrayList(Over) = .empty;
-                defer overs.deinit(w.env.gpa);
-                try w.overList(if (d.kind == .node) d.a else d.b, at_summary, &overs);
-                for (overs.items) |o| acc = mix(&.{ acc, o.key, try w.nodeHash(o.node, o.at_summary) });
-            },
-            .recast => acc = mix(&.{ acc, try w.nodeHash(.from(d.a), at_summary) }),
-            .@"union", .positions => {
-                var two = [2]u64{ try w.nodeHash(.from(d.a), at_summary), try w.nodeHash(.from(d.b), at_summary) };
-                acc = try w.sortedMix(acc, &two);
-            },
-        }
-        return w.remember(.node, key, map, acc);
-    }
-
-    // ---- the records ---------------------------------------------------------
 
     fn step(w: *Writer, s: Step) Error!void {
-        const words = w.stepWords(s);
-        try w.put(@intCast(words[0]));
-        try w.put(@intCast(words[1]));
-        if (s.kind == .ctor_arg) try w.put(@intCast(words[2]));
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(w.env.gpa);
+        try w.stepWords(s, &words);
+        try w.put(words.items);
     }
 
-    fn path(w: *Writer, p: PathId) Error!void {
-        try w.tag(.path);
-        if (p == .none) return w.put(none);
-        const places = w.env.places;
-        var steps: std.ArrayList(Step) = .empty;
-        defer steps.deinit(w.env.gpa);
-        var at = p;
-        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try steps.append(w.env.gpa, places.pathStep(at));
-        try w.put(@intCast(steps.items.len));
-        try w.put(try w.placeLocal(places.pathPlace(at)));
-        var i = steps.items.len;
-        while (i > 0) : (i -= 1) try w.step(steps.items[i - 1]);
-    }
-
-    fn label(w: *Writer, l: LabelId) Error!void {
-        try w.tag(.label);
-        if (l == .none) return w.put(none);
-        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
-        const d = w.env.cells.labelOf(l);
-        try w.put(d.inst);
-        try w.put(@intFromBool(d.folded));
-        try w.label(d.callee_label);
-        // A label's own supplies are the walk's (S4) and live, today, in the
-        // classes' funs keyed by the label; its record holds none yet.
-        std.debug.assert(d.supplies.len == 0);
-    }
-
-    fn cell(w: *Writer, c: CellId) Error!void {
-        try w.env.charge.reserve(w.env.gpa, .inspection, 1);
-        const cells = w.env.cells;
-        const d = cells.get(c);
-        try w.tag(.cell);
-        try w.put(@backingInt(d.origin));
-        try w.put(@backingInt(d.kind));
-        switch (d.origin) {
-            .site => {
-                try w.put(d.a);
-                try w.put(try w.placeLocal(d.place));
-            },
-            .result, .esc => {
-                try w.label(.from(d.a));
-                try w.put(d.b);
-                try w.put(try w.placeLocal(d.place));
-            },
-            .shared => {
-                const name = w.names.decl(w.names.ctx, d.a);
-                try w.put(name[0]);
-                try w.put(name[1]);
-                try w.path(.from(d.b));
-                try w.put(d.c);
-            },
-            .param, .env, .msg => {
-                try w.put(d.a);
-                try w.path(.from(d.b));
-                try w.put(d.c);
-            },
-            .cb => {
-                try w.label(.from(d.a));
-                try w.path(.from(d.b));
-                try w.put(d.c);
-            },
-            .top => {},
-            .elem, .others, .level, .below, .loan => {
-                try w.cell(.from(d.a));
-                try w.label(.from(d.b));
-                try w.put(d.c);
-                try w.put(try w.placeLocal(d.place));
-                // The split the refinement was taken by, with the
-                // container's κ at it (§2.2), when there is one.
-                const s = cells.findSplit(.from(d.a), .from(d.b));
-                if (s == .none) {
-                    try w.put(0);
-                } else {
-                    const split = cells.splitOf(s);
-                    try w.put(1);
-                    try w.put(split.inst);
-                    try w.cond(split.cond);
-                }
-            },
-            .mark => {
-                try w.put(d.a);
-                // A written field's rank is a field rank like a step's.
-                try w.put(if (d.a == @backingInt(Cell.Mark.field)) w.names.place.field(w.names.place.ctx, d.b) else d.b);
-            },
+    /// The child map of a node or a delta, in the order of the steps'
+    /// words: `n, (step, child)×n`.
+    fn overs(w: *Writer, root: u32) Error!void {
+        const gpa = w.env.gpa;
+        const Entry = struct { words: [3]u32, n: u8, node: NodeId };
+        var list: std.ArrayList(Entry) = .empty;
+        defer list.deinit(gpa);
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        var it = w.env.shapes.overEntries(root);
+        while (it.next()) |e| {
+            words.clearRetainingCapacity();
+            try w.stepWords(e.step, &words);
+            var three: [3]u32 = @splat(0);
+            @memcpy(three[0..words.items.len], words.items);
+            try list.append(gpa, .{ .words = three, .n = @intCast(words.items.len), .node = e.node });
         }
-    }
-
-    const Keyed = struct { key: u64, id: u32, bit: u32 = 0 };
-
-    fn sortKeyed(w: *Writer, items: []Keyed) Error!void {
-        try chargeSort(w.env, items.len);
-        std.mem.sort(Keyed, items, {}, struct {
-            fn less(_: void, a: Keyed, b: Keyed) bool {
-                return a.key < b.key;
+        try chargeSort(w.env, list.items.len);
+        std.mem.sort(Entry, list.items, {}, struct {
+            fn less(_: void, a: Entry, b: Entry) bool {
+                return std.mem.order(u32, &a.words, &b.words) == .lt;
             }
         }.less);
-    }
-
-    fn cellSet(w: *Writer, s: SetId) Error!void {
-        try w.tag(.set);
-        var members: std.ArrayList(Keyed) = .empty;
-        defer members.deinit(w.env.gpa);
-        var it = w.env.cells.sets.iterate(s);
-        while (it.next()) |e| try members.append(w.env.gpa, .{ .key = mix(&.{ try w.cellHash(.from(e.key)), e.value }), .id = e.key, .bit = e.value });
-        try w.sortKeyed(members.items);
-        try w.put(@intCast(members.items.len));
-        for (members.items) |m| {
-            try w.cell(.from(m.id));
-            try w.put(m.bit);
+        try w.word(@intCast(list.items.len));
+        for (list.items) |e| {
+            try w.put(e.words[0..e.n]);
+            try w.tok(.knot, try w.rec(.node, e.node.int()));
         }
     }
 
-    fn cond(w: *Writer, k: CondId) Error!void {
-        try w.tag(.cond);
-        try w.put(@backingInt(w.env.conds.kind(k)));
-        if (k == Cond.yes or Cond.Table.fails(k)) return;
-        try w.atomSet(try w.env.conds.flat(w.env.gpa, w.env.charge, k));
-    }
-
-    fn atomSet(w: *Writer, s: SetId) Error!void {
-        var atoms: std.ArrayList(Keyed) = .empty;
-        defer atoms.deinit(w.env.gpa);
-        var it = w.env.conds.atoms.iterate(s);
-        while (it.next()) |e| try atoms.append(w.env.gpa, .{ .key = try w.atomHash(.from(e.key)), .id = e.key });
-        try w.sortKeyed(atoms.items);
-        try w.put(@intCast(atoms.items.len));
-        for (atoms.items) |a| try w.atom(.from(a.id));
-    }
-
-    fn atom(w: *Writer, id: CondId) Error!void {
-        const a = w.env.conds.get(id);
-        try w.tag(.atom);
-        try w.put(@backingInt(a.atom));
-        switch (a.atom) {
-            .excl => try w.cell(.from(a.a)),
-            .sep => {
-                const x: CellId = .from(a.a);
-                const y: CellId = .from(a.b);
-                const swap = try w.cellHash(y) < try w.cellHash(x);
-                try w.cell(if (swap) y else x);
-                try w.cell(if (swap) x else y);
-            },
-            .within => try w.label(.from(a.a)),
-            .apart => try w.cellSet(.from(a.a)),
-            .keep, .writes => try w.put(a.a),
-        }
-    }
-
-    fn node(w: *Writer, id: NodeId, at_summary: bool) Error!void {
+    /// The κ map `kappas` holds for what `roots` reach: one entry per
+    /// stored κ of a reached node at its position class, or `none`.
+    fn kmap(w: *Writer, kappas: Cond.Kappas, roots: []const NodeId) Error!u32 {
+        if (kappas == .none) return none;
         const gpa = w.env.gpa;
-        try w.env.charge.reserve(gpa, .inspection, 1);
-        if (id == .none) return w.tag(.none_node);
-        const got = try w.ordinal.getOrPut(gpa, .{ id.int(), try w.ctxLocal(w.ctx) });
-        if (got.found_existing) {
-            try w.tag(.node_ref);
-            return w.put(got.value_ptr.*);
+        const shapes = w.env.shapes;
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(gpa);
+        for (roots) |n| if (n != .none) try stack.append(gpa, .{ n.int(), 0 });
+        const first: u32 = @intCast(w.entries.items.len);
+        while (stack.pop()) |pair| {
+            if ((try seen.getOrPut(gpa, .{(pair[0] << 1) | pair[1]})).found_existing) continue;
+            try w.env.charge.reserve(gpa, .inspection, 1);
+            const n: NodeId = .from(pair[0]);
+            const at_summary = pair[1] == 1;
+            if (w.env.conds.kappaGet(kappas, n, at_summary)) |k| try w.entries.append(gpa, try w.extra(.kentry, .{ .kentry = .{ .node = n, .at_summary = at_summary, .cond = k } }));
+            const d = shapes.get(n);
+            switch (d.kind) {
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try stack.append(gpa, .{ d.a, pair[1] });
+                    var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| try stack.append(gpa, .{ e.node.int(), @intFromBool(at_summary or e.step.kind == .elem or e.step.kind == .level) });
+                },
+                .recast => try stack.append(gpa, .{ d.a, pair[1] }),
+                .@"union", .positions => try stack.appendSlice(gpa, &.{ .{ d.a, pair[1] }, .{ d.b, pair[1] } }),
+            }
         }
-        got.value_ptr.* = w.next;
-        w.next += 1;
-        const d = w.env.shapes.get(id);
-        try w.tag(.node_new);
-        try w.put(@backingInt(d.kind));
-        try w.put(@intFromBool(at_summary));
-        try w.put(try w.placeLocal(d.place));
-        // A leaf's and a built node's cells; every other kind's are its
-        // parts', which the reader's constructors join again.
-        if (d.kind == .leaf or d.kind == .node) try w.cellSet(d.cells);
-        if (w.stored(id, at_summary)) |k| {
-            try w.put(1);
-            try w.cond(k);
-        } else try w.put(0);
-        switch (d.kind) {
-            .leaf => {},
-            .node, .delta => {
-                if (d.kind == .delta) try w.node(.from(d.a), at_summary);
-                var overs: std.ArrayList(Over) = .empty;
-                defer overs.deinit(gpa);
-                try w.overList(if (d.kind == .node) d.a else d.b, at_summary, &overs);
-                try w.put(@intCast(overs.items.len));
-                for (overs.items) |o| {
-                    try w.step(o.step);
-                    try w.node(o.node, o.at_summary);
+        const len: u32 = @intCast(w.entries.items.len - first);
+        if (len == 0) return none;
+        return w.extra(.kmap, .{ .kmap = .{ first, len } });
+    }
+
+    fn describe(w: *Writer, r: u32) Error!void {
+        const gpa = w.env.gpa;
+        const start: u32 = @intCast(w.toks.items.len);
+        const kind = w.recs.items[r].kind;
+        const id = w.recs.items[r].id;
+        const cells = w.env.cells;
+        switch (kind) {
+            .label => {
+                const d = cells.labelOf(.from(id));
+                // A label's own supplies are the walk's (S4) and live, today,
+                // in the classes' funs keyed by the label; its record holds
+                // none yet.
+                std.debug.assert(d.supplies.len == 0);
+                try w.put(&.{ d.inst, @intFromBool(d.folded) });
+                try w.ref(.label, d.callee_label.int());
+            },
+            .path => {
+                const places = w.env.places;
+                var steps: std.ArrayList(Step) = .empty;
+                defer steps.deinit(gpa);
+                var at: PathId = .from(id);
+                while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try steps.append(gpa, places.pathStep(at));
+                try w.word(@intCast(steps.items.len));
+                try w.tok(.place, places.pathPlace(at).int());
+                var i = steps.items.len;
+                while (i > 0) : (i -= 1) try w.step(steps.items[i - 1]);
+            },
+            .cell => {
+                const d = cells.get(.from(id));
+                try w.put(&.{ @backingInt(d.origin), @backingInt(d.kind) });
+                switch (d.origin) {
+                    .site => {
+                        try w.word(d.a);
+                        try w.tok(.place, d.place.int());
+                    },
+                    .result, .esc => {
+                        try w.ref(.label, d.a);
+                        try w.word(d.b);
+                        try w.tok(.place, d.place.int());
+                    },
+                    .shared => {
+                        const name = w.names.decl(w.names.ctx, d.a);
+                        try w.put(&.{ name[0], name[1] });
+                        try w.ref(.path, d.b);
+                        try w.word(d.c);
+                    },
+                    .param, .env, .msg => {
+                        try w.word(d.a);
+                        try w.ref(.path, d.b);
+                        try w.word(d.c);
+                    },
+                    .cb => {
+                        try w.ref(.label, d.a);
+                        try w.ref(.path, d.b);
+                        try w.word(d.c);
+                    },
+                    .top => {},
+                    .elem, .others, .level, .below, .loan => {
+                        try w.ref(.cell, d.a);
+                        try w.ref(.label, d.b);
+                        try w.word(d.c);
+                        try w.tok(.place, d.place.int());
+                        // The split the refinement was taken by, with the
+                        // container's κ at it (§2.2), when there is one.
+                        try w.ref(.split, cells.findSplit(.from(d.a), .from(d.b)).int());
+                    },
+                    .mark => {
+                        try w.word(d.a);
+                        // A written field's rank is a field rank like a step's.
+                        try w.word(if (d.a == @backingInt(Cell.Mark.field)) w.names.place.field(w.names.place.ctx, d.b) else d.b);
+                    },
                 }
             },
-            .recast => try w.node(.from(d.a), at_summary),
-            .@"union", .positions => {
-                const a: NodeId = .from(d.a);
-                const b: NodeId = .from(d.b);
-                const swap = try w.nodeHash(b, at_summary) < try w.nodeHash(a, at_summary);
-                try w.node(if (swap) b else a, at_summary);
-                try w.node(if (swap) a else b, at_summary);
+            .split => {
+                const s = cells.splitOf(.from(id));
+                try w.ref(.cell, s.container.int());
+                try w.word(s.inst);
+                try w.ref(.label, s.label.int());
+                try w.ref(.cond, s.cond.int());
             },
+            .set => {
+                var by_bit: [2]std.ArrayList(u32) = .{ .empty, .empty };
+                defer for (&by_bit) |*l| l.deinit(gpa);
+                var it = cells.sets.iterate(.from(id));
+                while (it.next()) |e| try by_bit[e.value].append(gpa, try w.rec(.cell, e.key));
+                try w.group(by_bit[0].items);
+                try w.group(by_bit[1].items);
+            },
+            .atoms => {
+                var list: std.ArrayList(u32) = .empty;
+                defer list.deinit(gpa);
+                var it = w.env.conds.atoms.iterate(.from(id));
+                while (it.next()) |e| try list.append(gpa, try w.rec(.atom, e.key));
+                try w.group(list.items);
+            },
+            .cond => {
+                const k: CondId = .from(id);
+                try w.word(@backingInt(w.env.conds.kind(k)));
+                if (k != Cond.yes and !Cond.Table.fails(k)) try w.ref(.atoms, (try w.env.conds.flat(gpa, w.env.charge, k)).int());
+            },
+            .atom => {
+                const a = w.env.conds.get(.from(id));
+                try w.word(@backingInt(a.atom));
+                switch (a.atom) {
+                    .excl => try w.ref(.cell, a.a),
+                    .sep => try w.group(&.{ try w.rec(.cell, a.a), try w.rec(.cell, a.b) }),
+                    .within => try w.ref(.label, a.a),
+                    .apart => try w.ref(.set, a.a),
+                    .keep, .writes => try w.word(a.a),
+                }
+            },
+            .node => {
+                const d = w.env.shapes.get(.from(id));
+                try w.word(@backingInt(d.kind));
+                try w.tok(.place, d.place.int());
+                switch (d.kind) {
+                    .leaf => try w.ref(.set, d.cells.int()),
+                    .node => {
+                        try w.ref(.set, d.cells.int());
+                        try w.overs(d.a);
+                    },
+                    .delta => {
+                        try w.ref(.node, d.a);
+                        try w.overs(d.b);
+                    },
+                    .recast => try w.ref(.node, d.a),
+                    .@"union", .positions => try w.group(&.{ try w.rec(.node, d.a), try w.rec(.node, d.b) }),
+                }
+            },
+            .kentry => {
+                const e = w.extras.items[id].kentry;
+                try w.ref(.node, e.node.int());
+                try w.word(@intFromBool(e.at_summary));
+                try w.ref(.cond, e.cond.int());
+            },
+            .kmap => {
+                const run = w.extras.items[id].kmap;
+                const list = try gpa.dupe(u32, w.entries.items[run[0]..][0..run[1]]);
+                defer gpa.free(list);
+                try w.group(list);
+            },
+            .supply => {
+                const s = w.extras.items[id].supply;
+                try w.put(&.{ s.k, @as(u32, @intFromBool(s.owned)) | (@as(u32, @intFromBool(s.taken)) << 1) });
+                try w.ref(.label, s.label.int());
+                // The handed value under its own snapshot.
+                try w.tok(.ref, try w.kmap(s.kappa, &.{s.node}));
+                try w.ref(.node, s.node.int());
+            },
+            .keep => {
+                const k = w.extras.items[id].keep;
+                try w.put(&.{ k.j, k.k });
+                try w.ref(.path, k.kept_path.int());
+                try w.ref(.path, k.written_path.int());
+                try w.word(k.writer);
+            },
+            .slot => {
+                const s = w.extras.items[id].slot;
+                try w.word(s.param);
+                try w.ref(.path, s.path.int());
+            },
+            .class => try w.class(.from(id)),
+            .group => unreachable,
         }
-    }
-
-    fn supplyHash(w: *Writer, s: Summary.Supply) Error!u64 {
-        const saved = w.ctx;
-        w.ctx = s.kappa;
-        defer w.ctx = saved;
-        return mix(&.{ 10, s.k, @intFromBool(s.owned), @intFromBool(s.taken), try w.labelHash(s.label), try w.nodeHash(s.node, false) });
-    }
-
-    fn supply(w: *Writer, s: Summary.Supply) Error!void {
-        try w.tag(.supply);
-        try w.put(s.k);
-        try w.put(@as(u32, @intFromBool(s.owned)) | (@as(u32, @intFromBool(s.taken)) << 1));
-        try w.label(s.label);
-        // The handed value under its own snapshot.
-        try w.put(try w.ctxLocal(s.kappa));
-        const saved = w.ctx;
-        w.ctx = s.kappa;
-        defer w.ctx = saved;
-        try w.node(s.node, false);
-    }
-
-    fn keepHash(w: *Writer, k: Summary.Keep) Error!u64 {
-        return mix(&.{ 11, k.j, k.k, try w.pathHash(k.kept_path), try w.pathHash(k.written_path), k.writer });
-    }
-
-    fn keep(w: *Writer, k: Summary.Keep) Error!void {
-        try w.tag(.keep);
-        try w.put(k.j);
-        try w.put(k.k);
-        try w.path(k.kept_path);
-        try w.path(k.written_path);
-        try w.put(k.writer);
-    }
-
-    /// A class's hash, to order nested classes: everything `class` writes.
-    fn classHash(w: *Writer, c: ClassId) Error!u64 {
-        if (try w.memo(.class, c.int(), 0)) |h| return h;
-        const k = w.sums.get(c);
-        const saved = w.ctx;
-        w.ctx = k.kappas;
-        defer w.ctx = saved;
-        var acc = mix(&.{ 12, k.params.len, @as(u64, @intFromBool(k.writes)) | (@as(u64, @intFromBool(k.entry)) << 1) | (@as(u64, @intFromBool(k.refs_top)) << 2), @backingInt(k.origin), try w.nodeHash(k.res, false) });
-        for (w.sums.paramUses(c)) |u| acc = mix(&.{ acc, try w.nodeHash(u, false) });
-        acc = mix(&.{ acc, try w.atomSetHash(k.xreq) });
-        for (0..k.funs.len) |i| {
-            const f = w.sums.fun(c, @intCast(i));
-            var hs: std.ArrayList(u64) = .empty;
-            defer hs.deinit(w.env.gpa);
-            for (0..f.supplies.len) |s| try hs.append(w.env.gpa, try w.supplyHash(w.sums.supply(f, @intCast(s))));
-            for (0..f.keeps.len) |s| try hs.append(w.env.gpa, try w.keepHash(w.sums.keepOf(f, @intCast(s))));
-            acc = try w.sortedMix(mix(&.{ acc, f.j, @backingInt(f.calls), @as(u64, @intFromBool(f.need)) | (@as(u64, @intFromBool(f.seen)) << 1) }), hs.items);
-        }
-        var rest: std.ArrayList(u64) = .empty;
-        defer rest.deinit(w.env.gpa);
-        for (0..k.slots.len) |i| {
-            const s = w.sums.slot(c, @intCast(i));
-            try rest.append(w.env.gpa, mix(&.{ 13, s.param, try w.pathHash(s.path) }));
-        }
-        for (w.sums.nestedOf(c)) |x| try rest.append(w.env.gpa, try w.classHash(x));
-        for (w.sums.oncesOf(c)) |p| try rest.append(w.env.gpa, mix(&.{ 14, try w.pathHash(p) }));
-        acc = try w.sortedMix(acc, rest.items);
-        return w.remember(.class, c.int(), 0, mix(&.{ acc, try w.setHash(k.refs) }));
+        const len: u32 = @intCast(w.toks.items.len - start);
+        try w.env.charge.reserve(gpa, .inspection, len);
+        w.recs.items[r].toks = start;
+        w.recs.items[r].len = len;
     }
 
     fn class(w: *Writer, c: ClassId) Error!void {
         const gpa = w.env.gpa;
-        try w.env.charge.reserve(gpa, .inspection, 1);
         const k = w.sums.get(c);
-        const saved = w.ctx;
-        w.ctx = k.kappas;
-        defer w.ctx = saved;
-        try w.tag(.class);
-        try w.put(try w.ctxLocal(k.kappas));
-        try w.put(k.params.len);
-        try w.put(@as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2));
-        try w.put(@backingInt(k.origin));
-        try w.node(k.res, false);
-        for (w.sums.paramUses(c)) |u| try w.node(u, false);
-        try w.atomSet(k.xreq);
-        try w.put(k.funs.len);
+        var roots: std.ArrayList(NodeId) = .empty;
+        defer roots.deinit(gpa);
+        try roots.append(gpa, k.res);
+        try roots.appendSlice(gpa, w.sums.paramUses(c));
+        try w.tok(.ref, try w.kmap(k.kappas, roots.items));
+        try w.put(&.{ k.params.len, @as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2), @backingInt(k.origin) });
+        try w.ref(.node, k.res.int());
+        for (w.sums.paramUses(c)) |u| try w.ref(.node, u.int());
+        try w.ref(.atoms, k.xreq.int());
+        try w.word(k.funs.len);
+        var list: std.ArrayList(u32) = .empty;
+        defer list.deinit(gpa);
         for (0..k.funs.len) |i| {
             const f = w.sums.fun(c, @intCast(i));
-            try w.tag(.fun);
-            try w.put(f.j);
-            try w.put(@backingInt(f.calls));
-            try w.put(@as(u32, @intFromBool(f.need)) | (@as(u32, @intFromBool(f.seen)) << 1));
-            var items: std.ArrayList(Keyed) = .empty;
-            defer items.deinit(gpa);
-            for (0..f.supplies.len) |s| try items.append(gpa, .{ .key = try w.supplyHash(w.sums.supply(f, @intCast(s))), .id = @intCast(s) });
-            try w.sortKeyed(items.items);
-            try w.put(@intCast(items.items.len));
-            for (items.items) |it| try w.supply(w.sums.supply(f, it.id));
-            items.clearRetainingCapacity();
-            for (0..f.keeps.len) |s| try items.append(gpa, .{ .key = try w.keepHash(w.sums.keepOf(f, @intCast(s))), .id = @intCast(s) });
-            try w.sortKeyed(items.items);
-            try w.put(@intCast(items.items.len));
-            for (items.items) |it| try w.keep(w.sums.keepOf(f, it.id));
+            try w.put(&.{ f.j, @backingInt(f.calls), @as(u32, @intFromBool(f.need)) | (@as(u32, @intFromBool(f.seen)) << 1) });
+            list.clearRetainingCapacity();
+            for (0..f.supplies.len) |s| try list.append(gpa, try w.extra(.supply, .{ .supply = w.sums.supply(f, @intCast(s)) }));
+            try w.group(list.items);
+            list.clearRetainingCapacity();
+            for (0..f.keeps.len) |s| try list.append(gpa, try w.extra(.keep, .{ .keep = w.sums.keepOf(f, @intCast(s)) }));
+            try w.group(list.items);
         }
-        var items: std.ArrayList(Keyed) = .empty;
-        defer items.deinit(gpa);
-        for (0..k.slots.len) |i| {
-            const s = w.sums.slot(c, @intCast(i));
-            try items.append(gpa, .{ .key = mix(&.{ 13, s.param, try w.pathHash(s.path) }), .id = @intCast(i) });
+        list.clearRetainingCapacity();
+        for (0..k.slots.len) |i| try list.append(gpa, try w.extra(.slot, .{ .slot = w.sums.slot(c, @intCast(i)) }));
+        try w.group(list.items);
+        list.clearRetainingCapacity();
+        for (w.sums.nestedOf(c)) |x| try list.append(gpa, try w.rec(.class, x.int()));
+        try w.group(list.items);
+        list.clearRetainingCapacity();
+        for (w.sums.oncesOf(c)) |p| try list.append(gpa, try w.rec(.path, p.int()));
+        try w.group(list.items);
+        try w.ref(.set, k.refs.int());
+    }
+
+    // ---- keys ------------------------------------------------------------------
+
+    fn toksOf(w: *const Writer, r: u32) []const Tok {
+        const x = w.recs.items[r];
+        return w.toks.items[x.toks..][0..x.len];
+    }
+
+    fn keyOfPart(w: *const Writer, r: u32) u64 {
+        return if (r == none) 0 else w.recs.items[r].key;
+    }
+
+    /// A record's key from its parts' current keys: its kind, its words, its
+    /// places' encodings, its parts' keys, a group's sorted.
+    fn keyOf(w: *Writer, r: u32, scratch: *std.ArrayList(u64)) Error!u64 {
+        var h = std.hash.Wyhash.init(0x6f776e33);
+        h.update(&.{@backingInt(w.recs.items[r].kind)});
+        const ts = w.toksOf(r);
+        var i: usize = 0;
+        while (i < ts.len) : (i += 1) {
+            const t = ts[i];
+            const v: u64 = switch (t.tag) {
+                .word => t.x,
+                .place => try w.placeHash(.from(t.x)),
+                .ref, .knot => w.keyOfPart(t.x),
+                .group => {
+                    scratch.clearRetainingCapacity();
+                    for (ts[i + 1 ..][0..t.x]) |m| try scratch.append(w.env.gpa, w.keyOfPart(m.x));
+                    try chargeSort(w.env, scratch.items.len);
+                    std.mem.sort(u64, scratch.items, {}, std.sort.asc(u64));
+                    h.update(std.mem.asBytes(&@as(u64, t.x)));
+                    for (scratch.items) |k| h.update(std.mem.asBytes(&k));
+                    i += t.x;
+                    continue;
+                },
+            };
+            h.update(std.mem.asBytes(&v));
         }
-        try w.sortKeyed(items.items);
-        try w.put(@intCast(items.items.len));
-        for (items.items) |it| {
-            const s = w.sums.slot(c, it.id);
-            try w.tag(.slot);
-            try w.put(s.param);
-            try w.path(s.path);
+        return h.final();
+    }
+
+    const Frame = struct { r: u32, cursor: u32 };
+
+    /// Tarjan's components over the records, by an explicit stack, each
+    /// keyed as it closes: its parts' components closed before it.
+    fn keys(w: *Writer) Error!void {
+        const gpa = w.env.gpa;
+        const n = w.recs.items.len;
+        const index = try gpa.alloc(u32, n);
+        defer gpa.free(index);
+        const low = try gpa.alloc(u32, n);
+        defer gpa.free(low);
+        const on = try gpa.alloc(bool, n);
+        defer gpa.free(on);
+        @memset(index, none);
+        @memset(on, false);
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        var call: std.ArrayList(Frame) = .empty;
+        defer call.deinit(gpa);
+        var counter: u32 = 0;
+        var scratch: std.ArrayList(u64) = .empty;
+        defer scratch.deinit(gpa);
+        for (0..n) |root| {
+            if (index[root] != none) continue;
+            index[root] = counter;
+            low[root] = counter;
+            counter += 1;
+            try stack.append(gpa, @intCast(root));
+            on[root] = true;
+            try call.append(gpa, .{ .r = @intCast(root), .cursor = 0 });
+            while (call.items.len > 0) {
+                const f = &call.items[call.items.len - 1];
+                const ts = w.toksOf(f.r);
+                if (f.cursor < ts.len) {
+                    const t = ts[f.cursor];
+                    f.cursor += 1;
+                    if ((t.tag != .ref and t.tag != .knot) or t.x == none) continue;
+                    const c = t.x;
+                    if (index[c] == none) {
+                        index[c] = counter;
+                        low[c] = counter;
+                        counter += 1;
+                        try stack.append(gpa, c);
+                        on[c] = true;
+                        try call.append(gpa, .{ .r = c, .cursor = 0 });
+                    } else if (on[c]) low[f.r] = @min(low[f.r], index[c]);
+                    continue;
+                }
+                const r = f.r;
+                _ = call.pop();
+                if (call.items.len > 0) {
+                    const p = call.items[call.items.len - 1].r;
+                    low[p] = @min(low[p], low[r]);
+                }
+                if (low[r] != index[r]) continue;
+                const first: u32 = @intCast(w.members.items.len);
+                while (true) {
+                    const m = stack.pop().?;
+                    on[m] = false;
+                    try w.members.append(gpa, m);
+                    w.recs.items[m].scc = @intCast(w.sccs.items.len);
+                    if (m == r) break;
+                }
+                const len: u32 = @intCast(w.members.items.len - first);
+                try w.sccs.append(gpa, .{ .first = first, .len = len, .all = len, .knot = len > 1 or w.selfPart(r) });
+                try w.close(@intCast(w.sccs.items.len - 1), &scratch);
+            }
         }
-        items.clearRetainingCapacity();
-        const nested = w.sums.nestedOf(c);
-        for (nested, 0..) |x, i| try items.append(gpa, .{ .key = try w.classHash(x), .id = @intCast(i) });
-        try w.sortKeyed(items.items);
-        try w.put(@intCast(items.items.len));
-        for (items.items) |it| try w.class(nested[it.id]);
-        items.clearRetainingCapacity();
-        const once = w.sums.oncesOf(c);
-        for (once, 0..) |p, i| try items.append(gpa, .{ .key = mix(&.{ 14, try w.pathHash(p) }), .id = @intCast(i) });
-        try w.sortKeyed(items.items);
-        try w.put(@intCast(items.items.len));
-        for (items.items) |it| try w.path(once[it.id]);
-        try w.cellSet(k.refs);
+    }
+
+    fn selfPart(w: *const Writer, r: u32) bool {
+        for (w.toksOf(r)) |t| if ((t.tag == .ref or t.tag == .knot) and t.x == r) return true;
+        return false;
+    }
+
+    fn distinct(w: *Writer, ms: []const u32) Error!usize {
+        const ks = try w.env.gpa.alloc(u64, ms.len);
+        defer w.env.gpa.free(ks);
+        for (ms, ks) |m, *k| k.* = w.recs.items[m].key;
+        try chargeSort(w.env, ks.len);
+        std.mem.sort(u64, ks, {}, std.sort.asc(u64));
+        var d: usize = 0;
+        for (ks, 0..) |k, i| {
+            if (i == 0 or k != ks[i - 1]) d += 1;
+        }
+        return d;
+    }
+
+    /// Key a closed component. A knot: rounds of refinement until its
+    /// partition is stable, its bisimilar members merged, and its members
+    /// ordered by key with every part but a child step after what it names.
+    fn close(w: *Writer, s: u32, scratch: *std.ArrayList(u64)) Error!void {
+        const gpa = w.env.gpa;
+        const c = w.sccs.items[s];
+        const ms = w.members.items[c.first..][0..c.len];
+        if (!c.knot) {
+            w.recs.items[ms[0]].key = try w.keyOf(ms[0], scratch);
+            return;
+        }
+        // Only a shape node can be on a cycle; anything else is a table
+        // the constructors cannot make.
+        for (ms) |m| if (w.recs.items[m].kind != .node) return error.AccountingInvariant;
+        const next = try gpa.alloc(u64, ms.len);
+        defer gpa.free(next);
+        var classes: usize = 1;
+        while (true) {
+            for (ms, next) |m, *k| k.* = std.hash.Wyhash.hash(w.recs.items[m].key, std.mem.asBytes(&try w.keyOf(m, scratch)));
+            for (ms, next) |m, k| w.recs.items[m].key = k;
+            const now = try w.distinct(ms);
+            if (now == classes) break;
+            classes = now;
+        }
+        // Bisimilar members are one: the first of each key.
+        const Cmp = struct {
+            w: *const Writer,
+            fn less(ctx: @This(), a: u32, b: u32) bool {
+                return ctx.w.recs.items[a].key < ctx.w.recs.items[b].key;
+            }
+        };
+        std.mem.sort(u32, ms, Cmp{ .w = w }, Cmp.less);
+        var reps: std.ArrayList(u32) = .empty;
+        defer reps.deinit(gpa);
+        for (ms, 0..) |m, i| {
+            if (i > 0 and w.recs.items[m].key == w.recs.items[ms[i - 1]].key) {
+                w.recs.items[m].rep = w.recs.items[ms[i - 1]].rep;
+            } else try reps.append(gpa, m);
+        }
+        // Every part but a child step after what it names: a post-order
+        // walk of those parts from each member in key order, so the order
+        // is the structure's. A member met on its own walk is a cycle no
+        // step closes, which no constructor makes.
+        var order: std.ArrayList(u32) = .empty;
+        defer order.deinit(gpa);
+        // A member's walk: 0 open, 1 done.
+        var state: Ids.FixedDict(1) = .{};
+        defer state.deinit(gpa);
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(gpa);
+        for (reps.items) |root| {
+            const top = try state.getOrPut(gpa, .{root});
+            if (top.found_existing) continue;
+            top.value_ptr.* = 0;
+            try stack.append(gpa, .{ root, 0 });
+            while (stack.items.len > 0) {
+                const f = &stack.items[stack.items.len - 1];
+                const ts = w.toksOf(f[0]);
+                if (f[1] == ts.len) {
+                    (try state.getOrPut(gpa, .{f[0]})).value_ptr.* = 1;
+                    try order.append(gpa, f[0]);
+                    _ = stack.pop();
+                    continue;
+                }
+                const t = ts[f[1]];
+                f[1] += 1;
+                try w.env.charge.reserve(gpa, .inspection, 1);
+                if (t.tag != .ref or t.x == none or w.recs.items[t.x].scc != s) continue;
+                const target = w.recs.items[t.x].rep;
+                const got = try state.getOrPut(gpa, .{target});
+                if (got.found_existing) {
+                    if (got.value_ptr.* == 0) return error.AccountingInvariant;
+                    continue;
+                }
+                got.value_ptr.* = 0;
+                try stack.append(gpa, .{ target, 0 });
+            }
+        }
+        const k = order.items.len;
+        // The written members first, in order; the merged ones after them,
+        // unwritten, for `emit` to check.
+        var merged: std.ArrayList(u32) = .empty;
+        defer merged.deinit(gpa);
+        for (ms) |m| if (w.recs.items[m].rep != m) try merged.append(gpa, m);
+        @memcpy(ms[0..k], order.items);
+        @memcpy(ms[k..], merged.items);
+        w.sccs.items[s].len = @intCast(k);
+    }
+
+    fn allMembers(w: *const Writer, s: u32) []const u32 {
+        const c = w.sccs.items[s];
+        return w.members.items[c.first..][0..c.all];
+    }
+
+    // ---- emitting -------------------------------------------------------------
+
+    fn ordinalOf(w: *const Writer, r: u32) u32 {
+        return if (r == none) none else w.recs.items[w.recs.items[r].rep].ordinal;
+    }
+
+    /// A record's parts in written order, a group's by key.
+    fn parts(w: *Writer, r: u32, out: *std.ArrayList(u32)) Error!void {
+        const gpa = w.env.gpa;
+        const ts = w.toksOf(r);
+        var i: usize = 0;
+        while (i < ts.len) : (i += 1) {
+            const t = ts[i];
+            switch (t.tag) {
+                .word, .place => {},
+                .ref, .knot => if (t.x != none) try out.append(gpa, w.recs.items[t.x].rep),
+                .group => {
+                    const start = out.items.len;
+                    for (ts[i + 1 ..][0..t.x]) |m| try out.append(gpa, w.recs.items[m.x].rep);
+                    w.sortByKey(out.items[start..]);
+                    i += t.x;
+                },
+            }
+        }
+    }
+
+    fn sortByKey(w: *const Writer, rs: []u32) void {
+        std.mem.sort(u32, rs, w, struct {
+            fn less(ww: *const Writer, a: u32, b: u32) bool {
+                const ka = ww.recs.items[a].key;
+                const kb = ww.recs.items[b].key;
+                return ka < kb or (ka == kb and ww.recs.items[a].ordinal < ww.recs.items[b].ordinal);
+            }
+        }.less);
+    }
+
+    const EFrame = struct { s: u32, first: u32, len: u32, cursor: u32 };
+
+    /// Write component `s` and everything it reaches, parts first, by an
+    /// explicit stack.
+    fn emitFrom(w: *Writer, s0: u32) Error!void {
+        const gpa = w.env.gpa;
+        var kids: std.ArrayList(u32) = .empty;
+        defer kids.deinit(gpa);
+        var stack: std.ArrayList(EFrame) = .empty;
+        defer stack.deinit(gpa);
+        if (w.sccs.items[s0].state != .new) return;
+        try w.open(s0, &kids, &stack);
+        while (stack.items.len > 0) {
+            const f = &stack.items[stack.items.len - 1];
+            if (f.cursor < f.len) {
+                const r = kids.items[f.first + f.cursor];
+                f.cursor += 1;
+                const s = w.recs.items[r].scc;
+                if (w.sccs.items[s].state == .new) try w.open(s, &kids, &stack);
+                continue;
+            }
+            const s = f.s;
+            kids.shrinkRetainingCapacity(f.first);
+            _ = stack.pop();
+            try w.emit(s);
+            w.sccs.items[s].state = .done;
+        }
+    }
+
+    fn open(w: *Writer, s: u32, kids: *std.ArrayList(u32), stack: *std.ArrayList(EFrame)) Error!void {
+        w.sccs.items[s].state = .open;
+        const first: u32 = @intCast(kids.items.len);
+        const c = w.sccs.items[s];
+        for (w.members.items[c.first..][0..c.len]) |m| {
+            const start = kids.items.len;
+            try w.parts(m, kids);
+            // A knot's own members are not its parts.
+            var keep = start;
+            for (kids.items[start..]) |x| {
+                if (w.recs.items[x].scc == s) continue;
+                kids.items[keep] = x;
+                keep += 1;
+            }
+            kids.shrinkRetainingCapacity(keep);
+        }
+        try stack.append(w.env.gpa, .{ .s = s, .first = first, .len = @intCast(kids.items.len - first), .cursor = 0 });
+    }
+
+    const rel_bit: u32 = 1 << 31;
+
+    /// Record `r`'s words: its kind, then its description with every part
+    /// its ordinal (a member of knot `base`'s, its offset with `rel_bit` in
+    /// `rel` and its ordinal in `abs`), a group's by key.
+    fn spell(w: *Writer, r: u32, s: u32, base: u32, abs: *std.ArrayList(u32), rel: *std.ArrayList(u32)) Error!void {
+        const gpa = w.env.gpa;
+        try abs.append(gpa, @backingInt(w.recs.items[r].kind));
+        try rel.append(gpa, @backingInt(w.recs.items[r].kind));
+        const ts = w.toksOf(r);
+        var i: usize = 0;
+        while (i < ts.len) : (i += 1) {
+            const t = ts[i];
+            switch (t.tag) {
+                .word => {
+                    try abs.append(gpa, t.x);
+                    try rel.append(gpa, t.x);
+                },
+                .place => {
+                    const p = try w.placeLocal(.from(t.x));
+                    try abs.append(gpa, p);
+                    try rel.append(gpa, p);
+                },
+                .ref, .knot => try w.part(t.x, s, base, abs, rel),
+                .group => {
+                    var g: std.ArrayList(u32) = .empty;
+                    defer g.deinit(gpa);
+                    for (ts[i + 1 ..][0..t.x]) |m| try g.append(gpa, w.recs.items[m.x].rep);
+                    try chargeSort(w.env, g.items.len);
+                    w.sortByKey(g.items);
+                    try abs.append(gpa, t.x);
+                    try rel.append(gpa, t.x);
+                    for (g.items) |m| try w.part(m, s, base, abs, rel);
+                    i += t.x;
+                },
+            }
+        }
+    }
+
+    fn part(w: *Writer, x: u32, s: u32, base: u32, abs: *std.ArrayList(u32), rel: *std.ArrayList(u32)) Error!void {
+        const gpa = w.env.gpa;
+        const o = w.ordinalOf(x);
+        try abs.append(gpa, o);
+        try rel.append(gpa, if (x != none and w.recs.items[x].scc == s) (o - base) | rel_bit else o);
+    }
+
+    /// Write a closed component: one record, or a knot's group; a record
+    /// with the words of one written before is that one.
+    fn emit(w: *Writer, s: u32) Error!void {
+        const gpa = w.env.gpa;
+        const c = w.sccs.items[s];
+        var abs: std.ArrayList(u32) = .empty;
+        defer abs.deinit(gpa);
+        var rel: std.ArrayList(u32) = .empty;
+        defer rel.deinit(gpa);
+        const base = w.next;
+        if (base + c.len >= rel_bit) return error.OwnershipLimit;
+        const ms = w.members.items[c.first..][0..c.len];
+        if (c.knot) {
+            for (ms, 0..) |m, i| w.recs.items[m].ordinal = base + @as(u32, @intCast(i));
+            try abs.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
+            try rel.appendSlice(gpa, &.{ @backingInt(Kind.group), c.len });
+            const marks = try gpa.alloc(usize, ms.len + 1);
+            defer gpa.free(marks);
+            for (ms, 0..) |m, i| {
+                marks[i] = rel.items.len;
+                try w.spell(m, s, base, &abs, &rel);
+            }
+            marks[ms.len] = rel.items.len;
+            // A merged member must be its representative's record: equal
+            // keys of different records in one knot are refused.
+            var other: std.ArrayList(u32) = .empty;
+            defer other.deinit(gpa);
+            var scratch: std.ArrayList(u32) = .empty;
+            defer scratch.deinit(gpa);
+            const all = w.allMembers(s);
+            for (all) |x| {
+                const rep = w.recs.items[x].rep;
+                if (rep == x) continue;
+                other.clearRetainingCapacity();
+                scratch.clearRetainingCapacity();
+                try w.spell(x, s, base, &scratch, &other);
+                const i = w.recs.items[rep].ordinal - base;
+                if (!std.mem.eql(u32, other.items, rel.items[marks[i]..marks[i + 1]])) return error.AccountingInvariant;
+            }
+        } else try w.spell(ms[0], s, base, &abs, &rel);
+        try w.env.charge.reserve(gpa, .inspection, @intCast(abs.items.len));
+        const key = std.mem.sliceAsBytes(rel.items);
+        if (w.seen.get(key)) |found| {
+            for (ms, 0..) |m, i| w.recs.items[m].ordinal = found + @as(u32, @intCast(i));
+            return;
+        }
+        try w.seen.put(gpa, try w.seen_keys.allocator().dupe(u8, key), base);
+        if (!c.knot) w.recs.items[ms[0]].ordinal = base;
+        w.next += c.len;
+        w.units += 1;
+        try w.out.appendSlice(gpa, abs.items);
     }
 };
 
@@ -728,30 +1019,37 @@ const Writer = struct {
 
 /// The classes of a block, built in `env`'s tables and appended to `out`;
 /// null when the words are not a block this version wrote. The block is
-/// decoded first into tables of its own: a block that does not decode
-/// leaves `env`'s tables and `out` as they were.
+/// decoded first into tables of its own, against the caller's allowance
+/// and the room in its place table, and that work is charged to the
+/// caller once: a block that does not decode leaves `env`'s tables and
+/// `out` as they were, and one past a limit is `error.OwnershipLimit`
+/// before any of them is touched.
 pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, out: *std.ArrayList(ClassId)) ReadError!?void {
     const gpa = env.gpa;
-    // The trial: fresh tables, charged to the caller like the real read.
+    const owner = env.account();
     {
         var t: Scratch = .{};
-        try t.init(gpa);
+        try t.init(gpa, env);
         defer t.deinit(gpa);
         var trial: std.ArrayList(ClassId) = .empty;
         defer trial.deinit(gpa);
         var r: Reader = .{ .env = t.env(gpa), .sums = &t.sums, .words = words, .remap = remap };
         defer r.deinit();
-        const ok = if (r.all(&trial)) true else |err| switch (err) {
-            error.Malformed, error.BlockConflict => false,
-            error.OwnershipLimit, error.AccountingInvariant => false,
-            error.OutOfMemory => return error.OutOfMemory,
-        };
-        const spent = t.account.growth;
-        try env.charge.reserve(gpa, .inspection, @intCast(@min(spent, std.math.maxInt(u32))));
-        if (!ok) return null;
+        const failed: ?Reader.Failure = if (r.all(&trial)) null else |err| err;
+        if (failed) |e| if (e == error.OutOfMemory) return error.OutOfMemory;
+        try env.charge.reserve(gpa, .inspection, t.account.growth);
+        if (failed) |e| {
+            if (e != error.OwnershipLimit) return null;
+            // The trial met the caller's limit: the caller's refusal.
+            if (owner.failed == null) owner.failed = t.account.failed;
+            return error.OwnershipLimit;
+        }
     }
+    // The commit: the work is paid for, and its limits were the trial's.
+    var paid: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+    defer paid.deinit(gpa);
     const mark = out.items.len;
-    var r: Reader = .{ .env = env, .sums = sums, .words = words, .remap = remap };
+    var r: Reader = .{ .env = .{ .gpa = gpa, .charge = .growth(&paid), .places = env.places, .cells = env.cells, .shapes = env.shapes, .conds = env.conds }, .sums = sums, .words = words, .remap = remap };
     defer r.deinit();
     r.all(out) catch |err| {
         out.shrinkRetainingCapacity(mark);
@@ -764,7 +1062,8 @@ pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, ou
     };
 }
 
-/// Tables of their own for a trial read.
+/// Tables of their own for a trial read, with the caller's allowance left
+/// and the room left in its place table.
 const Scratch = struct {
     places: Place.Table = .{},
     cells: Cell.Table = .{},
@@ -773,10 +1072,11 @@ const Scratch = struct {
     sums: Summary.Table = .{},
     account: Ids.Account = .{},
 
-    fn init(t: *Scratch, gpa: Allocator) Error!void {
-        // The trial is the caller's work, charged to the caller once it is
-        // done; its own account only counts it.
-        t.account.allowance = std.math.maxInt(u32);
+    fn init(t: *Scratch, gpa: Allocator, caller: Env) Error!void {
+        const a = caller.account();
+        t.account.allowance = if (caller.charge.lane == null) a.allowance -| a.growth else std.math.maxInt(u32);
+        t.places.limits = caller.places.limits;
+        t.places.limits.type_places -|= caller.places.count();
         t.conds = try Cond.Table.init(gpa, .growth(&t.account));
     }
 
@@ -800,45 +1100,35 @@ const Reader = struct {
     words: []const u32,
     remap: Remap,
     at: usize = 0,
-    ctx: Cond.Kappas = .none,
     /// The block's places, in local order, once each is in `env.places`.
     places: std.ArrayList(PlaceId) = .empty,
     /// Where each local place's record starts in `words`.
     place_at: std.ArrayList(u32) = .empty,
-    /// The nodes by ordinal; `.none` while one is still being read.
-    nodes: std.ArrayList(NodeId) = .empty,
-    /// The κ maps by the writer's local number, built as nodes arrive.
-    maps: std.ArrayList(Cond.Kappas) = .empty,
-    /// The local number `ctx` is being built as.
-    ctx_index: u32 = none,
-    /// The first type-variable number the block's places take.
-    place_base: u32 = 0,
+    /// Each record's value (a table id, or an index of the lists below) and
+    /// kind, by ordinal.
+    vals: std.ArrayList(u32) = .empty,
+    kinds: std.ArrayList(Kind) = .empty,
+    supplies: std.ArrayList(Summary.Supply) = .empty,
+    keeps: std.ArrayList(Summary.Keep) = .empty,
+    slots: std.ArrayList(Summary.Slot) = .empty,
+    entries: std.ArrayList(KEntry) = .empty,
+    /// The ordinals a part may name (below `low`), and a child step (below
+    /// `high`: in a knot, any member).
+    low: usize = 0,
+    high: usize = 0,
 
     const Failure = ReadError || error{Malformed};
 
     fn deinit(r: *Reader) void {
-        r.places.deinit(r.env.gpa);
-        r.place_at.deinit(r.env.gpa);
-        r.nodes.deinit(r.env.gpa);
-        r.maps.deinit(r.env.gpa);
-    }
-
-    const Saved = struct { ctx: Cond.Kappas, index: u32 };
-
-    /// Build into map `i`: the one built so far, or a new empty one.
-    fn enter(r: *Reader, i: u32) Failure!Saved {
-        if (i > r.maps.items.len) return error.Malformed;
-        if (i == r.maps.items.len) try r.maps.append(r.env.gpa, .none);
-        const saved: Saved = .{ .ctx = r.ctx, .index = r.ctx_index };
-        r.ctx = r.maps.items[i];
-        r.ctx_index = i;
-        return saved;
-    }
-
-    fn leave(r: *Reader, saved: Saved) void {
-        if (r.ctx_index != none) r.maps.items[r.ctx_index] = r.ctx;
-        r.ctx = saved.ctx;
-        r.ctx_index = saved.index;
+        const gpa = r.env.gpa;
+        r.places.deinit(gpa);
+        r.place_at.deinit(gpa);
+        r.vals.deinit(gpa);
+        r.kinds.deinit(gpa);
+        r.supplies.deinit(gpa);
+        r.keeps.deinit(gpa);
+        r.slots.deinit(gpa);
+        r.entries.deinit(gpa);
     }
 
     fn get(r: *Reader) Failure!u32 {
@@ -847,13 +1137,42 @@ const Reader = struct {
         return r.words[r.at - 1];
     }
 
-    fn expect(r: *Reader, t: Tag) Failure!void {
-        if (try r.get() != @backingInt(t)) return error.Malformed;
+    fn flag(r: *Reader, max: u32) Failure!u32 {
+        const x = try r.get();
+        if (x > max) return error.Malformed;
+        return x;
+    }
+
+    /// A count of what follows, each at least one word.
+    fn count(r: *Reader) Failure!u32 {
+        const n = try r.get();
+        if (n > r.words.len - r.at) return error.Malformed;
+        return n;
     }
 
     fn enumOf(comptime E: type, x: u32) Failure!E {
         if (x > std.math.maxInt(@typeInfo(E).@"enum".tag_type)) return error.Malformed;
         return std.enums.fromInt(E, x) orelse error.Malformed;
+    }
+
+    /// A part of `kind` below `limit`, or null for `none`.
+    fn refBelow(r: *Reader, kind: Kind, limit: usize) Failure!?u32 {
+        const o = try r.get();
+        if (o == none) return null;
+        if (o >= limit or r.kinds.items[o] != kind) return error.Malformed;
+        return r.vals.items[o];
+    }
+
+    fn ref(r: *Reader, kind: Kind) Failure!?u32 {
+        return r.refBelow(kind, r.low);
+    }
+
+    fn need(r: *Reader, kind: Kind) Failure!u32 {
+        return (try r.ref(kind)) orelse error.Malformed;
+    }
+
+    fn opt(r: *Reader, comptime T: type, kind: Kind) Failure!T {
+        return if (try r.ref(kind)) |v| .from(v) else .none;
     }
 
     /// A step's words, checked: a payload a step can hold, a field's rank
@@ -869,15 +1188,23 @@ const Reader = struct {
         };
     }
 
+    fn stepOf(r: *Reader) Failure!Step {
+        const kind = try enumOf(Place.StepKind, try r.get());
+        const a = try r.get();
+        const b = if (kind == .ctor_arg) try r.get() else 0;
+        return r.stepFrom(kind, a, b);
+    }
+
+    fn placeOf(r: *Reader) Failure!PlaceId {
+        const i = try r.get();
+        if (i >= r.places.items.len) return error.Malformed;
+        return r.places.items[i];
+    }
+
     fn all(r: *Reader, out: *std.ArrayList(ClassId)) Failure!void {
         const gpa = r.env.gpa;
         if (try r.get() != magic or try r.get() != version) return error.Malformed;
-        const n_places = try r.get();
-        // The block's places take type-variable numbers no place of the
-        // reader's table has: they meet nothing of the module's or of
-        // another block's (§3.6's structural re-interning is S6's).
-        r.place_base = r.env.places.freshVar();
-        if (n_places > std.math.maxInt(u32) - r.place_base) return error.Malformed;
+        const n_places = try r.count();
         // Each place record, checked whole before any place is made: kind,
         // head, holds, n, then n × (step, child).
         var i: u32 = 0;
@@ -891,26 +1218,29 @@ const Reader = struct {
             r.at += 4;
             var j: u32 = 0;
             while (j < n) : (j += 1) {
-                const kind = try enumOf(Place.StepKind, try r.get());
-                const a = try r.get();
-                const b = if (kind == .ctor_arg) try r.get() else 0;
-                _ = try r.stepFrom(kind, a, b);
+                _ = try r.stepOf();
                 if (try r.get() >= n_places) return error.Malformed;
             }
         }
         var failed: ?Failure = null;
         var source: Describe = .{ .r = r, .failed = &failed };
+        // The block's places are a namespace of their own in the reader's
+        // table (§3.6's re-interning onto a module's own graph is S6's).
+        r.env.places.beginBlock();
         i = 0;
         while (i < n_places) : (i += 1) {
-            // The block's place locals are a type-variable space of their own
-            // in the reader's table (§3.6's re-interning onto a module's own
-            // graph is S6's).
-            try r.places.append(gpa, try r.env.places.of(gpa, r.env.account(), .{ .ctx = &source, .describe = Describe.describe }, r.place_base + i));
+            try r.places.append(gpa, try r.env.places.ofBlock(gpa, r.env.account(), .{ .ctx = &source, .describe = Describe.describe }, i));
             if (failed) |e| return e;
         }
-        const n_classes = try r.get();
+        const units = try r.count();
         i = 0;
-        while (i < n_classes) : (i += 1) try out.append(gpa, try r.class());
+        while (i < units) : (i += 1) try r.unit();
+        const n_classes = try r.count();
+        i = 0;
+        while (i < n_classes) : (i += 1) {
+            r.low = r.vals.items.len;
+            try out.append(gpa, .from(try r.need(.class)));
+        }
         if (r.at != r.words.len) return error.Malformed;
     }
 
@@ -921,7 +1251,7 @@ const Reader = struct {
         fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
             const d: *Describe = @ptrCast(@alignCast(ctx));
             const r = d.r;
-            var at: usize = r.place_at.items[v - r.place_base];
+            var at: usize = r.place_at.items[v];
             const k: Place.Kind = @fromBackingInt(@intCast(r.words[at]));
             const head = r.words[at + 1];
             const n = r.words[at + 3];
@@ -936,54 +1266,166 @@ const Reader = struct {
                     d.failed.* = e;
                     break :blk Step.elem;
                 };
-                try out.append(r.env.gpa, .{ .step = s, .@"var" = r.place_base + r.words[at] });
+                try out.append(r.env.gpa, .{ .step = s, .@"var" = r.words[at] });
                 at += 1;
             }
             return .{ .kind = k, .head = if (k == .tuple or k == .record) head else r.remap.place.head(r.remap.place.ctx, head) };
         }
     };
 
-    fn placeOf(r: *Reader) Failure!PlaceId {
-        const i = try r.get();
-        if (i >= r.places.items.len) return error.Malformed;
-        return r.places.items[i];
-    }
-
-    fn stepOf(r: *Reader) Failure!Step {
-        const kind = try enumOf(Place.StepKind, try r.get());
-        const a = try r.get();
-        const b = if (kind == .ctor_arg) try r.get() else 0;
-        return r.stepFrom(kind, a, b);
-    }
-
-    fn path(r: *Reader) Failure!PathId {
-        try r.expect(.path);
-        const depth = try r.get();
-        if (depth == none) return .none;
-        var p = try r.env.places.rootPath(r.env.gpa, try r.placeOf());
-        var i: u32 = 0;
-        while (i < depth) : (i += 1) {
-            try r.env.charge.reserve(r.env.gpa, .inspection, 1);
-            p = (try r.env.places.extend(r.env.gpa, r.env.charge, p, try r.stepOf())) orelse return error.Malformed;
+    /// One record, or a knot: its members made first, every one a node no
+    /// constructor interns, then each read and tied.
+    fn unit(r: *Reader) Failure!void {
+        const gpa = r.env.gpa;
+        try r.env.charge.reserve(gpa, .inspection, 1);
+        const kind = try enumOf(Kind, try r.get());
+        if (kind != .group) {
+            r.low = r.vals.items.len;
+            r.high = r.low;
+            const v = try r.record(kind);
+            try r.vals.append(gpa, v);
+            try r.kinds.append(gpa, kind);
+            return;
         }
-        return p;
+        const k = try r.count();
+        if (k == 0) return error.Malformed;
+        const base = r.vals.items.len;
+        var i: u32 = 0;
+        while (i < k) : (i += 1) {
+            try r.vals.append(gpa, (try r.env.shapes.knot(gpa, r.env.account())).int());
+            try r.kinds.append(gpa, .node);
+        }
+        i = 0;
+        while (i < k) : (i += 1) {
+            if (try r.get() != @backingInt(Kind.node)) return error.Malformed;
+            r.low = base + i;
+            r.high = base + k;
+            _ = try r.node(.from(r.vals.items[base + i]));
+        }
     }
 
-    fn label(r: *Reader) Failure!LabelId {
-        try r.expect(.label);
-        const inst = try r.get();
-        if (inst == none) return .none;
-        const folded = try r.get();
-        if (folded > 1) return error.Malformed;
-        const callee = try r.label();
-        return r.env.cells.label(r.env.gpa, r.env.account(), r.remap.inst(r.remap.ctx, inst), callee, folded == 1);
+    fn record(r: *Reader, kind: Kind) Failure!u32 {
+        const gpa = r.env.gpa;
+        const acct = r.env.account();
+        const charge = r.env.charge;
+        const cells = r.env.cells;
+        const conds = r.env.conds;
+        switch (kind) {
+            .label => {
+                const inst = try r.get();
+                const folded = try r.flag(1);
+                const callee = try r.opt(LabelId, .label);
+                return (try cells.label(gpa, acct, r.remap.inst(r.remap.ctx, inst), callee, folded == 1)).int();
+            },
+            .path => {
+                const depth = try r.count();
+                var p = try r.env.places.rootPath(gpa, try r.placeOf());
+                var i: u32 = 0;
+                while (i < depth) : (i += 1) {
+                    try charge.reserve(gpa, .inspection, 1);
+                    p = (try r.env.places.extend(gpa, charge, p, try r.stepOf())) orelse return error.Malformed;
+                }
+                return p.int();
+            },
+            .cell => return (try r.cell()).int(),
+            .split => {
+                const container: CellId = .from(try r.need(.cell));
+                const inst = try r.get();
+                const l = try r.opt(LabelId, .label);
+                const k: CondId = .from(try r.need(.cond));
+                // A split made on first sight keeps its condition: one that
+                // is there with another would change what the reader's
+                // tables mean.
+                const existing = cells.findSplit(container, l);
+                if (existing != .none and cells.splitOf(existing).cond != k) return error.BlockConflict;
+                return (try cells.split(gpa, acct, container, inst, l, k)).int();
+            },
+            .set => {
+                var s: SetId = .none;
+                for (0..2) |bit| {
+                    const n = try r.count();
+                    var i: u32 = 0;
+                    while (i < n) : (i += 1) s = try cells.sets.insert(gpa, charge, s, try r.need(.cell), @intCast(bit));
+                }
+                return s.int();
+            },
+            .atoms => {
+                const n = try r.count();
+                var acc = Cond.yes;
+                var i: u32 = 0;
+                while (i < n) : (i += 1) acc = try conds.@"and"(gpa, charge, acc, .from(try r.need(.atom)));
+                return acc.int();
+            },
+            .cond => return switch (try enumOf(Cond.Kind, try r.get())) {
+                .yes => Cond.yes.int(),
+                .shared => Cond.shared.int(),
+                .lost => Cond.lost.int(),
+                .@"and", .atom => try r.need(.atoms),
+            },
+            .atom => {
+                const a = switch (try enumOf(Cond.AtomKind, try r.get())) {
+                    .excl => try conds.excl(gpa, charge, .from(try r.need(.cell))),
+                    .sep => blk: {
+                        if (try r.get() != 2) return error.Malformed;
+                        const x: CellId = .from(try r.need(.cell));
+                        break :blk try conds.sepAtom(gpa, charge, x, .from(try r.need(.cell)));
+                    },
+                    .within => try conds.within(gpa, charge, .from(try r.need(.label))),
+                    .apart => try conds.apartAtom(gpa, charge, try r.opt(SetId, .set)),
+                    .keep => try conds.keep(gpa, charge, try r.get()),
+                    .writes => try conds.writes(gpa, charge, try r.get()),
+                };
+                return a.int();
+            },
+            .node => return (try r.node(null)).int(),
+            .kentry => {
+                const n: NodeId = .from(try r.need(.node));
+                const s = try r.flag(1);
+                try r.entries.append(gpa, .{ .node = n, .at_summary = s == 1, .cond = .from(try r.need(.cond)) });
+                return @intCast(r.entries.items.len - 1);
+            },
+            .kmap => {
+                const n = try r.count();
+                var ctx: Cond.Kappas = .none;
+                var i: u32 = 0;
+                while (i < n) : (i += 1) {
+                    // Two entries of one node (nodes the block merged) join.
+                    const e = r.entries.items[try r.need(.kentry)];
+                    ctx = (try conds.kappaSet(gpa, charge, ctx, e.node, e.at_summary, e.cond)).ctx;
+                }
+                return ctx.int();
+            },
+            .supply => {
+                const k = try r.get();
+                const bits = try r.flag(3);
+                const l = try r.opt(LabelId, .label);
+                const kappa = try r.opt(Cond.Kappas, .kmap);
+                const n = try r.opt(NodeId, .node);
+                try r.supplies.append(gpa, .{ .j = 0, .k = k, .node = n, .label = l, .owned = bits & 1 == 1, .taken = bits & 2 == 2, .kappa = kappa });
+                return @intCast(r.supplies.items.len - 1);
+            },
+            .keep => {
+                const j = try r.get();
+                const k = try r.get();
+                const kept = try r.opt(PathId, .path);
+                const written = try r.opt(PathId, .path);
+                try r.keeps.append(gpa, .{ .j = j, .k = k, .kept_path = kept, .written_path = written, .writer = try r.get() });
+                return @intCast(r.keeps.items.len - 1);
+            },
+            .slot => {
+                const p = try r.get();
+                try r.slots.append(gpa, .{ .param = p, .path = try r.opt(PathId, .path) });
+                return @intCast(r.slots.items.len - 1);
+            },
+            .class => return (try r.class()).int(),
+            .group => return error.Malformed,
+        }
     }
 
     fn cell(r: *Reader) Failure!CellId {
         const gpa = r.env.gpa;
         const acct = r.env.account();
         const cells = r.env.cells;
-        try r.expect(.cell);
         const o = try enumOf(Cell.Origin, try r.get());
         const kind = try enumOf(Cell.Kind, try r.get());
         switch (o) {
@@ -992,7 +1434,7 @@ const Reader = struct {
                 return cells.site(gpa, acct, inst, try r.placeOf(), kind);
             },
             .result, .esc => {
-                const l = try r.label();
+                const l = try r.opt(LabelId, .label);
                 const k = try r.get();
                 return cells.result(gpa, acct, o, l, k, try r.placeOf(), kind);
             },
@@ -1000,39 +1442,29 @@ const Reader = struct {
                 const name = try r.get();
                 const ordinal = try r.get();
                 const index = r.remap.decl(r.remap.ctx, name, ordinal) orelse return error.Malformed;
-                const p = try r.path();
-                if (p == .none) return error.Malformed;
+                const p: PathId = .from(try r.need(.path));
                 return cells.symbolic(gpa, acct, r.env.places, o, index, p, try r.get());
             },
             .param, .env, .msg => {
                 const index = try r.get();
-                const p = try r.path();
-                if (p == .none) return error.Malformed;
+                const p: PathId = .from(try r.need(.path));
                 return cells.symbolic(gpa, acct, r.env.places, o, index, p, try r.get());
             },
             .cb => {
-                const l = try r.label();
-                const p = try r.path();
-                if (p == .none) return error.Malformed;
+                const l = try r.opt(LabelId, .label);
+                const p: PathId = .from(try r.need(.path));
                 return cells.symbolic(gpa, acct, r.env.places, .cb, l.int(), p, try r.get());
             },
             .top => return cells.top(gpa, acct),
             .elem, .others, .level, .below, .loan => {
-                const parent = try r.cell();
-                const l = try r.label();
+                const parent: CellId = .from(try r.need(.cell));
+                const l = try r.opt(LabelId, .label);
                 const step = try r.get();
                 const at = try r.placeOf();
-                const has_split = try r.get();
-                if (has_split > 1) return error.Malformed;
-                if (has_split == 1) {
-                    const inst = try r.get();
-                    const k = try r.cond();
-                    // A split made on first sight keeps its condition: one
-                    // that is there with another would change what the
-                    // reader's tables mean.
-                    const existing = cells.findSplit(parent, l);
-                    if (existing != .none and cells.splitOf(existing).cond != k) return error.BlockConflict;
-                    _ = try cells.split(gpa, acct, parent, inst, l, k);
+                // The split it was taken by is the container's at its label.
+                if (try r.ref(.split)) |s| {
+                    const split = cells.splitOf(.from(s));
+                    if (split.container != parent or split.label != l) return error.Malformed;
                 }
                 return cells.refine(gpa, acct, o, parent, l, step, at, kind);
             },
@@ -1044,147 +1476,74 @@ const Reader = struct {
         }
     }
 
-    fn cellSet(r: *Reader) Failure!SetId {
-        try r.expect(.set);
-        const n = try r.get();
-        var s: SetId = .none;
-        var i: u32 = 0;
-        while (i < n) : (i += 1) {
-            const c = try r.cell();
-            const bit = try r.get();
-            if (bit > 1) return error.Malformed;
-            s = try r.env.cells.sets.insert(r.env.gpa, r.env.charge, s, c.int(), @intCast(bit));
-        }
-        return s;
-    }
-
-    fn cond(r: *Reader) Failure!CondId {
-        try r.expect(.cond);
-        const kind = try enumOf(Cond.Kind, try r.get());
-        switch (kind) {
-            .yes => return Cond.yes,
-            .shared => return Cond.shared,
-            .lost => return Cond.lost,
-            .@"and", .atom => return r.atoms(),
-        }
-    }
-
-    /// An atom set, conjoined.
-    fn atoms(r: *Reader) Failure!CondId {
-        const gpa = r.env.gpa;
-        const t = r.env.conds;
-        const charge = r.env.charge;
-        const n = try r.get();
-        var acc = Cond.yes;
-        var i: u32 = 0;
-        while (i < n) : (i += 1) {
-            try r.expect(.atom);
-            const k = try enumOf(Cond.AtomKind, try r.get());
-            const a = switch (k) {
-                .excl => try t.excl(gpa, charge, try r.cell()),
-                .sep => blk: {
-                    const x = try r.cell();
-                    break :blk try t.sepAtom(gpa, charge, x, try r.cell());
-                },
-                .within => try t.within(gpa, charge, try r.label()),
-                .apart => try t.apartAtom(gpa, charge, try r.cellSet()),
-                .keep => try t.keep(gpa, charge, try r.get()),
-                .writes => try t.writes(gpa, charge, try r.get()),
-            };
-            acc = try t.@"and"(gpa, charge, acc, a);
-        }
-        return acc;
-    }
-
+    /// A child map: `n, (step, child)×n`, a child below `high`.
     fn overs(r: *Reader) Failure!u32 {
-        const n = try r.get();
+        const n = try r.count();
         var root: u32 = none;
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const s = try r.stepOf();
-            root = try r.env.shapes.overPut(r.env.gpa, r.env.account(), root, s, try r.child());
+            const child = (try r.refBelow(.node, r.high)) orelse return error.Malformed;
+            root = try r.env.shapes.overPut(r.env.gpa, r.env.account(), root, s, .from(child));
         }
         return root;
     }
 
-    /// A node that must be there: a child, a side, an inner.
-    fn child(r: *Reader) Failure!NodeId {
-        const n = try r.node();
-        if (n == .none) return error.Malformed;
-        return n;
-    }
-
-    fn node(r: *Reader) Failure!NodeId {
+    /// A node, made by its constructor, or — a knot's member `raw` — tied
+    /// as its constructor would have made it, its parts read before it.
+    fn node(r: *Reader, raw: ?NodeId) Failure!NodeId {
         const gpa = r.env.gpa;
         const acct = r.env.account();
         const shapes = r.env.shapes;
-        try r.env.charge.reserve(gpa, .inspection, 1);
-        const t = try enumOf(Tag, try r.get());
-        switch (t) {
-            .none_node => return .none,
-            .node_ref => {
-                const o = try r.get();
-                if (o >= r.nodes.items.len) return error.Malformed;
-                // A node that is still being read cannot be its own part.
-                if (r.nodes.items[o] == .none) return error.Malformed;
-                return r.nodes.items[o];
-            },
-            .node_new => {},
-            else => return error.Malformed,
-        }
+        const sets = &r.env.cells.sets;
         const kind = try enumOf(Shape.Kind, try r.get());
-        const at_summary = try r.get();
-        if (at_summary > 1) return error.Malformed;
         const at = try r.placeOf();
-        const cells: SetId = if (kind == .leaf or kind == .node) try r.cellSet() else .none;
-        const has_k = try r.get();
-        if (has_k > 1) return error.Malformed;
-        const k: ?CondId = if (has_k == 1) try r.cond() else null;
-        // The ordinal is handed out before the children are read, as the
-        // writer numbered it.
-        const slot = r.nodes.items.len;
-        try r.nodes.append(gpa, .none);
-        const id: NodeId = switch (kind) {
-            .leaf => try shapes.leaf(gpa, acct, at, cells),
-            .node => try shapes.node(gpa, acct, at, cells, try r.overs()),
-            .delta => blk: {
-                const base = try r.child();
+        switch (kind) {
+            .leaf, .node => {
+                const cells = try r.opt(SetId, .set);
+                const children = if (kind == .node) try r.overs() else 0;
+                const id = raw orelse return if (kind == .leaf) shapes.leaf(gpa, acct, at, cells) else shapes.node(gpa, acct, at, cells, children);
+                shapes.tie(id, .{ .kind = kind, .place = at, .cells = cells, .a = children, .b = 0, .reach = .none });
+                return id;
+            },
+            .delta => {
+                const base: NodeId = .from(try r.need(.node));
                 if (shapes.kind(base) == .delta) return error.Malformed;
-                break :blk try shapes.delta(gpa, acct, base, try r.overs());
+                const over = try r.overs();
+                const id = raw orelse return shapes.delta(gpa, acct, base, over);
+                shapes.tie(id, .{ .kind = .delta, .place = shapes.place(base), .cells = shapes.cells(base), .a = base.int(), .b = over, .reach = .none });
+                return id;
             },
-            .recast => try shapes.recast(gpa, acct, at, try r.child()),
-            .@"union" => blk: {
-                const a = try r.child();
-                break :blk try shapes.@"union"(gpa, acct, &r.env.cells.sets, a, try r.child());
+            .recast => {
+                const inner: NodeId = .from(try r.need(.node));
+                const id = raw orelse return shapes.recast(gpa, acct, at, inner);
+                if (shapes.kind(inner) == .recast) return error.Malformed;
+                shapes.tie(id, .{ .kind = .recast, .place = at, .cells = shapes.cells(inner), .a = inner.int(), .b = 0, .reach = .none });
+                return id;
             },
-            .positions => blk: {
-                const a = try r.child();
-                break :blk try shapes.collect(gpa, acct, &r.env.cells.sets, &.{ a, try r.child() });
+            .@"union", .positions => {
+                if (try r.get() != 2) return error.Malformed;
+                const a: NodeId = .from(try r.need(.node));
+                const b: NodeId = .from(try r.need(.node));
+                const id = raw orelse return if (kind == .@"union") shapes.@"union"(gpa, acct, sets, a, b) else shapes.collect(gpa, acct, sets, &.{ a, b });
+                shapes.tie(id, .{ .kind = kind, .place = shapes.place(a), .cells = try sets.unionWith(gpa, r.env.charge, shapes.cells(a), shapes.cells(b)), .a = a.int(), .b = b.int(), .reach = .none });
+                return id;
             },
-        };
-        r.nodes.items[slot] = id;
-        // The κ the writer's map stored, stored again; the rest derives.
-        if (k) |cond_k| r.ctx = (try r.env.conds.kappaSet(gpa, r.env.charge, r.ctx, id, at_summary == 1, cond_k)).ctx;
-        return id;
+        }
     }
 
     fn class(r: *Reader) Failure!ClassId {
         const gpa = r.env.gpa;
-        try r.env.charge.reserve(gpa, .inspection, 1);
-        try r.expect(.class);
-        const saved = try r.enter(try r.get());
-        defer r.leave(saved);
-        const n_params = try r.get();
-        if (n_params > r.words.len) return error.Malformed;
-        const flags = try r.get();
-        if (flags > 7) return error.Malformed;
+        const kappas = try r.opt(Cond.Kappas, .kmap);
+        const n_params = try r.count();
+        const flags = try r.flag(7);
         const origin = try enumOf(Summary.Origin, try r.get());
-        const res = try r.node();
+        const res = try r.opt(NodeId, .node);
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         var i: u32 = 0;
-        while (i < n_params) : (i += 1) try params.append(gpa, try r.node());
-        const xreq_cond = try r.atoms();
+        while (i < n_params) : (i += 1) try params.append(gpa, try r.opt(NodeId, .node));
+        const xreq: CondId = if (try r.ref(.atoms)) |v| .from(v) else Cond.yes;
         var funs: std.ArrayList(Summary.DraftFun) = .empty;
         defer funs.deinit(gpa);
         var supplies: std.ArrayList(Summary.Supply) = .empty;
@@ -1193,44 +1552,24 @@ const Reader = struct {
         defer keeps.deinit(gpa);
         var runs: std.ArrayList([4]u32) = .empty;
         defer runs.deinit(gpa);
-        const n_funs = try r.get();
+        const n_funs = try r.count();
         i = 0;
         while (i < n_funs) : (i += 1) {
-            try r.expect(.fun);
             const j = try r.get();
             const calls = try enumOf(Summary.Calls, try r.get());
-            const bits = try r.get();
-            if (bits > 3) return error.Malformed;
+            const bits = try r.flag(3);
             const s_start: u32 = @intCast(supplies.items.len);
-            const n_s = try r.get();
+            const n_s = try r.count();
             var s: u32 = 0;
             while (s < n_s) : (s += 1) {
-                try r.expect(.supply);
-                const k = try r.get();
-                const sb = try r.get();
-                if (sb > 3) return error.Malformed;
-                const l = try r.label();
-                // The handed value under its own snapshot.
-                const outer = try r.enter(try r.get());
-                const n = r.node() catch |e| {
-                    r.leave(outer);
-                    return e;
-                };
-                const kappa = r.ctx;
-                r.leave(outer);
-                try supplies.append(gpa, .{ .j = j, .k = k, .node = n, .label = l, .owned = sb & 1 == 1, .taken = sb & 2 == 2, .kappa = kappa });
+                var x = r.supplies.items[try r.need(.supply)];
+                x.j = j;
+                try supplies.append(gpa, x);
             }
             const k_start: u32 = @intCast(keeps.items.len);
-            const n_k = try r.get();
+            const n_k = try r.count();
             s = 0;
-            while (s < n_k) : (s += 1) {
-                try r.expect(.keep);
-                const kj = try r.get();
-                const kk = try r.get();
-                const kept = try r.path();
-                const written = try r.path();
-                try keeps.append(gpa, .{ .j = kj, .k = kk, .kept_path = kept, .written_path = written, .writer = try r.get() });
-            }
+            while (s < n_k) : (s += 1) try keeps.append(gpa, r.keeps.items[try r.need(.keep)]);
             try funs.append(gpa, .{ .j = j, .calls = calls, .need = bits & 1 == 1, .seen = bits & 2 == 2 });
             try runs.append(gpa, .{ s_start, n_s, k_start, n_k });
         }
@@ -1240,29 +1579,25 @@ const Reader = struct {
         }
         var slots: std.ArrayList(Summary.Slot) = .empty;
         defer slots.deinit(gpa);
-        const n_slots = try r.get();
+        var n = try r.count();
         i = 0;
-        while (i < n_slots) : (i += 1) {
-            try r.expect(.slot);
-            const p = try r.get();
-            try slots.append(gpa, .{ .param = p, .path = try r.path() });
-        }
+        while (i < n) : (i += 1) try slots.append(gpa, r.slots.items[try r.need(.slot)]);
         var nested: std.ArrayList(ClassId) = .empty;
         defer nested.deinit(gpa);
-        const n_nested = try r.get();
+        n = try r.count();
         i = 0;
-        while (i < n_nested) : (i += 1) try nested.append(gpa, try r.class());
+        while (i < n) : (i += 1) try nested.append(gpa, .from(try r.need(.class)));
         var once: std.ArrayList(PathId) = .empty;
         defer once.deinit(gpa);
-        const n_once = try r.get();
+        n = try r.count();
         i = 0;
-        while (i < n_once) : (i += 1) try once.append(gpa, try r.path());
-        const refs = try r.cellSet();
+        while (i < n) : (i += 1) try once.append(gpa, .from(try r.need(.path)));
+        const refs = try r.opt(SetId, .set);
         return r.sums.add(r.env, .{
             .params = params.items,
             .res = res,
-            .kappas = r.ctx,
-            .xreq = if (xreq_cond == Cond.yes) .none else try r.env.conds.flat(gpa, r.env.charge, xreq_cond),
+            .kappas = kappas,
+            .xreq = if (xreq == Cond.yes) .none else try r.env.conds.flat(gpa, r.env.charge, xreq),
             .funs = funs.items,
             .slots = slots.items,
             .classes = nested.items,
@@ -1281,7 +1616,7 @@ const Rows = @import("Rows.zig");
 
 /// 0 `List Int`, 1 `Int`, 2 `List (List Int)`, 3 `List Int → List Int`,
 /// 4 `Ref (List Int)`, 5 `Maybe (List Int)`, 6 `{ a : List Int }`,
-/// 7 `List { a : List Int }`.
+/// 7 `List { a : List Int }`, 8 `type Tree = Node Tree (List Int) Tree`.
 const Graph = struct {
     table: *Place.Table,
     account: *Ids.Account,
@@ -1307,6 +1642,10 @@ const Graph = struct {
                 return .{ .kind = .record };
             },
             7 => try out.append(gpa, .{ .step = Step.elem, .@"var" = 6 }),
+            8 => {
+                for ([_]u32{ 8, 0, 8 }, 0..) |child, i| try out.append(gpa, .{ .step = g.table.ctorStep(gpa, g.account, 0, @intCast(i)) catch unreachable, .@"var" = child });
+                return .{ .kind = .ctor, .head = 800 };
+            },
             else => unreachable,
         }
         return .{ .kind = .list, .head = 200 };
@@ -1425,13 +1764,8 @@ test "a block round-trips: read into tables of its own, written again, the same 
     try write(b.env(), &b.sums, read_back.items, .identity, &again);
     try testing.expectEqualSlices(u32, words.items, again.items);
     for (classes, read_back.items) |x, y| try testing.expectEqualStrings(try a.text(arena, x), try b.text(arena, y));
-    // Not asserted: that a table which built the same rows in another
-    // order writes the same bytes. `Cell.internCell` keys a `result`,
-    // `site` or refinement cell without its place, so the cell keeps the
-    // place of the first row that made it, and the block writes that place
-    // (S6 decides whether the key takes the place or the record drops it).
-    // Within one module the order is the schedule's (§3.8), so the bytes
-    // are still a function of the module.
+    // That the same rows built in another order write the same bytes is
+    // the next tests'.
 }
 
 test "a block that does not decode is no block: every truncation, a wrong magic, a wrong version, a bad tag" {
@@ -1673,24 +2007,24 @@ test "a malformed block decodes as no block and never crashes: every truncation,
     }
 }
 
-test "a node that refers to itself while it is read is no block" {
-    // magic, version, one place (a leaf list), one class whose res is a
-    // node whose child is a reference to itself.
-    const words = [_]u32{
-        magic,                        version,                        1,
-        @backingInt(Place.Kind.list), 200,                            0,
-        0,                            1,                              0,
-        0,                            0,                              0,
-        @backingInt(Tag.node_new),    @backingInt(Shape.Kind.recast), 0,
-        0,                            0,                              @backingInt(Tag.node_ref),
-        0,
-    };
-    var t: Tables = .{};
-    try t.init();
-    defer t.deinit();
+test "a knot's member may name itself by a child step and by nothing else" {
+    // magic, version, one place (a list, no children), one knot of one
+    // member, no classes.
+    const head = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 0, 1, @backingInt(Kind.group), 1, @backingInt(Kind.node) };
+    // A node whose `[*]` child is itself: a knot.
+    const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, none, 1, @backingInt(Place.StepKind.elem), 0, 0, 0 };
+    // A recast of itself: no constructor makes it.
+    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0 };
+    // A union with itself as a side.
+    const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 2, 0, 0, 0 };
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
-    try testing.expect(try read(t.env(), &t.sums, &words, .identity, &out) == null);
+    for ([_][]const u32{ &by_step, &by_inner, &by_side }, [_]bool{ true, false, false }) |words, ok| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        try testing.expectEqual(ok, try read(t.env(), &t.sums, words, .identity, &out) != null);
+    }
 }
 
 test "a block read into tables that hold records already keeps its meaning, and a failed read changes nothing" {
@@ -1779,4 +2113,207 @@ test "a block names a written field and a shared declaration through Names, neve
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     try testing.expectEqualStrings(try a.text(arena_state.allocator(), c), try b.text(arena_state.allocator(), back.items[0]));
+}
+
+/// `go`'s widened tree (`Shape`'s "widen ties go's grafted levels back"): a
+/// knot whose `#Node.0` and `#Node.2` children name it again.
+fn widenedTree(t: *Tables) !NodeId {
+    const gpa = testing.allocator;
+    const tree = try t.place(8);
+    const list = try t.place(0);
+    const s0 = try t.places.ctorStep(gpa, &t.account, 0, 0);
+    const s1 = try t.places.ctorStep(gpa, &t.account, 0, 1);
+    const s2 = try t.places.ctorStep(gpa, &t.account, 0, 2);
+    const param = try t.cells.symbolic(gpa, &t.account, &t.places, .param, 2, try t.places.rootPath(gpa, tree), 0);
+    const t_param = try t.shapes.leaf(gpa, &t.account, tree, try t.cells.sets.insert(gpa, t.env().charge, .none, param.int(), 0));
+    var level = t_param;
+    for (1..3) |i| {
+        const site = try t.cells.site(gpa, &t.account, @intCast(i), list, .list);
+        var children = try t.shapes.overPut(gpa, &t.account, Ids.none_int, s0, level);
+        children = try t.shapes.overPut(gpa, &t.account, children, s1, try t.shapes.leaf(gpa, &t.account, list, try t.cells.sets.insert(gpa, t.env().charge, .none, site.int(), 0)));
+        children = try t.shapes.overPut(gpa, &t.account, children, s2, level);
+        level = try t.shapes.node(gpa, &t.account, tree, .none, children);
+    }
+    return t.shapes.widen(gpa, &t.account, &t.places, &t.cells, level);
+}
+
+test "a recursive class's widened knot is written once and read back as a knot" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    // The allowance `@ownership_summary_size` allows: a knot is no reason to
+    // stop, and no stack grows with it.
+    a.account.allowance = std.math.maxInt(u32) - 1;
+    const w = try widenedTree(&a);
+    const k = try a.conds.excl(testing.allocator, a.env().charge, try a.cells.top(testing.allocator, &a.account));
+    const c = try a.sums.add(a.env(), .{ .params = &.{w}, .res = w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, w, false, k)).ctx });
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &.{c}, .identity, &words);
+    try testing.expect(std.mem.indexOfScalar(u32, words.items, @backingInt(Kind.group)) != null);
+    // Widened again, the same knot under other ids: the same words.
+    const again_w = try widenedTree(&a);
+    try testing.expect(again_w != w);
+    const c2 = try a.sums.add(a.env(), .{ .params = &.{again_w}, .res = again_w, .kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, again_w, false, k)).ctx });
+    var words2: std.ArrayList(u32) = .empty;
+    defer words2.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &.{c2}, .identity, &words2);
+    try testing.expectEqualSlices(u32, words.items, words2.items);
+
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    var back: std.ArrayList(ClassId) = .empty;
+    defer back.deinit(testing.allocator);
+    try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+    var round: std.ArrayList(u32) = .empty;
+    defer round.deinit(testing.allocator);
+    try write(b.env(), &b.sums, back.items, .identity, &round);
+    try testing.expectEqualSlices(u32, words.items, round.items);
+    // The knot is in the reader's table: a child at `#Node.0` leads back to
+    // the root (through the union with the parameter's leaf, if any).
+    const res = b.sums.get(back.items[0]).res;
+    const s0 = try b.places.ctorStep(testing.allocator, &b.account, 0, 0);
+    var at = res;
+    if (b.shapes.kind(at) == .@"union") at = .from(b.shapes.nodes.items(.a)[at.int()]);
+    const child = b.shapes.overGet(b.shapes.nodes.items(.a)[at.int()], s0).?;
+    try testing.expect(child == res or b.shapes.nodes.items(.a)[child.int()] == at.int() or child == at);
+    // Its stored κ came back with it.
+    try testing.expect(b.conds.kappaGet(b.sums.get(back.items[0]).kappas, res, false) != null);
+}
+
+test "a block built in another order writes the same bytes: nested classes and supplies with maps of their own" {
+    const Build = struct {
+        fn of(t: *Tables, flip: bool) !ClassId {
+            const gpa = testing.allocator;
+            const env = t.env();
+            const list = try t.place(0);
+            const root = try t.places.rootPath(gpa, list);
+            var p: [2]CellId = undefined;
+            for (0..2) |k| {
+                const i = if (flip) 1 - k else k;
+                p[i] = try t.cells.symbolic(gpa, &t.account, &t.places, .param, @intCast(i), root, 0);
+            }
+            var nested: [2]ClassId = undefined;
+            var supplies: [2]Summary.Supply = undefined;
+            for (0..2) |k| {
+                const i = if (flip) 1 - k else k;
+                const leaf = try t.shapes.leaf(gpa, &t.account, list, try t.cells.sets.insert(gpa, env.charge, .none, p[i].int(), 0));
+                const map = (try t.conds.kappaSet(gpa, env.charge, .none, leaf, false, try t.conds.excl(gpa, env.charge, p[i]))).ctx;
+                nested[k] = try t.sums.add(env, .{ .params = &.{.none}, .res = leaf, .kappas = map });
+                supplies[k] = .{ .j = 0, .k = @intCast(i), .node = leaf, .label = .none, .owned = true, .taken = false, .kappa = map };
+            }
+            return t.sums.add(env, .{ .params = &.{ .none, .none }, .res = .none, .classes = &nested, .funs = &.{.{ .j = 0, .calls = .once, .supplies = &supplies }} });
+        }
+    };
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const ca = try Build.of(&a, false);
+    const cb = try Build.of(&b, true);
+    var wa: std.ArrayList(u32) = .empty;
+    defer wa.deinit(testing.allocator);
+    var wb: std.ArrayList(u32) = .empty;
+    defer wb.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &.{ca}, .identity, &wa);
+    try write(b.env(), &b.sums, &.{cb}, .identity, &wb);
+    try testing.expectEqualSlices(u32, wa.items, wb.items);
+    // And both decode, every map with its κ.
+    for ([_][]const u32{ wa.items, wb.items }) |words| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(testing.allocator);
+        try testing.expect(try read(t.env(), &t.sums, words, .identity, &back) != null);
+        for (t.sums.nestedOf(back.items[0])) |x| try testing.expect(t.sums.get(x).kappas != .none);
+        const f = t.sums.fun(back.items[0], 0);
+        for (0..2) |i| try testing.expect(t.sums.supply(f, @intCast(i)).kappa != .none);
+    }
+}
+
+test "a block's size is linear in a chain of taken elements of taken elements" {
+    var last: usize = 0;
+    for ([_]u32{ 64, 128, 256 }) |depth| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        const gpa = testing.allocator;
+        const env = t.env();
+        const list = try t.place(0);
+        var c = try t.cells.symbolic(gpa, &t.account, &t.places, .param, 0, try t.places.rootPath(gpa, list), 0);
+        for (0..depth) |i| {
+            const l = try t.cells.label(gpa, &t.account, @intCast(i), .none, false);
+            _ = try t.cells.split(gpa, &t.account, c, @intCast(i), l, try t.conds.excl(gpa, env.charge, c));
+            c = try t.cells.refine(gpa, &t.account, .elem, c, l, 0, list, .list);
+        }
+        const res = try t.shapes.leaf(gpa, &t.account, list, try t.cells.sets.insert(gpa, env.charge, .none, c.int(), 0));
+        const k = try t.sums.add(env, .{ .params = &.{.none}, .res = res });
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        try write(env, &t.sums, &.{k}, .identity, &words);
+        if (last > 0) try testing.expect(words.items.len * 10 <= last * 21);
+        last = words.items.len;
+    }
+}
+
+test "a block's places are a namespace of their own: the module's type variables never meet them" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const classes = try rows(&a, false);
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &classes, .identity, &words);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    var back: std.ArrayList(ClassId) = .empty;
+    defer back.deinit(testing.allocator);
+    try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+    // The module asks for its type variables after the read: each is a
+    // place of its own walk, none of the block's.
+    const block_places = b.places.count();
+    for (0..8) |v| try testing.expect((try b.place(@intCast(v))).int() >= block_places);
+}
+
+test "a read is charged once, and a read past the allowance leaves the reader's tables as they were" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const classes = try rows(&a, false);
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(testing.allocator);
+    try write(a.env(), &a.sums, &classes, .identity, &words);
+    var cost: u32 = 0;
+    {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(testing.allocator);
+        const before = t.account.growth;
+        try testing.expect(try read(t.env(), &t.sums, words.items, .identity, &back) != null);
+        cost = t.account.growth - before;
+    }
+    for ([_]u32{ 0, 1 }) |short| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = t.account.growth + cost - short;
+        const counts = [_]u32{ t.places.count(), t.cells.count(), t.shapes.count(), t.conds.count(), t.sums.count() };
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(testing.allocator);
+        if (short == 0) {
+            // The whole decode once is exactly what the read costs.
+            try testing.expect(try read(t.env(), &t.sums, words.items, .identity, &back) != null);
+        } else {
+            try testing.expectError(error.OwnershipLimit, read(t.env(), &t.sums, words.items, .identity, &back));
+            try testing.expectEqualSlices(u32, &counts, &.{ t.places.count(), t.cells.count(), t.shapes.count(), t.conds.count(), t.sums.count() });
+            try testing.expectEqual(@as(usize, 0), back.items.len);
+        }
+    }
 }
