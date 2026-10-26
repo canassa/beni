@@ -206,8 +206,11 @@ pub const Prepass = struct {
     /// the enclosing frame — the enclosing `lambda` or `let_def` with
     /// parameters, or `none` for the declaration's own body.
     enclosing_frame: []const u32,
-    /// The spread chains (§2.13.2), in source order.
+    /// The spread chains (§2.13.2), per declaration in the order `Lower` finished them
+    /// (an inner chain before the chain around it).
     spreads: []const Spread,
+    /// Every chain's items, each chain a run of them.
+    spread_items: []const SpreadItem,
     /// The `withDefault (map m f) d` shapes (§2.13.12), by the outer call.
     joins: []const MaybeJoin,
 
@@ -219,9 +222,8 @@ pub const Prepass = struct {
         _pad: u6 = 0,
     };
 
-    /// A spread chain `Lower` recorded: its root call and its items in
-    /// source order (§2.13.2). The BIR table this reads does not exist yet
-    /// (S2b): the pre-pass publishes an empty list until it does.
+    /// A spread chain `Lower` recorded (`Bir.Spread`, §2.13.2): its root
+    /// call and its items in source order, a run of `spread_items`.
     pub const Spread = struct {
         root: u32,
         items: Ids.Range,
