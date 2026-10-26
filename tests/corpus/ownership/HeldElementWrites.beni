@@ -1,0 +1,65 @@
+-- ownership: a write to a pattern's element while the list it came from,
+-- or a view of it, is still read (ownership-v2.md §2.8, the refinement
+-- chain). The element is `elem(π1·ι)`, canonically `π1[*]`; the holder's
+-- `[*]` names `π1[*]` and a view's `[*]` names `others(π1·ι)`. Neither is
+-- a trie ancestor of the element, so only the canonical cell and the
+-- refinement chain at its path find them. Each write is refused; the
+-- element may be the value the push stored, so the refusal is approximate.
+pub basic : List (List Int) → List Int × List (List Int)
+basic xss =
+    zs = List.push xss [ 0 ]
+    case zs of
+        [ a, _ ] →
+            ( List.push a 1, zs )
+
+        _ →
+            ( [], [] )
+
+
+pub pushed : List (List Int), List Int → List Int × List (List Int)
+pushed xss y =
+    zs = List.push xss y
+    case zs of
+        [ a, _ ] →
+            ( List.push a 1, zs )
+
+        _ →
+            ( [], [] )
+
+
+pub set : List (List Int) → List Int × List (List Int)
+set xss =
+    zs = List.set xss 5 [ 0 ]
+    case zs of
+        [ a, _ ] →
+            ( List.push a 1, zs )
+
+        _ →
+            ( [], [] )
+
+
+pub ofRest : List (List Int) → List Int × List (List Int)
+ofRest xss =
+    zs = List.push xss [ 1 ]
+    case zs of
+        [ _, …rest ] →
+            case rest of
+                [ b, …_ ] →
+                    ( List.push b 2, rest )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub twice : List (List Int), List Int → List Int × List Int
+twice xss y =
+    zs = List.push (List.push xss y) y
+    case zs of
+        [ a, b ] →
+            ( List.push a 1, b )
+
+        _ →
+            ( [], [] )

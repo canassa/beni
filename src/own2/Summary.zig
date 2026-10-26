@@ -164,7 +164,7 @@ pub const Env = struct {
 pub const Names = struct {
     ctx: *anyopaque,
     field: *const fn (ctx: *anyopaque, rank: u32) []const u8,
-    ctor: *const fn (ctx: *anyopaque, c: u32, i: u32) []const u8,
+    ctor: *const fn (ctx: *anyopaque, head: u32, ordinal: u32) []const u8, // type `head`'s `ordinal`th
     decl: *const fn (ctx: *anyopaque, module: u32, decl: u32) []const u8,
 };
 
@@ -1261,7 +1261,7 @@ pub const Table = struct {
             while (kids.next()) |e| {
                 var sb: std.Io.Writer.Allocating = .init(p.arena);
                 try sb.writer.writeAll(prefix);
-                try p.step(&sb.writer, e.step);
+                try p.step(&sb.writer, d.place, e.step);
                 try p.useLines(e.node, i, sb.toOwnedSlice() catch return error.OutOfMemory, out);
             }
         }
@@ -1306,7 +1306,7 @@ pub const Table = struct {
                         if (env.shapes.kind(c) == .leaf and env.shapes.cells(c) == .none) continue;
                         var sb: std.Io.Writer.Allocating = .init(p.arena);
                         try sb.writer.writeAll(prefix);
-                        try p.step(&sb.writer, s);
+                        try p.step(&sb.writer, d.place, s);
                         try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, at_summary or s.kind == .elem or s.kind == .level, out);
                     }
                 },
@@ -1455,22 +1455,23 @@ pub const Table = struct {
 
         fn path(p: *Printer, w: *std.Io.Writer, q: PathId) WErr!void {
             if (q == .none) return;
-            var steps: std.ArrayList(Step) = .empty;
+            var steps: std.ArrayList(PathId) = .empty;
             var at = q;
             while (p.env.places.pathParent(at) != .none) : (at = p.env.places.pathParent(at)) {
-                steps.append(p.arena, p.env.places.pathStep(at)) catch return error.WriteFailed;
+                steps.append(p.arena, at) catch return error.WriteFailed;
             }
             var n = steps.items.len;
-            while (n > 0) : (n -= 1) try p.step(w, steps.items[n - 1]);
+            while (n > 0) : (n -= 1) try p.step(w, p.env.places.pathPlace(p.env.places.pathParent(steps.items[n - 1])), p.env.places.pathStep(steps.items[n - 1]));
         }
 
-        fn step(p: *Printer, w: *std.Io.Writer, s: Step) WErr!void {
+        /// Step `s` out of place `from` (a constructor is named by its type).
+        fn step(p: *Printer, w: *std.Io.Writer, from: PlaceId, s: Step) WErr!void {
             switch (s.kind) {
                 .field => try w.print(".{s}", .{p.names.field(p.names.ctx, s.payload)}),
                 .index => try w.print(".{d}", .{s.payload}),
                 .ctor_arg => {
                     const pair = p.env.places.ctorArgOf(s);
-                    try w.print("#{s}.{d}", .{ p.names.ctor(p.names.ctx, pair[0], pair[1]), pair[1] });
+                    try w.print("#{s}.{d}", .{ p.names.ctor(p.names.ctx, p.env.places.head(from), pair[0]), pair[1] });
                 },
                 .elem => try w.writeAll("[*]"),
                 .contents => try w.writeAll("◆"),

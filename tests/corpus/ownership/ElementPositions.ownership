@@ -1,0 +1,7 @@
+module ElementPositions
+  10:13 List.push a: accepted param
+  20:15 List.push p: accepted param
+  summary first: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*][*]{excl π1}, fresh1 π1[*]{excl π1}; xreq excl π1
+  summary siblings: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh2) fresh2 π1[*]{excl π1}, .0[*] ~condition(fresh3) ~π1[*][*]{excl π1}, .1 fresh5 ~condition(fresh4) π1[*]{excl π1}, condition(fresh1){sep π1[*] π1[*], sep π1[*] π1[*][*]}r{sep π1[*] π1[*], sep π1[*] π1[*][*]}; xreq excl π1
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

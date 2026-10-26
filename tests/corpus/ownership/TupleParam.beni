@@ -1,0 +1,5 @@
+-- ownership: a parameter written as a pattern (ownership-v2.md §2.13.3).
+-- The pattern has no type of its own; the parameter's place is the
+-- signature's, so `rows` is `π2.0` and `count`, an `Int`, holds nothing.
+pub update : Int, List Int × Int → List Int × Int
+update n ( rows, count ) = ( List.push rows n, count + 1 )

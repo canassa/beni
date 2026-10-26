@@ -83,7 +83,7 @@ pub fn walk(in: Input) Error!Result {
     const gpa = env.gpa;
     var regions = try Regions.build(gpa, env.account(), in.phase, in.bir, in.decl, in.prepass);
     defer regions.deinit(gpa);
-    var frame: Transfer.Frame = .{ .gpa = gpa, .env = env, .sums = in.sums, .ctx = in.ctx, .bir = in.bir, .decl = in.decl, .regions = &regions };
+    var frame: Transfer.Frame = .{ .gpa = gpa, .env = env, .sums = in.sums, .ctx = in.ctx, .bir = in.bir, .decl = in.decl, .regions = &regions, .param_places = in.param_places };
     defer frame.deinit();
     try frame.walk();
     if (frame.unbuilt != none) {
@@ -236,22 +236,28 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
                 return;
             }
             try stepsOf(e.places, path, e.gpa, st);
-            // A path through `⟲` marks where it re-enters: the place above.
-            var len = st.items.len;
-            for (st.items, 0..) |s, i| if (s.kind == .level) {
-                len = i;
-                break;
-            };
-            us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items[0..len], m, &.{});
+            // The canonical path, `⟲` included: a write below a level is at
+            // that level (`π1#Rose.0⟨List⟩`), never the outer object's storage.
+            us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items, m, &.{});
         }
     };
-    // R: the body's reads of a parameter's local.
-    const params = in.bir.extraSlice(.{ .start = in.decl.params_start, .end = in.decl.params_end }, Bir.Inst.Index);
+    // R: the body's reads of a local that names a parameter's object — the
+    // parameter itself, or a part a pattern bound (`count ( _, ( b, _ ) )`
+    // reads `π1.1.0`): at the cell's path, the use's own path below it.
+    var use_steps: std.ArrayList(Place.Step) = .empty;
+    defer use_steps.deinit(gpa);
     for (frame.uses.items) |u| {
-        for (params, 0..) |p, k| {
-            if (in.bir.instTag(p) != .pat_var or in.bir.instData(p).lhs != u.local) continue;
-            try Mark.at(env, uses, in.param_places, @intCast(k), u.path, .{ .r = true }, &steps);
-        }
+        if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;
+        const v = frame.locals[u.local];
+        if (v.node == .none) continue;
+        try stepsOf(env.places, u.path, gpa, &use_steps);
+        var it = env.cells.sets.iterate(env.shapes.cells(v.node));
+        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            var at = pq[1];
+            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse break;
+            try Mark.at(env, uses, in.param_places, pq[0], at, .{ .r = true }, &steps);
+        };
     }
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {

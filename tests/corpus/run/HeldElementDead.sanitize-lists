@@ -1,0 +1,1 @@
+A pattern's element written once the list it came from is dead (ownership-v2.md §2.8): the accepted twin of HeldElementInPlace, run on a copy that poisons the old list.

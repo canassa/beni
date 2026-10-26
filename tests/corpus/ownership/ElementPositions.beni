@@ -1,0 +1,23 @@
+-- ownership: a write to one position of a parameter's list
+-- (ownership-v2.md §2.2 `under`, §2.10). `first` writes `π1[*]`'s storage,
+-- not `π1`'s: its class marks `π1[*]` written. `siblings` keeps another
+-- position: the two are one object only if the list's elements are not
+-- exclusive, so the write is accepted on that condition, `xreq excl π1[*]`.
+pub first : List (List Int) → List Int
+first xss =
+    case xss of
+        [ a, …_ ] →
+            List.push a 1
+
+        _ →
+            []
+
+
+pub siblings : List (List Int) → List Int × List Int
+siblings xss =
+    case xss of
+        [ p, q ] →
+            ( List.push p 9, q )
+
+        _ →
+            ( [], [] )

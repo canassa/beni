@@ -38,11 +38,9 @@ const SummaryNames = struct {
         const s: *SummaryNames = @ptrCast(@alignCast(ctx));
         return s.names.field(s.names.ctx, rank);
     }
-    fn ctor(ctx: *anyopaque, c: u32, i: u32) []const u8 {
-        _ = ctx;
-        _ = i;
-        _ = c;
-        return "C";
+    fn ctor(ctx: *anyopaque, head: u32, ordinal: u32) []const u8 {
+        const s: *SummaryNames = @ptrCast(@alignCast(ctx));
+        return s.names.ctor(s.names.ctx, head, ordinal);
     }
     fn decl(ctx: *anyopaque, index: u32, j: u32) []const u8 {
         _ = j;
@@ -99,7 +97,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 line.writer.print("account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total() }) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
-                for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @enumFromInt(c)), n }) catch return error.OutOfMemory;
+                for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
                 try others.append(arena, line.written());
             }
             if (in.format_summaries and dr.class != .none) {

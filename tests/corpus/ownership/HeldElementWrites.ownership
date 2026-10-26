@@ -1,0 +1,21 @@
+module HeldElementWrites
+  10:10 List.push xss: accepted param
+  13:15 List.push a: rejected alias: zs[*] holds it and is read at 13:13
+  21:10 List.push xss: accepted param
+  24:15 List.push a: rejected alias: zs[*] holds it and is read at 24:13
+  32:10 List.set xss: accepted param
+  35:15 List.push a: rejected alias: zs[*] holds it and is read at 35:13
+  43:10 List.push xss: accepted param
+  48:23 List.push b: rejected alias: rest[*] holds it and is read at 48:21
+  59:10 List.push <call List.push>: accepted param
+  59:21 List.push xss: accepted param
+  62:15 List.push a: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  summary basic: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res .0 fresh7 ~condition(fresh3) ~fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh8 ~condition(fresh5) π1, .1[*] ~condition(fresh6) ~fresh1 ~π1[*], condition(fresh2){lost}r{lost}; xreq excl π1
+  summary pushed: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A, π2 RAw[storage], π2[*] A; res .0 fresh7 ~condition(fresh1) ~condition(fresh4) ~π2{excl π1, excl π2, sep π1[*] π2} π1[*]{excl π1, excl π2, sep π1[*] π2}, .0[*] ~condition(fresh2) ~π1[*][*]{excl π1, excl π2, sep π1[*] π2} ~π2[*]{excl π1, excl π2, sep π1[*] π2}, .1 fresh8 ~condition(fresh5) π1{excl π2, sep π1[*] π2}, .1[*] ~condition(fresh1) ~condition(fresh6) ~π1[*] ~π2, condition(fresh3){lost}r{lost}; xreq excl π1, excl π2, sep π1[*] π2
+  summary set: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res .0 fresh7 ~condition(fresh3) ~fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh8 ~condition(fresh5) π1, .1[*] ~condition(fresh6) ~fresh1 ~π1[*], condition(fresh2){lost}r{lost}; xreq excl π1
+  summary ofRest: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res .0 fresh7 ~condition(fresh3) ~fresh1 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh8 ~condition(fresh5) π1, .1[*] ~condition(fresh6) ~fresh1 ~π1[*], condition(fresh2){lost}r{lost}; xreq excl π1
+  summary twice: π1 RW[storage], π1[*] RAW[storage], π1[*][*] A, π2 RAw[storage], π2[*] A; res .0 fresh6 ~condition(fresh1) ~condition(fresh4) ~π2{lost} π1[*]{lost}, .0[*] ~condition(fresh2) ~π1[*][*]{lost} ~π2[*]{lost}, .1 fresh7 ~condition(fresh1) ~condition(fresh5) ~π2{lost} π1[*]{lost}, condition(fresh3){sep π1[*] π1[*], sep π1[*] π1[*][*], sep π1[*] π2, sep π1[*] π2[*], sep π1[*][*] π2, sep π2 π2, sep π2 π2[*]}r{sep π1[*] π1[*], sep π1[*] π1[*][*], sep π1[*] π2, sep π1[*] π2[*], sep π1[*][*] π2, sep π2 π2, sep π2 π2[*]}
+  demands 11: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 11: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 4
+cause exclusive 1

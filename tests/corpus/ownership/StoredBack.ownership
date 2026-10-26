@@ -1,0 +1,6 @@
+module StoredBack
+  11:18 List.set xss: accepted param
+  14:23 List.push a: accepted param
+  summary storedBack: π1 RW[storage], π1[*] RAW[storage], π1[*][*] A; res .0 fresh6 ~condition(fresh1) ~condition(fresh4) ~π1[*]{excl π1}, .0[*] ~condition(fresh2) ~π1[*][*]{excl π1}, .1 fresh7 ~condition(fresh1) ~condition(fresh5) ~π1[*]{excl π1}, condition(fresh3){lost}r{lost}; xreq excl π1
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

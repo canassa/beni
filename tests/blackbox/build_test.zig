@@ -7923,3 +7923,109 @@ test "the checker v2's published blocks are the same bytes at one job and at eig
     try testing.expectEqual(@as(usize, 3), std.mem.count(u8, dumps[0], "  block: "));
     for (dumps[1..]) |d| try testing.expectEqualStrings(dumps[0], d);
 }
+
+test "the checker v2 reads a pattern element's write off at its canonical position, and a sibling's condition into xreq" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.2, §2.10: `elem(π1·ι)` is `π1[*]`, so a write to
+    // a pattern's element marks `π1[*]` written, not the outer list `π1`
+    // (a caller that holds an element must see it). Another position the
+    // body still reads rests on the elements being exclusive: `xreq`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub first : List (List Int) → List Int
+        \\first xss =
+        \\    case xss of
+        \\        [ a, …_ ] →
+        \\            List.push a 1
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\pub siblings : List (List Int) → List Int × List Int
+        \\siblings xss =
+        \\    case xss of
+        \\        [ p, q ] →
+        \\            ( List.push p 9, q )
+        \\
+        \\        _ →
+        \\            ( [], [] )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary first: π1 R, π1[*] RAW, π1[*][*] A;") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary siblings: π1 R, π1[*] RAW, π1[*][*] A;") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "; xreq excl π1[*]\n") != null);
+}
+
+test "the checker v2's dump names a shared value, a method call, and gives lists' == and < their derived class" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13, R-7.15: `writeTop`'s class names the
+    // top-level value it returns, `helper`; `xs.push 1` is `List.push`; a
+    // list's `==` and `<` dispatch to `List.eq`/`List.compare`, written in
+    // JavaScript with no words, over derived element evidence: the derived
+    // class, read-only, never the pessimistic one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub other : List Int
+        \\other =
+        \\    [ 9 ]
+        \\
+        \\
+        \\helper : List Int
+        \\helper =
+        \\    [ 1 ]
+        \\
+        \\
+        \\pub writeTop : ⊤ → List Int
+        \\writeTop ⊤ =
+        \\    List.push helper 3
+        \\
+        \\
+        \\pub method : List Int → List Int × List Int
+        \\method xs =
+        \\    ys = xs.push 1
+        \\    ( ys, xs )
+        \\
+        \\
+        \\pub same : List Int, List Int → Bool
+        \\same a b =
+        \\    a == b
+        \\
+        \\
+        \\pub less : List Int, List Int → Bool
+        \\less a b =
+        \\    a < b
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "shared(helper)") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "shared(other)") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, " List.push xs: rejected later-use: xs is read again at ") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary same: π1 R, π2 R\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary less: π1 R, π2 R\n") != null);
+}
