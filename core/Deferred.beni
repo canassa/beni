@@ -31,7 +31,9 @@ pub opaque type Deferred a
 
 --| A new `Deferred`, not completed. Each call makes a new one.
 pub make : ⊤ → Deferred a
-make ⊤ = Deferred (Js.from { done = False, value = Js.null, waiters = Js.array [] })
+make ⊤ =
+    Deferred
+        (Js.from { done = False, value = Js.null, waiters = Js.construct (Js.global "Set") [] })
 
 
 --| The value, once the `Deferred` is completed: at once when it already is,
@@ -45,12 +47,11 @@ wait (Deferred d) =
         Task.callback λresume →
             waiter = Js.from resume
             waiters = Js.get d "waiters"
-            _ = Js.call waiters "push" [ waiter ]
+            _ = Js.call waiters "add" [ waiter ]
 
             λ⊤ →
-                i : Int
-                i = Js.to (Js.call waiters "indexOf" [ waiter ])
-                if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ])
+                _ = Js.call waiters "delete" [ waiter ]
+                ⊤
 
 
 --| Complete the `Deferred` with `value`, and answer `True`: every fiber
@@ -65,7 +66,7 @@ complete (Deferred d) value =
         Js.set d "done" (Js.from True)
         Js.set d "value" (Js.from value)
         waiters = Js.get d "waiters"
-        Js.set d "waiters" (Js.array [])
+        Js.set d "waiters" (Js.construct (Js.global "Set") [])
         Js.each waiters λw → Task.resume (Js.to w) value
         True
 

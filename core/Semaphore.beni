@@ -41,7 +41,8 @@ pub opaque type Semaphore
 --| A new `Semaphore` with `permits` permits, all free. Fewer than 0 is 0.
 --| Each call makes a new one.
 pub make : Int → Semaphore
-make permits = Semaphore (Js.from { permits = max 0 permits, taken = 0, waiters = Js.array [] })
+make permits =
+    Semaphore (Js.from { permits = max 0 permits, taken = 0, head = Js.null, tail = Js.null })
 
 
 --| Take `n` permits, run `work`, and give the permits back when `work`
@@ -73,7 +74,7 @@ tryWithPermits (Semaphore s) n work =
     if n ≤ 0 then
         Just (work ⊤)
     else
-        got = if Js.to (Js.get (Js.get s "waiters") "length") == 0 then grant s n else 0
+        got = if Js.isNull (Js.get s "head") then grant s n else 0
 
         if got ≤ 0 then
             Nothing
@@ -135,8 +136,12 @@ resize (Semaphore s) n =
 
 -- ---- The queue -------------------------------------------------------------
 --
--- `s` is `{ permits, taken, waiters }`; a waiter is `{ got, n, resume }`,
--- first in the array first served. A waiter is served by its permits
+-- `s` is `{ permits, taken, head, tail }`. The waiters are a doubly linked
+-- list, `head` first served: a waiter is `{ got, n, resume, queued, prev,
+-- next }`, and a cancelled one unlinks itself in constant time, so closing a
+-- scope of n waiters costs n, not n². (A `Set` would do for the order, but
+-- reading its first element after deleting many from the front walks every
+-- hole, which is the same n².) A waiter is served by its permits
 -- being counted as taken, `got` set, and its fiber resumed — a hand-off,
 -- so no later request can take them first. Its canceller sees `got`: a
 -- waiter served but cancelled before it ran gives the permits back.
@@ -169,17 +174,45 @@ grant s n =
 -- at the end of the queue. Answers how many were taken.
 take : Js.Value, Int → Int
 take s n =
-    waiters = Js.get s "waiters"
-    now = if Js.to (Js.get waiters "length") == 0 then grant s n else 0
+    now = if Js.isNull (Js.get s "head") then grant s n else 0
 
     if now > 0 then
         Js.set s "taken" (Js.from (takenOf s + now))
         now
     else
         Task.callback λresume →
-            w = Js.from { got = 0, n = n, resume = resume }
-            _ = Js.call waiters "push" [ w ]
+            w =
+                Js.from
+                    { got = 0
+                    , n = n
+                    , resume = resume
+                    , queued = True
+                    , prev = Js.null
+                    , next = Js.null
+                    }
+            enqueue s w
             λ⊤ → leave s w
+
+
+-- Link `w` at the end of the queue.
+enqueue : Js.Value, Js.Value → ⊤
+enqueue s w =
+    tail = Js.get s "tail"
+    Js.set w "prev" tail
+    if Js.isNull tail then Js.set s "head" w else Js.set tail "next" w
+    Js.set s "tail" w
+
+
+-- Take `w` off the queue, wherever it is.
+unlink : Js.Value, Js.Value → ⊤
+unlink s w =
+    prev = Js.get w "prev"
+    next = Js.get w "next"
+    if Js.isNull prev then Js.set s "head" next else Js.set prev "next" next
+    if Js.isNull next then Js.set s "tail" prev else Js.set next "prev" prev
+    Js.set w "prev" Js.null
+    Js.set w "next" Js.null
+    Js.set w "queued" (Js.from False)
 
 
 -- A waiter's fiber is cancelled: give back what it was handed, or take it
@@ -191,13 +224,10 @@ leave s w =
 
     if got > 0 then
         give s got
-    else
-        waiters = Js.get s "waiters"
-
-        i : Int
-        i = Js.to (Js.call waiters "indexOf" [ w ])
-        if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ])
-        if i == 0 then serve s
+    else if Js.to (Js.get w "queued") then
+        wasHead = Js.isNull (Js.get w "prev")
+        unlink s w
+        if wasHead then serve s
 
 
 -- Give back `n` permits, never below none taken, and serve the queue.
@@ -210,14 +240,12 @@ give s n =
 -- Hand permits to the waiters at the head, in order, while they fit.
 serve : Js.Value → ⊤
 serve s =
-    waiters = Js.get s "waiters"
+    w = Js.get s "head"
 
-    if Js.to (Js.get waiters "length") > 0 then
-        w = Js.at waiters 0
-
+    if not (Js.isNull w) then
         got = grant s (Js.to (Js.get w "n"))
         if got > 0 then
-            _ = Js.call waiters "shift" []
+            unlink s w
             Js.set s "taken" (Js.from (takenOf s + got))
             Js.set w "got" (Js.from got)
             Task.resume (Js.to (Js.get w "resume")) got

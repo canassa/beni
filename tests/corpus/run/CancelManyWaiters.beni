@@ -1,0 +1,35 @@
+-- run: cancelling many waiters at once costs time linear in their number
+-- (transparent-effects-proposal.md §17.4, §17.9). 400 000 fibers wait on a
+-- `Deferred` and 400 000 more for a `Semaphore`; closing their scope
+-- cancels them all. Both still work afterwards: `complete` answers `True`
+-- with no waiter left to wake, and a `release` frees the permit.
+import Deferred exposing (Deferred)
+import Io
+import List
+import Node exposing (Program)
+import Semaphore exposing (Semaphore)
+import Task
+
+
+count : Int
+count = 400000
+
+
+main : Program
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
+    s = Semaphore.make 1
+    Semaphore.acquire s 1
+    Task.scope λscope →
+        _ = List.foldl (List.range 1 count) 0 λi n →
+            _ = Task.spawnIn scope λ⊤ → Deferred.wait d
+            _ = Task.spawnIn scope λ⊤ → Semaphore.withPermit s λ⊤ → ⊤
+            n + i
+        Task.yieldNow ⊤
+    _ = Debug.log "complete" (Deferred.complete d 7)
+    _ = Debug.log "wait" (Deferred.wait d)
+    _ = Debug.log "available while held" (Semaphore.available s)
+    Semaphore.release s 1
+    _ = Debug.log "available after release" (Semaphore.available s)
+    _ = Debug.log "try" (Semaphore.tryWithPermits s 1 λ⊤ → "in")
+    Node.print "done"

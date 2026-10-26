@@ -509,7 +509,7 @@ module Semaphore
   opaque type Semaphore
   value acquire : Semaphore, Int → ⊤  -- suspends
   value available : Semaphore → Int  -- impure
-  value make : Int → Semaphore  -- impure
+  value make : Int → Semaphore
   value release : Semaphore, Int → ⊤  -- impure
   value resize : Semaphore, Int → ⊤  -- impure
   value tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a  -- impure
