@@ -9,13 +9,13 @@ module RecordContentsRows
   35:34 ++ rows: accepted param
   39:22 update <++>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsRows.flip writes it) (approx) [copy]
   39:33 ++ rows: rejected disjoint: another operand of the same operation reaches it
-  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
-  summary viaFilter: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh1r{excl π1}; rxreq excl π1
-  summary viaReverse: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh1r{excl π1}; rxreq excl π1
-  summary viaTake: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
-  summary viaCopy: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
-  summary viaAppend: π1 RW, π1[*] W{done}, π2 R, π2[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1, excl π2, sep π1[*] π2[*]} ~π1[*]◦ ~π2[*]◦, fresh1r{excl π1, excl π2, sep π1[*] π2[*]}; rxreq excl π1, excl π2, sep π1[*] π2[*]
-  summary viaAppendSelf: π1 RW, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*]◦, fresh1r{lost}
+  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1} ~π1[*]◦, fresh2r{excl π1}; rxreq excl π1
+  summary viaFilter: π1 R, π1[*] RW{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh2r{excl π1}; rxreq excl π1
+  summary viaReverse: π1 R, π1[*] RW{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh2r{excl π1}; rxreq excl π1
+  summary viaTake: π1 R, π1[*] RW{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh2r{excl π1}; rxreq excl π1
+  summary viaCopy: π1 R, π1[*] RW{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh2r{excl π1}; rxreq excl π1
+  summary viaAppend: π1 RW, π1[*] W{done}, π2 R, π2[*] W{done}; res [*] ~condition(fresh1) ~fresh1r{excl π1, excl π2, sep π1[*] π2[*]} ~π1[*]◦ ~π2[*]◦, fresh2r{excl π1, excl π2, sep π1[*] π2[*]}; rxreq excl π1, excl π2, sep π1[*] π2[*]
+  summary viaAppendSelf: π1 RW, π1[*] W{done}; res [*] ~condition(fresh1) ~fresh1r{lost} ~π1[*]◦, fresh2r{lost}
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
   records 8: accepted 7, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

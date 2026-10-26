@@ -7740,6 +7740,37 @@ test "dump --ownership-both prints v1's report, a marker line, then v2's, from o
     try testing.expectEqual(@as(u8, 2), refused.exit_code);
 }
 
+test "an ownership dump stops when its verdicts are not the module check's" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The report is computed again after the module check; under runtime
+    // safety the two must agree site by site (`checkVerdicts`), whether or
+    // not core is read from the checked core (#1106). The hidden
+    // `--ownership-skew-sites` forgets what the check observed.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\held : List Int → List Int × List Int
+        \\held xs = ( xs, List.push xs 1 )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const plain = try w.runWith(&.{ "dump", "--stage=ownership", "Main.beni" }, raw);
+    const skewed = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-skew-sites", "Main.beni" }, raw);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expect(skewed.exit_code != 0);
+    try testing.expect(std.mem.indexOf(u8, skewed.stderr, "serial and DAG verdicts differ") != null);
+}
+
 test "an ownership dump checks only the program and reads core's facts from the checked core" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
