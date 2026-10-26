@@ -2117,6 +2117,8 @@ Where it departs from §7.3, and why:
    `browser/inline/TotalCallBranchOwnership`, where the `inline` lowering evaluates both arms of a branch and
    writes one list twice that v1 accepted once per arm. So `test-lists-in-place` is red on master until it is
    fixed.
+5. **A trie's `List.drop` keeps one leaf unpoisoned.** On a trie, `List.drop` copies its first leaf into a fresh
+   head, so a held drop that reads only that leaf is not trapped. Tracked in #1035 until S8b removes the trie.
 
 ### 8.1 Risks and what de-risks each
 
