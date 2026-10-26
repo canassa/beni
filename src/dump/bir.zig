@@ -261,6 +261,19 @@ const Dumper = struct {
             try d.writeInst(@fromBackingInt(@intCast(i)));
             try d.w.writeByte('\n');
         }
+        // `spread %9: %2, …%4, %5` — each spread chain as one fact
+        // (ownership-v2.md §2.13.2), its root and its items in source order.
+        for (d.bir.spreads(decl_)) |s| {
+            try d.w.writeAll("  spread ");
+            try d.ref(s.root);
+            try d.w.writeAll(":");
+            for (d.bir.spreadItems(s), 0..) |item, k| {
+                try d.w.writeAll(if (k == 0) " " else ", ");
+                if (item[1] == 1) try d.w.writeAll("…");
+                try d.ref(item[0]);
+            }
+            try d.w.writeByte('\n');
+        }
 
         switch (decl_.kind) {
             .value, .annotation_only, .foreign_value => {

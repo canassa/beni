@@ -1,0 +1,11 @@
+-- BIR: each spread literal is one `spread` fact (`ownership-v2.md`
+-- §2.13.2) beside the `List.cons`/`List.append` calls it lowers to: its
+-- root and its items in source order, a spread item marked `…`. A spread
+-- literal inside another is a chain of its own, recorded before the outer
+-- one, and a literal in a lambda belongs to the declaration around it.
+nested : List Int, List Int → List Int
+nested xs ys = [ 0, …xs, …[ 1, …ys, 2 ] ]
+
+
+inLambda : List (List Int) → List (List Int)
+inLambda rows = List.map rows λrow → [ …row, 9 ]
