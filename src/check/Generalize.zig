@@ -364,16 +364,21 @@ pub fn holdExpansive(s: *Solve, rank: u32, binders: []const u32, annotated: []co
         if (try isValue(&s.report.env, scratch, rhs)) continue;
         held.clearRetainingCapacity();
         try Walk.nonCovariant(st, scratch, b.v, list, .{ .at_least = rank }, &held);
+        // Where a held flex goes: the enclosing frame, a top-level group's or
+        // a `let`'s.
+        const frames = s.frames.items;
+        const to_top = frames.len < 2 or frames[frames.len - 2].kind != .let;
         var reported = false;
         for (held.items) |v| {
             const root = st.find(v);
             if (st.rank(root) < rank) continue;
             switch (st.content(root)) {
                 .flex => |flags| {
+                    try s.report.made_by_call.append(scratch, .{ .v = root, .binding = b.name, .decl = b.decl, .to_top = to_top });
                     // A constrained root is `holdLet`'s (rule 2), which holds it
-                    // the same way and names its method in the hint.
+                    // the same way and names its method in the hint; it is
+                    // recorded all the same, for the top-level check.
                     if (Walk.constraints(flags).count(st) != 0) continue;
-                    try s.report.made_by_call.append(scratch, .{ .v = root, .binding = b.name, .decl = b.decl });
                     try Walk.lowerTo(st, &s.stacks, s.cx.gpa, root, rank - 1);
                 },
                 .rigid => {
@@ -452,7 +457,9 @@ pub fn isValue(env: *const EnvFile.Env, scratch: Allocator, inst: Bir.Inst.Index
                 try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
                 for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |f| try stack.append(scratch, f.value);
             },
-            .field_access, .tuple_index => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
+            // Not `field_access`: on a nominal receiver `x.m` is the call
+            // `M.m x` (static-dispatch-spike.md §1.1).
+            .tuple_index => try stack.append(scratch, @fromBackingInt(@intCast(data.lhs))),
             .call => {
                 if (!transparent(env, @fromBackingInt(@intCast(data.lhs)))) return false;
                 try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index));
@@ -872,18 +879,23 @@ pub fn impureValues(e: *Effects, cx: *const Context, report: *Report, decl_schem
         if (held.items.len == 0) continue;
         var tail = body;
         while (tail.int() < bir.insts.len and bir.instTag(tail) == .let) tail = @fromBackingInt(@intCast(bir.instData(tail).rhs));
-        const culprit: Var = if (!try isValue(&report.env, cx.scratch, tail))
-            held.items[0]
-        else culprit: {
+        if (try isValue(&report.env, cx.scratch, tail)) held: {
             for (report.made_by_call.items) |m| {
-                if (m.decl != @as(u32, @intCast(i))) continue;
+                if (m.decl != @as(u32, @intCast(i)) or !m.to_top) continue;
                 const root = st.find(m.v);
-                if (st.rank(root) == TypeStore.generalized) break :culprit root;
+                if (st.rank(root) != TypeStore.generalized) continue;
+                // The declaration's own quantifier: in its scheme, or a rigid of
+                // the reading an annotated body was checked against. A `number`
+                // nothing fixed is quantified too, in no type.
+                if (st.content(root) == .rigid or try reaches(st, cx.scratch, scheme, root)) break :held;
             }
             continue;
-        };
+        }
+        // The message names a variable of the scheme it prints: an annotated
+        // declaration's held variable is its checked reading's, not the
+        // scheme's.
         report.at(null);
-        try Messages.impurePolymorphicValue(report, body, d.name_token, bir.symbol(d.name), scheme, culprit);
+        try Messages.impurePolymorphicValue(report, body, d.name_token, bir.symbol(d.name), scheme, held.items[0]);
     }
 }
 
@@ -901,5 +913,24 @@ fn transparent(env: *const EnvFile.Env, callee: Bir.Inst.Index) bool {
     const module_name = env.interner.slice(env.graph.moduleName(module));
     if (std.mem.eql(u8, module_name, "Js")) return std.mem.eql(u8, name, "to") or std.mem.eql(u8, name, "from");
     if (std.mem.eql(u8, module_name, "Debug")) return std.mem.eql(u8, name, "log") or std.mem.eql(u8, name, "todo");
+    return false;
+}
+
+/// Whether `target`'s root is reachable from `from` by structural
+/// successors. Error path and the top-level check only.
+fn reaches(st: *TypeStore, scratch: Allocator, from: Var, target: Var) Error!bool {
+    const want = st.find(target);
+    const seen = st.nextMark();
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(scratch);
+    try stack.append(scratch, from);
+    while (stack.pop()) |v| {
+        const root = st.find(v);
+        if (root == want) return true;
+        if (st.mark(root) == seen) continue;
+        st.setMark(root, seen);
+        var n: u32 = 0;
+        while (Walk.child(st, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
+    }
     return false;
 }

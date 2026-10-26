@@ -20,7 +20,15 @@ pub const Error = Allocator.Error;
 /// (checker-v2.md §8.4); see `Env.monomorphic`.
 /// One variable a `let` value made by a call kept at the enclosing rank
 /// (checker-v2.md §8.4, amended 2026-10-26); see `Env.made_by_call`.
-pub const MadeByCall = struct { v: Var, binding: Symbol.Optional, decl: ?u32 };
+pub const MadeByCall = struct {
+    v: Var,
+    binding: Symbol.Optional,
+    decl: ?u32,
+    /// Held to a top-level frame, so a later quantifier of it is the
+    /// declaration's own (`Generalize.impureValues`), not a `let`
+    /// function's, which makes a new one per call.
+    to_top: bool,
+};
 
 pub const Monomorphic = struct {
     v: Var,
