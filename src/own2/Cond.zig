@@ -150,6 +150,8 @@ pub const Table = struct {
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
+    /// `kappaMerge`'s memo: an unordered pair of positions → their merge.
+    memo_merge: Ids.FixedDict(2) = .{},
     /// For tests: every position a reader (`deep`, `propagate`,
     /// `kappaLeq`) reads, as `node << 1 | class`, so a test can compare
     /// the frontiers they walk.
@@ -183,6 +185,7 @@ pub const Table = struct {
         t.prop_runs.deinit(gpa);
         t.memo_prop.deinit(gpa);
         t.memo_dag.deinit(gpa);
+        t.memo_merge.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -634,9 +637,21 @@ pub const Table = struct {
     /// merged below. A fold takes the other side folded into it; two exact
     /// folds stay exact (each stores every built node of its own), anything
     /// collapsed into one is collapsed. `a` when `b` adds nothing.
+    /// Memoised per unordered pair (§2.9): positions are immutable and
+    /// interned by content, so a pair always merges to one position.
     pub fn kappaMerge(t: *Table, gpa: Allocator, charge: Charge, a: Kappas, b: Kappas) Error!Kappas {
         if (a == .none) return b;
         if (b == .none or a == b) return a;
+        const mkey: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_merge.get(mkey)) |hit| return .from(hit);
+        const out = try t.kappaMergeUncached(gpa, charge, a, b);
+        try charge.reserve(gpa, .memo, 1);
+        (try t.memo_merge.getOrPut(gpa, mkey)).value_ptr.* = out.int();
+        return out;
+    }
+
+    fn kappaMergeUncached(t: *Table, gpa: Allocator, charge: Charge, a: Kappas, b: Kappas) Error!Kappas {
         try charge.reserve(gpa, .inspection, 1);
         const pa = t.position(a);
         const pb = t.position(b);

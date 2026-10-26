@@ -8312,9 +8312,10 @@ test "the checker v2's growth in a tower of joins of one value at two depths is 
     // #1119: `r_k = if c then Rose [ r_{k-1} ] else r_{k-1}` re-walked the
     // whole tower at every level (cubic: 18 364 / 114 123 at N = 10 / 20).
     // The join memo (§2.9) walks each state once across calls, so the
-    // states are linear. What remains quadratic is the snapshots' eager
-    // merge of the two depths (2k + 2 new positions per level), which the
-    // lazy merge removes; this bound then tightens to linear.
+    // states are linear, and the merge memo merges each pair of positions
+    // once. What remains quadratic is the reads over a position's cells
+    // and a union's sides, which grow with the level (#1121); this bound
+    // then tightens to linear.
     var growth: [3]u64 = undefined;
     for ([_]u32{ 10, 20, 40 }, 0..) |n, run| {
         var w = try World.init(testing.allocator, testing.io);
@@ -8341,10 +8342,11 @@ test "the checker v2's growth in a tower of joins of one value at two depths is 
     }
     // Twice the levels, at most four times the growth (quadratic); the
     // re-walk of union DAGs was about six times. And each state walked
-    // once: 79 788 at N = 40 with the memo, 126 033 without it.
+    // once, each pair merged once: 66 562 at N = 40; 79 788 without the
+    // merge memo, 126 033 without the join memo.
     try testing.expect(growth[1] <= 4 * growth[0]);
     try testing.expect(growth[2] <= 4 * growth[1]);
-    try testing.expect(growth[2] <= 100_000);
+    try testing.expect(growth[2] <= 73_000);
 }
 
 test "a one-element literal's [*] compares the objects its element holds at every path" {
