@@ -1,0 +1,12 @@
+-- parse/bad: a declaration's `@ownership_summary_size` (`ownership-v2.md`
+-- §4.4) is one of its lines, so the import after it comes after a
+-- declaration: `import_after_declaration` (9:1); the attribute, which no
+-- declaration follows, is `invalid_ownership_summary_size` (8:1). A
+-- module's attribute, in the preamble, may come before the imports.
+
+
+@ownership_summary_size(70000)
+import List
+
+
+f = 1
