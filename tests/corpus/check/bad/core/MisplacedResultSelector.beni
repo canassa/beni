@@ -8,7 +8,9 @@
 -- (`eight`), into a first parameter that is not `written returned`
 -- (`nine`), that is also `many` (`ten`), and on a `List` of callbacks
 -- (`eleven`); `cellupdate` and `cellmodify` without `stored` (`twelve`,
--- `thirteen`, and then `cellwrite` has no companion either).
+-- `thirteen`, and then `cellwrite` has no companion either). Two callbacks
+-- whose answers go back (`fourteen`, the second refused), and a second
+-- `written returned` parameter beside one (`fifteen`): ambiguous destinations.
 type Box a
     = Box a
 
@@ -50,3 +52,17 @@ pub foreign pure twelve : cellwrite Box a, cellupdate sync (a → a) → ⊤
 
 
 pub foreign pure thirteen : cellwrite Box a, cellmodify sync (a → b × a) → b
+
+
+pub foreign pure fourteen :
+      written returned List a
+    , once taken stored (a → a)
+    , once taken stored (a → a)
+    → List a
+
+
+pub foreign pure fifteen :
+      written returned List a
+    , written returned List a
+    , once taken stored (a → a)
+    → List a
