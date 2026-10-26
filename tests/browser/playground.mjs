@@ -292,6 +292,12 @@ const looks = {
       { text: ".toggle-all + label", pseudo: "::before", ui: true },
     ],
   },
+  "Ball machine": {
+    known: `getComputedStyle(document.querySelector(".tally b")).color + " on " + getComputedStyle(document.documentElement).backgroundColor`,
+    light: "rgb(166, 75, 0) on rgb(245, 245, 245)",
+    dark: "rgb(255, 154, 60) on rgb(4, 2, 5)",
+    texts: [{ text: ".tally" }, { text: ".tally b" }, { text: ".knob" }, { text: ".knob output" }],
+  },
 };
 
 /// The checks of §4.6 on the sample `name` that `page` shows, and its
@@ -353,7 +359,8 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
   } else {
     check((await page.until(loaded, 10_000)) !== null, `sample ${name} loads in the frame`);
     // Mounted, not only imported: the page's markup is in the frame.
-    const mounted = name === "TodoMVC" ? `document.querySelector("input") !== null` : `document.querySelectorAll("button").length === 2`;
+    const mounted =
+      name === "TodoMVC" ? `document.querySelector("input") !== null` : name === "Ball machine" ? `document.querySelector("svg circle") !== null` : `document.querySelectorAll("button").length === 2`;
     check((await page.until(mounted, 10_000, true)) !== null, `sample ${name} mounts its markup`);
     check(looks[name] !== undefined, `sample ${name} has a look to check`);
     if (looks[name] !== undefined) await checkLook(page, name, looks[name]);

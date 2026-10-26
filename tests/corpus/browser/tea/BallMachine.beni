@@ -1,0 +1,1541 @@
+--! The ball machine: four fibers run it, and none of them is async.
+--!
+--! Balls fall through the machine under gravity. The program below only
+--! opens and closes its gates. `admit` lets a ball in when there is room,
+--! `batch` fills the bucket and drops it, `finish` gives the room back when
+--! a ball leaves, and `retry` sends a failed ball round again, later each
+--! time. `waitBall` (a `Queue.take`), `Semaphore.acquire` and `Task.sleep`
+--! wait, and nothing marks them. A fifth fiber steps the physics before
+--! each frame and sends a picture of it to `view`.
+--!
+--! Open the page with `?debug` and the machine logs, on the console, each
+--! ball it lets in, each batch it drops and each retry.
+
+import Browser.Events
+import Browser.Navigation
+import Cmd exposing (Cmd)
+import Duration exposing (Duration)
+import Html exposing (Html)
+import Log
+import Queue exposing (Queue)
+import Random
+import Ref exposing (Ref)
+import Semaphore exposing (Semaphore)
+import Sub exposing (Sub)
+import Task
+import Tea
+import Time
+
+
+-- ---- The program that runs the machine ------------------------------------
+
+run : Machine → ⊤
+run m =
+    room = Semaphore.make 4
+    Task.scope λs →
+        _ = Task.spawnIn s λ⊤ → admit m room
+        _ = Task.spawnIn s λ⊤ → batch m
+        _ = Task.spawnIn s λ⊤ → finish m room
+        _ = Task.spawnIn s λ⊤ → retry m
+        _ = Task.spawnIn s λ⊤ → simulate m room
+        Task.never ⊤
+
+
+admit : Machine, Semaphore → ⊤
+admit m room = Task.forever λ⊤ →
+    _ = waitBall m.hopper
+    Semaphore.acquire room 1
+    pass m.entry
+
+
+batch : Machine → ⊤
+batch m = Task.forever λ⊤ →
+    fill m.bucket (perBatch m) (Duration.millis 500)
+    drop m.trapdoor
+
+
+finish : Machine, Semaphore → ⊤
+finish m room = Task.forever λ⊤ →
+    _ = waitBall m.exit
+    Semaphore.release room 1
+
+
+retry : Machine → ⊤
+retry m = Task.forever λ⊤ →
+    ball = waitBall m.bay
+    Task.sleep (Duration.millis (200 * 2 ^ ball.attempts))
+    pass m.bayGate
+
+
+-- ---- The machine's parts, as the program sees them ------------------------
+--
+-- A sensor is a queue the world offers each ball to as it passes. A gate
+-- lets balls through and tells which one went.
+
+--| The parts of one machine.
+type alias Machine =
+    world : Ref World
+    hopper : Queue Ball
+    exit : Queue Ball
+    bay : Queue Ball
+    entry : Gate
+    bayGate : Gate
+    bucket : Bucket
+    trapdoor : Trapdoor
+    send : Cmd.Send Msg
+
+
+--| A gate: `open` lets one more ball through, and `through` hears each.
+type alias Gate =
+    open : ⊤ → ⊤
+    through : Queue Ball
+
+
+--| The bucket under the chute: its gate lets in up to `n` balls.
+type alias Bucket =
+    open : Int → ⊤
+    close : ⊤ → ⊤
+    landed : Queue Ball
+
+
+--| The bucket's flat bottom.
+type alias Trapdoor =
+    open : ⊤ → ⊤
+    close : ⊤ → ⊤
+    emptied : Queue ⊤
+
+
+--| The next ball a sensor sees. A sensor never ends.
+waitBall : Queue Ball → Ball
+waitBall sensor =
+    case Queue.take sensor of
+        Just ball →
+            ball
+
+        Nothing →
+            Task.never ⊤
+
+
+--| Let one ball through the gate, and wait until it has gone through.
+pass : Gate → ⊤
+pass gate =
+    gate.open ⊤
+    _ = waitBall gate.through
+    ⊤
+
+
+--| Let balls into the bucket until it holds `n`, or until `window` after
+--| the first one landed, then shut its gate.
+fill : Bucket, Int, Duration → ⊤
+fill bucket n window =
+    bucket.open n
+    _ = waitBall bucket.landed
+    _ = Task.timeout window λ⊤ → List.map (List.range 2 n) λ_ → waitBall bucket.landed
+    bucket.close ⊤
+    drain bucket.landed
+
+
+--| Open the trapdoor until the bucket is empty, for 1.5 s at most.
+drop : Trapdoor → ⊤
+drop trapdoor =
+    trapdoor.open ⊤
+    _ = Task.timeout (Duration.millis 1500) λ⊤ → Queue.take trapdoor.emptied
+    trapdoor.close ⊤
+    drain trapdoor.emptied
+
+
+-- What a wait cut short by its timeout left behind.
+drain : Queue a → ⊤
+drain q =
+    case Queue.poll q of
+        Just _ →
+            drain q
+
+        Nothing →
+            ⊤
+
+
+perBatch : Machine → Int
+perBatch m = (Ref.get m.world).perBatch
+
+
+machine : Cmd.Send Msg → Machine
+machine send =
+    world : Ref World
+    world = Ref.make (fresh ⊤)
+    { world = world
+    , hopper = Queue.unbounded ⊤
+    , exit = Queue.unbounded ⊤
+    , bay = Queue.unbounded ⊤
+    , entry =
+        { open = λ⊤ → Ref.update world λw → { w | entry = w.entry + 1 }
+        , through = Queue.unbounded ⊤
+        }
+    , bayGate =
+        { open = λ⊤ → openBay world
+        , through = Queue.unbounded ⊤
+        }
+    , bucket =
+        { open = λn → Ref.update world λw → { w | bucketDoor = n, asked = n }
+        , close = λ⊤ → Ref.update world λw → { w | bucketDoor = 0 }
+        , landed = Queue.unbounded ⊤
+        }
+    , trapdoor =
+        { open = λ⊤ → openTrapdoor world
+        , close = λ⊤ → Ref.update world λw → { w | trapOpen = False, armed = False }
+        , emptied = Queue.unbounded ⊤
+        }
+    , send = send
+    }
+
+
+-- With `?debug` in the page's address, as on the flow page, the machine
+-- logs each ball it lets in, each batch it drops and each retry, with the
+-- times on the page's clock.
+debugging : ⊤ → Bool
+debugging ⊤ =
+    case Browser.Navigation.currentUrl ⊤ of
+        Just url →
+            url.query == Just "debug"
+
+        Nothing →
+            False
+
+
+openTrapdoor : Ref World → ⊤
+openTrapdoor world =
+    w = Ref.get world
+    bucket = List.filter w.balls λb → b.bucketed
+    first = Maybe.withDefault (List.minimum (List.map bucket λb → b.landedAt)) w.now
+    Log.debug "drop: ${List.length bucket} of ${w.asked}, the first in for ${clock ⊤ - first} ms"
+    Ref.update world openTrap
+
+
+openBay : Ref World → ⊤
+openBay world =
+    w = Ref.get world
+    waiting = List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+        b.arrivedAt
+    case waiting of
+        [ b, …_ ] →
+            Log.debug
+                "retry: ball ${b.id} went round ${b.attempts} times before and waited ${clock ⊤ - max b.arrivedAt w.bayFreeAt} ms"
+
+        [] →
+            ⊤
+    Ref.update world λv → { v | bayDoor = v.bayDoor + 1 }
+
+
+clock : ⊤ → Int
+clock ⊤ = Time.toMillis (Time.now ⊤)
+
+
+-- ---- The world: what the program does not control ------------------------
+--
+-- A fifth fiber steps the physics before each frame the browser draws,
+-- hands what the sensors saw to their queues, turns the "At once" knob on
+-- the room, and sends a picture of the world to `update`.
+
+simulate : Machine, Semaphore → ⊤
+simulate m room = Browser.Events.eachAnimationFrameDelta λms →
+    now = Ref.get m.world
+    if now.sized ≠ now.atOnce then
+        Semaphore.resize room now.atOnce
+        Ref.update m.world λw → { w | sized = w.atOnce }
+    signals = Ref.modify m.world λw → step w (min (1 / 30) (ms / 1000)) (clock ⊤)
+    _ = List.map signals λs → signal m s
+    if List.any signals isEntered then
+        w = Ref.get m.world
+        Log.debug "in: ${held w} of ${w.atOnce} in the machine"
+    m.send (Stepped (Ref.get m.world))
+
+
+isEntered : Signal → Bool
+isEntered s =
+    case s of
+        Entered _ →
+            True
+
+        _ →
+            False
+
+
+signal : Machine, Signal → ⊤
+signal m s =
+    _ =
+        case s of
+            AtHopper ball →
+                Queue.offer m.hopper ball
+
+            Entered ball →
+                Queue.offer m.entry.through ball
+
+            Landed ball →
+                Queue.offer m.bucket.landed ball
+
+            Emptied →
+                Queue.offer m.trapdoor.emptied ⊤
+
+            Exited ball →
+                Queue.offer m.exit ball
+
+            AtBay ball →
+                Queue.offer m.bay ball
+
+            Returned ball →
+                Queue.offer m.bayGate.through ball
+    ⊤
+
+
+--| What a sensor or a gate saw in one step.
+type Signal
+    = AtHopper Ball
+    | Entered Ball
+    | Landed Ball
+    | Emptied
+    | Exited Ball
+    | AtBay Ball
+    | Returned Ball
+
+
+--| Where a ball is on its way.
+type Stage
+    = Pool
+    | Inside
+    | Done
+    | Returning
+
+
+--| Where the flap at the check sends a ball.
+type Route
+    = ToLeft
+    | ToRight
+
+
+--| A ball. `token`: it takes up room. `attempts`: how many times it went
+--| round again.
+type alias Ball =
+    id : Int
+    x : Float
+    y : Float
+    vx : Float
+    vy : Float
+    red : Bool
+    stage : Stage
+    token : Bool
+    sensed : Bool
+    bucketed : Bool
+    landedAt : Int
+    dropped : Bool
+    inBox : Bool
+    boxAt : Float
+    route : Maybe Route
+    attempts : Int
+    waitFrom : Float
+    arrivedAt : Int
+    alpha : Float
+
+
+--| A spark from the trapdoor.
+type alias Spark =
+    x : Float
+    y : Float
+    vx : Float
+    vy : Float
+    life : Float
+
+
+--| The whole machine at one moment. `entry`, `bucketDoor` and `bayDoor`
+--| count the balls each gate still lets through.
+type alias World =
+    t : Float
+    now : Int
+    balls : List Ball
+    sparks : List Spark
+    seed : Random.Seed
+    next : Int
+    atOnce : Int
+    perBatch : Int
+    sized : Int
+    entry : Int
+    bucketDoor : Int
+    bayDoor : Int
+    bayFree : Float
+    bayFreeAt : Int
+    asked : Int
+    trapOpen : Bool
+    armed : Bool
+    flap : Maybe Route
+    events : List (Float × Bool)
+    failAt : Float
+    passAt : Float
+
+
+fresh : ⊤ → World
+fresh ⊤ =
+    { t = 0
+    , now = clock ⊤
+    , balls = []
+    , sparks = []
+    , seed = Random.initialSeed (Time.toMillis (Time.now ⊤))
+    , next = 1
+    , atOnce = 4
+    , perBatch = 3
+    , sized = 4
+    , entry = 0
+    , bucketDoor = 0
+    , bayDoor = 0
+    , bayFree = 0
+    , bayFreeAt = 0
+    , asked = 0
+    , trapOpen = False
+    , armed = False
+    , flap = Nothing
+    , events = []
+    , failAt = -9
+    , passAt = -9
+    }
+
+
+-- The world's units: a 400 × 560 box.
+r : Float
+r = 7.5
+
+
+cx : Float
+cx = 150
+
+
+gravity : Float
+gravity = 700
+
+
+flaky : Float
+flaky = 0.18
+
+
+hopTop : Float
+hopTop = 14
+
+
+gateA : Float
+gateA = 94
+
+
+bayTop : Float
+bayTop = 115
+
+
+bayBottom : Float
+bayBottom = 137
+
+
+gateB : Float
+gateB = 172
+
+
+bucketTop : Float
+bucketTop = 176
+
+
+trap : Float
+trap = 216
+
+
+intake : Float
+intake = 440
+
+
+exitY : Float
+exitY = 474
+
+
+floorY : Float
+floorY = 492
+
+
+-- Half widths: the chute, the trapdoor, the pipe, the funnel's top and its
+-- neck; and where the right channel ends.
+half : Float
+half = 11
+
+
+door : Float
+door = 24
+
+
+pipe : Float
+pipe = 26
+
+
+funnel : Float
+funnel = 42
+
+
+box : Float
+box = 8.5
+
+
+out : Float
+out = cx + 44
+
+
+--| A wall, and the part of the machine it belongs to.
+type alias Wall =
+    ax : Float
+    ay : Float
+    bx : Float
+    by : Float
+    part : Part
+
+
+type Part
+    = Fixed
+    | EntryGate
+    | BucketGate
+    | TrapGate
+    | BayGate
+    | LeftFlap
+    | RightFlap
+
+
+wall : Float, Float, Float, Float → Wall
+wall ax ay bx by = { ax = ax, ay = ay, bx = bx, by = by, part = Fixed }
+
+
+walls : List Wall
+walls =
+    [ wall (cx - 95) hopTop (cx - half) (gateA - 2)
+    , wall (cx + 95) hopTop (cx + half) (gateA - 2)
+    , wall (cx - half) (gateA - 2) (cx - half) bayTop
+    , wall (cx - half) bayBottom (cx - half) gateB
+    , wall (cx + half) (gateA - 2) (cx + half) gateB
+    , wall (cx - half) gateB (cx - 46) bucketTop
+    , wall (cx + half) gateB (cx + 46) bucketTop
+    , wall (cx - 46) bucketTop (cx - door) trap
+    , wall (cx + 46) bucketTop (cx + door) trap
+    , wall (cx - door) trap (cx - pipe) (trap + 4)
+    , wall (cx + door) trap (cx + pipe) (trap + 4)
+    , wall (cx - pipe) (trap + 4) (cx - pipe) intake
+    , wall (cx + pipe) (trap + 4) (cx + pipe) intake
+    , wall (cx - funnel) intake (cx - pipe) intake
+    , wall (cx + pipe) intake (cx + funnel) intake
+    , wall (cx - funnel) intake (cx - box) exitY
+    , wall (cx + funnel) intake (cx + box) exitY
+    , wall 25 exitY (cx - box) exitY
+    , wall (cx + box) exitY out exitY
+    , wall 3 floorY out floorY
+    , wall 3 floorY 3 bayTop
+    , wall 25 exitY 25 bayBottom
+    , wall 3 bayTop (cx - half) bayTop
+    , wall 25 bayBottom (cx - half) bayBottom
+    , { ax = cx - half, ay = gateA, bx = cx + half, by = gateA, part = EntryGate }
+    , { ax = cx - half, ay = gateB, bx = cx + half, by = gateB, part = BucketGate }
+    , { ax = cx - door, ay = trap, bx = cx + door, by = trap, part = TrapGate }
+    , { ax = cx - half - 3, ay = bayTop, bx = cx - half - 3, by = bayBottom, part = BayGate }
+    , { ax = cx - box, ay = exitY, bx = cx - box, by = floorY, part = LeftFlap }
+    , { ax = cx + box, ay = exitY, bx = cx + box, by = floorY, part = RightFlap }
+    ]
+
+
+solid : World, Part → Bool
+solid w part =
+    case part of
+        Fixed →
+            True
+
+        EntryGate →
+            w.entry ≤ 0
+
+        BucketGate →
+            w.bucketDoor ≤ 0
+
+        TrapGate →
+            not w.trapOpen
+
+        BayGate →
+            w.bayDoor ≤ 0
+
+        LeftFlap →
+            w.flap ≠ Just ToLeft
+
+        RightFlap →
+            w.flap ≠ Just ToRight
+
+
+roll : Random.Seed → Float × Random.Seed
+roll seed = Random.step (Random.float 0 1) seed
+
+
+--| One frame: new balls, six substeps of physics, then the slow things.
+step : World, Float, Int → List Signal × World
+step w0 dt now =
+    w1 = spawn { w0 | t = w0.t + dt, now = now }
+    h = dt / 6
+    ( w2, signals ) = List.foldl (List.range 1 6) ( w1, [] ) λ_ ( w, sigs ) → substep w h sigs
+    balls =
+        List.filter
+            (List.map w2.balls λb →
+                if b.stage == Done && b.y > floorY + 10 then
+                    { b | alpha = b.alpha - dt * 2.5 }
+                else
+                    b
+            )
+            λb → b.alpha > 0 && b.y < 600
+    sparks =
+        List.filter
+            (List.map w2.sparks λs →
+                { s
+                    | x = s.x + s.vx * dt
+                    , y = s.y + s.vy * dt
+                    , vy = s.vy + 380 * dt
+                    , life = s.life - dt
+                }
+            )
+            λs → s.life > 0
+    events = List.filter w2.events λev → w2.t - ev.0 < 10
+    ( signals, { w2 | balls = balls, sparks = sparks, events = events } )
+
+
+-- A new ball in the hopper while it holds fewer than ten.
+spawn : World → World
+spawn w =
+    pool = List.length (List.filter w.balls λb → b.stage == Pool)
+    ( u1, s1 ) = roll w.seed
+    ( u2, s2 ) = roll s1
+    ( u3, s3 ) = roll s2
+    x = cx + (u1 - 0.5) * 120
+    crowded = List.any w.balls λo → distance (o.x - x) (o.y - 4) < r * 2.2
+    if pool ≥ 10 || crowded then
+        { w | seed = s3 }
+    else
+        ball =
+            { id = w.next
+            , x = x
+            , y = 4
+            , vx = (u2 - 0.5) * 20
+            , vy = 0
+            , red = u3 < flaky
+            , stage = Pool
+            , token = False
+            , sensed = False
+            , bucketed = False
+            , landedAt = 0
+            , dropped = False
+            , inBox = False
+            , boxAt = 0
+            , route = Nothing
+            , attempts = 0
+            , waitFrom = 0
+            , arrivedAt = 0
+            , alpha = 1
+            }
+        { w | seed = s3, next = w.next + 1, balls = List.push w.balls ball }
+
+
+distance : Float, Float → Float
+distance dx dy = sqrt (dx * dx + dy * dy)
+
+
+substep : World, Float, List Signal → World × List Signal
+substep w h sigs =
+    ( moved, seed ) = List.foldl w.balls ( [], w.seed ) λb ( acc, s ) →
+        ( b2, s2 ) = move w b h s
+        ( List.push acc b2, s2 )
+    shut = List.filter walls λwl → solid w wl.part
+    walled = List.map moved λb → List.foldl shut b λwl acc → hitWall acc wl
+    bumped = collide walled
+    ( balls, w2, sigs2 ) =
+        List.foldl
+            (List.map2 w.balls bumped λp b → ( p.x, p.y, b ))
+            ( [], { w | seed = seed }, sigs )
+            λ( px, py, b ) ( acc, ww, ss ) →
+                ( b2, ww2, ss2 ) = cross ww ss px py b
+                ( List.push acc b2, ww2, ss2 )
+    emptied = w2.trapOpen && w2.armed && not (List.any balls λb → b.bucketed)
+    first = List.head (List.sortBy (List.filter balls λb → b.inBox) λb → b.boxAt)
+    w3 = { w2 | balls = balls, flap = Maybe.andThen first λb → b.route }
+    if emptied then ( { w3 | armed = False }, List.push sigs2 Emptied ) else ( w3, sigs2 )
+
+
+-- The forces: gravity; the air in the return tube; the flap's push.
+move : World, Ball, Float, Random.Seed → Ball × Random.Seed
+move w b h seed =
+    k = min 1 (10 * h)
+    air = λtx ty → { b | vx = b.vx + (tx - b.vx) * k, vy = b.vy + (ty - b.vy) * k }
+    inBand = b.y > exitY && b.y < floorY
+    ( pushed, s2 ) =
+        if b.inBox && b.route ≠ Nothing && b.route == w.flap then
+            ( air (if b.route == Just ToRight then 180 else -180) 0, seed )
+        else if inBand && b.x > cx + box - 2 && b.x < out then
+            ( air (if b.stage == Done then 180 else -180) 0, seed )
+        else if inBand && b.x < cx - box + 2 && b.x > 25 then
+            ( air (if b.stage == Returning then -180 else 180) 0, seed )
+        else if b.x > 3 && b.x < 25 && b.y > bayTop && b.y < floorY then
+            ( if b.y < bayBottom then air 130 0 else air 0 (-190), seed )
+        else if b.y > bayTop && b.y < bayBottom && b.x > 3 && b.x < cx - half then
+            ( air 130 0, seed )
+        else if b.stage == Pool && b.y < gateA then
+            ( shake, s ) = roll seed
+            ( { b | vy = b.vy + gravity * h, vx = b.vx + (shake - 0.5) * 900 * h }, s )
+        else
+            ( { b | vy = b.vy + gravity * h }, seed )
+    v = distance pushed.vx pushed.vy
+    capped =
+        if v > 700 then { pushed | vx = pushed.vx * 700 / v, vy = pushed.vy * 700 / v } else pushed
+    ( { capped | x = capped.x + capped.vx * h, y = capped.y + capped.vy * h }, s2 )
+
+
+hitWall : Ball, Wall → Ball
+hitWall b wl =
+    dx = wl.bx - wl.ax
+    dy = wl.by - wl.ay
+    k = clamp (((b.x - wl.ax) * dx + (b.y - wl.ay) * dy) / (dx * dx + dy * dy)) 0 1
+    nx = b.x - (wl.ax + dx * k)
+    ny = b.y - (wl.ay + dy * k)
+    d = distance nx ny
+    if d ≥ r || d == 0 then
+        b
+    else
+        ux = nx / d
+        uy = ny / d
+        vn = b.vx * ux + b.vy * uy
+        placed = { b | x = b.x + ux * (r - d), y = b.y + uy * (r - d) }
+        if vn < 0 then
+            { placed
+                | vx = (b.vx - 1.2 * vn * ux) * 0.995
+                , vy = (b.vy - 1.2 * vn * uy) * 0.995
+            }
+        else
+            placed
+
+
+-- Each ball pushed apart from every ball it overlaps.
+collide : List Ball → List Ball
+collide balls = List.map balls λa →
+    List.foldl balls a λc acc → if c.id == a.id then acc else bump acc c
+
+
+bump : Ball, Ball → Ball
+bump a c =
+    nx = c.x - a.x
+    ny = c.y - a.y
+    d = distance nx ny
+    if d ≥ r * 2 || d == 0 then
+        a
+    else
+        ux = nx / d
+        uy = ny / d
+        push = (r * 2 - d) / 2
+        vn = (c.vx - a.vx) * ux + (c.vy - a.vy) * uy
+        jn = if vn < 0 then -1.1 * vn / 2 else 0
+        { a | x = a.x - ux * push, y = a.y - uy * push, vx = a.vx - jn * ux, vy = a.vy - jn * uy }
+
+
+-- Where a ball crosses a gate or a sensor in this substep.
+cross : World, List Signal, Float, Float, Ball → Ball × World × List Signal
+cross w sigs px py b =
+    down = λy → py < y && b.y ≥ y
+    near = λwd → abs (b.x - cx) < wd + 2
+    if b.stage == Pool && down gateA && near half && w.entry > 0 then
+        ball = { b | stage = Inside, token = True, sensed = False }
+        ( ball, { w | entry = w.entry - 1 }, List.push sigs (Entered ball) )
+    else if
+        b.stage == Pool && not b.sensed && b.y > gateA - r * 2.4 && abs (b.x - cx) < half + r
+    then
+        ball = { b | sensed = True }
+        ( ball, w, List.push sigs (AtHopper ball) )
+    else if b.stage == Inside && not b.bucketed && not b.dropped && down gateB && near half then
+        ball = { b | bucketed = True, landedAt = w.now }
+        ( ball, { w | bucketDoor = max 0 (w.bucketDoor - 1) }, List.push sigs (Landed ball) )
+    else if b.bucketed && down trap && near door && w.trapOpen then
+        ( { b | bucketed = False, dropped = True }, w, sigs )
+    else if b.dropped && not b.inBox && down (exitY + r) && near box then
+        ball = { b | inBox = True, boxAt = w.t, route = Just (if b.red then ToLeft else ToRight) }
+        if b.red then ( ball, { w | failAt = w.t }, sigs ) else ( ball, { w | passAt = w.t }, sigs )
+    else if b.inBox && b.route == Just ToRight && px < cx + box && b.x ≥ cx + box then
+        ball = { b | inBox = False, stage = Done, dropped = False, token = False }
+        ( ball, { w | events = List.push w.events ( w.t, True ) }, List.push sigs (Exited ball) )
+    else if b.inBox && b.route == Just ToLeft && px > cx - box && b.x ≤ cx - box then
+        ball = { b | inBox = False, stage = Returning, dropped = False, route = Nothing }
+        ( ball, { w | events = List.push w.events ( w.t, False ) }, sigs )
+    else if b.stage == Returning && not b.sensed && b.y < bayBottom + 2 && b.x > cx - 60 then
+        ball = { b | sensed = True, waitFrom = w.t, arrivedAt = w.now }
+        ( ball, w, List.push sigs (AtBay ball) )
+    else if b.stage == Returning && px < cx - half - 3 && b.x ≥ cx - half - 3 && w.bayDoor > 0 then
+        ( chance, seed ) = roll w.seed
+        ball =
+            { b | stage = Inside, red = chance < flaky, sensed = False, attempts = b.attempts + 1 }
+        ( ball
+        , { w | bayDoor = w.bayDoor - 1, seed = seed, bayFree = w.t, bayFreeAt = w.now }
+        , List.push sigs (Returned ball)
+        )
+    else
+        ( b, w, sigs )
+
+
+-- The trapdoor opens, with a burst of sparks.
+openTrap : World → World
+openTrap w =
+    ( sparks, seed ) = List.foldl (List.range 1 16) ( w.sparks, w.seed ) λ_ ( acc, s0 ) →
+        ( a, s1 ) = roll s0
+        ( v, s2 ) = roll s1
+        ( x, s3 ) = roll s2
+        ( l, s4 ) = roll s3
+        angle = pi / 2 + (a - 0.5) * 2.2
+        speed = 40 + v * 90
+        spark =
+            { x = cx + (x - 0.5) * door * 2
+            , y = trap
+            , vx = cos angle * speed
+            , vy = sin angle * speed - 30
+            , life = 0.4 + l * 0.35
+            }
+        ( List.push acc spark, s4 )
+    { w | trapOpen = True, armed = True, sparks = sparks, seed = seed }
+
+
+-- ---- The page ---------------------------------------------------------------
+
+--| The page's model: the last picture of the world, and the machine once
+--| it runs.
+type alias Model =
+    world : World
+    machine : Maybe Machine
+    atOnce : Int
+    perBatch : Int
+
+
+type Msg
+    = Built Machine
+    | Stepped World
+    | SetAtOnce String
+    | SetPerBatch String
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { world = fresh ⊤, machine = Nothing, atOnce = 4, perBatch = 3 }, Cmd.perform start )
+
+
+start : Cmd.Send Msg → ⊤
+start send =
+    if debugging ⊤ then Log.setMinimum Log.Debug
+    m = machine send
+    send (Built m)
+    run m
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Built m →
+            ( { model | machine = Just m }, Cmd.none )
+
+        Stepped w →
+            ( { model | world = w }, Cmd.none )
+
+        SetAtOnce text →
+            n = clamp (Maybe.withDefault (String.toInt text) model.atOnce) 1 8
+            ( { model | atOnce = n }, knob model λw → { w | atOnce = n } )
+
+        SetPerBatch text →
+            n = clamp (Maybe.withDefault (String.toInt text) model.perBatch) 1 5
+            ( { model | perBatch = n }, knob model λw → { w | perBatch = n } )
+
+
+knob : Model, (World → World) → Cmd Msg
+knob model turn =
+    case model.machine of
+        Just m →
+            Cmd.perform λ_ → Ref.update m.world turn
+
+        Nothing →
+            Cmd.none
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.none
+
+
+-- ---- The drawing ------------------------------------------------------------
+
+steelHi : String
+steelHi = "#4D4260"
+
+
+steel : String
+steel = "#2C2438"
+
+
+steelLo : String
+steelLo = "#17121F"
+
+
+orange : String
+orange = "#FF9A3C"
+
+
+red : String
+red = "#FF5C5C"
+
+
+violet : String
+violet = "#B79CFF"
+
+
+muted : String
+muted = "#8F87A1"
+
+
+ink : String
+ink = "#F1EDF7"
+
+
+dim : String
+dim = "rgba(143, 135, 161, 0.3)"
+
+
+-- A number for an attribute, to a tenth.
+n1 : Float → String
+n1 x = String.fromFloat (toFloat (round (x * 10)) / 10)
+
+
+held : World → Int
+held w = List.length (List.filter w.balls λb → b.token)
+
+
+inBucket : World → Int
+inBucket w = List.length (List.filter w.balls λb → b.bucketed)
+
+
+score : World → String
+score w =
+    span = min w.t 10
+    if span > 1 then
+        tenths = round (toFloat (List.length (List.filter w.events λev → ev.1)) / span * 10)
+        "${tenths // 10}.${Int.mod tenths 10}"
+    else
+        "–"
+
+
+tally : World → Html Msg
+tally w =
+    span = round (min w.t 10)
+    done = List.length (List.filter w.events λev → ev.1)
+    failed = List.length (List.filter w.events λev → not ev.1)
+    <p class="tally"><b>{score w}</b> balls/s · last {span} s: {done} done · {failed} failed</p>
+
+
+view : Model → Html Msg
+view model =
+    w = model.world
+    free = w.atOnce - held w
+    sleeper =
+        Maybe.map
+            (List.head
+                (List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+                    b.arrivedAt
+                )
+            )
+            λb → b.id
+    <main class="machine">
+        <svg
+            viewBox="-12 0 412 560"
+            role="img"
+            aria-label="A ball machine: balls wait for room to enter, fill a bucket that a trapdoor drops down a pipe, and are checked at the bottom; failed ones are blown back up a tube to try again."
+        >
+            {defs}
+            {backdrop}
+            {
+                -- The return tube, its air running toward the chute.
+            }
+            <g class="tube">
+                <path
+                    d={tubePath}
+                    fill="none"
+                    stroke={steel}
+                    stroke-width="26"
+                    stroke-linejoin="round"
+                    filter="url(#shadow)"
+                />
+                <path
+                    d={tubePath}
+                    fill="none"
+                    stroke={steelLo}
+                    stroke-width="19"
+                    stroke-linejoin="round"
+                />
+                <path
+                    class="air"
+                    d={tubePath}
+                    fill="none"
+                    stroke="rgba(255, 92, 92, 0.3)"
+                    stroke-width="0.8"
+                    stroke-dasharray="2 7"
+                />
+                <text
+                    class="caption"
+                    x="0"
+                    y="0"
+                    transform="translate(-4 305.5) rotate(-90)"
+                    text-anchor="middle"
+                    dominant-baseline="middle"
+                    letter-spacing="1.8"
+                >
+                    RETRY
+                </text>
+            </g>
+            {
+                -- The hopper: glass with a rim.
+            }
+            <g>
+                <path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperGlass)" />
+                <path d="M55 14 L245 14 L161 94 L139 94 Z" fill="url(#hopperShade)" />
+                <line
+                    x1="68"
+                    y1="21"
+                    x2="129"
+                    y2="84"
+                    stroke="rgba(255, 255, 255, 0.13)"
+                    stroke-width="1.2"
+                />
+                {plate 51 10 198 5 2.5}
+            </g>
+            {glass (cx - half) gateA (half * 2) (gateB - gateA)}
+            {
+                -- The bucket: a metal body with a rim.
+            }
+            <path
+                d="M104 176 L196 176 L174 216 L126 216 Z"
+                fill="url(#bucketSteel)"
+                filter="url(#shadow)"
+            />
+            {plate 101 173 98 4.5 2.2}
+            {glass (cx - pipe) (trap + 4) (pipe * 2) (intake - trap - 4)}
+            {
+                -- The check: a housing around the funnel, with vents and a display.
+            }
+            {plate 94 434 112 66 4}
+            <path d="M108 440 L192 440 L158.5 474 L141.5 474 Z" fill="rgba(11, 8, 16, 0.75)" />
+            <rect x="141.5" y="474" width="17" height="18" fill="rgba(11, 8, 16, 0.8)" />
+            <rect x="158.5" y="474" width="35.5" height="18" fill="rgba(11, 8, 16, 0.8)" />
+            <g fill="rgba(0, 0, 0, 0.45)">
+                <rect x="95.5" y="444" width="7" height="1" />
+                <rect x="95.5" y="447" width="7" height="1" />
+                <rect x="95.5" y="450" width="7" height="1" />
+                <rect x="197.5" y="444" width="7" height="1" />
+                <rect x="197.5" y="447" width="7" height="1" />
+                <rect x="197.5" y="450" width="7" height="1" />
+            </g>
+            {flange cx (intake - 1) (pipe * 2 + 10)}
+            <rect
+                x="128"
+                y="498"
+                width="44"
+                height="12"
+                rx="2"
+                fill="#0B0810"
+                stroke="rgba(255, 154, 60, 0.25)"
+                stroke-width="0.6"
+            />
+            <text
+                class="display"
+                x="150"
+                y="504.5"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill={orange}
+            >
+                {score w}/s
+            </text>
+            <circle cx="180" cy="504" r="1.6" fill={if w.t - w.passAt < 0.4 then orange else dim} />
+            <circle cx="186" cy="504" r="1.6" fill={if w.t - w.failAt < 0.5 then red else dim} />
+            {
+                -- Light pools: each shut gate lights what is around it.
+            }
+            <g class="pools">
+                <circle
+                    cx="150"
+                    cy="94"
+                    r="34"
+                    fill={if free ≤ 0 then "url(#poolRed)" else "url(#poolViolet)"}
+                    opacity={if w.entry ≤ 0 then "0.16" else "0"}
+                />
+                <circle
+                    cx="150"
+                    cy="172"
+                    r="28"
+                    fill="url(#poolOrange)"
+                    opacity={if w.bucketDoor ≤ 0 then "0.1" else "0"}
+                />
+                <circle
+                    cx="150"
+                    cy={if w.trapOpen then "226" else "216"}
+                    r={if w.trapOpen then "46" else "36"}
+                    fill="url(#poolOrange)"
+                    opacity={if w.trapOpen then "0.22" else "0.12"}
+                />
+                <circle
+                    cx="136"
+                    cy="126"
+                    r="24"
+                    fill="url(#poolRed)"
+                    opacity={if w.bayDoor ≤ 0 then "0.12" else "0"}
+                />
+            </g>
+            {
+                -- The pipe's light, running down with the flow.
+            }
+            <g
+                clip-path="url(#pipeClip)"
+                stroke="rgba(255, 154, 60, 0.16)"
+                stroke-width="0.9"
+                stroke-dasharray="5 16"
+            >
+                <line class="flow" x1="135.7" y1="220" x2="135.7" y2="440" />
+                <line class="flow" x1="150" y1="220" x2="150" y2="440" />
+                <line class="flow" x1="164.3" y1="220" x2="164.3" y2="440" />
+            </g>
+            {flange cx (trap + 5) (pipe * 2 + 10)}
+            {
+                -- The bucket's lights: how full it is.
+            }
+            <g>
+                <For each={List.range 0 (w.perBatch - 1)} keyed={False}>
+                    {λk →
+                        <circle
+                            cx={n1 (cx + 30 + toFloat k * 5)}
+                            cy="185"
+                            r="1.4"
+                            fill={if k < inBucket w then orange else dim}
+                        />
+                    }
+                </For>
+            </g>
+            <g fill="#5E5272">
+                <circle cx="97.5" cy="437.5" r="1.1" />
+                <circle cx="202.5" cy="437.5" r="1.1" />
+                <circle cx="97.5" cy="496.5" r="1.1" />
+                <circle cx="202.5" cy="496.5" r="1.1" />
+            </g>
+            {rods}
+            {
+                -- The gates the program works: glowing while shut, a faint dashed line while open.
+            }
+            <g filter="url(#glow)" stroke-linecap="round">
+                {viewGate
+                    (cx - half)
+                    gateA
+                    (cx + half)
+                    gateA
+                    (w.entry ≤ 0)
+                    (if free ≤ 0 then red else violet)
+                }
+                {viewGate (cx - half) gateB (cx + half) gateB (w.bucketDoor ≤ 0) orange}
+                {viewGate (cx - door) trap (cx + door) trap (not w.trapOpen) orange}
+                {viewGate (cx - half - 3) bayTop (cx - half - 3) bayBottom (w.bayDoor ≤ 0) red}
+            </g>
+            <g stroke={steelHi} stroke-width="2.2" stroke-linecap="round">
+                <line
+                    x1="141.5"
+                    y1="474"
+                    x2="141.5"
+                    y2="492"
+                    visibility={if w.flap == Just ToLeft then "hidden" else "visible"}
+                />
+                <line
+                    x1="158.5"
+                    y1="474"
+                    x2="158.5"
+                    y2="492"
+                    visibility={if w.flap == Just ToRight then "hidden" else "visible"}
+                />
+            </g>
+            {
+                -- The room rack beside the entry gate.
+            }
+            {plate (cx + 17) (gateA - 15) (toFloat w.atOnce * 8.5 + 3) 2.6 1.3}
+            <g>
+                <For each={List.range 0 (w.atOnce - 1)} keyed={False}>
+                    {λk → viewChip (cx + 22 + toFloat k * 8.5) (gateA - 7) (k < free)}
+                </For>
+            </g>
+            <text class="caption" x="200" y="495" dominant-baseline="middle" letter-spacing="1.4">
+                DONE ↓
+            </text>
+            <g filter="url(#ballShadow)">
+                <For each={w.balls} keyed={.id}>
+                    {λb → viewBall w sleeper b}
+                </For>
+            </g>
+            <g fill={orange} style="mix-blend-mode: screen">
+                <For each={w.sparks} keyed={False}>
+                    {λs →
+                        <circle
+                            cx={n1 s.x}
+                            cy={n1 s.y}
+                            r="0.9"
+                            opacity={n1 (min 1 (s.life * 2.5))}
+                        />
+                    }
+                </For>
+            </g>
+            {viewLabel "IN THE MACHINE" "${w.atOnce - free} of ${w.atOnce}" (gateA + 6) (free ≤ 0)}
+            {viewLabel
+                "PER BATCH"
+                "bucket ${inBucket w} of ${w.perBatch}"
+                ((bucketTop + trap) / 2)
+                (w.perBatch > w.atOnce)
+            }
+            {viewLabel "CHECK" "some balls fail" (intake + 16) False}
+        </svg>
+        {tally w}
+        <div class="knobs">
+            <label class="knob">
+                At once <output>{model.atOnce}</output>
+                <input
+                    id="at-once"
+                    type="range"
+                    min="1"
+                    max="8"
+                    value={String.fromInt model.atOnce}
+                    onInput={SetAtOnce}
+                />
+            </label>
+            <label class="knob">
+                Per batch <output>{model.perBatch}</output>
+                <input
+                    id="per-batch"
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={String.fromInt model.perBatch}
+                    onInput={SetPerBatch}
+                />
+            </label>
+        </div>
+    </main>
+
+
+tubePath : String
+tubePath = "M141.5 483 L14 483 L14 126 L136 126"
+
+
+viewBall : World, Maybe Int, Ball → Html Msg
+viewBall w sleeper b =
+    fillUrl =
+        if b.stage == Done then
+            "url(#ballDone)"
+        else if b.red then
+            "url(#ballRed)"
+        else
+            "url(#ballOrange)"
+    waiting = sleeper == Just b.id
+    wait = 0.2 * toFloat (2 ^ b.attempts)
+    rest = if waiting then clamp (1 - (w.t - max b.waitFrom w.bayFree) / wait) 0 1 else 0
+    opacity = max 0 b.alpha * (if b.stage == Pool then 0.8 else 1)
+    <g transform={"translate(${n1 b.x} ${n1 b.y})"} opacity={n1 opacity}>
+        <circle r="7.5" fill={fillUrl} />
+        <circle
+            r="9.1"
+            fill="none"
+            stroke="rgba(183, 156, 255, 0.95)"
+            stroke-width="0.9"
+            visibility={if b.token then "visible" else "hidden"}
+        />
+        <circle
+            r="11.3"
+            fill="none"
+            stroke={red}
+            stroke-width="1.2"
+            transform="rotate(-90)"
+            pathLength="1"
+            stroke-dasharray={"${n1 rest} 1"}
+            visibility={if waiting then "visible" else "hidden"}
+        />
+    </g>
+
+
+viewGate : Float, Float, Float, Float, Bool, String → Html Msg
+viewGate ax ay bx by shut colour =
+    <line
+        x1={n1 ax}
+        y1={n1 ay}
+        x2={n1 bx}
+        y2={n1 by}
+        stroke={colour}
+        stroke-width={if shut then "2.6" else "1.4"}
+        opacity={if shut then "1" else "0.25"}
+        stroke-dasharray={if shut then "none" else "1.5 3"}
+    />
+
+
+viewChip : Float, Float, Bool → Html Msg
+viewChip x y lit =
+    <rect
+        x={n1 (x - 3.2)}
+        y={n1 (y - 4.5)}
+        width="6.4"
+        height="9"
+        rx="1.6"
+        fill={if lit then "url(#chip)" else "none"}
+        stroke={if lit then "none" else "rgba(183, 156, 255, 0.3)"}
+        stroke-width="0.6"
+        stroke-dasharray={if lit then "none" else "1.2 1.2"}
+    />
+
+
+viewLabel : String, String, Float, Bool → Html Msg
+viewLabel title value y warn =
+    <g>
+        <text
+            class="caption"
+            x="284"
+            y={n1 (y - 7)}
+            dominant-baseline="middle"
+            letter-spacing="1.3"
+            fill={if warn then red else muted}
+        >
+            {title}
+        </text>
+        <text
+            class="value"
+            x="284"
+            y={n1 (y + 7)}
+            dominant-baseline="middle"
+            fill={if warn then red else ink}
+        >
+            {value}
+        </text>
+        <line
+            x1="278"
+            y1={n1 y}
+            x2="262"
+            y2={n1 y}
+            stroke={if warn then "rgba(255, 92, 92, 0.45)" else "rgba(143, 135, 161, 0.3)"}
+            stroke-width="0.7"
+        />
+        <circle
+            cx="262"
+            cy={n1 y}
+            r="1.2"
+            fill={if warn then "rgba(255, 92, 92, 0.45)" else "rgba(143, 135, 161, 0.3)"}
+        />
+    </g>
+
+
+-- A metal plate: a soft shadow under it, shaded top to bottom, a bright top edge.
+plate : Float, Float, Float, Float, Float → Html Msg
+plate x y width height radius =
+    <g>
+        <rect
+            x={n1 x}
+            y={n1 y}
+            width={n1 width}
+            height={n1 height}
+            rx={n1 radius}
+            fill="url(#steel)"
+            stroke="rgba(255, 255, 255, 0.06)"
+            stroke-width="0.6"
+            filter="url(#shadow)"
+        />
+        <line
+            x1={n1 (x + radius)}
+            y1={n1 (y + 0.5)}
+            x2={n1 (x + width - radius)}
+            y2={n1 (y + 0.5)}
+            stroke="rgba(255, 255, 255, 0.16)"
+            stroke-width="0.7"
+        />
+    </g>
+
+
+-- A flange where two parts join: a collar with a bolt at each end.
+flange : Float, Float, Float → Html Msg
+flange x y width =
+    <g>
+        {plate (x - width / 2) (y - 2.6) width 5.2 1.8}
+        <circle cx={n1 (x - width / 2 + 3.2)} cy={n1 y} r="1.4" fill="url(#bolt)" />
+        <circle cx={n1 (x + width / 2 - 3.2)} cy={n1 y} r="1.4" fill="url(#bolt)" />
+    </g>
+
+
+-- Glass: bright edges, a darker core, a specular band down the left.
+glass : Float, Float, Float, Float → Html Msg
+glass x y width height =
+    <g>
+        <rect x={n1 x} y={n1 y} width={n1 width} height={n1 height} fill="url(#glass)" />
+        <rect
+            x={n1 (x + width * 0.12 - 2)}
+            y={n1 (y + 2)}
+            width="4"
+            height={n1 (height - 4)}
+            fill="url(#sheen)"
+        />
+    </g>
+
+
+-- The walls: rounded metal rods with a highlight along their tops.
+rods : Html Msg
+rods =
+    fixed = List.filter walls λwl → wl.part == Fixed
+    <g stroke-linecap="round">
+        <g stroke={steel} stroke-width="3.4" filter="url(#rodShadow)">
+            <For each={fixed} keyed={False}>
+                {λwl → <line x1={n1 wl.ax} y1={n1 wl.ay} x2={n1 wl.bx} y2={n1 wl.by} />}
+            </For>
+        </g>
+        <g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
+            <For each={fixed} keyed={False}>
+                {λwl →
+                    <line x1={n1 wl.ax} y1={n1 (wl.ay - 0.9)} x2={n1 wl.bx} y2={n1 (wl.by - 0.9)} />
+                }
+            </For>
+        </g>
+    </g>
+
+
+-- The backdrop: a faint dot grid, like a blueprint, and a violet glow, both
+-- fading out toward the edges.
+backdrop : Html Msg
+backdrop =
+    <g>
+        <rect x="-200" y="0" width="800" height="560" fill="url(#backGlow)" />
+        <rect x="-200" y="0" width="800" height="560" fill="url(#dots)" mask="url(#fade)" />
+    </g>
+
+
+defs : Html Msg
+defs =
+    <defs>
+        <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4D4260" />
+            <stop offset="0.5" stop-color="#2C2438" />
+            <stop offset="1" stop-color="#17121F" />
+        </linearGradient>
+        <linearGradient id="bucketSteel" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#17121F" />
+            <stop offset="0.32" stop-color="#4D4260" />
+            <stop offset="1" stop-color="#17121F" />
+        </linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11" />
+            <stop offset="0.1" stop-color="#FFFFFF" stop-opacity="0.025" />
+            <stop offset="0.5" stop-color="#0A0610" stop-opacity="0.12" />
+            <stop offset="0.9" stop-color="#FFFFFF" stop-opacity="0.025" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08" />
+        </linearGradient>
+        <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0" />
+            <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.12" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="hopperGlass" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07" />
+            <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.02" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04" />
+        </linearGradient>
+        <linearGradient id="hopperShade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#17121F" stop-opacity="0" />
+            <stop offset="1" stop-color="#17121F" stop-opacity="0.45" />
+        </linearGradient>
+        <linearGradient id="chip" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#D8C9FF" />
+            <stop offset="1" stop-color="#8E6BEA" />
+        </linearGradient>
+        <radialGradient id="bolt" cx="0.5" cy="0.5" r="0.5" fx="0.4" fy="0.35">
+            <stop offset="0" stop-color="#9A8EB0" />
+            <stop offset="1" stop-color="#17121F" />
+        </radialGradient>
+        <radialGradient id="ballOrange" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFE3BF" />
+            <stop offset="0.5" stop-color="#FF9A3C" />
+            <stop offset="1" stop-color="#C9631A" />
+        </radialGradient>
+        <radialGradient id="ballRed" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFC4BE" />
+            <stop offset="0.5" stop-color="#FF5C5C" />
+            <stop offset="1" stop-color="#B32E36" />
+        </radialGradient>
+        <radialGradient id="ballDone" cx="0.5" cy="0.5" r="0.5" fx="0.33" fy="0.28" fr="0.04">
+            <stop offset="0" stop-color="#FFFFFF" />
+            <stop offset="0.5" stop-color="#F1EDF7" />
+            <stop offset="1" stop-color="#9F97AF" />
+        </radialGradient>
+        <radialGradient id="poolViolet">
+            <stop offset="0" stop-color="#B79CFF" />
+            <stop offset="1" stop-color="#B79CFF" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="poolRed">
+            <stop offset="0" stop-color="#FF5C5C" />
+            <stop offset="1" stop-color="#FF5C5C" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="poolOrange">
+            <stop offset="0" stop-color="#FF9A3C" />
+            <stop offset="1" stop-color="#FF9A3C" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="backGlow" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="255">
+            <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.1" />
+            <stop offset="1" stop-color="#8B5CF6" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="fadeOut" gradientUnits="userSpaceOnUse" cx="150" cy="269" r="280">
+            <stop offset="0" stop-color="#FFFFFF" />
+            <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+        </radialGradient>
+        <mask id="fade">
+            <rect x="-200" y="0" width="800" height="560" fill="url(#fadeOut)" />
+        </mask>
+        <pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+            <rect x="7" y="7" width="0.8" height="0.8" fill="#B79CFF" fill-opacity="0.1" />
+        </pattern>
+        <clipPath id="pipeClip">
+            <rect x="124" y="220" width="52" height="220" />
+        </clipPath>
+        <filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
+            <feOffset "dy"="3" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.55" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+            <feOffset "dy"="1.5" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.55" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" />
+            <feOffset "dy"="1.5" result="blur" />
+            <feFlood flood-color="#000000" flood-opacity="0.5" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }
