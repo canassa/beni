@@ -8201,7 +8201,10 @@ test "the checker v2 charges an instruction's records to its source lanes" {
     // statement of `x_k = List.push x_{k-1} k` is the graft of the
     // callee's class at each call, named growth until S3b's call view by
     // reference (#1097): it stays constant per statement, and twice the
-    // statements is twice the growth.
+    // statements is twice the growth. Since the κ trie (#1073) the graft
+    // also relabels the class's snapshot and links the argument's at its
+    // path, about 35 records a call where it was 19 (until #1097 removes
+    // the graft's copy altogether).
     var growth: [2]u64 = undefined;
     for ([_]u32{ 100, 200 }, 0..) |n, run| {
         var w = try World.init(testing.allocator, testing.io);
@@ -8225,8 +8228,9 @@ test "the checker v2 charges an instruction's records to its source lanes" {
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
         growth[run] = try accountField(dump.stdout, "chain", "growth");
         const baseline = try accountField(dump.stdout, "chain", "baseline");
-        try testing.expect(growth[run] <= 20 * n);
-        try testing.expect(baseline >= 4 * growth[run]);
+        try testing.expect(growth[run] <= 40 * n);
+        // The graft's growth (#1097) is now about a third of the baseline.
+        try testing.expect(baseline >= 2 * growth[run]);
     }
     try testing.expect(growth[1] <= 2 * growth[0] + 40);
 }

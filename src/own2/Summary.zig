@@ -404,7 +404,7 @@ pub const Table = struct {
         for (param_places) |p| try params.append(gpa, try env.shapes.leaf(gpa, env.account(), p, all));
         const top = try env.cells.top(gpa, env.account());
         const res = try env.shapes.leaf(gpa, env.account(), res_place, try env.cells.sets.insert(gpa, env.charge, .none, top.int(), 0));
-        const kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, false, Cond.lost)).ctx;
+        const kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, Cond.lost)).ctx;
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
         for (fun_params) |j| try funs.append(gpa, .{ .j = j, .calls = .many, .need = true, .seen = false });
@@ -786,7 +786,8 @@ pub const Table = struct {
         env: Env,
         out: *std.ArrayList(u32),
         ctx: Kappas,
-        ordinal: stamped.Column(NodeId, u32) = .{},
+        /// `(node, cursor)` → ordinal: a node's two positions are two (§2.9).
+        ordinal: Ids.FixedDict(2) = .{},
         next: u32 = 0,
 
         const Tag = enum(u32) { class, node_new, node_ref, cell, set, cond, atom, fun, supply, keep, slot, path, label, none, back };
@@ -813,8 +814,9 @@ pub const Table = struct {
             try n.put(k.params.len);
             try n.put(@as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2));
             try n.put(@backingInt(k.origin));
-            try n.node(k.res, false);
-            for (n.t.paramUses(c)) |u| if (u == .none) try n.tag(.none) else try n.node(u, false);
+            try n.node(k.res, false, n.ctx);
+            // Use shapes carry marks, not value κ (§2.9).
+            for (n.t.paramUses(c)) |u| if (u == .none) try n.tag(.none) else try n.node(u, false, .none);
             try n.condSet(k.xreq);
             try n.put(k.funs.len);
             for (0..k.funs.len) |i| {
@@ -850,7 +852,7 @@ pub const Table = struct {
             const saved = n.ctx;
             n.ctx = s.kappa;
             defer n.ctx = saved;
-            try n.node(s.node, false);
+            try n.node(s.node, false, s.kappa);
         }
 
         fn backWords(n: *Normalizer, f: Fun, i: u32) Error!void {
@@ -900,37 +902,37 @@ pub const Table = struct {
             for (keyed.items) |k| try spell(n, f, k.i);
         }
 
-        fn node(n: *Normalizer, id: NodeId, at_summary: bool) Error!void {
+        fn node(n: *Normalizer, id: NodeId, at_summary: bool, cur: Kappas) Error!void {
             try n.env.charge.reserve(n.env.gpa, .inspection, 1);
-            if (n.ordinal.get(id)) |o| {
+            if (n.ordinal.get(.{ id.int(), cur.int() })) |o| {
                 try n.tag(.node_ref);
                 try n.put(o);
                 return;
             }
-            try n.ordinal.put(n.env.gpa, id, n.next);
+            (try n.ordinal.getOrPut(n.env.gpa, .{ id.int(), cur.int() })).value_ptr.* = n.next;
             n.next += 1;
             const d = n.env.shapes.get(id);
             try n.tag(.node_new);
             try n.put(@backingInt(d.kind));
             try n.put(d.place.int());
             try n.cellSet(d.cells);
-            try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), n.ctx, id, at_summary));
+            try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
             switch (d.kind) {
                 .leaf => {},
-                .node => try n.overs(d.a, at_summary),
+                .node => try n.overs(d.a, at_summary, cur),
                 .delta => {
-                    try n.node(.from(d.a), at_summary);
-                    try n.overs(d.b, at_summary);
+                    try n.node(.from(d.a), at_summary, cur);
+                    try n.overs(d.b, at_summary, cur);
                 },
-                .recast => try n.node(.from(d.a), at_summary),
+                .recast => try n.node(.from(d.a), at_summary, cur),
                 .@"union", .positions => {
-                    try n.node(.from(d.a), at_summary);
-                    try n.node(.from(d.b), at_summary);
+                    try n.node(.from(d.a), at_summary, cur);
+                    try n.node(.from(d.b), at_summary, cur);
                 },
             }
         }
 
-        fn overs(n: *Normalizer, root: u32, at_summary: bool) Error!void {
+        fn overs(n: *Normalizer, root: u32, at_summary: bool, cur: Kappas) Error!void {
             var n_entries: u32 = 0;
             var it = n.env.shapes.overEntries(root);
             while (it.next()) |_| n_entries += 1;
@@ -938,7 +940,7 @@ pub const Table = struct {
             it = n.env.shapes.overEntries(root);
             while (it.next()) |e| {
                 try n.step(e.step);
-                try n.node(e.node, at_summary or e.step.kind == .elem or e.step.kind == .level);
+                try n.node(e.node, at_summary or e.step.kind == .elem or e.step.kind == .level, n.env.conds.kappaChild(cur, e.step));
             }
         }
 
@@ -1137,7 +1139,7 @@ pub const Table = struct {
         ctx: Kappas,
         slots: []const Slot = &.{},
         params: u32 = 0,
-        seen: stamped.Column(NodeId, void) = .{},
+        seen: Ids.FixedDict(2) = .{},
 
         const WErr = std.Io.Writer.Error;
 
@@ -1158,8 +1160,9 @@ pub const Table = struct {
             Cond.sortText(uses.items);
             if (uses.items.len > 0) try parts.append(arena, try std.mem.join(arena, ", ", uses.items));
             var groups: std.ArrayList([]const u8) = .empty;
-            p.seen.clear();
-            try p.resLines(k.res, "", false, &groups);
+            p.seen.deinit(p.env.gpa);
+            p.seen = .{};
+            try p.resLines(k.res, "", false, p.ctx, &groups);
             Cond.sortText(groups.items);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
             for (0..k.funs.len) |i| {
@@ -1269,10 +1272,9 @@ pub const Table = struct {
         /// `res`'s groups: one text per path of the explicit structure,
         /// `<path> <provenances> {κ}`, a node once; a union's sides gathered
         /// into one group, a recast's cells approximate.
-        fn resLines(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        fn resLines(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const env = p.env;
-            if (p.seen.contains(n)) return;
-            try p.seen.put(env.gpa, n, {});
+            if ((try p.seen.getOrPut(env.gpa, .{ n.int(), cur.int() })).found_existing) return;
             var texts: std.ArrayList([]const u8) = .empty;
             try p.gather(n, &texts);
             Cond.sortText(texts.items);
@@ -1280,24 +1282,24 @@ pub const Table = struct {
             const w = &buf.writer;
             if (prefix.len > 0) try w.print("{s} ", .{prefix});
             try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
-            const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), p.ctx, n, at_summary);
+            const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), cur, n, at_summary);
             try p.cond(w, k);
             if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-            try p.descend(n, prefix, at_summary, out);
+            try p.descend(n, prefix, at_summary, cur, out);
         }
 
         /// The children of the explicit structure under `n`: a node's or a
         /// delta's projections (so a delta's unchanged fields print), a
         /// union's sides' in turn; a leaf's or a recast's are implied by its
         /// cells and never enumerated.
-        fn descend(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        fn descend(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const env = p.env;
             const d = env.shapes.get(n);
             switch (d.kind) {
                 .leaf, .recast => return,
                 .@"union", .positions => {
-                    try p.descend(.from(d.a), prefix, at_summary, out);
-                    try p.descend(.from(d.b), prefix, at_summary, out);
+                    try p.descend(.from(d.a), prefix, at_summary, cur, out);
+                    try p.descend(.from(d.b), prefix, at_summary, cur, out);
                 },
                 .node, .delta => {
                     const steps = env.places.steps(d.place);
@@ -1307,7 +1309,7 @@ pub const Table = struct {
                         var sb: std.Io.Writer.Allocating = .init(p.arena);
                         try sb.writer.writeAll(prefix);
                         try p.step(&sb.writer, d.place, s);
-                        try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, at_summary or s.kind == .elem or s.kind == .level, out);
+                        try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, at_summary or s.kind == .elem or s.kind == .level, env.conds.kappaChild(cur, s), out);
                     }
                 },
             }
@@ -1588,7 +1590,12 @@ const Fixture = struct {
     }
 
     fn setKAt(f: *Fixture, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) !Kappas {
-        return (try f.conds.kappaSet(testing.allocator, .growth(&f.account), ctx, n, at_summary, k)).ctx;
+        _ = at_summary;
+        return (try f.conds.kappaSet(testing.allocator, .growth(&f.account), ctx, n, k)).ctx;
+    }
+
+    fn setKPath(f: *Fixture, ctx: Kappas, steps: []const Place.Step, n: NodeId, k: CondId) !Kappas {
+        return f.conds.kappaSetAt(testing.allocator, .growth(&f.account), ctx, steps, n, k);
     }
 
     fn label(f: *Fixture, inst: u32) !LabelId {
@@ -1670,7 +1677,7 @@ test "a class prints in v1's grammar: bits by path, res by path with κ, funs, x
     const e3 = try f.conds.excl(gpa, env.charge, p3);
     const ap = try f.conds.apartAtom(gpa, env.charge, try f.set(&.{ p1e, p3 }));
     var m = try f.setK(.none, res, e1);
-    m = try f.setKAt(m, elem, true, try f.conds.@"and"(gpa, env.charge, ap, e3));
+    m = try f.setKPath(m, &.{Place.Step.elem}, elem, try f.conds.@"and"(gpa, env.charge, ap, e3));
     const supply_node = try f.leaf(3, &.{p1});
     const kappa_e1 = try f.setK(.none, supply_node, e1);
     const c = try f.sums.add(env, .{
@@ -1849,7 +1856,8 @@ test "repeated-node simulation: one DAG node against two partners, and a join th
     const s1 = try f.cells.result(gpa, &f.account, .result, .none, 1, rec, .record);
     // `a = { a = X, b = X }`: one node X at two paths, κ(X) = excl in a's map.
     const ra = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, x), fb, x));
-    var ma = try f.setK(.none, x, e);
+    var ma = try f.setKPath(.none, &.{fa}, x, e);
+    ma = try f.setKPath(ma, &.{fb}, x, e);
     ma = try f.setK(ma, ra, Cond.yes);
     const a = try f.sums.add(env, .{ .params = &.{}, .res = ra, .kappas = ma });
     // `b = { a = Y_bad, b = Y_good }` in either order: X meets two partners
@@ -1857,7 +1865,7 @@ test "repeated-node simulation: one DAG node against two partners, and a join th
     // is false whichever side holds Y_bad.
     for ([_][2]NodeId{ .{ y_bad, y_good }, .{ y_good, y_bad } }) |pair| {
         const rb = try f.shapes.node(gpa, &f.account, rec, try f.set(&.{s1}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, fa, pair[0]), fb, pair[1]));
-        var mb = try f.setK(.none, y_good, e);
+        var mb = try f.setKPath(.none, &.{if (pair[0] == y_good) fa else fb}, y_good, e);
         mb = try f.setK(mb, rb, Cond.yes);
         const b = try f.sums.add(env, .{ .params = &.{}, .res = rb, .kappas = mb });
         try testing.expect(!try f.sums.leq(env, a, b));

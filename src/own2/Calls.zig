@@ -148,6 +148,108 @@ const Grafter = struct {
         };
     }
 
+    /// The snapshot position of argument `i` at path `p` (`argAt`'s node's):
+    /// the argument's snapshot walked along the path, stopping at `⟲` as
+    /// `argAt` stops (the levels below are the value as it stands).
+    fn argKappa(g: *Grafter, i: u32, p: PathId) Error!Cond.Kappas {
+        if (i >= g.args.len) return .none;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(g.gpa());
+        try g.stepsOf(p, &steps);
+        var at = g.args[i].kappa;
+        for (steps.items) |s| {
+            if (s.kind == .level or at == .none) break;
+            at = g.env.conds.kappaChild(at, s);
+        }
+        return at;
+    }
+
+    fn relabelNode(ctx: *anyopaque, n: NodeId) ?NodeId {
+        const g: *Grafter = @ptrCast(@alignCast(ctx));
+        return g.s.memo.get(n);
+    }
+
+    fn instantiated(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: CondId) Error!CondId {
+        return t.instantiate(gpa_, charge, k, .{ .ctx = ctx, .atom = Grafter.atom });
+    }
+
+    /// `kappa` with each argument's snapshot merged in at every position of
+    /// the class's `res` whose cells name the argument (`π i·q`: the
+    /// argument's position at `q`): the paths of `res`'s explicit
+    /// structure, each `(node, path)` once. A route that meets a node it
+    /// has passed (a widened class's knot) folds there (§2.9).
+    fn linkArgs(g: *Grafter, kappa: Cond.Kappas, res: NodeId) Error!Cond.Kappas {
+        var w: LinkWalk = .{ .out = kappa };
+        defer w.deinit(g.gpa());
+        try g.linkAt(&w, res, 0);
+        return w.out;
+    }
+
+    const LinkWalk = struct {
+        out: Cond.Kappas,
+        path: std.ArrayList(Step) = .empty,
+        /// The nodes on the way here, each with the path length it was at.
+        route: std.ArrayList([2]u32) = .empty,
+        /// Paths interned as `(parent, step)`, 0 the root; `(node, path)` visited.
+        paths: Ids.FixedDict(2) = .{},
+        visited: Ids.FixedDict(2) = .{},
+        next_path: u32 = 1,
+
+        fn deinit(w: *LinkWalk, gpa_: Allocator) void {
+            w.path.deinit(gpa_);
+            w.route.deinit(gpa_);
+            w.paths.deinit(gpa_);
+            w.visited.deinit(gpa_);
+        }
+    };
+
+    fn linkAt(g: *Grafter, w: *LinkWalk, t: NodeId, pid: u32) Error!void {
+        const shapes = g.env.shapes;
+        const conds = g.env.conds;
+        try g.env.charge.reserve(g.gpa(), .memo, 1);
+        const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), pid });
+        if (seen.found_existing) return;
+        seen.value_ptr.* = 1;
+        for (w.route.items) |r| if (r[0] == t.int()) {
+            // A knot: everything below is that position, folded.
+            w.out = try conds.kappaFoldAt(g.gpa(), g.env.charge, w.out, w.path.items[0..r[1]]);
+            return;
+        };
+        try w.route.append(g.gpa(), .{ t.int(), @intCast(w.path.items.len) });
+        defer _ = w.route.pop();
+        var it = g.env.cells.sets.iterate(shapes.cells(t));
+        while (it.next()) |e| {
+            const cell: CellId = .from(e.key);
+            if (g.env.cells.origin(cell) != .param) continue;
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const x = g.env.cells.get(cell);
+            w.out = try conds.kappaMergeAt(g.gpa(), g.env.charge, w.out, w.path.items, try g.argKappa(x.a, .from(x.b)));
+        }
+        const d = shapes.get(t);
+        switch (d.kind) {
+            .leaf => {},
+            .node, .delta => {
+                if (d.kind == .delta) try g.linkAt(w, .from(d.a), pid);
+                var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                while (kt.next()) |e| {
+                    try g.env.charge.reserve(g.gpa(), .memo, 1);
+                    const got = try w.paths.getOrPut(g.gpa(), .{ pid, e.step.word() });
+                    if (!got.found_existing) {
+                        got.value_ptr.* = w.next_path;
+                        w.next_path += 1;
+                    }
+                    try w.path.append(g.gpa(), e.step);
+                    defer _ = w.path.pop();
+                    try g.linkAt(w, e.node, got.value_ptr.*);
+                }
+            },
+            .recast => try g.linkAt(w, .from(d.a), pid),
+            .@"union", .positions => {
+                try g.linkAt(w, .from(d.a), pid);
+                try g.linkAt(w, .from(d.b), pid);
+            },
+        }
+    }
     /// Node `t` of the class's `res`, grafted onto the arguments.
     fn graft(g: *Grafter, t: NodeId) Error!NodeId {
         if (g.s.memo.get(t)) |m| return m;
@@ -254,7 +356,7 @@ const Grafter = struct {
                 if (x.origin != .param) return if (x.origin == .result or x.origin == .esc) Cond.yes else Cond.lost;
                 const at = g.placeOfCell(c);
                 const n = try g.argAt(x.a, .from(x.b), at);
-                const kappa = if (x.a < g.args.len) g.args[x.a].kappa else .none;
+                const kappa = try g.argKappa(x.a, .from(x.b));
                 return t.deep(gpa_, g.env.charge, g.env.view(), kappa, n, g.env.places.isSummary(.from(x.b)));
             },
             .sep, .apart => {
@@ -343,17 +445,11 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     for (sums.paramUses(class), 0..) |u, i| try marked(env, u, @intCast(i), s);
     // 4: the result.
     const res = try g.graft(cls.res);
-    // 5: the arguments' snapshots, then the class's κ instantiated.
-    var kappa: Cond.Kappas = .none;
-    for (args) |a| kappa = try env.conds.kappaMerge(gpa, env.charge, kappa, a.kappa);
-    const interp: Cond.Interp = .{ .ctx = &g, .atom = Grafter.atom };
-    var it = env.conds.kappaEntries(cls.kappas);
-    while (it.next()) |e| {
-        try env.charge.reserve(gpa, .inspection, 1);
-        const m = s.memo.get(e.node) orelse continue;
-        const k = try env.conds.instantiate(gpa, env.charge, e.cond, interp);
-        kappa = (try env.conds.kappaSet(gpa, env.charge, kappa, m, e.at_summary, k)).ctx;
-    }
+    // 5: the class's κ relabelled onto the result, each entry's path
+    // unchanged and its condition instantiated, then each argument's
+    // snapshot linked where the argument stands in the result (§2.9).
+    var kappa = try env.conds.kappaRelabel(gpa, env.charge, cls.kappas, .{ .ctx = &g, .node = Grafter.relabelNode, .cond = Grafter.instantiated });
+    kappa = try g.linkArgs(kappa, cls.res);
     var xreq: CondId = Cond.yes;
     if (cls.xreq != .none) {
         var at = env.conds.atoms.iterate(cls.xreq);

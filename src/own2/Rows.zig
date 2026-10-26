@@ -282,7 +282,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
                         // A built node's own κ at ε is its cells', as for `res` below.
                         const kappa: Cond.Kappas = if (node == leaf) .none else blk: {
                             const own = try env.shapes.leaf(gpa, env.account(), fp, env.shapes.cells(node));
-                            break :blk (try env.conds.kappaSet(gpa, env.charge, .none, node, false, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
+                            break :blk (try env.conds.kappaSet(gpa, env.charge, .none, node, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
                         };
                         try supplies.append(gpa, .{ .j = j, .k = 0, .node = node, .label = .none, .owned = true, .taken = true, .kappa = kappa });
                         continue;
@@ -457,9 +457,9 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
     }
     // A built node's own κ at ε is its cells', as a leaf of them reads:
     // its children's conditions are the map's, set where they were built.
-    if (res != .none and env.shapes.kind(res) == .node and env.conds.kappaGet(kappas, res, false) == null) {
+    if (res != .none and env.shapes.kind(res) == .node and env.conds.kappaGet(kappas, res) == null) {
         const own = try env.shapes.leaf(gpa, env.account(), env.shapes.place(res), env.shapes.cells(res));
-        kappas = (try env.conds.kappaSet(gpa, env.charge, kappas, res, false, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
+        kappas = (try env.conds.kappaSet(gpa, env.charge, kappas, res, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
     }
     return sums.add(env, .{
         .params = params.items,
@@ -635,7 +635,7 @@ fn storedInto(env: Env, sig: Signature, r: u32, stored: []const CellId, fresh: b
     if (fresh) storage = try env.cells.sets.insert(gpa, env.charge, storage, (try env.cells.result(gpa, env.account(), .result, .none, 1, list, .list)).int(), 0);
     const node = try env.shapes.node(gpa, env.account(), list, storage, try env.shapes.overPut(gpa, env.account(), Ids.none_int, Step.elem, elems));
     const res = if (list == sig.result) node else try env.shapes.recast(gpa, env.account(), sig.result, node);
-    return .{ .node = res, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
+    return .{ .node = res, .kappas = try env.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, elems, k) };
 }
 
 /// `param πᵢ[*]`.
@@ -663,7 +663,7 @@ fn concatenation(env: Env, sig: Signature) Error!Built {
         const together = try env.conds.apart(gpa, env.charge, env.cells, env.places, &items, null);
         break :blk try env.conds.@"and"(gpa, env.charge, together, try env.conds.@"and"(gpa, env.charge, try env.conds.excl(gpa, env.charge, a), try env.conds.excl(gpa, env.charge, b)));
     } else if (env.places.holds(at).isEmpty()) Cond.yes else Cond.lost;
-    return .{ .node = node, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
+    return .{ .node = node, .kappas = try env.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, elems, k) };
 }
 
 /// `copyof` (§2.13.6): fresh storage holding parameter 1's elements, `[*]`
@@ -682,7 +682,7 @@ fn copyOf(env: Env, sig: Signature) Error!Built {
     const k = if (env.places.kind(at) == .record)
         try env.conds.excl(gpa, env.charge, a)
     else if (env.places.holds(at).isEmpty()) Cond.yes else Cond.lost;
-    return .{ .node = node, .kappas = (try env.conds.kappaSet(gpa, env.charge, .none, elems, true, k)).ctx };
+    return .{ .node = node, .kappas = try env.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, elems, k) };
 }
 
 /// A constructor's class (§2.13.1): `res` a node at the type's place with
@@ -720,7 +720,7 @@ pub fn ctorClass(env: Env, sums: *Summary.Table, type_place: PlaceId, steps: []c
     var kappas: Cond.Kappas = .none;
     if (!crosses(env, type_place)) {
         const k = try env.conds.apart(gpa, env.charge, env.cells, env.places, items.items, null);
-        kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, false, k)).ctx;
+        kappas = (try env.conds.kappaSet(gpa, env.charge, .none, res, k)).ctx;
     }
     return sums.add(env, .{ .params = params.items, .res = res, .kappas = kappas, .origin = .asserted });
 }
@@ -1292,7 +1292,7 @@ test "Appendix C.4: foldlFrom's res, κ and feedback supply reach the table's ro
     }.of;
     const withK = struct {
         fn of(ff: *Fixture, n: NodeId, k: Ids.CondId) !Cond.Kappas {
-            return (try ff.conds.kappaSet(testing.allocator, ff.env().charge, .none, n, false, k)).ctx;
+            return (try ff.conds.kappaSet(testing.allocator, ff.env().charge, .none, n, k)).ctx;
         }
     }.of;
     // The call at ι_rec hands the callback's answer back as the
