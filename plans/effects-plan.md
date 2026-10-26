@@ -738,6 +738,36 @@ each yield once 35 464 against 54 988; `timeout` around a body that answers at o
 loop's `pushBack` took `pushBack` out of the run loop in every fiber program (+4 to +29 brotli
 bytes) until `begin` got a copy of its own (`takeOn`).
 
+*P5, first part, as built (2026-10-26; #1039).* **`core/Semaphore.beni`** is beni over
+`Task.callback`, `Task.resume`, `Task.uninterruptibleMask` and `Task.onExit`, no `foreign`: a
+record of `permits`, `taken` and the waiters `{ got, n, resume }`, first in the array first served.
+The owner's amendment of §17.9 adds the manual `acquire` and `release` and corrects the reading of
+Effect. FIFO is a direct hand-off: `serve` counts the head's permits as taken, sets `got` and
+resumes it, so no later request can take them first. The canceller reads `got`, so a waiter
+handed its permits but cancelled before it runs gives them back, and a waiter cancelled while it
+waits leaves the array and, if it was the head, the queue is served again. The kernel already
+calls the canceller of a fiber that was resumed but has not run (`halt` sees it still parked), so
+nothing in `Task` changed. `withPermits` is Effect's shape (`Semaphore.ts:287-307`): the wait
+under `restore`, the work under `onExit`. Fixtures, both builds: `run/SemaphorePermitsNotLeaked`,
+`run/SemaphoreFifo` (both on `Clock.virtual`), `run/SemaphoreHeadCancelled`,
+`run/SemaphoreOversizeRequest`, `run/SemaphoreTryDoesNotJump`, `run/SemaphoreAcquireRelease`,
+`run/SemaphoreHandoffCancelled`, `run/SemaphoreReleaseUnmatched`, `run/SemaphoreResize`,
+`run/SemaphoreAcquireCancelled` and `run/SemaphoreNoPermits`. Each fails with the module removed,
+and each obligation was also broken on its own in a copy of core (`--core-root`) and turned at
+least one fixture red. The one exception is the `max 0` in `make` and `resize`, which no program
+can observe: a negative count behaves as 0 on every path. **Against Effect v4** (`bench/fiber`,
+`node --expose-gc node.mjs --group=semaphore`, a development library build, median of 9 after 3
+warm-ups, ns per operation, two runs, load average about 1): an uncontended `withPermit` 92–96
+against Effect's 268–273 (`Semaphore.make(1)`, `s.withPermit` of `Effect.succeed`); 1 000 fibers
+contending for `make 4`, ten `withPermit`s each, holding the permit across one `yieldNow`, 575–684
+against 1 254–1 271 (`forkChild`, `Fiber.join`). **The heap after 100 000 cancelled waits** — one
+permit held, and a fiber started, parked in `withPermit` and cancelled 100 000 times, the
+semaphore kept alive while the heap is weighed after two `gc()` calls — is where it started. The
+median of five runs is 0.9–20 kB for beni and 2.3–2.6 kB for Effect, and that is noise: a
+separate run of seven at 100 000 and at 1 000 000 waits read −750 to +54 kB at both sizes. It
+does not grow with the number of waits, and one waiter record kept per wait would be several
+megabytes. No operation is slower. `Queue` and `Latch`, the rest of P5, are still to come.
+
 *P7, first part, as built (2026-10-20; #358).* `core/Log.beni` holds the five levels, the five
 direct forms, `log`, `Entry`, `setSink` and `logfmt`, in beni over `Js`; the default minimum is
 `Info`, and no call changes it yet. `node`'s `Io.run` installs the `logfmt` sink. A sink is kept as

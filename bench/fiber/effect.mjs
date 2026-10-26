@@ -3,7 +3,7 @@
 // and documentation write them. Pinned to effect@4.0.0-rc.116, the version
 // references/effect is checked out at.
 
-import { Deferred, Effect, Fiber, Logger, Ref, Schedule } from "effect";
+import { Deferred, Effect, Fiber, Logger, Ref, Schedule, Semaphore } from "effect";
 import { TestClock } from "effect/testing";
 
 // `n` synchronous operations chained by `flatMap`: Effect's interpreter
@@ -209,3 +209,52 @@ export const logWritten = (n) => counted(n, (lines) => lines);
 
 // `logWritten`, inside one annotation and one log span.
 export const logInContext = (n) => counted(n, (lines) => lines.pipe(Effect.withLogSpan("save"), Effect.annotateLogs("user", "7")));
+
+// `n` times `withPermit` on a semaphore nobody else uses, around an effect
+// that answers at once.
+export const permitUncontended = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const s = yield* Semaphore.make(1);
+      const one = s.withPermit(Effect.succeed(1));
+      let acc = 0;
+      for (let i = 0; i < n; i++) acc += yield* one;
+      return acc;
+    }),
+  );
+
+// `fibers` fibers contending for 4 permits, each taking a permit `rounds`
+// times and yielding once while it holds it.
+export const permitContended = (fibers, rounds) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const s = yield* Semaphore.make(4);
+      const held = s.withPermit(Effect.as(Effect.yieldNow, 1));
+      const contend = Effect.gen(function* () {
+        let acc = 0;
+        for (let i = 0; i < rounds; i++) acc += yield* held;
+        return acc;
+      });
+      const started = [];
+      for (let i = 0; i < fibers; i++) started.push(yield* Effect.forkChild(contend));
+      let sum = 0;
+      for (const f of started) sum += yield* Fiber.join(f);
+      return sum;
+    }),
+  );
+
+// `n` waits for a permit, each interrupted while it waits, with one permit
+// held throughout. Answers the semaphore.
+export const cancelledWaits = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const s = yield* Semaphore.make(1);
+      yield* s.take(1);
+      for (let i = 0; i < n; i++) {
+        const f = yield* Effect.forkChild(s.withPermit(Effect.succeed(1)));
+        yield* Effect.yieldNow;
+        yield* Fiber.interrupt(f);
+      }
+      return s;
+    }),
+  );

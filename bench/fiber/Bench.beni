@@ -8,6 +8,7 @@ import Duration
 import Log
 import Ref exposing (Ref)
 import Schedule
+import Semaphore exposing (Semaphore)
 import Task exposing (Exit)
 
 
@@ -259,3 +260,67 @@ infoTimes n =
     else
         Log.info "written"
         infoTimes (n - 1)
+
+
+--| `n` times `withPermit` on a semaphore nobody else uses, around work that
+--| answers at once.
+pub permitUncontended : Int → Int
+permitUncontended n =
+    s = Semaphore.make 1
+    permitLoop s n 0
+
+
+permitLoop : Semaphore, Int, Int → Int
+permitLoop s n acc =
+    if n == 0 then
+        acc
+    else
+        permitLoop s (n - 1) (acc + Semaphore.withPermit s λ⊤ → 1)
+
+
+--| `fibers` fibers contending for 4 permits, each taking a permit `rounds`
+--| times and yielding once while it holds it. Answers how many times a
+--| permit was held.
+pub permitContended : Int, Int → Int
+permitContended fibers rounds =
+    s = Semaphore.make 4
+    started = List.map (List.range 1 fibers) λ_ → Task.spawn λ⊤ → contend s rounds 0
+    List.sum (Task.joinAll started)
+
+
+contend : Semaphore, Int, Int → Int
+contend s n acc =
+    if n == 0 then
+        acc
+    else
+        got = Semaphore.withPermit s λ⊤ →
+            Task.yieldNow ⊤
+            1
+        contend s (n - 1) (acc + got)
+
+
+--| `n` waits for a permit, each cancelled while it waits: one permit is
+--| held throughout, a fiber starts to wait, and is cancelled. Answers the
+--| semaphore, still held, so the harness can keep it alive while it weighs
+--| the heap.
+pub cancelledWaits : Int → Semaphore
+cancelledWaits n =
+    s = Semaphore.make 1
+    Semaphore.acquire s 1
+    cancelLoop s n
+    s
+
+
+cancelLoop : Semaphore, Int → ⊤
+cancelLoop s n =
+    if n > 0 then
+        waiter = Task.spawn λ⊤ → Semaphore.withPermit s λ⊤ → 1
+        Task.yieldNow ⊤
+        Task.cancel waiter
+        cancelLoop s (n - 1)
+
+
+--| How many permits are free: what the harness reads to see that the
+--| cancelled waits took none.
+pub availablePermits : Semaphore → Int
+availablePermits s = Semaphore.available s

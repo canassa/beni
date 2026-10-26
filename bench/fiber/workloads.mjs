@@ -203,3 +203,56 @@ export async function log(beni, effect, sizes = {}, progress = () => {}) {
   }
   return out;
 }
+
+// What the heap holds after `run(n)` that it did not before, with the
+// semaphore `run` answers still alive: research 48 §2.10's *Leak freedom*.
+// Needs `node --expose-gc`; without it the bytes are `null`.
+async function retained(label, n, run, keep) {
+  const gc = globalThis.gc;
+  const heap = () => globalThis.process?.memoryUsage().heapUsed ?? null;
+  await run(1000);
+  const bytes = [];
+  for (let i = 0; i < 5; i++) {
+    if (gc === undefined) break;
+    gc();
+    gc();
+    const h0 = heap();
+    const s = await run(n);
+    gc();
+    gc();
+    bytes.push(heap() - h0);
+    keep(s);
+  }
+  return { label, waits: n, retainedBytes: bytes.length === 0 ? null : median(bytes), runs: bytes };
+}
+
+// The semaphore (transparent-effects-proposal.md §17.9; `plans/effects-plan.md`
+// §8 P5): `node --expose-gc node.mjs --group=semaphore`.
+export async function semaphore(beni, effect, sizes = {}, progress = () => {}) {
+  const u = sizes.uncontended ?? 1_000_000;
+  const f = sizes.fibers ?? 1_000;
+  const r = sizes.rounds ?? 10;
+  const c = sizes.cancelled ?? 100_000;
+  const pairs = [
+    [`${u} uncontended withPermit`, u, () => inFiber(beni, () => beni.Bench$permitUncontended(u)), () => effect.permitUncontended(u), u],
+    [`${f} fibers contending for 4 permits, ${r} withPermit each`, f * r, () => inFiber(beni, () => beni.Bench$permitContended(f, r)), () => effect.permitContended(f, r), f * r],
+  ];
+  const out = [];
+  for (const [label, ops, b, e, expect] of pairs) {
+    out.push(await measure(`beni: ${label}`, ops, b, expect));
+    progress(out[out.length - 1].label);
+    out.push(await measure(`Effect v4: ${label}`, ops, e, expect));
+    progress(out[out.length - 1].label);
+  }
+  const kept = [];
+  out.push(
+    await retained(`beni: heap retained after ${c} cancelled waits`, c, (n) => inFiber(beni, () => beni.Bench$cancelledWaits(n)), (s) => {
+      if (beni.Bench$availablePermits(s) !== 0) throw new Error("a cancelled wait took a permit");
+      kept.push(s);
+    }),
+  );
+  progress(out[out.length - 1].label);
+  out.push(await retained(`Effect v4: heap retained after ${c} cancelled waits`, c, (n) => effect.cancelledWaits(n), (s) => kept.push(s)));
+  progress(out[out.length - 1].label);
+  return out;
+}
