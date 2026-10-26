@@ -1,0 +1,1 @@
+S3a (ownership-v2.md §2.8): every write v1 refuses is refused; the holder is named at its own path (v1 names the level below it), and v1's `level` cause is `element` here.

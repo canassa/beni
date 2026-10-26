@@ -1,0 +1,692 @@
+-- ownership: a sweep of writes below a view of the list above, over three
+-- recursive shapes (ownership-v2.md §2.8): `Rose (List Rose)`, `M (List
+-- Int) (List M)` and the mutual `A (List B)`, `B (List A)`; a rest view,
+-- an init view or the list whole; the first or the last element; `push`
+-- or `set`. `g` lies under `r` in every one: all refused, as v1 does.
+
+type Rose
+    = Rose (List Rose)
+
+
+type M
+    = M (List Int) (List M)
+
+
+type A
+    = A (List B)
+
+
+type B
+    = B (List A)
+
+
+pub p1 : List Rose → List Rose × List Rose
+p1 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p2 : List M → List Int × List M
+p2 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ M g _, …_ ] →
+                            ( List.push g (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p3 : List A → List A × List B
+p3 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ B g, …_ ] →
+                            ( List.push g (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p4 : List Rose → List Rose × List Rose
+p4 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.set g 0 (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p5 : List M → List Int × List M
+p5 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ M g _, …_ ] →
+                            ( List.set g 0 (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p6 : List A → List A × List B
+p6 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ B g, …_ ] →
+                            ( List.set g 0 (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p7 : List Rose → List Rose × List Rose
+p7 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, Rose g ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p8 : List M → List Int × List M
+p8 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, M g _ ] →
+                            ( List.push g (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p9 : List A → List A × List B
+p9 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, B g ] →
+                            ( List.push g (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p10 : List Rose → List Rose × List Rose
+p10 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, Rose g ] →
+                            ( List.set g 0 (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p11 : List M → List Int × List M
+p11 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, M g _ ] →
+                            ( List.set g 0 (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p12 : List A → List A × List B
+p12 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, B g ] →
+                            ( List.set g 0 (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p13 : List Rose → List Rose × List Rose
+p13 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p14 : List M → List Int × List M
+p14 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ M g _, …_ ] →
+                            ( List.push g (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p15 : List A → List A × List B
+p15 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ B g, …_ ] →
+                            ( List.push g (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p16 : List Rose → List Rose × List Rose
+p16 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.set g 0 (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p17 : List M → List Int × List M
+p17 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ M g _, …_ ] →
+                            ( List.set g 0 (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p18 : List A → List A × List B
+p18 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ B g, …_ ] →
+                            ( List.set g 0 (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p19 : List Rose → List Rose × List Rose
+p19 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, Rose g ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p20 : List M → List Int × List M
+p20 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, M g _ ] →
+                            ( List.push g (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p21 : List A → List A × List B
+p21 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, B g ] →
+                            ( List.push g (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p22 : List Rose → List Rose × List Rose
+p22 x =
+    case x of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, Rose g ] →
+                            ( List.set g 0 (Rose []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p23 : List M → List Int × List M
+p23 x =
+    case x of
+        [ M _ k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, M g _ ] →
+                            ( List.set g 0 (0), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p24 : List A → List A × List B
+p24 x =
+    case x of
+        [ A k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ …_, B g ] →
+                            ( List.set g 0 (A []), r )
+
+                        _ →
+                            ( [], r )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub p25 : List Rose → List Rose × List Rose
+p25 x =
+    case x of
+        [ Rose k1, …_ ] →
+            r = k1
+            case r of
+                [ Rose g, …_ ] →
+                    ( List.push g (Rose []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p26 : List M → List Int × List M
+p26 x =
+    case x of
+        [ M _ k1, …_ ] →
+            r = k1
+            case r of
+                [ M g _, …_ ] →
+                    ( List.push g (0), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p27 : List A → List A × List B
+p27 x =
+    case x of
+        [ A k1, …_ ] →
+            r = k1
+            case r of
+                [ B g, …_ ] →
+                    ( List.push g (A []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p28 : List Rose → List Rose × List Rose
+p28 x =
+    case x of
+        [ Rose k1, …_ ] →
+            r = k1
+            case r of
+                [ Rose g, …_ ] →
+                    ( List.set g 0 (Rose []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p29 : List M → List Int × List M
+p29 x =
+    case x of
+        [ M _ k1, …_ ] →
+            r = k1
+            case r of
+                [ M g _, …_ ] →
+                    ( List.set g 0 (0), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p30 : List A → List A × List B
+p30 x =
+    case x of
+        [ A k1, …_ ] →
+            r = k1
+            case r of
+                [ B g, …_ ] →
+                    ( List.set g 0 (A []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p31 : List Rose → List Rose × List Rose
+p31 x =
+    case x of
+        [ Rose k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, Rose g ] →
+                    ( List.push g (Rose []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p32 : List M → List Int × List M
+p32 x =
+    case x of
+        [ M _ k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, M g _ ] →
+                    ( List.push g (0), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p33 : List A → List A × List B
+p33 x =
+    case x of
+        [ A k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, B g ] →
+                    ( List.push g (A []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p34 : List Rose → List Rose × List Rose
+p34 x =
+    case x of
+        [ Rose k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, Rose g ] →
+                    ( List.set g 0 (Rose []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p35 : List M → List Int × List M
+p35 x =
+    case x of
+        [ M _ k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, M g _ ] →
+                    ( List.set g 0 (0), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )
+
+
+pub p36 : List A → List A × List B
+p36 x =
+    case x of
+        [ A k1, …_ ] →
+            r = k1
+            case r of
+                [ …_, B g ] →
+                    ( List.set g 0 (A []), r )
+
+                _ →
+                    ( [], r )
+
+        _ →
+            ( [], [] )

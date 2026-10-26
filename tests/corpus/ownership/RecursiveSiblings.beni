@@ -1,0 +1,63 @@
+-- ownership: siblings under a recursive constructor (ownership-v2.md
+-- §2.13.3): on a recursive place every argument of a matched node is
+-- materialised, the off-cycle `List Int` too, so `a` and `b` of two
+-- positions of one list are apart under that list's κ: the write to `a`
+-- with `b` read is accepted on `xreq excl π1#Rose.1[*]`, as the
+-- non-recursive twins are.
+
+type B
+    = B (List (List Int))
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub boxSib : B → List Int × List Int
+boxSib bx =
+    case bx of
+        B [ a, b ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub boxSibRead : B → List Int × List Int
+boxSibRead bx =
+    case bx of
+        B [ a, b ] →
+            ( List.push a 1, b )
+
+        _ →
+            ( [], [] )
+
+
+pub listSib : List (List Int) → List Int × List Int
+listSib xs =
+    case xs of
+        [ a, b ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub roseSibRead : Rose → List Int × List Int
+roseSibRead r =
+    case r of
+        Rose _ [ Rose a _, Rose b _ ] →
+            ( List.push a 1, b )
+
+        _ →
+            ( [], [] )
+
+
+pub roseKidsSib : Rose → List Rose × List Rose
+roseKidsSib r =
+    case r of
+        Rose _ [ Rose _ a, Rose _ b ] →
+            ( List.push a (Rose [] []), b )
+
+        _ →
+            ( [], [] )

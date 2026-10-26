@@ -1,0 +1,58 @@
+-- ownership: siblings two levels down a recursive constructor
+-- (ownership-v2.md §2.13.3), fresh and from a parameter. The fresh `Rose xs
+-- [ Rose xs [] ]` shares `xs` at both: refused, exactly.
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub twoRFresh : ⊤ → List Int × List Int
+twoRFresh ⊤ =
+    xs = [ 0 ]
+    r = Rose xs [ Rose xs [] ]
+    case r of
+        Rose a [ Rose b _ ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub twoR : Rose → List Int × List Int
+twoR r =
+    case r of
+        Rose a [ Rose b _ ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub twoRRead : Rose → List Int × List Int
+twoRRead r =
+    case r of
+        Rose a [ Rose b _ ] →
+            ( List.push a 1, b )
+
+        _ →
+            ( [], [] )
+
+
+pub twoKids : Rose → List Int × List Int
+twoKids r =
+    case r of
+        Rose _ [ Rose a _, Rose b _ ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub twoKidsDeep : Rose → List Int × List Int
+twoKidsDeep r =
+    case r of
+        Rose _ [ Rose a _, Rose _ [ Rose b _ ] ] →
+            ( List.push a 1, List.push b 2 )
+
+        _ →
+            ( [], [] )

@@ -693,15 +693,18 @@ pub const Table = struct {
             // A taken element stored back beside the elements it was taken
             // from (`elem(c·ι)` with `c[*]`, not `others(c·ι)`): one object at
             // two positions, exactly (§2.9's `shared`, P5).
-            for (arrivals.items) |c| if (cellt.origin(c) == .elem) {
-                var kids = cellt.children(cellt.parent(c));
-                while (kids.next()) |k| {
-                    try charge.reserve(gpa, .inspection, 1);
-                    const o = cellt.origin(k);
-                    if (!o.isSymbolic() or o == .top) continue;
-                    if (places.pathStep(.from(cellt.get(k).b)).kind != .elem) continue;
-                    if (cellt.sets.member(group, k.int())) return shared;
-                }
+            // The containers whose whole `[*]` arrived (a symbolic `c[*]`), then
+            // each taken position of one: one record per arrival.
+            var whole: SetId = .none;
+            for (arrivals.items) |c| {
+                const o = cellt.origin(c);
+                if (!o.isSymbolic() or o == .top) continue;
+                if (places.pathParent(.from(cellt.get(c).b)) == .none or places.pathStep(.from(cellt.get(c).b)).kind != .elem) continue;
+                whole = try cellt.sets.insert(gpa, charge, whole, cellt.parent(c).int(), 0);
+            }
+            if (whole != .none) for (arrivals.items) |c| if (cellt.origin(c) == .elem) {
+                try charge.reserve(gpa, .inspection, 1);
+                if (cellt.sets.member(whole, cellt.parent(c).int())) return shared;
             };
             acc = try t.@"and"(gpa, charge, acc, try t.apartAtom(gpa, charge, group));
             acc = try t.@"and"(gpa, charge, acc, try t.sameBasePairs(gpa, charge, cellt, places, arrivals.items, traversal));
@@ -712,27 +715,57 @@ pub const Table = struct {
     /// The pairs of `arrivals` over one base that `alias` does not tell apart.
     fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
         var acc: CondId = yes;
-        const Ctx = struct { cellt: *const Cell.Table };
-        std.mem.sort(CellId, arrivals, Ctx{ .cellt = cellt }, struct {
-            fn lessThan(ctx: Ctx, x: CellId, y: CellId) bool {
-                const bx = ctx.cellt.base(x).int();
-                const by = ctx.cellt.base(y).int();
-                return if (bx != by) bx < by else x.int() < y.int();
+        // By base, then by split (a position's or a view's `(container,
+        // label)`): two members of one split answer `sep` alike — `under`
+        // that split — so a split's run is decided by one pair, and only
+        // pairs across runs are decided one by one (§2.9; linear in a
+        // literal of positions taken from one list).
+        const Ctx = struct {
+            cellt: *const Cell.Table,
+            fn split(ctx: @This(), x: CellId) [2]u32 {
+                const o = ctx.cellt.origin(x);
+                if (o != .elem and o != .others) return .{ Ids.none_int, x.int() };
+                const d = ctx.cellt.get(x);
+                return .{ d.parent.int(), d.b };
+            }
+        };
+        const ctx: Ctx = .{ .cellt = cellt };
+        std.mem.sort(CellId, arrivals, ctx, struct {
+            fn lessThan(c: Ctx, x: CellId, y: CellId) bool {
+                const bx = c.cellt.base(x).int();
+                const by = c.cellt.base(y).int();
+                if (bx != by) return bx < by;
+                const sx = c.split(x);
+                const sy = c.split(y);
+                if (sx[0] != sy[0]) return sx[0] < sy[0];
+                if (sx[1] != sy[1]) return sx[1] < sy[1];
+                return x.int() < y.int();
             }
         }.lessThan);
         var k: usize = 0;
         while (k < arrivals.len) {
             var m = k + 1;
             while (m < arrivals.len and cellt.base(arrivals[m]) == cellt.base(arrivals[k])) m += 1;
+            // The runs of one split in [k, m).
             var x = k;
-            while (x < m) : (x += 1) {
-                var y = x + 1;
-                while (y < m) : (y += 1) {
-                    try charge.reserve(gpa, .inspection, 1);
-                    if (cellt.alias(places, arrivals[x], arrivals[y]) == .no) continue; // in the group
-                    acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, arrivals[x], arrivals[y], false, traversal));
-                    if (acc == shared) return shared;
+            while (x < m) {
+                var e = x + 1;
+                while (e < m and std.mem.eql(u32, &ctx.split(arrivals[e]), &ctx.split(arrivals[x])) and ctx.split(arrivals[x])[0] != Ids.none_int) e += 1;
+                if (e - x >= 2) {
+                    try charge.reserve(gpa, .inspection, @intCast(e - x));
+                    if (cellt.alias(places, arrivals[x], arrivals[x + 1]) != .no) {
+                        acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, arrivals[x], arrivals[x + 1], false, traversal));
+                        if (acc == shared) return shared;
+                    }
                 }
+                // Against every later run.
+                for (arrivals[x..e]) |a| for (arrivals[e..m]) |b| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    if (cellt.alias(places, a, b) == .no) continue; // in the group
+                    acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, a, b, false, traversal));
+                    if (acc == shared) return shared;
+                };
+                x = e;
             }
             k = m;
         }

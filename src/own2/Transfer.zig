@@ -404,12 +404,12 @@ pub const Frame = struct {
         }
     }
 
-    /// A constructor pattern's argument at `s` (§2.13.3): when `s` stays on
-    /// the cycle of the matched value's place, the levels under that
-    /// recursive child, one `below(c·s·ι)` per symbolic cell `c` of the
-    /// matched value (the cells a projection of `c` puts there replaced),
-    /// so they are below the matched levels' cells and apart from another
-    /// recursive child's under the split's κ. Otherwise the projection.
+    /// A constructor pattern's argument at `s` (§2.13.3) on a recursive
+    /// place: one `below(c·s·ι)` per symbolic cell `c` of the matched value
+    /// (the cells a projection of `c` puts there replaced) — the levels
+    /// under a recursive child, or a non-recursive argument of this one
+    /// node — so two matched positions' arguments are apart under their
+    /// split's κ and below the matched cells. Otherwise the projection.
     fn below(f: *Frame, p: u32, v: Value, s: Step, projected: Value) Error!Value {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
@@ -417,7 +417,14 @@ pub const Frame = struct {
         if (v.node == .none or projected.node == .none) return projected;
         const at = shapes.place(v.node);
         const child = places.child(at, s) orelse return projected;
-        if (!places.sameCycle(at, child) or shapes.place(projected.node) != child) return projected;
+        if (shapes.place(projected.node) != child) return projected;
+        // On a recursive place every argument is materialised (`level`'s
+        // non-recursive ones too, by their step); a non-recursive
+        // constructor's arguments are plain projections.
+        const recursive = for (places.steps(at).children) |k| {
+            if (places.sameCycle(at, k)) break true;
+        } else false;
+        if (!recursive) return projected;
         const label = try cells.label(f.gpa, f.account(), p, .none, false);
         const kind = Cell.Kind.ofPlace(places.kind(child));
         const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, projected.node, true);

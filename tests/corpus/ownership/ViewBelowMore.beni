@@ -1,0 +1,134 @@
+-- ownership: more writes below a view of the list above
+-- (ownership-v2.md §2.8; see ViewBelowWrites): an init view, the view's
+-- last element, the view whole, two levels down, and `List.set` for the
+-- push. Each is refused.
+
+type Rose
+    = Rose (List Rose)
+
+
+pub initView : List Rose → List Rose × List Rose
+initView kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ …r, _ ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub restLast : List Rose → List Rose × List Rose
+restLast kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ …_, Rose g ] →
+                            ( List.push g (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub restWhole : List Rose → List Rose × Rose
+restWhole kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ x, …_ ] →
+                            case x of
+                                Rose g →
+                                    ( List.push g (Rose []), x )
+
+                        _ →
+                            ( [], Rose [] )
+
+                _ →
+                    ( [], Rose [] )
+
+        _ →
+            ( [], Rose [] )
+
+
+pub restWriteShallow : List Rose → List Rose × List Rose
+restWriteShallow kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.push k1 (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub levelThree : List Rose → List Rose × List Rose
+levelThree kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ Rose k2, …_ ] →
+                    case k2 of
+                        [ _, …r ] →
+                            case r of
+                                [ Rose g, …_ ] →
+                                    ( List.push g (Rose []), r )
+
+                                _ →
+                                    ( [], [] )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub restSet : List Rose → List Rose × List Rose
+restSet kids =
+    case kids of
+        [ Rose k1, …_ ] →
+            case k1 of
+                [ _, …r ] →
+                    case r of
+                        [ Rose g, …_ ] →
+                            ( List.set g 0 (Rose []), r )
+
+                        _ →
+                            ( [], [] )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )

@@ -1,0 +1,14 @@
+module RecursiveSiblingsDeep
+  15:15 List.push a: rejected alias: b holds it and is read at 15:30
+  15:30 List.push b: rejected held-operand: the value at 15:15, evaluated before it, holds it until its consumer runs
+  25:15 List.push a: accepted param
+  25:30 List.push b: accepted param
+  35:15 List.push a: accepted param
+  45:15 List.push a: accepted param
+  45:30 List.push b: accepted param
+  55:15 List.push a: accepted param
+  55:30 List.push b: accepted param
+  demands 9: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 9: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause held-operand 1
+cause alias 1
