@@ -89,6 +89,45 @@ apart left right =
   a virtual clock with `Clock.run`.
 - `Duration`: `Duration.millis n`, `Duration.seconds n`, `Duration.minutes n`.
 
+## Permits: `Semaphore`
+
+A `Semaphore` limits how many fibers do one thing at the same time. `Semaphore.make n` makes
+`n` permits.
+
+- `Semaphore.withPermit s (λ⊤ → work)` waits for a permit, runs `work` and gives the permit back
+  when `work` ends. It also gives it back when the fiber is cancelled. Use this form first.
+- `Semaphore.withPermits s n (λ⊤ → work)` does the same with `n` permits.
+- `Semaphore.tryWithPermits s n (λ⊤ → work)` does not wait: `Just` the value, or `Nothing` and
+  `work` does not run.
+- Fibers get permits in the order they started to wait. A request waits while an earlier request
+  waits.
+- A request for more permits than there are waits until all are free, then takes all of them.
+  A request for 0 or fewer does not wait.
+- `Semaphore.acquire s n` and `Semaphore.release s n` are the manual pair. One fiber can take a
+  permit and a different fiber can give it back. Nothing gives back a permit that you `acquire`:
+  if you do not `release` it, it is lost.
+- `Semaphore.available s` is the number of free permits. `Semaphore.resize s n` changes the
+  number of permits.
+
+```beni
+import Semaphore exposing (Semaphore)
+import Task
+
+
+pub fetchAll : Semaphore, List String, (String → Int) → List Int
+fetchAll pool urls fetch =
+    fibers = List.map urls λurl → Task.spawn λ⊤ → Semaphore.withPermit pool λ⊤ → fetch url
+    Task.joinAll fibers
+
+
+pub enter : Semaphore → ⊤
+enter slots = Semaphore.acquire slots 1
+
+
+pub leave : Semaphore → ⊤
+leave slots = Semaphore.release slots 1
+```
+
 ## Where a program can wait
 
 `main` is evaluated once, when the program starts, and must not wait.
@@ -142,4 +181,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5; `core/Task.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5, §17.9; `core/Task.beni`; `core/Semaphore.beni`; `core/Log.beni`; `platforms/node/Io.beni`.

@@ -505,6 +505,16 @@ module Schema
   value variant : String, String, Schema pe pa, Injection pe e, Injection pa a → Variant e a  -- impure
   value write : Schema e a, a → Result (List Issue) Value  -- impure
   value writeWith : Schema e a, Options, a → Result (List Issue) Value  -- impure
+module Semaphore
+  opaque type Semaphore
+  value acquire : Semaphore, Int → ⊤  -- suspends
+  value available : Semaphore → Int  -- impure
+  value make : Int → Semaphore  -- impure
+  value release : Semaphore, Int → ⊤  -- impure
+  value resize : Semaphore, Int → ⊤  -- impure
+  value tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a  -- impure
+  value withPermit : Semaphore, (⊤ → a) → a  -- suspends
+  value withPermits : Semaphore, Int, (⊤ → a) → a  -- suspends
 module Set
   opaque type Set a
   value diff : Set key, Set key → Set key
