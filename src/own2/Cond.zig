@@ -516,10 +516,11 @@ pub const Table = struct {
         const d = cellt.get(c);
         return switch (d.origin) {
             .site, .top, .mark => false,
-            .result, .esc => cellt.labelOf(.from(d.a)).folded,
-            .cb => cellt.labelOf(.from(d.a)).folded or places.isSummary(.from(d.b)),
+            // No label (an asserted row's `taken` element): folded, which claims less.
+            .result, .esc => d.a == Ids.none_int or cellt.labelOf(.from(d.a)).folded,
+            .cb => d.a == Ids.none_int or cellt.labelOf(.from(d.a)).folded or places.isSummary(.from(d.b)),
             .param, .env, .shared, .msg => places.isSummary(.from(d.b)),
-            .elem, .others, .level, .below, .loan => cellt.labelOf(.from(d.b)).folded,
+            .elem, .others, .level, .below, .loan => d.b == Ids.none_int or cellt.labelOf(.from(d.b)).folded,
         };
     }
 
