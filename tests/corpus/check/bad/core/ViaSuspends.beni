@@ -1,0 +1,35 @@
+-- A `via` extractor is held `sync`, beni or `foreign` (checker-v2.md §25.8,
+-- amended 2026-10-26): a lowering calls it while the event is dispatched,
+-- outside any fiber, so one that may suspend is `sync_boundary` at the
+-- event that names it — `onSlow` (21:11), whose beni `waits` suspends, and
+-- `onSlower` (24:11), whose `foreign suspends` rung says so. `reads` is fine.
+import Js
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via reads : String
+
+
+pub event "onSlow" name "slow" via waits : String
+
+
+pub event "onSlower" name "slower" via waitsF : String
+
+
+reads : Event → String
+reads ev = Js.to (Js.get (Js.from ev) "detail")
+
+
+waits : Event → String
+waits ev = Js.suspending λ⊤ → Js.to (Js.get (Js.from ev) "detail")
+
+
+foreign suspends waitsF : Event → String

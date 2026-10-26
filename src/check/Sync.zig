@@ -253,7 +253,8 @@ const Sync = struct {
         const bir = y.in.cx.bir;
         const d = src.demand;
         switch (d.kind) {
-            .main, .value, .method => {
+            .main, .value, .method, .extractor => {
+                // `.extractor`: `decl` is the event declaration whose `via` names it.
                 const decl = bir.decls[d.decl];
                 return .{ @backingInt(decl.inst_start), decl.name_token };
             },
@@ -404,6 +405,7 @@ const Sync = struct {
                 );
             },
             .handler => return w.writeAll("This handler must not suspend: the page calls it synchronously, while the event is being dispatched."),
+            .extractor => return w.writeAll("This event's payload extractor must not suspend: a lowering calls it synchronously, while the event is dispatched, outside any fiber (`docs/design/boundary.md` §9.3)."),
             .row => return w.writeAll("This row function must not suspend: the page calls it synchronously, while it renders."),
             .key => return w.writeAll("This key function must not suspend: the page calls it synchronously, while it renders."),
             .signature => {
