@@ -1,0 +1,17 @@
+{
+  "dev": {
+    "modules": 40,
+    "raw": 241783,
+    "brotli": 52412
+  },
+  "release": {
+    "modules": 1,
+    "raw": 77154,
+    "brotli": 22840
+  },
+  "gradient": {
+    "modules": 40,
+    "raw": 242371,
+    "brotli": 52457
+  }
+}

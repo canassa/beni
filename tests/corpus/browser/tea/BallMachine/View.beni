@@ -331,9 +331,9 @@ view model =
             </g>
             {rods}
             {
-                -- The gates the program works: glowing while shut, a faint dashed line while open.
+                -- The gates the program works: bright while shut, a faint dashed line while open.
             }
-            <g filter="url(#glow)" stroke-linecap="round">
+            <g stroke-linecap="round">
                 {viewGate
                     (cx - half)
                     gateA
@@ -535,18 +535,24 @@ viewBall w sleeper b =
     opacity = max 0 b.alpha * (if b.stage == Pool then 0.8 else 1)
     <g transform={"translate(${n1 b.x} ${n1 b.y})"} opacity={n1 opacity}>
         <circle
+            r="15"
+            fill={if b.red then "url(#poolRed)" else "url(#poolOrange)"}
+            opacity={if b.stage == Done || b.dropped && b.stage == Inside then "0.25" else "0"}
+        />
+        <circle
+            r="10.5"
+            fill="none"
+            stroke="rgba(183, 156, 255, 0.14)"
+            stroke-width="3"
+            visibility={if b.token then "visible" else "hidden"}
+        />
+        <circle
             r="7.5"
             fill={fillUrl}
-            filter={if b.stage == Done || b.dropped && b.stage == Inside then
-                       "url(#glow)"
-                    else
-                       "url(#ballShadow)"
-                   }
         />
         <circle
             r="9.1"
             fill="none"
-            filter="url(#glow)"
             stroke="rgba(183, 156, 255, 0.95)"
             stroke-width="0.9"
             visibility={if b.token then "visible" else "hidden"}
@@ -607,7 +613,6 @@ viewChip x y lit =
                 height="9"
                 rx="1.6"
                 fill="url(#chip)"
-                filter="url(#glow)"
             />
             <circle cx={n1 x} cy={n1 (y - 2.2)} r="0.9" fill="rgba(23, 12, 40, 0.75)" />
         </g>
@@ -860,23 +865,6 @@ defs =
             <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
             <feOffset "dy"="1.5" result="blur" />
             <feFlood flood-color="#000000" flood-opacity="0.55" />
-            <feComposite in2="blur" operator="in" />
-            <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-            </feMerge>
-        </filter>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-            <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-            </feMerge>
-        </filter>
-        <filter id="ballShadow" x="-10%" y="-10%" width="120%" height="120%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" />
-            <feOffset "dy"="1.5" result="blur" />
-            <feFlood flood-color="#000000" flood-opacity="0.5" />
             <feComposite in2="blur" operator="in" />
             <feMerge>
                 <feMergeNode />
