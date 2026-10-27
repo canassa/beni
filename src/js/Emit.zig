@@ -1023,6 +1023,11 @@ const Emitter = struct {
     /// file's of `main` (`markImported`). A module's `export` list is cut
     /// to them. Scratch-owned; empty and unused otherwise.
     imported: Print.Imported = .{},
+    /// `--release`: the whole-program ordinals of names the build imports
+    /// from a hand-written file — a `foreign`'s sibling export, the platform's
+    /// runtime — which `Print.resolve` never writes in place of an arrow
+    /// (`backend.md` §9 item 6; `markHandWritten`).
+    hand_written: Print.Imported = .{},
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
@@ -5122,6 +5127,7 @@ const Emitter = struct {
                 if (!e.options.library) try e.markImported(slots, todo.items, entry);
             }
             e.hoisted = hoist != null;
+            if (lowered_clean) try e.markHandWritten(slots, todo.items);
             if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
             try e.assignFields(slots, todo.items);
             // A hoisted build writes only the modules its one file holds:
@@ -5677,6 +5683,7 @@ const Emitter = struct {
                 .rename = &renamer,
                 .compact = true,
                 .imported = if (e.options.library or e.hoisted) null else &e.imported,
+                .hand_written = &e.hand_written,
                 .hoisted = e.hoisted,
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
@@ -7187,6 +7194,34 @@ const Emitter = struct {
     /// module — the output tree is the program — so an export outside this
     /// set is bytes no one can ask for. After `numberGlobals`, so every
     /// name has its ordinal and its session symbol.
+    /// The names the build imports from a hand-written file: an `import`
+    /// specifier whose imported name is not its local one is a sibling's
+    /// export (`import { add as Basics$add } from "./Basics.foreign.mjs"`)
+    /// or the platform runtime's; an import from an emitted module carries
+    /// the one name on both sides. §9 item 6 prints no such name in place
+    /// of a forwarding arrow: a hand-written function may read `arguments`
+    /// or `this`, and a host holding the value may call it with more
+    /// arguments than the lambda took (`Print.resolve`). Every release
+    /// path, hoisted or not, `--library` or not.
+    fn markHandWritten(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        e.hand_written = try .initEmpty(e.scratch, e.globals.next);
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (ir.tag(stmt) != .import_stmt) continue;
+                const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
+                for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                    if (spec.imported == spec.local) continue;
+                    const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
+                    e.hand_written.set(ordinal);
+                }
+            }
+        }
+    }
+
     fn markImported(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: ?Entry) Allocator.Error!void {
         e.imported = try .initEmpty(e.scratch, e.globals.next);
         for (todo) |i| {
