@@ -203,57 +203,118 @@ const Grafter = struct {
         }
     };
 
-    fn linkAt(g: *Grafter, w: *LinkWalk, t: NodeId, pid: u32) Error!void {
+    fn linkAt(g: *Grafter, w: *LinkWalk, root: NodeId, root_pid: u32) Error!void {
         const shapes = g.env.shapes;
         const conds = g.env.conds;
-        try g.env.charge.reserve(g.gpa(), .memo, 1);
-        const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), pid });
-        if (seen.found_existing) return;
-        seen.value_ptr.* = 1;
-        try g.env.charge.reserve(g.gpa(), .inspection, @intCast(w.route.items.len));
-        for (w.route.items) |r| if (r[0] == t.int()) {
-            // A knot: everything below is that position, folded.
-            w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items[0..r[1]], .fold);
-            return;
-        };
-        try w.route.append(g.gpa(), .{ t.int(), @intCast(w.path.items.len) });
-        defer _ = w.route.pop();
-        var it = g.env.cells.sets.iterate(shapes.cells(t));
-        while (it.next()) |e| {
-            const cell: CellId = .from(e.key);
-            if (g.env.cells.origin(cell) != .param) continue;
-            try g.env.charge.reserve(g.gpa(), .inspection, 1);
-            const x = g.env.cells.get(cell);
-            w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items, .{ .merge = try g.argKappa(x.a, .from(x.b)) });
-        }
-        const d = shapes.get(t);
-        switch (d.kind) {
-            .leaf => {},
-            .node, .delta => {
-                if (d.kind == .delta) try g.linkAt(w, .from(d.a), pid);
-                var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                while (kt.next()) |e| {
-                    try g.env.charge.reserve(g.gpa(), .memo, 1);
-                    const got = try w.paths.getOrPut(g.gpa(), .{ pid, e.step.word() });
-                    if (!got.found_existing) {
-                        got.value_ptr.* = w.next_path;
-                        w.next_path += 1;
+        // A depth-first walk on an explicit stack (#1130: `res`'s depth is the
+        // source's, never native-stack depth). An `enter` frame may carry the
+        // step it is reached by; its `exit` frame takes the node off the
+        // route and the step off the path.
+        const Frame = struct { node: NodeId, pid: u32, step: ?Step, exit: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(g.gpa());
+        var kids: std.ArrayList(Frame) = .empty;
+        defer kids.deinit(g.gpa());
+        try stack.append(g.gpa(), .{ .node = root, .pid = root_pid, .step = null, .exit = false });
+        while (stack.pop()) |f| {
+            if (f.exit) {
+                _ = w.route.pop();
+                if (f.step != null) _ = w.path.pop();
+                continue;
+            }
+            const t = f.node;
+            if (f.step) |s| try w.path.append(g.gpa(), s);
+            try g.env.charge.reserve(g.gpa(), .memo, 1);
+            const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), f.pid });
+            if (seen.found_existing) {
+                if (f.step != null) _ = w.path.pop();
+                continue;
+            }
+            seen.value_ptr.* = 1;
+            try g.env.charge.reserve(g.gpa(), .inspection, @intCast(w.route.items.len));
+            const knot = for (w.route.items) |r| {
+                if (r[0] == t.int()) break r[1];
+            } else null;
+            if (knot) |len| {
+                // A knot: everything below is that position, folded.
+                w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items[0..len], .fold);
+                if (f.step != null) _ = w.path.pop();
+                continue;
+            }
+            try w.route.append(g.gpa(), .{ t.int(), @intCast(w.path.items.len) });
+            try stack.append(g.gpa(), .{ .node = t, .pid = f.pid, .step = f.step, .exit = true });
+            var it = g.env.cells.sets.iterate(shapes.cells(t));
+            while (it.next()) |e| {
+                const cell: CellId = .from(e.key);
+                if (g.env.cells.origin(cell) != .param) continue;
+                try g.env.charge.reserve(g.gpa(), .inspection, 1);
+                const x = g.env.cells.get(cell);
+                w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items, .{ .merge = try g.argKappa(x.a, .from(x.b)) });
+            }
+            // The children, in the order the recursion took them: pushed in
+            // reverse so the first is walked first.
+            kids.clearRetainingCapacity();
+            const d = shapes.get(t);
+            switch (d.kind) {
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try kids.append(g.gpa(), .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false });
+                    var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (kt.next()) |e| {
+                        try g.env.charge.reserve(g.gpa(), .memo, 1);
+                        const got = try w.paths.getOrPut(g.gpa(), .{ f.pid, e.step.word() });
+                        if (!got.found_existing) {
+                            got.value_ptr.* = w.next_path;
+                            w.next_path += 1;
+                        }
+                        try kids.append(g.gpa(), .{ .node = e.node, .pid = got.value_ptr.*, .step = e.step, .exit = false });
                     }
-                    try w.path.append(g.gpa(), e.step);
-                    defer _ = w.path.pop();
-                    try g.linkAt(w, e.node, got.value_ptr.*);
-                }
-            },
-            .recast => try g.linkAt(w, .from(d.a), pid),
-            .@"union", .positions => {
-                try g.linkAt(w, .from(d.a), pid);
-                try g.linkAt(w, .from(d.b), pid);
-            },
+                },
+                .recast => try kids.append(g.gpa(), .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }),
+                .@"union", .positions => try kids.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
+            }
+            var k = kids.items.len;
+            while (k > 0) {
+                k -= 1;
+                try stack.append(g.gpa(), kids.items[k]);
+            }
         }
     }
     /// Node `t` of the class's `res`, grafted onto the arguments.
-    fn graft(g: *Grafter, t: NodeId) Error!NodeId {
-        if (g.s.memo.get(t)) |m| return m;
+    fn graft(g: *Grafter, root: NodeId) Error!NodeId {
+        if (g.s.memo.get(root)) |m| return m;
+        // Post-order on an explicit stack (#1130): `res`'s depth is the
+        // source's, never native-stack depth. A node's parts are grafted
+        // before it, each once (`memo`).
+        const shapes = g.env.shapes;
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(g.gpa());
+        try stack.append(g.gpa(), .{ .node = root, .expanded = false });
+        while (stack.pop()) |f| {
+            if (g.s.memo.get(f.node) != null) continue;
+            if (f.expanded) {
+                try g.graftOne(f.node);
+                continue;
+            }
+            try stack.append(g.gpa(), .{ .node = f.node, .expanded = true });
+            const d = shapes.get(f.node);
+            switch (d.kind) {
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try stack.append(g.gpa(), .{ .node = .from(d.a), .expanded = false });
+                    var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (kt.next()) |e| try stack.append(g.gpa(), .{ .node = e.node, .expanded = false });
+                },
+                .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .expanded = false }),
+                .@"union", .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
+            }
+        }
+        return g.s.memo.get(root).?;
+    }
+
+    /// Node `t` grafted, its parts' images in `memo` already.
+    fn graftOne(g: *Grafter, t: NodeId) Error!void {
         const shapes = g.env.shapes;
         const d = shapes.get(t);
         const out: NodeId = switch (d.kind) {
@@ -275,24 +336,23 @@ const Grafter = struct {
                 }
                 var kids: u32 = Ids.none_int;
                 var kt = shapes.overEntries(d.a);
-                while (kt.next()) |e| kids = try shapes.overPut(g.gpa(), g.account(), kids, e.step, try g.graft(e.node));
+                while (kt.next()) |e| kids = try shapes.overPut(g.gpa(), g.account(), kids, e.step, g.s.memo.get(e.node).?);
                 break :blk try shapes.node(g.gpa(), g.account(), d.place, c, kids);
             },
             .delta => blk: {
-                var n = try g.graft(.from(d.a));
+                var n = g.s.memo.get(.from(d.a)).?;
                 var kt = shapes.overEntries(d.b);
-                while (kt.next()) |e| n = try shapes.put(g.gpa(), g.account(), g.env.places, g.env.cells, n, e.step, try g.graft(e.node), true, .none);
+                while (kt.next()) |e| n = try shapes.put(g.gpa(), g.account(), g.env.places, g.env.cells, n, e.step, g.s.memo.get(e.node).?, true, .none);
                 break :blk n;
             },
-            .recast => try shapes.recast(g.gpa(), g.account(), d.place, try g.graft(.from(d.a))),
+            .recast => try shapes.recast(g.gpa(), g.account(), d.place, g.s.memo.get(.from(d.a)).?),
             .@"union" => blk: {
-                var two = [_]NodeId{ try g.graft(.from(d.a)), try g.graft(.from(d.b)) };
+                var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
                 break :blk try shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
             },
-            .positions => try shapes.collect(g.gpa(), g.account(), &g.env.cells.sets, &.{ try g.graft(.from(d.a)), try g.graft(.from(d.b)) }),
+            .positions => try shapes.collect(g.gpa(), g.account(), &g.env.cells.sets, &.{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? }),
         };
         try g.s.memo.put(g.gpa(), t, out);
-        return out;
     }
 
     /// A leaf: each parameter cell the argument there, the rest one leaf of
@@ -473,4 +533,93 @@ comptime {
     Ids.assertRecord(Write);
     Ids.assertRecord(Escape);
     _ = Facts;
+}
+
+// ---- tests ---------------------------------------------------------------------------------------
+
+const testing = std.testing;
+const Place = @import("Place.zig");
+
+/// `type T = T (List T)`: 0 the constructor, 1 its list.
+const TestGraph = struct {
+    table: *Place.Table,
+    account: *Ids.Account,
+    gpa: Allocator,
+
+    fn describe(ctx: *anyopaque, v: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
+        const g: *TestGraph = @ptrCast(@alignCast(ctx));
+        switch (v) {
+            0 => {
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 0, 0) catch unreachable), .@"var" = 1 });
+                return .{ .kind = .ctor, .head = 300 };
+            },
+            1 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 0 });
+                return .{ .kind = .list, .head = 200 };
+            },
+            else => unreachable,
+        }
+    }
+};
+
+test "#1130: a call grafts and links a result as deep as the source, on explicit stacks" {
+    // On a thread with a small stack (a wasm build's is 1 MiB): a native
+    // frame per level of the source would overflow it.
+    var result: anyerror!void = {};
+    const th = try std.Thread.spawn(.{ .stack_size = 1 << 20 }, struct {
+        fn run(out: *anyerror!void) void {
+            out.* = deepCall();
+        }
+    }.run, .{&result});
+    th.join();
+    try result;
+}
+
+fn deepCall() !void {
+    const gpa = testing.allocator;
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var cells: Cell.Table = .{};
+    defer cells.deinit(gpa);
+    var shapes: Shape.Table = .{};
+    defer shapes.deinit(gpa);
+    var account: Ids.Account = .{ .allowance = std.math.maxInt(u32) - 1 };
+    defer account.deinit(gpa);
+    var conds = try Cond.Table.init(gpa, .growth(&account));
+    defer conds.deinit(gpa);
+    var sums: Summary.Table = .{};
+    defer sums.deinit(gpa);
+    var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
+    const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
+    const t_place = try places.of(gpa, &account, src, 0);
+    const list = try places.of(gpa, &account, src, 1);
+    const arg = try places.ctorStep(gpa, &account, 0, 0);
+    const env: Env = .{ .gpa = gpa, .charge = .growth(&account), .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds };
+    // `res`: 30 000 levels of `T [ … ]` over the parameter at the bottom (60 000
+    // path steps, inside `path_steps`), deeper than a native frame per level allows.
+    const p = try cells.symbolic(gpa, &account, &places, .param, 0, try places.rootPath(gpa, t_place), 0);
+    var n = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    const depth = 30_000;
+    for (0..depth) |i| {
+        const l = try shapes.node(gpa, &account, list, try cells.sets.insert(gpa, env.charge, .none, (try cells.site(gpa, &account, @intCast(i + 1), list, .list)).int(), 0), try shapes.overPut(gpa, &account, Ids.none_int, Place.Step.elem, n));
+        n = try shapes.node(gpa, &account, t_place, .none, try shapes.overPut(gpa, &account, Ids.none_int, arg, l));
+    }
+    const c = try sums.add(env, .{ .params = &.{.none}, .res = n, .kappas = .none });
+    // The argument: a leaf with a snapshot of its own, merged at the bottom.
+    const site = try cells.site(gpa, &account, depth + 1, t_place, .record);
+    const a = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, site.int(), 0));
+    const ak = (try conds.kappaSet(gpa, env.charge, .none, a, Cond.yes)).ctx;
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const applied = try apply(env, &sums, c, &.{.{ .node = a, .kappa = ak }}, 0, &s);
+    // The bottom of the result is the argument, its κ there.
+    var at = applied.result;
+    for (0..depth) |_| {
+        at.node = (try shapes.proj(gpa, &account, &places, &cells, at.node, arg)).?;
+        at.kappa = conds.kappaChild(at.kappa, arg);
+        at.node = (try shapes.proj(gpa, &account, &places, &cells, at.node, Place.Step.elem)).?;
+        at.kappa = conds.kappaChild(at.kappa, Place.Step.elem);
+    }
+    try testing.expectEqual(a, at.node);
+    try testing.expectEqual(Cond.yes, conds.kappaGet(at.kappa, a).?);
 }

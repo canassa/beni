@@ -599,14 +599,28 @@ pub const Table = struct {
     /// `root` with `op` done at the position along `along`, path-copied: a
     /// record per step; a fold on the way is the rest of the path itself.
     pub fn kappaAt(t: *Table, gpa: Allocator, charge: Charge, root: Kappas, along: []const Step, op: PathOp) Error!Kappas {
-        if (along.len == 0 or t.isFold(root)) return switch (op) {
-            .set => |s| (try t.kappaSet(gpa, charge, root, s.node, s.k)).ctx,
-            .merge => |sub| t.kappaMerge(gpa, charge, root, sub),
-            .fold => if (t.isFold(root)) root else t.kappaFold(gpa, charge, root),
+        // Down the path on an explicit stack (#1130: a path's length is the
+        // source's depth, never native-stack depth), to its end or a fold.
+        var way: std.ArrayList(Kappas) = .empty;
+        defer way.deinit(gpa);
+        var at = root;
+        var i: usize = 0;
+        while (i < along.len and !t.isFold(at)) : (i += 1) {
+            try charge.reserve(gpa, .inspection, 1);
+            try way.append(gpa, at);
+            at = t.kappaChild(at, along[i]);
+        }
+        var out = switch (op) {
+            .set => |s| (try t.kappaSet(gpa, charge, at, s.node, s.k)).ctx,
+            .merge => |sub| try t.kappaMerge(gpa, charge, at, sub),
+            .fold => if (t.isFold(at)) at else try t.kappaFold(gpa, charge, at),
         };
-        try charge.reserve(gpa, .inspection, 1);
-        const deeper = try t.kappaAt(gpa, charge, t.kappaChild(root, along[0]), along[1..], op);
-        return t.withLink(gpa, charge, root, along[0], deeper);
+        // Back up, each position with its link replaced.
+        while (way.pop()) |up| {
+            i -= 1;
+            out = try t.withLink(gpa, charge, up, along[i], out);
+        }
+        return out;
     }
 
     /// `kappaAt` setting κ(n) to `k` joined.
@@ -647,10 +661,38 @@ pub const Table = struct {
         const mkey: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
         try charge.reserve(gpa, .memo, 1);
         if (t.memo_merge.get(mkey)) |hit| return .from(hit);
-        const out = try t.kappaMergeUncached(gpa, charge, a, b);
-        try charge.reserve(gpa, .memo, 1);
-        (try t.memo_merge.getOrPut(gpa, mkey)).value_ptr.* = out.int();
-        return out;
+        // The pairs below that both sides link merge first, on an explicit
+        // stack (#1130: a snapshot's depth is the source's, never native-
+        // stack depth); each pair is memoised once complete, so a position's
+        // links then find their children merged.
+        const Frame = struct { a: Kappas, b: Kappas, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .a = a, .b = b, .expanded = false });
+        while (stack.pop()) |f| {
+            const key: [2]u32 = .{ @min(f.a.int(), f.b.int()), @max(f.a.int(), f.b.int()) };
+            if (!f.expanded) {
+                try charge.reserve(gpa, .memo, 1);
+                if (t.memo_merge.get(key) != null) continue;
+                try stack.append(gpa, .{ .a = f.a, .b = f.b, .expanded = true });
+                const pa = t.position(f.a);
+                const pb = t.position(f.b);
+                if (pa.fold != 0 or pb.fold != 0) continue;
+                var lt = t.mapEntries(pa.links);
+                while (lt.next()) |e| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    const y: Kappas = .from(t.mapGet(pb.links, e.key) orelse continue);
+                    const x: Kappas = .from(e.value);
+                    if (x != y) try stack.append(gpa, .{ .a = x, .b = y, .expanded = false });
+                }
+                continue;
+            }
+            if (t.memo_merge.get(key) != null) continue;
+            const out = try t.kappaMergeUncached(gpa, charge, f.a, f.b);
+            try charge.reserve(gpa, .memo, 1);
+            (try t.memo_merge.getOrPut(gpa, key)).value_ptr.* = out.int();
+        }
+        return .from(t.memo_merge.get(mkey).?);
     }
 
     fn kappaMergeUncached(t: *Table, gpa: Allocator, charge: Charge, a: Kappas, b: Kappas) Error!Kappas {
@@ -762,15 +804,36 @@ pub const Table = struct {
     /// each binding's node, its paths relative to the value's root). A
     /// record per position and entry, each shared position once.
     pub fn kappaRelabel(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel) Error!Kappas {
+        if (ctx == .none) return .none;
         var memo: Ids.FixedDict(1) = .{};
         defer memo.deinit(gpa);
-        return t.relabelAt(gpa, charge, ctx, r, &memo);
+        // Post-order on an explicit stack (#1130): a snapshot's depth is the
+        // source's, never native-stack depth. A position's children are
+        // relabelled before it; a shared one once (the memo).
+        const Frame = struct { at: Kappas, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .at = ctx, .expanded = false });
+        while (stack.pop()) |f| {
+            if (!f.expanded) {
+                try charge.reserve(gpa, .memo, 1);
+                if (memo.get(.{f.at.int()}) != null) continue;
+                try stack.append(gpa, .{ .at = f.at, .expanded = true });
+                const p = t.position(f.at);
+                if (p.fold == 0) {
+                    var lt = t.mapEntries(p.links);
+                    while (lt.next()) |e| try stack.append(gpa, .{ .at = .from(e.value), .expanded = false });
+                }
+                continue;
+            }
+            if (memo.get(.{f.at.int()}) != null) continue;
+            try t.relabelOne(gpa, charge, f.at, r, &memo);
+        }
+        return .from(memo.get(.{ctx.int()}).?);
     }
 
-    fn relabelAt(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1)) Error!Kappas {
-        if (ctx == .none) return .none;
-        try charge.reserve(gpa, .memo, 1);
-        if (memo.get(.{ctx.int()})) |hit| return .from(hit);
+    /// One position relabelled, its children's images in `memo` already.
+    fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1)) Error!void {
         const p = t.position(ctx);
         var here: u32 = Ids.none_int;
         var it = t.mapEntries(p.here);
@@ -788,13 +851,12 @@ pub const Table = struct {
         if (p.fold == 0) {
             var lt = t.mapEntries(p.links);
             while (lt.next()) |e| {
-                const child = try t.relabelAt(gpa, charge, .from(e.value), r, memo);
+                const child: Kappas = .from(memo.get(.{e.value}).?);
                 if (child != .none) links = try t.mapPut(gpa, charge, links, e.key, child.int());
             }
         }
         const out = try t.makePos(gpa, charge, .{ .here = here, .links = links, .fold = p.fold });
         (try memo.getOrPut(gpa, .{ctx.int()})).value_ptr.* = out.int();
-        return out;
     }
 
     /// κ of a union or a positions node: the join of its sides' and the
@@ -3734,6 +3796,58 @@ test "#1129: relabelling a fold keeps the steps it saw, so deep, kappaLeq and th
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, k, root, r, root, false));
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, r, root, k, root, false));
     }
+}
+
+test "#1130: a snapshot as deep as the source is set, relabelled and merged on explicit stacks" {
+    // On a thread with a small stack (a wasm build's is 1 MiB): a native
+    // frame per level of the snapshot would overflow it.
+    var result: anyerror!void = {};
+    const th = try std.Thread.spawn(.{ .stack_size = 1 << 20 }, struct {
+        fn run(out: *anyerror!void) void {
+            out.* = deepSnapshot();
+        }
+    }.run, .{&result});
+    th.join();
+    try result;
+}
+
+fn deepSnapshot() !void {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    f.account.allowance = std.math.maxInt(u32) - 1;
+    const gpa = testing.allocator;
+    const steps = try gpa.alloc(Place.Step, 30_000);
+    defer gpa.free(steps);
+    @memset(steps, Place.Step.elem);
+    const a = try f.leaf(1, &.{try f.param(0, 1, &.{})});
+    const b = try f.leaf(1, &.{try f.param(1, 1, &.{})});
+    // Path copying down 30 000 steps, twice, to two tries.
+    const ka = try f.conds.kappaSetAt(gpa, f.charge(), .none, steps, a, shared);
+    const kb = try f.conds.kappaSetAt(gpa, f.charge(), .none, steps, b, lost);
+    try testing.expectEqual(shared, f.conds.kappaGet(f.conds.kappaAlong(ka, steps), a).?);
+    // Relabelled by the identity: the same position.
+    const Identity = struct {
+        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+            return n;
+        }
+        fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
+            return k;
+        }
+    };
+    var dummy: u8 = 0;
+    try testing.expectEqual(ka, try f.conds.kappaRelabel(gpa, f.charge(), ka, .{ .ctx = &dummy, .node = Identity.node, .cond = Identity.cond }));
+    // Refused part way, loudly: what it completed is memoised, nothing
+    // else, so the same merge then succeeds with room.
+    f.account.allowance = f.account.growth + 1000;
+    try testing.expectError(error.OwnershipLimit, f.conds.kappaMerge(gpa, f.charge(), ka, kb));
+    f.account.failed = null;
+    f.account.allowance = std.math.maxInt(u32) - 1;
+    // Merged: both entries at the bottom, each pair of positions once.
+    const m = try f.conds.kappaMerge(gpa, f.charge(), ka, kb);
+    const bottom = f.conds.kappaAlong(m, steps);
+    try testing.expectEqual(shared, f.conds.kappaGet(bottom, a).?);
+    try testing.expectEqual(lost, f.conds.kappaGet(bottom, b).?);
 }
 test "#1101: a recast whose inner is a union of recasts keeps what is stored below them, through a join" {
     var f: Fixture = .{};
