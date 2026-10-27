@@ -422,15 +422,29 @@ Operations, memoised on their node arguments:
   the union of its members, so adding the sides of a member keeps γ (widen stays extensive, O3), and the image's
   multiplicity is not γ's. It is κ's, and κ for the widened value is propagated from the unwidened one (§2.9):
   `propagate` folds at the knot and joins every member position it covers. Each such read sees the unwidened
-  `positions` node, so a cell both sides hold reads its repeat (`shared`, or `lost` once approximate), and the
-  fold's join keeps that. A folded `positions` side therefore reads as many: no read of the widened value is
-  stronger than a read of the unwidened one at any position the fold covers. A summary position under the knot
-  still owes the read rule's `excl` over its arrivals. **Cost:** an opened member's sides are two more edges of
-  the walk, so the walk and the congruence closure stay O((nodes + edges) log(nodes + edges)), each node read once.
+  `positions` node, so a cell both sides hold at one path reads its repeat (`shared`, or `lost` once approximate),
+  and the fold's join keeps that. **But a per-path join is not enough** [#1125's review]. Opening folds positions
+  from different paths into one class, and a cell held at two of them (`k` the kids of a depth-1 and of a depth-2
+  node) is two positions of the class that no single path of the unwidened value held. So **a folded positions
+  side reads as many**: in a widen that opened a collection, each class is read as the multiset of its positions,
+  and a cell two of them hold is a repeat. Its positions are its members, each counted once per time the walk
+  reached it. A node reached twice, and every node below it, stands at two positions. An opened member counts as
+  its sides. The repeats are `Radix.intersection` of each member's cells with the cells of the members before it,
+  plus the cells of a repeated member, in one pass over the class. The class's node reads `lost` where it has a
+  repeat: `lost`, not `shared`, because the fold has merged positions and cannot say which occurrences are one
+  object, as for a folded label (§2.2). `propagate` stores that `lost` at the knot, so the block carries it, and
+  `kappaOf` adds it to every read of the node. So no read of the widened value is stronger than a read of the
+  unwidened one at any position the fold covers, and a repeat across the positions it merges is not lost. A
+  summary position under the knot still owes the read rule's `excl` over its arrivals. **Guard: a stored κ never
+  reaches a widened image at a summary position without this cross-member check.** **Cost:** an opened member's
+  sides are two more edges of the walk, and the repeated nodes are marked by one more walk, each node once. The
+  multiset is one union and one intersection per member, so the widen and its congruence closure stay
+  O((nodes + edges) log(nodes + edges)).
   **What it gains and loses:** before, `Rose [ r_{k−1}, Rose [] ]` kept each level's whole tower beside the knot.
   Its summary grew as about n^2.4 (537 656 bytes at N = 30), with every entry `lost`. Opened, the block is linear
-  (56 452 bytes at N = 1 000) and reads what the unwidened value reads (`yes` there). No summary in the corpus
-  changes (2 698 compared). A class with no explicit member is its side alone.
+  (56 452 bytes at N = 1 000) and reads what the unwidened value reads (`yes` there, with no repeat). A kids list at two
+  depths reads `lost` at `#Rose.0`. Of the 2 698 summaries in the corpus, one changes (an `Int` list's `[*]`, which
+  holds no object). A class with no explicit member is its side alone.
   The image is a newly built `node`, so outside the snapshot `propagate` makes for it, it has no stored κ, and a
   read through it derives `lost` (§2.9's rule for a built node). Folding recursion ties the children of
   `Rose [ Rose [], Rose [] ]` to the root class. A repeat across them is a cell both children hold, which the
@@ -2507,9 +2521,9 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection}` | Ids, Place | ≤ 900 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand` | Ids, Place, Cell | ≤ 1 500 |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 560 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 875 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 880 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 500 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |

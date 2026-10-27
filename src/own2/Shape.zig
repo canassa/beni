@@ -103,6 +103,9 @@ pub const Table = struct {
     union_seen: stamped.Column(NodeId, void) = .{},
     /// `rank`'s memo: final ranks only (its in-progress marks are the call's).
     rank_memo: stamped.Column(NodeId, u32) = .{},
+    /// The repeats `widen` found in a class it opened a collection into: the
+    /// cells two of its positions hold (§2.3, #1120), by the class's node.
+    fold_dups: stamped.Column(NodeId, SetId) = .{},
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
@@ -110,6 +113,7 @@ pub const Table = struct {
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.rank_memo.deinit(gpa);
         t.named_memo.deinit(gpa);
+        t.fold_dups.deinit(gpa);
         t.named_pool.deinit(gpa);
         t.nodes.deinit(gpa);
         t.intern.deinit(gpa);
@@ -747,6 +751,12 @@ pub const Table = struct {
         try buf.appendSlice(gpa, merged.items);
     }
 
+    /// The cells two positions of `n`'s folded class hold, when `widen` opened
+    /// a collection into it (§2.3): a summary read there is `lost`.
+    pub fn foldDups(t: *const Table, n: NodeId) ?SetId {
+        return t.fold_dups.get(n);
+    }
+
     // ---- rank -------------------------------------------------------------------------------
 
     /// No finite rank: a recast, or a node on or above a cycle.
@@ -1135,6 +1145,13 @@ pub const Table = struct {
         /// sides are walked as members of their class (§2.3): their meaning
         /// is their sides', so they ride beside no image.
         opened: stamped.Column(NodeId, void) = .{},
+        any_opened: bool = false,
+        /// How many times the walk reached each node: a node reached twice
+        /// stands at two positions of its class.
+        occurs: stamped.Column(NodeId, u32) = .{},
+        /// The nodes at two positions or more (`markRepeats`).
+        multi: stamped.Column(NodeId, void) = .{},
+        repeated: std.ArrayList(NodeId) = .empty,
         pending: std.ArrayList([2]u32) = .empty,
         image: stamped.Column(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
@@ -1159,6 +1176,9 @@ pub const Table = struct {
             w.by_path.deinit(w.gpa);
             w.visited.deinit(w.gpa);
             w.opened.deinit(w.gpa);
+            w.occurs.deinit(w.gpa);
+            w.multi.deinit(w.gpa);
+            w.repeated.deinit(w.gpa);
             w.pending.deinit(w.gpa);
             w.image.deinit(w.gpa);
             w.kids.deinit(w.gpa);
@@ -1271,6 +1291,9 @@ pub const Table = struct {
             try stack.append(w.gpa, .{ .node = root, .path = try w.places.rootPath(w.gpa, w.t.place(root)) });
             while (stack.pop()) |f| {
                 try w.touch(f.node);
+                const seen_before = w.occurs.get(f.node) orelse 0;
+                try w.occurs.put(w.gpa, f.node, seen_before + 1);
+                if (seen_before == 1) try w.repeated.append(w.gpa, f.node);
                 try w.account.reserve(.edge, 1);
                 // `⟲` is its ancestor's class: the re-entered place's node.
                 const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
@@ -1287,6 +1310,7 @@ pub const Table = struct {
                 switch (w.t.kind(f.node)) {
                     .@"union", .positions => if (reentry) {
                         try w.opened.put(w.gpa, f.node, {});
+                        w.any_opened = true;
                         const d = w.t.get(f.node);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
                         continue;
@@ -1307,10 +1331,44 @@ pub const Table = struct {
                     try stack.append(w.gpa, .{ .node = child, .path = cp });
                 }
             }
+            // A node reached twice stands at two positions, and so does every
+            // node below it: one walk from the repeated nodes marks them (§2.3).
+            if (w.any_opened) try w.markRepeats();
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
             return w.emit(root);
+        }
+
+        /// Mark `multi` every node the walk reached twice and everything below
+        /// it: its explicit children and an opened member's sides. A record
+        /// per node marked and per edge read.
+        fn markRepeats(w: *Widen) Error!void {
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(w.gpa);
+            for (w.repeated.items) |n| if (!w.multi.contains(n)) {
+                try w.multi.put(w.gpa, n, {});
+                try stack.append(w.gpa, n);
+            };
+            var below: std.ArrayList(NodeId) = .empty;
+            defer below.deinit(w.gpa);
+            while (stack.pop()) |n| {
+                try w.account.reserve(.inspection, 1);
+                below.clearRetainingCapacity();
+                if (w.opened.contains(n)) {
+                    const d = w.t.get(n);
+                    try below.appendSlice(w.gpa, &.{ .from(d.a), .from(d.b) });
+                } else {
+                    try w.explicitEdges(n);
+                    var i: usize = 1;
+                    while (i < w.kids.items.len) : (i += 2) try below.append(w.gpa, w.kids.items[i]);
+                }
+                for (below.items) |c| if (!w.multi.contains(c)) {
+                    try w.account.reserve(.edge, 1);
+                    try w.multi.put(w.gpa, c, {});
+                    try stack.append(w.gpa, c);
+                };
+            }
         }
 
         /// Emit one node per class reachable from `root`, ids first so a
@@ -1344,12 +1402,23 @@ pub const Table = struct {
                 var leaf_cells: SetId = .none;
                 var has_leaf = false;
                 var explicit = false;
+                // The class's positions as a multiset (§2.3, #1120): a cell two
+                // occurrences hold, of one member or of two, is a repeat the
+                // folded summary position reads (`lost`). An opened member is
+                // its sides, which are members.
+                var held: SetId = .none;
+                var dups: SetId = .none;
                 extra.clearRetainingCapacity();
                 var m = w.head.items[rep];
                 while (m != none) : (m = w.next_member.items[m]) {
                     try w.account.reserve(.inspection, 1);
                     const d = w.t.get(.from(m));
                     c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, d.cells);
+                    if (!w.opened.contains(.from(m)) and d.cells != .none) {
+                        if (w.multi.contains(.from(m))) dups = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), dups, d.cells);
+                        dups = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), dups, try w.cellt.sets.intersection(w.gpa, .growth(w.account), held, d.cells));
+                        held = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), held, d.cells);
+                    }
                     switch (d.kind) {
                         .leaf => {
                             has_leaf = true;
@@ -1377,6 +1446,9 @@ pub const Table = struct {
                     try w.account.reserve(.inspection, 1);
                     children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.entries.items(.step)[e]), w.image.get(.from(w.find(w.entries.items(.child)[e]))).?);
                 }
+                // Only a widen that opened a collection merges positions the
+                // unwidened reads never compared; elsewhere a class is as before.
+                if (w.any_opened and dups != .none) try w.t.fold_dups.put(w.gpa, id, dups);
                 const at = w.t.place(id);
                 var side: ?NodeId = if (has_leaf) try w.t.leaf(w.gpa, w.account, at, leaf_cells) else null;
                 for (extra.items) |x| side = if (side) |s| try w.t.@"union"(w.gpa, w.account, &w.cellt.sets, s, x) else x;
@@ -1398,6 +1470,7 @@ pub const Table = struct {
                     w.t.nodes.set(id.int(), w.t.nodes.get(u.int()));
                     w.t.nodes.set(u.int(), img);
                     w.t.nodes.items(.a)[id.int()] = u.int();
+                    if (w.t.fold_dups.get(id)) |r| try w.t.fold_dups.put(w.gpa, u, r);
                 }
             }
             return w.image.get(.from(w.find(root.int()))).?;

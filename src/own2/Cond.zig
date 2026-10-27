@@ -853,6 +853,13 @@ pub const Table = struct {
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+        const k = try t.kappaOfOwn(gpa, charge, v, ctx, n, at_summary);
+        // A class `widen` opened a collection into holds a cell at two of its
+        // positions: that repeat reads `lost` (§2.3, #1120).
+        return if (v.shapes.foldDups(n) != null) t.join(gpa, charge, k, lost) else k;
+    }
+
+    fn kappaOfOwn(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
         const stored = t.kappaGet(ctx, n);
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
@@ -1552,6 +1559,9 @@ pub const Table = struct {
             }
             if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
             if (mode == .alternatives and f.len == 0) k = lost;
+            // The repeats of a class `widen` opened a collection into are stored,
+            // so the block carries them (§2.3, #1120).
+            if (v.shapes.foldDups(f.node) != null) k = try t.join(gpa, charge, k, lost);
             // A leaf's read is the stored ⊔ the derivation, so a κ no
             // stronger than the derivation stores nothing: what a reader
             // derives there is the same before and after the join.
@@ -3371,6 +3381,69 @@ fn roseOver(f: *Fixture, site: u32, xs: NodeId, xs_k: Kappas) !struct { node: No
     return .{ .node = n, .k = k };
 }
 
+/// `minimal` (#1125's review), or its control: `k` the kids of a depth-2
+/// and a depth-1 node (`alias`), or two lists alike. The root and its
+/// snapshot, the kids lists and the paths to them.
+fn crossDepth(f: *Fixture, alias: bool) !struct { root: NodeId, k: Kappas, kids: [2]NodeId } {
+    const gpa = testing.allocator;
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    const nothing = try f.shapes.nothing(gpa, &f.account, try f.placeOf(6));
+    const k1 = try listOver(f, 7, 1, nothing, .none);
+    const k2 = if (alias) k1 else try listOver(f, 7, 2, nothing, .none);
+    const rk1 = try roseOver(f, 3, k1.node, k1.k);
+    const rk2 = try roseOver(f, 4, k2.node, k2.k);
+    const empty = try listOver(f, 7, 5, nothing, .none);
+    const e = try roseOver(f, 6, empty.node, empty.k);
+    // `b = Rose [ Rose k, Rose [] ]`, then `Rose [ b, Rose k ]`: each
+    // literal's `[*]` the merge of its items' snapshots, as Transfer builds.
+    const inner = try f.shapes.node(gpa, &f.account, try f.placeOf(7), try f.set(&.{try f.cells.site(gpa, &f.account, 7, try f.placeOf(7), .list)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.collect(&.{ rk1.node, e.node })));
+    var ik = try f.conds.kappaLink(gpa, f.charge(), .none, Place.Step.elem, try f.conds.kappaMerge(gpa, f.charge(), rk1.k, e.k));
+    ik = (try f.conds.kappaSet(gpa, f.charge(), ik, inner, yes)).ctx;
+    const b = try roseOver(f, 8, inner, ik);
+    const outer = try f.shapes.node(gpa, &f.account, try f.placeOf(7), try f.set(&.{try f.cells.site(gpa, &f.account, 9, try f.placeOf(7), .list)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.collect(&.{ b.node, rk2.node })));
+    var ok = try f.conds.kappaLink(gpa, f.charge(), .none, Place.Step.elem, try f.conds.kappaMerge(gpa, f.charge(), b.k, rk2.k));
+    ok = (try f.conds.kappaSet(gpa, f.charge(), ok, outer, yes)).ctx;
+    const root = try roseOver(f, 10, outer, ok);
+    _ = arg;
+    return .{ .root = root.node, .k = root.k, .kids = .{ k1.node, k2.node } };
+}
+
+test "#1125 review: widen opening two depths into one class reads a cell both hold as `lost`, never stronger than a member" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    const e = Place.Step.elem;
+    for ([_]bool{ false, true }) |alias| {
+        const v = try crossDepth(&f, alias);
+        // Unwidened, each kids list reads `yes` at its own path: no single
+        // path holds `k` twice.
+        const depth2 = [_]Place.Step{ arg, e, arg, e, arg };
+        const depth1 = [_]Place.Step{ arg, e, arg };
+        const r2 = try f.kappaPath(v.k, &depth2, v.kids[0], true);
+        const r1 = try f.kappaPath(v.k, &depth1, v.kids[1], true);
+        try testing.expectEqual(yes, r2);
+        try testing.expectEqual(yes, r1);
+        // Widened: the kids of every depth are one class, its snapshot
+        // propagated from the unwidened one, as a read-off does.
+        const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, v.root);
+        try testing.expect(w != v.root);
+        const wk = try f.propagate(.none, w, &.{v.root}, &.{v.k}, .alternatives, false);
+        const kids = try f.projOf(w, arg);
+        const read = try f.kappa(f.conds.kappaChild(wk, arg), kids, false);
+        // The class itself: `kids`, or a side of it (the root class may carry
+        // a side beside its image, so `w`'s projection can be a union).
+        const kd = f.shapes.get(kids);
+        const marked = f.shapes.foldDups(kids) != null or (f.shapes.kind(kids) == .@"union" and (f.shapes.foldDups(.from(kd.a)) != null or f.shapes.foldDups(.from(kd.b)) != null));
+        // Never stronger than a member it covers.
+        try testing.expect(try f.conds.leq(gpa, f.charge(), try f.conds.join(gpa, f.charge(), r1, r2), read));
+        // `k` at two depths is two positions of the class: a repeat, `lost`.
+        // Two lists alike are no repeat: the cross-member check is silent.
+        try testing.expectEqual(alias, marked);
+        if (alias) try testing.expectEqual(lost, read);
+    }
+}
 test "#1073: a child's snapshot linked under a recursive parent reads at its paths as it does alone" {
     var f: Fixture = .{};
     try f.init();

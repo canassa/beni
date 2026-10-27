@@ -39,3 +39,7 @@
 /bench/jfb/work/
 # The built results table is rebuilt by `run.mjs --report-only`; only its data is committed.
 /bench/jfb/results/**/report/
+
+# patch(1) leftovers: never committed.
+*.orig
+*.rej
