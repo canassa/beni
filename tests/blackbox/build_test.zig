@@ -8453,6 +8453,21 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
         \\    c = Rose [ b, Rose [] ]
         \\    Rose (List.push [ c ] (Rose [ Rose [] ]))
         \\
+        \\
+        \\type M =
+        \\    M (List Int) (Maybe M)
+        \\
+        \\
+        \\pub mTree : ⊤ → M
+        \\mTree ⊤ =
+        \\    k = [ 1 ]
+        \\    M k (Just (M k Nothing))
+        \\
+        \\
+        \\pub mPlain : ⊤ → M
+        \\mPlain ⊤ =
+        \\    M [ 1 ] (Just (M [ 2 ] Nothing))
+        \\
     );
 
     // ┌─────────────────────────────────────────┐
@@ -8464,13 +8479,16 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    for ([_][]const u8{ "minimal", "kidsPush", "kidsSpread", "onePush", "plainPush" }) |name| {
+    // No opened collection: `k` at two depths of a Maybe tree folds as well,
+    // and every fold reads its repeats (#1125's verification).
+    for ([_][]const u8{ "minimal", "kidsPush", "kidsSpread", "onePush", "plainPush", "mTree", "mPlain" }) |name| {
         var buf: [64]u8 = undefined;
-        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res #Rose.0 ", .{name});
+        const field = if (name[0] == 'm' and name[1] != 'i') "#M.0" else "#Rose.0";
+        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res {s} ", .{ name, field });
         const at = std.mem.indexOf(u8, dump.stdout, head) orelse return error.TestUnexpectedResult;
         const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
         const repeat = std.mem.indexOf(u8, line, "{lost}") != null or std.mem.indexOf(u8, line, "{shared}") != null;
-        try testing.expectEqual(!std.mem.eql(u8, name, "plainPush"), repeat);
+        try testing.expectEqual(!std.mem.eql(u8, name, "plainPush") and !std.mem.eql(u8, name, "mPlain"), repeat);
     }
 }
 

@@ -426,14 +426,16 @@ Operations, memoised on their node arguments:
   and the fold's join keeps that. **But a per-path join is not enough** [#1125's review]. Opening folds positions
   from different paths into one class, and a cell held at two of them (`k` the kids of a depth-1 and of a depth-2
   node) is two positions of the class that no single path of the unwidened value held. So **a folded positions
-  side reads as many**: in a widen that opened a collection, each class is read as the multiset of its positions,
-  and a cell two of them hold is a repeat. Its positions are its members, each counted once per time the walk
+  side reads as many**: every widen fold reads each class as the multiset of its positions, opened or not (a
+  Maybe tree `M k (Just (M k Nothing))` folds `k`'s two depths with nothing opened), and a cell two of them hold
+  is a repeat. Its positions are its members, each counted once per time the walk
   reached it. A node reached twice, and every node below it, stands at two positions. An opened member counts as
   its sides. The repeats are `Radix.intersection` of each member's cells with the cells of the members before it,
   plus the cells of a repeated member, in one pass over the class. The class's node reads `lost` where it has a
   repeat: `lost`, not `shared`, because the fold has merged positions and cannot say which occurrences are one
-  object, as for a folded label (§2.2). `propagate` stores that `lost` at the knot, so the block carries it, and
-  `kappaOf` adds it to every read of the node. So no read of the widened value is stronger than a read of the
+  object, as for a folded label (§2.2). `propagate` stores that `lost` at the knot, a leaf's too (its redundancy test reads without the
+  repeats), and no read consults `widen`'s evidence beside the snapshot, so the snapshot alone carries it and a
+  block's reader reads what the writer read. So no read of the widened value is stronger than a read of the
   unwidened one at any position the fold covers, and a repeat across the positions it merges is not lost. A
   summary position under the knot still owes the read rule's `excl` over its arrivals. **Guard: a stored κ never
   reaches a widened image at a summary position without this cross-member check.** **Cost:** an opened member's
