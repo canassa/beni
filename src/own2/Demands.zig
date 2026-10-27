@@ -439,6 +439,23 @@ const Resolver = struct {
         return r.env.shapes.reach(r.gpa, r.env.account(), &r.env.cells.sets, n);
     }
 
+    /// Whether `c` (or, for a deep demand, what it holds) could have reached a
+    /// holder whose value is `n`: some cell of `n`'s reach other than `⊤`
+    /// conflicts with it. What a value got from an opaque result or a
+    /// pessimistic call is in its reach as its arrivals (`⋆ ~π1`), so a `⊤`
+    /// holder that never took `c` does not hold it. A record per cell read.
+    fn mayHaveReached(r: *Resolver, n: NodeId, c: CellId, deep: bool) Error!bool {
+        const cellt = r.env.cells;
+        var it = cellt.sets.iterate(try r.reach(n));
+        while (it.next()) |e| {
+            try r.env.charge.reserve(r.gpa, .inspection, 1);
+            const x: CellId = .from(e.key);
+            if (cellt.origin(x) == .top) continue;
+            if (r.conflict(x, c, deep) != .no or r.conflict(c, x, deep) != .no) return true;
+        }
+        return false;
+    }
+
     /// A holder's registration and expiry kernel (§4.1's holder index): its
     /// local's lane, or its instruction's for a pending operand, when its
     /// value holds at most `holder_kernel_cells` cells (a one-key update of
@@ -908,6 +925,10 @@ const Resolver = struct {
                 try r.holdersOf(d, &hs);
                 for (hs.items) |hi| {
                     const h = r.frame.holders[hi];
+                    // A holder of `⊤` counts only for what could have flowed into it
+                    // (§2.8, #1102): a cell of its value that may be `c` or hold it,
+                    // or anything given to JavaScript before (an opaque value may be it).
+                    if (cellt.origin(d) == .top and !try r.mayHaveReached(h.value.node, c, deep) and (try r.escaped(c, dm.point, deep)) == null) continue;
                     switch (how) {
                         .no => unreachable,
                         .under => |s| {

@@ -1,0 +1,51 @@
+-- ownership (core): a value of an opaque type (`Js.Value`, built by
+-- `Js.array` from a literal the checker gives no element type) holds
+-- what it was built from, and only that (#1102). An edit of a list that
+-- never went into it is accepted while it is read again: `other`, `fresh`
+-- and `localOther`, as v1 accepts them. One that did go in is refused:
+-- `deepThroughTop` writes an element of the list handed to `Js.array`,
+-- and `toBack` reads the array back with `Js.to`, which may answer it.
+import Js
+
+
+other : List Int, List Int → Js.Value
+other xs zs =
+    a = Js.array [ Js.from zs ]
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+fresh : List Int → Js.Value
+fresh xs =
+    a = Js.array [ Js.from [ 1 ] ]
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+localOther : Int → Js.Value
+localOther n =
+    xs = [ n ]
+    a = Js.array [ Js.from [ n ] ]
+    ys = List.push xs 1
+    Js.array [ a, Js.from ys ]
+
+
+deepThroughTop : List (List Int) → Js.Value
+deepThroughTop xss =
+    a = Js.array [ Js.from xss ]
+    ys =
+        case xss of
+            [ first, …_ ] →
+                List.push first 1
+            [] →
+                []
+    Js.array [ a, Js.from ys ]
+
+
+toBack : List Int → Int
+toBack xs =
+    a = Js.array [ Js.from xs ]
+    back : List (List Int)
+    back = Js.to a
+    ys = [ …xs, 1 ]
+    List.length ys + List.length back
