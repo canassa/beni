@@ -8396,6 +8396,84 @@ test "the checker v2's block is linear in a tower of two-element literals, whose
     try testing.expect(growth[2] <= 9 * growth[1]);
 }
 
+test "a kids list at two depths of a widened tree reads as a repeat; distinct kids read yes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1125's review: widen opens each level's `[*]` into one class, so `k`
+    // at depth 1 and at depth 2 is two positions of the folded kids class.
+    // No path of the unwidened value held `k` twice, so only the class's
+    // multiset sees the repeat (§2.3): `#Rose.0` must not read `yes`, or a
+    // traversal pushing into every kids list would push into `k` twice.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type Rose =
+        \\    Rose (List Rose)
+        \\
+        \\
+        \\pub minimal : ⊤ → Rose
+        \\minimal ⊤ =
+        \\    k = [ Rose [] ]
+        \\    b = Rose [ Rose k, Rose [] ]
+        \\    Rose [ …[ b ], Rose k ]
+        \\
+        \\
+        \\pub kidsPush : ⊤ → Rose
+        \\kidsPush ⊤ =
+        \\    k = [ Rose [] ]
+        \\    a = Rose k
+        \\    b = Rose [ a, Rose [] ]
+        \\    c = Rose [ b, Rose [] ]
+        \\    Rose (List.push [ c ] (Rose k))
+        \\
+        \\
+        \\pub kidsSpread : ⊤ → Rose
+        \\kidsSpread ⊤ =
+        \\    k = [ Rose [] ]
+        \\    a = Rose k
+        \\    b = Rose [ a, Rose [] ]
+        \\    c = Rose [ b, Rose [] ]
+        \\    Rose [ …[ c ], Rose k ]
+        \\
+        \\
+        \\pub onePush : ⊤ → Rose
+        \\onePush ⊤ =
+        \\    k = [ Rose [] ]
+        \\    a = Rose k
+        \\    b = Rose [ a ]
+        \\    c = Rose [ b ]
+        \\    Rose (List.push [ c ] (Rose k))
+        \\
+        \\
+        \\pub plainPush : ⊤ → Rose
+        \\plainPush ⊤ =
+        \\    a = Rose [ Rose [] ]
+        \\    b = Rose [ a, Rose [] ]
+        \\    c = Rose [ b, Rose [] ]
+        \\    Rose (List.push [ c ] (Rose [ Rose [] ]))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    for ([_][]const u8{ "minimal", "kidsPush", "kidsSpread", "onePush", "plainPush" }) |name| {
+        var buf: [64]u8 = undefined;
+        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res #Rose.0 ", .{name});
+        const at = std.mem.indexOf(u8, dump.stdout, head) orelse return error.TestUnexpectedResult;
+        const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
+        const repeat = std.mem.indexOf(u8, line, "{lost}") != null or std.mem.indexOf(u8, line, "{shared}") != null;
+        try testing.expectEqual(!std.mem.eql(u8, name, "plainPush"), repeat);
+    }
+}
+
 test "a one-element literal's [*] compares the objects its element holds at every path" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

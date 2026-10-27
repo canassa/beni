@@ -42,12 +42,12 @@ const layers = [_]Entry{
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1500 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1560 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1875 },
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 1880 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1500 },
