@@ -223,6 +223,18 @@ pub const Frame = struct {
         return .{ .node = try f.env.shapes.leaf(f.gpa, f.account(), at, try f.set1(top)) };
     }
 
+    /// A value built at a place the checker gave no structure (a type
+    /// variable: `Js.array`'s literal): `⊤`, and what it was built from, a
+    /// recast each, so what flowed into it stays in its reach (#1102).
+    fn opaqueOf(f: *Frame, at: PlaceId, parts: []const Value) Error!Value {
+        var v = try f.topValue(at);
+        for (parts) |p| {
+            if (p.node == .none) continue;
+            v.node = try f.env.shapes.@"union"(f.gpa, f.account(), &f.env.cells.sets, v.node, try f.env.shapes.recast(f.gpa, f.account(), at, p.node));
+        }
+        return v;
+    }
+
     /// `k` with κ(n) joined with `c` at the position `k` is.
     fn kappaSet(f: *Frame, k: Cond.Kappas, n: NodeId, c: CondId) Error!Cond.Kappas {
         return (try f.env.conds.kappaSet(f.gpa, f.env.charge, k, n, c)).ctx;
@@ -626,7 +638,12 @@ pub const Frame = struct {
         const at = try f.placeOf(i);
         const shapes = f.env.shapes;
         const cells = f.env.cells;
-        const elem_place = f.env.places.child(at, Step.elem) orelse return f.topValue(at);
+        const elem_place = f.env.places.child(at, Step.elem) orelse {
+            var parts: std.ArrayList(Value) = .empty;
+            defer parts.deinit(f.gpa);
+            for (items) |item| try parts.append(f.gpa, f.val(item).value);
+            return f.opaqueOf(at, parts.items);
+        };
         const site = try cells.site(f.gpa, f.account(), i, at, .list);
         var kappa: Cond.Kappas = .none;
         // The literal's `[*]`: one position, its items' snapshots merged (§2.9).
@@ -676,6 +693,12 @@ pub const Frame = struct {
         const at = try f.placeOf(i);
         const shapes = f.env.shapes;
         if (f.env.places.kind(at) == .cross) return f.nothing(at);
+        if (f.env.places.kind(at) == .@"var") {
+            var vs: std.ArrayList(Value) = .empty;
+            defer vs.deinit(f.gpa);
+            for (parts) |p| try vs.append(f.gpa, f.val(p).value);
+            return f.opaqueOf(at, vs.items);
+        }
         var kids: u32 = Ids.none_int;
         var kappa: Cond.Kappas = .none;
         for (parts, steps) |p, s| {
@@ -700,7 +723,13 @@ pub const Frame = struct {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const at = shapes.place(base.node);
-        const elem_place = f.env.places.child(at, Step.elem) orelse return f.topValue(at);
+        const elem_place = f.env.places.child(at, Step.elem) orelse {
+            var parts: std.ArrayList(Value) = .empty;
+            defer parts.deinit(f.gpa);
+            try parts.append(f.gpa, base);
+            try parts.appendSlice(f.gpa, stored);
+            return f.opaqueOf(at, parts.items);
+        };
         const old = (try shapes.proj(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem)).?;
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);
@@ -783,7 +812,13 @@ pub const Frame = struct {
     fn prepend(f: *Frame, root: u32, at: PlaceId, fronts: []const [2]u32, base: Value) Error!Value {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
-        const elem_place = f.env.places.child(at, Step.elem) orelse return f.topValue(at);
+        const elem_place = f.env.places.child(at, Step.elem) orelse {
+            var parts: std.ArrayList(Value) = .empty;
+            defer parts.deinit(f.gpa);
+            try parts.append(f.gpa, base);
+            for (fronts) |fr| try parts.append(f.gpa, f.val(fr[0]).value);
+            return f.opaqueOf(at, parts.items);
+        };
         var fresh = true;
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);

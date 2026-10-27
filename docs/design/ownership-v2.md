@@ -707,6 +707,14 @@ climb alone misses `kids`, and the subtrees' lists are then pushed in place. The
   aliasing cell then come from `set_head` and the live parent climb, as for any cell.
 - Concrete cells (`site`, `result`, `esc`) need no anchors: their contents are explicit children, found through
   `reach`.
+- **A holder of `⊤`** [#1102] (a value of an opaque type, a pessimistic call's result) may be any object, but
+  it can only hold what reached it. So it is a candidate for `c` only when its value's reach has a cell other than
+  `⊤` that may be `c` or hold it (`alias`, either way), or when `c` was given to JavaScript before the demand
+  (escaped: an opaque value may answer it). What reaches an opaque value stays in its reach. A worded row with
+  a crossing parameter or result puts a `returned` or `aliased` parameter into the result as a recast. A literal,
+  a construction, a prepend or a tuple at a place the checker gives no structure (a type variable, as
+  `Js.array`'s literal) is `⊤` joined with a recast of each part. `TopHolders` (core) checks both: an edit of a
+  list that never went in is accepted, and one that went in, or that may come back through `Js.to`, is refused.
 
 Cost: the first cell of the cell set reads at most two anchor chain heads and one refinement chain head per
 prefix, on the lane of the demand's step at that prefix (§2.7 *One query per prefix*); each further cell of a

@@ -362,9 +362,15 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
             }
         }
         try params.append(gpa, use);
-        if (crosses(env, prm.place) or crosses(env, sig.result)) continue;
         const p = try paramCell(env, i, prm.place);
         const p_leaf = try env.shapes.leaf(gpa, env.account(), prm.place, try env.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+        if (crosses(env, prm.place) or crosses(env, sig.result)) {
+            // A crossing value has no paths to hold what it is handed, but it
+            // may hold it: the parameter rides in the result as a recast, so
+            // its reach is what flowed in (§2.13.6, #1102).
+            if (has(words, .returned) or has(words, .aliased)) res = try addRes(env, res, try env.shapes.recast(gpa, env.account(), sig.result, p_leaf));
+            continue;
+        }
         if (has(words, .returned) and into != i) {
             returned = true;
             // The result IS the parameter: its leaf at the result's place
@@ -394,7 +400,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
     }
     const first_place: ?PlaceId = if (sig.params.len > 0) sig.params[0].place else null;
     if (crosses(env, sig.result)) {
-        res = try env.shapes.nothing(gpa, env.account(), sig.result);
+        if (res == .none) res = try env.shapes.nothing(gpa, env.account(), sig.result);
     } else if (has(rw, .fresh)) {
         const f = try freshLeaf(env, .result, 1, sig.result);
         res = try addRes(env, res, if (has(rw, .exclusive)) f else try env.shapes.recast(gpa, env.account(), sig.result, f));
