@@ -1145,7 +1145,6 @@ pub const Table = struct {
         /// sides are walked as members of their class (§2.3): their meaning
         /// is their sides', so they ride beside no image.
         opened: stamped.Column(NodeId, void) = .{},
-        any_opened: bool = false,
         /// How many times the walk reached each node: a node reached twice
         /// stands at two positions of its class.
         occurs: stamped.Column(NodeId, u32) = .{},
@@ -1310,7 +1309,6 @@ pub const Table = struct {
                 switch (w.t.kind(f.node)) {
                     .@"union", .positions => if (reentry) {
                         try w.opened.put(w.gpa, f.node, {});
-                        w.any_opened = true;
                         const d = w.t.get(f.node);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
                         continue;
@@ -1333,7 +1331,7 @@ pub const Table = struct {
             }
             // A node reached twice stands at two positions, and so does every
             // node below it: one walk from the repeated nodes marks them (§2.3).
-            if (w.any_opened) try w.markRepeats();
+            try w.markRepeats();
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
@@ -1446,9 +1444,9 @@ pub const Table = struct {
                     try w.account.reserve(.inspection, 1);
                     children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.entries.items(.step)[e]), w.image.get(.from(w.find(w.entries.items(.child)[e]))).?);
                 }
-                // Only a widen that opened a collection merges positions the
-                // unwidened reads never compared; elsewhere a class is as before.
-                if (w.any_opened and dups != .none) try w.t.fold_dups.put(w.gpa, id, dups);
+                // Every fold merges positions the unwidened reads never compared
+                // with each other (§2.9, #1125): its repeats are its own.
+                if (dups != .none) try w.t.fold_dups.put(w.gpa, id, dups);
                 const at = w.t.place(id);
                 var side: ?NodeId = if (has_leaf) try w.t.leaf(w.gpa, w.account, at, leaf_cells) else null;
                 for (extra.items) |x| side = if (side) |s| try w.t.@"union"(w.gpa, w.account, &w.cellt.sets, s, x) else x;

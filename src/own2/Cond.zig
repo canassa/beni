@@ -853,13 +853,6 @@ pub const Table = struct {
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        const k = try t.kappaOfOwn(gpa, charge, v, ctx, n, at_summary);
-        // A class `widen` opened a collection into holds a cell at two of its
-        // positions: that repeat reads `lost` (§2.3, #1120).
-        return if (v.shapes.foldDups(n) != null) t.join(gpa, charge, k, lost) else k;
-    }
-
-    fn kappaOfOwn(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
         const stored = t.kappaGet(ctx, n);
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
@@ -1941,6 +1934,16 @@ const TestGraph = struct {
             11 => {
                 inline for (.{ 10, 11 }) |name| try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, name) catch unreachable), .@"var" = 3 });
                 return .{ .kind = .record };
+            },
+            // `type T = T (List Int) (List T)`: 12 the constructor, 13 its list.
+            12 => {
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 12, 0) catch unreachable), .@"var" = 1 });
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 12, 1) catch unreachable), .@"var" = 13 });
+                return .{ .kind = .ctor, .head = 301 };
+            },
+            13 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 12 });
+                return .{ .kind = .list, .head = 200 };
             },
             else => unreachable,
         }
@@ -3443,6 +3446,48 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
         try testing.expectEqual(alias, marked);
         if (alias) try testing.expectEqual(lost, read);
     }
+}
+
+test "#1125 verification: a leaf-only folded class stores its repeat, so the snapshot alone reads it" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const t0 = try f.places.ctorStep(gpa, &f.account, 12, 0);
+    const t1 = try f.places.ctorStep(gpa, &f.account, 12, 1);
+    const tp = try f.placeOf(12);
+    const kids = try f.placeOf(13);
+    // `T xs [ T xs [ T xs [] ] ]`: `xs` (a leaf) at three depths of `#T.0`,
+    // one per path, so no unwidened read sees it twice; the folded class is
+    // all leaves.
+    const xs = try f.leaf(1, &.{try f.param(0, 1, &.{})});
+    var node: NodeId = try f.shapes.node(gpa, &f.account, kids, try f.set(&.{try f.cells.site(gpa, &f.account, 1, kids, .list)}), Ids.none_int);
+    var k = (try f.conds.kappaSet(gpa, f.charge(), .none, node, yes)).ctx;
+    var root: NodeId = undefined;
+    var rk: Kappas = undefined;
+    for (0..3) |i| {
+        root = try f.shapes.node(gpa, &f.account, tp, .none, try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, t0, xs), t1, node));
+        rk = try f.conds.kappaLink(gpa, f.charge(), .none, t1, k);
+        rk = (try f.conds.kappaSet(gpa, f.charge(), rk, root, yes)).ctx;
+        if (i == 2) break;
+        node = try f.shapes.node(gpa, &f.account, kids, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(i + 2), kids, .list)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, root));
+        k = try f.conds.kappaLink(gpa, f.charge(), .none, Place.Step.elem, rk);
+        k = (try f.conds.kappaSet(gpa, f.charge(), k, node, yes)).ctx;
+    }
+    // Widened and propagated, as a read-off does.
+    const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, root);
+    try testing.expect(w != root);
+    const wk = try f.propagate(.none, w, &.{root}, &.{rk}, .alternatives, false);
+    const at = try f.projOf(w, t0);
+    try testing.expectEqual(Shape.Kind.leaf, f.shapes.kind(at));
+    try testing.expect(f.shapes.foldDups(at) != null);
+    // The read, and the stored κ alone (what a block writes and its reader
+    // reads, with no `widen` evidence beside it): the same refusal.
+    const read = try f.kappa(f.conds.kappaChild(wk, t0), at, false);
+    try testing.expect(Table.fails(read));
+    const stored = f.conds.kappaGet(f.conds.kappaChild(wk, t0), at) orelse return error.TestUnexpectedResult;
+    try testing.expect(Table.fails(stored));
+    try testing.expectEqual(read, try f.conds.kappaOf(gpa, f.charge(), f.view(), f.conds.kappaChild(wk, t0), at, false));
 }
 test "#1073: a child's snapshot linked under a recursive parent reads at its paths as it does alone" {
     var f: Fixture = .{};
