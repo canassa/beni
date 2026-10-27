@@ -2351,6 +2351,10 @@ const Printer = struct {
     /// `ident`, itself resolved already; an `ident` whose binding was an
     /// arrow made once and used once resolves to that arrow, and then one
     /// step further if the arrow reduces. Two steps at most, each total.
+    /// A third step cannot exist: a substitution's target is never itself
+    /// substituted (`Opt.compress`), `Opt.eta` declines a callee whose
+    /// substitution is substituted, and an arrow's replacement is always an
+    /// `ident`.
     fn resolve(p: *Printer, node: Index) Index {
         var n = node;
         if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;

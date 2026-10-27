@@ -188,20 +188,18 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.pinned, 0);
     @memset(o.inlined, .none);
     @memset(o.top_stable, false);
-    // Item 6's callee may be a name the module binds once and never
-    // assigns: a top-level `const` or function, or an import. A top-level
-    // `let` (a `Js.Ref` of the module) is not one.
+    // Item 6's callee may be a name this file binds at the top level by a
+    // `const` or a function, which nothing emitted assigns. A top-level
+    // `let` (a `Js.Ref` of the module) is not one, and neither is a name an
+    // `import` binds: under `--release` those are the siblings and the
+    // platform's runtime, hand-written functions that may read `arguments`
+    // or `this` where emitted code never does, so a host calling one with
+    // more arguments than the lambda took could see the difference.
     for (ir.extraSlice(ir.body, Index)) |top| {
         const d = ir.data(top);
         switch (ir.tag(top)) {
             .const_decl, .func_decl, .gen_decl => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| {
                 if (i < o.top_stable.len) o.top_stable[i] = true;
-            },
-            .import_stmt => {
-                const imp = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
-                for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| if (spec.local.unwrap()) |i| {
-                    if (i < o.top_stable.len) o.top_stable[i] = true;
-                };
             },
             else => {},
         }
@@ -273,9 +271,10 @@ const Opt = struct {
     /// reduces to one, since the lambda read it when called and the name
     /// would be read where the lambda was made.
     let_bound: []bool,
-    /// One slot per name, for the whole module: bound at the top level by a
-    /// `const`, a function or an import, which nothing emitted assigns. Item
-    /// 6's callee may be one.
+    /// One slot per name, for the whole module: bound at the top level of
+    /// this file by a `const` or a function, which nothing emitted assigns
+    /// (`countStmt` asserts it). Item 6's callee may be one; a name an
+    /// `import` binds is not one.
     top_stable: []bool,
     dropped: []u32,
     /// One bit per node: a statement a call was moved into (`readsBefore`'s
@@ -400,6 +399,10 @@ const Opt = struct {
                 if (o.ir.tag(@fromBackingInt(@intCast(d.lhs))) == .ident) if (@as(NameIndex, @fromBackingInt(@intCast(o.ir.data(@fromBackingInt(@intCast(d.lhs))).lhs))).unwrap()) |i| if (i < o.rebound.len) {
                     o.touch(i);
                     o.rebound[i] = true;
+                    // Item 6 rests on it: no emitted statement rebinds a
+                    // top-level `const` or function (a `const` cannot be
+                    // assigned; module state is a `let`).
+                    std.debug.assert(!o.top_stable[i]);
                 };
                 try o.countExpr(@fromBackingInt(@intCast(d.lhs)));
                 try o.countExpr(@fromBackingInt(@intCast(d.rhs)));
@@ -617,14 +620,21 @@ const Opt = struct {
     /// §9 item 6: a plain arrow whose body is exactly `return f(p₁, …, pₙ)`
     /// over its own parameters, in order, each once, is printed as `f` when
     /// `f` denotes the same function at every call of the arrow as where the
-    /// arrow was made — a parameter, a local `const` or a top-level name no
-    /// `assign_stmt` in this declaration targets. Beni has no function
-    /// identity, so the two objects the lambda gave and the one `f` is are
-    /// told apart by no program. Decided after the arrow's own lists were
-    /// planned, so a callee item 1 substitutes is read through the plan:
-    /// `const g = f; … λa b → g a b` reduces to `f`, and a callee whose
-    /// substitution is not a name (a function made once and used here) is
-    /// left as written.
+    /// arrow was made — a parameter, a local `const` or a top-level `const`
+    /// or function of this file that no `assign_stmt` targets; never a name
+    /// an `import` binds, since a sibling may read `arguments` or `this`
+    /// where emitted code never does. Beni has no function identity, so the
+    /// two objects the lambda gave and the one `f` is are told apart by no
+    /// program. Decided after the arrow's own lists were planned, and after
+    /// every list that encloses the arrow (`planList` plans a list's
+    /// bindings before it descends into their statements), so a callee item
+    /// 1 substitutes is already recorded and is read through the plan:
+    /// `const g = f; … λa b → g a b` reduces to `f`, with the tests run on
+    /// `f`, the name the printer writes; a callee whose substitution is not
+    /// a name (a function made once and used here) is left as written. A
+    /// substitution's target is never itself substituted (`compress`) and an
+    /// arrow's replacement is always an `ident`, so `Print.resolve` ends in
+    /// two steps.
     fn eta(o: *Opt, arrow: Index, record: JsIr.ExtraIndex) void {
         const f = o.ir.extraData(record, JsIr.Func);
         const body = o.ir.extraSlice(f.body(), Index);
@@ -637,34 +647,38 @@ const Opt = struct {
         const params = o.ir.extraSlice(f.params(), NameIndex);
         const args = o.ir.extraSlice(o.ir.subRange(@fromBackingInt(@intCast(cd.rhs))), Index);
         if (args.len != params.len) return;
-        const name: NameIndex = @fromBackingInt(@intCast(o.ir.data(callee).lhs));
+        const written: NameIndex = @fromBackingInt(@intCast(o.ir.data(callee).lhs));
+        if (written == .none) return;
         for (params, args, 0..) |pn, arg, i| {
             if (o.ir.tag(arg) != .ident) return;
             if (@as(NameIndex, @fromBackingInt(@intCast(o.ir.data(arg).lhs))) != pn) return;
-            if (pn == name or pn == .none) return;
+            if (pn == written) return;
             for (params[0..i]) |q| if (q == pn) return;
         }
+        // The name the printer writes: item 1's substitution of the callee
+        // when it has one and it is a name, else the callee itself.
+        var target = callee;
+        if (o.inlined[callee.int()].unwrap()) |r| {
+            if (o.ir.tag(r) != .ident or o.inlined[r.int()] != .none) return;
+            target = r;
+        }
+        const name: NameIndex = @fromBackingInt(@intCast(o.ir.data(target).lhs));
         const i = name.unwrap() orelse return;
         if (i >= o.uses.len) return;
         for (o.mutable) |m| if (m == name) return;
         if (o.flagOf(i, "assigned")) return;
         const bound_here = o.readOf(i, "binds");
         if (bound_here == 0) {
-            // Not a binding of this declaration: a top-level name or an
-            // import of this module, or a name another file exports. A
-            // module's own top-level `let` is neither.
-            if (!(o.top_stable[i] or o.ir.name(name).module != .none)) return;
+            // Not a binding of this declaration: a top-level `const` or
+            // function of this file, or nothing this pass may rely on — the
+            // module's own top-level `let`, or a name an `import` binds.
+            if (!o.top_stable[i]) return;
         } else {
             // Bound once here: a parameter (no declaration), a local
             // `const` or an inner function (one declaration). Never a `let`,
             // and never a name bound twice, whose one `NameIndex` would
             // then mean two bindings.
             if (bound_here != 1 or o.readOf(i, "decls") > 1 or o.flagOf(i, "let_bound")) return;
-        }
-        var target = callee;
-        if (o.inlined[callee.int()].unwrap()) |r| {
-            if (o.ir.tag(r) != .ident or o.inlined[r.int()] != .none) return;
-            target = r;
         }
         o.inlined[arrow.int()] = target.toOptional();
     }
