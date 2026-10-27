@@ -782,7 +782,9 @@ pub const Table = struct {
             const v = if (old) |o| try t.join(gpa, charge, .from(o), k) else k;
             here = try t.mapPut(gpa, charge, here, m.int(), v.int());
         }
-        var links: u32 = Ids.none_int;
+        // A fold's links are the steps it saw, its sparse frontier (§2.9),
+        // each leading back to itself: kept as they are, never followed (#1129).
+        var links: u32 = if (p.fold != 0) p.links else Ids.none_int;
         if (p.fold == 0) {
             var lt = t.mapEntries(p.links);
             while (lt.next()) |e| {
@@ -3689,6 +3691,50 @@ test "#1073 review: below a fold the frontier is sparse too: a wide record's wid
     try testing.expectEqual(cost[0], cost[1]);
 }
 
+test "#1129: relabelling a fold keeps the steps it saw, so deep, kappaLeq and the frontier still reach below it" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const v = f.view();
+    const f0 = try Place.Step.field(&f.account, 100);
+    const root = try f.leaf(9, &.{try f.param(0, 9, &.{})});
+    const at = try f.projOf(try f.projOf(root, f0), Place.Step.elem);
+    const Identity = struct {
+        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+            return n;
+        }
+        fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
+            return k;
+        }
+    };
+    var dummy: u8 = 0;
+    const id: Table.Relabel = .{ .ctx = &dummy, .node = Identity.node, .cond = Identity.cond };
+    // A collapsed fold, and an exact one with the same entry and steps.
+    const collapsed = try f.conds.kappaFold(gpa, f.charge(), try f.setKPath(.none, &.{ f0, Place.Step.elem }, at, shared));
+    var exact = try f.conds.kappaEmptyFold(gpa, f.charge(), Table.fold_exact);
+    exact = try f.conds.kappaFoldStep(gpa, f.charge(), exact, f0);
+    exact = try f.conds.kappaFoldStep(gpa, f.charge(), exact, Place.Step.elem);
+    exact = (try f.conds.kappaSet(gpa, f.charge(), exact, at, shared)).ctx;
+    for ([_]Kappas{ collapsed, exact }) |k| {
+        try testing.expect(f.conds.isFold(k));
+        try testing.expectEqual(shared, try f.conds.deep(gpa, f.charge(), v, k, root, false));
+        const r = try f.conds.kappaRelabel(gpa, f.charge(), k, id);
+        // The identity is the identity: the same hash-consed position, its
+        // step set, and every read through it.
+        try testing.expectEqual(k, r);
+        var steps: u32 = 0;
+        var it = f.conds.kappaLinks(r);
+        while (it.next()) |e| {
+            try testing.expectEqual(r, e.child);
+            steps += 1;
+        }
+        try testing.expectEqual(@as(u32, 2), steps);
+        try testing.expectEqual(shared, try f.conds.deep(gpa, f.charge(), v, r, root, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, k, root, r, root, false));
+        try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, r, root, k, root, false));
+    }
+}
 test "#1101: a recast whose inner is a union of recasts keeps what is stored below them, through a join" {
     var f: Fixture = .{};
     try f.init();
