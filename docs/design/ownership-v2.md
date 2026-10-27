@@ -773,7 +773,9 @@ the linked child's paths being relative to its own root, which is the position i
 costs the read its path length and nothing at construction: length stays baseline. `Shape.map` carries a
 snapshot through an instantiation by relabelling each binding's node, its paths unchanged because they are
 relative to the value's root, and the argument's snapshot is linked under the argument's path at the graft
-(relabelling and linking are charged).
+(relabelling and linking are charged). A fold keeps the steps it saw through a relabelling, never followed (they lead
+back to it): they are its sparse frontier, the routes by which `deep`, `kappaLeq` and a block find what is stored below it
+(#1129).
 
 **`widen`, and only `widen`, folds a snapshot at recursive places** [M 2026-10-26, #1073]. A fixpoint unknown and
 a read-off widen their shape (§2.3); their snapshot is folded with it. In a folded snapshot, the position at

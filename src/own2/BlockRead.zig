@@ -2749,6 +2749,40 @@ test "a round trip keeps deep's answer below a leaf: the block writes what is st
     try testing.expectEqual(try atomCounts(&a, d0), try atomCounts(&b, d1));
 }
 
+test "#1129: a relabelled fold round-trips with the steps it saw: deep reaches below it after decode" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    const recs = try a.place(7);
+    const fa = try Step.field(&a.account, 10);
+    const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, recs), 0);
+    const res = try a.shapes.leaf(gpa, &a.account, recs, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    const e1 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, Step.elem)).?;
+    const e2 = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, e1, fa)).?;
+    // `shared` below a collapsed fold, the snapshot then relabelled by the
+    // identity, as a read-off relabels it.
+    const folded = try a.conds.kappaFold(gpa, env.charge, try a.conds.kappaSetAt(gpa, env.charge, .none, &.{ Step.elem, fa }, e2, Cond.shared));
+    const Identity = struct {
+        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+            return n;
+        }
+        fn cond(_: *anyopaque, _: *Cond.Table, _: Allocator, _: Ids.Charge, k: CondId) Error!CondId {
+            return k;
+        }
+    };
+    var dummy: u8 = 0;
+    const km = try a.conds.kappaRelabel(gpa, env.charge, folded, .{ .ctx = &dummy, .node = Identity.node, .cond = Identity.cond });
+    try testing.expectEqual(Cond.shared, try a.conds.deep(gpa, env.charge, env.view(), km, res, false));
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = km });
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    try testing.expect(b.conds.isFold(back.kappas));
+    try testing.expectEqual(Cond.shared, try b.conds.deep(gpa, b.env().charge, b.env().view(), back.kappas, back.res, false));
+}
 test "#1073: a folded snapshot round-trips: its fold, and every read at and below it" {
     const gpa = testing.allocator;
     var a: Tables = .{};
