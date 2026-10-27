@@ -11,8 +11,9 @@
 -- `pick` (a callee a `case` fills, a `let`), `viaLetAlias` (the same `let`
 -- behind an alias item 1 folds: the test runs on the name written) and
 -- `method` (a method callee, whose `this` the reduction would lose). A
--- callee an `import` binds — a sibling's function — stays as written too:
--- `JsCompare`'s `viaValue`. Built with `--core --release`.
+-- callee the build imports from a hand-written file — a sibling's function
+-- — stays as written too: `JsCompare`'s `viaValue`. Built with
+-- `--core --release`.
 import Js
 
 

@@ -111,6 +111,11 @@ pub const Options = struct {
     /// *Roots*). Read only through `rename`, which is what gives a name
     /// its ordinal.
     imported: ?*const Imported = null,
+    /// `--release`: the whole-program ordinals of names the build imports
+    /// from a hand-written file (`Emit.markHandWritten`). §9 item 6 never
+    /// writes one in place of a forwarding arrow (`resolve`). Null in a
+    /// development build, which runs no plan.
+    hand_written: ?*const Imported = null,
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
@@ -165,6 +170,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .rename = options.rename,
         .compact = options.compact,
         .imported = options.imported,
+        .hand_written = options.hand_written,
         .recursion_limit = options.recursion_limit,
         .unobserved = options.unobserved,
         .bare_globals = options.bare_globals,
@@ -477,6 +483,8 @@ const Printer = struct {
     compact: bool = false,
     /// `Options.imported`.
     imported: ?*const Imported = null,
+    /// `Options.hand_written`.
+    hand_written: ?*const Imported = null,
     /// The last byte pushed, for the token-adjacency guard. Only read in
     /// compact mode, where it is the whole of the tokenisation risk.
     last: u8 = 0,
@@ -1237,6 +1245,17 @@ const Printer = struct {
         try p.terminate();
         try p.endLine(level);
         return last;
+    }
+
+    /// Whether `ident` names a function the build imports from a
+    /// hand-written file (`Options.hand_written`); false when the printer
+    /// was given no such set, as in a development build.
+    fn handWritten(p: *const Printer, ident: Index) bool {
+        const set = p.hand_written orelse return false;
+        const rename = p.rename orelse return false;
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(ident).lhs));
+        const ordinal = rename.ordinal(n) orelse return false;
+        return ordinal < set.bit_length and set.isSet(ordinal);
     }
 
     /// Whether an `export` list names `n`: always, unless `imported`
@@ -2358,7 +2377,14 @@ const Printer = struct {
     fn resolve(p: *Printer, node: Index) Index {
         var n = node;
         if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;
-        if (p.ir.tag(n) == .arrow) n = p.plan.replacement(n) orelse return n;
+        if (p.ir.tag(n) == .arrow) {
+            // §9 item 6's veto: the join knows which names the build
+            // imports from a hand-written file, and `Opt` does not, so a
+            // forwarding arrow to one is written as the arrow it is.
+            const callee = p.plan.replacement(n) orelse return n;
+            if (p.handWritten(callee)) return n;
+            n = callee;
+        }
         std.debug.assert(p.ir.tag(n) != .ident or p.plan.replacement(n) == null);
         std.debug.assert(p.ir.tag(n) != .arrow or p.plan.replacement(n) == null);
         return n;

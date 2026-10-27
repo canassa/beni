@@ -190,11 +190,9 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.top_stable, false);
     // Item 6's callee may be a name this file binds at the top level by a
     // `const` or a function, which nothing emitted assigns. A top-level
-    // `let` (a `Js.Ref` of the module) is not one, and neither is a name an
-    // `import` binds: under `--release` those are the siblings and the
-    // platform's runtime, hand-written functions that may read `arguments`
-    // or `this` where emitted code never does, so a host calling one with
-    // more arguments than the lambda took could see the difference.
+    // `let` (a `Js.Ref` of the module) is not one, and neither is a name
+    // this module's `import` binds — a sibling's export, aliased, which the
+    // printer would veto anyway (`Print.resolve`).
     for (ir.extraSlice(ir.body, Index)) |top| {
         const d = ir.data(top);
         switch (ir.tag(top)) {
@@ -273,8 +271,8 @@ const Opt = struct {
     let_bound: []bool,
     /// One slot per name, for the whole module: bound at the top level of
     /// this file by a `const` or a function, which nothing emitted assigns
-    /// (`countStmt` asserts it). Item 6's callee may be one; a name an
-    /// `import` binds is not one.
+    /// (`countStmt` asserts it). Item 6's callee may be one; a name this
+    /// module's `import` binds is not one.
     top_stable: []bool,
     dropped: []u32,
     /// One bit per node: a statement a call was moved into (`readsBefore`'s
@@ -621,9 +619,12 @@ const Opt = struct {
     /// over its own parameters, in order, each once, is printed as `f` when
     /// `f` denotes the same function at every call of the arrow as where the
     /// arrow was made — a parameter, a local `const` or a top-level `const`
-    /// or function of this file that no `assign_stmt` targets; never a name
-    /// an `import` binds, since a sibling may read `arguments` or `this`
-    /// where emitted code never does. Beni has no function identity, so the
+    /// or function of this file, or another module's export, that no
+    /// `assign_stmt` targets. A name the build imports from a hand-written
+    /// file — a sibling's export, the runtime — is the printer's to veto
+    /// (`Print.resolve`), since only the join knows the imports: a sibling
+    /// may read `arguments` or `this` where emitted code never does. Beni
+    /// has no function identity, so the
     /// two objects the lambda gave and the one `f` is are told apart by no
     /// program. Decided after the arrow's own lists were planned, and after
     /// every list that encloses the arrow (`planList` plans a list's
@@ -670,9 +671,11 @@ const Opt = struct {
         const bound_here = o.readOf(i, "binds");
         if (bound_here == 0) {
             // Not a binding of this declaration: a top-level `const` or
-            // function of this file, or nothing this pass may rely on — the
-            // module's own top-level `let`, or a name an `import` binds.
-            if (!o.top_stable[i]) return;
+            // function of this file, or another module's export (a
+            // qualified name; a sibling's is the printer's to veto), or
+            // nothing this pass may rely on — the module's own top-level
+            // `let`, or a name this module's `import` binds.
+            if (!(o.top_stable[i] or o.ir.name(name).module != .none)) return;
         } else {
             // Bound once here: a parameter (no declaration), a local
             // `const` or an inner function (one declaration). Never a `let`,
