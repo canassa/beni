@@ -1,0 +1,10 @@
+-- A host that calls a beni function value with more arguments than the
+-- lambda took: `String.prototype.replaceAll` calls its replacer with the
+-- match, its offset and the whole string. `λm → f m` passes one; under
+-- `--release` item 6 hands the host `f` itself, which receives three and,
+-- as every emitted function, reads only its own parameters.
+import Js
+
+
+pub replaced : String, (String → String) → String
+replaced s f = Js.to (Js.call (Js.from s) "replaceAll" [ Js.from "-", Js.from λm → f m ])
