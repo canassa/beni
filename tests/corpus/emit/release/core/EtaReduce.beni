@@ -8,8 +8,11 @@
 -- tail-call loop takes of its parameter each iteration. The rest stay as
 -- written: `swapped` (reordered), `partial` (an argument missing), `twice`
 -- (one parameter read twice), `wrap` (a constructor, which has no callee),
--- `pick` (a callee a `case` fills, a `let`) and `method` (a method callee,
--- whose `this` the reduction would lose). Built with `--core --release`.
+-- `pick` (a callee a `case` fills, a `let`), `viaLetAlias` (the same `let`
+-- behind an alias item 1 folds: the test runs on the name written) and
+-- `method` (a method callee, whose `this` the reduction would lose). A
+-- callee an `import` binds — a sibling's function — stays as written too:
+-- `JsCompare`'s `viaValue`. Built with `--core --release`.
 import Js
 
 
@@ -90,6 +93,20 @@ pick p f g =
             Third →
                 λx → x
     λa → h a
+
+
+pub viaLetAlias : Pick, (Int → Int), (Int → Int) → (Int → Int)
+viaLetAlias p f g =
+    h =
+        case p of
+            First →
+                f
+            Second →
+                g
+            Third →
+                λx → x
+    k = h
+    λa → k a
 
 
 pub method : Js.Value → (Js.Value → Js.Value)

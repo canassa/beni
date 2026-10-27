@@ -1,0 +1,13 @@
+-- Item 6 of the release optimiser (`backend.md` §9) hands a host the callee
+-- itself where the development build hands it a lambda; the host calls with
+-- extra arguments, and both builds print the same.
+import Node
+import Ops
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "replaced " ++ Ops.replaced "a-b-c" λm → m ++ "+"
+        , "kept " ++ Ops.replaced "abc" λm → m ++ "+"
+        ]
