@@ -1547,9 +1547,13 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    `fresh` (`assumed`, R-6.3).
 9. **Casts** (R-4.11): a `returned Value → a` call whose argument place differs structurally from its result's
    makes `recast(place(a), inner)`; a later read **of the recast node itself** (no step taken since) at a place
-   structurally identical to `inner`'s restores `inner` exactly; a projection of a recast is a recast over the same
-   inner, approximate, never restored, so a child of a recast recursive value is not taken for its root
-   (R-4.11.2). Retain the inner value interpretation, including its snapshot and loan overlay, not only its
+   structurally identical to `inner`'s restores `inner` exactly; a projection of a recast is a recast,
+   approximate, never restored, so a child of a recast recursive value is not taken for its root
+   (R-4.11.2). Its inner is the inner's own part at that step when the inner is built (a node or a delta,
+   explicit structure) and its place has the step to the same place (the same field, index or element of
+   the same object: `r.a` of `Js.to (Js.from { a = xs })` is `xs`), and the whole
+   inner otherwise [#1132's review; `CastProjections` (core)]. The whole inner there took the part for the
+   literal around it (`fresh`) and accepted an edit of `xs`. Retain the inner value interpretation, including its snapshot and loan overlay, not only its
    shape: an unstepped restoration restores those facts together (a recast and its inner are one position,
    §2.9, so what the snapshot stores at the inner and below it is read at the recast), while a stepped recast cannot recover
    a stronger certificate by finding a structurally equal type later; `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.

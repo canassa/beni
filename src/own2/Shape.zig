@@ -462,13 +462,13 @@ pub const Table = struct {
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = true });
-        try t.projBelow(gpa, account, &stack, n, s);
+        try t.projBelow(gpa, places, &stack, n, s);
         while (stack.pop()) |f| {
             if (!f.expanded) {
                 try account.reserve(.memo, 1);
                 if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                try t.projBelow(gpa, account, &stack, f.node, s);
+                try t.projBelow(gpa, places, &stack, f.node, s);
                 continue;
             }
             if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
@@ -479,14 +479,24 @@ pub const Table = struct {
     }
 
     /// The nodes `n`'s projection at `s` reads the projections of.
-    fn projBelow(t: *Table, gpa: Allocator, account: *Account, stack: anytype, n: NodeId, s: Step) Error!void {
-        _ = account;
+    fn projBelow(t: *Table, gpa: Allocator, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
         switch (d.kind) {
+            .recast => if (t.recastPart(places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
             .@"union", .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
             else => {},
         }
+    }
+
+    /// A recast's inner when the recast's part at `s` is the inner's own
+    /// part: a built inner (a word's recast of a leaf may hold its cell
+    /// anywhere) whose place has the step to the same place.
+    fn recastPart(t: *Table, places: *Place.Table, n: NodeId, s: Step) ?NodeId {
+        const inner: NodeId = .from(t.get(n).a);
+        if (t.kind(inner) != .node and t.kind(inner) != .delta) return null;
+        const child = places.child(t.place(n), s) orelse return null;
+        return if (places.child(t.place(inner), s) == child) inner else null;
     }
 
     /// `n`'s projection at `s`, what it reads projected already.
@@ -505,7 +515,10 @@ pub const Table = struct {
             .leaf => try t.projectLeaf(gpa, account, places, cellt, d.cells, child_place, s),
             .node => t.overGet(d.a, s) orelse try t.nothing(gpa, account, child_place),
             .delta => t.overGet(d.b, s) orelse got(t, d.a, s),
-            .recast => try t.recast(gpa, account, child_place, .from(d.a)),
+            // A recast projects to a recast of its inner's own part where
+            // `recastPart` finds one (§2.13.9, #1132's review); otherwise of
+            // the whole inner, as far as anyone knows.
+            .recast => try t.recast(gpa, account, child_place, if (t.recastPart(places, n, s)) |inner| got(t, inner.int(), s) else .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
         };
