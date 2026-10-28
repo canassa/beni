@@ -1,0 +1,47 @@
+-- ownership (core): a projection out of a cast value (`ownership-v2.md`
+-- §2.13.9, #1132's review). Read back with `Js.to`, a record's field, a
+-- tuple's part or a list's element is the same object the value was built
+-- from, so it is that part: editing `r.a`, `a` or `first` while `xs` is read
+-- again is refused, as v1 refuses it, and editing `xs` while only the other
+-- part `z` is read again is accepted.
+import Js
+
+
+toDisjoint : List Int, List Int → List Int × List Int
+toDisjoint xs zs =
+    b : List Int × List Int
+    b = Js.to (Js.from ( xs, zs ))
+    ( _, z ) = b
+    ys = [ …xs, 1 ]
+    ( z, ys )
+
+
+fieldOut : List Int → List Int × List Int
+fieldOut xs =
+    r : { a : List Int }
+    r = Js.to (Js.from { a = xs })
+    ys = [ …r.a, 1 ]
+    ( ys, xs )
+
+
+tupleOut : List Int → List Int × List Int
+tupleOut xs =
+    t : List Int × Int
+    t = Js.to (Js.from ( xs, 1 ))
+    ( a, _ ) = t
+    ys = [ …a, 1 ]
+    ( ys, xs )
+
+
+elementOut : List Int → List Int × List Int
+elementOut xs =
+    l : List (List Int)
+    l = Js.to (Js.from [ xs ])
+    ys =
+        case l of
+            [ first, …_ ] →
+                [ …first, 1 ]
+
+            [] →
+                []
+    ( ys, xs )

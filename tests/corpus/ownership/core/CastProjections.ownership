@@ -1,0 +1,12 @@
+module CastProjections
+  15:12 construction xs: accepted param
+  23:12 construction r.a: rejected alias: xs holds it and is read at 24:5
+  32:12 construction a: rejected alias: xs holds it and is read at 33:5
+  43:19 construction first: rejected alias: xs holds it and is read at 47:5
+  summary toDisjoint: π1 RAW, π2 RA; res .0 condition(fresh1) π2, .1 condition(fresh3) π1, condition(fresh2){sep π1 π2}
+  summary fieldOut: π1 RAW; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}
+  summary tupleOut: π1 RAW; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}
+  summary elementOut: π1 RAW; res .0 condition(fresh1) fresh1 π1{excl π1}, .1 condition(fresh3) π1, condition(fresh2){excl π1}; xreq excl π1
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 3
