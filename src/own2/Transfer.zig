@@ -224,15 +224,21 @@ pub const Frame = struct {
     }
 
     /// A value built at a place the checker gave no structure (a type
-    /// variable: `Js.array`'s literal): `⊤`, and what it was built from, a
-    /// recast each, so what flowed into it stays in its reach (#1102).
-    fn opaqueOf(f: *Frame, at: PlaceId, parts: []const Value) Error!Value {
-        var v = try f.topValue(at);
-        for (parts) |p| {
+    /// variable: `Js.array`'s literal): one leaf of `⊤` and everything its
+    /// parts reach, so what flowed into it is in its reach and held at its
+    /// own path (#1102, #1136). Each part's union is that part's work, on
+    /// its own lane when it has one (§4.1), and a part's reach is memoised,
+    /// so a level adds its own cells and never rebuilds the one below.
+    fn opaqueOf(f: *Frame, at: PlaceId, parts: []const Value, insts: ?[]const u32) Error!Value {
+        const sets = &f.env.cells.sets;
+        var cells = try f.set1(try f.env.cells.top(f.gpa, f.account()));
+        for (parts, 0..) |p, i| {
             if (p.node == .none) continue;
-            v.node = try f.env.shapes.@"union"(f.gpa, f.account(), &f.env.cells.sets, v.node, try f.env.shapes.recast(f.gpa, f.account(), at, p.node));
+            const kernel = if (insts) |is| try f.lane(is[i]) else null;
+            defer if (kernel) |k| f.account().leave(k);
+            cells = try sets.unionWith(f.gpa, f.env.charge, cells, try f.env.shapes.reach(f.gpa, f.account(), sets, p.node));
         }
-        return v;
+        return .{ .node = try f.env.shapes.leaf(f.gpa, f.account(), at, cells) };
     }
 
     /// `k` with κ(n) joined with `c` at the position `k` is.
@@ -642,7 +648,7 @@ pub const Frame = struct {
             var parts: std.ArrayList(Value) = .empty;
             defer parts.deinit(f.gpa);
             for (items) |item| try parts.append(f.gpa, f.val(item).value);
-            return f.opaqueOf(at, parts.items);
+            return f.opaqueOf(at, parts.items, items);
         };
         const site = try cells.site(f.gpa, f.account(), i, at, .list);
         var kappa: Cond.Kappas = .none;
@@ -697,7 +703,7 @@ pub const Frame = struct {
             var vs: std.ArrayList(Value) = .empty;
             defer vs.deinit(f.gpa);
             for (parts) |p| try vs.append(f.gpa, f.val(p).value);
-            return f.opaqueOf(at, vs.items);
+            return f.opaqueOf(at, vs.items, parts);
         }
         var kids: u32 = Ids.none_int;
         var kappa: Cond.Kappas = .none;
@@ -728,7 +734,7 @@ pub const Frame = struct {
             defer parts.deinit(f.gpa);
             try parts.append(f.gpa, base);
             try parts.appendSlice(f.gpa, stored);
-            return f.opaqueOf(at, parts.items);
+            return f.opaqueOf(at, parts.items, null);
         };
         const old = (try shapes.proj(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem)).?;
         var members: std.ArrayList(NodeId) = .empty;
@@ -817,7 +823,7 @@ pub const Frame = struct {
             defer parts.deinit(f.gpa);
             try parts.append(f.gpa, base);
             for (fronts) |fr| try parts.append(f.gpa, f.val(fr[0]).value);
-            return f.opaqueOf(at, parts.items);
+            return f.opaqueOf(at, parts.items, null);
         };
         var fresh = true;
         var members: std.ArrayList(NodeId) = .empty;

@@ -1,0 +1,86 @@
+-- ownership (core): a list held inside a cast value (`ownership-v2.md`
+-- §2.13.9, #1136). `Js.from [ xs ]`, a tuple, a record, a `Maybe` or a spread
+-- handed to `Js.array` or `Js.from` all hold `xs` where `Js.Value` has no
+-- path: the hold stays at the cast value's own path, so an edit of `xs`
+-- while the value is read again is refused, as v1 refuses it. The edit of
+-- `vs` in `spreadFirst` is accepted: `vs` is read before it, and a spread
+-- does not keep its source.
+import Js
+
+
+fromList : List Int → Js.Value × List Int
+fromList xs =
+    a = Js.from [ xs ]
+    ys = [ …xs, 1 ]
+    ( a, ys )
+
+
+arrayOfLocal : List Int → Js.Value
+arrayOfLocal xs =
+    l = [ Js.from xs ]
+    a = Js.array l
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+arrayOfTuple : List Int → Js.Value
+arrayOfTuple xs =
+    a = Js.array ( 1, xs )
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+fromRecord : List Int → Js.Value
+fromRecord xs =
+    a = Js.from { k = xs }
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+spreadFirst : List Int, List Js.Value → Js.Value
+spreadFirst xs vs =
+    a = Js.array [ …vs, Js.from xs ]
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+spreadLast : List Int, List Js.Value → Js.Value
+spreadLast xs vs =
+    a = Js.array [ Js.from xs, …vs ]
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+arrayOfJust : List Int → Js.Value
+arrayOfJust xs =
+    a = Js.array (Just xs)
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+arrayOfRecord : List Int → Js.Value
+arrayOfRecord xs =
+    a = Js.array { k = xs }
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+fromTuple : List Int → Js.Value
+fromTuple xs =
+    a = Js.from ( 1, xs )
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+fromJust : List Int → Js.Value
+fromJust xs =
+    a = Js.from (Just xs)
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]
+
+
+fromNested : List Int → Js.Value
+fromNested xs =
+    a = Js.from { v = Js.array [ Js.from xs ] }
+    ys = [ …xs, 1 ]
+    Js.array [ a, Js.from ys ]

@@ -8685,3 +8685,55 @@ test "the checker v2 never reaches a lane's ceiling on a call with a 1 000-item 
 test "the checker v2 never reaches a lane's ceiling on a 1 000-field record update" {
     try expectWideKernel(3);
 }
+
+test "the checker v2's growth over a tower of Js.array values is n log n, and a wide one stays in its lanes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1132's review: `Js.array`'s literal sits at a type variable, so it is
+    // an opaque value of what its items reach. Built by unions over each
+    // level, it rebuilt the level below (about 29·n²); one item's work is its
+    // own lane's, so a 1 000-item literal is no accounting defect.
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 100, 1000 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 262144)\n\n\nimport Js\n\n\npub tower : List Int → Js.Value\ntower zs =\n    a0 = Js.array [ Js.from zs ]\n");
+        for (1..n + 1) |i| try src.print(a, "    a{d} = Js.array [ a{d}, Js.from zs ]\n", .{ i, i - 1 });
+        try src.print(a, "    a{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+    }
+    // 832 / 9 788 / 121 708: ten times the levels, at most 14 times the
+    // growth.
+    try testing.expect(growth[1] <= 14 * growth[0]);
+    try testing.expect(growth[2] <= 14 * growth[1]);
+
+    // A literal of 1 000 items: each item's share on its own lane.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "import Js\n\n\npub wide : List Int → Js.Value\nwide zs =\n    Js.array [ Js.from zs");
+    for (1..1000) |_| try src.appendSlice(a, ", Js.from zs");
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked wide") == null);
+}

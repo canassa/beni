@@ -444,14 +444,16 @@ const Resolver = struct {
     /// conflicts with it. What a value got from an opaque result or a
     /// pessimistic call is in its reach as its arrivals (`⋆ ~π1`), so a `⊤`
     /// holder that never took `c` does not hold it. A record per cell read.
-    fn mayHaveReached(r: *Resolver, n: NodeId, c: CellId, deep: bool) Error!bool {
+    fn mayHaveReached(r: *Resolver, n: NodeId, c: CellId, deep: bool, cands: []const CellId) Error!bool {
         const cellt = r.env.cells;
-        var it = cellt.sets.iterate(try r.reach(n));
-        while (it.next()) |e| {
+        const held = try r.reach(n);
+        // The candidates for `c` (itself, its trie ancestors, its named
+        // descendants for a deep demand, its anchors' cells): one lookup each,
+        // never a walk of the holder's reach.
+        for (cands) |x| {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
-            const x: CellId = .from(e.key);
-            if (cellt.origin(x) == .top) continue;
-            if (r.conflict(x, c, deep) != .no or r.conflict(c, x, deep) != .no) return true;
+            if (cellt.origin(x) == .top or !cellt.sets.member(held, x.int())) continue;
+            if (r.conflict(x, c, deep) != .no) return true;
         }
         return false;
     }
@@ -693,7 +695,10 @@ const Resolver = struct {
     /// a summary flag: held only at a summary position.
     fn holdPaths(r: *Resolver, n: NodeId, root: PathId, d: CellId, c: CellId, out: *std.ArrayList(Hold)) Error!void {
         // `alt`: reached through a union's side, one of several alternatives.
-        const Frame_ = struct { node: NodeId, path: PathId, alt: bool = false };
+        // `cast`: below a recast, whose inner structure the cast's type may not
+        // have: a step the outer place lacks stays at the cast's own path
+        // (§2.13.9, #1136); `blur`: a hold kept so, approximate.
+        const Frame_ = struct { node: NodeId, path: PathId, alt: bool = false, cast: bool = false, blur: bool = false };
         var stack: std.ArrayList(Frame_) = .empty;
         defer stack.deinit(r.gpa);
         var seen: stamped.Column(NodeId, void) = .{};
@@ -724,7 +729,7 @@ const Resolver = struct {
                         for (r.steps.items) |s| at = (try r.env.places.extend(r.gpa, r.env.charge, at, s)) orelse break;
                     }
                 }
-                try out.append(r.gpa, .{ .path = at, .d = d, .approx = v == 1, .several = f.alt or several(r.env.cells, cells) });
+                try out.append(r.gpa, .{ .path = at, .d = d, .approx = v == 1 or f.blur, .several = f.alt or several(r.env.cells, cells) });
             };
             const k = shapes.get(f.node);
             if (seen.contains(f.node)) continue;
@@ -732,17 +737,18 @@ const Resolver = struct {
             switch (k.kind) {
                 .leaf => {},
                 .node, .delta => {
-                    if (k.kind == .delta) try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path });
+                    if (k.kind == .delta) try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path, .cast = f.cast, .blur = f.blur });
                     var it = shapes.overEntries(if (k.kind == .node) k.a else k.b);
                     while (it.next()) |e| {
-                        const p = (try r.env.places.extend(r.gpa, r.env.charge, f.path, e.step)) orelse continue;
-                        try stack.append(r.gpa, .{ .node = e.node, .path = p });
+                        const ext = try r.env.places.extend(r.gpa, r.env.charge, f.path, e.step);
+                        const p = ext orelse if (f.cast) f.path else continue;
+                        try stack.append(r.gpa, .{ .node = e.node, .path = p, .cast = f.cast, .blur = f.blur or ext == null });
                     }
                 },
-                .recast => try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path }),
+                .recast => try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path, .cast = true, .blur = f.blur }),
                 .@"union", .positions => {
                     const alt = f.alt or k.kind == .@"union";
-                    try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path, .alt = alt }, .{ .node = .from(k.b), .path = f.path, .alt = alt } });
+                    try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur }, .{ .node = .from(k.b), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur } });
                 },
             }
         }
@@ -926,9 +932,9 @@ const Resolver = struct {
                 for (hs.items) |hi| {
                     const h = r.frame.holders[hi];
                     // A holder of `⊤` counts only for what could have flowed into it
-                    // (§2.8, #1102): a cell of its value that may be `c` or hold it,
-                    // or anything given to JavaScript before (an opaque value may be it).
-                    if (cellt.origin(d) == .top and !try r.mayHaveReached(h.value.node, c, deep) and (try r.escaped(c, dm.point, deep)) == null) continue;
+                    // (§2.8, #1102): a cell of its value that may be `c` or hold it. A
+                    // `c` given to JavaScript before is refused at step 2 already.
+                    if (cellt.origin(d) == .top and !try r.mayHaveReached(h.value.node, c, deep, cands.items)) continue;
                     switch (how) {
                         .no => unreachable,
                         .under => |s| {

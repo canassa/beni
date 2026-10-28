@@ -709,11 +709,12 @@ climb alone misses `kids`, and the subtrees' lists are then pushed in place. The
   `reach`.
 - **A holder of `⊤`** [#1102] (a value of an opaque type, a pessimistic call's result) may be any object, but
   it can only hold what reached it. So it is a candidate for `c` only when its value's reach has a cell other than
-  `⊤` that may be `c` or hold it (`alias`, either way), or when `c` was given to JavaScript before the demand
-  (escaped: an opaque value may answer it). What reaches an opaque value stays in its reach. A worded row with
+  `⊤` that is one of `c`'s candidates and may be `c` or hold it (a membership lookup per candidate; a `c`
+  given to JavaScript before is refused as escaped already). What reaches an opaque value stays in its reach. A worded row with
   a crossing parameter or result puts a `returned` or `aliased` parameter into the result as a recast. A literal,
   a construction, a prepend or a tuple at a place the checker gives no structure (a type variable, as
-  `Js.array`'s literal) is `⊤` joined with a recast of each part. `TopHolders` (core) checks both: an edit of a
+  `Js.array`'s literal) is one leaf of `⊤` and everything its parts reach, each part's union on its own lane;
+  a part's reach is memoised, so a tower of them is n log n (a level adds its own cells). `TopHolders` (core) checks both: an edit of a
   list that never went in is accepted, and one that went in, or that may come back through `Js.to`, is refused.
 
 Cost: the first cell of the cell set reads at most two anchor chain heads and one refinement chain head per
@@ -1552,6 +1553,12 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    shape: an unstepped restoration restores those facts together (a recast and its inner are one position,
    §2.9, so what the snapshot stores at the inner and below it is read at the recast), while a stepped recast cannot recover
    a stronger certificate by finding a structurally equal type later; `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.
+   **A hold below a cast stays at the cast's path** [#1136]. The inner's structure can name a step the cast's
+   place lacks (`Js.from [ xs ]`: `[*]` under `Js.Value`). The object there is still held by the cast value,
+   somewhere the cast hides, so a holder walk (`Demands.holdPaths`) that cannot extend its path by the inner's
+   step keeps the hold at the path it is at, approximate: every later use of the cast value, which reads all
+   of it, finds it. Dropping the hold accepted an edit that JavaScript then saw. `CastHolds` (core) checks it
+   with v1's verdicts.
 10. **Schemas** (R-4.7.10, R-5.11): a run is a call of a row derived from the resolved schema plan
     (`check/SchemaPlan.zig`): `res` fresh at every place the direction builds, holding conversions' captured or
     top-level cells where a conversion runs (a conversion placing one list twice makes the answer `⊤`, R-5.11.2),

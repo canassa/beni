@@ -1,0 +1,28 @@
+module CastHolds
+  14:12 construction xs: rejected alias: a⟨as 1:List::List(32:1:List::List(15:1:Basics::Int()))⟩[*] holds it and is read at 15:5
+  22:12 construction xs: rejected call: a⋆ may hold it through the call at 21:9, and is read at 23:14 (approx)
+  29:12 construction xs: rejected call: a⋆ may hold it through the call at 28:9, and is read at 30:14 (approx)
+  36:12 construction xs: rejected alias: a⟨as record(1:k=32:1:List::List(15:1:Basics::Int())|2:{})⟩.k holds it and is read at 37:14
+  42:20 construction vs: accepted param
+  43:12 construction xs: rejected call: a⋆ may hold it through the call at 42:9, and is read at 44:14 (approx)
+  50:12 construction xs: rejected call: a⋆ may hold it through the call at 49:9, and is read at 51:14 (approx)
+  57:12 construction xs: rejected call: a⋆ may hold it through the call at 56:9, and is read at 58:14 (approx)
+  64:12 construction xs: rejected call: a⋆ may hold it through the call at 63:9, and is read at 65:14 (approx)
+  71:12 construction xs: rejected alias: a⟨as tuple(20:var(0:CastHolds:8:0)32:1:List::List(15:1:Basics::Int()))⟩.1 holds it and is read at 72:14
+  78:12 construction xs: rejected alias: a⟨as 1:Maybe::Maybe(32:1:List::List(15:1:Basics::Int()))⟩#Just.0 holds it and is read at 79:14
+  85:12 construction xs: rejected call: a⟨as record(1:v=13:1:Js::Value()|2:{})⟩.v⋆ may hold it through the call at 84:23, and is read at 86:14 (approx)
+  summary fromList: π1 RAW; res .0 fresh1{excl π1}, .0⟨as 1:List::List(32:1:List::List(15:1:Basics::Int()))⟩[*] condition(fresh3) π1, .1 condition(fresh4) π1, condition(fresh2){shared}
+  summary arrayOfLocal: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~π1
+  summary arrayOfTuple: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~π1
+  summary fromRecord: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{shared} ~fresh501◦ ~π1
+  summary spreadFirst: π1 RAW, π2 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{lost}r{lost} ~π1 ~π2{excl π1, sep π1 π2[*]}
+  summary spreadLast: π1 RAW, π2 RA, π2[*] RA; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{lost}r{lost} ~π1 ~π2 ~π2[*]
+  summary arrayOfJust: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~π1
+  summary arrayOfRecord: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~fresh501◦ ~π1
+  summary fromTuple: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{shared} ~π1
+  summary fromJust: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{shared} ~π1
+  summary fromNested: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~fresh501◦ ~π1
+  demands 12: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 11
+total 12: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 11
+cause alias 4
+cause call 7
