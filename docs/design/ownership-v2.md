@@ -1725,6 +1725,8 @@ newtypes and the low-level resource account live in `Ids.zig` (L0), all record t
 
 ```
 Place.Table (per module)
+  key       : u32         the content key (§4.1 #1104): from kind, head (a type's name, never its TypeId), steps
+                          and children's keys; a recursive type's graph keyed at once by its refinement
   kind      : u8          record | tuple | ctor | list | dict | ref | closure | opaque | var | cross
   head      : u32         TypeId of a nominal/foreign type; the record's field-name run; the tuple arity
   steps     : Range       into `step_tab`, sorted (field by name text, index, ctor·arg)
@@ -1748,6 +1750,8 @@ records enter the same owning-summary account (baseline lanes or growth); layout
 
 ```
 Cell.Table (per walk)
+  key      : u32    the content key (§4.1 #1104): from origin, kind, place's key and a, b, c by their keys, a
+                    site's or result's instruction declaration-local
   origin   : u8     site | param | env | shared | result | esc | cb | msg | top | elem | others | level | below | loan | mark
   kind     : u8     list | dict | record | ref | closure | opaque
   a, b     : u32    site: instruction; result/esc: LabelId + k; refinements: parent CellId + LabelId (the split's chain); param/env/shared/msg: index + PathId; cb: LabelId + PathId
@@ -1756,7 +1760,8 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
   children : Range    into `child_cells`: the trie children in first-sight order (the descendants of a cell the program named)
 intern     : owner-local comparison tree (origin, kind, a, b, c, place) → CellId
-sets       : persistent compressed binary radix sets of (CellId, approx), u32 keys; at most 33 nodes per insertion
+sets       : persistent compressed binary radix sets of (CellId, approx), keyed by the cells' content keys, a leaf
+             holding its key's bucket (§4.1 #1104); at most 33 nodes per insertion
              union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order);
              `Radix`: insert, member, unionWith, subset, intersection (the common keys, approximate when either
              is; one descent, O(min) nodes: the κ read's repeated cells, §2.3)
@@ -1770,6 +1775,9 @@ marks      : MultiArrayList { bits: u4, fields: SetId, deep: u1 }  interned use-
 
 ```
 Shape.Table (per walk)
+  key      : u32    the content key (§4.1 #1104): from kind, place, cells' set and children's or sides' keys; a
+                    knot keyed by one refinement of its cycle when it is tied
+entries    : the memo entries (§4.1 #1104): own cost by category, dependency range; a declaration stamp per entry
   kind     : u8        leaf | node | delta | recast | union | positions
   place    : PlaceId
   cells    : SetId     (delta: the base's)
@@ -1796,6 +1804,8 @@ Live parent links and their transition/query tasks use §4.1 accounting.
 
 ```
 Cond.Table (per walk)
+  key       : u32     the content key (§4.1 #1104) of a condition, and of each κ map node and position: from
+                      kind and the components' keys; κ's `here` maps are keyed by node keys
   kind    : u8      yes | and | atom | shared | lost
   a, b    : u32     and: (CondId, CondId); atom: (atom kind: excl | sep | within | apart | keep | writes, operands)
 groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
@@ -2332,6 +2342,79 @@ references it through its lane; a derived-context request reserves its logical g
 hit. No producer's lane is transferred to another request, and no first producer decides B versus G.
 Unchanged source incidence, not an identifier's lexicographic position, defines the split. Test lane maps
 under alpha-renaming and declaration permutation, in addition to the existing diagnostic-order tests.
+
+**What a declaration is charged does not depend on where it sits in its module** [M 2026-10-28, #1104]. Rule 5
+and the declaration-order guarantee (`ordering_test.zig`) need each declaration's whole account line (baseline,
+growth and every category) to be a function of that declaration and what it reads, not of what the module met
+before it. Two things break that today:
+- **Ids are given in first-come order**, and every persistent set and map is a radix trie keyed by ids, so the
+  same set built in two orders has two shapes, and the same request does different work.
+- **A shared memo charges its miss to whoever meets it first**, and a hit charges almost nothing.
+
+Two rules fix these.
+
+*(1) Every radix key is a content key.* Each interned record of the bottom layers carries a 32-bit **key**
+computed from its content, and every persistent set or map is keyed by keys, never by ids (§3.1–§3.4 say how
+each record gets one). A set's trie then depends only on the keys it holds, so its shape, and the work and
+allocation of `insert`, `unionWith`, `intersection`, `subset`, `mapPut` and `mapUnion`, depend only on content.
+This is the "radix trees on canonical u32 semantic ranks" above, made concrete:
+- **A key is computed once, when the record is interned: O(1) from its components' keys** (a Merkle hash), so
+  O(log n) per intern with the dictionary. There is no renumbering pass, and a key never changes.
+- **Collisions are content-ordered.** A leaf of a trie holds one key and a **bucket**: the records with that key,
+  sorted by the canonical content order (components compared by key, then by content, recursively; a cycle by
+  its refinement rank, below). A bucket is almost always one record. Its order and size depend only on content,
+  so collisions cost what content says. Sharing is unchanged: trie nodes stay hash-consed by
+  `(prefix, mask, left, right)`, and an equal-content set is one canonical trie, so it is one node.
+- **Physical ids stay first-come** and index the tables. They are never a radix key, never compared for order,
+  and never charged by.
+- **What has no acyclic content:** a recursive type's place graph, and a knot `widen` or a block reader ties.
+  These are keyed when they are finished, by one canonical refinement of that graph (Hopcroft, as `Refine` ranks
+  a block's positions): O(g log g) for a graph of g records, once per graph, never per declaration.
+- **Source positions in content are declaration-local.** A `site ι`, a `result` or an instruction's region names
+  its instruction as `(declaration's key, ι − first instruction of the declaration)`, because moving a declaration
+  renumbers the module's instructions. A declaration's key is its name's.
+
+*(2) Each declaration is accounted as if every memo were cold.* A memo **entry** keeps the answer, its **own
+cost** and its **dependencies**:
+- the own cost is what its computation charged, by category, excluding the memo requests it made;
+- the dependencies are the entries it requested, one record each, charged in the own cost.
+
+A declaration's request for an entry charges the request's own memo record. Then, the first time *this
+declaration* reaches the entry, whether by a miss or a hit, it charges the entry's own cost and reaches each
+dependency the same way. A declaration stamp makes this once per declaration: a `stamped.Column` cleared per
+declaration in O(1). A miss computes the entry and charges as it goes; a hit walks the dependencies on an
+explicit stack. Either way a declaration pays exactly what a cold run of it would pay, each shared entry once,
+whichever declaration first built the answer.
+- **CPU follows the account.** A hit's walk visits each new entry once and reads its dependency list. Each list
+  edge is one record of the own cost, and each entry's own cost is at least one record. So the walk's work is at
+  most what it charges, and what it charges is at most a cold run's charge. A hit saves recomputing and
+  allocating the answer, never the account.
+- **Memory:** a dependency list's edges are records its miss charged, so all lists together are at most the
+  records the module's misses charged. They are bounded by the sum of its declarations' accounts: linear, as
+  everything else the walk keeps.
+- **The own cost of an entry that a walk fills alongside others** is the work that entry's own node takes, with
+  its neighbours as dependencies:
+  - `Shape.rank` and `namedSteps`: a node's entry costs one inspection plus one record per child or side read;
+    its dependencies are the children's entries.
+  - `reach` and `arrivals`, computed by SCC: the entry is the strongly connected component, named by its member
+    with the least key. It costs one record per member and per edge, plus the unions of its members' cells and of
+    its successors' sets, taken in key order. Its dependencies are the successor components.
+  - `propagate`'s memo states: a stored clean state costs the work of its walk, excluding the stored states it
+    reached, which are its dependencies.
+  - `kappaMerge`'s pairs: a pair costs its own `here` and link unions; the pairs below are its dependencies.
+  - `Place.extend`, `Cell.symbolic`'s missing ancestors, `Cond.flat`'s and-tree and `ofSet`: the same pattern.
+    An entry is one path step, one cell, one `and` node or one set; its neighbours are dependencies.
+
+  Each entry's own work reads only its own content and its dependencies' answers, so by (1) it is a function of
+  content: order-independent. The walk's visited set and order only decide when it is paid, never how much.
+- **Interning stays as it is:** one record per request, hit or miss, because a record's own work is constant.
+- **Lanes:** an entry's own cost is charged where the request is charged, the requester's lane or growth (§4.1's
+  tables, name-independent credit above). The ceiling proofs count an entry's own work, as they count it now on
+  a miss.
+
+**The test:** `build_test` compares every declaration's whole account line across all six orders of three
+declarations (a shared row, a shared recursive type, and a widened fixpoint among them), and across both orders
+of the two-declaration case it has now. A permutation that changes one record fails.
 
 **R-7.4 cases, proved versus qualified.**
 
