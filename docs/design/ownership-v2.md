@@ -2697,9 +2697,11 @@ aggregate in `propagate`, its `[*]` κ. So is the run's own work at its root, wh
 and its items (#1181): the first item's fit in a spread or append chain, and all of `construct` and
 `prepend` (the base's projection, κ and cells, the put, a not-fresh base's cells put in the root's set) but
 the positions nodes. So is a construction demand's sweep of every operand's reach against the base's cells,
-a product. So is a demand's sweep of the holders of its base past the first (#1201): the
-*direct demand query* row of the table below has one direct holder, and a value spread or stored at k
-sites has k holders, so k demands on it are k × k. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
+a product. So is a demand's sweep past one direct holder at one path (#1201), as the *direct demand query*
+row of the table below has it: the walk of a holder's value for its paths, a second holder, radix node,
+hold path or live refinement, and a deep demand's walk below its base. A value spread or stored at k sites
+has k holders, and one record of k fields that are one list holds it at k paths: k demands on it are
+k × k. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
 a lazy node, `proj`, `reach`, `namedSteps`, `rank`, `dagKappa`, `reachAgg` on a miss) is a growth task too,
 never the asking kernel's lane: an earlier run's DAG read again (`[ …xs, …b ]`) is as large as that run.
 From any other node the walk stays the kernel's, so a call's view and a demand's query keep their own. The
