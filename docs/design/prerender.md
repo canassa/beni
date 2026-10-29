@@ -738,7 +738,7 @@ and the elements its factory refers to (`PieceData.arm_runs`, `refs`) for the pr
 the steps `fresh`, `inject` and `retag`, the normalisation, and goldens of a build's own; the P2a
 fixtures are `Tampered`, `Retagged`, `RetagUnseen` (an element no code refers to: a release build
 takes the page over, a development build mounts fresh), `ArmOpens`, `PieceArm`, `LoneElement` and
-`WrongPlace`, and `emit/prerender/` and `emit/release/prerender/` pin the shape. A page that does
+`WrongPlace`, with `MovedComment` (a comment out of place) and `ExtraElement` (the count), and `emit/prerender/` and `emit/release/prerender/` pin the shape. A page that does
 not prerender ships what it did: no `emit/inline/` or `emit/release/inline/` golden moved, and
 `bench/size.mjs`'s `page` lines are the same bytes.
 

@@ -1,0 +1,39 @@
+-- A comment that names an arm, standing where the arm does not
+-- (docs/design/prerender.md §6.4, amended 2026-10-29): a second `<!--0-->`
+-- before the toggle, as a host could write one. The arm opens where its
+-- comment stands, so every build checks each comment's place, and a page
+-- whose comment is out of place is mounted fresh; a development build warns
+-- first, naming the comment.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <main data-role="app">
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        {if model.open then <p data-role="note">Note</p> else <></>}
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view })
+        "root"

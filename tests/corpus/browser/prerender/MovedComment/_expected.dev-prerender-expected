@@ -1,0 +1,36 @@
+-- inject [data-role=toggle] "<!--0-->"
+-- fresh
+-- load
+console.warn: The prerendered page is not the one this program makes: the comment <!--0--> does not stand where the program's arm 0 does. The program mounts it fresh.
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      ""
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=toggle]
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      <p data-role="note">"Note"</p>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=toggle]
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      ""
+    </main>
+  </div>
+  "\n  "
+</body>
