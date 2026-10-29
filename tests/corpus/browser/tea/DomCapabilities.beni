@@ -93,7 +93,7 @@ view _ =
         <button id="into" onClick={Try ScrollIntoView}>into view</button>
         <button id="viewport" onClick={Try Viewport}>viewport</button>
         <button id="missing" onClick={Try Missing}>missing</button>
-        <input id="field" />
+        <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" />
         <div id="pane" />
     </main>
 
