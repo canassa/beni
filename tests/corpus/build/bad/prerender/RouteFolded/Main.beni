@@ -1,0 +1,17 @@
+-- `/About` and `/about` are one file on a file system that folds case,
+-- as macOS and Windows do: `output_path_collision`, naming both routes
+-- (docs/design/prerender.md §7.4; backend.md §2).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/About", "/about" ]

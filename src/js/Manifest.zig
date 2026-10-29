@@ -113,6 +113,9 @@ pub const Build = struct {
     paths: ?[]const []const u8 = null,
     out: ?[]const u8 = null,
     base: ?[]const u8 = null,
+    /// `"build"."origin"` (`prerender.md` §7.3): the address a prerendered
+    /// site is served at, which an application's routes are `Url`s below.
+    origin: ?[]const u8 = null,
 };
 
 /// `"lists"` (`boundary.md` §5.2): what the chain's code may do with a

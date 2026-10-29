@@ -25,6 +25,7 @@ The project file, in the directory `beni` runs from (or `--root`):
 | `"build"."paths"` | the source paths, what the positional arguments say | none: `build` refuses |
 | `"build"."out"` | the output directory, what `--out` says | `out` |
 | `"build"."base"` | the URL path the output is served under; ends in `/` | `/` |
+| `"build"."origin"` | the address a prerendered site is served at, `https://example.com`: no path; a prerendered `Tea.application` needs it (`prerender.md`) | none |
 | `"html"` | the page shell, a file relative to `beni.json` | the platform's |
 | `"exports"` | the names the entry file exports, a list of ASCII identifier names (letters, digits, `_`, `$`), not `default` or `flush`; read when the platform declares `"exports": "program"`, a warning otherwise | none |
 
@@ -45,6 +46,7 @@ A command-line flag replaces the manifest's value, field by field. `check` alway
 |---|---|
 | `out/_main.mjs` | the entry module; `node out/_main.mjs` runs a `node` program |
 | `out/index.html` | the page shell, for a page platform; it loads `/_main.mjs` |
+| `out/about.html`, `out/blog/index.html` | a prerendered page per route, on `browser-inline` with `Browser.prerender` (`prerender.md`) |
 | `out/<Module>.mjs`, `out/Ui/Card.mjs` | your modules, one file each |
 | `out/_core/`, `out/_platform/` | core and the platform; only what the program reaches |
 | `*.mjs.map` | a source map beside every module, with the beni source inside; `--no-source-maps` drops them |
@@ -62,7 +64,8 @@ A command-line flag replaces the manifest's value, field by field. `check` alway
 `beni serve` builds, watches the sources, and serves `out/` at `http://127.0.0.1:8000/` with live
 reload: the page reloads after each successful build; a failed build keeps the last page and prints
 the errors. `--port=<n>`, `--host=<address>`, `--no-reload`. A path that names no file is answered
-with `index.html`, so a client-side route survives a reload. `beni build --watch` is the same loop
+with `<path>.html` when that file is there (a prerendered page, `prerender.md`), else with
+`index.html`, so a client-side route survives a reload. `beni build --watch` is the same loop
 without the server.
 
 Sources: `docs/design/frontend.md` §1, §10; `docs/design/backend.md` §2.

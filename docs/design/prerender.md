@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slices P1 and P2a built** (2026-10-29, #1165, #1178, §11 *As built — P1*, *As built — P2a*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1, P2a and P3 built** (2026-10-29, #1165, #1178, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P3*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -300,6 +300,14 @@ production does; a build that fails at prerender is a failed build, and `serve` 
 one (`frontend.md` §10.4). Slices P1 and P2, before the route list, prerender only `index.html`, and
 are switched on by a hidden, test-only flag until P3 gives the program its own way to say so (§11).
 
+*Amended 2026-10-29, as built in P3 (#1194).* A program that does not call `Browser.prerender`
+does not prerender, whatever its constructor: a `Tea.sandbox` that wants its one page prerendered
+says `Browser.prerender (Tea.sandbox app) [ "/" ]`. The build reads `main`'s body when the program
+is checked, before anything is emitted, so it knows whether to build the prerender tree. The
+hidden `--prerender` is gone; a hidden, test-only `--no-prerender` takes its place for the corpus,
+which builds each prerendered project as if `main` did not say so and compares the two pages'
+transcripts (`tests/corpus/README.md`, *Prerendered pages*). A `--library` build never prerenders.
+
 ### 5.3 The page shell gets `{{view}}`
 
 The shell is the chain's or the app's `"html"` (`backend.md` §2, *The page shell*). It gets a third
@@ -559,6 +567,18 @@ The list is a beni value, so blog slugs come from beni data; data the build read
 `browser-tea` gets the same function, which returns its program unchanged, so a prerendered program
 still builds there as a client-rendered one.
 
+*Amended 2026-10-29, as built in P3 (#1194; `boundary.md` §9.4.6, version 1.22).* "Where it is
+called" is `main`'s spine: `main`'s body, or the first argument, again and again, of a
+`Browser.mountAt` or a `Browser.prerender` there. A call anywhere else would say nothing the build
+acts on, and is `program_shape`; so is a second call on the spine. In the client tree the call is
+compiled as its program and reachability follows neither `Browser.prerender` nor the list, so a
+client page ships neither, nor a declaration only the list names (a blog's posts, when the `view`
+does not show them). In the prerender tree the call runs as written: `Browser.prerender` is beni
+over `Js` that gives `[render, routes]`, the routes copied into an array, and the entry exports
+both. In that tree a `Browser.mountAt` around the program is compiled away whatever its element:
+the render function mounts nowhere. `browser-tea`'s identity is in `browser`'s `Browser`, which
+`browser-tea` re-exports, so `browser` has it too.
+
 ### 7.3 What `init` receives
 
 **The route, from the page, never from `location`.** The build gives `init` the `Url` of the route;
@@ -593,6 +613,19 @@ A prerendering build of an `application` with no `"build"."origin"` is `prerende
 its query; a program that reads the query reads it in `onUrlChange`. The owner decided it (§10,
 question 2, 2026-10-29).
 
+*Amended 2026-10-29, as built in P3 (#1194).* The `Url` is core's `Url.fromString` of the origin,
+the base less its last `/`, and the route (`Inline.routeUrl`), in the build and in the browser
+alike. The hydrating client reads the route from the page's `[data-beni]` before `init` runs
+(`Inline.pageUrl`), so a page whose unit is then mounted fresh, because the host changed it
+(§6.4), still starts from its route. Once `onUrlChange` listens — after the first pass, before
+`init`'s command — the mount replaces a file-name address and then, when `Url.fromString` of the
+address is not the route's `Url`, dispatches `Browser.Navigation`'s own announcement,
+`"beni:navigate"`, which `onUrlChange`'s listener answers with the address, as it answers a push
+(`Inline.arrived`). An address that is not a `Url` — a page opened from a file — is announced too
+and sends nothing, as `onUrlChange` sends nothing for one: the page shows its route, and does not
+stop. `"build"."origin"` is `http://` or `https://`, a host and at most a port (`frontend.md`
+§10.1); any other value fails the build with exit 2.
+
 ### 7.4 From a route to a file
 
 A route is a path below the base: `/`, `/about`, `/blog/my-blog`, `/blog/`.
@@ -626,6 +659,13 @@ shell with no view, which mounts fresh (§6.1) and serves a host's single-page f
 Non-ASCII routes (`/blog/café`) are a limit, lifted only with a Unicode case folding for rule 2:
 APFS and NTFS fold more than ASCII, so the check would miss a collision there.
 
+*Amended 2026-10-29, as built in P3 (#1194).* The routes are checked after Node has run, from its
+first record, the list itself: a list that holds a route the rules refuse is `invalid_route` for
+each such route whatever the renders did, since a render of a route that is not a path may throw
+for that reason alone. Both diagnostics are at `main`. `output_path_collision` also covers a page
+whose file is, under the folding, a directory of another page or of a file the build writes —
+`/a` and `/a.html/`, or `/index.html/` beside the shell — which one file system could not hold.
+
 ### 7.5 A title per page
 
 A page is found by its `<title>`. `Tea.document`'s and `Tea.application`'s `view` gives a `Document`
@@ -634,6 +674,12 @@ prerendering build replaces with the route's title, escaped, and a client build 
 platform's own shell keeps its `<title>beni</title>`; an app that wants a title per page writes
 `<title>{{title}}</title>` in its shell. P3 builds it with `Tea.document`. Other head content (a description, an Open Graph image) is a later
 amendment, once a program can say it.
+
+*Amended 2026-10-29, as built in P3 (#1194).* "Escaped" is §4.1's rule for a text: `&`, `<` and a
+carriage return. The render function of a `document` or an `application` gives `[html, title]`,
+and the record carries the title. A shell's `{{title}}` and `{{view}}` are replaced in one pass, so
+a title that says `{{view}}` stays text; a page with no title — a `sandbox`'s, or the shell with
+no view — writes nothing there.
 
 ## 8. Build-time data (later)
 

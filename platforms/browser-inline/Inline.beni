@@ -217,6 +217,71 @@ address ⊤ =
                 )
 
 
+--| `(origin, route)`: the `Url` of a route of a prerendered page — the
+--| project's origin and base, `origin`, with the route after it, and no
+--| query or fragment (`prerender.md` §7.3). The build and the browser make
+--| it the same way, so their `init`s are handed the same value. A route the
+--| build checked always makes one; anything else is a defect.
+pub routeUrl : String, String → Url
+routeUrl origin route =
+    case Url.fromString (origin ++ route) of
+        Just url →
+            url
+
+        Nothing →
+            Js.throw
+                (Js.construct (Js.global "Error")
+                    [ Js.from "a prerendered page's route ${route} is not a URL below ${origin}" ]
+                )
+
+
+--| `(origin)`: the `Url` a hydrating application's `init` is handed: the
+--| route the prerendered page carries in its `data-beni`, and on a page
+--| with no prerendered view, the page's own address (`prerender.md` §7.3).
+pub pageUrl : String → Url
+pageUrl origin =
+    unit = Js.call (Js.global "document") "querySelector" [ Js.from "[data-beni]" ]
+    if Js.isNull unit then
+        address ⊤
+    else
+        routeUrl origin (Js.to (Js.call unit "getAttribute" [ Js.from "data-beni" ]))
+
+
+--| `(url)`: after the first render of a hydrating application, the page's
+--| address, when it is not `url`, the one `init` was handed: announced, so
+--| `onUrlChange` sends it as a message (`prerender.md` §7.3). An address
+--| that is the route's file name — the route with `.html` after it, or a
+--| route ending in `/` with `index.html` after it — is first replaced by
+--| the route, its query and fragment kept.
+pub arrived : Url → ⊤
+arrived url =
+    location = Js.global "location"
+    path : String
+    path = Js.to (Js.get location "pathname")
+    file = String.endsWith url.path "/" && path == url.path ++ "index.html"
+    if file || path == url.path ++ ".html" then
+        search : String
+        search = Js.to (Js.get location "search")
+        hash : String
+        hash = Js.to (Js.get location "hash")
+        _ =
+            Js.call (Js.global "history") "replaceState"
+                [ Js.get (Js.global "history") "state"
+                , Js.from ""
+                , Js.from (url.path ++ search ++ hash)
+                ]
+        ⊤
+    -- An address that is not a `Url` (a page opened from a file) is not
+    -- sent: `onUrlChange` sends nothing for one either.
+    if Url.fromString (Js.to (Js.get location "href")) ≠ Just url then
+        -- `Browser.Navigation`'s announcement, which its `onUrlChange`
+        -- listens to and answers with the address.
+        _ =
+            Js.call (Js.global "window") "dispatchEvent"
+                [ Js.construct (Js.global "Event") [ Js.from "beni:navigate" ] ]
+        ⊤
+
+
 --| What changes the page's address: `Browser.Navigation.Key`, one per
 --| page. It is declared here, where the runtime hands it to an
 --| application's `init`, so that `Browser.Navigation` may import this

@@ -286,7 +286,7 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 The same `Tea` programs as `browser-tea`, `document` and `application` included, so one source
 builds on both. The program is compiled, not run: each constructor is recognised where it is called,
 and the page ships only what it reaches. Lists are edited in place here, so the ownership checker's
-errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`.
+errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`. Pages: `prerender.md`.
 
 ## `html`
 

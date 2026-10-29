@@ -486,6 +486,13 @@ pub const Code = enum {
     prerender_impure,
     prerender_failed,
     prerender_needs_node,
+    /// Appended on 2026-10-29 with routes (`prerender.md` §7, §9, slice
+    /// P3): a prerendered `Tea.application` in a project whose `beni.json`
+    /// names no `"build"."origin"`, against that file; and a route that
+    /// breaks §7.4's rules, at `main`, naming it and the rule. `build`'s,
+    /// both errors.
+    prerender_needs_origin,
+    invalid_route,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -676,6 +683,8 @@ pub fn title(code: Code) []const u8 {
         .prerender_impure => "IMPURE PRERENDERED PROGRAM",
         .prerender_failed => "PRERENDER FAILED",
         .prerender_needs_node => "PRERENDER NEEDS NODE",
+        .prerender_needs_origin => "PRERENDER NEEDS AN ORIGIN",
+        .invalid_route => "INVALID ROUTE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

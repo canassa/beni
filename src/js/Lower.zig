@@ -1376,6 +1376,10 @@ pub const Lowerer = struct {
     /// Version 1.14 (`Lowering.places`): the placement calls compiled as
     /// their first argument alone, the program call they place, sorted.
     placed_calls: []const u32 = &.{},
+    /// Version 1.22 (`prerender.md` §7.2): the calls of the lowering's
+    /// `prerender` placement in this module, sorted, and whether each is on
+    /// `main`'s spine — where one says the program prerenders.
+    prerender_calls: []const PrerenderCall = &.{},
     /// `schema.md` §6: the callees of the module's validator runs
     /// (`SchemaValid`), which are `Schema.readValid`.
     valid_sites: SchemaValid.Sites = .{},
@@ -10348,6 +10352,8 @@ pub const Lowerer = struct {
         };
         // Version 1.14: a placement the program's mount already made.
         if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
+        // Version 1.22: `Browser.prerender` (`prerender.md` §7.2).
+        if (l.prerender_calls.len != 0) if (try l.prerenderCall(out, inst, arg_insts)) |n| return n;
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -13887,7 +13893,10 @@ pub const Lowerer = struct {
             try l.findConsumed();
             if (lowering.places) try l.findPlaced();
         }
-        if (lowering.placements.len != 0) try l.findPlacedTwice();
+        if (lowering.placements.len != 0) {
+            try l.findPrerenders();
+            try l.findPlacedTwice();
+        }
     }
 
     /// The call at `inst` of constructor `ci`, with its record's fields
@@ -14091,9 +14100,16 @@ pub const Lowerer = struct {
     /// second is a string literal. The hook is handed the literal
     /// (`Program.placed`) and the placement call is compiled as the
     /// program call alone.
+    /// Version 1.22: a `prerender` placement's call is seen through to its
+    /// first argument (`prerender.md` §7.2), where a program call or a
+    /// `first` placement is placed as if it stood alone. In the prerender
+    /// tree, where no program mounts, a `first` placement around a program
+    /// call is compiled away whatever its element: the program's value is
+    /// its render function.
     fn findPlaced(l: *Lowerer) !void {
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
+        const tree = l.in.markup.?.build.prerender == .tree;
         var placed: std.ArrayList(u32) = .empty;
         for (l.bir.decls, 0..) |d, di| {
             if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
@@ -14103,10 +14119,12 @@ pub const Lowerer = struct {
                 const placement = l.placementOf(@fromBackingInt(@intCast(data[at].lhs))) orelse continue;
                 if (placement.places != .first) continue;
                 const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data[at].rhs))), Inst.Index);
-                if (args.len != 2 or l.bir.instTag(args[1]) != .string) continue;
-                const pc = l.programCallAt(args[0]) orelse continue;
+                if (args.len != 2) continue;
+                const literal = l.bir.instTag(args[1]) == .string;
+                if (!literal and !tree) continue;
+                const pc = l.programCallAt(l.throughPrerender(args[0])) orelse continue;
                 if (pc.refused or pc.placed != .unknown) continue;
-                pc.placed = .{ .at = l.bir.bytes(args[1]) };
+                if (literal) pc.placed = .{ .at = l.bir.bytes(args[1]) };
                 try placed.append(l.scratch, @intCast(at));
             }
         }
@@ -14114,10 +14132,135 @@ pub const Lowerer = struct {
         // `main = Tea.sandbox { … }`: the entry file's `run` mounts it at
         // `document.body`.
         if (l.entryDecl()) |entry| if (l.bir.decls[entry].body.unwrap()) |body| {
-            if (l.programCallAt(body)) |pc| if (!pc.refused and pc.placed == .unknown) {
+            if (l.programCallAt(l.throughPrerender(body))) |pc| if (!pc.refused and pc.placed == .unknown) {
                 pc.placed = .body;
             };
         };
+    }
+
+    /// A call of a `prerender` placement in this module (`prerender.md`
+    /// §7.2), and whether it is on `main`'s spine.
+    pub const PrerenderCall = struct { inst: u32, spine: bool, twice: bool = false };
+
+    /// `inst`, or, while it is a call of a `prerender` placement, its first
+    /// argument.
+    fn throughPrerender(l: *Lowerer, inst: Inst.Index) Inst.Index {
+        var at = inst;
+        var depth: u32 = 0;
+        while (depth < 64) : (depth += 1) {
+            if (l.bir.instTag(at) != .call) return at;
+            const d = l.bir.instData(at);
+            const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return at;
+            if (placement.places != .prerender) return at;
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+            if (args.len != 2) return at;
+            at = args[0];
+        }
+        return at;
+    }
+
+    /// Version 1.22: every call of a `prerender` placement, sorted, each
+    /// marked when it is on `main`'s spine: `main`'s body, or the first
+    /// argument, again and again, of a `first` or `prerender` placement
+    /// there (`prerender.md` §7.2).
+    fn findPrerenders(l: *Lowerer) !void {
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        var calls: std.ArrayList(PrerenderCall) = .empty;
+        for (l.bir.decls, 0..) |d, di| {
+            if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .call) continue;
+                const placement = l.placementOf(@fromBackingInt(@intCast(data[at].lhs))) orelse continue;
+                if (placement.places != .prerender) continue;
+                try calls.append(l.scratch, .{ .inst = @intCast(at), .spine = false });
+            }
+        }
+        if (calls.items.len == 0) return;
+        std.mem.sort(PrerenderCall, calls.items, {}, struct {
+            fn less(_: void, a: PrerenderCall, b: PrerenderCall) bool {
+                return a.inst < b.inst;
+            }
+        }.less);
+        l.prerender_calls = calls.items;
+        const entry = l.entryDecl() orelse return;
+        var at = l.bir.decls[entry].body.unwrap() orelse return;
+        var depth: u32 = 0;
+        var seen = false;
+        while (depth < 64 and l.bir.instTag(at) == .call) : (depth += 1) {
+            const d = l.bir.instData(at);
+            const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return;
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+            switch (placement.places) {
+                .first => {},
+                .prerender => if (l.prerenderCallAt(at)) |pc| {
+                    pc.spine = true;
+                    pc.twice = seen;
+                    seen = true;
+                },
+                else => return,
+            }
+            if (args.len == 0) return;
+            at = args[0];
+        }
+    }
+
+    /// The `prerender` placement's call at `inst`, if it is one.
+    fn prerenderCallAt(l: *Lowerer, inst: Inst.Index) ?*PrerenderCall {
+        const calls = @constCast(l.prerender_calls);
+        for (calls) |*c| if (c.inst == inst.int()) return c;
+        return null;
+    }
+
+    /// Version 1.22 (`prerender.md` §7.2): a `prerender` placement's call,
+    /// compiled. One on `main`'s spine is compiled as its first argument in
+    /// every tree but the prerender tree, where it is called as written —
+    /// the list it is handed checked pure first; any other, or a second on
+    /// the spine, is refused: it would say nothing the build could act on.
+    /// Null: compile the call as written.
+    fn prerenderCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index) Allocator.Error!?Node.Index {
+        const pc = l.prerenderCallAt(inst) orelse return null;
+        if (!pc.spine) {
+            try l.report(.program_shape, inst,
+                \\`{s}` says which program the build prerenders, so it is written where `main` says
+                \\what the page's program is: `main = Browser.prerender (Tea.sandbox app) routes`, or
+                \\inside a `Browser.mountAt` there (`docs/design/prerender.md` §7.2). Here it is
+                \\somewhere else, where the build would not see it.
+            , .{"Browser.prerender"});
+            return null;
+        }
+        // A second one on the spine, below the first.
+        if (pc.twice) {
+            try l.report(.program_shape, inst,
+                \\This program is prerendered twice: `{s}` is written around a program that already
+                \\has one. List every route once, in one call (`docs/design/prerender.md` §7.2).
+            , .{"Browser.prerender"});
+            return null;
+        }
+        if (l.in.markup.?.build.prerender != .tree) return try l.expr(out, args[0]);
+        // The route list must be pure (`prerender.md` §3.1), `Debug`'s
+        // effect aside.
+        const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
+        @memset(verdicts, .unknown);
+        switch (try l.effectOf(args[1], verdicts)) {
+            .none, .debug => {},
+            .unread => |at| try l.report(.prerender_impure, at,
+                \\This program prerenders, so its route list must be pure: the build computes it
+                \\once and writes a page for each route (`docs/design/prerender.md` §3.1). This is
+                \\another module's value, and the build cannot read whether it is computed purely:
+                \\its code is not this module's. A limit of the build (#1170): write the list, or
+                \\the value it is made from, in this module.
+            , .{}),
+            .site => |at| try l.report(.prerender_impure, at,
+                \\This program prerenders, so its route list must be pure, and this may have an
+                \\effect: it may read or change something outside the program. The build computes
+                \\the routes once and writes a page for each, so a read of the host, the clock or
+                \\randomness would make the site depend on when it was built
+                \\(`docs/design/prerender.md` §3.1). Write the list from values the program holds.
+            , .{}),
+        }
+        return null;
     }
 
     /// The placement call at `inst` compiled as its first argument, if it
@@ -14152,7 +14295,7 @@ pub const Lowerer = struct {
                     .list => if (args.len == 1 and l.bir.instTag(args[0]) == .list) {
                         for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |item| try l.placedIn(item, seen, depth + 1);
                     },
-                    .first => if (args.len != 0) try l.placedIn(args[0], seen, depth + 1),
+                    .first, .prerender => if (args.len != 0) try l.placedIn(args[0], seen, depth + 1),
                     else => {},
                 }
             },

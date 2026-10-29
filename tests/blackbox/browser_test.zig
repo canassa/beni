@@ -674,7 +674,7 @@ test "a public library markup helper receives the markup-value diagnostic" {
 }
 
 test "a prerendering build with no node on PATH is refused, and writes nothing" {
-    // `docs/design/prerender.md` §5.1: until the engine is in `beni`, the
+    // `docs/design/prerender.md` §5.1: the
     // prerender tree runs under the `node` on `PATH`; the harness gives the
     // compiler an empty environment, so there is none. Zig's own search
     // would fall back to `/usr/local/bin:/bin:/usr/bin` (`Io.Threaded`'s
@@ -692,6 +692,7 @@ fn expectNeedsNode(empty_dir_on_path: bool) !void {
     try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
     try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
     try w.write("Main.beni",
+        \\import Browser
         \\import Html exposing (Html)
         \\import Tea
         \\
@@ -701,7 +702,7 @@ fn expectNeedsNode(empty_dir_on_path: bool) !void {
         \\
         \\
         \\main : Tea.Program
-        \\main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
+        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]
         \\
     );
     var path: ?[]const u8 = null;
@@ -710,14 +711,14 @@ fn expectNeedsNode(empty_dir_on_path: bool) !void {
         try w.createDir("bin");
         path = try w.projectSubPath(testing.allocator, "bin");
     }
-    const r = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .path = path });
+    const r = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .path = path });
     try expectExit(1, r);
     const diagnostic = @import("diagnostic");
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
         .code = .prerender_needs_node,
         .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 10, .col = 1 }, .end = .{ .line = 10, .col = 5 } },
+        .span = .{ .file = "Main.beni", .start = .{ .line = 11, .col = 1 }, .end = .{ .line = 11, .col = 5 } },
         .title = "PRERENDER NEEDS NODE",
         .message = "This program prerenders, and the build runs its prerender tree with Node, but\nthere is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`\n(`docs/design/prerender.md` §5.1).",
     }}), r.diagnostics);
@@ -736,6 +737,7 @@ test "a Debug.log in a prerendered view is allowed, and what Node wrote reaches 
     try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
     try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
     try w.write("Main.beni",
+        \\import Browser
         \\import Html exposing (Html)
         \\import Tea
         \\
@@ -749,15 +751,15 @@ test "a Debug.log in a prerendered view is allowed, and what Node wrote reaches 
         \\
         \\
         \\main : Tea.Program
-        \\main = Tea.sandbox { init = λ⊤ → 7, update = λn _ → n, view = view }
+        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → 7, update = λn _ → n, view = view }) [ "/" ]
         \\
     );
     const path = try w.nodePath();
-    const text = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true, .path = path });
+    const text = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true, .path = path });
     try expectExit(0, text);
     try testing.expectEqualStrings("view: 7\nshown: 7\n", text.stderr);
-    try testing.expectEqualStrings("<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><p data-beni>7</p></body>\n", try w.read("out/index.html"));
-    const json = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=json", "Main.beni" }, .{ .path = path });
+    try testing.expectEqualStrings("<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><p data-beni=\"/\">7</p></body>\n", try w.read("out/index.html"));
+    const json = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=json", "Main.beni" }, .{ .path = path });
     try expectExit(0, json);
     try testing.expectEqualStrings("", json.stderr);
     try testing.expect(!w.exists(".out.prerender") and !w.exists(".json.prerender"));

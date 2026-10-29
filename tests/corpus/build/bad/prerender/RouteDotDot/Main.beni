@@ -1,0 +1,17 @@
+-- A segment `..` (or `.`) would let a route name a file outside its
+-- directory, or outside `--out`: `invalid_route` (docs/design/prerender.md
+-- §7.4), and nothing is written.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/", "/blog/../../escape" ]

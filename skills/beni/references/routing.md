@@ -80,5 +80,7 @@ main =
 - A refusal message must not wait: give a constructor, as above.
 - There is no `eachUrlRequest` or `eachUrlChange`. They need a fiber.
 - A link's `href` must be a literal. A `javascript:` URL is written as an empty `href`.
+- `Browser.prerender` writes a page per route. A prerendered `application`'s `init` gets the route,
+  not the address; the address comes to `onUrlChange` (`prerender.md`).
 
 Sources: `docs/design/boundary.md` §9.8.13, §9.8.17; `docs/design/browser-inline.md` §10.

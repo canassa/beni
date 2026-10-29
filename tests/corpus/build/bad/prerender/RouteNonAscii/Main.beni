@@ -1,0 +1,17 @@
+-- A route outside ASCII is a limit: APFS and NTFS fold more than ASCII,
+-- so rule 2's check could miss a collision (docs/design/prerender.md
+-- §7.4). `invalid_route`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/", "/blog/café" ]

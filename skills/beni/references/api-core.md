@@ -686,7 +686,7 @@ module Url
   alias Url
     Url
   value fromString : String → Maybe Url
-  value percentDecode : String → Maybe String  -- impure
+  value percentDecode : String → Maybe String
   value percentEncode : String → String  -- impure
   value toString : Url → String
 module Url.Builder
@@ -705,9 +705,9 @@ module Url.Builder
   value toQuery : List QueryParameter → String
 module Url.Parser
   opaque type Parser a b
-  value custom : String, (String → Maybe a) → Parser (a → b) b  -- impure
+  value custom : String, (String → Maybe a) → Parser (a → b) b
   value fragment : (Maybe String → fragment) → Parser (fragment → a) a
-  value int : Parser (Int → a) a  -- impure
+  value int : Parser (Int → a) a
   value map : (Parser a b), a → Parser (b → c) c
   value map2 : (Parser (a → b → r) r), (a, b → r) → Parser (r → c) c
   value map3 : (Parser (a → b → d → r) r), (a, b, d → r) → Parser (r → c) c
@@ -717,12 +717,12 @@ module Url.Parser
   value map7 : (Parser (a → b → d → e → g → h → i → r) r), (a, b, d, e, g, h, i → r) → Parser (r → c) c
   value map8 : (Parser (a → b → d → e → g → h → i → j → r) r), (a, b, d, e, g, h, i, j → r) → Parser (r → c) c
   value oneOf : List (Parser a b) → Parser a b
-  value parse : (Parser (a → a) a), Url → Maybe a  -- impure
+  value parse : (Parser (a → a) a), Url → Maybe a
   value query : (QueryParser query) → Parser (query → a) a
   value questionMark : (Parser a (query → b)), (QueryParser query) → Parser a b
-  value s : String → Parser a a  -- impure
+  value s : String → Parser a a
   value slash : (Parser a b), (Parser b c) → Parser a c
-  value string : Parser (String → a) a  -- impure
+  value string : Parser (String → a) a
   value top : Parser a a
 module Url.Parser.Internal
   type QueryParser a

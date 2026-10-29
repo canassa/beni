@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 21 },
+    .targets = .{ .major = 1, .minor = 22 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -108,6 +108,12 @@ pub const lowering: m.Lowering = .{
         // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
         // a document's title written (§10).
         .{ .name = "address", .arity = 1 },
+        // `(address, route)` the `Url` of a route, `(address)` the one a
+        // hydrating application's `init` is handed, and `(url)` the page's
+        // own address sent after the first render (`prerender.md` §7.3).
+        .{ .name = "routeUrl", .arity = 2 },
+        .{ .name = "pageUrl", .arity = 1 },
+        .{ .name = "arrived", .arity = 1 },
         .{ .name = "navigationKey", .arity = 1 },
         .{ .name = "title", .arity = 1 },
     },
@@ -120,12 +126,14 @@ pub const lowering: m.Lowering = .{
         // `browser-inline.md` §10: an element whose view is a document,
         // and one that owns the page's address too.
         .{ .module = "Tea", .name = "document" },
-        .{ .module = "Tea", .name = "application" },
+        .{ .module = "Tea", .name = "application", .routed = true },
     },
     .program = program,
     .piece = piece,
     .placements = &.{
         .{ .module = "Browser", .name = "mountAt", .places = .first },
+        // `prerender.md` §7.2: the program prerendered at each route.
+        .{ .module = "Browser", .name = "prerender", .places = .prerender },
     },
     .places = true,
     .constructs = true,
@@ -210,14 +218,6 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     // or the build is refused, then the render function in the mount's
     // place.
     if (cx.build.prerender == .tree) {
-        // A document's title and an application's route are slice P3's
-        // (`prerender.md` §7, §11): until then neither prerenders.
-        if (p.constructor >= 2) return cx.programReport(.call, .not_implemented,
-            \\A limit of the compiler: `browser-inline` does not prerender a `Tea.document` or a
-            \\`Tea.application` yet: their title and their route are written per page, which routes
-            \\bring (`docs/design/prerender.md` §7; `docs/design/browser-inline.md` §5, class 1).
-            \\Prerender a `Tea.sandbox` or a `Tea.element`, or build this program without prerendering.
-        );
         try cx.programPure(.init);
         try cx.programPure(.view);
     }
@@ -458,7 +458,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         const base = try cx.fresh("arm");
         try cx.pieceViewEnter(rblk, try pg.viewArgs());
         var rn: Render = .{ .pg = pg, .out = try cx.fresh("html"), .base = base };
-        try rn.unit(rblk);
+        try rn.unit(rblk, null);
         cx.programViewLeave();
         const render_params = try cx.arena.alloc(m.Name, 1 + holders.len);
         render_params[0] = base;
@@ -808,6 +808,10 @@ const Page = struct {
     /// its descendant of place `n` at `n + 1`, and every piece's table is
     /// cut from it.
     hydrating: bool = false,
+    /// A hydrating application's: the `Url` its `init` was handed, which
+    /// the mount compares the page's address with once `onUrlChange`
+    /// listens (`prerender.md` §7.3).
+    route_url: ?m.Name = null,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
     /// Per key, the buckets of the stateful controls its events are on.
@@ -1309,13 +1313,20 @@ const Page = struct {
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         // An application's `init` is handed the page's address and key
         // (§10), read inside the mount's guard.
-        const init = if (pg.p.constructor == 3)
-            try cx.programStart(body, &.{
-                try js.call(try js.name(try cx.runtime("address")), &.{}),
+        // A hydrating one's is the route its page carries, never `location`
+        // (`prerender.md` §7.3).
+        const init = if (pg.p.constructor == 3) blk: {
+            const address = if (pg.hydrating) a: {
+                const u = try cx.fresh("url");
+                try js.constant(body, u, try js.call(try js.name(try cx.runtime("pageUrl")), &.{try js.string(cx.build.address)}));
+                pg.route_url = u;
+                break :a try js.name(u);
+            } else try js.call(try js.name(try cx.runtime("address")), &.{});
+            break :blk try cx.programStart(body, &.{
+                address,
                 try js.call(try js.name(try cx.runtime("navigationKey")), &.{}),
-            })
-        else
-            try cx.programInit(body);
+            });
+        } else try cx.programInit(body);
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
         const titled = pg.p.constructor >= 2;
@@ -1699,6 +1710,10 @@ const Page = struct {
             const start = try cx.programSubscriptionStart(body, @intCast(i), send);
             try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{start}));
         }
+        // A hydrating application's own address, once `onUrlChange` listens:
+        // sent when it is not the route `init` was handed (`prerender.md`
+        // §7.3).
+        if (pg.route_url) |u| try js.expression(body, try js.call(try js.name(try cx.runtime("arrived")), &.{try js.name(u)}));
         // `init`'s command, after the mount's writes.
         if (element_ and cx.programCommand(null) == .runs) {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
@@ -1753,16 +1768,28 @@ const Page = struct {
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         const body = try js.block();
         const route = try cx.fresh("route");
-        const init = try cx.programInit(body);
-        const first_model = if (pg.p.constructor == 1) try js.member(init, "a") else init;
+        // An application's `init` is handed its route's `Url`, made from the
+        // project's origin and base (`prerender.md` §7.3), and the key.
+        const init = if (pg.p.constructor == 3)
+            try cx.programStart(body, &.{
+                try js.call(try js.name(try cx.runtime("routeUrl")), &.{ try js.string(cx.build.address), try js.name(route) }),
+                try js.call(try js.name(try cx.runtime("navigationKey")), &.{}),
+            })
+        else
+            try cx.programInit(body);
+        const first_model = if (pg.p.constructor >= 1) try js.member(init, "a") else init;
         pg.model = try cx.fresh("model");
         if (cx.programModelCell()) {
             pg.cell = try cx.fresh("cell");
             try js.constant(body, pg.cell.?, try js.array(&.{first_model}));
         } else try js.let(body, pg.model, first_model);
+        // A document's page has its title too (`prerender.md` §7.5), and the
+        // render function gives `[html, title]`.
+        const title: ?m.Name = if (pg.p.constructor >= 2) try cx.fresh("title") else null;
+        if (title) |t| try js.constant(body, t, try cx.programField(body, .title, try pg.modelRef()));
         try cx.programViewEnter(body, try pg.modelRef());
-        var r: Render = .{ .pg = pg, .out = try cx.fresh("html") };
-        try r.unit(body);
+        var r: Render = .{ .pg = pg, .out = try cx.fresh("html"), .route = route };
+        try r.unit(body, title);
         cx.programViewLeave();
         return js.arrow(&.{route}, body);
     }
@@ -3007,6 +3034,9 @@ const Render = struct {
     /// The value of the `select` whose options are being written, and the
     /// flag that one of them is marked selected by it.
     select: ?Select = null,
+    /// The program site's: the route the unit is rendered for, written as
+    /// its top element's `data-beni` (`prerender.md` §4.2). Null in a piece.
+    route: ?m.Name = null,
 
     const Select = struct { value: m.Name, marked: m.Name };
 
@@ -3044,14 +3074,15 @@ const Render = struct {
     }
 
     /// The unit into `blk`: the string, every node of the view, and the
-    /// string returned.
-    fn unit(r: *Render, blk: m.Block) m.Error!void {
+    /// string returned — with the page's `title` after it, `[html, title]`,
+    /// when there is one.
+    fn unit(r: *Render, blk: m.Block, title: ?m.Name) m.Error!void {
         const js_ = r.js();
         try js_.let(blk, r.out, try js_.string(""));
         try r.enter(blk, 0);
         try r.nodes(blk, r.pg.top_nodes, 0);
         try r.flush(blk);
-        try js_.@"return"(blk, try js_.name(r.out));
+        try js_.@"return"(blk, if (title) |t| try js_.array(&.{ try js_.name(r.out), try js_.name(t) }) else try js_.name(r.out));
     }
 
     /// Context `c` entered: the `let`s of its root that anything written in
@@ -3280,7 +3311,10 @@ const Render = struct {
             const test_ = try js_.binary(.logical_and, try js_.unary(.not, try js_.name(s.marked)), try js_.binary(.strict_eq, try js_.name(s.value), try js_.string(own)));
             try js_.@"if"(blk, test_, yes, null);
         };
-        if (n.target == null and c == 0 and !pg.piece) try r.text(" data-beni");
+        // The unit's top element carries the route it was rendered for,
+        // which the hydrating client hands `init` (`prerender.md` §4.2,
+        // §7.3).
+        if (n.target == null and c == 0 and !pg.piece) try r.quoted(blk, "data-beni", try js_.name(r.route.?));
         try r.text(">");
         if (n.void) return;
         const pre = std.mem.eql(u8, n.name, "pre") or std.mem.eql(u8, n.name, "textarea") or std.mem.eql(u8, n.name, "listing");

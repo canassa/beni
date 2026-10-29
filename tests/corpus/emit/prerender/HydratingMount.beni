@@ -6,6 +6,7 @@
 -- and the tag of every element, which a development build checks all of;
 -- every element is then `E[n + 1]`, the top element `E[0]`, though the
 -- page's code refers to one element alone.
+import Browser
 import Html exposing (Html)
 import Tea
 
@@ -34,4 +35,6 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view }
+main =
+    Browser.prerender (Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view })
+        [ "/" ]

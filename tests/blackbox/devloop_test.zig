@@ -374,6 +374,68 @@ test "serve answers from the output directory, falls back to index.html, and cou
     try testing.expect(std.mem.indexOf(u8, try w.read("out/index.html"), "live reload") == null);
 }
 
+test "serve prerenders every build, and answers /about with about.html" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §5.2: `serve` prerenders after each build, so a page is
+    // taken over in development as in production; §7.4 and `frontend.md`
+    // §10.4: a path that names no file is answered with `<path>.html`, the
+    // page a static host serves for the route.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    const source =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{n}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → START, update = λn _ → n, view = view }) [ "/", "/about" ]
+        \\
+    ;
+    const arena = w.arena.allocator();
+    try w.write("src/Main.beni", try std.mem.replaceOwned(u8, arena, source, "START", "1"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var live = try Live.startWith(&w, &.{ "serve", "--port=0", "--poll-interval=10", "--no-reload", "--platform=browser-inline", "src" }, try w.nodePath());
+    defer live.deinit();
+    try live.waitFor("beni: built in ", 1);
+    const port = try live.port();
+    const root = try get(&w, port, "/");
+    const about = try get(&w, port, "/about");
+    const about_file = try get(&w, port, "/about.html");
+    const missing = try get(&w, port, "/missing");
+    try w.write("src/Main.beni", try std.mem.replaceOwned(u8, arena, source, "START", "2"));
+    try live.waitFor("beni: built in ", 2);
+    const rebuilt = try get(&w, port, "/about");
+    const term = try live.stop();
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(std.process.Child.Term{ .exited = 0 }, term);
+    const page = "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><p data-beni=\"{s}\">{d}</p></body>\n";
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "/", 1 }), root.body);
+    try testing.expectEqual(@as(u16, 200), about.status);
+    try testing.expectEqualStrings("text/html; charset=utf-8", about.content_type);
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "/about", 1 }), about.body);
+    try testing.expectEqualStrings(about.body, about_file.body);
+    // A route the list does not hold is the single-page fallback.
+    try testing.expectEqualStrings(root.body, missing.body);
+    // The rebuild prerendered again.
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "/about", 2 }), rebuilt.body);
+    try testing.expect(!w.exists(".out.prerender"));
+}
+
 /// A `beni` that keeps running: both pipes are read as the scenario waits,
 /// with a deadline, and it is killed on every exit path.
 const Live = struct {
@@ -387,12 +449,19 @@ const Live = struct {
     const timeout_ms = 20_000;
 
     fn start(w: *World, args: []const []const u8) !Live {
+        return startWith(w, args, null);
+    }
+
+    /// `start` with `PATH` set to `path`: what a prerendering build runs
+    /// Node from (`prerender.md` §5.1).
+    fn startWith(w: *World, args: []const []const u8, path: ?[]const u8) !Live {
         const arena = w.arena.allocator();
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.append(arena, w.exe);
         try argv.appendSlice(arena, args);
         var env = std.process.Environ.Map.init(w.gpa);
         defer env.deinit();
+        if (path) |p| try env.put("PATH", p);
         const child = try std.process.spawn(w.io, .{
             .argv = argv.items,
             .cwd = .{ .dir = w.tmp.dir },

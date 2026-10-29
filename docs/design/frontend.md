@@ -1268,6 +1268,7 @@ defaults, so that inside a project `beni build` and `beni serve` need no argumen
 | `"build"."paths"` | the `<path>...` arguments, as written | none: `build needs at least one path`, exit 2, as before |
 | `"build"."out"` | what `--out` would say | `out` |
 | `"build"."base"` | the URL path `--out` is served under: what the page shell writes before the entry file (`{{entry}}`) and for `{{base}}`, and what `serve` takes off a request's path (*amended 2026-10-01*). It ends in `/` and holds no quote, `<`, `>` or whitespace, or it is `beni: beni.json's "build" "base" must be a URL path ending in '/', not '<value>'`, exit 2. It has no flag | `/` |
+| `"build"."origin"` | *added 2026-10-29* ([`prerender.md`](prerender.md) §7.3, slice P3): the address a prerendered site is served at, `http://` or `https://`, a host of ASCII letters, digits, `.` and `-`, and at most a port — no path; a prerendering build of a `Tea.application` needs it, and makes each route's `Url` with it (`prerender_needs_origin` otherwise). Any other value is `beni: beni.json's "build" "origin" must be an http or https origin with no path, as "https://example.com", not '<value>'`, exit 2, from a build that prerenders. It has no flag | none |
 | `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
 | `"exports"` | the entry file's named exports, a list of ECMAScript identifiers, each the answer of `run(main)`'s `exports(name)` (*added 2026-10-20*, `boundary.md` §5.2 and §9.12 (c)); read when the platform chain declares `"exports": "program"`, and the warning `exports_ignored` otherwise; a name that is not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, a diagnostic of the build (exit 1, reported during emit as `invalid_entry_file` is); a value that is not a list of strings is this row's exit-2 failure, like any key of the wrong type | none |
 
@@ -1390,7 +1391,7 @@ server's own namespace, and no file the build writes can be there — no emitted
 `_manifest.txt` and the platform's entry). A failed build does not move the count, so a page keeps
 showing the last good build while the errors are on the terminal.
 
-*Specified 2026-10-29, not built (#1160):* a prerendered site's page for `/about` is `about.html`,
+*Specified 2026-10-29, built the same day (#1160, slice P3, #1194):* a prerendered site's page for `/about` is `about.html`,
 so a path that names no file is answered with `<path>.html` when that file exists, before the
 single-page fallback, and `serve` prerenders after each build ([`prerender.md`](prerender.md) §5.2,
 §7.4). `"build"."origin"` joins §10.1's keys for a prerendering build (§7.3 there).

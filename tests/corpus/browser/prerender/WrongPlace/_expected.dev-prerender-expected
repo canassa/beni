@@ -3,7 +3,7 @@
 <body>
   "\n    "
   <div id="root"></div>
-  <div data-role="app" data-beni="">
+  <div data-role="app" data-beni="/">
     <output>"0"</output>
     <button data-role="inc">"+"</button>
   </div>

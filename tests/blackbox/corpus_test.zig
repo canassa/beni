@@ -788,9 +788,9 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.app = true;
             fixture.release = true;
         }
-        // `emit/prerender/` and `emit/release/prerender/`: the same, built
-        // with the hidden `--prerender` — the client of a prerendering
-        // build, whose mount takes the page over (`prerender.md` §6).
+        // `emit/prerender/` and `emit/release/prerender/`: the same, each a
+        // program whose `main` says `Browser.prerender` — the client of a
+        // prerendering build, whose mount takes the page over (`prerender.md` §6).
         for ([_]bool{ false, true }) |release| {
             const prerender_dir = try std.fs.path.join(arena, if (release) &.{ kind_dir, "release", "prerender" } else &.{ kind_dir, "prerender" });
             const prerender_start = fixtures.items.len;
@@ -809,9 +809,9 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         try collect(arena, inline_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
     }
-    // `prerender/`: projects built for `browser-inline` with the hidden
-    // `--prerender` (`prerender.md` §11, slice P1) — `browser/prerender/`
-    // pages, whose `index.html` is a golden and whose steps run on the
+    // `prerender/`: projects built for `browser-inline` whose `main` says
+    // `Browser.prerender` (`prerender.md` §7.2) — `browser/prerender/`
+    // pages, whose pages are goldens and whose steps run on the
     // page the build wrote, and `build/bad/prerender/` refusals.
     if (kind == .build_bad or kind == .browser) {
         const prerender_dir = try std.fs.path.join(arena, &.{ kind_dir, "prerender" });
@@ -1312,6 +1312,26 @@ fn codeCounts(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
     return out.items;
 }
 
+/// Every `.html` file below `dir`, by its path with `/` between segments,
+/// sorted: the pages of a prerendered build (`prerender.md` §7.4).
+fn htmlPages(arena: std.mem.Allocator, io: Io, dir: Io.Dir) ![]const []const u8 {
+    var pages: std.ArrayList([]const u8) = .empty;
+    var walker = try dir.walk(arena);
+    defer walker.deinit();
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".html")) continue;
+        const rel = try arena.dupe(u8, entry.path);
+        std.mem.replaceScalar(u8, rel, '\\', '/');
+        try pages.append(arena, rel);
+    }
+    std.mem.sort([]const u8, pages.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    return pages.items;
+}
+
 /// A stderr stream in a few words: the codes and start positions of a JSON
 /// diagnostic list, the titles of a rendered one, or its first line.
 fn summarize(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
@@ -1412,9 +1432,9 @@ const Fixture = struct {
     /// `--ownership-everywhere`, so the ownership checker enforces on a
     /// platform that edits no list in place (`ownership-checker.md` §30.7).
     everywhere: bool = false,
-    /// Under `browser/prerender/` and `build/bad/prerender/`: built with
-    /// the hidden `--prerender` for `browser-inline` (`prerender.md` §11,
-    /// slice P1), with a `PATH` that finds the suite's `node`.
+    /// Under `browser/prerender/` and `build/bad/prerender/`: a program that
+    /// prerenders, built for `browser-inline` (`prerender.md` §7.2, §11),
+    /// with a `PATH` that finds the suite's `node`.
     prerender: bool = false,
     /// A `workers/` fixture's second case: its `--release` build, run under
     /// Miniflare as the first case runs the development build. Two cases,
@@ -1964,8 +1984,8 @@ const Case = struct {
                 "--platform=node",
         });
         if (c.fixture.everywhere) try args.append(c.arena, "--ownership-everywhere");
-        if (c.fixture.prerender) try args.append(c.arena, "--prerender");
-        // A prerendering build runs the suite's `node` (`prerender.md` §5.1).
+        // A prerendering build, whose `main` says `Browser.prerender`, runs
+        // the suite's `node` (`prerender.md` §5.1, §5.2).
         const path: ?[]const u8 = if (c.fixture.prerender) try w.nodePath() else null;
         // The command, its diagnostics and its platform: what every other
         // build of the fixture below shares.
@@ -2813,11 +2833,12 @@ const Case = struct {
 
     /// A `browser/prerender/` project (`prerender.md` §11, slice P1;
     /// `tests/corpus/README.md`): built four times for `browser-inline`,
-    /// development and release, each without and with the hidden
-    /// `--prerender`, each into a directory of its own. A prerendering
-    /// build's `index.html` is the golden `_expected/index.html`, the same
-    /// for both modes; every build's page opens on the `index.html` it
-    /// wrote and runs the steps against the one `.expected`, so the page
+    /// development and release, each prerendering — its `main` says
+    /// `Browser.prerender` — and with the hidden `--no-prerender`, each into
+    /// a directory of its own. Every page a prerendering build writes is a
+    /// golden under `_expected/`, the same for both modes; every build's
+    /// page opens on the file it wrote for the script's address and runs
+    /// the steps against the one `.expected`, so the page
     /// from the shell with no view and the prerendered page give one
     /// transcript. The project carries its own shell, named by its
     /// `beni.json`.
@@ -2852,7 +2873,7 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        const page_golden = try std.fs.path.join(c.arena, &.{ dir_path, "_expected", "index.html" });
+        const page_goldens = try std.fs.path.join(c.arena, &.{ dir_path, "_expected" });
 
         const Build = struct { pass: RunPass, out: []const u8, prerender: bool };
         const builds = [_]Build{
@@ -2885,7 +2906,9 @@ const Case = struct {
         for (builds, &plans, 0..) |b, *plan, i| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", "--platform=browser-inline" });
-            if (b.prerender) try args.append(c.arena, "--prerender");
+            // A build that does not prerender is the same program built as if
+            // its `main` did not say `Browser.prerender` (`--no-prerender`).
+            if (!b.prerender) try args.append(c.arena, "--no-prerender");
             if (b.pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug", "--check-call-graph" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{b.out}));
             try args.appendSlice(c.arena, sources.items);
@@ -2900,22 +2923,46 @@ const Case = struct {
                 return error.PrerenderTreeLeft;
             }
             if (b.prerender) {
-                const page = try c.w.tmp.dir.readFileAlloc(c.w.io, try std.fmt.allocPrint(c.arena, "{s}/index.html", .{b.out}), c.arena, .limited(world.max_stream_bytes));
-                // The development build blesses; the release build's page is
-                // the same file.
+                // Every page the build wrote is a golden under `_expected/`,
+                // by its path below `--out`, and there is no other
+                // (`prerender.md` §7.4).
+                var out_dir = try c.w.tmp.dir.openDir(c.w.io, b.out, .{ .iterate = true });
+                defer out_dir.close(c.w.io);
+                const written = try htmlPages(c.arena, c.w.io, out_dir);
+                // The development build blesses; the release build's pages
+                // are the same files.
                 if (c.bless and b.pass == .dev) {
-                    try Io.Dir.cwd().createDirPath(testing.io, std.fs.path.dirname(page_golden).?);
-                    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = page_golden, .data = page });
-                    detail("blessed {s}\n", .{page_golden});
+                    Io.Dir.cwd().deleteTree(testing.io, page_goldens) catch {};
+                    for (written) |rel| {
+                        const page = try out_dir.readFileAlloc(c.w.io, rel, c.arena, .limited(world.max_stream_bytes));
+                        const golden = try std.fs.path.join(c.arena, &.{ page_goldens, rel });
+                        try Io.Dir.cwd().createDirPath(testing.io, std.fs.path.dirname(golden).?);
+                        try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = golden, .data = page });
+                        detail("blessed {s}\n", .{golden});
+                    }
                 } else {
-                    const expected = Io.Dir.cwd().readFileAlloc(testing.io, page_golden, c.arena, .limited(world.max_stream_bytes)) catch |err| {
-                        detail("{s}: cannot read golden {s} ({t}); set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, page_golden, err });
+                    var golden_dir = Io.Dir.cwd().openDir(testing.io, page_goldens, .{ .iterate = true }) catch |err| {
+                        detail("{s}: cannot read goldens {s} ({t}); set BENI_WRITE_EXPECTED=1 to create them\n", .{ c.fixture.name, page_goldens, err });
                         return error.MissingGolden;
                     };
-                    if (!std.mem.eql(u8, expected, page)) {
-                        detail("{s} [{s}]: the page differs from {s}\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, b.out, page_golden, expected, page });
-                        because("[{s}] index.html differs", .{b.out});
+                    defer golden_dir.close(testing.io);
+                    const expected_pages = try htmlPages(c.arena, testing.io, golden_dir);
+                    const same_set = expected_pages.len == written.len and for (expected_pages, written) |x, y| {
+                        if (!std.mem.eql(u8, x, y)) break false;
+                    } else true;
+                    if (!same_set) {
+                        detail("{s} [{s}]: the build wrote the pages {s}, and {s} holds {s}\n", .{ c.fixture.name, b.out, try std.mem.join(c.arena, ", ", written), page_goldens, try std.mem.join(c.arena, ", ", expected_pages) });
+                        because("[{s}] the pages differ", .{b.out});
                         return error.GoldenMismatch;
+                    }
+                    for (written) |rel| {
+                        const page = try out_dir.readFileAlloc(c.w.io, rel, c.arena, .limited(world.max_stream_bytes));
+                        const expected = try golden_dir.readFileAlloc(testing.io, rel, c.arena, .limited(world.max_stream_bytes));
+                        if (!std.mem.eql(u8, expected, page)) {
+                            detail("{s} [{s}]: the page {s} differs from {s}\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, b.out, rel, page_goldens, expected, page });
+                            because("[{s}] {s} differs", .{ b.out, rel });
+                            return error.GoldenMismatch;
+                        }
                     }
                 }
             }
@@ -3655,8 +3702,8 @@ const Case = struct {
         // one rule for the whole corpus, so that a shape golden can be about
         // a `Debug`-using program the day one is wanted.
         if (c.fixture.release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
-        // A prerendering build runs the suite's `node` (`prerender.md` §5.1).
-        if (c.fixture.prerender) try args.append(c.arena, "--prerender");
+        // A prerendering build runs the suite's `node` (`prerender.md` §5.1):
+        // its `main` says `Browser.prerender` (§5.2).
         try args.appendSlice(c.arena, sources.items);
 
         const built = if (c.fixture.prerender)

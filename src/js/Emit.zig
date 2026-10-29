@@ -251,6 +251,97 @@ pub fn findLowering(name: []const u8) ?*const beni_markup.Lowering {
     return null;
 }
 
+/// What `main` says of prerendering (`prerender.md` §5.2, §7.2): it
+/// prerenders when its body is a call of the lowering's `prerender`
+/// placement, or reaches one through the first arguments of `first`
+/// placements; `routed` when the program it prerenders is a
+/// `Named.routed` constructor's, which needs the project's origin.
+pub const Prerenders = struct {
+    routed: bool,
+    /// The outermost `prerender` call on the spine, and its module.
+    module: Graph.Index,
+    call: Bir.Inst.Index,
+};
+
+/// `Prerenders` of the checked program, or null when it does not
+/// prerender: no lowering that prerenders, no `main`, two of them (the
+/// emit reports that), or a `main` that does not say so. Read from the
+/// checked BIR before anything is emitted, so the build knows whether to
+/// build the prerender tree.
+pub fn prerenders(session: *const Session, lowering: *const beni_markup.Lowering) ?Prerenders {
+    if (!lowering.prerenders) return null;
+    var entry: ?struct { module: Graph.Index, decl: usize } = null;
+    for (0..session.graph.count()) |i| {
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
+        if (session.store.package(session.graph.moduleFile(m)) != .app) continue;
+        const b = session.artifacts.bir(session.graph.moduleFile(m));
+        for (b.decls, 0..) |d, index| {
+            if (d.kind != .value or b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+            if (entry != null) return null;
+            entry = .{ .module = m, .decl = index };
+        }
+    }
+    const found = entry orelse return null;
+    const b = session.artifacts.bir(session.graph.moduleFile(found.module));
+    var at = b.decls[found.decl].body.unwrap() orelse return null;
+    var call: ?Bir.Inst.Index = null;
+    var depth: u32 = 0;
+    while (depth < 64) : (depth += 1) {
+        if (b.instTag(at) != .call) break;
+        const d = b.instData(at);
+        const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+        const callee = platformValueOf(session, found.module, b, @fromBackingInt(@intCast(d.lhs))) orelse break;
+        const placement = for (lowering.placements) |p| {
+            if (std.mem.eql(u8, p.module, callee.module) and std.mem.eql(u8, p.name, callee.name)) break p;
+        } else {
+            // The program the spine ends at.
+            const c = call orelse return null;
+            for (lowering.programs) |p| {
+                if (std.mem.eql(u8, p.module, callee.module) and std.mem.eql(u8, p.name, callee.name)) return .{ .routed = p.routed, .module = found.module, .call = c };
+            }
+            return .{ .routed = false, .module = found.module, .call = c };
+        };
+        switch (placement.places) {
+            .prerender => if (call == null) {
+                call = at;
+            },
+            .first => {},
+            else => break,
+        }
+        if (args.len == 0) break;
+        at = args[0];
+    }
+    return if (call) |c| .{ .routed = false, .module = found.module, .call = c } else null;
+}
+
+/// The platform value instruction `at` of module `m` names, by its
+/// module's name and its own (`Lowerer.platformValue`'s two shapes).
+fn platformValueOf(session: *const Session, m: Graph.Index, b: *const Bir, at: Bir.Inst.Index) ?struct { module: []const u8, name: []const u8 } {
+    const d = b.instData(at);
+    switch (b.instTag(at)) {
+        .ext_value => {
+            const other: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+            if (other.int() >= session.resolution.interfaces.len) return null;
+            if (session.graph.modulePackage(other) != .platform) return null;
+            const iface = &session.resolution.interfaces[other.int()];
+            if (d.rhs >= iface.values.len) return null;
+            return .{
+                .module = session.interner.slice(session.graph.moduleName(other)),
+                .name = session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]),
+            };
+        },
+        .top => {
+            if (session.graph.modulePackage(m) != .platform) return null;
+            if (d.lhs >= b.decls.len) return null;
+            return .{
+                .module = session.interner.slice(session.graph.moduleName(m)),
+                .name = session.interner.slice(b.symbol(b.decls[d.lhs].name)),
+            };
+        },
+        else => return null,
+    }
+}
+
 /// The entry file a platform gets when its manifest does not name one
 /// (`backend.md` §2, rule 1; `boundary.md` §5.2).
 ///
@@ -352,11 +443,24 @@ pub const Options = struct {
     /// development build; under `release` only when asked for, and then
     /// the one scope-hoisted file has one map of its own (§11.2).
     source_maps: bool = false,
-    /// Which tree of a prerendering build this is (`prerender.md` §5.1,
-    /// switched on by the hidden `--prerender` until slice P3): none, the
+    /// Which tree of a prerendering build this is (`prerender.md` §5.1; a
+    /// program prerenders when its `main` says so, §5.2): none, the
     /// prerender tree, or the client tree with what running the prerender
     /// tree gave.
     prerender: Prerender = .none,
+    /// A prerendering build's: the project's `"build"."origin"`, null when
+    /// it names none (`prerender.md` §7.3), and the lowering's
+    /// `Build.address`, the origin with the base after it, its last `/`
+    /// left out.
+    origin: ?[]const u8 = null,
+    address: []const u8 = "",
+    /// A prerendering build's: whether the program `main` prerenders is a
+    /// `Named.routed` constructor's, which needs `origin`
+    /// (`prerender_needs_origin`).
+    routed: bool = false,
+    /// The app's root, whose `beni.json` `prerender_needs_origin` is
+    /// reported against.
+    app_root: []const u8 = ".",
 };
 
 /// The trees of a prerendering build (`prerender.md` §5.1).
@@ -376,14 +480,19 @@ pub const Prerender = union(enum) {
     client: Outcome,
 
     pub const Outcome = union(enum) {
-        /// The HTML of the route `/`, for the shell's `{{view}}`.
-        view: []const u8,
+        /// Each route's page, in the list's order (`prerender.md` §5.4).
+        pages: []const Page,
         /// No `node` on `PATH` (§5.1, `prerender_needs_node`).
         needs_node,
         /// The run failed (§5.5, `prerender_failed`): the route with no
         /// record (null: the route list), and why, in prose.
         failed: struct { route: ?[]const u8, why: []const u8 },
     };
+
+    /// A route's page: the route, the HTML of its first render for the
+    /// shell's `{{view}}`, and a document's title for `{{title}}`, null for
+    /// a program that has none (`prerender.md` §7.5).
+    pub const Page = struct { route: []const u8, html: []const u8, title: ?[]const u8 = null };
 
     pub fn mode(p: Prerender) beni_markup.Build.Prerender {
         return switch (p) {
@@ -404,6 +513,40 @@ pub const prerender_entry = "_prerender.mjs";
 /// What a page shell writes where the program's prerendered view goes
 /// (`prerender.md` §5.3).
 pub const view_placeholder = "{{view}}";
+
+/// What a page shell writes where a prerendered page's title goes
+/// (`prerender.md` §7.5).
+pub const title_placeholder = "{{title}}";
+
+/// Why `route` breaks `prerender.md` §7.4's rules, in prose, or null.
+pub fn routeFault(route: []const u8) ?[]const u8 {
+    if (route.len == 0 or route[0] != '/') return "it does not begin with `/`";
+    for (route) |c| if (c >= 0x80) return "it holds a character outside ASCII, whose case a file system may fold in ways the build cannot check";
+    var segments = std.mem.splitScalar(u8, route[1..], '/');
+    var first = true;
+    while (segments.next()) |segment| {
+        const last = segments.peek() == null;
+        if (segment.len == 0 and !last) return "it has an empty segment";
+        if (segment.len == 0 and last and !first) break;
+        if (std.mem.eql(u8, segment, ".") or std.mem.eql(u8, segment, "..")) return "it has a segment `.` or `..`";
+        for (segment) |c| {
+            if (std.ascii.isAlphanumeric(c) or c == '-' or c == '.' or c == '_' or c == '~') continue;
+            return "it holds a character a URL path escapes";
+        }
+        if (first and segment.len != 0 and segment[0] == '_') return "its first segment begins with `_`";
+        first = false;
+    }
+    return null;
+}
+
+/// The file under `--out` a checked route's page is written to
+/// (`prerender.md` §7.4): a route ending in `/` is the directory's
+/// `index.html`, any other its path with `.html` after it.
+pub fn routeFile(a: Allocator, route: []const u8) Allocator.Error![]const u8 {
+    const path = route[1..];
+    if (path.len == 0 or path[path.len - 1] == '/') return std.fmt.allocPrint(a, "{s}index.html", .{path});
+    return std.fmt.allocPrint(a, "{s}.html", .{path});
+}
 
 pub const Result = struct {
     /// Owned; messages are gpa-owned.
@@ -501,6 +644,7 @@ pub fn run(
     if (options.platform.lowering) |name| if (findLowering(name)) |lw| if (lw.program != null) {
         try e.runWrites();
         try e.findLifts();
+        try e.cutPrerender();
     };
     try e.eliminate(entry);
     try e.shareValidators();
@@ -2926,6 +3070,25 @@ const Emitter = struct {
     /// program's — each once, in program and declaration order; and the
     /// `subscriptions` fields no program site evaluates. Each piece is a
     /// root of reachability.
+    /// `prerender.md` §7.2: in every tree but the prerender tree, `main`'s
+    /// `Browser.prerender` call is compiled as its program, so neither the
+    /// callee nor the route list is reached through it: a client page ships
+    /// neither, nor what only the list names.
+    fn cutPrerender(e: *Emitter) !void {
+        if (e.options.prerender == .tree) return;
+        const lowering = findLowering(e.options.platform.lowering orelse return) orelse return;
+        const spine = prerenders(e.session, lowering) orelse return;
+        const b = e.bir(spine.module);
+        const d = b.instData(spine.call);
+        const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+        if (args.len != 2) return;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        try cuts.appendSlice(e.scratch, e.cuts);
+        try cuts.append(e.scratch, .{ .module = spine.module, .lo = d.lhs, .hi = d.lhs });
+        try cuts.append(e.scratch, .{ .module = spine.module, .lo = try Lift.low(b, e.scratch, args[1].int()), .hi = args[1].int() });
+        e.cuts = cuts.items;
+    }
+
     fn findLifts(e: *Emitter) !void {
         if (e.writes_effects == null) return;
         const w = e.writes.?;
@@ -5049,7 +5212,7 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode() },
+                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
                 };
@@ -7738,14 +7901,14 @@ const Emitter = struct {
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
     }
 
-    /// The prerender entry's exports, `main` spelled `main_name`: the routes
-    /// — the one route `/` until the route list (§11, slice P3) — and the
-    /// render function.
+    /// The prerender entry's exports, `main` spelled `main_name`: the
+    /// render function and the routes, an array of strings, which is what
+    /// `main` is in the prerender tree (`Placement.Places.prerender`).
     fn prerenderExports(e: *Emitter, main_name: []const u8) ![]const u8 {
         return if (e.options.release)
-            std.fmt.allocPrint(e.scratch, "export const routes=[\"/\"],render={s};", .{main_name})
+            std.fmt.allocPrint(e.scratch, "export const render={s}[0],routes={s}[1];", .{ main_name, main_name })
         else
-            std.fmt.allocPrint(e.scratch, "export const routes = [\"/\"];\nexport const render = {s};", .{main_name});
+            std.fmt.allocPrint(e.scratch, "export const render = {s}[0];\nexport const routes = {s}[1];", .{ main_name, main_name });
     }
 
     /// Whether the chain declares `"exports": "program"` (`boundary.md`
@@ -8003,13 +8166,33 @@ const Emitter = struct {
         ,
             .{ view_placeholder, if (views == 0) "nowhere" else "more than once", view_placeholder, view_placeholder },
         );
-        const view: []const u8 = switch (e.options.prerender) {
-            .none => "",
+        const pages: []const Prerender.Page = switch (e.options.prerender) {
+            .none => &.{},
             // The shell is checked and no page written: the client tree
-            // writes it.
-            .tree => return,
+            // writes them. An application's routes are `Url`s made with the
+            // project's origin, which it must name (`prerender.md` §7.3).
+            .tree => {
+                if (e.options.routed and e.options.origin == null) {
+                    const root = e.options.app_root;
+                    const app_manifest = if (root.len == 0 or std.mem.eql(u8, root, ".")) Manifest.file_name else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
+                    return e.reportInFile(
+                        .prerender_needs_origin,
+                        .{ .path = app_manifest },
+                        \\This program prerenders a `Tea.application`, whose `init` is handed the `Url` of
+                        \\each page's route, and this project names no origin to make it with.
+                        \\
+                        \\Add the address the site is served at to `"build"`:
+                        \\`"build": {{ "origin": "https://example.com" }}`. Each page's `init` is then
+                        \\handed `https://example.com` with the base and the route after it
+                        \\(`docs/design/prerender.md` §7.3).
+                    ,
+                        .{},
+                    );
+                }
+                return;
+            },
             .client => |outcome| switch (outcome) {
-                .view => |unit| unit,
+                .pages => |all| all,
                 .needs_node => return e.reportAtEntry(entry, .prerender_needs_node,
                     \\This program prerenders, and the build runs its prerender tree with Node, but
                     \\there is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`
@@ -8028,12 +8211,115 @@ const Emitter = struct {
                 , .{f.why}),
             },
         };
-        // The view last: what the program writes is never read as a
-        // placeholder.
         const with_entry = try std.mem.replaceOwned(u8, e.scratch, template, html_placeholder, replacement);
         const with_base = try std.mem.replaceOwned(u8, e.scratch, with_entry, base_placeholder, p.base);
-        const out = try std.mem.replaceOwned(u8, e.scratch, with_base, view_placeholder, view);
-        try e.produce(html_file, out, path);
+        // Each route's file (`prerender.md` §7.4), checked before any page is
+        // made: a route that breaks a rule, and two that write one file.
+        const files = try e.scratch.alloc([]const u8, pages.len);
+        var bad = false;
+        for (pages, files) |page, *file| {
+            if (routeFault(page.route)) |why| {
+                try e.reportAtEntry(entry, .invalid_route,
+                    \\This program prerenders the route `{s}`, and {s}.
+                    \\
+                    \\A route is a path below the base that names the file its page is written to:
+                    \\it begins with `/`, its segments are not empty (but for the last, in a route
+                    \\ending in `/`), not `.` and not `..`, and hold only ASCII letters, digits, `-`,
+                    \\`.`, `_` and `~`; and the first segment does not begin with `_`, which names
+                    \\the compiler's own files (`docs/design/prerender.md` §7.4).
+                , .{ page.route, why });
+                bad = true;
+                continue;
+            }
+            file.* = try routeFile(e.scratch, page.route);
+        }
+        if (bad) return;
+        // The shell with no view is `index.html` unless a route's page is.
+        const index_is_a_page = for (files) |f| {
+            if (std.ascii.eqlIgnoreCase(f, html_file)) break true;
+        } else false;
+        if (!index_is_a_page) try e.produce(html_file, try fillShell(e.scratch, with_base, "", null), path);
+        if (try e.routesCollide(entry, pages, files)) return;
+        for (pages, files) |page, file| try e.produce(file, try fillShell(e.scratch, with_base, page.html, page.title), path);
+    }
+
+    /// The shell with its `{{title}}` and its `{{view}}` filled: the title
+    /// escaped for the text of a `<title>`, and both last, so that what the
+    /// program writes is never read as a placeholder (`prerender.md` §5.3,
+    /// §7.5). No title, or none given, is nothing.
+    fn fillShell(a: Allocator, shell: []const u8, view: []const u8, title: ?[]const u8) Allocator.Error![]const u8 {
+        var escaped: std.ArrayList(u8) = .empty;
+        for (title orelse "") |c| switch (c) {
+            '&' => try escaped.appendSlice(a, "&amp;"),
+            '<' => try escaped.appendSlice(a, "&lt;"),
+            '\r' => try escaped.appendSlice(a, "&#13;"),
+            else => try escaped.append(a, c),
+        };
+        // One pass over the shell, so a title that says `{{view}}` stays text.
+        var out: std.ArrayList(u8) = .empty;
+        var i: usize = 0;
+        while (i < shell.len) {
+            if (std.mem.startsWith(u8, shell[i..], title_placeholder)) {
+                try out.appendSlice(a, escaped.items);
+                i += title_placeholder.len;
+            } else if (std.mem.startsWith(u8, shell[i..], view_placeholder)) {
+                try out.appendSlice(a, view);
+                i += view_placeholder.len;
+            } else {
+                try out.append(a, shell[i]);
+                i += 1;
+            }
+        }
+        return out.items;
+    }
+
+    /// `output_path_collision` for two routes whose files are one file, or
+    /// one of whose files is a directory of another or of a file the build
+    /// writes, under rule 2's ASCII folding (`prerender.md` §7.4; `backend.md`
+    /// §2): `/a/` and `/a/index`, `/About` and `/about`, a route listed
+    /// twice. Each pair is named by its routes. True when one was found.
+    fn routesCollide(e: *Emitter, entry: Entry, pages: []const Prerender.Page, files: []const []const u8) !bool {
+        var found = false;
+        const folded = try e.scratch.alloc([]const u8, files.len);
+        for (files, folded) |f, *slot| slot.* = try std.ascii.allocLowerString(e.scratch, f);
+        for (folded, 0..) |f, i| for (folded[0..i], 0..) |g, j| {
+            if (!std.mem.eql(u8, f, g) and !isDirOf(f, g) and !isDirOf(g, f)) continue;
+            try e.reportAtEntry(entry, .output_path_collision,
+                \\This program prerenders the routes `{s}` and `{s}`, whose pages are {s} on a
+                \\file system that folds case, as macOS (APFS) and Windows (NTFS) do:
+                \\
+                \\- `{s}`, written for `{s}`
+                \\- `{s}`, written for `{s}`
+                \\
+                \\A build's output is the same set of files on every file system, so this is
+                \\refused and nothing is written (`docs/design/prerender.md` §7.4;
+                \\`docs/design/backend.md` §2). List each page once, under one spelling.
+            , .{ pages[j].route, pages[i].route, if (std.mem.eql(u8, f, g)) "one file" else "a file and a directory of the same name", files[j], pages[j].route, files[i], pages[i].route });
+            found = true;
+        };
+        if (found) return true;
+        // A page's directory that is a file the build writes, or the
+        // other way round.
+        for (e.pending.items) |output| {
+            const other = try std.ascii.allocLowerString(e.scratch, output.path);
+            for (folded, 0..) |f, i| {
+                if (!isDirOf(f, other) and !isDirOf(other, f)) continue;
+                try e.reportAtEntry(entry, .output_path_collision,
+                    \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
+                    \\written for `{s}`, are a file and a directory of the same name on a file
+                    \\system that folds case (`docs/design/prerender.md` §7.4;
+                    \\`docs/design/backend.md` §2). Rename the route.
+                , .{ pages[i].route, files[i], output.path, output.origin });
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    /// Whether `dir` names a directory `path` is inside: `path` begins with
+    /// `dir` and a `/`.
+    fn isDirOf(dir: []const u8, path: []const u8) bool {
+        return path.len > dir.len and std.mem.startsWith(u8, path, dir) and path[dir.len] == '/';
     }
 
     /// `code` at the entry declaration's name: a fault of the program as a

@@ -1,5 +1,5 @@
 // Hydration measured (docs/design/prerender.md §11, slice P2a): beni's
-// hydrating mount of a page `beni build --prerender --release` wrote,
+// hydrating mount of a page `beni build --release` wrote for a `main` that says `Browser.prerender`,
 // against Solid 2's `hydrate` of its own hydratable `renderToString` output
 // of the same page, in headless Chrome (research 29's harness, `lib/`).
 //
@@ -58,7 +58,7 @@ const ITEMS = 12;
 const PANELS = 30;
 
 const beniHead = "import Browser\nimport Html exposing (Html)\nimport Tea\n\n\n";
-const beniMain = 'main : Tea.Program\nmain =\n    Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"\n';
+const beniMain = 'main : Tea.Program\nmain =\n    Browser.prerender (Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root") [ "/" ]\n';
 
 const pages = {
   counter: {
@@ -123,16 +123,16 @@ for (const page of wanted) {
   const dir = join(root, "out/hydrate", page);
   rmSync(dir, { recursive: true, force: true });
 
-  // beni: the client of `--prerender --release`, and the page it wrote.
+  // beni: the client of a `--release` build whose `main` says `Browser.prerender`, and the page it wrote.
   write(join(dir, "beni/src/Main.beni"), spec.beni);
   write(join(dir, "beni/src/shell.html"), shell(page, "{{view}}", "{{entry}}"));
   write(join(dir, "beni/src/beni.json"), '{ "html": "shell.html" }\n');
-  const b = spawnSync(beniExe, ["build", "--platform=browser-inline", "--prerender", "--release", "--no-cache", "--out=../out", "Main.beni"], { cwd: join(dir, "beni/src"), encoding: "utf8" });
+  const b = spawnSync(beniExe, ["build", "--platform=browser-inline", "--release", "--no-cache", "--out=../out", "Main.beni"], { cwd: join(dir, "beni/src"), encoding: "utf8" });
   if (b.status !== 0) throw new Error(`beni ${page}: ${b.stderr}`);
   const beniJs = readFileSync(join(dir, "beni/out/_main.mjs"));
-  // The same program built without `--prerender`, mounted fresh: what the
+  // The same program built with the hidden `--no-prerender`, mounted fresh: what the
   // hydrating mount adds is the difference.
-  const f = spawnSync(beniExe, ["build", "--platform=browser-inline", "--release", "--no-cache", "--out=../fresh", "Main.beni"], { cwd: join(dir, "beni/src"), encoding: "utf8" });
+  const f = spawnSync(beniExe, ["build", "--platform=browser-inline", "--no-prerender", "--release", "--no-cache", "--out=../fresh", "Main.beni"], { cwd: join(dir, "beni/src"), encoding: "utf8" });
   if (f.status !== 0) throw new Error(`beni ${page} fresh: ${f.stderr}`);
   const freshJs = readFileSync(join(dir, "beni/fresh/_main.mjs"));
   write(join(dir, "beni/out/timed.mjs"), timed(beniJs.toString()));

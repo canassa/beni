@@ -961,6 +961,7 @@ test "a prerendered page is byte-identical at every --jobs" {
         \\
     );
     try w.write("src/Main.beni",
+        \\import Browser
         \\import Html exposing (Html)
         \\import Panel
         \\import Tea
@@ -992,7 +993,10 @@ test "a prerendered page is byte-identical at every --jobs" {
         \\
         \\
         \\main : Tea.Program
-        \\main = Tea.sandbox { init = λ⊤ → { n = 1, open = False }, update = update, view = view }
+        \\main =
+        \\    Browser.prerender
+        \\        (Tea.sandbox { init = λ⊤ → { n = 1, open = False }, update = update, view = view })
+        \\        [ "/", "/about", "/blog/" ]
         \\
     );
 
@@ -1014,9 +1018,9 @@ test "a prerendered page is byte-identical at every --jobs" {
         const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}", .{b.out});
         const options: world.RunOptions = .{ .raw_diagnostics = true, .path = try w.nodePath() };
         const r = if (b.release)
-            try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--release", "--no-cache", out, b.jobs, "src" }, options)
+            try w.runWith(&.{ "build", "--platform=browser-inline", "--release", "--no-cache", out, b.jobs, "src" }, options)
         else
-            try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--no-cache", out, b.jobs, "src" }, options);
+            try w.runWith(&.{ "build", "--platform=browser-inline", "--no-cache", out, b.jobs, "src" }, options);
         try expectBuilt(r);
     }
 
@@ -1025,10 +1029,14 @@ test "a prerendered page is byte-identical at every --jobs" {
     // └─────────────────────────────────────────┘
     for (builds[1..4]) |b| try expectSameTree(&w, "dev-1a", b.out);
     for (builds[5..8]) |b| try expectSameTree(&w, "rel-1a", b.out);
-    // The page is the first render, the same in both modes.
-    const page = "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><main data-beni><button>1 &amp; more</button><!--0--><section><output>1</output><!--1--></section></main></body>\n";
-    try testing.expectEqualStrings(page, try w.read("dev-1a/index.html"));
-    try testing.expectEqualStrings(page, try w.read("rel-1a/index.html"));
+    // Each page is the first render, the same in both modes, with its
+    // route (`prerender.md` §7.4).
+    for ([_][2][]const u8{ .{ "index.html", "/" }, .{ "about.html", "/about" }, .{ "blog/index.html", "/blog/" } }) |pair| {
+        const page = try std.fmt.allocPrint(w.arena.allocator(), "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><main data-beni=\"{s}\"><button>1 &amp; more</button><!--0--><section><output>1</output><!--1--></section></main></body>\n", .{pair[1]});
+        for ([_][]const u8{ "dev-1a", "rel-1a" }) |out| {
+            try testing.expectEqualStrings(page, try w.read(try std.fs.path.join(w.arena.allocator(), &.{ out, pair[0] })));
+        }
+    }
 }
 
 /// The SHA-256 of `bytes`, hex, in a per-call buffer.

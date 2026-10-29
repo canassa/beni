@@ -183,8 +183,11 @@ pub percentDecode : String → Maybe String
 percentDecode str =
     -- `decodeURIComponent` documents one failure, a `URIError` for text that
     -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
-    -- thrown on (CLAUDE.md rule 9).
-    Js.catchIf
-        (λ⊤ → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
-        (λerror → Js.instanceOf error (Js.global "URIError"))
-        λ_ → Nothing
+    -- thrown on (CLAUDE.md rule 9). It reads and changes nothing else, so
+    -- it is pure, as a prerendered page's `init` must be
+    -- (`docs/design/prerender.md` §3.1).
+    Js.pure λ⊤ →
+        Js.catchIf
+            (λ⊤ → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+            (λerror → Js.instanceOf error (Js.global "URIError"))
+            λ_ → Nothing

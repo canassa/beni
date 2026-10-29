@@ -1,0 +1,23 @@
+-- A prerendered program's route list must be pure (docs/design/prerender.md
+-- §3.1, §7.2): the build computes it once and writes a page for each
+-- route, and a read of the clock would make the site depend on when it was
+-- built. `prerender_impure`, at the call, before anything runs.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+archive : ⊤ → String
+archive ⊤ = "/archive/${String.fromInt (Clock.now ⊤)}"
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/", archive ⊤ ]

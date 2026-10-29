@@ -1,0 +1,59 @@
+-- url "/blog/hello?ref=feed#comments"
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="about" href="/about">"about"</a>
+      <a id="hello" href="/blog/hello">"hello"</a>
+      <a id="second" href="/blog/second">"second"</a>
+    </nav>
+    <h1>"Post hello"</h1>
+    <p>"from feed, at comments"</p>
+  </main>
+</body>
+-- title
+(title: "Post hello")
+(the DOM did not change)
+-- location
+(location: /blog/hello?ref=feed#comments)
+(the DOM did not change)
+-- click #about
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="about" href="/about">"about"</a>
+      <a id="hello" href="/blog/hello">"hello"</a>
+      <a id="second" href="/blog/second">"second"</a>
+    </nav>
+    <h1>"About"</h1>
+    <p>""</p>
+  </main>
+</body>
+-- title
+(title: "About")
+(the DOM did not change)
+-- location
+(location: /about)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="about" href="/about">"about"</a>
+      <a id="hello" href="/blog/hello">"hello"</a>
+      <a id="second" href="/blog/second">"second"</a>
+    </nav>
+    <h1>"Post hello"</h1>
+    <p>"from feed, at comments"</p>
+  </main>
+</body>
+-- title
+(title: "Post hello")
+(the DOM did not change)
+-- location
+(location: /blog/hello?ref=feed#comments)
+(the DOM did not change)

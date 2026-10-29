@@ -33,7 +33,11 @@
 // and the body's attributes, its scripts left out, since the driver
 // imports the program itself — where every other page opens on an empty
 // body (docs/design/prerender.md §11, slice P1: a prerendered page holds
-// the program's first render before the program runs).
+// the program's first render before the program runs). When the script's
+// setup steps hold a `url`, the page is the file a static host answers that
+// address with (§7.4, `beni serve`'s rule): `/` and a path ending in `/` its
+// `index.html`, any other path the file itself, else `<path>.html`, else
+// the root `index.html`, the single-page fallback.
 //
 // A `--fuzz=<spec.json>@<report.json>` is a run of the page fuzzer
 // (`fuzz.mjs`, docs/design/browser-direct.md §8.3) in the same process:
@@ -296,7 +300,7 @@
 // Chrome runs microtasks between two listeners of a user's click).
 
 import { Console } from "node:console";
-import { fstatSync, mkdirSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { fstatSync, mkdirSync, readFileSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -1491,6 +1495,22 @@ function fiberSubscriptions() {
   return null;
 }
 
+// The file below `dir` a static host answers `address` with
+// (docs/design/prerender.md §7.4; `beni serve`'s rule, frontend.md §10.4).
+function servedFile(dir, address) {
+  const path = decodeURIComponent(new URL(address, "http://127.0.0.1/").pathname).slice(1);
+  const isFile = (rel) => {
+    try {
+      return statSync(join(dir, rel)).isFile();
+    } catch (error) {
+      if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return false;
+      throw error;
+    }
+  };
+  const tried = path === "" || path.endsWith("/") ? [`${path}index.html`] : [path, `${path}.html`, `${path}/index.html`];
+  return tried.find(isFile) ?? "index.html";
+}
+
 // `--html-page`: the page the build wrote, `html`, in place of the empty
 // one — its body's nodes and attributes. Its scripts are left out: the
 // driver imports the program. Under happy-dom with `--parser` the body is
@@ -2301,7 +2321,10 @@ async function runPage(entry, fiber, html = false) {
   // The test hook goes in before anything of the program runs.
   if (fiber) await page.run(fiberSubscriptions);
   // The page the build wrote, before the setup steps and the program.
-  if (html) await page.run(openPage, readFileSync(join(dirname(entryFile), "index.html"), "utf8"));
+  if (html) {
+    const at = script.find((s) => s.command === "url" && !s.throws);
+    await page.run(openPage, readFileSync(join(dirname(entryFile), servedFile(dirname(entryFile), at === undefined ? "/" : at.text)), "utf8"));
+  }
 
   let shown = null;
   let result = null;

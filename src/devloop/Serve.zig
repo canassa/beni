@@ -182,7 +182,8 @@ fn acceptsHtml(request: *const http.Server.Request) bool {
 }
 
 /// The file under `--out` that answers `rel`, or null for a 404: the file
-/// itself, a directory's `index.html`, or — for a path that names nothing
+/// itself, a directory's `index.html`, the path with `.html` after it — a
+/// prerendered page (`prerender.md` §7.4) — or, for a path that names nothing
 /// and whose last segment has no `.`, or any such path when the request
 /// accepts HTML — the root `index.html` (§10.4's single-page-application
 /// fallback, as amended for a route like `/users/jane.doe`).
@@ -202,6 +203,14 @@ fn locate(arena: Allocator, shared: *Shared, rel: []const u8, html: bool) !?[]co
         },
         else => return null,
     } else |_| {}
+    // A prerendered site's page for `/about` is `about.html`
+    // (`prerender.md` §7.4), as a static host answers it.
+    if (rel.len != 0) {
+        const page = try std.fmt.allocPrint(arena, "{s}.html", .{full});
+        if (cwd.statFile(io, page, .{})) |stat| {
+            if (stat.kind == .file) return page;
+        } else |_| {}
+    }
     const last = if (std.mem.lastIndexOfScalar(u8, rel, '/')) |i| rel[i + 1 ..] else rel;
     if (!html and std.mem.indexOfScalar(u8, last, '.') != null) return null;
     const index = try std.fmt.allocPrint(arena, "{s}/index.html", .{shared.out});

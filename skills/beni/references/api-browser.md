@@ -21,6 +21,7 @@ module Browser
   value installRendered : Value → ⊤  -- impure
   value mountAt : Program, String → Program  -- impure
   value onRendered : Resume ⊤ → (⊤ → ⊤)  -- impure
+  value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
 module Browser.Events

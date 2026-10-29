@@ -66,6 +66,19 @@ mountAt page id =
         )
 
 
+--| The same program. Under `browser-inline` this asks the build to write
+--| a prerendered page for each route of the list
+--| (`docs/design/prerender.md` §7.2); this platform renders every page in
+--| the browser, so the program is returned as it is and the list is not
+--| read. One source then builds on both platforms.
+--|
+--|     main : Program
+--|     main =
+--|         Browser.prerender (Browser.program app) [ "/", "/about" ]
+pub prerender : Program, List String → Program
+prerender page _ = page
+
+
 --| Several programs on one page, started in the order of the list, so a
 --| program may mount at an element an earlier one rendered. Each receives
 --| only the messages of the markup it rendered.

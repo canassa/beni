@@ -1,0 +1,33 @@
+-- A prerendered `Tea.application` is handed the `Url` of each page's route,
+-- made with the project's `"build"."origin"` (docs/design/prerender.md
+-- §7.3), and this project names none: `prerender_needs_origin`, against
+-- its `beni.json`, before anything runs.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Changed Url
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.application
+                { init = λurl _ → ( url.path, Cmd.none )
+                , update = λ_ m → ( m, Cmd.none )
+                , view = λpath → { title = path, body = <p>{path}</p> }
+                , subscriptions = λ_ → Sub.none
+                , onUrlRequest = Requested
+                , onUrlChange = Changed
+                }
+            )
+            "root"
+        )
+        [ "/" ]

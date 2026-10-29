@@ -15,6 +15,7 @@ module Browser
     Internal
     External
   value mountAt : Program, String → Program
+  value prerender : Program, List String → Program  -- impure
 module Browser.Navigation
   type Error
     BadUrl
@@ -50,6 +51,7 @@ module Cmd
 module Inline
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
+  value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
   value entry : V, V → V  -- impure
@@ -73,12 +75,14 @@ module Inline
   value on : V, V, V, V → ⊤  -- impure
   value onArm : V, V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
+  value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
   value pass : V → ⊤  -- impure
   value passes : V → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
+  value routeUrl : String, String → Url  -- impure
   value run : V → ⊤  -- impure
   value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
