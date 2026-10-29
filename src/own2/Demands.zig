@@ -459,6 +459,8 @@ const Resolver = struct {
     /// Escapes: per cell, a run of points (`esc_points`).
     esc: stamped.Column(CellId, Ids.Range) = .{},
     esc_points: std.ArrayList(u32) = .empty,
+    /// Per point of a run, the run prefix's point of least rank₂.
+    esc_low: std.ArrayList(u32) = .empty,
     visited: stamped.Column(SetId, void) = .{},
     seen_holder: stamped.Column(CellId, void) = .{},
     /// The query's growth task once its sweep passed the one direct holder
@@ -479,6 +481,7 @@ const Resolver = struct {
         r.live.deinit();
         r.esc.deinit(r.gpa);
         r.esc_points.deinit(r.gpa);
+        r.esc_low.deinit(r.gpa);
         r.visited.deinit(r.gpa);
         r.seen_holder.deinit(r.gpa);
         r.steps.deinit(r.gpa);
@@ -538,38 +541,50 @@ const Resolver = struct {
     /// Every cell of every escaped value, with the point it escaped at:
     /// escape is deep, so `reach` (§2.4).
     fn buildEscapes(r: *Resolver) Error!void {
-        // Two passes: count per cell, then fill, so each cell's points are one run.
-        var counts: stamped.Column(CellId, u32) = .{};
-        defer counts.deinit(r.gpa);
+        // Every (cell, point) as one word, sorted: each cell's points are one
+        // run in point order, beside each the run prefix's point of least
+        // rank₂ (`esc_low`), so `escapedAt` is one binary search (#1226).
+        var pairs: std.ArrayList(u64) = .empty;
+        defer pairs.deinit(r.gpa);
         for (r.frame.escapes) |e| {
             var it = r.env.cells.sets.iterate(try r.reach(e.node));
             while (it.next()) |x| {
                 try r.env.charge.reserve(r.gpa, .inspection, 1);
-                const got = try counts.getOrPut(r.gpa, .from(x.key));
-                if (!got.found_existing) got.value_ptr.* = 0;
-                got.value_ptr.* += 1;
+                try pairs.append(r.gpa, @as(u64, x.key) << 32 | e.point);
             }
         }
-        for (r.frame.escapes) |e| {
-            var it = r.env.cells.sets.iterate(try r.reach(e.node));
-            while (it.next()) |x| {
-                const c: CellId = .from(x.key);
-                const got = try r.esc.getOrPut(r.gpa, c);
-                if (!got.found_existing) {
-                    got.value_ptr.* = .{ .start = @intCast(r.esc_points.items.len), .len = 0 };
-                    try r.esc_points.appendNTimes(r.gpa, none, counts.get(c).?);
-                }
-                r.esc_points.items[got.value_ptr.start + got.value_ptr.len] = e.point;
-                got.value_ptr.len += 1;
-            }
+        try r.env.charge.reserve(r.gpa, .inspection, @intCast(pairs.items.len * (std.math.log2_int_ceil(usize, pairs.items.len + 1) + 1)));
+        std.mem.sort(u64, pairs.items, {}, std.sort.asc(u64));
+        try r.esc_points.resize(r.gpa, pairs.items.len);
+        try r.esc_low.resize(r.gpa, pairs.items.len);
+        for (pairs.items, 0..) |q, i| {
+            const pt: u32 = @truncate(q);
+            const got = try r.esc.getOrPut(r.gpa, .from(@intCast(q >> 32)));
+            if (!got.found_existing) got.value_ptr.* = .{ .start = @intCast(i), .len = 0 };
+            got.value_ptr.len += 1;
+            r.esc_points.items[i] = pt;
+            const low = if (got.value_ptr.len == 1) pt else r.esc_low.items[i - 1];
+            r.esc_low.items[i] = if (r.frame.regions.rank2(pt) < r.frame.regions.rank2(low)) pt else low;
         }
     }
 
-    /// The point `c` escaped at before `p`, compatibly, or null.
-    fn escapedAt(r: *Resolver, c: CellId, p: u32) ?u32 {
+    /// The point `c` escaped at before `p`, compatibly, or null. For e < p,
+    /// compatible ⇔ rank₂(e) < rank₂(p) (§2.5): the least rank₂ before `p`
+    /// decides, by a binary search charged as growth (#1226), never a scan.
+    fn escapedAt(r: *Resolver, c: CellId, p: u32) Error!?u32 {
         const run = r.esc.get(c) orelse return null;
-        for (r.esc_points.items[run.start..][0..run.len]) |e| if (e < p and r.compatible(e, p)) return e;
-        return null;
+        // A run's size, never the demand's fixed lane (§4.1).
+        const task: ?Ids.Account.Kernel = if (run.len > 1) try r.env.account().enter(r.gpa, null) else null;
+        defer if (task) |k| r.env.account().leave(k);
+        try r.env.charge.reserve(r.gpa, .inspection, std.math.log2_int_ceil(u32, run.len + 1) + 1);
+        const before = std.sort.partitionPoint(u32, r.esc_points.items[run.start..][0..run.len], p, struct {
+            fn below(bound: u32, e: u32) bool {
+                return e < bound;
+            }
+        }.below);
+        if (before == 0) return null;
+        const e = r.esc_low.items[run.start + before - 1];
+        return if (r.frame.regions.rank2(e) < r.frame.regions.rank2(p)) e else null;
     }
 
     /// Escaped itself or through a trie ancestor; for a deep demand, a
@@ -580,7 +595,7 @@ const Resolver = struct {
             const lane = try cellLane(r.env, r.gpa, r.atom, at);
             defer leaveLane(r.env, lane);
             try r.env.charge.reserve(r.gpa, .inspection, 1);
-            if (r.escapedAt(at, p)) |e| return e;
+            if (try r.escapedAt(at, p)) |e| return e;
         }
         if (!deep) return null;
         return r.escapedBelow(c, p);
@@ -598,7 +613,7 @@ const Resolver = struct {
             var it = r.env.cells.children(x);
             while (it.next()) |k| {
                 try r.env.charge.reserve(r.gpa, .inspection, 1);
-                if (r.escapedAt(k, p)) |e| return e;
+                if (try r.escapedAt(k, p)) |e| return e;
                 try stack.append(r.gpa, k);
             }
         }
