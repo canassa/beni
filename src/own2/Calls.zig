@@ -178,38 +178,91 @@ const Grafter = struct {
     /// argument's position at `q`): the paths of `res`'s explicit
     /// structure, each `(node, path)` once. A route that meets a node it
     /// has passed (a widened class's knot) folds there (§2.9).
+    /// At a knot's own cursor (§2.11, #1146): each position on the route
+    /// has a builder, its snapshot as it stands, rooted there; a merge and
+    /// a fold act on the builder at ε, and a finished builder is relinked
+    /// into its parent's once, on the way back. No route scan, no path
+    /// replayed from the root.
     fn linkArgs(g: *Grafter, kappa: Cond.Kappas, res: NodeId) Error!Cond.Kappas {
-        var w: LinkWalk = .{ .out = kappa };
+        var w: LinkWalk = .{};
         defer w.deinit(g.gpa());
+        try w.builders.append(g.gpa(), .{ .at = kappa });
         try g.linkAt(&w, res, 0);
-        return w.out;
+        return g.finishBuilder(w.builders.items[0]);
     }
 
     const LinkWalk = struct {
-        out: Cond.Kappas,
-        path: std.ArrayList(Step) = .empty,
-        /// The nodes on the way here, each with the path length it was at.
-        route: std.ArrayList([2]u32) = .empty,
+        /// One per position of the route, its path length its index.
+        builders: std.ArrayList(Builder) = .empty,
+        /// The nodes on the route: each its builder's index (a backedge's
+        /// fold is there), set on entry, cleared on exit.
+        active: stamped.Column(NodeId, u32) = .{},
         /// Paths interned as `(parent, step)`, 0 the root; `(node, path)` visited.
         paths: Ids.FixedDict(2) = .{},
         visited: Ids.FixedDict(2) = .{},
         next_path: u32 = 1,
+        /// `argKappa` per `(argument, path)`, from its parent path's.
+        arg_at: Ids.FixedDict(2) = .{},
+        /// The `(argument, path)`s a level step or a missing position stopped.
+        arg_stopped: Ids.FixedDict(2) = .{},
 
         fn deinit(w: *LinkWalk, gpa_: Allocator) void {
-            w.path.deinit(gpa_);
-            w.route.deinit(gpa_);
+            w.builders.deinit(gpa_);
+            w.active.deinit(gpa_);
             w.paths.deinit(gpa_);
             w.visited.deinit(gpa_);
+            w.arg_at.deinit(gpa_);
+            w.arg_stopped.deinit(gpa_);
         }
     };
+
+    /// A position's snapshot being built, and whether a backedge folds it.
+    const Builder = struct { at: Cond.Kappas, fold: bool = false };
+
+    fn finishBuilder(g: *Grafter, b: Builder) Error!Cond.Kappas {
+        if (!b.fold or g.env.conds.isFold(b.at)) return b.at;
+        return g.env.conds.kappaFold(g.gpa(), g.env.charge, b.at);
+    }
+
+    /// `argKappa(i, p)` from the parent path's, each `(i, path)` once: the
+    /// argument's cursor one step further, or the parent's past a level
+    /// step or a missing position (`argKappa` stops there).
+    fn argKappaAt(g: *Grafter, w: *LinkWalk, i: u32, p: PathId) Error!Cond.Kappas {
+        if (i >= g.args.len) return .none;
+        const places = g.env.places;
+        // The paths up to one known, then down from it.
+        var up: std.ArrayList(PathId) = .empty;
+        defer up.deinit(g.gpa());
+        var at = p;
+        var cur: Cond.Kappas = g.args[i].kappa;
+        var stopped = false;
+        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+            try g.env.charge.reserve(g.gpa(), .memo, 1);
+            if (w.arg_at.get(.{ i, at.int() })) |v| {
+                cur = .from(v);
+                stopped = w.arg_stopped.get(.{ i, at.int() }) != null;
+                break;
+            }
+            try up.append(g.gpa(), at);
+        }
+        while (up.pop()) |q| {
+            const s = places.pathStep(q);
+            if (!stopped and (s.kind == .level or cur == .none)) stopped = true;
+            if (!stopped) cur = g.env.conds.kappaChild(cur, s);
+            try g.env.charge.reserve(g.gpa(), .memo, 1);
+            (try w.arg_at.getOrPut(g.gpa(), .{ i, q.int() })).value_ptr.* = cur.int();
+            if (stopped) (try w.arg_stopped.getOrPut(g.gpa(), .{ i, q.int() })).value_ptr.* = 0;
+        }
+        return cur;
+    }
 
     fn linkAt(g: *Grafter, w: *LinkWalk, root: NodeId, root_pid: u32) Error!void {
         const shapes = g.env.shapes;
         const conds = g.env.conds;
         // A depth-first walk on an explicit stack (#1130: `res`'s depth is the
         // source's, never native-stack depth). An `enter` frame may carry the
-        // step it is reached by; its `exit` frame takes the node off the
-        // route and the step off the path.
+        // step it is reached by, and opens that position's builder; its
+        // `exit` frame takes the node off the route and relinks the builder.
         const Frame = struct { node: NodeId, pid: u32, step: ?Step, exit: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(g.gpa());
@@ -218,30 +271,32 @@ const Grafter = struct {
         try stack.append(g.gpa(), .{ .node = root, .pid = root_pid, .step = null, .exit = false });
         while (stack.pop()) |f| {
             if (f.exit) {
-                _ = w.route.pop();
-                if (f.step != null) _ = w.path.pop();
+                w.active.remove(f.node);
+                if (f.step) |s| {
+                    const child = try g.finishBuilder(w.builders.pop().?);
+                    const top = &w.builders.items[w.builders.items.len - 1];
+                    top.at = if (conds.isFold(top.at)) try conds.kappaMerge(g.gpa(), g.env.charge, top.at, child) else try conds.withLink(g.gpa(), g.env.charge, top.at, s, child);
+                }
                 continue;
             }
             const t = f.node;
-            if (f.step) |s| try w.path.append(g.gpa(), s);
             try g.env.charge.reserve(g.gpa(), .memo, 1);
             const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), f.pid });
-            if (seen.found_existing) {
-                if (f.step != null) _ = w.path.pop();
-                continue;
-            }
+            if (seen.found_existing) continue;
             seen.value_ptr.* = 1;
-            try g.env.charge.reserve(g.gpa(), .inspection, @intCast(w.route.items.len));
-            const knot = for (w.route.items) |r| {
-                if (r[0] == t.int()) break r[1];
-            } else null;
-            if (knot) |len| {
-                // A knot: everything below is that position, folded.
-                w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items[0..len], .fold);
-                if (f.step != null) _ = w.path.pop();
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            if (w.active.get(t)) |bi| {
+                // A knot: everything below its first entry is that
+                // position, folded when its builder is finished.
+                w.builders.items[bi].fold = true;
                 continue;
             }
-            try w.route.append(g.gpa(), .{ t.int(), @intCast(w.path.items.len) });
+            if (f.step) |s| {
+                const parent = w.builders.items[w.builders.items.len - 1].at;
+                try w.builders.append(g.gpa(), .{ .at = conds.kappaChild(parent, s) });
+            }
+            const here: u32 = @intCast(w.builders.items.len - 1);
+            try w.active.put(g.gpa(), t, here);
             try stack.append(g.gpa(), .{ .node = t, .pid = f.pid, .step = f.step, .exit = true });
             var it = g.env.cells.sets.iterate(shapes.cells(t));
             while (it.next()) |e| {
@@ -249,7 +304,8 @@ const Grafter = struct {
                 if (g.env.cells.origin(cell) != .param) continue;
                 try g.env.charge.reserve(g.gpa(), .inspection, 1);
                 const x = g.env.cells.get(cell);
-                w.out = try conds.kappaAt(g.gpa(), g.env.charge, w.out, w.path.items, .{ .merge = try g.argKappa(x.a, .from(x.b)) });
+                const b = &w.builders.items[here];
+                b.at = try conds.kappaMerge(g.gpa(), g.env.charge, b.at, try g.argKappaAt(w, x.a, .from(x.b)));
             }
             // The children, in the order the recursion took them: pushed in
             // reverse so the first is walked first.
@@ -1026,4 +1082,193 @@ test "#1143: a cycle with no node on it, a delta over the union it sits in, is g
     const dr: NodeId = .from(x.shapes.get(r).b);
     try testing.expectEqual(Shape.Kind.delta, x.shapes.kind(dr));
     try testing.expectEqual(r.int(), x.shapes.get(dr).a);
+}
+
+/// #1146's chain (`unionChainCost`'s), each `N_k` also holding `π0` at its
+/// own path when `params`; its root, and `lf` its seed and argument.
+fn linkChain(x: *KnotFixture, n: usize, params: bool, lf: NodeId) !NodeId {
+    const gpa = testing.allocator;
+    const xs = try gpa.alloc(NodeId, n + 1);
+    defer gpa.free(xs);
+    for (xs) |*k| k.* = try x.shapes.knot(gpa, &x.account);
+    // N_k's path: (arg, [*]) repeated n − k times below the root.
+    const paths = try gpa.alloc(PathId, n);
+    defer gpa.free(paths);
+    paths[0] = try x.places.rootPath(gpa, x.t_place);
+    for (1..n) |j| {
+        const via = (try x.places.extend(gpa, .growth(&x.account), paths[j - 1], x.arg)).?;
+        paths[j] = (try x.places.extend(gpa, .growth(&x.account), via, Place.Step.elem)).?;
+    }
+    for (1..n + 1) |k| {
+        const lsite = try x.site(@intCast(100_000 + k), x.list);
+        const lk = if (k == 1) lsite else try x.shapes.node(gpa, &x.account, x.list, x.shapes.cells(lsite), try x.one(Place.Step.elem, xs[k - 1]));
+        var cells = x.shapes.cells(try x.site(@intCast(10 + k), x.t_place));
+        if (params) {
+            const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, paths[n - k], 0);
+            cells = try x.cells.sets.insert(gpa, x.env().charge, cells, p.int(), 0);
+        }
+        const nk = try x.shapes.node(gpa, &x.account, x.t_place, cells, try x.one(x.arg, lk));
+        try x.tieUnion(xs[k], nk, if (k == n) lf else xs[k + 1]);
+    }
+    return xs[n];
+}
+
+/// An argument's snapshot: one entry at its root, linked one level down
+/// its own `arg`, so each parameter merges a position of its own.
+fn linkArgKappa(x: *KnotFixture, lf: NodeId) !Cond.Kappas {
+    const ak = (try x.conds.kappaSet(testing.allocator, x.env().charge, .none, lf, Cond.yes)).ctx;
+    return x.conds.kappaLink(testing.allocator, x.env().charge, ak, x.arg, ak);
+}
+
+/// What linking the chain's arguments costs, in records: the link step
+/// alone (the graft is counted above).
+fn linkChainCost(n: usize, params: bool) !u64 {
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    const lf = try x.site(7, x.t_place);
+    const root = try linkChain(&x, n, params, lf);
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(&x, lf) }}, .label = label, .s = &s };
+    const before = x.account.total();
+    try testing.expect(try g.linkArgs(.none, root) != .none);
+    return x.account.total() - before;
+}
+
+test "#1146: linking a chain of knots as deep as the source costs each knot its own records" {
+    for ([_]bool{ false, true }) |params| {
+        var cost: [5]u64 = undefined;
+        for ([_]usize{ 4, 16, 64, 256, 1_024 }, 0..) |n, i| cost[i] = try linkChainCost(n, params);
+        // Four times the knots, about four times the records (n log n at
+        // most), never sixteen: no route scan, no path from the root.
+        for (1..5) |i| try testing.expect(cost[i] <= 6 * cost[i - 1]);
+    }
+}
+
+/// The link step as it was before #1146, for a differential test: each
+/// operation replayed from the result's root along its path, the route
+/// scanned for a knot.
+fn linkByRootPaths(g: *Grafter, kappa: Cond.Kappas, root: NodeId) !Cond.Kappas {
+    const gpa = testing.allocator;
+    const shapes = g.env.shapes;
+    const conds = g.env.conds;
+    var out = kappa;
+    var path: std.ArrayList(Step) = .empty;
+    defer path.deinit(gpa);
+    var route: std.ArrayList([2]u32) = .empty;
+    defer route.deinit(gpa);
+    var paths: Ids.FixedDict(2) = .{};
+    defer paths.deinit(gpa);
+    var visited: Ids.FixedDict(2) = .{};
+    defer visited.deinit(gpa);
+    var next_path: u32 = 1;
+    const Frame = struct { node: NodeId, pid: u32, step: ?Step, exit: bool };
+    var stack: std.ArrayList(Frame) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, .{ .node = root, .pid = 0, .step = null, .exit = false });
+    while (stack.pop()) |f| {
+        if (f.exit) {
+            _ = route.pop();
+            if (f.step != null) _ = path.pop();
+            continue;
+        }
+        if ((try visited.getOrPut(gpa, .{ f.node.int(), f.pid })).found_existing) continue;
+        if (f.step) |s| try path.append(gpa, s);
+        const knot = for (route.items) |r| {
+            if (r[0] == f.node.int()) break r[1];
+        } else null;
+        if (knot) |len| {
+            out = try conds.kappaAt(gpa, g.env.charge, out, path.items[0..len], .fold);
+            if (f.step != null) _ = path.pop();
+            continue;
+        }
+        try route.append(gpa, .{ f.node.int(), @intCast(path.items.len) });
+        try stack.append(gpa, .{ .node = f.node, .pid = f.pid, .step = f.step, .exit = true });
+        var it = g.env.cells.sets.iterate(shapes.cells(f.node));
+        while (it.next()) |e| if (g.env.cells.origin(.from(e.key)) == .param) {
+            const x = g.env.cells.get(.from(e.key));
+            out = try conds.kappaAt(gpa, g.env.charge, out, path.items, .{ .merge = try g.argKappa(x.a, .from(x.b)) });
+        };
+        var kids: std.ArrayList(Frame) = .empty;
+        defer kids.deinit(gpa);
+        const d = shapes.get(f.node);
+        switch (d.kind) {
+            .leaf => {},
+            .node, .delta => {
+                if (d.kind == .delta) try kids.append(gpa, .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false });
+                var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                while (kt.next()) |e| {
+                    const got = try paths.getOrPut(gpa, .{ f.pid, e.step.word() });
+                    if (!got.found_existing) {
+                        got.value_ptr.* = next_path;
+                        next_path += 1;
+                    }
+                    try kids.append(gpa, .{ .node = e.node, .pid = got.value_ptr.*, .step = e.step, .exit = false });
+                }
+            },
+            .recast => try kids.append(gpa, .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }),
+            .@"union", .positions => try kids.appendSlice(gpa, &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
+        }
+        var k = kids.items.len;
+        while (k > 0) {
+            k -= 1;
+            try stack.append(gpa, kids.items[k]);
+        }
+    }
+    return out;
+}
+
+test "#1146: linking at each knot's own cursor builds the snapshot replaying root paths builds" {
+    const gpa = testing.allocator;
+    // The chain with and without parameters, a tree with no knot, and one
+    // argument passed for two parameters (an aliased control).
+    for (0..4) |case| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const lf = try x.site(7, x.t_place);
+        const ak = try linkArgKappa(&x, lf);
+        const root: NodeId = switch (case) {
+            0 => try linkChain(&x, 8, false, lf),
+            1 => try linkChain(&x, 8, true, lf),
+            else => blk: {
+                // T{arg: L{[*]: union(P0, P1)}}, P_i the parameter's leaf at
+                // the element's path, and π0 at T's root.
+                const rp = try x.places.rootPath(gpa, x.t_place);
+                const ep = (try x.places.extend(gpa, .growth(&x.account), (try x.places.extend(gpa, .growth(&x.account), rp, x.arg)).?, Place.Step.elem)).?;
+                const leafAt = struct {
+                    fn of(f: *KnotFixture, i: u32, p: PathId) !NodeId {
+                        const c = try f.cells.symbolic(testing.allocator, &f.account, &f.places, .param, i, p, 0);
+                        return f.shapes.leaf(testing.allocator, &f.account, f.t_place, try f.cells.sets.insert(testing.allocator, f.env().charge, .none, c.int(), 0));
+                    }
+                }.of;
+                const u = try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, try leafAt(&x, 0, ep), try leafAt(&x, @intCast(case - 2), ep));
+                const l = try x.shapes.node(gpa, &x.account, x.list, .none, try x.one(Place.Step.elem, u));
+                break :blk try x.shapes.node(gpa, &x.account, x.t_place, x.shapes.cells(try leafAt(&x, 0, rp)), try x.one(x.arg, l));
+            },
+        };
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+        const args = [_]Value{ .{ .node = lf, .kappa = ak }, .{ .node = lf, .kappa = ak } };
+        var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+        const seed = (try x.conds.kappaSet(gpa, x.env().charge, .none, lf, Cond.yes)).ctx;
+        try testing.expectEqual(try linkByRootPaths(&g, seed, root), try g.linkArgs(seed, root));
+    }
+}
+
+test "#1146: a chain of knots as deep as the source is linked on a small stack" {
+    var result: anyerror!u64 = 0;
+    const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
+        fn run(out: *anyerror!u64) void {
+            out.* = linkChainCost(1_024, true);
+        }
+    }.run, .{&result});
+    th.join();
+    _ = try result;
 }

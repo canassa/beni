@@ -663,7 +663,7 @@ pub const Table = struct {
     }
 
     /// `ctx` with its link at `s` replaced by `child`.
-    fn withLink(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, s: Step, child: Kappas) Error!Kappas {
+    pub fn withLink(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, s: Step, child: Kappas) Error!Kappas {
         const p = t.position(ctx);
         std.debug.assert(p.fold == 0);
         if (t.kappaChild(ctx, s) == child) return ctx;
