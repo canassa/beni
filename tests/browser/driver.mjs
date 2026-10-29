@@ -1478,8 +1478,14 @@ function fiberSubscriptions() {
 // parsed by the standard's algorithm (`standardParsing`), as Chrome's
 // `DOMParser` parses it.
 function openPage(html) {
+  // The `<body>` element alone, its start tag to its end tag: what follows
+  // it in the file — the newline before `</html>` — the parser would move
+  // into it.
+  const start = html.search(/<body[\s>]/i);
+  const end = html.lastIndexOf("</body>");
+  const body = html.slice(start === -1 ? 0 : start, end === -1 ? html.length : end + "</body>".length);
   const parse = globalThis.__beniParseBody;
-  const parsed = parse === undefined ? new DOMParser().parseFromString(html, "text/html").body : parse(html);
+  const parsed = parse === undefined ? new DOMParser().parseFromString(body, "text/html").body : parse(body);
   for (const script of parsed.querySelectorAll("script")) script.remove();
   for (const a of parsed.attributes) document.body.setAttribute(a.name, a.value);
   document.body.replaceChildren(...[...parsed.childNodes].map((n) => document.importNode(n, true)));
@@ -2351,12 +2357,9 @@ async function standardParsing(parserPath) {
     for (const c of (node.tagName === "template" ? node.content : node).childNodes) into.appendChild(build(doc, c));
     return el;
   };
-  // `openPage`'s parser: the page's `<body>` element, its start tag and
-  // content, parsed where the standard parses it, below `<html>`.
-  globalThis.__beniParseBody = (page) => {
-    const start = page.search(/<body[\s>]/i);
-    const end = page.lastIndexOf("</body>");
-    const text = page.slice(start === -1 ? 0 : start, end === -1 ? page.length : end + "</body>".length);
+  // `openPage`'s parser: the page's `<body>` element, its start tag to its
+  // end tag, parsed where the standard parses it, below `<html>`.
+  globalThis.__beniParseBody = (text) => {
     const root = parseFragment(defaultTreeAdapter.createElement("html", html, []), text);
     return build(globalThis.document, root.childNodes.find((n) => n.tagName === "body"));
   };
