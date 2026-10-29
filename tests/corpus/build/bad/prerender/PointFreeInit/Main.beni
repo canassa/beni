@@ -1,0 +1,41 @@
+-- A prerendered program's `init` that is a function of its own module
+-- bound point-free (docs/design/prerender.md §3.1, amended for #1170):
+-- `stamp = Clock.now` has no body a call runs, so its walk shows no effect,
+-- and the build accepted it, and wrote the build machine's clock into the
+-- page. A field that names such a function is refused unless the checker
+-- proves it total.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+stamp : ⊤ → Int
+stamp = Clock.now
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model}</output>
+        {if model > 1000 then <p>late</p> else <></>}
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = stamp, update = update, view = view }) "root")
+        [ "/" ]

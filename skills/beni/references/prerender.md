@@ -138,8 +138,15 @@ main =
 
 `init`, `view` and the route list must be pure: the build computes each page, and the browser
 computes the same first render again. A call that may read the clock, randomness or the host is
-`prerender_impure`, at the call. `Debug.log` is allowed. A render that throws fails the build
-(`prerender_failed`), with the route.
+`prerender_impure`, at the call. `Debug.log` is allowed, also in another module. A render that
+throws fails the build (`prerender_failed`), with the route.
+- The build reads all the code that they can run, in each module of the program and its
+  platforms. `init` can name a function of another module: `init = Counter.init`.
+- A constant is computed when its module loads. A read of a constant whose code may be impure
+  (`seed = Clock.now ⊤`) is `prerender_impure`, also in a called function or a lambda.
+- A function with no parameters whose body is not a lambda (`stamp = Clock.now`) has no body that
+  a call runs: write the parameter (`start ⊤ = initial ⊤`), or a call of it can be refused.
+- A method call or an operator that may be impure is `prerender_impure`.
 
 ## What `init` gets
 

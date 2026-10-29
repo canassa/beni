@@ -1,0 +1,11 @@
+--! A helper that logs a value it finds out of range, through a second
+--! function of this module, and gives back the value it is handed. The
+--! program hands it none out of range, so the build writes nothing to
+--! standard error.
+
+pub checked : String, Int → Int
+checked label n = if n > 100 then warn label n else n
+
+
+warn : String, Int → Int
+warn label n = Debug.log label n

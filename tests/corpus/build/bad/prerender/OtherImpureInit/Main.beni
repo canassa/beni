@@ -1,0 +1,34 @@
+-- A prerendered program's `init` that is another module's function named in
+-- the record (docs/design/prerender.md §3.1, amended for #1170): the build
+-- follows `Stamp.init` into its body, which reads the clock, and names that
+-- call, in `Stamp.beni`. The page would hold the build machine's clock.
+import Browser
+import Html exposing (Html)
+import Stamp
+import Tea
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Stamp.Model → Stamp.Model
+update msg model =
+    case msg of
+        Reset →
+            { model | at = 0 }
+
+
+view : Stamp.Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.at}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = Stamp.init, update = update, view = view }) "root")
+        [ "/" ]

@@ -1,0 +1,4 @@
+--! A constant another module's `view` reads.
+
+pub title : String
+title = String.toUpper "counter"

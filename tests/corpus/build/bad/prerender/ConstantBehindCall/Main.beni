@@ -1,0 +1,37 @@
+-- A constant computed from the clock, read behind a call the checker
+-- answers pure (docs/design/prerender.md §3.1, amended for #1170): reading
+-- `Theme.seed` is not an effect to the checker, since the constant is
+-- computed where `Theme` loads, so `Theme.addSeed model` is pure to call.
+-- The page would still hold the build machine's clock, which the browser
+-- computes again. The build follows every function `view` names, and
+-- refuses the read, in `Theme.beni`. It accepted it before.
+import Browser
+import Html exposing (Html)
+import Tea
+import Theme
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{Theme.addSeed model}</output>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root")
+        [ "/" ]

@@ -1,0 +1,11 @@
+--! A model stamped with the time it was made.
+
+import Clock
+
+
+pub type alias Model =
+    at : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { at = Clock.now ⊤ }

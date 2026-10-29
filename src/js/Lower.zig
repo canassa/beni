@@ -261,6 +261,12 @@ pub const Input = struct {
     /// (static-dispatch-spike.md §7). Lowering reads it; what it cannot
     /// honour is REFUSED rather than emitted wrongly.
     dispatch: *const Dispatch,
+    /// Every module's checker table, indexed by module, read only by the
+    /// purity walk of a prerendered program (`prerender.md` §3.1, amended
+    /// for #1170): it follows a call of another module's function into
+    /// that function's body, and reads the checker's answers there. Empty:
+    /// no other module's body is followed, and such a call is the effect.
+    dispatches: []const Dispatch = &.{},
     /// The checked or installed module-local ownership facts (§31.10).
     ownership: Hoists.Table = .empty,
     /// The session's type table, read as a **name, declaration and
@@ -14327,18 +14333,24 @@ pub const Lowerer = struct {
         if (l.in.markup.?.build.prerender != .tree) return try l.expr(out, args[0]);
         // The route list must be pure (`prerender.md` §3.1), `Debug`'s
         // effect aside.
-        const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
-        @memset(verdicts, .unknown);
-        switch (try l.effectOf(args[1], verdicts)) {
-            .none, .debug => {},
-            .unread => |at| try l.report(.prerender_impure, at,
+        var verdicts = try l.newVerdicts();
+        switch (try l.effectOf(l.ownFrame(), args[1], &verdicts)) {
+            .none, .debug => if (try l.constantRead(l.ownFrame(), args[1], &verdicts)) |read| try l.reportEffect(read,
+                \\This program prerenders, so its route list must be pure, and it may read this
+                \\value, which is computed where its module loads by code that may have an
+                \\effect: it may read or change something outside the program. The build
+                \\computes the routes once and writes a page for each, so a read of the host,
+                \\the clock or randomness would make the site depend on when it was built
+                \\(`docs/design/prerender.md` §3.1). Compute it from values the program holds.
+            , .{}),
+            .unread => |at| try l.reportEffect(at,
                 \\This program prerenders, so its route list must be pure: the build computes it
                 \\once and writes a page for each route (`docs/design/prerender.md` §3.1). This is
-                \\another module's value, and the build cannot read whether it is computed purely:
-                \\its code is not this module's. A limit of the build (#1170): write the list, or
-                \\the value it is made from, in this module.
+                \\a value the build cannot read the code of, so it cannot tell whether it is
+                \\computed purely. A limit of the build: write the list, or the value it is made
+                \\from, in a module of the program.
             , .{}),
-            .site => |at| try l.report(.prerender_impure, at,
+            .site => |at| try l.reportEffect(at,
                 \\This program prerenders, so its route list must be pure, and this may have an
                 \\effect: it may read or change something outside the program. The build computes
                 \\the routes once and writes a page for each, so a read of the host, the clock or
@@ -14931,9 +14943,11 @@ pub const Lowerer = struct {
     /// `cx.programPure` (version 1.20, `prerender.md` §3.1): `prerender_impure`
     /// at the first call of `init`'s or `view`'s body that may have an
     /// effect other than `Debug`'s, by the checker's inferred rung; false
-    /// then. A field whose body the compiler cannot read here — another
-    /// module's function, a value computed at run time — is refused at the
-    /// field: nothing says it is pure.
+    /// then. A field that names a top-level function, of this module or of
+    /// another (`init = Counter.init`), is answered as a call of it would be
+    /// (§3.1, amended for #1170). A field whose code the compiler cannot
+    /// read here — a value computed at run time — is refused at the field:
+    /// nothing says it is pure.
     fn directPure(l: *Lowerer, part: beni_markup.Program.Part) Allocator.Error!bool {
         const pc = l.program_now orelse return true;
         const part_name, const field = switch (part) {
@@ -14941,28 +14955,40 @@ pub const Lowerer = struct {
             .view => .{ "view", pc.view orelse return true },
             else => return true,
         };
-        const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
-        @memset(verdicts, .unknown);
+        var verdicts = try l.newVerdicts();
+        const at: At = .{ .m = l.in.module, .inst = field };
         const found: Effect = switch (l.bir.instTag(field)) {
-            .lambda => try l.effectOf(@fromBackingInt(@intCast(l.bir.instData(field).rhs)), verdicts),
-            .top => blk: {
-                const d = l.bir.instData(field).lhs;
-                if (d >= l.bir.decls.len or l.bir.decls[d].body.unwrap() == null) break :blk .{ .unread = field };
-                break :blk try l.declEffect(d, verdicts);
+            .lambda => try l.effectOf(l.ownFrame(), @fromBackingInt(@intCast(l.bir.instData(field).rhs)), &verdicts),
+            .top => try l.namedEffect(l.ownFrame(), l.bir.instData(field).lhs, at, &verdicts),
+            .ext_value => blk: {
+                const d = l.bir.instData(field);
+                const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                const f = l.followed(m) orelse break :blk .{ .unread = at };
+                const decl = l.in.provenance[m.int()].valueDecl(d.rhs) orelse break :blk .{ .unread = at };
+                break :blk try l.namedEffect(f, decl.int(), at, &verdicts);
             },
-            else => .{ .unread = field },
+            else => .{ .unread = at },
         };
         switch (found) {
-            .none, .debug => return true,
-            .unread => |at| try l.report(.prerender_impure, at,
+            .none, .debug => {
+                const read = try l.constantRead(l.ownFrame(), field, &verdicts) orelse return true;
+                try l.reportEffect(read,
+                    \\This program prerenders, so its `{s}` must be pure, and it may read this value,
+                    \\which is computed where its module loads by code that may have an effect: it
+                    \\may read or change something outside the program. The build and the browser
+                    \\each compute it again, so a read of the host, the clock or randomness could
+                    \\make the page and the first render differ (`docs/design/prerender.md` §3.1).
+                    \\Compute it from values the program holds, or in a command.
+                , .{part_name});
+            },
+            .unread => |where| try l.reportEffect(where,
                 \\This program prerenders, so its `{s}` must be pure: the build computes the page
                 \\from it, and the browser computes the same first render from it again
-                \\(`docs/design/prerender.md` §3.1). This is another module's value, and the build
-                \\cannot read whether it is computed purely: its code is not this module's. A limit
-                \\of the build (#1170): write a call of a function, `λ⊤ → Other.init ⊤`, or the
-                \\value in this module.
+                \\(`docs/design/prerender.md` §3.1). This is a value the build cannot read the code
+                \\of, so it cannot tell whether calling it is pure. A limit of the build: write a
+                \\function, `λ⊤ → …`, or name a top-level function of the program.
             , .{part_name}),
-            .site => |at| try l.report(.prerender_impure, at,
+            .site => |where| try l.reportEffect(where,
                 \\This program prerenders, so its `{s}` must be pure, and this may have an effect:
                 \\it may read or change something outside the program. The build computes the page
                 \\from `{s}`, and the browser computes the same first render from it again, so a
@@ -14974,56 +15000,156 @@ pub const Lowerer = struct {
         return false;
     }
 
+    /// An instruction of some module: where an `Effect` was found.
+    const At = struct { m: Graph.Index, inst: Inst.Index };
+
     /// What evaluating some code may do, as `prerender.md` §3.1 reads it:
     /// nothing; only `Debug`'s effect; an effect at a site, named; or a
     /// value whose code the build cannot read.
-    const Effect = union(enum) { none, debug, site: Inst.Index, unread: Inst.Index };
+    const Effect = union(enum) { none, debug, site: At, unread: At };
 
     /// A declaration's `Effect`, once walked: `visiting` while its body is,
     /// so a recursive call finds no effect the walk has not met already.
     const Purity = union(enum) { unknown, visiting, done: Effect };
 
-    /// Declaration `d`'s body's `Effect`, walked once.
-    fn declEffect(l: *Lowerer, d: u32, verdicts: []Purity) Allocator.Error!Effect {
-        switch (verdicts[d]) {
+    /// Per module, its declarations' `Purity`, each module's made the first
+    /// time the walk enters it.
+    const Verdicts = struct { per: [][]Purity };
+
+    /// A module the walk reads code in: its `Bir` and the checker's table.
+    const CodeFrame = struct { m: Graph.Index, b: *const Bir, dispatch: *const Dispatch };
+
+    fn newVerdicts(l: *Lowerer) Allocator.Error!Verdicts {
+        const per = try l.scratch.alloc([]Purity, l.in.graph.count());
+        @memset(per, &.{});
+        return .{ .per = per };
+    }
+
+    fn verdictsOf(l: *Lowerer, v: *Verdicts, f: CodeFrame) Allocator.Error![]Purity {
+        const i = f.m.int();
+        if (i >= v.per.len) return &.{};
+        if (v.per[i].len != f.b.decls.len) {
+            v.per[i] = try l.scratch.alloc(Purity, f.b.decls.len);
+            @memset(v.per[i], .unknown);
+        }
+        return v.per[i];
+    }
+
+    fn ownFrame(l: *Lowerer) CodeFrame {
+        return .{ .m = l.in.module, .b = l.bir, .dispatch = l.in.dispatch };
+    }
+
+    /// The module `m` as the walk reads it, when it follows its code: the
+    /// app's and the platforms' modules, whose bodies and checker tables
+    /// the lowering holds (`Input.birs`, `Input.dispatches`). Core's are
+    /// answered at their calls and their reads, as before.
+    fn followed(l: *Lowerer, m: Graph.Index) ?CodeFrame {
+        if (m == l.in.module) return l.ownFrame();
+        const package = l.in.graph.modulePackage(m);
+        if (package != .app and package != .platform) return null;
+        const i = m.int();
+        if (i >= l.in.birs.len or i >= l.in.dispatches.len or i >= l.in.provenance.len) return null;
+        return .{ .m = m, .b = l.in.birs[i], .dispatch = &l.in.dispatches[i] };
+    }
+
+    /// `prerender_impure` at `at`, in its own module's file.
+    fn reportEffect(l: *Lowerer, at: At, comptime fmt: []const u8, args: anytype) !void {
+        try l.report(.prerender_impure, at.inst, fmt, args);
+        if (at.m != l.in.module) l.diagnostics.items[l.diagnostics.items.len - 1].region_module = at.m;
+    }
+
+    /// Declaration `d` of `f`'s module's body's `Effect`, walked once.
+    fn declEffect(l: *Lowerer, f: CodeFrame, d: u32, verdicts: *Verdicts) Allocator.Error!Effect {
+        const slots = try l.verdictsOf(verdicts, f);
+        if (d >= slots.len) return .{ .unread = .{ .m = f.m, .inst = f.b.decls[0].inst_start } };
+        switch (slots[d]) {
             .done => |e| return e,
             // A call in a cycle adds no effect of its own: the cycle's
             // bodies hold every call it makes, and the walk meets each.
             .visiting => return .debug,
             .unknown => {},
         }
-        verdicts[d] = .visiting;
-        const e = try l.effectOf(l.bodyOf(d), verdicts);
-        verdicts[d] = .{ .done = e };
+        slots[d] = .visiting;
+        const e = try l.effectOf(f, bodyIn(f, d), verdicts);
+        // `verdictsOf` may not move a module's slots once made.
+        slots[d] = .{ .done = e };
         return e;
     }
 
-    /// The `Effect` of evaluating `root`: the checker's answer at each call
-    /// that may be impure, except that a call of `Debug`'s is `Debug`'s and a
-    /// call of a function of this module is answered by that function's
-    /// body — and a call the checker answers impure whose body shows no
-    /// effect is the effect itself, since its value carries one the walk
-    /// cannot see (a function bound point-free, `stamp = Clock.now`). A
-    /// top-level constant of this module is evaluated where it is read: its
-    /// body's effect is the read's. Another app module's constant is
-    /// `unread`: its code is not this module's. The body of a function a
-    /// value makes is not evaluated where it is made — a lambda, a `let` of
-    /// a function — and a call of one is the checker's at the call.
-    fn effectOf(l: *Lowerer, root: Inst.Index, verdicts: []Purity) Allocator.Error!Effect {
+    /// Declaration `d`'s body as `Lowerer.bodyOf` reads it, in `f`'s module:
+    /// a lambda's body when the whole body is one.
+    fn bodyIn(f: CodeFrame, d: u32) Inst.Index {
+        const body = f.b.decls[d].body.unwrap().?;
+        return switch (Convention.definitionOf(f.dispatch, f.b, d)) {
+            .lambda => @fromBackingInt(@intCast(f.b.instData(body).rhs)),
+            else => body,
+        };
+    }
+
+    /// Whether a call of declaration `d` of `f`'s module evaluates its body
+    /// with the call's arguments: it has parameters, or its whole body is a
+    /// lambda. Any other function is a value its body computes — `stamp =
+    /// Clock.now`, `stamp = Debug.log "s" Clock.now` — and its body's walk
+    /// says nothing of what calling that value does.
+    fn callRunsBody(f: CodeFrame, d: u32) bool {
+        return switch (Convention.definitionOf(f.dispatch, f.b, d)) {
+            .params, .lambda => true,
+            else => false,
+        };
+    }
+
+    /// The `Effect` of calling declaration `d` of `f`'s module when the
+    /// checker says the call may be impure: its body's, if the call runs
+    /// its body and the body shows `Debug`'s effect or one of its own. A
+    /// body that shows none, or a function its body computes, is the effect
+    /// itself: its value carries one the walk cannot see. `at` is the call.
+    fn calleeEffect(l: *Lowerer, f: CodeFrame, d: u32, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        if (d >= f.b.decls.len or f.b.decls[d].body.unwrap() == null or !callRunsBody(f, d)) return .{ .site = at };
+        return switch (try l.declEffect(f, d, verdicts)) {
+            .none => .{ .site = at },
+            .debug => .debug,
+            else => |e| e,
+        };
+    }
+
+    /// The `Effect` of calling the top-level function `d` of `f`'s module
+    /// that a program's field names, where no call site holds the
+    /// checker's answer (§3.1, amended for #1170): none when the checker
+    /// proves it total, so pure (`checker-v2.md` §26.1); else its body's, if
+    /// a call runs its body; else the field is the effect.
+    fn namedEffect(l: *Lowerer, f: CodeFrame, d: u32, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        if (d >= f.b.decls.len or f.b.decls[d].body.unwrap() == null) return .{ .site = at };
+        if (f.dispatch.effectDecl(d).total) return .none;
+        if (!callRunsBody(f, d)) return .{ .site = at };
+        return l.declEffect(f, d, verdicts);
+    }
+
+    /// The `Effect` of evaluating `root`, of `f`'s module: the checker's
+    /// answer at each call that may be impure, except that a call of
+    /// `Debug`'s is `Debug`'s and a call of a function of the app's or a
+    /// platform's modules is answered by that function's body, in its own
+    /// module (`calleeEffect`). A top-level constant of those modules is
+    /// evaluated where its module loads, in the build as in the browser:
+    /// its body's effect is the read's. The body of a function a value
+    /// makes is not evaluated where it is made — a lambda, a `let` of a
+    /// function — and a call of one is the checker's at the call.
+    fn effectOf(l: *Lowerer, f: CodeFrame, root: Inst.Index, verdicts: *Verdicts) Allocator.Error!Effect {
         const debug = l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol());
+        const b = f.b;
         var saw_debug = false;
         var stack: std.ArrayList(Inst.Index) = .empty;
         try stack.append(l.scratch, root);
         while (stack.pop()) |at| {
-            const d = l.bir.instData(at);
-            switch (l.bir.instTag(at)) {
+            const d = b.instData(at);
+            const here_at: At = .{ .m = f.m, .inst = at };
+            switch (b.instTag(at)) {
                 .lambda => continue,
                 .let => {
-                    for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
-                        const dd = l.bir.instData(def);
-                        switch (l.bir.instTag(def)) {
+                    for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                        const dd = b.instData(def);
+                        switch (b.instTag(def)) {
                             .let_def => {
-                                const ld = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
+                                const ld = b.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
                                 if (ld.params_end != ld.params_start) continue;
                                 try stack.append(l.scratch, @fromBackingInt(@intCast(dd.rhs)));
                             },
@@ -15035,51 +15161,67 @@ pub const Lowerer = struct {
                     continue;
                 },
                 .call => {
-                    const site = l.in.dispatch.effectAt(at);
+                    const site = f.dispatch.effectAt(at);
                     if (site.impure or site.own != .no) {
+                        if (site.own != .no) return .{ .site = here_at };
                         const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
-                        const cd = l.bir.instData(callee);
-                        switch (l.bir.instTag(callee)) {
-                            .ext_value => if (debug != null and cd.lhs == debug.?.int()) {
-                                saw_debug = true;
-                            } else return .{ .site = at },
-                            .top => {
-                                if (site.own != .no) return .{ .site = at };
-                                if (cd.lhs >= l.bir.decls.len or l.bir.decls[cd.lhs].body.unwrap() == null) return .{ .site = at };
-                                switch (try l.declEffect(cd.lhs, verdicts)) {
-                                    .none => return .{ .site = at },
-                                    .debug => saw_debug = true,
-                                    else => |e| return e,
-                                }
+                        const cd = b.instData(callee);
+                        const e: Effect = switch (b.instTag(callee)) {
+                            .ext_value => blk: {
+                                if (debug != null and cd.lhs == debug.?.int()) break :blk .debug;
+                                const m: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
+                                const other = l.followed(m) orelse break :blk .{ .site = here_at };
+                                const decl = l.in.provenance[m.int()].valueDecl(cd.rhs) orelse break :blk .{ .site = here_at };
+                                break :blk try l.calleeEffect(other, decl.int(), here_at, verdicts);
                             },
-                            else => return .{ .site = at },
+                            .top => try l.calleeEffect(f, cd.lhs, here_at, verdicts),
+                            else => .{ .site = here_at },
+                        };
+                        switch (e) {
+                            .none => {},
+                            .debug => saw_debug = true,
+                            else => return e,
                         }
                     }
                 },
                 .method_call, .type_dispatch => {
-                    const site = l.in.dispatch.effectAt(at);
-                    if (site.impure or site.own != .no) return .{ .site = at };
+                    const site = f.dispatch.effectAt(at);
+                    if (site.impure or site.own != .no) return .{ .site = here_at };
                 },
                 // A constant read: evaluated where the module loads, in the
                 // build as in the browser, so its effect is this read's.
-                .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].body.unwrap() != null and l.constantDecl(d.lhs)) {
-                    switch (try l.declEffect(d.lhs, verdicts)) {
+                .top => if (d.lhs < b.decls.len and b.decls[d.lhs].body.unwrap() != null and constantIn(f, d.lhs)) {
+                    switch (try l.declEffect(f, d.lhs, verdicts)) {
                         .none => {},
                         .debug => saw_debug = true,
-                        .site, .unread => return .{ .site = at },
+                        .site, .unread => return .{ .site = here_at },
                     }
                 },
+                // Another module's constant, the same, in its module — a
+                // function bound point-free among them, whose body runs
+                // where its module loads, as this module's does.
                 .ext_value => {
                     const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
-                    const use = Convention.ofImport(l.in.interfaces, m, d.rhs);
-                    if (l.in.graph.modulePackage(m) == .app and use.convention != .function and use.arity == 0) return .{ .unread = at };
+                    if (l.followed(m)) |other| {
+                        const decl = l.in.provenance[m.int()].valueDecl(d.rhs) orelse return .{ .unread = here_at };
+                        if (decl.int() < other.b.decls.len and other.b.decls[decl.int()].body.unwrap() != null and constantIn(other, decl.int())) {
+                            switch (try l.declEffect(other, decl.int(), verdicts)) {
+                                .none => {},
+                                .debug => saw_debug = true,
+                                .site, .unread => return .{ .site = here_at },
+                            }
+                        }
+                    } else if (l.in.graph.modulePackage(m) == .app) {
+                        const use = Convention.ofImport(l.in.interfaces, m, d.rhs);
+                        if (use.convention != .function and use.arity == 0) return .{ .unread = here_at };
+                    }
                 },
                 else => {},
             }
             var children: std.ArrayList(Inst.Index) = .empty;
             // Markup's values: its holes, attributes and handlers.
-            if (l.bir.instTag(at) == .markup) try l.bir.markupValues(l.scratch, @fromBackingInt(@intCast(d.lhs)), &children);
-            try l.instChildren(at, &children);
+            if (b.instTag(at) == .markup) try b.markupValues(l.scratch, @fromBackingInt(@intCast(d.lhs)), &children);
+            try l.instChildrenOf(b, at, &children);
             // Reversed, so the first operand is walked first: the first call
             // in source order is the one named.
             std.mem.reverse(Inst.Index, children.items);
@@ -15088,11 +15230,140 @@ pub const Lowerer = struct {
         return if (saw_debug) .debug else .none;
     }
 
-    /// Whether top-level declaration `d` is a constant: no parameter and a
-    /// body that is not a lambda, so its body runs when the module loads.
-    fn constantDecl(l: *Lowerer, d: u32) bool {
-        if (l.paramsOf(d).len != 0) return false;
-        return l.bir.instTag(l.bodyOf(d)) != .lambda;
+    /// A read of a constant whose computing may have an effect, anywhere in
+    /// the code `root` may run (`prerender.md` §3.1, amended for #1170): the
+    /// constant is computed where its module loads, in the build and again
+    /// in the browser, and the checker does not count a read of it as an
+    /// effect, so `effectOf`, which enters a body only at a call the checker
+    /// answers impure, does not see one behind a call it answers pure, in a
+    /// lambda, or in a type's function a dispatch runs. This walk follows
+    /// every reference instead — each declaration of the app's and the
+    /// platforms' modules `root` names, in its own module, each once, and
+    /// the functions every dispatch site and its evidence name — and
+    /// answers each constant it meets by its body (`declEffect`). Core's
+    /// code names no constant of theirs. A dispatch to another module's
+    /// derived function or to a codec, and a schema member, are not
+    /// followed: each is the read when some constant of those modules may
+    /// have an effect at all.
+    fn constantRead(l: *Lowerer, f: CodeFrame, root: Inst.Index, verdicts: *Verdicts) Allocator.Error!?At {
+        const Visit = struct { f: CodeFrame, inst: Inst.Index };
+        const TermItem = struct { f: CodeFrame, term: Dispatch.TermIndex, at: Inst.Index };
+        const seen = try l.scratch.alloc([]bool, l.in.graph.count());
+        @memset(seen, &.{});
+        var stack: std.ArrayList(Visit) = .empty;
+        var terms: std.ArrayList(TermItem) = .empty;
+        var children: std.ArrayList(Inst.Index) = .empty;
+        var any_impure: ?bool = null;
+        try stack.append(l.scratch, .{ .f = f, .inst = root });
+        while (true) {
+            if (terms.pop()) |t| {
+                const d = t.f.dispatch;
+                if (t.term.int() >= d.terms.len) continue;
+                for (d.argsOfTerm(t.term)) |a| try terms.append(l.scratch, .{ .f = t.f, .term = a, .at = t.at });
+                const decl: ?struct { f: CodeFrame, d: u32 } = switch (d.term(t.term)) {
+                    .top => |u| .{ .f = t.f, .d = u.decl.int() },
+                    .ext => |u| blk: {
+                        const other = l.followed(u.module) orelse break :blk null;
+                        const vd = l.in.provenance[u.module.int()].valueDecl(@backingInt(u.value)) orelse break :blk null;
+                        break :blk .{ .f = other, .d = vd.int() };
+                    },
+                    .derived => |u| blk: {
+                        if (u.index < d.derived.len) for (d.argsAt(d.derived[u.index].body)) |a| try terms.append(l.scratch, .{ .f = t.f, .term = a, .at = t.at });
+                        break :blk null;
+                    },
+                    .ext_derived => |u| blk: {
+                        if (l.followed(u.module) == null) break :blk null;
+                        if (any_impure == null) any_impure = try l.anyImpureConstant(verdicts);
+                        if (any_impure.?) return .{ .m = t.f.m, .inst = t.at };
+                        break :blk null;
+                    },
+                    .codec => blk: {
+                        if (any_impure == null) any_impure = try l.anyImpureConstant(verdicts);
+                        if (any_impure.?) return .{ .m = t.f.m, .inst = t.at };
+                        break :blk null;
+                    },
+                    else => null,
+                };
+                if (decl) |x| if (try l.readDecl(x.f, x.d, .{ .m = t.f.m, .inst = t.at }, seen, verdicts, &stack)) |at| return at;
+                continue;
+            }
+            const item = stack.pop() orelse break;
+            const b = item.f.b;
+            const at = item.inst;
+            const d = b.instData(at);
+            switch (b.instTag(at)) {
+                .top => if (try l.readDecl(item.f, d.lhs, .{ .m = item.f.m, .inst = at }, seen, verdicts, &stack)) |r| return r,
+                // A schema's member runs its conversions and checks, which
+                // its plan holds and no reference here names: not followed,
+                // as a codec is not.
+                .schema_member_top, .ext_schema_member => {
+                    if (any_impure == null) any_impure = try l.anyImpureConstant(verdicts);
+                    if (any_impure.?) return .{ .m = item.f.m, .inst = at };
+                },
+                .ext_value => {
+                    const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                    if (l.followed(m)) |other| {
+                        if (l.in.provenance[m.int()].valueDecl(d.rhs)) |vd| {
+                            if (try l.readDecl(other, vd.int(), .{ .m = item.f.m, .inst = at }, seen, verdicts, &stack)) |r| return r;
+                        }
+                    }
+                },
+                else => {},
+            }
+            if (item.f.dispatch.siteOf(at)) |site| {
+                if (site.callee.unwrap()) |c| try terms.append(l.scratch, .{ .f = item.f, .term = c, .at = at });
+                for (item.f.dispatch.argsAt(site.evidence)) |a| try terms.append(l.scratch, .{ .f = item.f, .term = a, .at = at });
+            }
+            children.clearRetainingCapacity();
+            try b.operands(l.scratch, at, &children);
+            for (children.items) |c| try stack.append(l.scratch, .{ .f = item.f, .inst = c });
+        }
+        return null;
+    }
+
+    /// `constantRead`'s visit of declaration `d` of `f`'s module, read at
+    /// `at`: the read, when it is a constant whose computing may have an
+    /// effect; else its body joins the walk, the first time.
+    fn readDecl(l: *Lowerer, f: CodeFrame, d: u32, at: At, seen: [][]bool, verdicts: *Verdicts, stack: anytype) Allocator.Error!?At {
+        const i = f.m.int();
+        if (i >= seen.len or d >= f.b.decls.len) return null;
+        const body = f.b.decls[d].body.unwrap() orelse return null;
+        if (seen[i].len != f.b.decls.len) {
+            seen[i] = try l.scratch.alloc(bool, f.b.decls.len);
+            @memset(seen[i], false);
+        }
+        if (seen[i][d]) return null;
+        seen[i][d] = true;
+        if (constantIn(f, d)) switch (try l.declEffect(f, d, verdicts)) {
+            .none, .debug => {},
+            .site, .unread => return at,
+        };
+        try stack.append(l.scratch, .{ .f = f, .inst = body });
+        return null;
+    }
+
+    /// Whether any constant of the app's or the platforms' modules may have
+    /// an effect when it is computed.
+    fn anyImpureConstant(l: *Lowerer, verdicts: *Verdicts) Allocator.Error!bool {
+        for (0..l.in.graph.count()) |i| {
+            const f = l.followed(@fromBackingInt(@intCast(i))) orelse continue;
+            for (f.b.decls, 0..) |decl, d| {
+                if (!decl.kind.isValue() or decl.body.unwrap() == null or !constantIn(f, @intCast(d))) continue;
+                switch (try l.declEffect(f, @intCast(d), verdicts)) {
+                    .none, .debug => {},
+                    .site, .unread => return true,
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Whether top-level declaration `d` of `f`'s module is a constant: no
+    /// parameter and a body that is not a lambda, so its body runs when the
+    /// module loads.
+    fn constantIn(f: CodeFrame, d: u32) bool {
+        if (f.b.decls[d].params != 0) return false;
+        return f.b.instTag(f.b.decls[d].body.unwrap().?) != .lambda;
     }
 
     /// `cx.programSubscriptionStart` (version 1.14): declaration `i`'s start
@@ -16665,30 +16936,35 @@ pub const Lowerer = struct {
     /// The instructions an instruction's value is made of, for the walks
     /// below; patterns and types are not among them.
     fn instChildren(l: *Lowerer, inst: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
-        const d = l.bir.instData(inst);
+        return l.instChildrenOf(l.bir, inst, out);
+    }
+
+    /// `instChildren` of an instruction of `b`, any module's `Bir`.
+    fn instChildrenOf(l: *Lowerer, b: *const Bir, inst: Inst.Index, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+        const d = b.instData(inst);
         const one = struct {
             fn of(x: u32) Inst.Index {
                 return @fromBackingInt(@intCast(x));
             }
         }.of;
-        switch (l.bir.instTag(inst)) {
+        switch (b.instTag(inst)) {
             .call => {
                 try out.append(l.scratch, one(d.lhs));
-                try out.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index));
+                try out.appendSlice(l.scratch, b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index));
             },
             .method_call => {
                 try out.append(l.scratch, one(d.lhs));
-                const mc = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
-                try out.appendSlice(l.scratch, l.bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index));
+                const mc = b.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
+                try out.appendSlice(l.scratch, b.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index));
             },
             .type_dispatch => {
-                const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
-                try out.appendSlice(l.scratch, l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+                const t = b.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
+                try out.appendSlice(l.scratch, b.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
             },
             .let => {
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
-                    const dd = l.bir.instData(def);
-                    switch (l.bir.instTag(def)) {
+                for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                    const dd = b.instData(def);
+                    switch (b.instTag(def)) {
                         .let_def, .let_pattern, .let_stmt => try out.append(l.scratch, one(dd.rhs)),
                         else => {},
                     }
@@ -16697,16 +16973,16 @@ pub const Lowerer = struct {
             },
             .case => {
                 try out.append(l.scratch, one(d.lhs));
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
-                    if (l.bir.instTag(branch) == .branch) try out.append(l.scratch, one(l.bir.instData(branch).rhs));
+                for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                    if (b.instTag(branch) == .branch) try out.append(l.scratch, one(b.instData(branch).rhs));
                 }
             },
             .@"try", .field_access, .tuple_index => try out.append(l.scratch, one(d.lhs)),
-            .tuple, .list, .interp => try out.appendSlice(l.scratch, l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
-            .record => for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| try out.append(l.scratch, f.value),
+            .tuple, .list, .interp => try out.appendSlice(l.scratch, b.extraSlice(Bir.inlineRange(d), Inst.Index)),
+            .record => for (b.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| try out.append(l.scratch, f.value),
             .record_update => {
                 try out.append(l.scratch, one(d.lhs));
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| try out.append(l.scratch, f.value);
+                for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| try out.append(l.scratch, f.value);
             },
             .lambda => try out.append(l.scratch, one(d.rhs)),
             else => {},

@@ -1,0 +1,11 @@
+--! A constant computed from the clock, and a function that reads it.
+
+import Clock
+
+
+pub seed : Int
+seed = Clock.now ⊤
+
+
+pub addSeed : Int → Int
+addSeed n = n + seed

@@ -1,0 +1,32 @@
+-- A prerendered program whose `init` is another module's function named in
+-- the record, and whose `view` reads another module's constant
+-- (docs/design/prerender.md §3.1, amended for #1170): the build follows
+-- `Counter.init` into its body in `Counter`, and `Theme.title` into its
+-- constant, and finds neither has an effect, so the page holds the first
+-- render. The build refused both before: it did not read another module's
+-- code.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+import Theme
+
+
+update : Counter.Msg, Counter.Model → Counter.Model
+update msg model = Counter.update msg model
+
+
+view : Counter.Model → Html Counter.Msg
+view model =
+    <div data-role="app">
+        <h1>{Theme.title}</h1>
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Counter.Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = Counter.init, update = update, view = view }) "root")
+        [ "/" ]

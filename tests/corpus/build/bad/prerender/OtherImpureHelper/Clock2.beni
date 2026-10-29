@@ -1,0 +1,7 @@
+--! A function that reads the clock.
+
+import Clock
+
+
+pub read : ⊤ → Int
+read ⊤ = Clock.now ⊤ - 1

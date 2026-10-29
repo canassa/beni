@@ -1,0 +1,28 @@
+--! A counter whose `init` calls a function of its own module and reads a
+--! constant of it.
+
+pub type alias Model =
+    count : Int
+
+
+pub type Msg
+    = Inc
+
+
+start : Int
+start = 2 * 3
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = clamp start 0 limit }
+
+
+limit : Int
+limit = 10
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 limit }

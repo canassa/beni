@@ -1,0 +1,7 @@
+--! A helper that logs, and then calls another module's function.
+
+import Clock2
+
+
+pub first : ⊤ → Int
+first ⊤ = Debug.log "first" (Clock2.read ⊤)

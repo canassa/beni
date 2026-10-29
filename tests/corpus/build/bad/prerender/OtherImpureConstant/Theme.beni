@@ -1,0 +1,7 @@
+--! A constant computed from the clock when the module loads.
+
+import Clock
+
+
+pub seed : Int
+seed = Clock.now ⊤
