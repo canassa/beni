@@ -2316,9 +2316,11 @@ test "#1159: many template paths under one prefix walk the argument once, kept a
         try testing.expectEqual(walks + 1, x.conds.classes_done.items.len);
     }
     // Eight times the paths: the walk once, each further path a read.
-    // Measured 5,517 and 5,652 records: the walk (the 64-field record) once,
-    // about two records for each further path, never another walk.
-    try testing.expect(grew[1] - grew[0] <= 4 * (64 - 8));
+    // Measured 5,349 and 5,652 records: the walk (the 64-field record) once,
+    // about five records for each further path (memo, inspection, cond),
+    // never another walk, which would cost thousands. Before #1236 the path
+    // re-entry walk charged the narrower run more and hid part of that.
+    try testing.expect(grew[1] - grew[0] <= 6 * (64 - 8));
 }
 
 fn nextId(ids: *u32) u32 {
