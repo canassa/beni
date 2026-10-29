@@ -1271,13 +1271,20 @@ walkReplies ids seen work =
         walkReplies ids seen work
 
 
--- Push an array's elements onto the work list, last first; the array is
--- copied, since `reverse` works in place and a message's own array is not
--- ours to turn.
+-- Push an array's elements onto the work list, last first: an index loop
+-- from the end, as `core/Task`'s `pushBack`, so the array is neither
+-- copied nor turned.
 pushReversed : Js.Value, Js.Value → ⊤
-pushReversed work elements = Js.each (Js.call (Js.call elements "slice" []) "reverse" []) λx →
-    _ = Js.call work "push" [ x ]
-    ⊤
+pushReversed work elements = pushFrom work elements (Js.to (Js.get elements "length") - 1)
+
+
+pushFrom : Js.Value, Js.Value, Int → ⊤
+pushFrom work elements i =
+    if i < 0 then
+        ⊤
+    else
+        _ = Js.call work "push" [ Js.at elements i ]
+        pushFrom work elements (i - 1)
 
 
 isArray : Js.Value → Bool
