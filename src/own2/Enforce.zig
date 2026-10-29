@@ -177,11 +177,23 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
     defer reports.deinit(gpa);
     var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
     for (targets) |m| {
+        // The session's check ran v2 on the module and kept its report
+        // (#1193): print it, never run v2 again.
+        if (m < session.ownership2_reports.len) {
+            if (session.ownership2_reports[m]) |k| {
+                try reports.append(gpa, k.report);
+                continue;
+            }
+            try reports.append(gpa, .{ .module = m, .checked = false });
+            continue;
+        }
         const mi = moduleInput(gpa, session, &ins, .{ .modules = session.checked.modules, .types = &session.checked.types, .dispatch = session.checked.dispatch }, m) orelse {
             try reports.append(gpa, .{ .module = m, .checked = false });
             continue;
         };
         try mods.append(gpa, mi);
+        const token = session.profile.begin();
+        defer session.profile.end(0, token, .ownership2_module, @backingInt(session.graph.moduleFile(@fromBackingInt(m))), 0);
         const one = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = mods.items[mods.items.len - 1 ..], .format_summaries = !options.totals_only });
         try reports.appendSlice(gpa, one);
     }
@@ -199,16 +211,21 @@ pub const Context = struct {
 /// checks it; an application module on a chain that enforces gets its
 /// refusals as errors (R-1.1, R-8.1).
 pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
-    _ = tid;
     const session = ctx.session;
     const gpa = d.gpa;
     const mi = moduleInput(gpa, session, ctx.ins, .{ .modules = d.kept, .types = d.types, .dispatch = d.dispatch }, m.int()) orelse return;
+    const token = session.profile.begin();
+    defer session.profile.end(tid, token, .ownership2_module, @backingInt(session.graph.moduleFile(m)), 0);
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var nc: NameCtx = .{ .session = session, .ins = ctx.ins, .types = d.types, .arena = arena };
     const one = [_]Groups.Input{mi};
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true });
+    const kept = session.options.ownership_v2_dump;
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false });
+    // The dump's report, from this run (#1193): one slot per module, written
+    // by the worker that checked it.
+    if (kept != null and m.int() < session.ownership2_reports.len) session.ownership2_reports[m.int()] = try Report.Kept.of(gpa, reports[0]);
     // §3.7: the block in the interface, hashed with it, for importers.
     if (reports[0].block) |b| {
         const iface = &d.interfaces[m.int()];

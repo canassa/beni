@@ -9077,6 +9077,45 @@ fn expectNearLimitAccepted(h_first: bool) !void {
     try testing.expect(growth > 60_000 and growth <= 65_536);
 }
 
+test "dump --stage=ownership --ownership=v2 walks each module once" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1193: the dump ran the checker v2 again after the session's check
+    // had run it, doubling every ownership dump. It prints the check's own
+    // reports now: one `ownership2_module` walk of `Main.beni`, with or
+    // without the summaries.
+    for ([_]bool{ false, true }) |totals| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", "pub g : List Int → List Int\ng xs =\n    List.push xs 1\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = if (totals)
+            try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-totals", "--self-profile=trace.json", "Main.beni" })
+        else
+            try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--self-profile=trace.json", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "total 1: accepted 1") != null);
+        const Event = struct { name: []const u8, args: struct { file: ?[]const u8 = null } = .{} };
+        const text = try w.read("trace.json");
+        const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, text, .{ .ignore_unknown_fields = true });
+        defer parsed.deinit();
+        var walks: u32 = 0;
+        for (parsed.value.traceEvents) |e| {
+            if (!std.mem.eql(u8, e.name, "ownership2_module")) continue;
+            if (std.mem.endsWith(u8, e.args.file orelse "", "Main.beni")) walks += 1;
+        }
+        try testing.expectEqual(@as(u32, 1), walks);
+    }
+}
+
 test "the checker v2 accepts a declaration near the summary-size limit after another" {
     try expectNearLimitAccepted(false);
 }

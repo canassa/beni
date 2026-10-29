@@ -212,6 +212,9 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // nothing once its store is gone (checker.md §5).
     // `--msg-types` reads the checker's scheme of each program's `update`.
     options.keep_type_stores = dump.stage == .types or dump.stage == .ownership or dump.msg_types;
+    // `--stage=ownership --ownership=v2`: the check's run of the checker v2
+    // keeps what the dump prints, so v2 runs once (#1193).
+    if (dump.stage == .ownership and dump.common.ownership == .v2) options.ownership_v2_dump = .{ .summaries = !dump.ownership_totals };
     // A summary is read off solved types, which only a module this run
     // checks keeps (§16.9). A module the report prints is checked here;
     // every other one installed from the checked core keeps its ownership
@@ -779,5 +782,6 @@ fn dumpOwnershipV2(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer
         }
     };
     if (!onBigStackResult(Run.go, .{ gpa, session, targets.items, stdout, dump.ownership_totals })) return fail(stderr, "beni: out of memory", .{});
+    if (dump.common.self_profile) |path| session.writeProfile(path) catch {};
     return 0;
 }
