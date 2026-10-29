@@ -3803,8 +3803,11 @@ W paths at 32/64/128/256 steps. Every original step uses its own fixed kernel; a
 holders and instantiated contexts reserve general tasks before traversal. Keep the post-`Calls.apply`
 W/E/xreq consumer work in this audit; an eager graft's separate growth task does not cover work done after
 it returns. *As built (#1225):* a lane has a `step` word beside its atom, role and phase. A demand's step
-lanes are `(base instruction, direct_demand_query, slot · path)`, §4.4's `(written demand, slot, k)` words:
-slot 0 the demanded value's own path, slot 1 a holder's. `escaped`, `candidates` and its refinement
+lanes are `(base instruction, direct_demand_query, slot · k)`, §4.4's `(written demand, slot, k)` words, k the
+step's depth: slot 0 the demanded value's own path, slot 1 the direct holder's. A query already in growth
+(a several-cells product, a sweep past the direct holder) enters no step lane: its step work is that task's
+(#1233's review), so B_f gains at most 2·L(a) step lanes per written demand. §4.4 allows a second holder's
+slot; the sweep spills at the second holder (#1201), so slot 2 is unused. `escaped`, `candidates` and its refinement
 `chain`, `anchorsOf`, and `Liveness.useAfterIn`/`useUnderIn` with their `stepsOf` charge each step there.
 A base of several cells is decided several from its set before its cells are read. `DeepWrittenPath` pins
 the direct writes at 32/64/128/256; the callee W paths wait for S3b.

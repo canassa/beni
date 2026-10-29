@@ -1,0 +1,838 @@
+-- ownership: a deep path's step work inside a query that is already growth
+-- (ownership-v2.md §4.4, #1233's review). A base chosen from 160 paths
+-- `r.a.b.fᵢ` is a product, and 80 holders of `l` at `.k.j` are a sweep past
+-- the direct holder: their per-step work stays the growth task's, never one
+-- lane per step. `push` is accepted; `pushed` is refused, as v1 refuses it.
+@ownership_summary_size(module, 4194304)
+
+type alias B =
+    f0 : List Int
+    f1 : List Int
+    f2 : List Int
+    f3 : List Int
+    f4 : List Int
+    f5 : List Int
+    f6 : List Int
+    f7 : List Int
+    f8 : List Int
+    f9 : List Int
+    f10 : List Int
+    f11 : List Int
+    f12 : List Int
+    f13 : List Int
+    f14 : List Int
+    f15 : List Int
+    f16 : List Int
+    f17 : List Int
+    f18 : List Int
+    f19 : List Int
+    f20 : List Int
+    f21 : List Int
+    f22 : List Int
+    f23 : List Int
+    f24 : List Int
+    f25 : List Int
+    f26 : List Int
+    f27 : List Int
+    f28 : List Int
+    f29 : List Int
+    f30 : List Int
+    f31 : List Int
+    f32 : List Int
+    f33 : List Int
+    f34 : List Int
+    f35 : List Int
+    f36 : List Int
+    f37 : List Int
+    f38 : List Int
+    f39 : List Int
+    f40 : List Int
+    f41 : List Int
+    f42 : List Int
+    f43 : List Int
+    f44 : List Int
+    f45 : List Int
+    f46 : List Int
+    f47 : List Int
+    f48 : List Int
+    f49 : List Int
+    f50 : List Int
+    f51 : List Int
+    f52 : List Int
+    f53 : List Int
+    f54 : List Int
+    f55 : List Int
+    f56 : List Int
+    f57 : List Int
+    f58 : List Int
+    f59 : List Int
+    f60 : List Int
+    f61 : List Int
+    f62 : List Int
+    f63 : List Int
+    f64 : List Int
+    f65 : List Int
+    f66 : List Int
+    f67 : List Int
+    f68 : List Int
+    f69 : List Int
+    f70 : List Int
+    f71 : List Int
+    f72 : List Int
+    f73 : List Int
+    f74 : List Int
+    f75 : List Int
+    f76 : List Int
+    f77 : List Int
+    f78 : List Int
+    f79 : List Int
+    f80 : List Int
+    f81 : List Int
+    f82 : List Int
+    f83 : List Int
+    f84 : List Int
+    f85 : List Int
+    f86 : List Int
+    f87 : List Int
+    f88 : List Int
+    f89 : List Int
+    f90 : List Int
+    f91 : List Int
+    f92 : List Int
+    f93 : List Int
+    f94 : List Int
+    f95 : List Int
+    f96 : List Int
+    f97 : List Int
+    f98 : List Int
+    f99 : List Int
+    f100 : List Int
+    f101 : List Int
+    f102 : List Int
+    f103 : List Int
+    f104 : List Int
+    f105 : List Int
+    f106 : List Int
+    f107 : List Int
+    f108 : List Int
+    f109 : List Int
+    f110 : List Int
+    f111 : List Int
+    f112 : List Int
+    f113 : List Int
+    f114 : List Int
+    f115 : List Int
+    f116 : List Int
+    f117 : List Int
+    f118 : List Int
+    f119 : List Int
+    f120 : List Int
+    f121 : List Int
+    f122 : List Int
+    f123 : List Int
+    f124 : List Int
+    f125 : List Int
+    f126 : List Int
+    f127 : List Int
+    f128 : List Int
+    f129 : List Int
+    f130 : List Int
+    f131 : List Int
+    f132 : List Int
+    f133 : List Int
+    f134 : List Int
+    f135 : List Int
+    f136 : List Int
+    f137 : List Int
+    f138 : List Int
+    f139 : List Int
+    f140 : List Int
+    f141 : List Int
+    f142 : List Int
+    f143 : List Int
+    f144 : List Int
+    f145 : List Int
+    f146 : List Int
+    f147 : List Int
+    f148 : List Int
+    f149 : List Int
+    f150 : List Int
+    f151 : List Int
+    f152 : List Int
+    f153 : List Int
+    f154 : List Int
+    f155 : List Int
+    f156 : List Int
+    f157 : List Int
+    f158 : List Int
+    f159 : List Int
+
+
+type alias A =
+    b : B
+
+
+type alias R =
+    a : A
+
+
+type alias J =
+    j : List Int
+
+
+type alias K =
+    k : J
+
+
+pub push : R, Int → List Int
+push r k =
+    c =
+        case k of
+            0 →
+                r.a.b.f0
+
+            1 →
+                r.a.b.f1
+
+            2 →
+                r.a.b.f2
+
+            3 →
+                r.a.b.f3
+
+            4 →
+                r.a.b.f4
+
+            5 →
+                r.a.b.f5
+
+            6 →
+                r.a.b.f6
+
+            7 →
+                r.a.b.f7
+
+            8 →
+                r.a.b.f8
+
+            9 →
+                r.a.b.f9
+
+            10 →
+                r.a.b.f10
+
+            11 →
+                r.a.b.f11
+
+            12 →
+                r.a.b.f12
+
+            13 →
+                r.a.b.f13
+
+            14 →
+                r.a.b.f14
+
+            15 →
+                r.a.b.f15
+
+            16 →
+                r.a.b.f16
+
+            17 →
+                r.a.b.f17
+
+            18 →
+                r.a.b.f18
+
+            19 →
+                r.a.b.f19
+
+            20 →
+                r.a.b.f20
+
+            21 →
+                r.a.b.f21
+
+            22 →
+                r.a.b.f22
+
+            23 →
+                r.a.b.f23
+
+            24 →
+                r.a.b.f24
+
+            25 →
+                r.a.b.f25
+
+            26 →
+                r.a.b.f26
+
+            27 →
+                r.a.b.f27
+
+            28 →
+                r.a.b.f28
+
+            29 →
+                r.a.b.f29
+
+            30 →
+                r.a.b.f30
+
+            31 →
+                r.a.b.f31
+
+            32 →
+                r.a.b.f32
+
+            33 →
+                r.a.b.f33
+
+            34 →
+                r.a.b.f34
+
+            35 →
+                r.a.b.f35
+
+            36 →
+                r.a.b.f36
+
+            37 →
+                r.a.b.f37
+
+            38 →
+                r.a.b.f38
+
+            39 →
+                r.a.b.f39
+
+            40 →
+                r.a.b.f40
+
+            41 →
+                r.a.b.f41
+
+            42 →
+                r.a.b.f42
+
+            43 →
+                r.a.b.f43
+
+            44 →
+                r.a.b.f44
+
+            45 →
+                r.a.b.f45
+
+            46 →
+                r.a.b.f46
+
+            47 →
+                r.a.b.f47
+
+            48 →
+                r.a.b.f48
+
+            49 →
+                r.a.b.f49
+
+            50 →
+                r.a.b.f50
+
+            51 →
+                r.a.b.f51
+
+            52 →
+                r.a.b.f52
+
+            53 →
+                r.a.b.f53
+
+            54 →
+                r.a.b.f54
+
+            55 →
+                r.a.b.f55
+
+            56 →
+                r.a.b.f56
+
+            57 →
+                r.a.b.f57
+
+            58 →
+                r.a.b.f58
+
+            59 →
+                r.a.b.f59
+
+            60 →
+                r.a.b.f60
+
+            61 →
+                r.a.b.f61
+
+            62 →
+                r.a.b.f62
+
+            63 →
+                r.a.b.f63
+
+            64 →
+                r.a.b.f64
+
+            65 →
+                r.a.b.f65
+
+            66 →
+                r.a.b.f66
+
+            67 →
+                r.a.b.f67
+
+            68 →
+                r.a.b.f68
+
+            69 →
+                r.a.b.f69
+
+            70 →
+                r.a.b.f70
+
+            71 →
+                r.a.b.f71
+
+            72 →
+                r.a.b.f72
+
+            73 →
+                r.a.b.f73
+
+            74 →
+                r.a.b.f74
+
+            75 →
+                r.a.b.f75
+
+            76 →
+                r.a.b.f76
+
+            77 →
+                r.a.b.f77
+
+            78 →
+                r.a.b.f78
+
+            79 →
+                r.a.b.f79
+
+            80 →
+                r.a.b.f80
+
+            81 →
+                r.a.b.f81
+
+            82 →
+                r.a.b.f82
+
+            83 →
+                r.a.b.f83
+
+            84 →
+                r.a.b.f84
+
+            85 →
+                r.a.b.f85
+
+            86 →
+                r.a.b.f86
+
+            87 →
+                r.a.b.f87
+
+            88 →
+                r.a.b.f88
+
+            89 →
+                r.a.b.f89
+
+            90 →
+                r.a.b.f90
+
+            91 →
+                r.a.b.f91
+
+            92 →
+                r.a.b.f92
+
+            93 →
+                r.a.b.f93
+
+            94 →
+                r.a.b.f94
+
+            95 →
+                r.a.b.f95
+
+            96 →
+                r.a.b.f96
+
+            97 →
+                r.a.b.f97
+
+            98 →
+                r.a.b.f98
+
+            99 →
+                r.a.b.f99
+
+            100 →
+                r.a.b.f100
+
+            101 →
+                r.a.b.f101
+
+            102 →
+                r.a.b.f102
+
+            103 →
+                r.a.b.f103
+
+            104 →
+                r.a.b.f104
+
+            105 →
+                r.a.b.f105
+
+            106 →
+                r.a.b.f106
+
+            107 →
+                r.a.b.f107
+
+            108 →
+                r.a.b.f108
+
+            109 →
+                r.a.b.f109
+
+            110 →
+                r.a.b.f110
+
+            111 →
+                r.a.b.f111
+
+            112 →
+                r.a.b.f112
+
+            113 →
+                r.a.b.f113
+
+            114 →
+                r.a.b.f114
+
+            115 →
+                r.a.b.f115
+
+            116 →
+                r.a.b.f116
+
+            117 →
+                r.a.b.f117
+
+            118 →
+                r.a.b.f118
+
+            119 →
+                r.a.b.f119
+
+            120 →
+                r.a.b.f120
+
+            121 →
+                r.a.b.f121
+
+            122 →
+                r.a.b.f122
+
+            123 →
+                r.a.b.f123
+
+            124 →
+                r.a.b.f124
+
+            125 →
+                r.a.b.f125
+
+            126 →
+                r.a.b.f126
+
+            127 →
+                r.a.b.f127
+
+            128 →
+                r.a.b.f128
+
+            129 →
+                r.a.b.f129
+
+            130 →
+                r.a.b.f130
+
+            131 →
+                r.a.b.f131
+
+            132 →
+                r.a.b.f132
+
+            133 →
+                r.a.b.f133
+
+            134 →
+                r.a.b.f134
+
+            135 →
+                r.a.b.f135
+
+            136 →
+                r.a.b.f136
+
+            137 →
+                r.a.b.f137
+
+            138 →
+                r.a.b.f138
+
+            139 →
+                r.a.b.f139
+
+            140 →
+                r.a.b.f140
+
+            141 →
+                r.a.b.f141
+
+            142 →
+                r.a.b.f142
+
+            143 →
+                r.a.b.f143
+
+            144 →
+                r.a.b.f144
+
+            145 →
+                r.a.b.f145
+
+            146 →
+                r.a.b.f146
+
+            147 →
+                r.a.b.f147
+
+            148 →
+                r.a.b.f148
+
+            149 →
+                r.a.b.f149
+
+            150 →
+                r.a.b.f150
+
+            151 →
+                r.a.b.f151
+
+            152 →
+                r.a.b.f152
+
+            153 →
+                r.a.b.f153
+
+            154 →
+                r.a.b.f154
+
+            155 →
+                r.a.b.f155
+
+            156 →
+                r.a.b.f156
+
+            157 →
+                r.a.b.f157
+
+            158 →
+                r.a.b.f158
+
+            _ →
+                r.a.b.f159
+    List.push c 1
+
+
+pub pushed : ⊤ → List Int × List (List Int)
+pushed ⊤ =
+    l = [ 1 ]
+    h0 = { k = { j = l } }
+    h1 = { k = { j = l } }
+    h2 = { k = { j = l } }
+    h3 = { k = { j = l } }
+    h4 = { k = { j = l } }
+    h5 = { k = { j = l } }
+    h6 = { k = { j = l } }
+    h7 = { k = { j = l } }
+    h8 = { k = { j = l } }
+    h9 = { k = { j = l } }
+    h10 = { k = { j = l } }
+    h11 = { k = { j = l } }
+    h12 = { k = { j = l } }
+    h13 = { k = { j = l } }
+    h14 = { k = { j = l } }
+    h15 = { k = { j = l } }
+    h16 = { k = { j = l } }
+    h17 = { k = { j = l } }
+    h18 = { k = { j = l } }
+    h19 = { k = { j = l } }
+    h20 = { k = { j = l } }
+    h21 = { k = { j = l } }
+    h22 = { k = { j = l } }
+    h23 = { k = { j = l } }
+    h24 = { k = { j = l } }
+    h25 = { k = { j = l } }
+    h26 = { k = { j = l } }
+    h27 = { k = { j = l } }
+    h28 = { k = { j = l } }
+    h29 = { k = { j = l } }
+    h30 = { k = { j = l } }
+    h31 = { k = { j = l } }
+    h32 = { k = { j = l } }
+    h33 = { k = { j = l } }
+    h34 = { k = { j = l } }
+    h35 = { k = { j = l } }
+    h36 = { k = { j = l } }
+    h37 = { k = { j = l } }
+    h38 = { k = { j = l } }
+    h39 = { k = { j = l } }
+    h40 = { k = { j = l } }
+    h41 = { k = { j = l } }
+    h42 = { k = { j = l } }
+    h43 = { k = { j = l } }
+    h44 = { k = { j = l } }
+    h45 = { k = { j = l } }
+    h46 = { k = { j = l } }
+    h47 = { k = { j = l } }
+    h48 = { k = { j = l } }
+    h49 = { k = { j = l } }
+    h50 = { k = { j = l } }
+    h51 = { k = { j = l } }
+    h52 = { k = { j = l } }
+    h53 = { k = { j = l } }
+    h54 = { k = { j = l } }
+    h55 = { k = { j = l } }
+    h56 = { k = { j = l } }
+    h57 = { k = { j = l } }
+    h58 = { k = { j = l } }
+    h59 = { k = { j = l } }
+    h60 = { k = { j = l } }
+    h61 = { k = { j = l } }
+    h62 = { k = { j = l } }
+    h63 = { k = { j = l } }
+    h64 = { k = { j = l } }
+    h65 = { k = { j = l } }
+    h66 = { k = { j = l } }
+    h67 = { k = { j = l } }
+    h68 = { k = { j = l } }
+    h69 = { k = { j = l } }
+    h70 = { k = { j = l } }
+    h71 = { k = { j = l } }
+    h72 = { k = { j = l } }
+    h73 = { k = { j = l } }
+    h74 = { k = { j = l } }
+    h75 = { k = { j = l } }
+    h76 = { k = { j = l } }
+    h77 = { k = { j = l } }
+    h78 = { k = { j = l } }
+    h79 = { k = { j = l } }
+    ( List.push l 2
+    , [ h0.k.j
+      , h1.k.j
+      , h2.k.j
+      , h3.k.j
+      , h4.k.j
+      , h5.k.j
+      , h6.k.j
+      , h7.k.j
+      , h8.k.j
+      , h9.k.j
+      , h10.k.j
+      , h11.k.j
+      , h12.k.j
+      , h13.k.j
+      , h14.k.j
+      , h15.k.j
+      , h16.k.j
+      , h17.k.j
+      , h18.k.j
+      , h19.k.j
+      , h20.k.j
+      , h21.k.j
+      , h22.k.j
+      , h23.k.j
+      , h24.k.j
+      , h25.k.j
+      , h26.k.j
+      , h27.k.j
+      , h28.k.j
+      , h29.k.j
+      , h30.k.j
+      , h31.k.j
+      , h32.k.j
+      , h33.k.j
+      , h34.k.j
+      , h35.k.j
+      , h36.k.j
+      , h37.k.j
+      , h38.k.j
+      , h39.k.j
+      , h40.k.j
+      , h41.k.j
+      , h42.k.j
+      , h43.k.j
+      , h44.k.j
+      , h45.k.j
+      , h46.k.j
+      , h47.k.j
+      , h48.k.j
+      , h49.k.j
+      , h50.k.j
+      , h51.k.j
+      , h52.k.j
+      , h53.k.j
+      , h54.k.j
+      , h55.k.j
+      , h56.k.j
+      , h57.k.j
+      , h58.k.j
+      , h59.k.j
+      , h60.k.j
+      , h61.k.j
+      , h62.k.j
+      , h63.k.j
+      , h64.k.j
+      , h65.k.j
+      , h66.k.j
+      , h67.k.j
+      , h68.k.j
+      , h69.k.j
+      , h70.k.j
+      , h71.k.j
+      , h72.k.j
+      , h73.k.j
+      , h74.k.j
+      , h75.k.j
+      , h76.k.j
+      , h77.k.j
+      , h78.k.j
+      , h79.k.j
+      ]
+    )
