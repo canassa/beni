@@ -12,7 +12,12 @@
 -- behind an alias item 1 folds: the test runs on the name written) and
 -- `method` (a method callee, whose `this` the reduction would lose). A
 -- callee the build imports from a hand-written file — a sibling's function
--- — stays as written too: `JsCompare`'s `viaValue`. Built with
+-- — stays as written too: `JsCompare`'s `viaValue`, and here `aliasOnce`
+-- and `aliasTwice`, which reach `Js.lt` through a local `const`, read once
+-- (item 1 folds it: the test runs on the name written) or twice (the
+-- `const` holds an import). `ahead` forwards to a `const` declared after
+-- the lambda, which is bound at its statement and not at the arrow's
+-- evaluation: kept, read once (item 1 moves it) or twice. Built with
 -- `--core --release`.
 import Js
 
@@ -112,3 +117,29 @@ viaLetAlias p f g =
 
 pub method : Js.Value → (Js.Value → Js.Value)
 method o = λa → Js.call o "m" [ a ]
+
+
+pub aliasOnce : ⊤ → (Int, Int → Bool)
+aliasOnce _ =
+    c = Js.lt
+    λa b → c a b
+
+
+pub aliasTwice : ⊤ → (Int, Int → Bool) × (Int, Int → Bool)
+aliasTwice _ =
+    c = Js.lt
+    ( λa b → c a b, λa b → c a b )
+
+
+pub ahead : Int → (Int → Int) × (Int → Int)
+ahead n =
+    g = λx → h x
+    h = λx → x + n
+    ( g, h )
+
+
+pub aheadTwice : Int → (Int → Int) × (Int → Int) × (Int → Int)
+aheadTwice n =
+    g = λx → h x
+    h = λx → x + n
+    ( g, h, g )
