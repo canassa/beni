@@ -665,7 +665,6 @@ const Grafter = struct {
         return cur;
     }
 
-
     /// A finished child position's snapshot linked into its parent's builder
     /// at `s` (merged when the parent folds).
     fn linkChild(g: *Grafter, w: *LinkWalk, s: Step, child: Cond.Kappas) Error!void {
