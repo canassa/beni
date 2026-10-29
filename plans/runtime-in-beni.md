@@ -23,7 +23,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
-| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-30**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
+| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 
 ## Step 1 — slot and mount (2026-10-02)
@@ -916,7 +916,7 @@ raw −212), 5 smaller — the five that reach a moved export, `HelloWorker` −
 −30, `ObjectHolders` −8, `ObjectIsolation` −7, `ObjectStorage` −5 — and 8 byte for byte, none
 larger. The full lines are in the pull request's body.
 
-## Step 10 — `node`'s `Io.js` (2026-10-30)
+## Step 10 — `node`'s `Io.js` (2026-10-29)
 
 **What moved.** The two `foreign`s of `Io.beni`. `finish` reads the fiber's `Exit`: `Done program`
 writes the `Program`'s `out` to standard output when it is not empty and sets `process.exitCode`
