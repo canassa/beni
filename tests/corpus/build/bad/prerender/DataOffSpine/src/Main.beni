@@ -1,0 +1,39 @@
+-- `Browser.prerenderData` off `main`'s spine (docs/design/prerender.md
+-- §8.4): written in a top-level value `main` names, where the build does
+-- not look for it. `program_shape`.
+import Browser
+import Html exposing (Html)
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <output id="count">{String.fromInt model.count}</output>
+        <button id="inc" onClick={Inc}>+</button>
+    </main>
+
+
+site : Tea.Program
+site = Browser.prerenderData (Start.schema ⊤) λstart →
+    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }
+
+
+main : Tea.Program
+main = Browser.mountAt site "root"

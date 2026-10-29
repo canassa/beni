@@ -1,0 +1,37 @@
+-- A schema made when the page runs, by one of the library's interpreting
+-- builders (docs/design/prerender.md §8.4): its conversions are values no
+-- walk of the program can read, so the build cannot tell the decode is
+-- pure. `program_shape`, a limit of the compiler, at the schema.
+import Browser
+import Html exposing (Html)
+import Schema
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <output id="count">{String.fromInt model.count}</output>
+        <button id="inc" onClick={Inc}>+</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Schema.typeOnly (Start.schema ⊤)) λstart →
+    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }

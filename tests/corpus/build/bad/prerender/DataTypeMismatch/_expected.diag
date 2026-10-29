@@ -1,0 +1,1 @@
+[{"code":"missing_field","severity":"error","span":{"file":"src/Main.beni","start":{"line":35,"col":46},"end":{"line":35,"col":52}},"title":"MISSING FIELD","message":"This record does not have a `begin` field:\n\n    { start : Int }\n\nBut I need a record like:\n\n    { r | begin : a }\n"}]

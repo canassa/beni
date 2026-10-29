@@ -1,0 +1,12 @@
+-- A data program whose schema writes a field at another type than the
+-- site's reads it (docs/design/prerender.md §8.5 item 5): the build decodes
+-- each page's text with the site's schema, and `"41"` is not an `Int`.
+-- `prerender_data_invalid` at the `Browser.prerenderData` call, naming the
+-- route and the issue.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ → Ok [ ( "/", { start = "41" } ) ]

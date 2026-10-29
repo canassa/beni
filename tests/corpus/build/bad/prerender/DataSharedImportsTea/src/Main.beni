@@ -1,0 +1,33 @@
+-- The site of a data program the build refuses: see `shared/Start.beni`.
+import Browser
+import Html exposing (Html)
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <output id="count">{String.fromInt model.count}</output>
+        <button id="inc" onClick={Inc}>+</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Start.schema ⊤) λstart →
+    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }

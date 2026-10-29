@@ -1,0 +1,11 @@
+-- A route the data program gives that §7.4's rules refuse
+-- (docs/design/prerender.md §8.5 item 4): `invalid_route` at the site's
+-- `main`, saying the data program gave it, before anything renders.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ →
+    Ok [ ( "/", { start = 1 } ), ( "/_drafts", { start = 2 } ) ]
