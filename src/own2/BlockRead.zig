@@ -1150,7 +1150,7 @@ test "a block round-trips: read into tables of its own, written again, the same 
 /// three slices (cut at √⅓ and √⅔ of its length, so that no one test runs
 /// long), read into one set of tables: each refused
 /// read is no block, leaves no class in `out` and no record in the tables.
-fn expectTruncationsRefused(part: u32) !void {
+fn expectTruncationsRefused(part: u32, parts: u32) !void {
     var a: Tables = .{};
     try a.init();
     defer a.deinit();
@@ -1158,31 +1158,51 @@ fn expectTruncationsRefused(part: u32) !void {
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(testing.allocator);
     try write(a.env(), &a.sums, &classes, .identity, &words);
-    const w: f64 = @floatFromInt(words.items.len);
-    const cuts = [4]usize{ 0, @intFromFloat(w * @sqrt(1.0 / 3.0)), @intFromFloat(w * @sqrt(2.0 / 3.0)), words.items.len };
+
+    // Parts of equal work: a truncation at n costs about n, so cut at w·√(k/parts).
+    const cut = struct {
+        fn at(len: usize, k: u32, of: u32) usize {
+            if (k == of) return len;
+            return @intFromFloat(@as(f64, @floatFromInt(len)) * @sqrt(@as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(of))));
+        }
+    }.at;
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     var t: Tables = .{};
     try t.init();
     defer t.deinit();
     const counts = tableCounts(&t);
-    for (cuts[part]..cuts[part + 1]) |n| {
+    for (cut(words.items.len, part, parts)..cut(words.items.len, part + 1, parts)) |n| {
         try testing.expect(try read(t.env(), &t.sums, words.items[0..n], .identity, &out) == null);
         try testing.expectEqual(@as(usize, 0), out.items.len);
         try testing.expectEqualSlices(u32, &counts, &tableCounts(&t));
     }
 }
 
-test "a block that does not decode is no block: every truncation, the shortest third" {
-    try expectTruncationsRefused(0);
+// Every truncation, in six parts of equal work (three were near the 1 s
+// budget, #1197).
+test "a block that does not decode is no block: every truncation, part 1 of 6" {
+    try expectTruncationsRefused(0, 6);
 }
 
-test "a block that does not decode is no block: every truncation, the middle third" {
-    try expectTruncationsRefused(1);
+test "a block that does not decode is no block: every truncation, part 2 of 6" {
+    try expectTruncationsRefused(1, 6);
 }
 
-test "a block that does not decode is no block: every truncation, the longest third" {
-    try expectTruncationsRefused(2);
+test "a block that does not decode is no block: every truncation, part 3 of 6" {
+    try expectTruncationsRefused(2, 6);
+}
+
+test "a block that does not decode is no block: every truncation, part 4 of 6" {
+    try expectTruncationsRefused(3, 6);
+}
+
+test "a block that does not decode is no block: every truncation, part 5 of 6" {
+    try expectTruncationsRefused(4, 6);
+}
+
+test "a block that does not decode is no block: every truncation, part 6 of 6" {
+    try expectTruncationsRefused(5, 6);
 }
 
 test "a block that does not decode is no block: a wrong magic, a wrong version, a bad tag, a trailing word" {
@@ -1237,7 +1257,8 @@ fn expectLinearithmic(sizes: []const u32, comptime make: fn (*Tables, u32) anyer
     }
 }
 
-test "a block's cost is n log n: n stores, a list of n distinct elements, a union chain of depth n" {
+// A block's cost is n log n, one family a test (#1197).
+test "a block's cost is n log n: n stores" {
     try expectLinearithmic(&.{ 25, 50, 100, 200 }, struct {
         fn make(t: *Tables, n: u32) anyerror!ClassId {
             const lists = try t.place(2);
@@ -1249,6 +1270,9 @@ test "a block's cost is n log n: n stores, a list of n distinct elements, a unio
             return Rows.fromWords(t.env(), &t.sums, .{ .params = params, .result = lists });
         }
     }.make);
+}
+
+test "a block's cost is n log n: a list of n distinct elements" {
     // A literal of n distinct lists: a balanced `positions` DAG at `[*]`.
     try expectLinearithmic(&.{ 64, 128, 256, 512, 1024 }, struct {
         fn make(t: *Tables, n: u32) anyerror!ClassId {
@@ -1266,6 +1290,9 @@ test "a block's cost is n log n: n stores, a list of n distinct elements, a unio
             return t.sums.add(t.env(), .{ .params = &.{}, .res = res });
         }
     }.make);
+}
+
+test "a block's cost is n log n: a union chain of depth n" {
     // A left-deep chain of unions of depth n.
     try expectLinearithmic(&.{ 16, 32, 64, 128, 256 }, struct {
         fn make(t: *Tables, n: u32) anyerror!ClassId {
@@ -1373,7 +1400,35 @@ test "a block built in another order writes the same bytes" {
     try testing.expectEqualSlices(u32, wa.items, wb.items);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation, and a mutation of every word" {
+// A malformed block decodes as no block and never crashes: every truncation,
+// and a mutation of every word. The sweep is split into sixths of the words,
+// each a test of its own under the 1 s budget (#1197); together they cover
+// every word, as the one test did.
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 1 of 6" {
+    try malformedSweep(0, 6);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 2 of 6" {
+    try malformedSweep(1, 6);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 3 of 6" {
+    try malformedSweep(2, 6);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 4 of 6" {
+    try malformedSweep(3, 6);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 5 of 6" {
+    try malformedSweep(4, 6);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 6 of 6" {
+    try malformedSweep(5, 6);
+}
+
+fn malformedSweep(part: usize, parts: usize) !void {
     var a: Tables = .{};
     try a.init();
     defer a.deinit();
@@ -1392,14 +1447,15 @@ test "a malformed block decodes as no block and never crashes: every truncation,
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     // A payload a step cannot hold, which once panicked a cast.
-    const bad_step = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 1, @backingInt(Place.StepKind.elem), 0xFFFFFFFF, 0, 0 };
-    {
+    if (part == 0) {
+        const bad_step = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 1, @backingInt(Place.StepKind.elem), 0xFFFFFFFF, 0, 0 };
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
         try testing.expect(try read(t.env(), &t.sums, &bad_step, .identity, &out) == null);
     }
-    for (0..words.items.len) |i| {
+    const len = words.items.len;
+    for (len * part / parts..len * (part + 1) / parts) |i| {
         for ([_]u32{if (i % 2 == 0) 0 else words.items[i] +% 1}) |v| {
             if (v == words.items[i]) continue;
             @memcpy(copy, words.items);
@@ -2383,7 +2439,25 @@ test "the codec's lane stops the writer before the work: a cold place with a lar
     }
 }
 
-test "the codec's lane stops the writer at every prefix: nothing written, no memo left behind" {
+// The codec's lane stops the writer at every prefix: nothing written, no memo
+// left behind. The first 200 caps one by one, and then the long prefixes in
+// 48 steps in two halves, each part in one set of tables, one refusal after another (one
+// test of both was over the 1 s budget, #1197).
+test "the codec's lane stops the writer at every prefix: nothing written, no memo left behind, the first 200 caps" {
+    try codecLane(0);
+}
+
+test "the codec's lane stops the writer at every prefix: nothing written, no memo left behind, the long prefixes" {
+    try codecLane(1);
+}
+
+test "the codec's lane stops the writer at every prefix: nothing written, no memo left behind, the longest prefixes" {
+    try codecLane(2);
+}
+
+/// Part 0: caps 0 to 200, one by one; parts 1 and 2: the halves of the 48
+/// steps from 200 to the full price.
+fn codecLane(part: u32) !void {
     const gpa = testing.allocator;
     var full: std.ArrayList(u32) = .empty;
     defer full.deinit(gpa);
@@ -2409,7 +2483,16 @@ test "the codec's lane stops the writer at every prefix: nothing written, no mem
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(gpa);
     var cap: u64 = 0;
-    while (cap < paid) : (cap += if (cap < 200) 1 else paid / 48) {
+    const step = paid / 48;
+    const mid = @min(paid, 200 + 24 * step);
+    if (part == 1) cap = @min(200, paid);
+    if (part == 2) cap = mid;
+    const end: u64 = switch (part) {
+        0 => @min(200, paid),
+        1 => mid,
+        else => paid,
+    };
+    while (cap < end) : (cap += if (cap < 200) 1 else step) {
         const r = try writeCapped(&t, classes[0..], cap, &out);
         try testing.expectEqual(@as(?anyerror, error.AccountingInvariant), r.err);
         try testing.expectEqual(@as(usize, 0), out.items.len);
@@ -2510,9 +2593,27 @@ const Wide = struct {
     }
 };
 
-test "source-sized values write under the default allowance: a 4 000-deep type, a 1 040-node ring, a 2 551-place model, a 1 500-deep taken chain" {
+// Source-sized values write under the default allowance: one test per value
+// (the four in one test were near the 1 s budget, #1197).
+test "source-sized values write under the default allowance: a 4 000-deep type" {
+    try sourceSized(0);
+}
+
+test "source-sized values write under the default allowance: a 1 040-node ring" {
+    try sourceSized(1);
+}
+
+test "source-sized values write under the default allowance: a 2 551-place model" {
+    try sourceSized(2);
+}
+
+test "source-sized values write under the default allowance: a 1 000-deep taken chain" {
+    try sourceSized(3);
+}
+
+fn sourceSized(case: u32) !void {
     const gpa = testing.allocator;
-    for (0..4) |case| {
+    {
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -2545,7 +2646,7 @@ test "source-sized values write under the default allowance: a 4 000-deep type, 
                 const env = t.env();
                 const list = try t.place(0);
                 var cell = try t.cells.symbolic(gpa, &t.account, &t.places, .param, 0, try t.places.rootPath(gpa, list), 0);
-                for (0..1500) |i| {
+                for (0..1000) |i| {
                     const l = try t.cells.label(gpa, &t.account, @intCast(i), .none, false);
                     _ = try t.cells.split(gpa, &t.account, cell, @intCast(i), l, try t.conds.excl(gpa, env.charge, cell));
                     cell = try t.cells.refine(gpa, &t.account, .elem, cell, l, 0, list, .list);
@@ -2559,20 +2660,30 @@ test "source-sized values write under the default allowance: a 4 000-deep type, 
         const before = t.account.growth;
         try write(t.env(), &t.sums, &.{c}, .identity, &words);
         // The write's own growth is its κ reads and projections, a few a node.
-        try testing.expect(t.account.growth - before < Ids.Account.default_allowance / 8);
+        // The taken chain is 1 000 deep (1 500 were over the budget under load,
+        // #1197; its cost is linear): an eighth of the allowance per 1 500
+        // levels, as before.
+        try testing.expect(t.account.growth - before < Ids.Account.default_allowance / (if (case == 3) @as(u32, 12) else 8));
     }
 }
 
 /// A chain of 400 nodes at `Tree` and `k` supplies of it, each under its
 /// own map: k interpretations of every node.
 fn manyMaps(t: *Tables, k: u32) !ClassId {
+    return manyMapsOver(t, k, 400);
+}
+
+/// `k` maps over a chain of `len` nodes (at most 400), each map's κ `shared` at
+/// its own depth.
+fn manyMapsOver(t: *Tables, k: u32, len: usize) !ClassId {
     const gpa = testing.allocator;
     const env = t.env();
     const tree = try t.place(8);
     const s0 = try t.places.ctorStep(gpa, &t.account, 0, 0);
     var v = try t.shapes.nothing(gpa, &t.account, tree);
-    var chain: [400]NodeId = undefined;
-    for (&chain, 0..) |*n, i| {
+    var chain_buf: [400]NodeId = undefined;
+    const chain = chain_buf[0..len];
+    for (chain, 0..) |*n, i| {
         const site = try t.cells.site(gpa, &t.account, @intCast(i + 1), tree, .list);
         v = try t.shapes.node(gpa, &t.account, tree, try t.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try t.shapes.overPut(gpa, &t.account, Ids.none_int, s0, v));
         n.* = v;
@@ -2580,7 +2691,7 @@ fn manyMaps(t: *Tables, k: u32) !ClassId {
     const sups = try gpa.alloc(Summary.Supply, k);
     defer gpa.free(sups);
     for (sups, 0..) |*s, i| {
-        const km = try below_n(t, .none, s0, 399 - (i % 400), chain[i % 400], Cond.shared);
+        const km = try below_n(t, .none, s0, @intCast(len - 1 - (i % len)), chain[i % len], Cond.shared);
         s.* = .{ .j = 0, .k = @intCast(i), .node = v, .label = .none, .owned = true, .taken = false, .kappa = km };
     }
     return t.sums.add(env, .{ .params = &.{.none}, .res = v, .funs = &.{.{ .j = 0, .calls = .once, .supplies = sups }} });
@@ -2658,9 +2769,27 @@ fn oneField(t: *Tables, at: PlaceId, site_id: u32) !NodeId {
     return t.shapes.node(gpa, &t.account, at, .none, try t.shapes.overPut(gpa, &t.account, Ids.none_int, s, leaf));
 }
 
-test "a type's width costs the writer nothing: one node of a 30 000-field record, 340 nodes of a 100-field one, a 256 × 256 record, under the default allowance, no growth" {
+// A type's width costs the writer nothing, under the default allowance, no
+// growth: one test per shape (the four in one were near the 1 s budget, #1197).
+test "a type's width costs the writer nothing: one node of a 4 000-field record" {
+    try typeWidth(0);
+}
+
+test "a type's width costs the writer nothing: one node of a 30 000-field record" {
+    try typeWidth(1);
+}
+
+test "a type's width costs the writer nothing: 340 nodes of a 100-field record" {
+    try typeWidth(2);
+}
+
+test "a type's width costs the writer nothing: a 256 × 256 record" {
+    try typeWidth(3);
+}
+
+fn typeWidth(case: u32) !void {
     const gpa = testing.allocator;
-    for (0..4) |case| {
+    {
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -2730,30 +2859,37 @@ test "the codec's work is O(S log S) whatever the width: P declarations of one n
     for (ratios[1..]) |r| try testing.expect(r <= ratios[0] * 1.25);
 }
 
-test "a declaration's growth is its own: editing another that shares its records changes nothing of it" {
+// A declaration's growth is its own: editing another that shares its
+// records changes nothing of it. B is eight maps over a 200-node chain; A,
+// the chain under one map or under eight more, first in the block. One test
+// per edit, each against B alone (one test was over the 1 s budget, #1197).
+test "a declaration's growth is its own: a declaration sharing its chain under one map changes nothing of it" {
+    const alone = try sharedGrowth(0);
+    try testing.expect(alone >= 7 * 200);
+    try testing.expectEqual(alone, try sharedGrowth(1));
+}
+
+test "a declaration's growth is its own: a declaration sharing its maps and eight more changes nothing of it" {
+    try testing.expectEqual(try sharedGrowth(0), try sharedGrowth(2));
+}
+
+/// B's growth when written alone (variant 0) or after A (1, 2).
+fn sharedGrowth(variant: u32) !u32 {
     const gpa = testing.allocator;
-    var charged: [3]u32 = undefined;
-    for (0..3) |variant| {
-        var t: Tables = .{};
-        try t.init();
-        defer t.deinit();
-        t.account.allowance = std.math.maxInt(u32) - 1;
-        // B: eight maps over a 400-node chain. A: the chain under one map
-        // (variant 1) or under eight more (variant 2), first in the block.
-        const b = try manyMaps(&t, 8);
-        const a = if (variant == 2) try manyMaps(&t, 16) else try t.sums.add(t.env(), .{ .params = &.{.none}, .res = t.sums.get(b).res });
-        var accounts: [2]Ids.Account = .{ .{}, .{} };
-        defer for (&accounts) |*x| x.deinit(gpa);
-        var out: std.ArrayList(u32) = .empty;
-        defer out.deinit(gpa);
-        if (variant == 0) {
-            try Block.writeWith(t.env(), &t.sums, &.{b}, .identity, &out, .{ .charges = &.{.growth(&accounts[1])} });
-        } else try Block.writeWith(t.env(), &t.sums, &.{ a, b }, .identity, &out, .{ .charges = &.{ .growth(&accounts[0]), .growth(&accounts[1]) } });
-        charged[variant] = accounts[1].growth;
-    }
-    try testing.expect(charged[0] >= 7 * 400);
-    try testing.expectEqual(charged[0], charged[1]);
-    try testing.expectEqual(charged[0], charged[2]);
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    t.account.allowance = std.math.maxInt(u32) - 1;
+    const b = try manyMapsOver(&t, 8, 200);
+    const a = if (variant == 2) try manyMapsOver(&t, 16, 200) else try t.sums.add(t.env(), .{ .params = &.{.none}, .res = t.sums.get(b).res });
+    var accounts: [2]Ids.Account = .{ .{}, .{} };
+    defer for (&accounts) |*x| x.deinit(gpa);
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(gpa);
+    if (variant == 0) {
+        try Block.writeWith(t.env(), &t.sums, &.{b}, .identity, &out, .{ .charges = &.{.growth(&accounts[1])} });
+    } else try Block.writeWith(t.env(), &t.sums, &.{ a, b }, .identity, &out, .{ .charges = &.{ .growth(&accounts[0]), .growth(&accounts[1]) } });
+    return accounts[1].growth;
 }
 
 /// The atoms of a condition: how many, and how many are `excl` (a constant
@@ -3069,7 +3205,9 @@ test "#1141: the codec's work on a snapshot grows with its depth, never with its
     const gpa = testing.allocator;
     var write_cost: [3]u64 = undefined;
     var read_cost: [3]u64 = undefined;
-    for ([_]usize{ 500, 1_000, 2_000 }, 0..) |depth, run| {
+    // 125, 250 and 500 levels: the ratio, not the size, tells n from n²
+    // (2 000 levels took the test over the 1 s budget, #1197).
+    for ([_]usize{ 125, 250, 500 }, 0..) |depth, run| {
         var a: Tables = .{};
         try a.init();
         defer a.deinit();

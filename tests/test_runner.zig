@@ -79,7 +79,12 @@ pub fn main(init: std.process.Init.Minimal) void {
     executable = args[0];
     var listen = false;
     for (args[1..]) |arg| {
-        if (std.mem.startsWith(u8, arg, "--crash-probe=")) {
+        if (std.mem.eql(u8, arg, "--budget-probe")) {
+            readBudget(init.environ);
+            timing.open(runner_io, init.environ, args[0]);
+            budgetProbe();
+            return;
+        } else if (std.mem.startsWith(u8, arg, "--crash-probe=")) {
             crashProbe(arg["--crash-probe=".len..]);
             return;
         } else if (std.mem.startsWith(u8, arg, "--hang-guard-probe=")) {
@@ -99,6 +104,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         }
     }
     selectShard(init.environ);
+    readBudget(init.environ);
     timing.open(runner_io, init.environ, args[0]);
     // The tests run on a thread with a stack of their own rather than on the
     // main thread, whose size is whatever the shell's limit is: `zig build`
@@ -180,7 +186,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
         std.mem.startsWith(u8, test_fn.name, "playground_test.test.part ");
     if (!suite) guard.start(test_fn.name) catch @panic("cannot start test hang guard");
     defer if (!suite) guard.finish();
-    const status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
+    var status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
         .pass
     else |err| switch (err) {
         error.SkipZigTest => .skip,
@@ -193,6 +199,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.io_instance.deinit();
     const leaks = testing.allocator_instance.deinit();
     const cpu_us = started.cpuUs();
+    if (status == .pass and !suite and overBudget(test_fn.name, cpu_us)) status = .fail;
     if (timing.enabled()) started.record(test_fn.name, status);
     timing.current_test = "";
     crash_name.store(null, .release);
@@ -458,4 +465,39 @@ pub fn rawWrite(s: []const u8) void {
         if (n <= 0) return;
         rest = rest[@intCast(n)..];
     }
+}
+
+/// `BENI_TEST_BUDGET_MS`: the CPU one test may spend, in milliseconds; a
+/// test that spends more fails, naming itself and its cost (#1197). Unset:
+/// no budget. `build.zig` sets 1 000 for the unit tests; the black-box
+/// suites guard each case themselves. CPU, not wall: a loaded machine slows
+/// every test's wall clock alike, and that is no test's fault.
+var budget_us: ?u64 = null;
+
+fn readBudget(environ: std.process.Environ) void {
+    const text = environ.getAlloc(std.heap.page_allocator, "BENI_TEST_BUDGET_MS") catch |err| switch (err) {
+        error.EnvironmentVariableMissing => return,
+        else => std.debug.panic("cannot read BENI_TEST_BUDGET_MS: {t}", .{err}),
+    };
+    if (text.len == 0) return;
+    const ms = std.fmt.parseUnsigned(u64, text, 10) catch std.debug.panic("BENI_TEST_BUDGET_MS must be a number of milliseconds, got '{s}'", .{text});
+    budget_us = ms * std.time.us_per_ms;
+}
+
+/// Whether a test that spent `cpu_us` is over the budget; says so if it is.
+fn overBudget(name: []const u8, cpu_us: u64) bool {
+    const budget = budget_us orelse return false;
+    if (cpu_us <= budget) return false;
+    std.debug.print("FAIL: test over its CPU budget ({d} ms, budget {d} ms): {s}\n", .{ cpu_us / std.time.us_per_ms, budget / std.time.us_per_ms, name });
+    return true;
+}
+
+/// `--budget-probe`: a test that spins past the budget, for the runner's own
+/// tests (`tests/blackbox/gates_test.zig`); fails (exit 1) when over it.
+fn budgetProbe() void {
+    const started: Started = .now();
+    var x: u64 = 0;
+    while (started.cpuUs() < 50 * std.time.us_per_ms) x +%= 1;
+    std.mem.doNotOptimizeAway(x);
+    if (overBudget("budget probe", started.cpuUs())) std.process.exit(1);
 }

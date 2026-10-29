@@ -1204,10 +1204,12 @@ const TestGraph = struct {
 };
 
 test "#1130: a call grafts and links a result as deep as the source, on explicit stacks" {
-    // On a thread with a small stack (a wasm build's is 1 MiB): a native
-    // frame per level of the source would overflow it.
+    // On a thread with a small stack, 256 KiB for 6 000 levels: about 43
+    // bytes a level, far below a native frame per level in any build, so a
+    // recursive walk would overflow it. (It was 30 000 levels on 1 MiB, about
+    // the same ratio, over the 1 s budget, #1197.)
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 1 << 20 }, struct {
+    const th = try std.Thread.spawn(.{ .stack_size = 256 << 10 }, struct {
         fn run(out: *anyerror!void) void {
             out.* = deepCall();
         }
@@ -1236,11 +1238,11 @@ fn deepCall() !void {
     const list = try places.of(gpa, &account, src, 1);
     const arg = try places.ctorStep(gpa, &account, 0, 0);
     const env: Env = .{ .gpa = gpa, .charge = .growth(&account), .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds };
-    // `res`: 30 000 levels of `T [ … ]` over the parameter at the bottom (60 000
+    // `res`: 6 000 levels of `T [ … ]` over the parameter at the bottom (12 000
     // path steps, inside `path_steps`), deeper than a native frame per level allows.
     const p = try cells.symbolic(gpa, &account, &places, .param, 0, try places.rootPath(gpa, t_place), 0);
     var n = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
-    const depth = 30_000;
+    const depth = 6_000;
     for (0..depth) |i| {
         const l = try shapes.node(gpa, &account, list, try cells.sets.insert(gpa, env.charge, .none, (try cells.site(gpa, &account, @intCast(i + 1), list, .list)).int(), 0), try shapes.overPut(gpa, &account, Ids.none_int, Place.Step.elem, n));
         n = try shapes.node(gpa, &account, t_place, .none, try shapes.overPut(gpa, &account, Ids.none_int, arg, l));
@@ -1863,22 +1865,41 @@ fn linkRandom(seed_: u64, flags: u32) !u8 {
     return linkDiff(&x.conds, want, got, 0);
 }
 
-test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most" {
-    // Random graphs of up to 9 knots: nodes, deltas, recasts, unions and
-    // positions, back edges anywhere, parameters at six paths, seeds and
-    // arguments with exact and collapsed folds. Every snapshot is the
-    // replay's, or differs only in a collapsed fold's steps, which the
-    // cursor walk keeps for every step linked below it.
+// Random graphs of up to 9 knots: nodes, deltas, recasts, unions and
+// positions, back edges anywhere, parameters at six paths, seeds and
+// arguments with exact and collapsed folds. Every snapshot is the replay's,
+// or differs only in a collapsed fold's steps, which the cursor walk keeps
+// for every step linked below it. 600 graphs as before, 150 a test (one
+// test of all was over the 1 s budget, #1197); each quarter allows a quarter
+// of the 60 step-only differences the whole allowed (1 and 3 measured).
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 0–149" {
+    try testing.expect(try linkRandomSweep(0xff, 0, 150) < 15);
+}
+
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 150–299" {
+    try testing.expect(try linkRandomSweep(0xff, 150, 300) < 15);
+}
+
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: plain graphs, seeds 0–149" {
+    try testing.expect(try linkRandomSweep(0xe0, 0, 150) < 15);
+}
+
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: plain graphs, seeds 150–299" {
+    try testing.expect(try linkRandomSweep(0xe0, 150, 300) < 15);
+}
+
+/// How many random graphs of the kind mix `flags`, seeds `from` to `to`,
+/// differ from the replay only in a collapsed fold's steps; any other
+/// difference fails.
+fn linkRandomSweep(flags: u32, from: u64, to: u64) !u32 {
     var steps_only: u32 = 0;
-    for ([_]u32{ 0xff, 0xe0 }) |flags| {
-        var q: u64 = 0;
-        while (q < 300) : (q += 1) switch (try linkRandom(q, flags)) {
-            0 => {},
-            1 => steps_only += 1,
-            else => return error.TestUnexpectedResult,
-        };
-    }
-    try testing.expect(steps_only < 60);
+    var q: u64 = from;
+    while (q < to) : (q += 1) switch (try linkRandom(q, flags)) {
+        0 => {},
+        1 => steps_only += 1,
+        else => return error.TestUnexpectedResult,
+    };
+    return steps_only;
 }
 
 test "#1149 review: a merge after a backedge's fold is a step the collapsed fold saw" {

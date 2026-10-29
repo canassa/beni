@@ -4528,10 +4528,11 @@ test "#1129: relabelling a fold keeps the steps it saw, so deep, kappaLeq and th
 }
 
 test "#1130: a snapshot as deep as the source is set, relabelled and merged on explicit stacks" {
-    // On a thread with a small stack (a wasm build's is 1 MiB): a native
-    // frame per level of the snapshot would overflow it.
+    // On a thread with a small stack, 512 KiB for 15 000 steps, as 1 MiB was
+    // for 30 000 (over the budget under load, #1197): a native frame per
+    // level of the snapshot would overflow it.
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 1 << 20 }, struct {
+    const th = try std.Thread.spawn(.{ .stack_size = 512 << 10 }, struct {
         fn run(out: *anyerror!void) void {
             out.* = deepSnapshot();
         }
@@ -4546,12 +4547,12 @@ fn deepSnapshot() !void {
     defer f.deinit();
     f.account.allowance = std.math.maxInt(u32) - 1;
     const gpa = testing.allocator;
-    const steps = try gpa.alloc(Place.Step, 30_000);
+    const steps = try gpa.alloc(Place.Step, 15_000);
     defer gpa.free(steps);
     @memset(steps, Place.Step.elem);
     const a = try f.leaf(1, &.{try f.param(0, 1, &.{})});
     const b = try f.leaf(1, &.{try f.param(1, 1, &.{})});
-    // Path copying down 30 000 steps, twice, to two tries.
+    // Path copying down 15 000 steps, twice, to two tries.
     const ka = try f.conds.kappaSetAt(gpa, f.charge(), .none, steps, a, shared);
     const kb = try f.conds.kappaSetAt(gpa, f.charge(), .none, steps, b, lost);
     try testing.expectEqual(shared, f.conds.kappaGet(f.conds.kappaAlong(ka, steps), a).?);
@@ -4852,7 +4853,23 @@ fn aggSame(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) !u8 
     return 2;
 }
 
-test "#1150 review: random aggregates decide what apart over the same multiset decides" {
+// The review's differential, in two tests (one was near the 1 s budget, #1197):
+// random aggregates against `apart`, and random cyclic shapes' reach aggregates in
+// two halves of 750 shapes on two seeds (1 500 on one seed before).
+test "#1150 review: random aggregates decide what apart over the same multiset decides: members, orders and images" {
+    try randomAggregates(0);
+}
+
+test "#1150 review: random aggregates decide what apart over the same multiset decides: cyclic shapes' reach, 750 of one seed" {
+    try randomAggregates(1);
+}
+
+test "#1150 review: random aggregates decide what apart over the same multiset decides: cyclic shapes' reach, 750 of another" {
+    try randomAggregates(2);
+}
+
+fn randomAggregates(part: u32) !void {
+    const members = part == 0;
     // The review's differential: random members built of random parts
     // (sites, parameters at folded paths, ⊤, two splits' refinements, a
     // taken element and its container, approximate occurrences), merged in
@@ -4902,11 +4919,11 @@ test "#1150 review: random aggregates decide what apart over the same multiset d
     const n_pool = pool.items.len;
     f.account.allowance = std.math.maxInt(u32) - 1;
 
-    var prng = std.Random.DefaultPrng.init(777);
+    var prng = std.Random.DefaultPrng.init(777 + part);
     const r = prng.random();
     var bad: u32 = 0;
     var iter: u32 = 0;
-    while (iter < 400) : (iter += 1) {
+    while (members and iter < 400) : (iter += 1) {
         // Members, each a set made of parts.
         const n_members = 1 + r.uintLessThan(usize, 4);
         var items: std.ArrayList(Item) = .empty;
@@ -4992,7 +5009,7 @@ test "#1150 review: random aggregates decide what apart over the same multiset d
     const rec = try f.placeOf(0);
     var sbad: u32 = 0;
     var siter: u32 = 0;
-    while (siter < 1500) : (siter += 1) {
+    while (!members and siter < 750) : (siter += 1) {
         const nk = 2 + r.uintLessThan(usize, 7);
         var ks: [9]NodeId = undefined;
         for (ks[0..nk]) |*k| k.* = try f.shapes.knot(gpa, &f.account);
