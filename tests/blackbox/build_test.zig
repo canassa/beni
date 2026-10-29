@@ -1030,9 +1030,10 @@ test "a prerendered page is byte-identical at every --jobs" {
     for (builds[1..4]) |b| try expectSameTree(&w, "dev-1a", b.out);
     for (builds[5..8]) |b| try expectSameTree(&w, "rel-1a", b.out);
     // Each page is the first render, the same in both modes, with its
-    // route (`prerender.md` §7.4).
+    // route (`prerender.md` §7.4), after the capture script of its one
+    // listener's kind (§6.5, amended 2026-10-29).
     for ([_][2][]const u8{ .{ "index.html", "/" }, .{ "about.html", "/about" }, .{ "blog/index.html", "/blog/" } }) |pair| {
-        const page = try std.fmt.allocPrint(w.arena.allocator(), "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><main data-beni=\"{s}\"><button>1 &amp; more</button><!--0--><section><output>1</output><!--1--></section></main></body>\n", .{pair[1]});
+        const page = try std.fmt.allocPrint(w.arena.allocator(), "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><script>(()=>{{let d=document,r=[],k=[\"click\"],f=e=>{{let t=e.target;t.closest?.(\"[data-beni]\")&&r.push([e,t.value,t.checked,t.selectedIndex])}};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{{for(let n of k)d.removeEventListener(n,f,!0);return r}};d.currentScript.remove()}})()</script><main data-beni=\"{s}\"><button>1 &amp; more</button><!--0--><section><output>1</output><!--1--></section></main></body>\n", .{pair[1]});
         for ([_][]const u8{ "dev-1a", "rel-1a" }) |out| {
             try testing.expectEqualStrings(page, try w.read(try std.fs.path.join(w.arena.allocator(), &.{ out, pair[0] })));
         }

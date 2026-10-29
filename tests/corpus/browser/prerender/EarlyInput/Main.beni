@@ -1,0 +1,72 @@
+-- Input made on a prerendered page before its program runs
+-- (docs/design/prerender.md §6.5, amended 2026-10-29): the page's capture
+-- script records a click on a button's child, typed text, a checked box, a
+-- `select`'s change and another click, and the mount hands each to the
+-- listener on its element or an ancestor after the first pass, in order,
+-- the control state written back first. Each reaches `update` once, and
+-- the log shows the order. No event is dispatched again, so the box the
+-- user checked stays checked. A page mounted fresh has nothing to deliver.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    name : String
+    agree : Bool
+    plan : String
+    log : String
+
+
+type Msg
+    = Inc
+    | SetName String
+    | SetAgree Bool
+    | SetPlan String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1, log = model.log ++ " inc" }
+
+        SetName typed →
+            { model | name = typed, log = model.log ++ " name:" ++ typed }
+
+        SetAgree on →
+            { model | agree = on, log = model.log ++ " check" }
+
+        SetPlan chosen →
+            { model | plan = chosen, log = model.log ++ " plan:" ++ chosen }
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="app">
+        <button data-role="inc" onClick={Inc}><b>+</b></button>
+        <input data-role="name" value={model.name} onInput={SetName} />
+        <input type="checkbox" data-role="agree" checked={model.agree} onCheck={SetAgree} />
+        <select data-role="plan" value={model.plan} onChange={SetPlan}>
+            <option value="free">Free</option>
+            <option value="team">Team</option>
+        </select>
+        <output data-role="count">{String.fromInt model.count}</output>
+        <output data-role="log">{model.log}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { count = 0, name = "Ada", agree = False, plan = "free", log = "" }
+                , update = update
+                , view = view
+                }
+            )
+            "root"
+        )
+        [ "/" ]

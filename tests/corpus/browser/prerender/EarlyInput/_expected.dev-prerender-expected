@@ -1,0 +1,49 @@
+-- early click [data-role=inc]>b
+-- early input [data-role=name] "Bo"
+-- early click [data-role=agree]
+-- early set [data-role=plan] "team"
+-- early event [data-role=plan] change
+-- early click [data-role=inc]
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <button data-role="inc">
+        <b>"+"</b>
+      </button>
+      <input data-role="name" .value="Bo">
+      <input type="checkbox" data-role="agree" .value="on" .checked=true>
+      <select data-role="plan" .value="team">
+        <option value="free">"Free"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output data-role="count">"2"</output>
+      <output data-role="log">" inc name:Bo check plan:team inc"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <button data-role="inc">
+        <b>"+"</b>
+      </button>
+      <input data-role="name" .value="Bo">
+      <input type="checkbox" data-role="agree" .value="on" .checked=true>
+      <select data-role="plan" .value="team">
+        <option value="free">"Free"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output data-role="count">"3"</output>
+      <output data-role="log">" inc name:Bo check plan:team inc inc"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- listeners document
+(listeners: 0)
+(the DOM did not change)

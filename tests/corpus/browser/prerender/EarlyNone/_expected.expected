@@ -1,0 +1,15 @@
+-- early click [data-role=noop]
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <article data-role="post">
+      <h1>"Hello"</h1>
+      <button data-role="noop">"Nothing"</button>
+    </article>
+  </div>
+  "\n  "
+</body>
+-- listeners document
+(listeners: 0)
+(the DOM did not change)

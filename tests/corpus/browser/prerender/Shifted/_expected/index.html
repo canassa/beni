@@ -6,6 +6,6 @@
     <script type="module" src="/_main.mjs"></script>
   </head>
   <body>
-    <div id="root"><div data-role=app data-beni="/"><h1>Counter</h1><button data-role=inc>+</button><button data-role=dec>-</button><output>0</output><button data-role=help>?</button></div></div>
+    <div id="root"><script>(()=>{let d=document,r=[],k=["click"],f=e=>{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{for(let n of k)d.removeEventListener(n,f,!0);return r};d.currentScript.remove()})()</script><div data-role=app data-beni="/"><h1>Counter</h1><button data-role=inc>+</button><button data-role=dec>-</button><output>0</output><button data-role=help>?</button></div></div>
   </body>
 </html>

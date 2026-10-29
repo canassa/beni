@@ -1,0 +1,5 @@
+inject [data-role=inc] "<i>ad</i>"
+fresh
+early click [data-role=inc]
+early input [data-role=name] "Bo"
+click [data-role=inc]

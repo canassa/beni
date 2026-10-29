@@ -30,8 +30,8 @@
 //
 // A `--html-page=<entry.mjs>@<report.json>` is such a page opened on the
 // page the build wrote — the `index.html` beside the entry file, its body
-// and the body's attributes, its scripts left out, since the driver
-// imports the program itself — where every other page opens on an empty
+// and the body's attributes, its module and `src` scripts left out, since the driver
+// imports the program itself, and its inline scripts run (prerender.md §6.5) — where every other page opens on an empty
 // body (docs/design/prerender.md §11, slice P1: a prerendered page holds
 // the program's first render before the program runs). When the script's
 // setup steps hold a `url`, the page is the file a static host answers that
@@ -216,6 +216,13 @@
 //                               — fails; with it, one that keeps any
 //                               element of the unit fails. A page with no
 //                               unit checks neither
+//   early <step>                a `click`, `input`, `set` or `event` step
+//                               made on a prerendered page before its
+//                               program loads, after its inline scripts ran
+//                               (docs/design/prerender.md §6.5): a user's
+//                               input before the takeover. It is a setup
+//                               step, its heading alone in the transcript;
+//                               on a page with no unit it does nothing
 //   throws <step>               any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
@@ -911,6 +918,9 @@ async function load({ url, runtime }) {
 // Run one step. Returns null, or why the step could not run — or, for
 // `advance`, a promise of one.
 function step(s) {
+  // An `early` step acts on a prerendered page before its program loads; a
+  // page with no prerendered unit has nothing to act on.
+  if (s.early && document.querySelector("[data-beni]") === null) return null;
   // Fire every timer due by `target`, earliest first (by when it was set,
   // among timers due at once), with the clock at its time, and let the
   // page settle after each, so the work a timer resumed runs — and may set
@@ -1525,9 +1535,18 @@ function openPage(html) {
   const body = html.slice(start === -1 ? 0 : start, end === -1 ? html.length : end + "</body>".length);
   const parse = globalThis.__beniParseBody;
   const parsed = parse === undefined ? new DOMParser().parseFromString(body, "text/html").body : parse(body);
-  for (const script of parsed.querySelectorAll("script")) script.remove();
+  for (const script of parsed.querySelectorAll("script[src], script[type=module]")) script.remove();
   for (const a of parsed.attributes) document.body.setAttribute(a.name, a.value);
   document.body.replaceChildren(...[...parsed.childNodes].map((n) => document.importNode(n, true)));
+  // Each inline classic script — a prerendered page's capture script
+  // (docs/design/prerender.md §6.5) — run in document order, as the parser
+  // runs one it reaches, `document.currentScript` the element. Neither DOM
+  // runs a script a `DOMParser` made, and happy-dom runs none at all.
+  for (const script of [...document.body.querySelectorAll("script")]) {
+    Object.defineProperty(document, "currentScript", { value: script, configurable: true });
+    (0, eval)(script.text);
+    delete document.currentScript;
+  }
   globalThis.__beniPrerendered = true;
   return null;
 }
@@ -1813,6 +1832,9 @@ const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // The steps that set the page up, before the program loads.
 const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove"];
+// The steps an `early` step may be: what a user does on the page before its
+// program loads.
+const earlyCommands = ["click", "input", "set", "event"];
 
 // Parse the whole script before the page loads, so a malformed step is
 // reported without running anything.
@@ -1823,13 +1845,40 @@ if (stepsPath !== undefined) {
     const written = raw.trim();
     if (written === "" || written.startsWith("#")) return;
     const where = `${stepsPath}:${i + 1}`;
+    // `early <step>`: the step, run on a prerendered page before its
+    // program loads (`markEarly`).
+    if (written.startsWith("early ")) {
+      const before = steps.length;
+      parseStep(written.slice("early ".length).trim(), where);
+      markEarly(steps, before, written, where);
+      return;
+    }
+    parseStep(written, where);
+  });
+}
+
+// The step just parsed, `early`: one that acts on the page, run before the
+// program loads, after every setup step but `fresh`; and never one that
+// throws, sets the page up or needs the program.
+function markEarly(steps, before, written, where) {
+  const s = steps[before];
+  if (steps.length !== before + 1 || s.throws || setupCommands.includes(s.command) || !earlyCommands.includes(s.command)) {
+    usage(`${where}: \`early\` takes one of ${earlyCommands.map((c) => `\`${c}\``).join(", ")}`);
+  }
+  if (steps.slice(0, before).some((x) => !x.early && !setupCommands.includes(x.command))) usage(`${where}: an \`early\` step comes before the steps after the load`);
+  s.early = true;
+  s.line = written;
+}
+
+function parseStep(written, where) {
+  {
     const throws = written.startsWith("throws ");
     const line = throws ? written.slice("throws ".length).trim() : written;
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
-    if (line === "load" && (!throws || steps.some((s) => !setupCommands.includes(s.command)))) {
+    if (line === "load" && (!throws || steps.some((s) => !s.early && !setupCommands.includes(s.command)))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
     if (line === "selection") return void steps.push({ line: written, where, command: "selection", selector: null, throws });
@@ -2073,7 +2122,7 @@ if (stepsPath !== undefined) {
       s.name = argument;
     } else usage(`${where}: unknown command \`${command}\``);
     steps.push(s);
-  });
+  }
 }
 
 // The page the program runs in: an empty document whose address is
@@ -2178,6 +2227,9 @@ async function happyDomPage(domPath) {
   // wrote (`openPage`); this one has not, yet.
   globalThis.__beniPrerendered = false;
   globalThis.__beniMarks = null;
+  // Node's global is every page's window here: the capture script's global
+  // of a page before (docs/design/prerender.md §6.5) is not this one's.
+  delete globalThis.$beni;
   prelude();
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
@@ -2395,7 +2447,7 @@ async function runPage(entry, fiber, html = false) {
   // up: they run before the program loads, each a heading with nothing
   // under it.
   const setup = [];
-  while (script.length !== 0 && setupCommands.includes(script[0].command) && script[0].command !== "file" && !script[0].throws) setup.push(script.shift());
+  while (script.length !== 0 && (script[0].early || (setupCommands.includes(script[0].command) && script[0].command !== "file")) && !script[0].throws) setup.push(script.shift());
   let setupFault = null;
   // `fresh`: the page the build prerendered is to be mounted fresh, not
   // taken over (`takenOver`).
