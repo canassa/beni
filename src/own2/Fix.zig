@@ -186,9 +186,12 @@ pub const Prover = struct {
     revs: std.ArrayList(Rev) = .empty,
     specs: std.ArrayList(Spec) = .empty,
     spec_paths: std.ArrayList(PathId) = .empty,
-    /// `within`'s provenance: a folded label → its pre-fold pair's index.
+    /// `within`'s provenance: a folded label → its entry (`Provenance`); the
+    /// labels folded beside each pair; each instantiated copy by its source.
     provenance: Ids.FixedDict(1) = .{},
-    pairs: std.ArrayList([2]LabelId) = .empty,
+    provs: std.ArrayList(Provenance) = .empty,
+    absorbed: std.ArrayList([2]u32) = .empty,
+    copies: std.ArrayList([2]u32) = .empty,
     stats: Stats = .{},
 
     pub fn deinit(p: *Prover, gpa: Allocator) void {
@@ -204,7 +207,9 @@ pub const Prover = struct {
         p.specs.deinit(gpa);
         p.spec_paths.deinit(gpa);
         p.provenance.deinit(gpa);
-        p.pairs.deinit(gpa);
+        p.provs.deinit(gpa);
+        p.absorbed.deinit(gpa);
+        p.copies.deinit(gpa);
     }
 
     // ---- ports and generations ---------------------------------------------
@@ -498,46 +503,161 @@ pub const Prover = struct {
     /// (§2.9's `sep(c, c)`), never `within`. `folded` must be the fold of
     /// both (§2.2's uniform fold: the first instruction kept, the tail
     /// dropped). A label has one pre-fold pair: a second, different one is a
-    /// conflict, and the label's `within` is refused from then on.
+    /// conflict, and the label's `within` is refused from then on, every proof
+    /// that read it invalidated (its port). The invocation-only bit is set
+    /// unless a label folded into `folded` (`foldInto`) stops above the depth
+    /// where the pair parts (§2.12 *Invocation-only folds*).
     pub fn foldPair(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, a: LabelId, b: LabelId, folded: LabelId) Error!CondId {
         if (a == b or !diverge(cells, a, b)) return Cond.lost;
         if (!isFoldOf(cells, folded, a) or !isFoldOf(cells, folded, b)) return Cond.lost;
-        return p.record(gpa, charge, conds, folded, if (a.int() < b.int()) .{ a, b } else .{ b, a });
+        return p.record(gpa, charge, conds, cells, folded, if (a.int() < b.int()) .{ a, b } else .{ b, a }, partDepth(cells, a, b), none);
+    }
+
+    /// The read-off folds `x` into `folded` too (beside its pair): one that
+    /// stops above the pair's parting depth clears the bit, at once or when
+    /// the pair is recorded.
+    pub fn foldInto(p: *Prover, gpa: Allocator, charge: Charge, cells: *const Cell.Table, folded: LabelId, x: LabelId) Error!void {
+        const i = try p.provIndex(gpa, charge, folded);
+        try charge.reserve(gpa, .other, 1);
+        try p.absorbed.append(gpa, .{ i, x.int() });
+        const pv = p.provs.items[i];
+        if (pv.state == .recorded and !inside(cells, x, pv)) try p.clearBit(gpa, charge, i);
+    }
+
+    /// Two classes carrying `within(l)` joined: the bit of `l` is the AND of
+    /// theirs.
+    pub fn joinWithin(p: *Prover, gpa: Allocator, charge: Charge, l: LabelId, bit: bool) Error!void {
+        const i = try p.provIndex(gpa, charge, l);
+        if (bit) return;
+        p.provs.items[i].cleared = true;
+        try p.clearBit(gpa, charge, i);
     }
 
     /// `within(l)` instantiated at the call `inst` (§2.11 item 7): the label
-    /// `(inst·l)` with the pair `(inst·a, inst·b)`, still separate. A `within`
-    /// without provenance instantiates to `lost`.
+    /// `(inst·l)` with the pair `(inst·a, inst·b)`, still separate, parting
+    /// one deeper, with `l`'s bit; a later conflict or clearing of `l`
+    /// reaches the copy. A `within` without provenance instantiates to `lost`.
     pub fn prefixWithin(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table, l: LabelId, inst: u32) Error!CondId {
-        const pair = p.provenanceOf(l) orelse return Cond.lost;
+        const src = p.provenance.get(.{l.int()}) orelse return Cond.lost;
+        const sp = p.provs.items[src];
+        if (sp.state != .recorded) return Cond.lost;
         const account = charge.account;
         const out = try cells.label(gpa, account, inst, l, true);
-        return p.record(gpa, charge, conds, out, .{ try cells.label(gpa, account, inst, pair[0], false), try cells.label(gpa, account, inst, pair[1], false) });
+        return p.record(gpa, charge, conds, cells, out, .{ try cells.label(gpa, account, inst, sp.pair[0], false), try cells.label(gpa, account, inst, sp.pair[1], false) }, sp.part + 1, src);
     }
 
-    fn record(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, folded: LabelId, pair: [2]LabelId) Error!CondId {
-        try charge.reserve(gpa, .memo, 1);
-        try p.pairs.ensureUnusedCapacity(gpa, 1);
-        const got = try p.provenance.getOrPut(gpa, .{folded.int()});
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(p.pairs.items.len);
-            p.pairs.appendAssumeCapacity(pair);
-        } else if (got.value_ptr.* == conflict or !std.mem.eql(LabelId, &p.pairs.items[got.value_ptr.*], &pair)) {
-            got.value_ptr.* = conflict;
-            return Cond.lost;
+    fn record(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, folded: LabelId, pair: [2]LabelId, part: u32, source: u32) Error!CondId {
+        const i = try p.provIndex(gpa, charge, folded);
+        const pv = &p.provs.items[i];
+        switch (pv.state) {
+            .conflicted => return Cond.lost,
+            .recorded => if (!std.mem.eql(LabelId, &pv.pair, &pair) or pv.source != source) {
+                try p.conflict(gpa, charge, i);
+                return Cond.lost;
+            },
+            .absent => {
+                pv.* = .{ .pair = pair, .part = part, .bit = true, .state = .recorded, .port = pv.port, .source = source, .cleared = pv.cleared };
+                if (source != none) {
+                    try charge.reserve(gpa, .other, 1);
+                    try p.copies.append(gpa, .{ source, i });
+                }
+                p.provs.items[i].bit = !p.provs.items[i].cleared and (source == none or p.provs.items[source].bit) and p.allInside(cells, i);
+                try p.bump(gpa, charge, p.provs.items[i].port);
+            },
         }
         return conds.within(gpa, charge, folded);
     }
 
-    const conflict = Ids.none_int;
+    fn allInside(p: *const Prover, cells: *const Cell.Table, i: u32) bool {
+        const pv = p.provs.items[i];
+        for (p.absorbed.items) |e| if (e[0] == i and !inside(cells, .from(e[1]), pv)) return false;
+        return true;
+    }
+
+    /// The entry of `l`, made absent (with its port) on first sight, so a
+    /// read of an absent provenance is invalidated when it is recorded.
+    fn provIndex(p: *Prover, gpa: Allocator, charge: Charge, l: LabelId) Error!u32 {
+        try charge.reserve(gpa, .memo, 1);
+        if (p.provenance.get(.{l.int()})) |i| return i;
+        const port_id = try p.port(gpa, charge);
+        try p.provs.ensureUnusedCapacity(gpa, 1);
+        const got = try p.provenance.getOrPut(gpa, .{l.int()});
+        got.value_ptr.* = @intCast(p.provs.items.len);
+        p.provs.appendAssumeCapacity(.{ .pair = .{ .none, .none }, .part = 0, .bit = false, .state = .absent, .port = port_id, .source = none, .cleared = false });
+        return got.value_ptr.*;
+    }
+
+    /// `i` and every copy made from it: conflicted, their readers invalidated.
+    fn conflict(p: *Prover, gpa: Allocator, charge: Charge, i: u32) Error!void {
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, i);
+        while (stack.pop()) |j| {
+            if (p.provs.items[j].state == .conflicted) continue;
+            p.provs.items[j].state = .conflicted;
+            p.provs.items[j].bit = false;
+            try p.bump(gpa, charge, p.provs.items[j].port);
+            for (p.copies.items) |c| if (c[0] == j) try stack.append(gpa, c[1]);
+        }
+    }
+
+    /// `i`'s bit and every copy's cleared, their readers invalidated.
+    fn clearBit(p: *Prover, gpa: Allocator, charge: Charge, i: u32) Error!void {
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, i);
+        while (stack.pop()) |j| {
+            if (!p.provs.items[j].bit) continue;
+            p.provs.items[j].bit = false;
+            try p.bump(gpa, charge, p.provs.items[j].port);
+            for (p.copies.items) |c| if (c[0] == j) try stack.append(gpa, c[1]);
+        }
+    }
+
+    const none = Ids.none_int;
+
+    pub const Provenance = struct { pair: [2]LabelId, part: u32, bit: bool, state: enum(u8) { absent, recorded, conflicted }, port: u32, source: u32, cleared: bool };
 
     /// `within(l)`'s recorded pre-fold pair; an atom without one (an imported
     /// self atom, a `sep(c, c)`) or with conflicting ones has none.
-    pub fn provenanceOf(p: *const Prover, l: LabelId) ?[2]LabelId {
+    pub fn provenanceOf(p: *const Prover, l: LabelId) ?Provenance {
         const i = p.provenance.get(.{l.int()}) orelse return null;
-        return if (i == conflict) null else p.pairs.items[i];
+        const pv = p.provs.items[i];
+        return if (pv.state == .recorded) pv else null;
     }
 };
+
+/// The depth where two diverging chains first differ.
+fn partDepth(cells: *const Cell.Table, a: LabelId, b: LabelId) u32 {
+    var x = a;
+    var y = b;
+    var d: u32 = 0;
+    while (x != .none and y != .none) : (d += 1) {
+        const lx = cells.labelOf(x);
+        const ly = cells.labelOf(y);
+        if (lx.inst != ly.inst) return d;
+        x = lx.callee_label;
+        y = ly.callee_label;
+    }
+    return d;
+}
+
+/// Whether label `x` names a call inside one of those `pv`'s pair stands
+/// for: it agrees with the pair down to the parting depth and names a call
+/// there; a tail a fold dropped above it does not.
+fn inside(cells: *const Cell.Table, x: LabelId, pv: Prover.Provenance) bool {
+    var at = x;
+    var ref = pv.pair[0];
+    var d: u32 = 0;
+    while (d < pv.part) : (d += 1) {
+        if (at == .none or ref == .none) return false;
+        const la = cells.labelOf(at);
+        if (la.inst != cells.labelOf(ref).inst) return false;
+        at = la.callee_label;
+        ref = cells.labelOf(ref).callee_label;
+    }
+    return at != .none;
+}
 
 // ---- expanding a goal ----------------------------------------------------------------
 
@@ -702,12 +822,17 @@ pub const Expansion = struct {
     /// mark certifies one traversal (under the container's κ). Otherwise one
     /// object answers twice: `sep(c, c)`. A `within` without its pre-fold
     /// provenance fails first. A result, an answer or a split counts as per
-    /// call only when its own label is under `l` (`under`): one made by a
-    /// call outside the invocations `l` stands for (`r = mk ⊤` before the
-    /// map) is one object at every invocation.
+    /// call only when its own label is inside one of the calls the pair stands
+    /// for (`inside`), or is `l` itself with the invocation-only bit set
+    /// (§2.12 *Invocation-only folds*): one made by the callee before them,
+    /// or by a call outside them (`r = mk ⊤`), is one object at every call.
     pub fn within(ex: *Expansion, conds: *Cond.Table, cells: *const Cell.Table, places: *const Cell.Places, l: LabelId, set: SetId, marks: *const Marks, resolve: Resolve) Error!void {
         try ex.begin();
-        if (ex.p.provenanceOf(l) == null) return ex.refute(.approximate);
+        // The provenance is a port: a later conflict or clearing invalidates
+        // this proof (absent now, recorded later, likewise).
+        const pi = try ex.p.provIndex(ex.gpa, ex.charge, l);
+        try ex.read(ex.p.provs.items[pi].port);
+        const pv = ex.p.provenanceOf(l) orelse return ex.refute(.approximate);
         var it = cells.sets.iterate(set);
         while (it.next()) |e| {
             try ex.charge.reserve(ex.gpa, .inspection, 1);
@@ -718,7 +843,7 @@ pub const Expansion = struct {
                 .elem => .from(d.b),
                 else => null,
             };
-            if (own == null or !under(cells, own.?, l)) {
+            if (own == null or !(inside(cells, own.?, pv) or (own.? == l and pv.bit))) {
                 try ex.require(conds, try conds.sep(ex.gpa, ex.charge, cells, places, c, c, e.value == 1, null));
                 continue;
             }
@@ -790,24 +915,6 @@ pub fn diverge(cells: *const Cell.Table, a: LabelId, b: LabelId) bool {
         y = ly.callee_label;
     }
     return false;
-}
-
-/// Whether `x` names a call among those `l` stands for: its chain has `l`'s
-/// as a prefix, where a folded label without a tail stands for every call
-/// at its instruction.
-pub fn under(cells: *const Cell.Table, x: LabelId, l: LabelId) bool {
-    var a = x;
-    var b = l;
-    while (b != .none) {
-        if (a == .none) return false;
-        const la = cells.labelOf(a);
-        const lb = cells.labelOf(b);
-        if (la.inst != lb.inst) return false;
-        if (lb.folded and lb.callee_label == .none) return true;
-        a = la.callee_label;
-        b = lb.callee_label;
-    }
-    return true;
 }
 
 /// Whether `folded` is `x`'s fold: its first instruction, folded, the tail
@@ -1397,13 +1504,13 @@ test "within keeps its pre-fold provenance: a distinct pair folds to within, a s
     const rec_rec = try f.label(11, rec_star, false);
     const w_rec = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, rec_f, rec_rec, rec_star);
     try testing.expectEqual(try f.conds.within(gpa, f.charge(), rec_star), w_rec);
-    const recorded = f.prover.provenanceOf(rec_star).?;
+    const recorded = f.prover.provenanceOf(rec_star).?.pair;
     try testing.expect((recorded[0] == rec_f and recorded[1] == rec_rec) or (recorded[0] == rec_rec and recorded[1] == rec_f));
     // A self pair a fold met (foldlFrom's `sep(π₁, π₂[*])` instantiated with one
     // folded supply on both sides, Appendix C.6): lost, and no within.
     const l_star = try f.label(20, .none, true);
     try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, l_star, l_star, l_star));
-    try testing.expectEqual(@as(?[2]LabelId, null), f.prover.provenanceOf(l_star));
+    try testing.expect(f.prover.provenanceOf(l_star) == null);
     // At a consumer: fresh results per call pass under provenance; the same
     // fresh results under an atom without provenance (an imported self
     // atom) do not; one capture at every call is one object.
@@ -2111,6 +2218,10 @@ test "#1189 review: holes pinned red-first" {
     const c_l = try f.label(30, .none, true);
     _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(1, .none, false), false), try f.label(30, try f.label(2, .none, false), false), c_l);
     try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(3, .none, false), false), try f.label(30, try f.label(4, .none, false), false), c_l));
+    // ... and the label's `within` is refused.
+    const c_fresh = try f.set(&.{try f.cells.result(gpa, &f.account, .result, c_l, 1, try f.placeOf(0), .list)});
+    var cw: World = .{ .f = &f, .entries = &.{.{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = c_l, .cells = c_fresh } }} }} };
+    try expectAnswer(try f.prove(&cw, demand(2)), .refuted, .approximate);
     // H. A mark's `single` flipped 0 → 1 is not a mark.
     const xs = try f.sym(.param, 1, 2, &.{});
     var flipped = encodeMark(try cross(&f.cells, gpa, &f.account, enter(xs, Cond.yes), 600, .folded_callback));
@@ -2219,4 +2330,122 @@ test "RefinementFeedbackTwice's positive control: one traversal edits each taken
         try expectAnswer(a, .proved, .exact);
         try testing.expectEqual(k, a.xreq);
     }
+}
+
+test "#1189 re-review: provenance is versioned — a conflict refuses every proof that read it, in either order, through copies too" {
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const l = try f.label(30, .none, true);
+    const pair1 = [2]LabelId{ try f.label(30, try f.label(1, .none, false), false), try f.label(30, try f.label(2, .none, false), false) };
+    const pair2 = [2]LabelId{ try f.label(30, try f.label(3, .none, false), false), try f.label(30, try f.label(4, .none, false), false) };
+    const fresh = try f.set(&.{try f.cells.result(gpa, &f.account, .result, l, 1, try f.placeOf(0), .list)});
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, pair1[0], pair1[1], l);
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l, 50);
+    const copy = try f.label(50, l, true);
+    const fresh_copy = try f.set(&.{try f.cells.result(gpa, &f.account, .result, copy, 1, try f.placeOf(0), .list)});
+    var w: World = .{ .f = &f, .entries = &.{
+        .{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = l, .cells = fresh } }} },
+        .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = copy, .cells = fresh_copy } }} },
+    } };
+    // Proved, then a conflicting pair arrives: both proofs are stale and refused.
+    try expectAnswer(try f.prove(&w, demand(0)), .proved, .exact);
+    try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
+    try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, pair2[0], pair2[1], l));
+    try testing.expectEqual(@as(?Answer, null), try f.prover.cached(gpa, f.charge(), demand(0)));
+    try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
+    try expectAnswer(try f.prove(&w, demand(1)), .refuted, .approximate);
+    // The reverse order: the conflict first, then the proof — the same verdict.
+    var g: Fixture = .{};
+    try g.init();
+    defer g.deinit();
+    const gl = try g.label(30, .none, true);
+    const gp1 = [2]LabelId{ try g.label(30, try g.label(1, .none, false), false), try g.label(30, try g.label(2, .none, false), false) };
+    const gp2 = [2]LabelId{ try g.label(30, try g.label(3, .none, false), false), try g.label(30, try g.label(4, .none, false), false) };
+    _ = try g.prover.foldPair(gpa, g.charge(), &g.conds, &g.cells, gp2[0], gp2[1], gl);
+    _ = try g.prover.foldPair(gpa, g.charge(), &g.conds, &g.cells, gp1[0], gp1[1], gl);
+    const gfresh = try g.set(&.{try g.cells.result(gpa, &g.account, .result, gl, 1, try g.placeOf(0), .list)});
+    var gw: World = .{ .f = &g, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = gl, .cells = gfresh } }} }} };
+    try expectAnswer(try g.prove(&gw, demand(0)), .refuted, .approximate);
+    // A proof over a label read while absent is invalidated when it is recorded.
+    var h: Fixture = .{};
+    try h.init();
+    defer h.deinit();
+    const hl = try h.label(30, .none, true);
+    const hfresh = try h.set(&.{try h.cells.result(gpa, &h.account, .result, hl, 1, try h.placeOf(0), .list)});
+    var hw: World = .{ .f = &h, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = hl, .cells = hfresh } }} }} };
+    try expectAnswer(try h.prove(&hw, demand(0)), .refuted, .approximate);
+    _ = try h.prover.foldPair(gpa, h.charge(), &h.conds, &h.cells, try h.label(30, try h.label(1, .none, false), false), try h.label(30, try h.label(2, .none, false), false), hl);
+    try expectAnswer(try h.prove(&hw, demand(0)), .proved, .exact);
+    // A pair named under a label that is not its fold records nothing: the
+    // demand on that label is refused.
+    const wrong = try h.label(700, .none, true);
+    _ = try h.prover.foldPair(gpa, h.charge(), &h.conds, &h.cells, try h.label(31, try h.label(1, .none, false), false), try h.label(31, try h.label(2, .none, false), false), wrong);
+    const wfresh = try h.set(&.{try h.cells.result(gpa, &h.account, .result, wrong, 1, try h.placeOf(0), .list)});
+    var ww: World = .{ .f = &h, .entries = &.{.{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = wrong, .cells = wfresh } }} }} };
+    try expectAnswer(try h.prove(&ww, demand(1)), .refuted, .approximate);
+}
+
+test "#1189 re-review: the invocation-only bit — a callee's own allocation folded beside the calls refuses; mapped fresh callbacks keep their green" {
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const L0 = try f.placeOf(0);
+    // `help cb = (arr = []; [ cb arr, cb arr ])` called at 13: its callbacks at
+    // `13·10` and `13·11` fold with `arr`'s `result 13·1` into `13⋆`.
+    const l13 = try f.label(13, .none, true);
+    const c10 = try f.label(13, try f.label(10, .none, false), false);
+    const c11 = try f.label(13, try f.label(11, .none, false), false);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, c10, c11, l13);
+    try testing.expect(f.prover.provenanceOf(l13).?.bit);
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l13, try f.label(13, .none, false));
+    try testing.expect(!f.prover.provenanceOf(l13).?.bit);
+    const arr = try f.set(&.{try f.cells.result(gpa, &f.account, .result, try f.label(13, .none, false), 1, L0, .list)});
+    const arr_folded = try f.set(&.{try f.cells.result(gpa, &f.account, .result, l13, 1, L0, .list)});
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l13, 20);
+    const l20 = try f.label(20, l13, true);
+    const arr20 = try f.set(&.{try f.cells.result(gpa, &f.account, .result, l20, 1, L0, .list)});
+    // A callback answer inside `13·10`, from a family whose answer is a capture.
+    const inner = try f.cells.symbolic(gpa, &f.account, &f.places, .cb, (try f.label(13, try f.label(10, try f.label(5, .none, false), false), false)).int(), try f.path(0, &.{}), 0);
+    const calls = [_]World.Call{.{ .inst = 13, .port = 7 }};
+    var w: World = .{ .f = &f, .calls = &calls, .entries = &.{
+        .{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = l13, .cells = arr } }} },
+        .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = l13, .cells = arr_folded } }} },
+        .{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = l20, .cells = arr20 } }} },
+        .{ .goal = demand(3), .alts = &.{.{ .within = .{ .label = l13, .cells = try f.set(&.{inner}) } }} },
+        .{ .goal = gen(7), .alts = &.{.{ .gen = try f.leaf(0, &.{try f.sym(.env, 9, 0, &.{})}) }} },
+    } };
+    try expectAnswer(try f.prove(&w, demand(0)), .refuted, .exact);
+    try expectAnswer(try f.prove(&w, demand(1)), .refuted, .approximate);
+    try expectAnswer(try f.prove(&w, demand(2)), .refuted, .approximate);
+    try expectAnswer(try f.prove(&w, demand(3)), .refuted, .approximate);
+
+    // A join of a set bit and a cleared bit: cleared.
+    const lj = try f.label(40, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(40, try f.label(1, .none, false), false), try f.label(40, try f.label(2, .none, false), false), lj);
+    const lj_fresh = try f.set(&.{try f.cells.result(gpa, &f.account, .result, lj, 1, L0, .list)});
+    var wj: World = .{ .f = &f, .entries = &.{.{ .goal = demand(4), .alts = &.{.{ .within = .{ .label = lj, .cells = lj_fresh } }} }} };
+    try f.prover.joinWithin(gpa, f.charge(), lj, true);
+    try expectAnswer(try f.prove(&wj, demand(4)), .proved, .exact);
+    try f.prover.joinWithin(gpa, f.charge(), lj, false);
+    try expectAnswer(try f.prove(&wj, demand(4)), .refuted, .approximate);
+
+    // C.6's `List.map xs (λ_ → [ 1 ])` at the caller's call 100: List.map's
+    // read-off folds the two callback chains and the taken splits (inside the
+    // calls) into ι_m⋆, its builder's `result` has another instruction and is
+    // never folded there. The bit stays set; the fresh answer per call passes.
+    const l_m = try f.label(101, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(101, try f.label(10, .none, true), false), try f.label(101, try f.label(11, .none, true), false), l_m);
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l_m, try f.label(101, try f.label(12, .none, false), false));
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 100);
+    const at_caller = try f.label(100, l_m, true);
+    try testing.expect(f.prover.provenanceOf(at_caller).?.bit);
+    const one = try f.set(&.{try f.cells.result(gpa, &f.account, .result, at_caller, 1, L0, .list)});
+    var wm: World = .{ .f = &f, .entries = &.{.{ .goal = demand(5), .alts = &.{.{ .within = .{ .label = at_caller, .cells = one } }} }} };
+    try expectAnswer(try f.prove(&wm, demand(5)), .proved, .exact);
+    // A later clearing at List.map reaches the caller's copy.
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l_m, try f.label(101, .none, false));
+    try expectAnswer(try f.prove(&wm, demand(5)), .refuted, .approximate);
 }

@@ -1684,6 +1684,34 @@ neither runs inside the other: their label chains part at some instruction. A ca
 its caller does not, so neither a `sep` over two such labels nor a `within` from such a pre-fold pair
 follows from it (`Fix.diverge`; S4-verifier, §8).
 
+**Invocation-only folds (#1189).** A `within(l)` says that the calls `l` stands for answer distinct
+objects. Its pre-fold pair `(a, b)` parts at a depth `d`: the first instruction where the two chains
+differ. A cell made inside one of those calls has a label that agrees with the pair down to `d` and
+names a call at `d`. The read-off fold drops the tail, and so loses that. `result 13·1`, an allocation
+of the callee's own call 13 before both callback calls, folds into `13⋆` beside `(13·10)` and
+`(13·11)`. So each folded label with provenance carries an **invocation-only** bit:
+
+- **Set** when the fold records the pair: every label folded into `l` so far reaches depth `d`.
+- **Cleared** when the read-off folds into `l` a label that stops above `d`, or that a fold has
+  collapsed (its tail dropped above `d`). Examples are the callee's own allocation, the call itself,
+  and another label with a dropped tail.
+- **ANDed** at a join: two classes that carry `within(l)` keep the bit only if both set it.
+- **Kept** by instantiation: `within(ι·l)` has the pair `(ι·a, ι·b)`, which parts at `d + 1`, and the
+  bit of `l`. A later clearing of `l` clears it too.
+
+A `within(l)` holds over a `result`, `cb` or taken cell in two cases:
+
+- its label agrees with the pair down to `d` and names a call there;
+- its label is `l` itself, and `l`'s bit is set.
+
+Otherwise the cell is one object at every call, `sep(c, c)`. A `result` label names an allocation
+site. Instantiation maps a callee class's `fresh k`, an allocation its activation made, to
+`result (ι·L)·k`. A callee that returns a capture, a top-level value or a supply yields that `env`,
+`shared` or supplied cell, never a `result` (§2.11 item 6). So a call that returns a captured or
+shared value never yields an exact `result` cell at its label; the bit relies on that. S4's read-off
+computes the bit at the uniform fold, from every label it folds into `l`, and publishes it with the
+pair. A block carries it with the pair; a missing bit decodes as cleared.
+
 
 
 Every component is joined round to round, κ included: a `sep` between two `cb j` labels is an atom inside every
@@ -3138,7 +3166,7 @@ L0  Ids
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 200 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
-| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` provenance, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldPair, prefixWithin}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Marks`, `Families`, `Uses`, `diverge`, `under` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 100 |
+| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` provenance, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldPair, foldInto, joinWithin, prefixWithin}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
@@ -3429,14 +3457,19 @@ inside this invocation (`gen`). The evaluators read values with `Shape.cellsAt` 
   atom is re-read at the outgoing cells. An atom over the incoming value is discharged only when the
   invariant states it; an atom it does not state fails approximately.
 - `within`, at a consumer: a fresh result, a generative answer or a certified split counts as one
-  object per call only when its own label is under the `within`'s label. A result made by a call
-  outside those invocations (`r = mk ⊤` before a map) is one object at every call.
+  object per call only when its label is inside one of the calls the pre-fold pair stands for, or is
+  the `within`'s label with its invocation-only bit set (§2.12 *Invocation-only folds*). A result
+  made outside those calls (`r = mk ⊤` before a map, a callee's own allocation folded beside them)
+  is one object at every call.
 - `apartCalls`, at a consumer, and `writesCaptures` for a writer called through a function value (a
   top-level capture is refused exactly).
 
 `within` keeps its provenance. `foldPair` records a pre-fold pair only when the two calls are separate
 and the label is their fold (§2.2's first instruction, tail dropped). `prefixWithin` carries it through
-an instantiation as `(ι·a, ι·b)`. A second, different pair for one label is a conflict, and that label's
+an instantiation as `(ι·a, ι·b)`. The provenance is versioned: each label's entry is a port that every
+`within` proof reads, so a conflicting second pair, or a clearing of the invocation-only bit (`foldInto`,
+and `joinWithin` at a join), invalidates every cached proof and every instantiated copy that used it, in
+either order of arrival. A second, different pair for one label is a conflict, and that label's
 `within` is refused from then on. `Marks` carry §2.2's certificate: the container, the entry, `single`
 and κ at the split. They follow the crossing rules and answer `Cond.Traversal`. Their word codec reads
 an out-of-range id, or a `single` word that is neither of its two spellings, as unknown. The spellings
@@ -3459,7 +3492,7 @@ two callback labels before `gen` separates them, and of a pre-fold pair before `
 `within` (§2.12 *Recursive proofs*). mapHelp's pair `(ι_rec·ι_f⋆, ι_rec·ι_rec⋆)` diverges. A call and
 a call made inside it do not diverge.
 
-**Witnesses** (`src/own2/Fix.zig`, 16 tests, each under 0.2 s). Every label in them is built by the
+**Witnesses** (`src/own2/Fix.zig`, 18 tests, each under 0.2 s). Every label in them is built by the
 fold and instantiation rules above, not named by hand.
 
 - **GrowFresh and GrowAlias:** GrowFresh is accepted; GrowAlias's base is refused exactly and its copy
@@ -3475,6 +3508,14 @@ fold and instantiation rules above, not named by hand.
 - **`within` provenance:** a distinct pair folds; refused are a self pair, a pair that does not fold
   into the named label, a conflicting second pair, an atom without provenance, and a result made
   outside the invocations.
+- **Versioned provenance:** a proof, then a conflict, is refused, and the reverse order gives the same
+  verdict, through an instantiated copy too. A proof read while the provenance was absent is redone
+  when it arrives. A pair under a label that is not its fold proves nothing.
+- **Invocation-only:** the callee's own allocation folded beside its calls (`help cb = (arr = [];
+  [ cb arr, cb arr ])`) is refused, and so are its `13⋆·1` form, its `prefixWithin` copy, a callback
+  whose nested call answers a capture, and a join of a set bit with a cleared one. C.6's
+  `List.map xs (λ_ → [ 1 ])` and NestedTraversalShared stay accepted. A later clearing at List.map
+  reaches the caller's copy.
 - **`gen` by path:** `f ⊤ = [ shared ]` refuses two calls' elements, though their roots are fresh.
 - **C.6 and RefinementFeedbackTwice:**
   - C.6's held-once accumulator: the keeping arm is accepted, and the second store is refused exactly
@@ -3506,7 +3547,8 @@ fold and instantiation rules above, not named by hand.
 
 **Mutation checks.** Each rule was removed in turn: base, feedback freshness, entry, `single`,
 provenance, the self pair, unstated atoms, captures, one label twice, each staleness check, consumer
-invalidation, the label-under check, `gen`'s path, the fold check, the conflict check, the codec's
+invalidation, the provenance read, the inside check, the invocation-only bit, the join's AND, the
+copies' conflict and clearing, `gen`'s path, the fold check, the conflict check, the codec's
 spellings and `writesCaptures`. Each removal fails a witness.
 
 **Measured proof work.** A chain and a ring of n + 1 families with a demand on top, at
@@ -3528,7 +3570,8 @@ still leave the caller-side self pair. A proof needs a new caller-side fact, suc
 certificate tying the current supply to the earlier lists of one traversal, and its own review.
 
 **Left to S3b/S4 (interface obligations, not gaps in the verdict).** S4's walker and read-off produce
-the alternatives, the marks (by `cross`), the provenance (`foldPair`, `prefixWithin`), and the
+the alternatives, the marks (by `cross`), the provenance and its invocation-only bit (`foldPair`,
+`foldInto` for every label the uniform fold merges, `joinWithin`, `prefixWithin`), and the
 refutations for a step's escape, keep and capture effects (the verifier reads values only). Its
 `Resolve` names a callee family's port; the verifier keys the goal by the cell's path. Calls must not
 mint a fresh `result` cell for a value reached through a feedback, including through carried closures.

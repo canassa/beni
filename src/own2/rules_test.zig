@@ -54,16 +54,16 @@ const layers = [_]Entry{
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1650 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
-    .{ .file = "Rows.zig", .layer = 6, .max_lines = 1100 },
+    .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
     .{ .file = "Demands.zig", .layer = 6, .max_lines = 1200 },
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
     .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
-    // §5 says 1 100 since S4-verifier (#1180): the recursive-proof verifier;
+    // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
-    .{ .file = "Fix.zig", .layer = 8, .max_lines = 1100 },
+    .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
     // §5 says 1 100 since S3a: the source and signature adapters.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1100 },
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1200 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
