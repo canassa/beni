@@ -665,6 +665,11 @@ const Resolver = struct {
 
     /// The registered holders whose `reach` holds `d`: climb from `d`'s
     /// live leaves through live parents to the roots, every node once.
+    /// The holders a demand's query sweeps on its own lane: one direct holder
+    /// (§4.1's *direct demand query*); enumerating more is not that kernel
+    /// (#1201).
+    const lane_holders: u32 = 1;
+
     fn holdersOf(r: *Resolver, d: CellId, out: *std.ArrayList(u32)) Error!void {
         r.visited.clear();
         var stack: std.ArrayList(SetId) = .empty;
@@ -924,6 +929,13 @@ const Resolver = struct {
         defer hs.deinit(r.gpa);
         var holds: std.ArrayList(Hold) = .empty;
         defer holds.deinit(r.gpa);
+        // A value spread or stored at k sites has k holders, and a demand on
+        // it reads them all: k demands are k × k, a product. The demand's lane
+        // sweeps one direct holder (§4.1's *direct demand query*); before the
+        // next one's share the sweep becomes growth, for the rest of it (#1201).
+        var swept: u32 = 0;
+        var sweep: ?Ids.Account.Kernel = null;
+        defer if (sweep) |k| r.env.account().leave(k);
         for (cells.items, 0..) |e, ci| {
             const c: CellId = .from(e.key);
             cands.clearRetainingCapacity();
@@ -937,6 +949,8 @@ const Resolver = struct {
                 hs.clearRetainingCapacity();
                 try r.holdersOf(d, &hs);
                 for (hs.items) |hi| {
+                    if (sweep == null and swept == lane_holders) sweep = try r.env.account().enter(r.gpa, null);
+                    swept += 1;
                     const h = r.frame.holders[hi];
                     // A holder of `⊤` counts only for what could have flowed into it
                     // (§2.8, #1102): a cell of its value that may be `c` or hold it. A

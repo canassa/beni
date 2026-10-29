@@ -1,0 +1,39 @@
+module OneValueManySites
+  9:12 construction v: rejected later-use: v is read again at 10:12
+  10:12 construction v: rejected later-use: v is read again at 11:12
+  11:12 construction v: rejected later-use: v is read again at 12:12
+  12:12 construction v: rejected later-use: v is read again at 13:12
+  13:12 construction v: rejected later-use: v is read again at 14:12
+  14:12 construction v: rejected later-use: v is read again at 15:12
+  15:12 construction v: rejected later-use: v is read again at 16:12
+  16:12 construction v: rejected later-use: v is read again at 17:12
+  17:12 construction v: rejected later-use: v is read again at 18:12
+  18:12 construction v: rejected later-use: v is read again at 19:13
+  19:13 construction v: rejected later-use: v is read again at 20:13
+  20:13 construction v: rejected later-use: v is read again at 21:13
+  21:13 construction v: rejected later-use: v is read again at 22:13
+  22:13 construction v: rejected later-use: v is read again at 23:13
+  23:13 construction v: rejected later-use: v is read again at 24:13
+  24:13 construction v: rejected alias: a0 holds it and is read at 25:5
+  31:12 ++ v: rejected later-use: v is read again at 32:12
+  32:12 ++ v: rejected later-use: v is read again at 33:12
+  33:12 ++ v: rejected later-use: v is read again at 34:12
+  34:12 ++ v: rejected later-use: v is read again at 35:12
+  35:12 ++ v: rejected later-use: v is read again at 36:12
+  36:12 ++ v: rejected later-use: v is read again at 37:12
+  37:12 ++ v: rejected later-use: v is read again at 38:12
+  38:12 ++ v: rejected later-use: v is read again at 39:12
+  39:12 ++ v: rejected later-use: v is read again at 40:12
+  40:12 ++ v: rejected later-use: v is read again at 41:13
+  41:13 ++ v: rejected later-use: v is read again at 42:13
+  42:13 ++ v: rejected later-use: v is read again at 43:13
+  43:13 ++ v: rejected later-use: v is read again at 44:13
+  44:13 ++ v: rejected later-use: v is read again at 45:13
+  45:13 ++ v: rejected later-use: v is read again at 46:13
+  46:13 ++ v: rejected alias: a0 holds it and is read at 47:5
+  summary spread: π1 RA; res [*] condition(fresh2) fresh2{excl π1}, [*][*] condition(fresh1) fresh1 π1, fresh3{shared}r{shared}
+  summary appended: π1 RA; res [*] condition(fresh2) fresh2{excl π1}, [*][*] condition(fresh1) fresh1 π1, fresh3{shared}r{shared}
+  demands 32: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 32
+total 32: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 32
+cause later-use 30
+cause alias 2
