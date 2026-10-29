@@ -3132,10 +3132,10 @@ parseWith s o text =
                         Js.catchIf
                             (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
                             (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
-                            λthrown → Err (stringOf (Js.get thrown "message"))
+                            λ_ → Err ""
                     of
-                        Err message →
-                            rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+                        Err _ →
+                            rootErr Decoding Encoded ParseFailed "invalid JSON"
 
                         Ok v →
                             c = context o Decoding encodedSide True typeSide False True
@@ -3206,10 +3206,10 @@ compiledParse o args worker text =
                 Js.catchIf
                     (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
                     (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
-                    λthrown → Err (stringOf (Js.get thrown "message"))
+                    λ_ → Err ""
             of
-                Err message →
-                    rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+                Err _ →
+                    rootErr Decoding Encoded ParseFailed "invalid JSON"
 
                 Ok v →
                     c = context o Decoding encodedSide True typeSide False True
