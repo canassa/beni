@@ -3103,10 +3103,12 @@ and `Dom.js` is gone: the node is `Js.call (Js.global "document") "getElementByI
 [ Js.from id ]`, `Js.isNull` on it is `NotFound id`, the node's method is called through `Js.call`,
 and `viewport` reads the four window properties with `Js.global`. None of these calls documents a
 failure, so none is caught (`CLAUDE.md` rule 9). `Error`, `Box` and `Viewport` no longer cross the
-boundary, so a release build gives `NotFound` an integer tag. The two records keep their field
-names: `box` reads the host rectangle's `x`, `y`, `width` and `height` with `Js.get`, and a field
-name the build also writes as a plain property is never renamed (`backend.md` §9 item 4's closed
-list), as it was not through the `foreign`. `emit/release/tea/DomCapabilities` pins both.
+boundary, so a release build gives `Result` integer tags and writes `NotFound id` as `id`, a type
+of one constructor with one field being its field (`backend.md` §9). The two records keep their
+field names where `box` is live: it reads the host rectangle's `x`, `y`, `width` and `height` with
+`Js.get`, and a field name the build also writes as a plain property is never renamed
+(`backend.md` §9 item 4's closed list); a page that never measures a node renames them, since no
+JavaScript reads these records. `emit/release/tea/DomCapabilities` pins both.
 
 **`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,

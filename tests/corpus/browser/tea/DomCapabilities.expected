@@ -8,7 +8,7 @@
     <button id="into">"into view"</button>
     <button id="viewport">"viewport"</button>
     <button id="missing">"missing"</button>
-    <input id="field" .value="">
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="">
     <div id="pane"></div>
   </main>
 </body>
@@ -23,7 +23,7 @@ console.log: focus: ok: ⊤
     <button id="into">"into view"</button>
     <button id="viewport">"viewport"</button>
     <button id="missing">"missing"</button>
-    <input id="field" .value="" :focus>
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="" :focus>
     <div id="pane"></div>
   </main>
 </body>
@@ -38,7 +38,7 @@ console.log: blur: ok: ⊤
     <button id="into">"into view"</button>
     <button id="viewport">"viewport"</button>
     <button id="missing">"missing"</button>
-    <input id="field" .value="">
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="">
     <div id="pane"></div>
   </main>
 </body>

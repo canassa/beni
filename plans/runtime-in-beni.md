@@ -932,12 +932,15 @@ nothing.
 **What changes shape.** `Dom.Error`, `Box` and `Viewport` crossed the boundary through the
 `foreign` declarations, so every release build kept `NotFound`'s string tag and the two records'
 field names for the sibling to write (`boundary.md` §4, *What JavaScript may read of a beni
-value*). They cross nothing now: `NotFound` gets an integer tag. The records keep their field
-names all the same: `box` reads the host rectangle's `x`, `y`, `width` and `height` with
-`Js.get`, and a field name the build also writes as a plain property is never renamed
-(`backend.md` §9 item 4's closed list), so a page that measures a node ships those four names as
-before. `emit/release/tea/DomCapabilities` pins the shape, and `browser/tea/DomCapabilities` runs
-all six, and the `NotFound` of the five that take an id, under happy-dom in both builds.
+value*). They cross nothing now: `Result` gets integer tags, and `NotFound id` is written as `id`,
+a type of one constructor with one field being its field (`backend.md` §9). The records keep
+their field names where `box` is live: `box` reads the host rectangle's `x`, `y`, `width` and
+`height` with `Js.get`, and a field name the build also writes as a plain property is never
+renamed (`backend.md` §9 item 4's closed list), so a page that measures a node ships those four
+names as before, and a page that only reads the viewport renames `height` and `width`.
+`emit/release/tea/DomCapabilities` pins the shape, and `browser/tea/DomCapabilities` runs all six,
+and the `NotFound` of the five that take an id, under happy-dom in both builds and in headless
+Chrome (`DomCapabilities.chrome-expected`, the layout of a fixed box).
 
 **Sizes.** Measured against `master` at `cdd26f460`, both compilers ReleaseSafe, release brotli 11
 over each concatenated bundle (`zig-out/scratch/pages.mjs` over the `browser/` corpus, 416 of 420
