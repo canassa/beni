@@ -1,0 +1,1 @@
+#1181 (ownership-v2.md §4.1): v1's verdicts; v2 puts a spread's and an append's base and root work in growth, so the root's lane never reaches its ceiling.
