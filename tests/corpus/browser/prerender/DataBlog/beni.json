@@ -1,0 +1,7 @@
+{
+  "html": "shell.html",
+  "build": {
+    "paths": ["src", "shared"],
+    "data": { "paths": ["data", "shared"], "inputs": ["posts"] }
+  }
+}

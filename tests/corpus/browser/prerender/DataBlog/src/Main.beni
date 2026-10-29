@@ -1,0 +1,75 @@
+-- A blog whose posts are files (docs/design/prerender.md §8): the data
+-- program in `data/` reads `posts/hello.txt` and `posts/second.txt` and
+-- gives a route per post and one for `/`, each with its value; the build
+-- writes `index.html`, `blog/hello.html` and `blog/second.html`, each
+-- holding its own value in a `<script type="application/json">` and the
+-- view the site renders from the value it decodes from that text. The page
+-- here is `blog/hello.html`, whose post holds `</script>`, `<!--` and
+-- `&amp;`: they are text in the page the build wrote and after the page is
+-- taken over, with no element replaced. The `--no-prerender` build writes
+-- each page with its script alone, and the same program mounts fresh from
+-- the value: one transcript for both.
+import Blog exposing (Page)
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    page : Page.Type
+    open : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Toggle →
+            ( { model | open = not model.open }, Cmd.none )
+
+
+heading : Page.Type → String
+heading page =
+    case page of
+        Page.Home _ →
+            "Home"
+
+        Page.Article post →
+            post.title
+
+
+text : Page.Type → String
+text page =
+    case page of
+        Page.Home home →
+            String.join home.titles ", "
+
+        Page.Article post →
+            post.body
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = heading model.page
+    , body =
+        <main>
+            <h1>{heading model.page}</h1>
+            <p id="text">{text model.page}</p>
+            <button id="more" onClick={Toggle}>{if model.open then "less" else "more"}</button>
+        </main>
+    }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.document
+        { init = λ⊤ → ( { page = page, open = False }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

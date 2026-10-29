@@ -124,6 +124,11 @@ pub const lowering: m.Lowering = .{
         .{ .name = "routeUrl", .arity = 2 },
         .{ .name = "pageUrl", .arity = 1 },
         .{ .name = "arrived", .arity = 1 },
+        // `(schema, at)` the value and route a page of a data site holds,
+        // and `(schema, text)` the prerender tree's decode of a page's text
+        // (`prerender.md` §8.6, §8.5).
+        .{ .name = "pageData", .arity = 2 },
+        .{ .name = "decoded", .arity = 2 },
         .{ .name = "navigationKey", .arity = 1 },
         .{ .name = "title", .arity = 1 },
     },
@@ -144,6 +149,8 @@ pub const lowering: m.Lowering = .{
         .{ .module = "Browser", .name = "mountAt", .places = .first },
         // `prerender.md` §7.2: the program prerendered at each route.
         .{ .module = "Browser", .name = "prerender", .places = .prerender },
+        // `prerender.md` §8.4: the program of each page's value.
+        .{ .module = "Browser", .name = "prerenderData", .places = .prerender_data },
     },
     .places = true,
     .constructs = true,
@@ -1393,12 +1400,28 @@ const Page = struct {
         pg.hydrating = cx.build.prerender == .client;
         if (pg.hydrating and (pg.top_nodes.len != 1 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0))
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
+        // A program of each page's value reads it from the page before
+        // `init` (`prerender.md` §8.6): `[route, value]`, the value bound to
+        // the lambda's parameter, which `init` reads.
+        const data: ?m.Name = if (pg.p.data) blk: {
+            const d = try cx.fresh("data");
+            const schema = try cx.programDataSchema(body);
+            try js.constant(body, d, try js.call(try js.name(try cx.runtime("pageData")), &.{ schema, try js.name(at) }));
+            try cx.programDataBind(body, try js.index(try js.name(d), try js.number("1")));
+            break :blk d;
+        } else null;
         // An application's `init` is handed the page's address and key
         // (§10), read inside the mount's guard.
         // A hydrating one's is the route its page carries, never `location`
-        // (`prerender.md` §7.3).
+        // (`prerender.md` §7.3); one of a page's value, the route its value
+        // came with (§8.6), whether the page is taken over or not.
         const init = if (pg.p.constructor == 3) blk: {
-            const address = if (pg.hydrating) a: {
+            const address = if (data) |d| a: {
+                const u = try cx.fresh("url");
+                try js.constant(body, u, try js.call(try js.name(try cx.runtime("routeUrl")), &.{ try js.string(cx.build.address), try js.index(try js.name(d), try js.number("0")) }));
+                pg.route_url = u;
+                break :a try js.name(u);
+            } else if (pg.hydrating) a: {
                 const u = try cx.fresh("url");
                 try js.constant(body, u, try js.call(try js.name(try cx.runtime("pageUrl")), &.{try js.string(cx.build.address)}));
                 pg.route_url = u;
@@ -1859,6 +1882,20 @@ const Page = struct {
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         const body = try js.block();
         const route = try cx.fresh("route");
+        // A program of each page's value renders from the value its schema
+        // decodes from the page's text (`prerender.md` §8.5 item 5), or gives
+        // the issues, `{ issues }`, and renders nothing.
+        const text: ?m.Name = if (pg.p.data) blk: {
+            const t = try cx.fresh("text");
+            const d = try cx.fresh("data");
+            const schema = try cx.programDataSchema(body);
+            try js.constant(body, d, try js.call(try js.name(try cx.runtime("decoded")), &.{ schema, try js.name(t) }));
+            const failed = try js.block();
+            try js.@"return"(failed, try js.name(d));
+            try js.@"if"(body, try js.member(try js.name(d), "issues"), failed, null);
+            try cx.programDataBind(body, try js.member(try js.name(d), "value"));
+            break :blk t;
+        } else null;
         // An application's `init` is handed its route's `Url`, made from the
         // project's origin and base (`prerender.md` §7.3), and the key.
         const init = if (pg.p.constructor == 3)
@@ -1882,6 +1919,7 @@ const Page = struct {
         var r: Render = .{ .pg = pg, .out = try cx.fresh("html"), .route = route };
         try r.unit(body, title);
         cx.programViewLeave();
+        if (text) |t| return js.arrow(&.{ route, t }, body);
         return js.arrow(&.{route}, body);
     }
 

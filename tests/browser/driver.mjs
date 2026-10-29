@@ -207,6 +207,10 @@
 //                               element `name` with its attributes and
 //                               children
 //   remove <selector>           the same, the element taken out
+//   retext <selector> "<text>"  before the program loads: the element's text
+//                               replaced, on any page — a data site's
+//                               `script[data-beni-data]` a host changed
+//                               (docs/design/prerender.md §8.6)
 //   fresh                      before the program loads: the prerendered
 //                               unit is to be mounted fresh, not taken over
 //                               (docs/design/prerender.md §6.4). Without
@@ -1207,6 +1211,14 @@ function step(s) {
     return null;
   }
   if (s.command === "inject" || s.command === "retag" || s.command === "remove") return editPage(s);
+  // A data site's script, its text changed by a host, on any page
+  // (docs/design/prerender.md §8.6).
+  if (s.command === "retext") {
+    const el = document.querySelector(s.selector);
+    if (el === null) return `no element matches ${s.selector}`;
+    el.textContent = s.text;
+    return null;
+  }
   if (s.command === "element") {
     const at = document.createElement("div");
     at.id = s.text;
@@ -1541,8 +1553,10 @@ function openPage(html) {
   // Each inline classic script — a prerendered page's capture script
   // (docs/design/prerender.md §6.5) — run in document order, as the parser
   // runs one it reaches, `document.currentScript` the element. Neither DOM
-  // runs a script a `DOMParser` made, and happy-dom runs none at all.
-  for (const script of [...document.body.querySelectorAll("script")]) {
+  // runs a script a `DOMParser` made, and happy-dom runs none at all. A
+  // data block (docs/design/prerender.md §8.6) stays, the program's to
+  // read, and is not run.
+  for (const script of [...document.body.querySelectorAll("script:not([type=\"application/json\"])")]) {
     Object.defineProperty(document, "currentScript", { value: script, configurable: true });
     (0, eval)(script.text);
     delete document.currentScript;
@@ -1561,7 +1575,9 @@ function markPage() {
     globalThis.__beniMarks = null;
     return null;
   }
-  const all = [...document.body.querySelectorAll("*")];
+  // A data site's script is the program's to read and take out before it
+  // takes the page over (docs/design/prerender.md §8.6): not marked.
+  const all = [...document.body.querySelectorAll("*")].filter((e) => !e.matches("script[data-beni-data]"));
   globalThis.__beniMarks = { all, set: new Set(all), unit: [unit, ...unit.querySelectorAll("*")] };
   return null;
 }
@@ -1831,7 +1847,7 @@ if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: 
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // The steps that set the page up, before the program loads.
-const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove"];
+const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove", "retext"];
 // The steps an `early` step may be: what a user does on the page before its
 // program loads.
 const earlyCommands = ["click", "input", "set", "event"];
@@ -1917,6 +1933,13 @@ function parseStep(written, where) {
         s.text = undefined;
       }
       if (typeof s.text !== "string") usage(`${where}: \`inject\` takes a selector and its HTML as a JSON string`);
+    } else if (command === "retext") {
+      try {
+        s.text = JSON.parse(argument ?? "");
+      } catch {
+        s.text = undefined;
+      }
+      if (typeof s.text !== "string") usage(`${where}: \`retext\` takes a selector and its text as a JSON string`);
     } else if (command === "remove") {
       if (argument !== undefined) usage(`${where}: \`remove\` takes a selector alone`);
     } else if (command === "retag") {

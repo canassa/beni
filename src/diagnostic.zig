@@ -493,6 +493,18 @@ pub const Code = enum {
     /// both errors.
     prerender_needs_origin,
     invalid_route,
+    /// Appended on 2026-10-29 with build-time data (`prerender.md` §8, §9,
+    /// slice P4): a program that says `Browser.prerenderData` in a project
+    /// whose `beni.json` names no `"build"."data"`, against that file; a
+    /// data program whose `body` gave `Err`, threw, gave a value its schema
+    /// cannot encode or ended without its records, at its `main`; a route's
+    /// text the site's schema cannot decode, at the `Browser.prerenderData`
+    /// call; and, a warning, a `"build"."data"` that a program not saying
+    /// `Browser.prerenderData` leaves unused, against `beni.json`. `build`'s.
+    prerender_needs_data,
+    prerender_data_failed,
+    prerender_data_invalid,
+    prerender_data_ignored,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -685,6 +697,10 @@ pub fn title(code: Code) []const u8 {
         .prerender_needs_node => "PRERENDER NEEDS NODE",
         .prerender_needs_origin => "PRERENDER NEEDS AN ORIGIN",
         .invalid_route => "INVALID ROUTE",
+        .prerender_needs_data => "PRERENDER NEEDS DATA",
+        .prerender_data_failed => "DATA PROGRAM FAILED",
+        .prerender_data_invalid => "PAGE DATA DOES NOT DECODE",
+        .prerender_data_ignored => "DATA PROGRAM IGNORED",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

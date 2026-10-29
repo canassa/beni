@@ -2039,6 +2039,11 @@ const Case = struct {
             detail("{s}: a refused prerendering build must remove its prerender tree\n", .{c.fixture.name});
             return error.PrerenderTreeLeft;
         }
+        // Nor its data program's (§8.3).
+        if (w.exists(".out.data")) {
+            detail("{s}: a refused prerendering build must remove its data program's tree\n", .{c.fixture.name});
+            return error.PrerenderTreeLeft;
+        }
         if (!c.goldenExists("diag") and !c.bless) {
             detail("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
             return error.MissingDiagGolden;
@@ -2891,7 +2896,16 @@ const Case = struct {
         var goldens: [builds.len][]const u8 = @splat("expected");
         var scripts: [builds.len]Script = @splat(script);
         for (builds, &goldens, &scripts) |b, *golden, *own_script| {
-            if (!b.prerender) continue;
+            // A data site's `--no-prerender` build may have its own golden
+            // too, `.dev-noprerender-expected` or
+            // `.release-noprerender-expected`: a page whose script a host
+            // changed stops in every build, each mode in its own words
+            // (`prerender.md` §8.6).
+            if (!b.prerender) {
+                const ext = try std.fmt.allocPrint(c.arena, "{s}-noprerender-expected", .{@tagName(b.pass)});
+                if (Io.Dir.cwd().access(testing.io, try c.goldenPath(ext), .{})) |_| golden.* = ext else |_| {}
+                continue;
+            }
             const ext = try std.fmt.allocPrint(c.arena, "{s}-prerender-expected", .{@tagName(b.pass)});
             if (Io.Dir.cwd().access(testing.io, try c.goldenPath(ext), .{})) |_| golden.* = ext else |_| {}
             const steps_ext = try std.fmt.allocPrint(c.arena, "{s}-prerender-steps", .{@tagName(b.pass)});
@@ -2918,8 +2932,8 @@ const Case = struct {
                 because("[{s}] build exit {d}: {s}", .{ b.out, built.exit_code, summarize(c.arena, built.stderr) });
                 return error.BuildFailed;
             }
-            if (c.w.exists(try std.fmt.allocPrint(c.arena, ".{s}.prerender", .{b.out}))) {
-                detail("{s} [{s}]: the build left its prerender tree\n", .{ c.fixture.name, b.out });
+            if (c.w.exists(try std.fmt.allocPrint(c.arena, ".{s}.prerender", .{b.out})) or c.w.exists(try std.fmt.allocPrint(c.arena, ".{s}.data", .{b.out}))) {
+                detail("{s} [{s}]: the build left its prerender tree or its data program's\n", .{ c.fixture.name, b.out });
                 return error.PrerenderTreeLeft;
             }
             if (b.prerender) {

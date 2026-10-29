@@ -1,0 +1,1 @@
+Hello: </script> <!-- a comment? &amp; is text.
