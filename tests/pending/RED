@@ -325,3 +325,8 @@ tests/pending/check/bad/inline/LogScopeUnknownLimit.beni exit=1 codes=record_sti
 # CK-311 (#954): a lambda applied directly to a function parameter overflows
 # the stack of `dump --stage=ownership`; R-7.12.
 tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
+
+# CK-312 (#1225): a list pattern over a 1 000-item literal of fresh lists;
+# `Demands.resolve` inspects the push's alternatives on its own lane, so v2
+# reports an accounting invariant; ownership-v2.md §4.1.
+tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit

@@ -413,6 +413,11 @@ pub const Table = struct {
     /// union of its sides — alternatives.
     pub fn without(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, drop: SetId, one: bool) Error!NodeId {
         if (drop == .none and !one) return n;
+        // Rebuilding a positions, union or choice DAG is as large as the
+        // value: a growth task chosen before it, never the asking lane (a
+        // pattern's materialisation, §4.1, #1224).
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         t.memo_map.clear();
         const F = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(F) = .empty;

@@ -2895,6 +2895,19 @@ charged once. Before, every write tested every escape point of its cell, uncharg
 writes (`build_test.zig`) is 132, w · (log₂ e + 1), where the product is 1 936. A run of one point is one test, which the
 ancestor step that asks it already pays for on its own lane.
 
+Pattern materialisation, including positions-to-alternatives conversion and removal of symbolic
+projections, is value-sized work. Reserve its continuation before traversing it; no pattern atom pays for
+an earlier aggregate's whole DAG. *As built (#1224):* `Shape.without`, which a list pattern's
+`Transfer.bindList` calls to make one position of the contents into alternatives, enters
+`Shape.dagWalk` from a `positions`, `union` or `choice` node, like the walks above, so the rebuild is
+never the pattern's `transfer_settlement` lane. Measured on the source continuation (#1198), each
+declaration's whole account: fresh lists at 40 / 100 items take 8 345 / 22 792 records of continuation
+and 0 growth; one shared list at 40 / 100 / 1 000 positions takes 782 / 1 502 / 11 478. Before, the
+fresh family reached the lane's ceiling at 42 items. The fresh 1 000-item twin still stops, on the
+push's demand: `Demands.resolve` inspects its 1 000 alternatives on the demand's own lane before it
+enters the product task (#1225; pending fixture CK-312). The corpus pins `PatternWideFresh` and
+`PatternWideShared`.
+
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
 record work, and comparison-tree navigation/canonical export adds at most a logarithmic time factor.
@@ -3806,7 +3819,10 @@ slice passes before S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as it
 consumers land. Declaration-order independence of accounts remains an open owner decision in #1104;
 no resolution or implementation dependency for that decision is prescribed here. Add independent
 escape-count × write-count fixtures and their mutually exclusive and actually escaped twins before S3b
-introduces transitive E summaries (#1226, §4.1); do not defer this ledger-completeness check to S9.
+introduces transitive E summaries (#1226, §4.1); do not defer this ledger-completeness check to S9. Add fresh and shared
+pattern twins at 40/100/1,000 elements to the S3a exit gate (#1224, §4.1), then repeat them through S3b
+returned and supplied values. The ordinary fresh family must remain below the default allowance as its
+length grows.
 Before S3b, holder-path discovery must preserve every distinct observable route through shared shapes,
 including repeated nodes at unequal depths (#1223, Astra's review). Its memo key must include the semantic
 path/read context, or it must share a suffix answer and instantiate it at each relevant route. Cycle

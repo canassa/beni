@@ -1,0 +1,9 @@
+module PatternWideShared
+  52:13 List.push x: accepted fresh
+  163:13 List.push x: accepted fresh
+  1174:13 List.push x: accepted fresh
+  summary shared40: res condition(fresh1) fresh1
+  summary shared100: res condition(fresh1) fresh1
+  summary shared1000: res condition(fresh1) fresh1
+  demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
