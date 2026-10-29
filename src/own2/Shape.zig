@@ -103,6 +103,11 @@ pub const Table = struct {
     union_seen: stamped.Column(NodeId, void) = .{},
     /// `rank`'s memo: final ranks only (its in-progress marks are the call's).
     rank_memo: stamped.Column(NodeId, u32) = .{},
+    /// `reach`'s and `arrivals`' scratch, one per walk in progress (#1191).
+    reach_pool: stamped.Pool(ReachScratch) = .{},
+    /// Node marks for a walk over the node table, one per walk in progress,
+    /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
+    marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
@@ -111,6 +116,8 @@ pub const Table = struct {
     named_pool: std.ArrayList(u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.reach_pool.deinit(gpa);
+        t.marks.deinit(gpa);
         t.rank_memo.deinit(gpa);
         t.named_memo.deinit(gpa);
         t.named_pool.deinit(gpa);
@@ -676,8 +683,8 @@ pub const Table = struct {
         if (t.nodes.items(.reach)[n.int()] != .none) return t.nodes.items(.reach)[n.int()];
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
-        var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets };
-        defer r.deinit();
+        var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .s = try t.reach_pool.take(gpa) };
+        defer t.reach_pool.give(r.s);
         try r.run(n);
         return t.nodes.items(.reach)[n.int()];
     }
@@ -690,13 +697,43 @@ pub const Table = struct {
     pub fn arrivals(t: *Table, gpa: Allocator, account: *Account, cellt: *const Cell.Table, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
         try account.reserve(.memo, 1);
         if (t.arrivals_memo.get(n)) |s| return s;
-        var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .filter = cellt };
-        defer r.deinit();
+        var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .filter = cellt, .s = try t.reach_pool.take(gpa) };
+        defer t.reach_pool.give(r.s);
         try r.run(n);
         return t.arrivals_memo.get(n).?;
     }
 
     /// Iterative Tarjan over the explicit children, on explicit stacks.
+    /// A `Reach`'s columns and stacks, kept by the table and emptied by
+    /// generation per walk: a walk makes no slot an earlier walk made (#1191).
+    pub const ReachScratch = struct {
+        index: stamped.Column(NodeId, u32) = .{},
+        low: stamped.Column(NodeId, u32) = .{},
+        on_stack: stamped.Column(NodeId, void) = .{},
+        scc_stack: std.ArrayList(NodeId) = .empty,
+        /// Successors of a node, flattened: `(node, successor cursor)`.
+        frames: std.ArrayList(Reach.Frame) = .empty,
+        kids: std.ArrayList(NodeId) = .empty,
+
+        pub fn clear(x: *ReachScratch) void {
+            x.index.clear();
+            x.low.clear();
+            x.on_stack.clear();
+            x.scc_stack.clearRetainingCapacity();
+            x.frames.clearRetainingCapacity();
+            x.kids.clearRetainingCapacity();
+        }
+
+        pub fn deinit(x: *ReachScratch, gpa: Allocator) void {
+            x.index.deinit(gpa);
+            x.low.deinit(gpa);
+            x.on_stack.deinit(gpa);
+            x.scc_stack.deinit(gpa);
+            x.frames.deinit(gpa);
+            x.kids.deinit(gpa);
+        }
+    };
+
     const Reach = struct {
         t: *Table,
         gpa: Allocator,
@@ -704,25 +741,11 @@ pub const Table = struct {
         sets: *Cell.Radix,
         /// Set: `arrivals`, into `arrivals_memo`, a node's own cells filtered.
         filter: ?*const Cell.Table = null,
-        index: stamped.Column(NodeId, u32) = .{},
-        low: stamped.Column(NodeId, u32) = .{},
-        on_stack: stamped.Column(NodeId, void) = .{},
-        scc_stack: std.ArrayList(NodeId) = .empty,
-        /// Successors of a node, flattened: `(node, successor cursor)`.
-        frames: std.ArrayList(Frame) = .empty,
-        kids: std.ArrayList(NodeId) = .empty,
+        /// Its columns and stacks, from `Table.reach_pool` (#1191).
+        s: *ReachScratch,
         next_index: u32 = 0,
 
         const Frame = struct { node: NodeId, first_kid: u32, cursor: u32 };
-
-        fn deinit(r: *Reach) void {
-            r.index.deinit(r.gpa);
-            r.low.deinit(r.gpa);
-            r.on_stack.deinit(r.gpa);
-            r.scc_stack.deinit(r.gpa);
-            r.frames.deinit(r.gpa);
-            r.kids.deinit(r.gpa);
-        }
 
         /// The explicit children of `n` appended to `kids`.
         fn children(r: *Reach, n: NodeId) Error!void {
@@ -731,15 +754,15 @@ pub const Table = struct {
                 .leaf => {},
                 .node => {
                     var it = r.t.overEntries(d.a);
-                    while (it.next()) |e| try r.kids.append(r.gpa, e.node);
+                    while (it.next()) |e| try r.s.kids.append(r.gpa, e.node);
                 },
                 .delta => {
-                    try r.kids.append(r.gpa, .from(d.a));
+                    try r.s.kids.append(r.gpa, .from(d.a));
                     var it = r.t.overEntries(d.b);
-                    while (it.next()) |e| try r.kids.append(r.gpa, e.node);
+                    while (it.next()) |e| try r.s.kids.append(r.gpa, e.node);
                 },
-                .recast => try r.kids.append(r.gpa, .from(d.a)),
-                .@"union", .choice, .positions => try r.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
+                .recast => try r.s.kids.append(r.gpa, .from(d.a)),
+                .@"union", .choice, .positions => try r.s.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
             }
         }
 
@@ -769,66 +792,66 @@ pub const Table = struct {
 
         fn push(r: *Reach, n: NodeId) Error!void {
             try r.account.reserve(.memo, 1);
-            try r.index.put(r.gpa, n, r.next_index);
-            try r.low.put(r.gpa, n, r.next_index);
+            try r.s.index.put(r.gpa, n, r.next_index);
+            try r.s.low.put(r.gpa, n, r.next_index);
             r.next_index += 1;
-            try r.on_stack.put(r.gpa, n, {});
-            try r.scc_stack.append(r.gpa, n);
-            const first: u32 = @intCast(r.kids.items.len);
+            try r.s.on_stack.put(r.gpa, n, {});
+            try r.s.scc_stack.append(r.gpa, n);
+            const first: u32 = @intCast(r.s.kids.items.len);
             try r.children(n);
-            try r.frames.append(r.gpa, .{ .node = n, .first_kid = first, .cursor = first });
+            try r.s.frames.append(r.gpa, .{ .node = n, .first_kid = first, .cursor = first });
         }
 
         fn run(r: *Reach, root: NodeId) Error!void {
             try r.push(root);
-            while (r.frames.items.len > 0) {
-                const f = &r.frames.items[r.frames.items.len - 1];
-                if (f.cursor < r.kids.items.len) {
-                    const k = r.kids.items[f.cursor];
+            while (r.s.frames.items.len > 0) {
+                const f = &r.s.frames.items[r.s.frames.items.len - 1];
+                if (f.cursor < r.s.kids.items.len) {
+                    const k = r.s.kids.items[f.cursor];
                     f.cursor += 1;
                     const n = f.node;
                     if (r.settled(k)) continue; // settled elsewhere
-                    if (r.index.get(k) == null) {
+                    if (r.s.index.get(k) == null) {
                         try r.push(k);
                         continue;
                     }
-                    if (r.on_stack.contains(k)) {
-                        const l = @min(r.low.get(n).?, r.index.get(k).?);
-                        try r.low.put(r.gpa, n, l);
+                    if (r.s.on_stack.contains(k)) {
+                        const l = @min(r.s.low.get(n).?, r.s.index.get(k).?);
+                        try r.s.low.put(r.gpa, n, l);
                     }
                     continue;
                 }
                 // Done with `f.node`: pop its kids, fold its low into the parent,
                 // and close a component if it is a root.
                 const n = f.node;
-                r.kids.shrinkRetainingCapacity(f.first_kid);
-                _ = r.frames.pop();
-                if (r.frames.items.len > 0) {
-                    const parent = r.frames.items[r.frames.items.len - 1].node;
-                    const l = @min(r.low.get(parent).?, r.low.get(n).?);
-                    try r.low.put(r.gpa, parent, l);
+                r.s.kids.shrinkRetainingCapacity(f.first_kid);
+                _ = r.s.frames.pop();
+                if (r.s.frames.items.len > 0) {
+                    const parent = r.s.frames.items[r.s.frames.items.len - 1].node;
+                    const l = @min(r.s.low.get(parent).?, r.s.low.get(n).?);
+                    try r.s.low.put(r.gpa, parent, l);
                 }
-                if (r.low.get(n).? != r.index.get(n).?) continue;
+                if (r.s.low.get(n).? != r.s.index.get(n).?) continue;
                 // A component: its members' cells and their successors' sets
                 // (every successor outside it is settled already).
                 var set: SetId = .none;
-                var i = r.scc_stack.items.len;
+                var i = r.s.scc_stack.items.len;
                 while (i > 0) {
                     i -= 1;
-                    const m = r.scc_stack.items[i];
+                    const m = r.s.scc_stack.items[i];
                     set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
-                    const first: u32 = @intCast(r.kids.items.len);
+                    const first: u32 = @intCast(r.s.kids.items.len);
                     try r.children(m);
-                    for (r.kids.items[first..]) |k| {
+                    for (r.s.kids.items[first..]) |k| {
                         const s = r.got(k);
                         if (s != .none) set = try r.sets.unionWith(r.gpa, .growth(r.account), set, s);
                     }
-                    r.kids.shrinkRetainingCapacity(first);
+                    r.s.kids.shrinkRetainingCapacity(first);
                     if (m == n) break;
                 }
-                while (r.scc_stack.items.len > 0) {
-                    const m = r.scc_stack.pop().?;
-                    r.on_stack.remove(m);
+                while (r.s.scc_stack.items.len > 0) {
+                    const m = r.s.scc_stack.pop().?;
+                    r.s.on_stack.remove(m);
                     if (r.filter != null) try r.t.arrivals_memo.put(r.gpa, m, set) else r.t.nodes.items(.reach)[m.int()] = set;
                     if (m == n) break;
                 }
@@ -942,8 +965,8 @@ pub const Table = struct {
         // The nodes on the walk's stack: the call's own, so a refusal in
         // the middle leaves no mark behind (§2.3 *Memo safety*); only a
         // finished node's rank is memoised.
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(gpa);
+        const open = try t.marks.take(gpa);
+        defer t.marks.give(open);
         var kids: std.ArrayList(NodeId) = .empty;
         defer kids.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });

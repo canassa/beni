@@ -87,6 +87,7 @@ const artifact_bytes = @import("frontend/artifact_bytes.zig");
 const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
+const stamped = @import("stamped.zig");
 
 const Session = @This();
 
@@ -2256,7 +2257,9 @@ fn checkSerial(session: *Session) RunError!void {
     // `check` is one event per MODULE (checker.md §9), emitted by the
     // checker itself on the worker that took the module, with `constrain`,
     // `solve` and `exhaustive` nested inside each.
+    const slots_before = stamped.slots_made.load(.monotonic);
     session.checked = try runCheckOnBigStack(session, quiet, cached, &cutoff);
+    session.profile.addCounter(.scratch_slots, stamped.slots_made.load(.monotonic) - slots_before);
     // Move installed facts before the cache entries are freed. Fresh modules'
     // slots were filled on their checking worker, without rewriting BIR.
     for (cached, 0..) |*slot, i| if (slot.*) |*l| {

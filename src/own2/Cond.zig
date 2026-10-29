@@ -166,6 +166,9 @@ pub const Table = struct {
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
+    /// Node marks for a walk over the node table, one per walk in progress,
+    /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
+    marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
     /// `kappaMerge`'s memo: an unordered pair of positions → their merge.
     memo_merge: Ids.FixedDict(2) = .{},
     /// For tests: every position a reader (`deep`, `propagate`,
@@ -187,6 +190,7 @@ pub const Table = struct {
     }
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.marks.deinit(gpa);
         t.conds.deinit(gpa);
         t.intern.deinit(gpa);
         t.atoms.deinit(gpa);
@@ -1304,8 +1308,8 @@ pub const Table = struct {
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(gpa);
+        const open = try t.marks.take(gpa);
+        defer t.marks.give(open);
         var parts: std.ArrayList(NodeId) = .empty;
         defer parts.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });

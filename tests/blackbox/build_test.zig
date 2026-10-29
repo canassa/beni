@@ -8504,6 +8504,51 @@ fn expectNoLimit(src: []const u8) !void {
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limits ") == null);
 }
 
+/// The check's `scratch_slots` and `g`'s account total, from a dump of
+/// `src` with `--self-profile`.
+fn scratchAndRecords(src: []const u8) !struct { slots: u64, records: u64 } {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--self-profile=trace.json", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const Event = struct { ph: []const u8, args: struct { scratch_slots: ?u64 = null } = .{} };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var slots: ?u64 = null;
+    for (parsed.value.traceEvents) |e| if (e.args.scratch_slots) |n| {
+        slots = n;
+    };
+    return .{ .slots = slots orelse return error.NoCounter, .records = try accountField(dump.stdout, "g", "total") };
+}
+
+test "the checker v2's scratch columns make slots in proportion to its records on a wide literal" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1191: a walk made a fresh `stamped.Column` per call, and a column
+    // makes a slot per id up to the highest it is given: calls × the node
+    // table, quadratic in the literal's width, while the records count only
+    // the nodes visited. The walks take their columns from a pool and empty
+    // them by generation, so the slots stay a small multiple of the records.
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    for ([_]u32{300}) |n| {
+        src.clearRetainingCapacity();
+        try wideRunSource(testing.allocator, &src, .literal, n);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const got = try scratchAndRecords(src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(got.slots <= 4 * got.records);
+    }
+}
+
 test "the checker v2 checks a literal of 1 500 lists at the default allowance" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
