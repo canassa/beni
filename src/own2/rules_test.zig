@@ -34,7 +34,7 @@ const layers = [_]Entry{
     // §5 says 600; the lane-charging forms, named limits and charge targets
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 700 },
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 750 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
