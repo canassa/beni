@@ -376,11 +376,17 @@ toFloat s = Js.pure λ⊤ →
 pub fromFloat : Float → String
 fromFloat n = Js.pure λ⊤ →
     -- `String(1.0)` is "1" in JavaScript and `1` is not a float literal in
-    -- beni's own syntax, so a whole float prints with its point.
-    if Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ]) then
-        "${n}.0"
+    -- beni's own syntax, so a whole float prints with its point, unless
+    -- JavaScript wrote it with an exponent (`1e+21`), which is one already.
+    text : String
+    text = Js.to (Js.apply (Js.global "String") [ Js.from n ])
+    if
+        Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ])
+            && not (Js.to (Js.call (Js.from text) "includes" [ Js.from "e" ]))
+    then
+        text ++ ".0"
     else
-        Js.to (Js.apply (Js.global "String") [ Js.from n ])
+        text
 
 
 --| Create a string from a given character.

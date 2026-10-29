@@ -1,0 +1,32 @@
+-- `String.fromFloat` adds the `.0` of a whole float only when JavaScript
+-- printed no exponent: `1e+21.0` is not a float literal and `toFloat`
+-- refuses it. Each value must print as a literal and read back as itself.
+import Node exposing (Program)
+import String
+
+
+values : List Float
+values =
+    [ 1.0
+    , 123456789012345680000.0
+    , 1.0e21
+    , 8.41e21
+    , 1.0e23
+    , 1.0e300
+    , -1.0e21
+    , 1.7976931348623157e308
+    , 1.5e-7
+    ]
+
+
+row : Float → String
+row x =
+    String.join
+        [ String.fromFloat x
+        , Debug.toString (String.toFloat (String.fromFloat x))
+        ]
+        " "
+
+
+main : Program
+main = Node.printLines (List.map values row)
