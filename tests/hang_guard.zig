@@ -43,7 +43,7 @@ fn watch(g: *Guard) void {
                 rawWrite(g.name);
                 rawWrite("\n");
                 killChildren();
-                std.process.exit(1);
+                hardExit(1);
             },
         };
     }
@@ -51,44 +51,49 @@ fn watch(g: *Guard) void {
 
 // A timeout exits the test process, so first kill every child process group
 // it owns, including grandchildren. Registration is shared by corpus workers.
-var children: std.ArrayList(std.posix.pid_t) = .empty;
-var children_mutex: Io.Mutex = .init;
-var children_backend: Io.Threaded = .init_single_threaded;
+// A fixed table of atomic slots (0 empty): a crash handler reads it with no
+// lock and no reallocation under its feet.
+const max_children = 1024;
+var children: [max_children]std.atomic.Value(std.posix.pid_t) = @splat(.init(0));
 
 pub fn trackChild(pid: std.posix.pid_t) !void {
-    const io = children_backend.io();
-    children_mutex.lockUncancelable(io);
-    defer children_mutex.unlock(io);
-    try children.append(std.heap.page_allocator, pid);
+    for (&children) |*slot| {
+        if (slot.cmpxchgStrong(0, pid, .acq_rel, .acquire) == null) return;
+    }
+    return error.TooManyTestChildren;
 }
 
 pub fn untrackChild(pid: std.posix.pid_t) void {
-    const io = children_backend.io();
-    children_mutex.lockUncancelable(io);
-    defer children_mutex.unlock(io);
-    for (children.items, 0..) |child, i| {
-        if (child == pid) {
-            _ = children.swapRemove(i);
-            return;
-        }
+    for (&children) |*slot| {
+        if (slot.cmpxchgStrong(pid, 0, .acq_rel, .acquire) == null) return;
     }
     unreachable;
 }
 
 fn killChildren() void {
-    const io = children_backend.io();
-    children_mutex.lockUncancelable(io);
-    defer children_mutex.unlock(io);
-    for (children.items) |pid| std.posix.kill(-pid, .KILL) catch |err| switch (err) {
-        error.ProcessNotFound => {},
-        else => std.debug.print("cannot kill test child group {d}: {t}\n", .{ pid, err }),
-    };
+    for (&children) |*slot| {
+        const pid = slot.load(.acquire);
+        if (pid == 0) continue;
+        std.posix.kill(-pid, .KILL) catch |err| switch (err) {
+            error.ProcessNotFound => {},
+            else => rawWrite("cannot kill a test child group\n"),
+        };
+    }
 }
 
-/// `killChildren` without the lock, for a crash handler: the list may be
-/// mid-update, so this kills what it can read.
+/// `killChildren` for a crash handler: no lock, no allocation, no print.
 pub fn killChildrenNow() void {
-    for (children.items) |pid| std.posix.kill(-pid, .KILL) catch {};
+    for (&children) |*slot| {
+        const pid = slot.load(.acquire);
+        if (pid != 0) std.posix.kill(-pid, .KILL) catch {};
+    }
+}
+
+/// Exit at once with `_exit` (`exit_group` on Linux without libc): no atexit
+/// handler, no stdio flush, so a crash inside malloc cannot hang it.
+pub fn hardExit(code: u8) noreturn {
+    if (@import("builtin").os.tag == .linux and !@import("builtin").link_libc) std.os.linux.exit_group(code);
+    std.c._exit(code);
 }
 
 /// `s` to stderr with `write(2)` alone, so a timeout reports even while a
