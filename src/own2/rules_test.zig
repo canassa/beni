@@ -63,7 +63,8 @@ const layers = [_]Entry{
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
-    // §5 says 1 100 since S3a: the source and signature adapters.
+    // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
+    // calls of walked declarations.
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 1250 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped

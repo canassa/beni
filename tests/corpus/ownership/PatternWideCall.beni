@@ -3,7 +3,8 @@
 -- by a declaration (`rows40`, `rows100`, `sharedRows1000`), or supplied to
 -- one (`headPush`). The pattern's rebuild stays growth, so each
 -- declaration checks with no lane past its ceiling. The 100-item returned
--- twin waits for #1231, which takes that rebuild off the pattern's lane.
+-- twin waits for #1224's fix, which takes that rebuild off the pattern's
+-- lane.
 headPush : List (List Int) → List Int
 headPush rows =
     case rows of
@@ -1179,6 +1180,7 @@ returned40 ⊤ =
             []
 
 
+pub returnedShared : ⊤ → List Int
 returnedShared ⊤ =
     case sharedRows1000 [ 0 ] of
         [ x, …_ ] →
