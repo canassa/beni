@@ -1,0 +1,129 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      ""
+      <section>
+        <button data-role="open">"First"</button>
+        ""
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        <div>
+          <span>"Second is open"</span>
+          <button data-role="close">"Close"</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click section:nth-of-type(1)>[data-role=open]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      ""
+      <section>
+        <button data-role="open">"First"</button>
+        <div>
+          <span>"First is open"</span>
+          <button data-role="close">"Close"</button>
+        </div>
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        <div>
+          <span>"Second is open"</span>
+          <button data-role="close">"Close"</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click section:nth-of-type(2)>div>[data-role=close]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      ""
+      <section>
+        <button data-role="open">"First"</button>
+        <div>
+          <span>"First is open"</span>
+          <button data-role="close">"Close"</button>
+        </div>
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        ""
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click section:nth-of-type(1)>div>[data-role=close]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      ""
+      <section>
+        <button data-role="open">"First"</button>
+        ""
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        ""
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=help]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      <p data-role="note">"Two panels."</p>
+      <section>
+        <button data-role="open">"First"</button>
+        ""
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        ""
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click section:nth-of-type(2)>[data-role=open]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="help">"Help"</button>
+      <p data-role="note">"Two panels."</p>
+      <section>
+        <button data-role="open">"First"</button>
+        ""
+      </section>
+      <section>
+        <button data-role="open">"Second"</button>
+        <div>
+          <span>"Second is open"</span>
+          <button data-role="close">"Close"</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>

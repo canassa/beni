@@ -445,17 +445,266 @@ replace : V, String, String → V
 replace s from to = Js.call s "replaceAll" [ Js.from from, Js.from to ]
 
 
---| `(root)`: the prerendered unit below `root` — the element that has
---| `data-beni` (`prerender.md` §4.2) — taken out of the page, so that the
---| mount after it makes the page a page with no view makes (§11, slice
---| P1). On a page the build did not prerender there is none, and nothing
---| is taken out.
-pub unprerender : V → ⊤
-unprerender at =
-    unit = Js.call at "querySelector" [ Js.from "[data-beni]" ]
-    if not (Js.isNull unit) then
-        _ = Js.call unit "remove" []
-        ⊤
+-- ---- Hydration (`prerender.md` §6) -------------------------------------
+
+--| `(at, html, arms, tags)`: the hydrating mount of a prerendering build's
+--| client (`prerender.md` §6.1–§6.4). It gives the unit's table: its top
+--| element, then each of its descendants in document order, as the fresh
+--| mount numbers them. On a page that holds the prerendered unit — the
+--| element with `data-beni` — as a child of `at`, the page's elements are
+--| taken over: the table merges them with the elements of each eager arm
+--| the page hides, which a comment `<!--k-->` stands in place of, made
+--| from `html`, the unit's string; the comment is then the arm's anchor.
+--| `arms` is three numbers per arm, in the order of the arms' ordinals:
+--| its element's index in the table, how many elements it holds, and its
+--| parent's index. `tags` is the tag of each element of the table,
+--| space-separated, empty where the mount does not check it. A page that
+--| does not hold what the program makes — a tag, a count, or a comment
+--| that differs — is mounted fresh in the same task, the unit taken out
+--| first, and a development build says why in a warning. A page with no
+--| unit is mounted fresh. A unit that is not a child of `at` is a fault
+--| in a development build, and is taken out and mounted fresh in a release
+--| build. What undoes the mount, the top element's removal, is registered.
+pub take : V, V, V, V → V
+take at html arms tags =
+    unit = Js.call (Js.global "document") "querySelector" [ Js.from "[data-beni]" ]
+
+    adopted =
+        if Js.isNull unit then
+            Js.null
+        else if Js.same (Js.get unit "parentNode") at then
+            adopt at unit html arms tags
+        else
+            if Js.development ⊤ then
+                id : String
+                id = Js.to (Js.get at "id")
+                where = if id == "" then "document.body" else id
+                fault
+                    "cannot take over the page at ${where}: the prerendered view is not inside the element the program mounts at"
+            Js.null
+
+    table =
+        if Js.isNull adopted then
+            if not (Js.isNull unit) then
+                _ = Js.call unit "remove" []
+                ⊤
+            _ = Js.call at "insertAdjacentHTML" [ Js.from "beforeend", html ]
+            tableOf (Js.get at "lastChild")
+        else
+            _ = Js.call unit "removeAttribute" [ Js.from "data-beni" ]
+            adopted
+
+    top = Js.at table 0
+    own (Js.from λ⊤ → Js.to (Js.call top "remove" []))
+    table
+
+
+-- `[top, …top.querySelectorAll("*")]`: a fresh unit's table.
+tableOf : V → V
+tableOf top =
+    table = Js.call (Js.global "Array") "from" [ Js.call top "querySelectorAll" [ Js.from "*" ] ]
+    _ = Js.call table "unshift" [ top ]
+    table
+
+
+-- The table of the page's unit, or null when the page is not what the
+-- program makes there (`prerender.md` §6.4).
+adopt : V, V, V, V, V → V
+adopt at unit html arms tags =
+    page = Js.call unit "querySelectorAll" [ Js.from "*" ]
+    table = Js.array [ unit ]
+    taken = Js.ref 0
+    made = Js.ref Js.null
+    names = Js.call tags "split" [ Js.from " " ]
+    count : Int
+    count = Js.to (Js.get names "length")
+
+    -- The arm whose comment is out of place, or -1.
+    misplaced : Int
+    misplaced =
+        if Js.to (Js.get arms "length") == 0 then
+            -1
+        else
+            hiddenArms
+                (Js.call (Js.global "document") "createTreeWalker" [ unit, Js.from 128 ])
+                { at = at
+                , html = html
+                , arms = arms
+                , table = table
+                , page = page
+                , taken = taken
+                , made = made
+                }
+                (-1)
+
+    filled = misplaced < 0 && fill table page taken (count - 1)
+
+    -- A tag that differs is named first, in the table as far as it was
+    -- filled: an element a host inserted, removed or replaced is where the
+    -- page stops being the program's.
+    if tagsDiffer table names 0 then
+        Js.null
+    else if misplaced ≥ 0 then
+        if Js.development ⊤ then
+            shown = String.fromInt misplaced
+            warn "the comment <!--${shown}--> does not stand where the program's arm ${shown} does"
+        Js.null
+    else if not filled then
+        if Js.development ⊤ then
+            warn "the page holds fewer elements than the program makes"
+        Js.null
+    else if Js.read taken < Js.to (Js.get page "length") then
+        if Js.development ⊤ then
+            extra : String
+            extra = Js.to (Js.get (Js.at page (Js.read taken)) "localName")
+            warn
+                "the page holds more elements than the program makes, the first of them a <${extra}>"
+        Js.null
+    else
+        table
+
+
+-- What `hiddenArms` reads and writes as it walks: the mount element and the
+-- unit's string, from which a hidden arm's elements are made, once
+-- (`made`); the arms; the table it fills; and the page's elements, of
+-- which `taken` are in the table.
+type alias Walk =
+    at : V
+    html : V
+    arms : V
+    table : V
+    page : V
+    taken : Js.Ref Int
+    made : Js.Ref V
+
+
+-- Each comment of the unit that names an arm, in document order, after
+-- the comment of the arm `last`: the page's elements before the arm into
+-- the table, then the arm's own, made from the unit's string, its
+-- element's anchor the comment. -1 when every comment stands where its arm
+-- does; otherwise the arm of the first that does not, or that names an arm
+-- that does not follow the last one outside it.
+hiddenArms : V, Walk, Int → Int
+hiddenArms walker w last =
+    c = Js.call walker "nextNode" []
+    if Js.isNull c then
+        -1
+    else
+        data = Js.get c "data"
+        k : Int
+        k = Js.to (Js.apply (Js.global "Number") [ data ])
+        named = Js.same (Js.apply (Js.global "String") [ Js.from k ]) data
+        if not named then
+            hiddenArms walker w last
+        else if k ≤ last || 3 * k ≥ Js.to (Js.get w.arms "length") then
+            k
+        else
+            index : Int
+            index = Js.to (Js.at w.arms (3 * k))
+            holds : Int
+            holds = Js.to (Js.at w.arms (3 * k + 1))
+            if
+                index < Js.to (Js.get w.table "length")
+                    || not (fill w.table w.page w.taken (index - 1))
+            then
+                k
+            else if
+                not
+                    (Js.same
+                        (Js.get c "parentNode")
+                        (Js.at w.table (Js.to (Js.at w.arms (3 * k + 2))))
+                    )
+                    || not (between c w.page (Js.read w.taken))
+            then
+                k
+            else
+                made = madeOf w
+                arm = Js.at made (index - 1)
+                _ = Js.call arm "remove" []
+                Js.set arm "$a" c
+                push w.table made (index - 1) (index - 1 + holds)
+                hiddenArms walker w k
+
+
+-- Whether comment `c` stands after the page's element `k - 1` and before
+-- its element `k`, in document order.
+between : V, V, Int → Bool
+between c page k =
+    after = k == 0 || follows (Js.at page (k - 1)) c
+    after && (k == Js.to (Js.get page "length") || follows c (Js.at page k))
+
+
+-- Whether node `b` follows node `a` in document order:
+-- `compareDocumentPosition`'s `DOCUMENT_POSITION_FOLLOWING` bit.
+follows : V, V → Bool
+follows a b = Js.bitAnd (Js.to (Js.call a "compareDocumentPosition" [ b ])) 4 ≠ 0
+
+
+-- The descendants of the unit's top element as the unit's string makes
+-- them, parsed once, where the mount element would parse it.
+madeOf : Walk → V
+madeOf w =
+    if Js.isNull (Js.read w.made) then
+        holder = Js.call w.at "cloneNode" [ Js.from False ]
+        _ = Js.call holder "insertAdjacentHTML" [ Js.from "beforeend", w.html ]
+        Js.write w.made (Js.call (Js.get holder "lastChild") "querySelectorAll" [ Js.from "*" ])
+    Js.read w.made
+
+
+-- The page's elements, from the first not taken, into `table` until it
+-- holds `upto` descendants; false when the page has too few.
+fill : V, V, Js.Ref Int, Int → Bool
+fill table page taken upto =
+    if Js.to (Js.get table "length") > upto then
+        True
+    else
+        k = Js.read taken
+        if k == Js.to (Js.get page "length") then
+            False
+        else
+            _ = Js.call table "push" [ Js.at page k ]
+            Js.write taken (k + 1)
+            fill table page taken upto
+
+
+-- `list`'s elements from `i` to before `end` pushed onto `table`.
+push : V, V, Int, Int → ⊤
+push table list i end =
+    if i < end then
+        _ = Js.call table "push" [ Js.at list i ]
+        push table list (i + 1) end
+
+
+-- Whether an element of `table` from `i` on is not the one `names` says,
+-- a name left empty matching any; a development build says which.
+tagsDiffer : V, V, Int → Bool
+tagsDiffer table names i =
+    if i == Js.to (Js.get table "length") then
+        False
+    else
+        want : String
+        want = Js.to (Js.at names i)
+        has : String
+        has = Js.to (Js.get (Js.at table i) "localName")
+        if want == "" || want == has then
+            tagsDiffer table names (i + 1)
+        else
+            if Js.development ⊤ then
+                warn
+                    "its element ${String.fromInt i} is a <${has}>, where the program makes a <${want}>"
+            True
+
+
+-- A development build's warning that the page is not the one the program
+-- makes, `why` naming the first difference, before the fresh mount.
+warn : String → ⊤
+warn why =
+    Js.to
+        (Js.call (Js.global "console") "warn"
+            [ Js.from
+                "The prerendered page is not the one this program makes: ${why}. The program mounts it fresh."
+            ]
+        )
 
 
 -- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------

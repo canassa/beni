@@ -1,0 +1,25 @@
+-- retag h1 h2
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h2>"Counter"</h2>
+      <output>"0"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h2>"Counter"</h2>
+      <output>"1"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

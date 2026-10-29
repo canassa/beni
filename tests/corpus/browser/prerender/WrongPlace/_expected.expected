@@ -1,0 +1,23 @@
+-- fresh
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"0"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"1"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

@@ -194,6 +194,23 @@
 //                               `SecurityError`
 //   sockets                     log `(sockets: <n>)`, the sockets the page
 //                               made and has not closed
+//   inject <selector> "<html>"  before the program loads, on a page opened
+//                               with `--html-page` that holds a prerendered
+//                               unit (`[data-beni]`): the HTML inserted
+//                               before the element, as an extension inserts
+//                               it; on a page with no unit it does nothing
+//   retag <selector> <name>     the same, the element replaced by one of
+//                               element `name` with its attributes and
+//                               children
+//   fresh                       before the program loads: the prerendered
+//                               unit is to be mounted fresh, not taken over
+//                               (docs/design/prerender.md §6.4). Without
+//                               it, a `--html-page` page whose unit the load
+//                               does not take over whole — an element
+//                               taken out of the page or made by the mount
+//                               — fails; with it, one that keeps any
+//                               element of the unit fails. A page with no
+//                               unit checks neither
 //   throws <step>               any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
@@ -1174,6 +1191,7 @@ function step(s) {
     globalThis.__beniHarness.selection = true;
     return null;
   }
+  if (s.command === "inject" || s.command === "retag") return editPage(s);
   if (s.command === "element") {
     const at = document.createElement("div");
     at.id = s.text;
@@ -1489,6 +1507,61 @@ function openPage(html) {
   for (const script of parsed.querySelectorAll("script")) script.remove();
   for (const a of parsed.attributes) document.body.setAttribute(a.name, a.value);
   document.body.replaceChildren(...[...parsed.childNodes].map((n) => document.importNode(n, true)));
+  globalThis.__beniPrerendered = true;
+  return null;
+}
+
+// Before the program loads, on a page opened with `openPage`: every
+// element of the page marked, and the prerendered unit's (`[data-beni]`)
+// remembered, for `takenOver` to check after the load. A page the build
+// did not prerender holds no unit, and nothing is checked.
+function markPage() {
+  const unit = document.querySelector("[data-beni]");
+  if (unit === null) {
+    globalThis.__beniMarks = null;
+    return null;
+  }
+  const all = [...document.body.querySelectorAll("*")];
+  globalThis.__beniMarks = { all, set: new Set(all), unit: [unit, ...unit.querySelectorAll("*")] };
+  return null;
+}
+
+// After the load: why the page is not what the load was to make of the
+// prerendered page, or null. Taken over (docs/design/prerender.md §6.1):
+// every element marked is still in the page and every element in it was
+// marked — the mount replaced none and made none. `fresh` (a `fresh`
+// step): no element of the prerendered unit is still in the page — the
+// mount took the unit out and made its own (§6.4).
+function takenOver(fresh) {
+  const marks = globalThis.__beniMarks;
+  if (marks === null || marks === undefined) return null;
+  const shown = (e) => `<${e.localName}>${e.id === "" ? "" : ` #${e.id}`}`;
+  if (fresh) {
+    const kept = marks.unit.find((e) => e.isConnected);
+    return kept === undefined ? null : `the prerendered page was to be mounted fresh, and its element ${shown(kept)} is still in the page`;
+  }
+  const gone = marks.all.find((e) => !e.isConnected);
+  if (gone !== undefined) return `the prerendered page was to be taken over, and its element ${shown(gone)} was taken out of it`;
+  const made = [...document.body.querySelectorAll("*")].find((e) => !marks.set.has(e));
+  if (made !== undefined) return `the prerendered page was to be taken over, and the program made the element ${shown(made)}`;
+  return null;
+}
+
+// An `inject` or `retag` step: the prerendered page edited before the
+// program loads, as a host or an extension edits it. On a page that holds
+// no prerendered unit it does nothing: there is no view to edit.
+function editPage(s) {
+  if (document.querySelector("[data-beni]") === null) return null;
+  const el = document.querySelector(s.selector);
+  if (el === null) return `no element matches ${s.selector}`;
+  if (s.command === "inject") {
+    el.insertAdjacentHTML("beforebegin", s.text);
+    return null;
+  }
+  const other = document.createElement(s.text);
+  for (const a of el.attributes) other.setAttribute(a.name, a.value);
+  other.append(...el.childNodes);
+  el.replaceWith(other);
   return null;
 }
 
@@ -1537,6 +1610,17 @@ function serialise(also) {
   const prefixes = { "http://www.w3.org/2000/svg": "svg:", "http://www.w3.org/1998/Math/MathML": "math:" };
   const voids = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
   const lines = [];
+  // On a page opened on what the build wrote (`openPage`), the prerendered
+  // view's control state is attributes as well as properties — an input's
+  // `value` and `checked`, an option's `selected`, a textarea's text — and
+  // a hidden arm's anchor is its comment `<!--n-->` where a fresh mount
+  // keeps an empty text (docs/design/prerender.md §6.1, §6.2). Neither is
+  // printed as it is: the attributes are left out, as the properties are
+  // printed, and the comment is printed as the empty text, so a page taken
+  // over and a page mounted fresh give one transcript.
+  const prerendered = globalThis.__beniPrerendered === true;
+  const prerenderedState = (tag, attribute) =>
+    (tag === "input" && (attribute === "value" || attribute === "checked")) || (tag === "option" && attribute === "selected");
   // Read once: nothing in the walk moves the focus.
   const active = document.activeElement;
   const fuzzing = also !== undefined;
@@ -1597,6 +1681,7 @@ function serialise(also) {
     const name = (prefixes[node.namespaceURI] ?? "") + tag;
     let open = `<${name}`;
     for (const a of node.attributes) {
+      if (prerendered && prerenderedState(tag, a.name)) continue;
       const value = a.value;
       open += ` ${a.name}=${quote(value)}`;
       if (gathered && offering && (a.name === "id" || a.name === "value" || a.name === "href" || a.name.startsWith("data-"))) take(value);
@@ -1612,7 +1697,11 @@ function serialise(also) {
     open += ">";
     const template = tag === "template";
     const children = [];
-    for (let c = (template ? node.content : node).firstChild; c !== null; c = c.nextSibling) if (comments || c.nodeType !== 8) children.push(c);
+    for (let c = (template ? node.content : node).firstChild; c !== null; c = c.nextSibling) {
+      if (prerendered && tag === "textarea") continue;
+      if (prerendered && c.nodeType === 8 && /^[0-9]+$/.test(c.data)) children.push({ nodeType: 3, data: "" });
+      else if (comments || c.nodeType !== 8) children.push(c);
+    }
     const close = `</${name}>`;
     if (children.length === 0) return void lines.push(pad + open + (voids.includes(name) ? "" : close));
     if (children.length === 1 && children[0].nodeType === 3) {
@@ -1697,6 +1786,9 @@ if (options.server !== undefined) {
 if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: false });
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
+// The steps that set the page up, before the program loads.
+const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag"];
+
 // Parse the whole script before the page loads, so a malformed step is
 // reported without running anything.
 const steps = [];
@@ -1712,10 +1804,11 @@ if (stepsPath !== undefined) {
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
-    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element" && s.command !== "selection"))) {
+    if (line === "load" && (!throws || steps.some((s) => !setupCommands.includes(s.command)))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
     if (line === "selection") return void steps.push({ line: written, where, command: "selection", selector: null, throws });
+    if (line === "fresh") return void steps.push({ line: written, where, command: "fresh", selector: null, throws });
     if (["back", "forward", "location", "title", "file", "load", "stop"].includes(line)) {
       steps.push({ line: written, where, command: line, selector: null, throws });
       return;
@@ -1743,6 +1836,16 @@ if (stepsPath !== undefined) {
     } else if (command === "element") {
       if (argument !== undefined || !/^"[A-Za-z][A-Za-z0-9-]*"$/.test(selector)) usage(`${where}: \`element\` takes one id as a JSON string`);
       s.text = JSON.parse(selector);
+    } else if (command === "inject") {
+      try {
+        s.text = JSON.parse(argument ?? "");
+      } catch {
+        s.text = undefined;
+      }
+      if (typeof s.text !== "string") usage(`${where}: \`insert\` takes a selector and its HTML as a JSON string`);
+    } else if (command === "retag") {
+      if (argument === undefined || !/^[a-z][a-z0-9-]*$/.test(argument)) usage(`${where}: \`retag\` takes a selector and an element name`);
+      s.text = argument;
     } else if (command === "url" || command === "hash") {
       try {
         s.text = JSON.parse(argument === undefined ? selector : "");
@@ -2044,6 +2147,10 @@ async function happyDomPage(domPath) {
   }
   if (options.parser !== undefined) await standardParsing(options.parser);
   globalThis.__beniHostSocket = options.server === undefined ? undefined : window.WebSocket;
+  // A page of this process before it may have been opened on what its build
+  // wrote (`openPage`); this one has not, yet.
+  globalThis.__beniPrerendered = false;
+  globalThis.__beniMarks = null;
   prelude();
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
@@ -2134,7 +2241,7 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage};`;
+  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage}; const markPage = ${markPage}; const takenOver = ${takenOver}; const editPage = ${editPage};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -2258,23 +2365,38 @@ async function runPage(entry, fiber, html = false) {
   // up: they run before the program loads, each a heading with nothing
   // under it.
   const setup = [];
-  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store" || script[0].command === "element" || script[0].command === "selection") && !script[0].throws) setup.push(script.shift());
+  while (script.length !== 0 && setupCommands.includes(script[0].command) && script[0].command !== "file" && !script[0].throws) setup.push(script.shift());
   let setupFault = null;
+  // `fresh`: the page the build prerendered is to be mounted fresh, not
+  // taken over (`takenOver`).
+  let fresh = false;
   for (const s of setup) {
     transcript.push(`-- ${s.line}`);
+    if (s.command === "fresh") {
+      fresh = true;
+      continue;
+    }
     const why = await page.run(step, s);
     if (why !== null) {
       setupFault = `${s.where}: ${s.line}: ${why}`;
       break;
     }
   }
+  // Every element of the page the build wrote, marked before the program
+  // loads, and checked as soon as it has mounted.
+  if (html) await page.run(markPage);
 
   // `throws load`: the program must throw while it loads.
   const loadThrows = script.length !== 0 && script[0].command === "load";
   if (loadThrows) script.shift();
+  const loaded = async () => {
+    const why = await page.run(load, { url: entryUrl, runtime });
+    if (why !== null && why !== undefined) return why;
+    return html && !loadThrows ? page.run(takenOver, fresh) : null;
+  };
 
   if (setupFault !== null) await finish(1, setupFault);
-  else if (await phase(loadThrows ? "throws load" : "load", () => page.run(load, { url: entryUrl, runtime }), loadThrows)) {
+  else if (await phase(loadThrows ? "throws load" : "load", loaded, loadThrows)) {
     let ok = true;
     for (const s of script) {
       ok = await phase(s.line, async () => {

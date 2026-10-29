@@ -1,0 +1,26 @@
+--! A switch with a label its model hides.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    on : Bool
+
+
+pub type Msg
+    = Flip
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | on = not model.on }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button onClick={Flip}>Flip</button>
+        {if model.on then <strong>On</strong> else <></>}
+    </section>

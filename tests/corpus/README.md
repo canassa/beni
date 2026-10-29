@@ -909,6 +909,41 @@ transcript. No build may leave its prerender tree, `.<out>.prerender`.
 or a `view` that is not pure, a render that throws, a shell without
 `{{view}}` or with two.
 
+*Since slice P2a* the client of a prerendering build takes the page over
+(`prerender.md` §6), and the kind checks it:
+
+- **No element is replaced.** The driver marks every element of a page
+  opened on what its build wrote before the program loads, and as soon as it
+  has mounted checks that every element marked is still in the page and that
+  the mount made none. A page whose unit is to be mounted fresh says so with
+  the setup step `fresh`, and the check is then that no element of the
+  prerendered unit is left. A page with no prerendered unit checks neither.
+- **The normalisation.** A page taken over keeps two differences from one
+  mounted fresh, which the program cannot see (§6.1, §6.2): a control's
+  state is attributes as well as properties — an input's `value` and
+  `checked`, an option's `selected`, a textarea's text — and a hidden arm's
+  anchor is its comment `<!--n-->` where a fresh mount keeps an empty text.
+  So on a page opened on what its build wrote the transcript leaves those
+  attributes and a textarea's children out, the properties being printed
+  anyway, and prints a comment whose text is a number as the empty text
+  `""`.
+- **A page the host changed.** The setup steps `inject <selector> "<html>"`
+  and `retag <selector> <name>` edit the prerendered unit before the program
+  loads, as an extension or a CDN does; on a page with no unit they do
+  nothing.
+- **A build whose page differs on purpose.** A prerendering build may have
+  its own golden, `_expected.dev-prerender-expected` or
+  `_expected.release-prerender-expected`, and its own steps beside it,
+  `_expected.dev-prerender-steps` or `_expected.release-prerender-steps`:
+  a development build that warns before it mounts fresh, or whose mount
+  faults (`WrongPlace`), and a release build that takes over a page whose
+  development build refuses it (`RetagUnseen`). The other builds keep the
+  one `.expected`.
+
+`emit/prerender/` and `emit/release/prerender/` are built the same way, for
+`browser-inline` with `--prerender`, as `emit/inline/` and
+`emit/release/inline/` applications: their goldens pin the hydrating mount.
+
 Every enforcing `build/bad/` project is also checked for its release refusal
 — under `inline/`, on a project's own `platform/`
 whose chain edits lists in place, and under `everywhere/`: built again with

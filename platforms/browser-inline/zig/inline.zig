@@ -102,9 +102,9 @@ pub const lowering: m.Lowering = .{
         .{ .name = "escape", .arity = 1 },
         .{ .name = "escapePre", .arity = 1 },
         .{ .name = "escapeAttribute", .arity = 1 },
-        // `(root)`: the prerendered unit below the mount element, taken out
-        // of the page (`prerender.md` §11, slice P1).
-        .{ .name = "unprerender", .arity = 1 },
+        // `(root, html, arms, tags)`: the hydrating mount's table, the
+        // prerendered page taken over or mounted fresh (`prerender.md` §6).
+        .{ .name = "take", .arity = 4 },
         // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
         // a document's title written (§10).
         .{ .name = "address", .arity = 1 },
@@ -262,6 +262,11 @@ const PieceData = struct {
     /// has.
     render: ?[]const u8 = null,
     arms: u32 = 0,
+    /// The hydrating mount's (`prerender.md` §6.2, §6.4): the root's eager
+    /// arms, by index in its table — its top element 0 — and the places of
+    /// the elements its factory refers to, whose tags the mount checks.
+    arm_runs: []const ArmRun = &.{},
+    refs: []const u32 = &.{},
 };
 
 /// A constructor the root's events send, its fields, and the buckets of the
@@ -464,6 +469,12 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         try cx.pieceExport(render_base, try js.arrow(render_params, rblk));
         render_name = render_base;
     }
+    // The root's arms and the elements its factory refers to, for the
+    // hydrating mount of the program that shows it (`prerender.md` §6.2).
+    var layout: Layout = .{ .a = cx.arena };
+    try layout.unit(pg, pg.top_nodes[0]);
+    var refs: std.ArrayList(u32) = .empty;
+    for (layout.referenced.items[1..], 0..) |yes, i| if (yes) try refs.append(a, @intCast(i));
     const data = try a.create(PieceData);
     // The static markup, a piece of its own: every end tag of the top
     // element written, since the program site writes more after it.
@@ -483,6 +494,8 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         .handlers = out_handlers,
         .render = render_name,
         .arms = arms,
+        .arm_runs = try a.dupe(ArmRun, layout.arms.items),
+        .refs = refs.items,
     };
     req.facts.* = .{ .written = true, .data = data };
 }
@@ -678,6 +691,82 @@ fn runOf(runs: []const Run, piece_index: u32) ?Run {
     return null;
 }
 
+/// One eager arm of a unit, as the hydrating mount reads it
+/// (`prerender.md` §6.2): the index of its element in the unit's table —
+/// the top element is 0, its descendant of place `n` is `n + 1` — how many
+/// elements the arm holds, its own and its descendants, and the index of
+/// its parent.
+const ArmRun = struct { at: u32, len: u32, parent: u32 };
+
+/// A unit's elements in document order, as the hydrating mount's table
+/// holds them (`prerender.md` §6.2, §6.4): each one's name, lower case, as
+/// the page's `localName` gives it; whether some code of the unit refers to
+/// it; and the unit's eager arms in document order, which is the order of
+/// their ordinals (§4.1).
+const Layout = struct {
+    a: std.mem.Allocator,
+    names: std.ArrayList([]const u8) = .empty,
+    referenced: std.ArrayList(bool) = .empty,
+    arms: std.ArrayList(ArmRun) = .empty,
+
+    /// The unit of `pg`, whose top element is `top`.
+    fn unit(l: *Layout, pg: *Page, top: Html) m.Error!void {
+        const arm_at = try l.a.alloc(bool, pg.count);
+        @memset(arm_at, false);
+        for (pg.writes.items) |w| if (w.what == .when) {
+            arm_at[w.target.?] = true;
+        };
+        try l.push(top.name);
+        try l.walk(top.children, 0, 0, arm_at, pg.pieces.items);
+        std.debug.assert(l.names.items.len == pg.count + 1);
+        // What the unit's own code refers to: a write's element — but a
+        // choice's whose markup is all empty, which has none — and an
+        // event's.
+        for (pg.writes.items) |w| if (w.what != .observe) {
+            l.referenced.items[if (w.target) |t| t + 1 else 0] = true;
+        };
+        for (pg.events.items) |ev| l.referenced.items[if (ev.target) |t| t + 1 else 0] = true;
+    }
+
+    fn push(l: *Layout, name: []const u8) m.Error!void {
+        const lower = try l.a.alloc(u8, name.len);
+        _ = std.ascii.lowerString(lower, name);
+        try l.names.append(l.a, lower);
+        try l.referenced.append(l.a, false);
+    }
+
+    /// `nodes`, the children of the element at index `parent`, of the unit
+    /// whose top element is at index `base`: the program's, or a piece's.
+    fn walk(l: *Layout, nodes: []const Html, parent: u32, base: u32, arm_at: []const bool, pieces: []const PieceUse) m.Error!void {
+        for (nodes) |n| switch (n.kind) {
+            .text => {},
+            .element => {
+                const at: u32 = @intCast(l.names.items.len);
+                std.debug.assert(base + n.target.? + 1 == at);
+                try l.push(n.name);
+                const arm = arm_at.len != 0 and arm_at[at - base - 1];
+                const slot = l.arms.items.len;
+                if (arm) try l.arms.append(l.a, .{ .at = at, .len = 0, .parent = parent });
+                try l.walk(n.children, at, base, arm_at, pieces);
+                if (arm) l.arms.items[slot].len = @as(u32, @intCast(l.names.items.len)) - at;
+            },
+            // Another module's root: its top element, its elements, its
+            // arms and the elements its factory refers to, all numbered
+            // after its top element's index.
+            .piece => {
+                const u = pieces[n.piece];
+                const at: u32 = @intCast(l.names.items.len);
+                std.debug.assert(u.target + 1 == at);
+                try l.push(u.data.top);
+                for (u.data.arm_runs) |r| try l.arms.append(l.a, .{ .at = r.at + at, .len = r.len, .parent = r.parent + at });
+                try l.walk(u.data.nodes[0].children, at, at, &.{}, &.{});
+                std.debug.assert(l.names.items.len == at + 1 + u.data.count);
+                for (u.data.refs) |r| l.referenced.items[at + 1 + r] = true;
+            },
+        };
+    }
+};
+
 /// Where a piece's top element stands: its parent's place (null: the top
 /// node) and its place among the parent's element children.
 const Place = struct { parent: ?u32, at: u32 };
@@ -730,6 +819,11 @@ const Page = struct {
     elements: ?m.Name = null,
     /// `elements` is the one element code refers to, not the list.
     single: bool = false,
+    /// The client of a prerendering build (`prerender.md` §6.2):
+    /// `elements` is the hydrating mount's table, the top element at 0 and
+    /// its descendant of place `n` at `n + 1`, and every piece's table is
+    /// cut from it.
+    hydrating: bool = false,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
     /// Per key, the buckets of the stateful controls its events are on.
@@ -1223,10 +1317,12 @@ const Page = struct {
             else => try js.name(id),
         };
         try js.constant(body, at, try js.call(try js.name(try cx.runtime("root")), &.{which}));
-        // The client of a prerendering build takes the prerendered unit out
-        // of the page and mounts fresh, in the same task (`prerender.md` §11,
-        // slice P1; hydration is P2a's).
-        if (cx.build.prerender == .client) try js.expression(body, try js.call(try js.name(try cx.runtime("unprerender")), &.{try js.name(at)}));
+        // The client of a prerendering build takes the prerendered page over
+        // (`prerender.md` §6): its view is one element of its own, or the
+        // prerender tree's render function refused it.
+        pg.hydrating = cx.build.prerender == .client;
+        if (pg.hydrating and (pg.top_nodes.len != 1 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0))
+            return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         // An application's `init` is handed the page's address and key
         // (§10), read inside the mount's guard.
         const init = if (pg.p.constructor == 3)
@@ -1260,7 +1356,12 @@ const Page = struct {
             pg.retitle = try cx.fresh("retitle");
             try js.constant(body, pg.retitle.?, try js.arrow(&.{}, blk));
         }
-        if (pg.top_nodes.len == 1) {
+        if (pg.hydrating) {
+            cx.at(view_node);
+            var html: std.ArrayList(u8) = .empty;
+            try serialise(pg.a(), &html, pg.top_nodes, null, true);
+            try pg.take(at, html.items);
+        } else if (pg.top_nodes.len == 1) {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
             // The whole string the parser reads: nothing is appended after
@@ -1277,8 +1378,10 @@ const Page = struct {
         }
         // The runs of roots mounted through one table (§8.4, amended
         // 2026-10-24), and whether a piece is reached other than as a child
-        // of its run's parent.
-        const root_runs = try pg.rootRuns();
+        // of its run's parent. The hydrating mount has none: a run reads
+        // each root's table from the page, and a piece's table is cut from
+        // the merged one (`prerender.md` §6.2).
+        const root_runs = if (pg.hydrating) &.{} else try pg.rootRuns();
         const piece_placed = for (pg.pieces.items, 0..) |_, i| {
             const r = runOf(root_runs, @intCast(i)) orelse break true;
             switch (r.elements) {
@@ -1292,7 +1395,7 @@ const Page = struct {
         } else for (pg.events.items) |ev| {
             if (ev.target != null) break true;
         } else false;
-        if (placed) {
+        if (placed and !pg.hydrating) {
             // One element referred to is reached by its path from the top
             // node, which costs less than the list of all of them; more are
             // read from the list (§8.2).
@@ -1315,6 +1418,17 @@ const Page = struct {
         for (pg.pieces.items, 0..) |*u, i| {
             if (runOf(root_runs, @intCast(i)) != null) continue;
             u.elements = try cx.fresh("elements");
+            if (pg.hydrating) {
+                // The slice of the merged table below the root's top
+                // element: its elements are a run of it (`prerender.md`
+                // §6.2).
+                const from = u.target + 2;
+                try js.constant(body, u.elements, try js.call(try js.member(try js.name(pg.elements.?), "slice"), &.{
+                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from})),
+                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from + u.data.count})),
+                }));
+                continue;
+            }
             try js.constant(body, u.elements, try js.call(try js.name(try cx.runtime("part")), &.{try pg.ref(u.target)}));
         }
         // Handler-bound arguments share the handler's lifetime. Release
@@ -1608,6 +1722,37 @@ const Page = struct {
         return js.arrow(&.{id}, body);
     }
 
+    // ---- Hydration (`prerender.md` §6) ----------------------------------
+
+    /// The hydrating mount's table (`prerender.md` §6.1–§6.4): the
+    /// runtime's `take` given the mount element, the unit's string, each
+    /// eager arm as three numbers — its element's index in the table, how
+    /// many elements it holds, its parent's index — and the tag of each
+    /// element of the table, space-separated, empty in a release build for
+    /// one no code refers to, which the mount checks the page against.
+    fn take(pg: *Page, at: m.Name, html: []const u8) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        var layout: Layout = .{ .a = pg.a() };
+        try layout.unit(pg, pg.top_nodes[0]);
+        const arms = try pg.a().alloc(m.Expr, 3 * layout.arms.items.len);
+        for (layout.arms.items, 0..) |r, k| for ([_]u32{ r.at, r.len, r.parent }, 0..) |x, j| {
+            arms[3 * k + j] = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{x}));
+        };
+        var tags: std.ArrayList(u8) = .empty;
+        for (layout.names.items, layout.referenced.items, 0..) |name, yes, i| {
+            if (i != 0) try tags.append(pg.a(), ' ');
+            if (yes or !cx.build.release) try tags.appendSlice(pg.a(), name);
+        }
+        pg.elements = try cx.fresh("elements");
+        try js.constant(pg.body, pg.elements.?, try js.call(try js.name(try cx.runtime("take")), &.{
+            try js.name(at),
+            try pg.htmlValue(html),
+            try js.array(arms),
+            try js.string(tags.items),
+        }));
+    }
+
     // ---- The string form (`prerender.md` §4) ---------------------------
 
     /// The program's render function, in the prerender tree in the mount's
@@ -1844,6 +1989,7 @@ const Page = struct {
     /// The element at `target`: the top node, or its descendant by place.
     fn ref(pg: *Page, target: ?u32) m.Error!m.Expr {
         const js = pg.cx.js;
+        if (pg.hydrating) return js.index(try js.name(pg.elements.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{if (target) |t| t + 1 else 0})));
         const t = target orelse return js.name(pg.node.?);
         if (pg.single) return js.name(pg.elements.?);
         return js.index(try js.name(pg.elements.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{t})));

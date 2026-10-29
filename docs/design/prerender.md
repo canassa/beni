@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slice P1 built** (2026-10-29, #1165, §11 *As built — P1*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1 and P2a built** (2026-10-29, #1165, #1178, §11 *As built — P1*, *As built — P2a*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -318,6 +318,13 @@ after the element's children (`Browser.mountAt`'s doc comment).
   throws *"cannot take over the page at …: the prerendered view is not inside the element the program
   mounts at"*, as it throws for a missing mount element (`browser-inline.md` §6); a release build
   mounts fresh (§6.4).
+
+  *Amended 2026-10-29, as built in P2a (#1178).* "Inside" is "a child of": the mount takes the
+  unit over only when its parent is the mount element, as a fresh mount's unit is. A unit deeper
+  down — `{{view}}` inside a `<main>` of a body-mounted program's shell — is outside it in this
+  sense, since taking it over would leave the program where a fresh mount never puts it. A release
+  build takes such a unit out of the page before it mounts fresh, so the page does not show it
+  twice. Where among the mount element's children the unit stands is not checked.
 - `{{entry}}` stays an absolute path from the base, so a page at `blog/my-blog.html` loads
   `/_main.mjs` as `index.html` does (`backend.md` §2, *Absolute, from the base*).
 
@@ -375,6 +382,13 @@ page reaches only when it hydrates.
 
 `stop` removes the unit's top node as it does today (`Inline.own`), so a hydrated page unmounts as a
 fresh one does.
+
+*Amended 2026-10-29, as built in P2a (#1178).* The page keeps a second difference from a fresh one,
+which §6.2 decides: a hidden arm's anchor is its comment `<!--n-->`, where a fresh mount keeps an
+empty text node. Neither difference reaches the program, and the corpus's transcript prints both
+pages alike (`tests/corpus/README.md`, *Prerendered pages*). The hydrating mount is one runtime
+function, `Inline.take`, which finds the unit, merges the table, checks the page and, on a
+difference or with no unit, mounts fresh; the mount's code after it is today's.
 
 ### 6.2 The element table
 
@@ -441,6 +455,18 @@ names the first element that differs. The program is then exactly the fresh page
 attached to an element it was not compiled for. The cost is the prerender's benefit for that page
 load — focus, selection and scroll inside the unit are reset. Whether this, or stopping the page as
 a defect, is right is the owner's decision (§10, question 3).
+
+*Amended 2026-10-29, as built in P2a (#1178).* An arm opens where its comment stands, so the
+check covers the comments too, in every build: a comment whose text is a number names an arm;
+the arms it names follow each other in their ordinals' order, none inside another the page
+hides, and each comment's parent is the element the arm's parent is, between the page's element
+before the arm and the one after it in document order. A comment of any other text is not the
+program's and is passed over. The tags are compared first, over the table as far as it was
+merged, so the warning names the element a host inserted or replaced (`browser/prerender/
+Tampered`, `Retagged`); the count and the comments' places come after. One string of tags,
+space-separated, one per element of the table — the top element first — and empty in a release
+build for an element no code refers to, carries the count as well (`emit/prerender/`,
+`emit/release/prerender/`).
 
 ### 6.5 Input before the program runs
 
@@ -698,3 +724,39 @@ prerendered page is byte-identical at every --jobs*, and `prerender_needs_node` 
 `tests/blackbox/browser_test.zig`'s, an empty `PATH`. The emitted code of a build that does not
 prerender is unchanged: no `emit/inline/` or `emit/release/inline/` golden moved, and only the
 development source maps of `_platform/Inline.mjs`, which carry the module's text, did.
+
+**As built — P2a** (2026-10-29, #1178). The client of a prerendering build calls `Inline.take` in
+place of the string's insertion (§6.1's amendment): `take(at, html, arms, tags)`, the mount
+element, the unit's string, three numbers per eager arm — its element's index in the table, the
+elements it holds, its parent's index — and the tag string of §6.4's amendment. It gives the
+table with the top element at 0, so the mount refers to every element as `E[n + 1]` and to no
+path; each piece's table is `E.slice` below its top element, and pieces are not mounted as a run
+(`Inline.roots`), which reads each root's table from the page. A piece's owner records its arms
+and the elements its factory refers to (`PieceData.arm_runs`, `refs`) for the program site.
+`Inline.unprerender` is gone. The lowering interface does not change. The corpus's checks are
+`tests/corpus/README.md`'s *Prerendered pages*, since P2a: every element is marked before load,
+the steps `fresh`, `inject` and `retag`, the normalisation, and goldens of a build's own; the P2a
+fixtures are `Tampered`, `Retagged`, `RetagUnseen` (an element no code refers to: a release build
+takes the page over, a development build mounts fresh), `ArmOpens`, `PieceArm`, `LoneElement` and
+`WrongPlace`, and `emit/prerender/` and `emit/release/prerender/` pin the shape. A page that does
+not prerender ships what it did: no `emit/inline/` or `emit/release/inline/` golden moved, and
+`bench/size.mjs`'s `page` lines are the same bytes.
+
+Measured with `bench/ui/hydrate.mjs` (report 29's harness; headless Chrome, 21 fresh loads per
+page and subject, rotated; release builds): beni's hydrating mount of the page
+`beni build --prerender --release` wrote, against Solid 2's (`2.0.0-rc.9`) `hydrate` of its own
+hydratable `renderToString` output of the same page, its hydration script in the page's head.
+The time is from the module's start to the end of the mount, every handler attached, and the
+microtasks the mount queued; then a real click must change the page. Medians, in ms:
+
+| page | beni | Solid 2 | beni's JS, brotli | Solid's JS, brotli |
+|---|--:|--:|--:|--:|
+| `counter` (a text hole, two buttons) | 0.730 | 3.460 | 1 104 B | 18 493 B |
+| `static` (research 29's static-heavy page, ~2 000 elements, 50 holes) | 1.745 | 5.280 | 1 465 B | 21 090 B |
+| `arms` (30 panels, every other body hidden) | 1.695 | 5.475 | 2 010 B | 19 743 B |
+
+From the navigation's start to the same point, beni's medians are 13.8, 16.4 and 12.9 ms, Solid's
+17.1, 20.3 and 17.8 ms. What hydration adds to beni's client, against the same program built
+without `--prerender`, is 583, 640 and 687 B brotli on the three pages (the runtime's `take` and
+the unit's arms and tags), against Solid's 1 439 B of hydration (research 27 §6.8). The run takes
+under a minute.

@@ -1,0 +1,27 @@
+-- retag h1 h2
+-- fresh
+-- load
+console.warn: The prerendered page is not the one this program makes: its element 1 is a <h2>, where the program makes a <h1>. The program mounts it fresh.
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <output>"0"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <output>"1"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

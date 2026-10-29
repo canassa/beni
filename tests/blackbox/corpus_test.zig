@@ -788,6 +788,20 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.app = true;
             fixture.release = true;
         }
+        // `emit/prerender/` and `emit/release/prerender/`: the same, built
+        // with the hidden `--prerender` — the client of a prerendering
+        // build, whose mount takes the page over (`prerender.md` §6).
+        for ([_]bool{ false, true }) |release| {
+            const prerender_dir = try std.fs.path.join(arena, if (release) &.{ kind_dir, "release", "prerender" } else &.{ kind_dir, "prerender" });
+            const prerender_start = fixtures.items.len;
+            try collect(arena, prerender_dir, false, false, &fixtures, true);
+            for (fixtures.items[prerender_start..]) |*fixture| {
+                fixture.platform = "browser-inline";
+                fixture.app = true;
+                fixture.release = release;
+                fixture.prerender = true;
+            }
+        }
     }
     if (kind == .build_bad or kind == .check_bad or kind == .browser) {
         const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
@@ -2847,6 +2861,26 @@ const Case = struct {
             .{ .pass = .release, .out = "release", .prerender = false },
             .{ .pass = .release, .out = "release-pre", .prerender = true },
         };
+        // A prerendering build whose page differs from the page with no view
+        // on purpose (`tests/corpus/README.md`, *Prerendered pages*) has its
+        // own golden, `.dev-prerender-expected` or
+        // `.release-prerender-expected`, and may have its own steps beside
+        // it, `.dev-prerender-steps`: a development build that warns, or
+        // whose mount faults.
+        var goldens: [builds.len][]const u8 = @splat("expected");
+        var scripts: [builds.len]Script = @splat(script);
+        for (builds, &goldens, &scripts) |b, *golden, *own_script| {
+            if (!b.prerender) continue;
+            const ext = try std.fmt.allocPrint(c.arena, "{s}-prerender-expected", .{@tagName(b.pass)});
+            if (Io.Dir.cwd().access(testing.io, try c.goldenPath(ext), .{})) |_| golden.* = ext else |_| {}
+            const steps_ext = try std.fmt.allocPrint(c.arena, "{s}-prerender-steps", .{@tagName(b.pass)});
+            const own_path = try c.goldenPath(steps_ext);
+            if (Io.Dir.cwd().readFileAlloc(testing.io, own_path, c.arena, .limited(world.max_stream_bytes))) |bytes| {
+                const name = std.fs.path.basename(own_path);
+                try c.w.write(name, bytes);
+                own_script.* = .{ .name = name, .bytes = bytes };
+            } else |_| {}
+        }
         var plans: [builds.len]PagePlan = undefined;
         for (builds, &plans, 0..) |b, *plan, i| {
             var args: std.ArrayList([]const u8) = .empty;
@@ -2885,32 +2919,47 @@ const Case = struct {
                     }
                 }
             }
+            const own_golden = !std.mem.eql(u8, goldens[i], "expected");
             plan.* = try c.checkedPlan(.{
                 .pass = b.pass,
-                .golden = "expected",
-                .bless = c.bless and i == 0,
+                .golden = goldens[i],
+                .bless = c.bless and (i == 0 or own_golden),
                 .out = b.out,
                 .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{b.out}),
                 .skip = false,
-            }, h, script, record);
+            }, h, scripts[i], record);
         }
-        var entries: std.ArrayList(browser.Entry) = .empty;
-        for (plans) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .html = true });
-        var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
-        if (entries.items.len != 0) {
-            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
+        // The pages of one script run in one driver; a build with steps of
+        // its own runs in a driver of its own.
+        var shown: [builds.len]?world.Result = @splat(null);
+        var runs: [builds.len]world.Result = undefined;
+        var done: [builds.len]bool = @splat(false);
+        for (0..builds.len) |first| {
+            if (done[first]) continue;
+            var entries: std.ArrayList(browser.Entry) = .empty;
+            var members: std.ArrayList(usize) = .empty;
+            for (first..builds.len) |j| {
+                if (done[j] or !std.mem.eql(u8, scripts[j].name.?, scripts[first].name.?)) continue;
+                done[j] = true;
+                if (plans[j].skip) continue;
+                try entries.append(c.arena, .{ .path = plans[j].entry, .html = true });
+                try members.append(c.arena, j);
+            }
+            if (entries.items.len == 0) continue;
+            const got = browser.driveAll(c.w, h, chrome_endpoint, entries.items, scripts[first].name, c.cfg.timeout_ms) catch |err| {
                 detail("{s}: cannot run the pages ({t}); is node on PATH?\n", .{ c.fixture.name, err });
                 return err;
             };
+            for (members.items, 0..) |j, k| {
+                shown[j] = got.pages[k];
+                runs[j] = got.run;
+            }
         }
         var verified: [4]?[]const u8 = @splat(null);
-        var next: usize = 0;
-        for (plans, &verified) |p, *line| {
+        for (plans, &verified, 0..) |p, *line, j| {
             if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
-            const page = shown.pages[next];
-            next += 1;
-            line.* = try c.pageVerdict(p, shown.run, page, h, script);
+            line.* = try c.pageVerdict(p, runs[j], shown[j], h, scripts[j]);
         }
         if (recording) {
             for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
@@ -3606,9 +3655,14 @@ const Case = struct {
         // one rule for the whole corpus, so that a shape golden can be about
         // a `Debug`-using program the day one is wanted.
         if (c.fixture.release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+        // A prerendering build runs the suite's `node` (`prerender.md` §5.1).
+        if (c.fixture.prerender) try args.append(c.arena, "--prerender");
         try args.appendSlice(c.arena, sources.items);
 
-        const built = try c.inProject(args.items);
+        const built = if (c.fixture.prerender)
+            try c.w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms, .path = try c.w.nodePath() })
+        else
+            try c.inProject(args.items);
         if (built.exit_code != 0) {
             detail("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
             because("build exit {d}: {s}: {s}", .{ built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });

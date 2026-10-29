@@ -1,0 +1,58 @@
+-- Hidden arms opened after the takeover (docs/design/prerender.md §6.2):
+-- `init` hides the panel, whose elements the page does not hold — its
+-- comment `<!--0-->` stands in their place, and the arm inside it writes
+-- nothing — and hides the badge inside the shown `<div>`, `<!--3-->`. The
+-- comment is each arm's anchor: `Bump` opens the badge where its comment
+-- stood, `Toggle` opens the panel made from the unit's string with its
+-- holes written and its button wired, closes it, and opens it again.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    count : Int
+
+
+type Msg
+    = Toggle
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+        Bump →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main data-role="app">
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        {if model.open then
+            <section data-role="panel">
+                <p>{model.count}</p>
+                <button data-role="inner" onClick={Bump}>+1</button>
+                {if model.count > 1 then <em>big</em> else <></>}
+            </section>
+         else
+            <></>
+        }
+        <div data-role="shown">
+            {if model.open then <></> else <span data-role="closed">closed at {model.count}</span>}
+            {if model.count > 0 then <b>{model.count}</b> else <></>}
+            <button data-role="bump" onClick={Bump}>Bump</button>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { open = False, count = 0 }, update = update, view = view })
+        "root"

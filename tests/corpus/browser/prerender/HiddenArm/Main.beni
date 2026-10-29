@@ -2,8 +2,9 @@
 -- first model hides is not in the page, and in its place stands the
 -- comment `<!--0-->`, its ordinal among the unit's eager arms in document
 -- order; the arm inside it writes nothing at all, and the arm after it,
--- shown, is written, its ordinal 2. Opening the popup on the page the
--- client mounted makes it from its template, as on a page with no view.
+-- shown, is written, its ordinal 2. On the page the client took over, the
+-- popup opens made from the unit's string, where its comment stands, which
+-- is its anchor (§6.2).
 import Browser
 import Html exposing (Html)
 import Tea

@@ -1,0 +1,37 @@
+-- A page whose code refers to one element, behind a hidden arm
+-- (docs/design/prerender.md §6.2): a fresh mount reaches it by its path,
+-- `firstChild` from the top element, which on the prerendered page is the
+-- arm's comment. The hydrating mount reads no path: the element is made
+-- from the unit's string, and its comment is its anchor.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app" onClick={Toggle}>
+        {if model.open then <p data-role="note">Note</p> else <></>}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view })
+        "root"

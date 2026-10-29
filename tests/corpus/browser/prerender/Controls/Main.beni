@@ -1,9 +1,9 @@
 -- The controls' first render (docs/design/prerender.md §4.1): a text
 -- input's `value` is its `value` attribute, a checkbox `init` checks is
 -- `checked`, and the option whose value the `select`'s is, the first such
--- one, is `selected`. The client mounts fresh, so the controls show the
--- model's values as properties either way, and each event writes them
--- back.
+-- one, is `selected`. The client takes the page over (§6.1): the controls
+-- keep those attributes, which a fresh mount does not write, and show the
+-- model's values as properties either way; each event writes them back.
 import Browser
 import Html exposing (Html)
 import Tea

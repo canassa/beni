@@ -1,0 +1,3 @@
+retag [data-role=inc] span
+fresh
+click [data-role=inc]

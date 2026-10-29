@@ -1,0 +1,34 @@
+-- A release build's hydrating mount (docs/design/prerender.md §6.4): the
+-- tags handed to `take` are those of the elements the page's code refers to
+-- — the top element for its listener and the arm's `<p>` — and the `<h1>`'s
+-- is left empty, unchecked; `take`, its merge and its checks are in the one
+-- file, with no warning: the development build's prose is not shipped.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <div onClick={Toggle}>
+        <h1>Title</h1>
+        {if model.open then <p>Open</p> else <></>}
+    </div>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view }

@@ -1,0 +1,38 @@
+-- A page a host changed after the build (docs/design/prerender.md §6.4):
+-- an element inserted into the prerendered view before the program loads,
+-- as a browser extension inserts one. The page is not the one the program
+-- makes, so the mount takes the unit out and mounts fresh in the same task
+-- — the inserted element goes with it — and a development build first
+-- warns, naming the element. The program then behaves as on a page with
+-- no view.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

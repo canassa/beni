@@ -1,0 +1,63 @@
+-- A hidden arm inside another module's piece (docs/design/prerender.md
+-- §6.2): the program hides an arm of its own before two pieces, `Panel`'s,
+-- which hides its body, `<!--1-->`, and `Drawer`'s, which shows its own.
+-- Each piece's table is the slice of the merged table below its top
+-- element, so the first panel's body is made from the unit's string and
+-- opens at its comment, and each piece's listeners are on its own elements.
+import Browser
+import Drawer
+import Html exposing (Html)
+import Panel
+import Tea
+
+
+type alias Model =
+    help : Bool
+    a : Panel.Model
+    b : Drawer.Model
+
+
+type Msg
+    = Help
+    | A Panel.Msg
+    | B Drawer.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Help →
+            { model | help = not model.help }
+
+        A sub →
+            { model | a = Panel.update sub model.a }
+
+        B sub →
+            { model | b = Drawer.update sub model.b }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <button data-role="help" onClick={Help}>Help</button>
+        {if model.help then <p data-role="note">Two panels.</p> else <></>}
+        {Html.map (Panel.view model.a) A}
+        {Html.map (Drawer.view model.b) B}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ →
+                    { help = False
+                    , a = { open = False, label = "First" }
+                    , b = { open = True, label = "Second" }
+                    }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
