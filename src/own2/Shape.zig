@@ -57,7 +57,7 @@ pub const Account = Ids.Account;
 
 pub const Error = Ids.ChargeError;
 
-pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions, choice };
+pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions, choice, view };
 
 /// One node (§3.3). `a`, `b` by kind: `node`: the children map; `delta`:
 /// base + the override map; `recast`: inner; `union`, `positions`: left, right.
@@ -114,6 +114,13 @@ pub const Table = struct {
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
+    /// Views (§2.11 *Representation of a view*): the layer that makes them,
+    /// a view's answer, and `viewReach`'s images per (radix node, environment).
+    instantiation: ?Instantiation = null,
+    memo_force: stamped.Column(NodeId, NodeId) = .{},
+    /// A view's one step, when it is a view again: the chain `force` followed.
+    memo_step: stamped.Column(NodeId, NodeId) = .{},
+    memo_view_reach: Ids.FixedDict(2) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -132,6 +139,9 @@ pub const Table = struct {
         t.union_seen.deinit(gpa);
         t.memo_map.deinit(gpa);
         t.arrivals_memo.deinit(gpa);
+        t.memo_force.deinit(gpa);
+        t.memo_step.deinit(gpa);
+        t.memo_view_reach.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -193,10 +203,23 @@ pub const Table = struct {
                 continue;
             }
             const d = t.get(x);
+            // A view's cells are its answer's.
+            if (d.kind == .view) {
+                const answer = try t.force(gpa, account, x);
+                if (t.isLazy(answer)) {
+                    try stack.append(gpa, answer);
+                    continue;
+                }
+                try account.reserve(.shape, 1);
+                t.nodes.items(.cells)[x.int()] = t.cells(answer);
+                _ = stack.pop();
+                continue;
+            }
             // A recast's or a delta's cells are its inner's or base's, lazy
-            // with them; a positions node's its sides'.
+            // with them; a positions node's, a union's or a choice's its sides' (a raw one
+            // a view made, §2.11).
             const l: NodeId = .from(d.a);
-            const r: NodeId = if (d.kind == .positions) .from(d.b) else l;
+            const r: NodeId = if (d.kind == .positions or d.kind == .@"union" or d.kind == .choice) .from(d.b) else l;
             if (t.isLazy(l) or t.isLazy(r)) {
                 if (t.isLazy(l)) try stack.append(gpa, l);
                 if (r != l and t.isLazy(r)) try stack.append(gpa, r);
@@ -348,6 +371,141 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = t.cells(in), .a = in.int(), .b = 0, .reach = .none });
     }
 
+    // ---- views (§2.11 *Representation of a view*, #1097) ---------------------------
+
+    /// A view's environment, as the layer that makes views (`Calls`) keeps it:
+    /// the images of a template's leaf, own cells and one reach cell under the
+    /// environment `env`. Set once per table; views exist only where it is.
+    pub const Instantiation = struct {
+        ctx: *anyopaque,
+        /// The cell sets of the tables the views live in.
+        sets: *Cell.Radix,
+        /// A template leaf's image: each parameter cell re-rooted at the
+        /// actual, the others mapped, the parts joined raw.
+        leaf: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!NodeId,
+        /// A template node's own cells' image at `at`.
+        cells: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, cells: SetId, at: PlaceId) Error!SetId,
+        /// One template reach cell's image: a parameter cell the actual's
+        /// reach at its path, any other its mapped self.
+        reach: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, cell: CellId, approx: u1) Error!SetId,
+    };
+
+    /// `view(template, env)`: a call's result by reference, interned, its
+    /// cells lazy until a reader asks.
+    pub fn view(t: *Table, gpa: Allocator, account: *Account, template: NodeId, env: u32) Error!NodeId {
+        return t.make(gpa, account, .{ .kind = .view, .place = t.place(template), .cells = lazy_cells, .a = template.int(), .b = env, .reach = .none });
+    }
+
+    /// `n`, or the answer of a view already forced: a reader past the force
+    /// (a fold's source walk) reads what the force left.
+    pub fn forced(t: *const Table, n: NodeId) NodeId {
+        if (t.kind(n) != .view) return n;
+        return t.memo_force.get(n).?;
+    }
+
+    /// `n`, or a view's answer: expanded one step (its children views
+    /// again), memoised. A chain of views (an answer that is a view) is
+    /// followed once, in growth past its first step, and every view on it
+    /// then answers the first node that is not one.
+    pub fn force(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
+        if (t.kind(n) != .view) return n;
+        try account.reserve(.memo, 1);
+        if (t.memo_force.get(n)) |hit| return hit;
+        var chain: std.ArrayList(NodeId) = .empty;
+        defer chain.deinit(gpa);
+        var task: ?Account.Kernel = null;
+        defer if (task) |k| account.leave(k);
+        var at = n;
+        while (t.kind(at) == .view) {
+            if (t.memo_force.get(at)) |hit| {
+                at = hit;
+                break;
+            }
+            if (chain.items.len == 1) task = try account.enter(gpa, null);
+            try chain.append(gpa, at);
+            const next = try t.expandView(gpa, account, at);
+            if (t.kind(next) == .view) try t.memo_step.put(gpa, at, next);
+            at = next;
+        }
+        try account.reserve(.memo, @intCast(chain.items.len));
+        for (chain.items) |v| try t.memo_force.put(gpa, v, at);
+        return at;
+    }
+
+    /// The view a forced view `v`'s one step answered, when that was a view
+    /// again (a chain, §2.11); null at the chain's last view.
+    pub fn chainNext(t: *const Table, v: NodeId) ?NodeId {
+        return t.memo_step.get(v);
+    }
+
+    /// A view's one step (§2.11): its template's kind with views for
+    /// children; a leaf's image; the sides of a join built raw, lazy, with no
+    /// absorption test, so a step never reads them.
+    fn expandView(t: *Table, gpa: Allocator, account: *Account, v: NodeId) Error!NodeId {
+        const inst = t.instantiation orelse unreachable; // a view exists only under one
+        const cellsets = inst.sets;
+        const env = t.nodes.items(.b)[v.int()];
+        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const d = t.get(template);
+        return switch (d.kind) {
+            .leaf => inst.leaf(inst.ctx, t, gpa, account, env, template),
+            .node => blk: {
+                const c = if (d.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, env, try t.cellsOf(gpa, account, cellsets, template), d.place);
+                var over: u32 = over_none;
+                var it = t.overEntries(d.a);
+                while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, try t.view(gpa, account, e.node, env));
+                break :blk t.node(gpa, account, d.place, c, over);
+            },
+            .delta => blk: {
+                var over: u32 = over_none;
+                var it = t.overEntries(d.b);
+                while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, try t.view(gpa, account, e.node, env));
+                const base = try t.view(gpa, account, .from(d.a), env);
+                break :blk t.make(gpa, account, .{ .kind = .delta, .place = d.place, .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
+            },
+            .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = 0, .reach = .none }),
+            .@"union", .choice, .positions => t.make(gpa, account, .{ .kind = d.kind, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = (try t.view(gpa, account, .from(d.b), env)).int(), .reach = .none }),
+            // A class built of an earlier call's views: that view's answer,
+            // read under this environment.
+            .view => t.view(gpa, account, try t.force(gpa, account, template), env),
+        };
+    }
+
+    /// `reach(view(T, E))`: the image of `reach(T)` under `E`, mapped per
+    /// radix node of that set and memoised per (radix node, `E`), each node
+    /// charged before it is mapped: a nested view's reach is a part of its
+    /// parent's, so a depth-d value's reaches cost O(d), never O(d²).
+    fn viewReach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, v: NodeId) Error!SetId {
+        const inst = t.instantiation orelse unreachable;
+        const env = t.nodes.items(.b)[v.int()];
+        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const whole = try t.reach(gpa, account, cellsets, template);
+        const Frame = struct { set: SetId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .set = whole, .expanded = false });
+        while (stack.pop()) |f| {
+            if (f.set == .none) continue;
+            try account.reserve(.memo, 1);
+            if (t.memo_view_reach.get(.{ f.set.int(), env }) != null) continue;
+            if (cellsets.branches(f.set)) |two| {
+                if (!f.expanded) {
+                    try stack.appendSlice(gpa, &.{ .{ .set = f.set, .expanded = true }, .{ .set = two[0], .expanded = false }, .{ .set = two[1], .expanded = false } });
+                    continue;
+                }
+                const l = if (two[0] == .none) SetId.none else SetId.from(t.memo_view_reach.get(.{ two[0].int(), env }).?);
+                const r = if (two[1] == .none) SetId.none else SetId.from(t.memo_view_reach.get(.{ two[1].int(), env }).?);
+                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = (try cellsets.unionWith(gpa, .growth(account), l, r)).int();
+            } else {
+                var it = cellsets.iterate(f.set);
+                const e = it.next().?;
+                try account.reserve(.inspection, 1);
+                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = (try inst.reach(inst.ctx, t, gpa, account, env, .from(e.key), e.value)).int();
+            }
+        }
+        return if (whole == .none) .none else .from(t.memo_view_reach.get(.{ whole.int(), env }).?);
+    }
+
     /// A stepped recast that keeps the whole inner (§2.13.9: no part of it
     /// matches the step): it stands for some value inside the inner, so its
     /// cells are what the inner reaches, approximately — never the inner's
@@ -456,6 +614,11 @@ pub const Table = struct {
                     try t.memo_map.put(gpa, f.node, if (kept == .none) .none else if (kept == d.cells) f.node else try t.leaf(gpa, account, d.place, kept));
                 },
                 .node, .delta, .recast => try t.memo_map.put(gpa, f.node, f.node),
+                // A view is its answer here (a pattern's position of a call's result).
+                .view => if (!f.expanded) {
+                    const answer = try t.force(gpa, account, f.node);
+                    try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = answer, .expanded = false } });
+                } else try t.memo_map.put(gpa, f.node, t.memo_map.get(t.memo_force.get(f.node).?).?),
                 .@"union", .choice, .positions => if (!f.expanded) {
                     try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
                 } else {
@@ -596,13 +759,13 @@ pub const Table = struct {
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = true });
-        try t.projBelow(gpa, places, &stack, n, s);
+        try t.projBelow(gpa, account, places, &stack, n, s);
         while (stack.pop()) |f| {
             if (!f.expanded) {
                 try account.reserve(.memo, 1);
                 if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                try t.projBelow(gpa, places, &stack, f.node, s);
+                try t.projBelow(gpa, account, places, &stack, f.node, s);
                 continue;
             }
             if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
@@ -613,12 +776,14 @@ pub const Table = struct {
     }
 
     /// The nodes `n`'s projection at `s` reads the projections of.
-    fn projBelow(t: *Table, gpa: Allocator, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
+    fn projBelow(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
         switch (d.kind) {
             .recast => if (t.recastPart(places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
             .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
+            // A view projects as its answer does.
+            .view => try stack.append(gpa, .{ .node = try t.force(gpa, account, n), .expanded = false }),
             else => {},
         }
     }
@@ -656,6 +821,7 @@ pub const Table = struct {
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
+            .view => got(t, t.memo_force.get(n).?.int(), s),
         };
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
     }
@@ -784,6 +950,9 @@ pub const Table = struct {
                 },
                 .recast => try r.s.kids.append(r.gpa, .from(d.a)),
                 .@"union", .choice, .positions => try r.s.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
+                // A view's reach is its own cells (`own`): `viewReach`, never
+                // its answer's graph walked.
+                .view => {},
             }
         }
 
@@ -797,11 +966,14 @@ pub const Table = struct {
 
         /// A member's own cells, filtered in `arrivals` mode: a record each.
         fn own(r: *Reach, m: NodeId) Error!SetId {
+            // A view stands for its whole reach (§2.11, `viewReach`).
+            const view_reach: ?SetId = if (r.t.kind(m) == .view) try r.t.viewReach(r.gpa, r.account, r.sets, m) else null;
             // A lazy node's cells are its parts', which the reach takes anyway.
-            if (r.t.isLazy(m)) return .none;
-            const cellt = r.filter orelse return r.t.cells(m);
+            if (view_reach == null and r.t.isLazy(m)) return .none;
+            const own_cells = view_reach orelse r.t.cells(m);
+            const cellt = r.filter orelse return own_cells;
             var out: SetId = .none;
-            var it = r.sets.iterate(r.t.cells(m));
+            var it = r.sets.iterate(own_cells);
             while (it.next()) |e| {
                 try r.account.reserve(.inspection, 1);
                 const o = cellt.origin(.from(e.key));
@@ -913,12 +1085,18 @@ pub const Table = struct {
                     try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false } });
                     continue;
                 },
+                // A view names its answer's steps.
+                .view => {
+                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = try t.force(gpa, account, x), .expanded = false } });
+                    continue;
+                },
                 else => {},
             };
             try account.reserve(.inspection, 1);
             buf.clearRetainingCapacity();
             switch (d.kind) {
                 .leaf, .recast => {},
+                .view => try t.mergeNamed(gpa, account, &buf, t.named_memo.get(t.memo_force.get(x).?).?),
                 .node, .delta => {
                     var it = t.overEntries(if (d.kind == .node) d.a else d.b);
                     while (it.next()) |e| {
@@ -1022,6 +1200,8 @@ pub const Table = struct {
                     for (kids.items[0 .. kids.items.len - 1]) |k| r = rankAbove(r, t.rank_memo.get(k) orelse rank_unbounded);
                     r = @max(r, t.rank_memo.get(kids.items[kids.items.len - 1]) orelse rank_unbounded);
                 },
+                // A view ranks as its answer (`rankKids` gave it).
+                .view => r = t.rank_memo.get(kids.items[0]) orelse rank_unbounded,
                 .@"union", .choice, .positions => for (kids.items) |k| {
                     r = @max(r, t.rank_memo.get(k) orelse rank_unbounded);
                 },
@@ -1051,6 +1231,7 @@ pub const Table = struct {
                 if (d.kind == .delta) try out.append(gpa, .from(d.a));
             },
             .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            .view => try out.append(gpa, try t.force(gpa, account, x)),
         }
     }
 
@@ -1322,6 +1503,11 @@ pub const Table = struct {
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
                         try stack.appendSlice(gpa, &.{ .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
                     },
+                    // A view's image is its answer's.
+                    .view => {
+                        const answer = try t.force(gpa, account, n);
+                        try stack.appendSlice(gpa, &.{ .{ .node = n, .expanded = true }, .{ .node = answer, .expanded = false } });
+                    },
                     .node, .delta => {
                         // Pre-allocate so a cyclic child finds its image (the knot).
                         const c = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells);
@@ -1346,6 +1532,10 @@ pub const Table = struct {
             }
             switch (d.kind) {
                 .leaf => unreachable,
+                .view => {
+                    if (t.memo_map.get(n) != null) continue;
+                    try t.memo_map.put(gpa, n, t.memo_map.get(t.memo_force.get(n).?).?);
+                },
                 .recast => {
                     if (t.memo_map.get(n) != null) continue;
                     try t.memo_map.put(gpa, n, try t.recast(gpa, account, d.place, t.memo_map.get(.from(d.a)).?));
@@ -1700,12 +1890,14 @@ pub const Table = struct {
                 .delta => {
                     var it = w.t.overEntries(d.b);
                     while (it.next()) |e| try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
-                    if (w.t.kind(.from(d.a)) == .node) {
-                        var bt = w.t.overEntries(w.t.nodes.items(.a)[d.a]);
+                    const base = try w.t.force(w.gpa, w.account, .from(d.a));
+                    if (w.t.kind(base) == .node) {
+                        var bt = w.t.overEntries(w.t.nodes.items(.a)[base.int()]);
                         while (bt.next()) |e| if (w.t.overGet(d.b, e.step) == null) try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
                     }
                 },
                 .leaf, .recast, .@"union", .choice, .positions => {},
+                .view => unreachable, // `run` forces before it reads edges
             }
         }
 
@@ -1716,41 +1908,43 @@ pub const Table = struct {
             defer stack.deinit(w.gpa);
             try stack.append(w.gpa, .{ .node = root, .path = try w.places.rootPath(w.gpa, w.t.place(root)) });
             while (stack.pop()) |f| {
-                try w.touch(f.node);
-                const seen_before = w.occurs.get(f.node) orelse 0;
-                try w.occurs.put(w.gpa, f.node, seen_before + 1);
+                // Widen forces as it descends (§2.11): it folds answers, never views.
+                const fnode = try w.t.force(w.gpa, w.account, f.node);
+                try w.touch(fnode);
+                const seen_before = w.occurs.get(fnode) orelse 0;
+                try w.occurs.put(w.gpa, fnode, seen_before + 1);
                 try w.account.reserve(.edge, 1);
                 // `⟲` is its ancestor's class: the re-entered place's node.
                 const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
                 const key = if (reentry) w.places.pathParent(f.path) else f.path;
                 if (w.by_path.get(key)) |cls| {
-                    _ = try w.unite(cls, f.node.int());
+                    _ = try w.unite(cls, fnode.int());
                 } else {
-                    try w.by_path.put(w.gpa, key, w.find(f.node.int()));
+                    try w.by_path.put(w.gpa, key, w.find(fnode.int()));
                 }
-                if (w.visited.contains(f.node)) continue;
-                try w.visited.put(w.gpa, f.node, {});
-                try w.seen_order.append(w.gpa, f.node);
+                if (w.visited.contains(fnode)) continue;
+                try w.visited.put(w.gpa, fnode, {});
+                try w.seen_order.append(w.gpa, fnode);
                 // A union or a positions node on the cycle being folded: its sides
                 // are at its path, so they are members of its class (§2.3).
-                switch (w.t.kind(f.node)) {
+                switch (w.t.kind(fnode)) {
                     .@"union", .choice, .positions => if (reentry) {
-                        try w.opened.put(w.gpa, f.node, {});
-                        const d = w.t.get(f.node);
+                        try w.opened.put(w.gpa, fnode, {});
+                        const d = w.t.get(fnode);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
                         continue;
                     },
                     else => {},
                 }
-                try w.explicitEdges(f.node);
+                try w.explicitEdges(fnode);
                 // `kids` holds (step word, child) pairs; copy out before the
                 // recursion below reuses it.
                 var i: usize = 0;
                 while (i < w.kids.items.len) : (i += 2) {
                     const step = Step.fromWord(w.kids.items[i].int());
-                    const child = w.kids.items[i + 1];
+                    const child = try w.t.force(w.gpa, w.account, w.kids.items[i + 1]);
                     try w.touch(child);
-                    const rep = w.find(f.node.int());
+                    const rep = w.find(fnode.int());
                     try w.addEdge(rep, step.word(), child.int());
                     const cp = (try w.places.extend(w.gpa, .growth(w.account), f.path, step)) orelse continue;
                     try stack.append(w.gpa, .{ .node = child, .path = cp });
@@ -1839,7 +2033,7 @@ pub const Table = struct {
                         .recast, .@"union", .choice, .positions => if (!w.opened.contains(.from(m))) try extra.append(w.gpa, .from(m)),
                         .delta => {
                             explicit = true;
-                            const base: NodeId = .from(d.a);
+                            const base = try w.t.force(w.gpa, w.account, .from(d.a));
                             switch (w.t.kind(base)) {
                                 .leaf => {
                                     has_leaf = true;
@@ -1847,9 +2041,11 @@ pub const Table = struct {
                                 },
                                 .node => {},
                                 .recast, .@"union", .choice, .positions, .delta => try extra.append(w.gpa, base),
+                                .view => unreachable, // forced above
                             }
                         },
                         .node => explicit = true,
+                        .view => unreachable, // `run` visits answers, never views
                     }
                 }
                 var children: u32 = over_none;
@@ -2816,4 +3012,88 @@ test "#1158 review: a recast or a delta over a lazy node is one node before and 
     _ = try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, p);
     try testing.expectEqual(r1, try f.shapes.recast(gpa, &f.account, try f.placeOf(0), p));
     try testing.expectEqual(d1, try f.shapes.delta(gpa, &f.account, p, try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, n)));
+}
+
+/// A test environment for views: every parameter cell of a template is the
+/// one actual `arg`; every other cell is itself.
+const TestInstantiation = struct {
+    f: *Fixture,
+    arg: NodeId,
+
+    fn inst(x: *TestInstantiation) Table.Instantiation {
+        return .{ .ctx = x, .sets = &x.f.cells.sets, .leaf = leaf, .cells = cells, .reach = reach };
+    }
+
+    fn of(ctx: *anyopaque) *TestInstantiation {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    fn isParam(x: *TestInstantiation, s: SetId) bool {
+        var it = x.f.cells.sets.iterate(s);
+        while (it.next()) |e| if (x.f.cells.origin(.from(e.key)) == .param) return true;
+        return false;
+    }
+
+    fn leaf(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!NodeId {
+        _ = env;
+        const x = of(ctx);
+        return if (x.isParam(t.cells(template))) x.arg else t.leaf(gpa, account, t.place(template), t.cells(template));
+    }
+
+    fn cells(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, s: SetId, at: PlaceId) Error!SetId {
+        _ = .{ ctx, t, gpa, account, env, at };
+        return s;
+    }
+
+    fn reach(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, c: CellId, approx: u1) Error!SetId {
+        _ = env;
+        const x = of(ctx);
+        if (x.f.cells.origin(c) == .param) return t.reach(gpa, account, &x.f.cells.sets, x.arg);
+        return x.f.cells.sets.insert(gpa, .growth(account), .none, c.int(), approx);
+    }
+};
+
+test "a view answers its template's instantiation one step at a time: proj, cells and reach as the eager image's" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const list = try f.placeOf(1);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    // The template `{ a = π1, b = [] }`; the actual a built list.
+    const p1 = try f.shapes.leaf(gpa, &f.account, list, try f.param(1, list));
+    const empty = try f.shapes.leaf(gpa, &f.account, list, try f.site(7, list, .list));
+    var kids = try f.one(fa, p1);
+    kids = try f.shapes.overPut(gpa, &f.account, kids, fb, empty);
+    const template = try f.shapes.node(gpa, &f.account, rec, try f.site(8, rec, .record), kids);
+    const arg = try f.shapes.leaf(gpa, &f.account, list, try f.site(9, list, .list));
+    var ti: TestInstantiation = .{ .f = &f, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, template, 0);
+    try testing.expectEqual(Kind.view, f.shapes.kind(v));
+    // Interned: the same view again; nothing forced yet.
+    try testing.expectEqual(v, try f.shapes.view(gpa, &f.account, template, 0));
+    try testing.expectEqual(@as(?NodeId, null), f.shapes.memo_force.get(v));
+    // A step answers a view again, one step deeper: `.a` forces to the
+    // actual itself, `.b` to the template's own leaf.
+    try testing.expectEqual(arg, try f.shapes.force(gpa, &f.account, try f.proj(v, fa)));
+    try testing.expectEqual(empty, try f.shapes.force(gpa, &f.account, try f.proj(v, fb)));
+    // Forced once: the answer is a node of views, memoised.
+    const answer = try f.shapes.force(gpa, &f.account, v);
+    try testing.expectEqual(Kind.node, f.shapes.kind(answer));
+    try testing.expectEqual(answer, try f.shapes.force(gpa, &f.account, v));
+    try testing.expectEqual(answer, f.shapes.forced(v));
+    try testing.expectEqual(f.shapes.cells(template), try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, v));
+    // reach: the record's cell, the actual's, the empty list's; as the answer's.
+    const r = try f.shapes.reach(gpa, &f.account, &f.cells.sets, v);
+    try testing.expectEqual(@as(u32, 3), f.cells.sets.count(r));
+    try testing.expectEqual(r, try f.shapes.reach(gpa, &f.account, &f.cells.sets, answer));
+    // A view of a view is a chain: it answers the inner view's answer, and
+    // the chain keeps each step for κ's reads.
+    const outer = try f.shapes.view(gpa, &f.account, v, 0);
+    const outer_answer = try f.shapes.force(gpa, &f.account, outer);
+    try testing.expect(f.shapes.kind(outer_answer) != .view);
+    try testing.expect(f.shapes.chainNext(outer) != null);
 }

@@ -1,0 +1,10 @@
+module KappaAtView
+  17:15 List.push a: rejected alias: rest[*] holds it and is read at 17:30
+  27:15 List.push a: accepted call
+  summary twoOf: π1 RA; res [*] condition(fresh2) π1, fresh1{shared}
+  summary twoFresh: res [*] fresh1, fresh2
+  summary sharedHead: res .0 condition(fresh1) fresh1 fresh{shared}, .0[*] ~fresh{shared}
+  summary freshHead: res .0 fresh fresh2, .0[*] ~condition(fresh1) ~fresh
+  demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

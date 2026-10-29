@@ -971,15 +971,29 @@ pub const Table = struct {
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        const k = try t.kappaRead(gpa, charge, v, ctx, n, at_summary);
+        // A view is read at its answer, with the entries stored under every id
+        // of its chain joined in before the kind's rule (§2.11 *κ at a view*).
+        var at = n;
+        var chain_stored: ?CondId = null;
+        if (v.shapes.kind(n) == .view) {
+            at = try v.shapes.force(gpa, charge.account, n);
+            var id: ?NodeId = n;
+            while (id) |x| : (id = v.shapes.chainNext(x)) {
+                try charge.reserve(gpa, .inspection, 1);
+                if (t.kappaGet(ctx, x)) |s| chain_stored = if (chain_stored) |c| try t.join(gpa, charge, c, s) else s;
+            }
+        }
+        const k = try t.kappaRead(gpa, charge, v, ctx, at, at_summary, chain_stored);
         // A widened class image owes its path-multiset obligation wherever it
-        // is read, a union's side included (§2.9, #1128).
-        const fc = t.fold_cond.get(n) orelse return k;
+        // is read, a union's side included (§2.9, #1128). `fold_cond` never
+        // keys a view: widen folds answers.
+        const fc = t.fold_cond.get(at) orelse return k;
         return t.@"and"(gpa, charge, k, fc);
     }
 
-    fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        const stored = t.kappaGet(ctx, n);
+    fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
+        const own = t.kappaGet(ctx, n);
+        const stored: ?CondId = if (extra) |e| (if (own) |s| try t.join(gpa, charge, s, e) else e) else own;
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
             .leaf => try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), at_summary, &.{}),
@@ -1013,12 +1027,17 @@ pub const Table = struct {
                 // A pure function of the read, memoised like `deep`.
                 const key: [3]u32 = .{ ctx.int(), n.int(), @intFromBool(at_summary) };
                 try charge.reserve(gpa, .memo, 1);
-                if (t.memo_dag.get(key)) |hit| return .from(hit);
-                const k = try t.dagKappa(gpa, charge, v, ctx, n, at_summary);
-                try charge.reserve(gpa, .memo, 1);
-                (try t.memo_dag.getOrPut(gpa, key)).value_ptr.* = k.int();
-                return k;
+                const k: CondId = if (t.memo_dag.get(key)) |hit| .from(hit) else blk: {
+                    const read = try t.dagKappa(gpa, charge, v, ctx, n, at_summary);
+                    try charge.reserve(gpa, .memo, 1);
+                    (try t.memo_dag.getOrPut(gpa, key)).value_ptr.* = read.int();
+                    break :blk read;
+                };
+                // What a view's chain stored, as the union's own entry is
+                // read by `dagKappa` (§2.11).
+                return if (extra) |e| t.join(gpa, charge, e, k) else k;
             },
+            .view => unreachable, // `kappaOf` reads a view at its answer
         };
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
     }
@@ -1316,7 +1335,7 @@ pub const Table = struct {
         while (stack.pop()) |f| {
             if (t.reachMemo(v, f.node) != null) continue;
             parts.clearRetainingCapacity();
-            try partsOf(gpa, v, f.node, &parts);
+            try partsOf(gpa, charge, v, f.node, &parts);
             if (!f.expanded) {
                 if (open.contains(f.node)) continue;
                 try open.put(gpa, f.node, {});
@@ -1351,7 +1370,7 @@ pub const Table = struct {
     }
 
     /// The parts of `n` whose cells its reach holds.
-    fn partsOf(gpa: Allocator, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+    fn partsOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
         const d = v.shapes.get(n);
         switch (d.kind) {
             .leaf => {},
@@ -1362,6 +1381,8 @@ pub const Table = struct {
             },
             .recast => try out.append(gpa, .from(d.a)),
             .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            // A view holds what its answer holds (§2.11).
+            .view => try out.append(gpa, try v.shapes.force(gpa, charge.account, n)),
         }
     }
 
@@ -1600,7 +1621,7 @@ pub const Table = struct {
         while (stack.pop()) |f| {
             if (memo.get(f.node) != null) continue;
             parts.clearRetainingCapacity();
-            try sourceParts(gpa, v, fold, f.node, &parts);
+            try sourceParts(gpa, charge, v, fold, f.node, &parts);
             // An opened choice's arms: the maximum, arm by arm (§2.3).
             const arms = v.shapes.kind(f.node) == .choice and fold.opened.contains(f.node);
             if (!f.expanded) {
@@ -1654,7 +1675,7 @@ pub const Table = struct {
                 try all.put(gpa, img, try v.cells.sets.unionWith(gpa, charge, old, if (v.shapes.isLazy(n)) SetId.none else v.shapes.cells(n)));
             }
             parts.clearRetainingCapacity();
-            try sourceParts(gpa, v, fold, n, &parts);
+            try sourceParts(gpa, charge, v, fold, n, &parts);
             try walk.appendSlice(gpa, parts.items);
         }
         var out: ClassAggs = .{ .saturated = true };
@@ -1672,7 +1693,12 @@ pub const Table = struct {
     /// children, an opened union's, choice's or positions node's sides. They
     /// coexist, except an opened choice's arms, which the caller takes by the
     /// maximum (§2.3: two source occurrences add, one execution has one arm).
-    fn sourceParts(gpa: Allocator, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+    fn sourceParts(gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        const from = out.items.len;
+        defer for (out.items[from..]) |*p| {
+            // The widen forced each child as it descended: its source nodes are answers.
+            p.* = v.shapes.forced(p.*);
+        };
         const d = v.shapes.get(n);
         switch (d.kind) {
             .@"union", .choice, .positions => if (fold.opened.contains(n)) try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
@@ -1683,12 +1709,14 @@ pub const Table = struct {
             .delta => {
                 var it = v.shapes.overEntries(d.b);
                 while (it.next()) |e| try out.append(gpa, e.node);
-                if (v.shapes.kind(.from(d.a)) == .node) {
-                    var bt = v.shapes.overEntries(v.shapes.get(.from(d.a)).a);
+                const base = try v.shapes.force(gpa, charge.account, .from(d.a));
+                if (v.shapes.kind(base) == .node) {
+                    var bt = v.shapes.overEntries(v.shapes.get(base).a);
                     while (bt.next()) |e| if (v.shapes.overGet(d.b, e.step) == null) try out.append(gpa, e.node);
                 }
             },
             .leaf, .recast => {},
+            .view => unreachable, // the widen walked answers, never views
         }
     }
 
@@ -2416,7 +2444,7 @@ pub const Table = struct {
             // derives there is the same before and after the join.
             // (Against the read without its fold obligation, so the snapshot
             // stores the obligation itself, #1128.)
-            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, f.node, f.summary));
+            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, f.node, f.summary, null));
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });

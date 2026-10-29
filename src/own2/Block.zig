@@ -601,6 +601,7 @@ const Writer = struct {
             },
             .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur)),
             .@"union", .choice, .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
+            .view => unreachable, // a block forces its views at publish (§2.11)
         }
         // What is stored at the position, nothing else (§3.6): every reader
         // adds the derivation from the structure the reader rebuilds, and
@@ -669,6 +670,7 @@ const Writer = struct {
             },
             .recast => try out.append(gpa, .{ d.a, sb, none, 0, cur.int() }),
             .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
+            .view => unreachable, // a block forces its views at publish (§2.11)
         }
         if (!all or cur == .none) return;
         // A fold's links are the steps it saw: sparse below it too.

@@ -833,6 +833,7 @@ const Reader = struct {
         // read (`unit`). Every other kind is its constructor's, its parts
         // read before it.
         const id: NodeId = switch (kind) {
+            .view => return error.Malformed, // a block holds no views: they are forced at publish (§2.11)
             .leaf => try shapes.leaf(gpa, acct, at, try r.opt(SetId, .set)),
             .node => blk: {
                 const cells = try r.opt(SetId, .set);
@@ -3156,6 +3157,7 @@ fn setAtNodeFrom(t: *Tables, out: *Cond.Kappas, n: NodeId, target: NodeId, k: Co
     defer _ = route.pop();
     const d = t.shapes.get(n);
     switch (d.kind) {
+        .view => unreachable, // a read block holds no views
         .leaf => {},
         .node, .delta => {
             if (d.kind == .delta) try setAtNodeFrom(t, out, .from(d.a), target, k, path, route);
