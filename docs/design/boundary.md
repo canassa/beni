@@ -6881,7 +6881,11 @@ entry file exports, one per `Worker.Object.define`, each a subclass of `DurableO
 `cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
 and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
 globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
-reaches `document`; check 3 is lexical and that is the edge it makes visible.
+reaches `document`; check 3 is lexical and that is the edge it makes visible. *As built
+2026-10-30 (`plans/runtime-in-beni.md` step 11):* the platform has no sibling of §4's shape left —
+`Worker.js`, `Worker/Object.js` and `Worker/Storage.js` are beni over `Js.catchIf` and a walk —
+and `runtime.js` is its one file of JavaScript; a beni module reaches those globals through
+`Js.global`.
 
 **(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
 compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
@@ -7614,7 +7618,8 @@ pub type AskError
   timer is one host `setTimeout`, re-armed as (e.5) says; under `--test-hooks` no host timer is
   armed and `/__beni/tick` is its firing ((k)).
 - **`post` and `ask` on the wire** ((e.10)): `post` to `self` goes into the mailbox with the ids of
-  the `Reply`s the message holds (a walk of its records and lists, `Object.js`); to another object
+  the `Reply`s the message holds (a walk of its records and lists, `Object.beni`'s `repliesIn`
+  since 2026-10-30, `Object.js` before); to another object
   it is `POST /__beni/post` on the stub with `x-beni-chain`, answered 204 after `received` ran.
   `ask` is `POST /__beni/ask` with `x-beni-ask: <uuid>`; the receiver keeps the pending ask by that
   id, `reply` prints the value with the schema captured at parse time and answers it 200, and the
@@ -8007,7 +8012,7 @@ pub type PutError
   byte per unit for a one-byte string and two for a two-byte one. Beni's ceiling of 2 000 000
   bytes at two per unit, about 1 000 000 units of key and text, stays under it for every string;
   an ASCII value could go to about 2 200 000 characters before the host refuses it*); `Full` is
-  `kvPut`'s one caught text; a read
+  `kvPut`'s one caught text (a `Js.catchIf` in `Storage.beni` since 2026-10-30); a read
   with another schema is `Err` with its issues; what one instance put, the instance after its
   abort reads in `restore`.
 
