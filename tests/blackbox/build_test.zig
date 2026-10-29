@@ -8834,6 +8834,75 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g: ownership_summary_size") != null);
 }
 
+/// `e` escapes of `xs` (`Js.ref xs`) and a chain of `w` pushes on it, in
+/// one branch (`together`, the escaped twin) or in the two arms of an
+/// `if` (the mutually exclusive one): the dump's account line of `f` and
+/// its total line. The allowance is raised, so the frame is measured.
+fn escapesWrites(e: u32, w_count: u32, together: bool) !struct { inspection: u64, total: []const u8 } {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "@ownership_summary_size(module, 4194304)\n\nimport Js\n\n\npub f flag xs =\n    if flag then\n");
+    for (0..e) |_| try src.appendSlice(a, "        _ = Js.ref xs\n");
+    if (!together) try src.appendSlice(a, "        xs\n    else\n");
+    for (0..w_count) |i| {
+        if (i == 0) try src.appendSlice(a, "        a0 = List.push xs 1\n") else try src.print(a, "        a{d} = List.push a{d} 1\n", .{ i, i - 1 });
+    }
+    try src.print(a, "        a{d}\n", .{w_count - 1});
+    if (together) try src.appendSlice(a, "    else\n        xs\n");
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f") == null);
+    const at = std.mem.indexOf(u8, dump.stdout, "\ntotal ") orelse return error.NoTotal;
+    const end = std.mem.indexOfScalarPos(u8, dump.stdout, at + 1, '\n') orelse dump.stdout.len;
+    return .{ .inspection = try accountField(dump.stdout, "f", "inspection"), .total = try std.testing.allocator.dupe(u8, dump.stdout[at + 1 .. end]) };
+}
+
+test "the checker v2's escape queries are charged and indexed, never an uncharged escapes × writes product" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1226 (§4.1): every write asked every escape point of its cell
+    // whether it came before, compatibly, with no charge: e × w tests at
+    // growth 0. The points of a cell are indexed by the second order, so a
+    // query is one binary search, charged as growth. The mixed difference over
+    // independent escape and write counts is the product term; it stays
+    // within w · (log₂ e + 1) (measured: 368 at 4 and 96), where the
+    // product would be e × w (8 464).
+    const counts = [_]u32{ 4, 96 };
+    var ins: [2][2]u64 = undefined;
+    for (counts, 0..) |e, i| for (counts, 0..) |w_count, j| {
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const r = try escapesWrites(e, w_count, false);
+        defer testing.allocator.free(r.total);
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        // The arms exclude each other: every push is accepted.
+        const want = try std.fmt.allocPrint(testing.allocator, "total {d}: accepted {d} ", .{ w_count, w_count });
+        defer testing.allocator.free(want);
+        try testing.expect(std.mem.startsWith(u8, r.total, want));
+        ins[i][j] = r.inspection;
+    };
+    const mixed = (ins[1][1] + ins[0][0]) -| (ins[1][0] + ins[0][1]);
+    // Charged: each extra write's query costs more when it has more
+    // escape points to search, so the term is never 0 (it was, uncharged).
+    try testing.expect(mixed >= 96 - 4);
+    try testing.expect(mixed <= 16 * 96);
+    try testing.expect(mixed < 96 * 96 / 4);
+    // The escaped twin: the escapes come first in the same branch, so every
+    // push is refused `escaped`.
+    const twin = try escapesWrites(96, 16, true);
+    defer testing.allocator.free(twin.total);
+    try testing.expect(std.mem.startsWith(u8, twin.total, "total 16: accepted 0 "));
+    try testing.expect(std.mem.indexOf(u8, twin.total, "rejected 16") != null);
+}
+
 test "the checker v2's growth in a tower of joins of one value at two depths is at most quadratic" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

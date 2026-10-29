@@ -2880,6 +2880,15 @@ item; a 1 000-item literal and append chain need a raised allowance, at 122 and 
 pins the shapes that reached a lane's ceiling: `WideItemValues`, `EarlierRunSpread` and, a base chosen
 from 64 or 100 arms and spread or appended to, `WideChoiceSpread`.
 
+Escape queries use an index by cell, point and compatible region, or pre-reserved inspection tasks for every
+candidate. Count both successful and unsuccessful escape-point tests. *As built (#1226):* a frame's escape
+points are sorted by cell and point, and each point carries its run prefix's point of least `rank₂`
+(§2.5's second order). For e < p, compatible ⇔ rank₂(e) < rank₂(p), so a write asks one binary search of
+its cell's run, charged as growth of the run's size (never the demand's fixed lane), and the sort is
+charged once. Before, every write tested every escape point of its cell, uncharged: e × w tests at growth
+0 (10⁶ at 1 000 × 1 000). Measured, the mixed difference of a frame's inspections over 4 and 96 escapes and
+writes (`build_test.zig`) is 368, w · (log₂ e + 1), where the product is 8 464.
+
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
 record work, and comparison-tree navigation/canonical export adds at most a logarithmic time factor.
@@ -3789,7 +3798,9 @@ cyclic graft knots; #1143 is closed by merged #1144's Tarjan walk and cyclic rec
 `Summary.Table.join`/`leq` bound is stated in §3.9. Keep these regressions. The S4-verifier feasibility
 slice passes before S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as its call/transport
 consumers land. Declaration-order independence of accounts remains an open owner decision in #1104;
-no resolution or implementation dependency for that decision is prescribed here.
+no resolution or implementation dependency for that decision is prescribed here. Add independent
+escape-count × write-count fixtures and their mutually exclusive and actually escaped twins before S3b
+introduces transitive E summaries (#1226, §4.1); do not defer this ledger-completeness check to S9.
 Before S3b, holder-path discovery must preserve every distinct observable route through shared shapes,
 including repeated nodes at unequal depths (#1223, Astra's review). Its memo key must include the semantic
 path/read context, or it must share a suffix answer and instantiate it at each relevant route. Cycle
