@@ -1,0 +1,23 @@
+-- `Browser.prerender` used as a value, not called where `main` says what
+-- the page's program is (docs/design/prerender.md §7.2): the build cannot
+-- see which program it prerenders, and a page would run the function as
+-- written and be handed the pair the prerender tree reads, not a program.
+-- `program_shape`, at the value.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+staticSite : Tea.Program, List String → Tea.Program
+staticSite = Browser.prerender
+
+
+main : Tea.Program
+main =
+    staticSite
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/", "/about" ]

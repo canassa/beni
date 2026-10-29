@@ -34,7 +34,7 @@ name p =
             "Home"
 
         Cartoons →
-            "Tom & Jerry <cartoons>"
+            "Tom & Jerry <cartoons> \"live\""
 
         Missing →
             "Missing"

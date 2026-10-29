@@ -198,8 +198,15 @@ fn locate(arena: Allocator, shared: *Shared, rel: []const u8, html: bool) !?[]co
         .file => return full,
         .directory => {
             const index = try std.fmt.allocPrint(arena, "{s}/index.html", .{full});
-            const s = cwd.statFile(io, index, .{}) catch return null;
-            return if (s.kind == .file) index else null;
+            if (cwd.statFile(io, index, .{})) |s| {
+                if (s.kind == .file) return index;
+            } else |_| {}
+            // A directory with no `index.html` beside a prerendered page of
+            // its name — `/blog` and `/blog/x` — is answered by the page.
+            if (rel.len == 0) return null;
+            const page = try std.fmt.allocPrint(arena, "{s}.html", .{full});
+            const s = cwd.statFile(io, page, .{}) catch return null;
+            return if (s.kind == .file) page else null;
         },
         else => return null,
     } else |_| {}
