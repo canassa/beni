@@ -1,0 +1,14 @@
+{
+  "platform": true,
+  "name": "rr",
+  "platforms": [
+    "browser-inline"
+  ],
+  "reexports": [
+    "Browser",
+    "Cmd",
+    "Html",
+    "Sub",
+    "Tea"
+  ]
+}

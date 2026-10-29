@@ -1,11 +1,9 @@
 -- A subscription whose tagger is the constructor a widget's messages are
 -- mapped with (`PadMsg`) sends the widget's own messages, which `update`
 -- splits again (browser-inline.md §10.3): its value reaches its key
--- through the dispatcher as the message. A widget's keys may otherwise be
--- handled inside the widget, where the dispatcher cannot call them; those
--- a message subscription may reach are kept at the program site. The
--- start sends `Add 10` when the page mounts; the widget's own button
--- adds 1.
+-- through the dispatcher as the message, which calls the program's handler
+-- of the key the widget's own button reaches too. The start sends `Add 10`
+-- when the page mounts; the widget's own button adds 1.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Pad

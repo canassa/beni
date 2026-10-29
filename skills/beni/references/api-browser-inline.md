@@ -11,7 +11,32 @@ wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Browser
   type Program
+  type UrlRequest
+    Internal
+    External
   value mountAt : Program, String → Program
+module Browser.Navigation
+  type Error
+    BadUrl
+    CrossOrigin
+    Throttled
+  alias Key
+  value back : Key, Int, (Error → msg) → Cmd msg
+  value currentUrl : ⊤ → Maybe Url  -- impure
+  value forward : Key, Int, (Error → msg) → Cmd msg
+  value goBack : Key, Int → Result Error ⊤  -- impure
+  value goForward : Key, Int → Result Error ⊤  -- impure
+  value key : ⊤ → Key
+  value load : String, (Error → msg) → Cmd msg
+  value loadPage : String → Result Error ⊤  -- impure
+  value onUrlChange : (Url → msg) → Sub msg
+  value onUrlRequest : (UrlRequest → msg) → Sub msg
+  value push : Key, String → Result Error ⊤  -- impure
+  value pushUrl : Key, String, (Error → msg) → Cmd msg
+  value reload : ⊤ → Cmd msg
+  value reloadPage : ⊤ → ⊤  -- impure
+  value replace : Key, String → Result Error ⊤  -- impure
+  value replaceUrl : Key, String, (Error → msg) → Cmd msg
 module Cmd
   type Cmd a
     None
@@ -23,6 +48,8 @@ module Cmd
   value none : Cmd msg
   value perform : (Send msg → ⊤) → Cmd msg
 module Inline
+  opaque type NavigationKey
+  value address : ⊤ → Url  -- impure
   value busy : ⊤ → Bool  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
   value entry : V, V → V  -- impure
@@ -42,6 +69,7 @@ module Inline
   value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value navigationKey : ⊤ → NavigationKey
   value on : V, V, V, V → ⊤  -- impure
   value onArm : V, V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
@@ -56,6 +84,7 @@ module Inline
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
   value text : V, V → ⊤  -- impure
+  value title : String → ⊤  -- impure
   value unprerender : V → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
@@ -68,7 +97,11 @@ module Sub
   value none : Sub msg
   value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order
 module Tea
+  alias Document a
+    Document
   alias Program
+  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
+  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
   value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program
   value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program
 ```

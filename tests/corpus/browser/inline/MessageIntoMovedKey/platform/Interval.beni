@@ -1,0 +1,22 @@
+--! Timers for the program, in the project's platform layer. beni's own `Time.every` is a
+--! chain of `Task.sleep`s; a page's clock is one `setInterval` that lives while the subscription
+--! is in the set, and is cleared when it leaves.
+
+import Js
+import Sub exposing (Sub)
+
+
+type Key
+    = Every Int
+
+
+--| A message every `ms` milliseconds, for as long as the subscription is declared. Two
+--| declarations of one period share one timer.
+pub every : Int, msg → Sub msg
+every ms tag = Sub.on (Every ms) (start ms _) λ_ → tag
+
+
+start : Int, sync (⊤ → ⊤) → (⊤ → ⊤)
+start ms send =
+    timer = Js.apply (Js.global "setInterval") [ Js.from λ⊤ → send ⊤, Js.from ms ]
+    λ⊤ → Js.to (Js.apply (Js.global "clearInterval") [ timer ])

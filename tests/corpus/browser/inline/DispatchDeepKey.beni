@@ -3,7 +3,9 @@
 -- the key (browser-inline.md §4, §10.3). `update` splits `Outer` again on
 -- `Add` and `Set`, so each handler takes the `Int` inside; the command's
 -- `Outer (Add 5)` must add 5. The dispatcher once handed such a handler the
--- whole message, and the count became `1[object Object]`.
+-- whole message, and the count became `1[object Object]`. `Boxed (Box n)`
+-- is the same through a constructor of one field of a type of one, which
+-- a release build writes as its field alone: `Ten`'s command must give 42.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -15,10 +17,16 @@ type Inner
     | Set Int
 
 
+type Box
+    = Box Int
+
+
 type Msg
     = Outer Inner
     | Go
     | Zero
+    | Boxed Box
+    | Ten
 
 
 update : Msg, Int → Int × Cmd Msg
@@ -32,6 +40,12 @@ update msg model =
 
         Go →
             ( model, Cmd.perform λsend → send (Outer (Add 5)) )
+
+        Boxed (Box n) →
+            ( n * 2, Cmd.none )
+
+        Ten →
+            ( model, Cmd.perform λsend → send (Boxed (Box 21)) )
 
         Zero →
             ( model, Cmd.perform λsend → send (Outer (Set 0)) )
@@ -47,6 +61,7 @@ main =
                 <main>
                     <button id="go" onClick={Go}>go</button>
                     <button id="zero" onClick={Zero}>zero</button>
+                    <button id="ten" onClick={Ten}>ten</button>
                     <output>{String.fromInt model}</output>
                 </main>
         , subscriptions = λ_ → Sub.none
