@@ -1,5 +1,7 @@
 # 108 — Which JavaScript engine beni embeds to prerender pages
 
+> **Not taken (2026-10-29).** The premise below is withdrawn: the owner did not decide an embedded engine; that was the manager's misreading, and prerendering runs under the `node` on `PATH` (`prerender.md` §5.1, corrected). This report stays as the measurement of the option.
+
 *2026-10-29. Beni master `cdd26f460`; Zig 0.17.0; Node 24.19.0 (V8 13.6, ICU 78.3, Unicode 17);
 QuickJS 2026-06-04; QuickJS-ng 0.17.0; Kiesel `3c95d594` (2026-10-25); x86-64 Linux (NixOS,
 glibc 2.44), 32 threads, shared with two other agents' builds. Issue #1162, part of #1160. The
