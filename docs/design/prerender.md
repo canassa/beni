@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slices P1, P2a and P3 built; P4 specified** (§8, #1207) (2026-10-29, #1165, #1178, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P3*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1, P2a, P2b and P3 built; P4 specified** (§8, #1207) (2026-10-29, #1165, #1178, #1206, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P2b*, *As built — P3*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -1362,3 +1362,38 @@ in place of the flag. A page that does not prerender ships what it did: no `emit
 moved, and `bench/size.mjs --pages-only` prints the same bytes. What prerendering adds to a client,
 release, brotli, against the same program built with `--no-prerender`: 577 B for `Counter`, and
 1 049 B for `Blog`, whose `pageUrl`, `routeUrl` and `arrived` are the routes' share.
+
+**As built — P2b** (2026-10-29, #1206). §6.5's amendment as written: the lowering's
+`Page.captureScript` writes the script at the start of the program site's render function's string
+(`platforms/browser-inline/zig/inline.zig`), its kinds from the unit's events and each piece's
+(`PieceData.kinds`); the hydrating mount calls `Inline.caught(E[0])` after `take` and
+`Inline.deliver()` last; and in a prerendering client every listener, a piece's too, is wired
+through `Inline.listen`, `onTaken` or `onArmTaken`. The lowering interface does not change. The
+browser driver runs a prerendered page's inline scripts where the page holds them, and its setup
+step `early <step>` acts on the page before the program loads (`tests/corpus/README.md`,
+*Prerendered pages*). The fixtures are `browser/prerender/EarlyInput` (a click on a button's child,
+typed text, a checked box, a `select`'s `change` and a second click, delivered in that order; the
+box stays checked; the script's listeners are gone after the load), `EarlyNone` (no listener: no
+script in the page) and `EarlyFresh` (a page a host changed: the input is dropped). Every existing
+prerendered page whose program listens holds the script, so their `_expected/` pages moved, and
+the `emit/prerender/` goldens show the new calls. A page that does not prerender ships what it did:
+no `emit/inline/` or `emit/release/inline/` golden moved, and `bench/size.mjs --pages-only` prints
+the same bytes as `master`'s compiler.
+
+The script is 294 B raw, 161 B brotli alone (one kind, `click`); in a page it adds 123–145 B
+brotli to the HTML. The runtime adds 270–294 B brotli to the client (`caught`, `listen`,
+`onTaken`, `deliver`): with `bench/ui/hydrate.mjs`, release, 61 loads per page and subject, what
+hydration adds against `--no-prerender` went from 583, 660 and 711 B to 861, 954 and 981 B on
+`counter`, `static` and `arms`, against Solid's 1 439 B. Time to interactive, by the same harness,
+two runs each of `master`'s compiler and this one, medians, ms (the machine was loaded, load
+average 8–14, so the second run is the quieter):
+
+| page | module start → handlers, before | after | navigation → handlers, before | after |
+|---|--:|--:|--:|--:|
+| `counter` | 0.695, 0.665 | 0.525, 0.505 | 12.2, 11.7 | 12.7, 12.1 |
+| `static` | 1.705, 1.540 | 1.460, 1.365 | 15.9, 14.9 | 18.4, 15.7 |
+| `arms` | 3.180, 1.740 | 1.660, 1.540 | 26.0, 13.1 | 15.9, 13.3 |
+
+The mount itself is not slower; from the navigation's start the quieter runs differ by 0.2–0.8 ms,
+the page's larger HTML and client. The harness loads each page with no input before the takeover,
+so `deliver` has nothing to hand on: what a delivery costs is a call per record.
