@@ -8357,8 +8357,9 @@ test "the checker v2's block is linear in a tower of two-element literals, whose
     // `[*]` (a positions node) beside the knot, so the published summary
     // grew as about n^2.4 (537 656 bytes at N = 30), every entry `lost`.
     // Opened on the cycle (§2.3), the block is linear and reads what the
-    // unwidened value reads. The growth is not linear yet: a literal's
-    // root compares each element's whole reach (#1121).
+    // unwidened value reads. A literal's root reads its elements' reach
+    // aggregates, each extended from its parts' (#1121), so the growth is
+    // n log n at most.
     var block: [3]u64 = undefined;
     var growth: [3]u64 = undefined;
     for ([_]u32{ 10, 100, 300 }, 0..) |n, run| {
@@ -8392,8 +8393,65 @@ test "the checker v2's block is linear in a tower of two-element literals, whose
     // 1 008 / 6 048 / 17 248 bytes: a constant per level.
     try testing.expect(block[1] <= 7 * block[0]);
     try testing.expect(block[2] <= 4 * block[1]);
-    // 3 180 / 52 237 / 279 347: at most quadratic until #1121.
-    try testing.expect(growth[2] <= 9 * growth[1]);
+    // 3 625 / 41 178 / 129 122: 101, 62 and 52 records per n·log₂(n + 2).
+    // Before #1121 3 180 / 52 237 / 279 347, quadratic.
+    try expectNLogN(&.{ 10, 100, 300 }, &growth);
+}
+
+/// Growth `g[i]` at `n[i]` levels is n log n at most: its records per
+/// n·log₂(n + 2) never rise by more than a tenth from one size to the next
+/// (#1121's counted towers; a quadratic rises tenfold over ten times the levels).
+fn expectNLogN(n: []const u32, g: []const u64) !void {
+    var last: f64 = std.math.inf(f64);
+    for (n, g) |ni, gi| {
+        const x: f64 = @floatFromInt(ni);
+        const per = @as(f64, @floatFromInt(gi)) / (x * std.math.log2(x + 2));
+        try testing.expect(per <= last * 1.1);
+        last = per;
+    }
+}
+
+test "the checker v2's growth over a tower of one-element literals with a new parameter per level is n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1121: `r_k = T a_k [ r_{k-1} ]`, a different parameter at each level.
+    // The literal's one element compares everything its reach holds, and
+    // rebuilt the arrivals' apart group from nothing at each level
+    // (1 449 549 at N = 1 000 after the read-off's groups were shared,
+    // 125 357 at N = 100 before). The group is now the element's reach
+    // aggregate, one insertion more than its predecessor, and read-off maps
+    // each group from its predecessor's image.
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 100, 300 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 4194304)\n\n\ntype T =\n    T (List Int) (List T)\n\n\npub tower : ");
+        for (0..n) |_| try src.appendSlice(a, "List Int, ");
+        try src.appendSlice(a, "⊤ → T\ntower ");
+        for (1..n + 1) |i| try src.print(a, "a{d} ", .{i});
+        try src.appendSlice(a, "⊤ =\n    r0 = T [] []\n");
+        for (1..n + 1) |i| try src.print(a, "    r{d} = T a{d} [ r{d} ]\n", .{ i, i, i - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+    }
+    // 2 976 / 38 482 / 126 600: 83, 58 and 51 records per n·log₂(n + 2).
+    try expectNLogN(&.{ 10, 100, 300 }, &growth);
 }
 
 test "a kids list at two depths of a widened tree reads as a repeat; distinct kids read yes" {

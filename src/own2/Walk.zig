@@ -131,6 +131,8 @@ const ReadOff = struct {
     env: Env,
     /// A frame cell → its `fresh k` (k from 1, first-sight order).
     fresh: Ids.FixedDict(1) = .{},
+    /// Each `apart` group → its image's aggregate (`Cond.apartImage`).
+    apart_images: Ids.FixedDict(1) = .{},
 
     fn relabel(r: *ReadOff, s: SetId) Error!SetId {
         if (s == .none) return .none;
@@ -181,13 +183,9 @@ const ReadOff = struct {
         switch (a.atom) {
             .excl => return t.excl(gpa, charge, try r.image(.from(a.a))),
             .sep => return t.sep(gpa, charge, cells, r.env.places, try r.image(.from(a.a)), try r.image(.from(a.b)), false, null),
-            .apart => {
-                var items: std.ArrayList(Cond.Item) = .empty;
-                defer items.deinit(gpa);
-                var it = cells.sets.iterate(.from(a.a));
-                while (it.next()) |e| try items.append(gpa, .{ .cell = try r.image(.from(e.key)), .approx = false });
-                return t.apart(gpa, charge, cells, r.env.places, items.items, null);
-            },
+            // Each group from its predecessor's image (§2.9, #1121): a tower's
+            // groups share their cells, and so do their images.
+            .apart => return t.apartImage(gpa, charge, cells, r.env.places, .from(a.a), &r.apart_images, r, image),
             .within => return t.within(gpa, charge, .from(a.a)),
             .keep => return t.keep(gpa, charge, a.a),
             .writes => return t.writes(gpa, charge, a.a),
@@ -275,6 +273,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     }
     var ro: ReadOff = .{ .env = env };
     defer ro.fresh.deinit(gpa);
+    defer ro.apart_images.deinit(gpa);
     // The frame's reliance in the class's cells; one that fails there
     // (a split's atom no caller could discharge) is no class at all.
     var class_xreq: SetId = .none;

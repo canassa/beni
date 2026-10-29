@@ -1126,7 +1126,14 @@ Where κ is set, always **at the selected path p**:
   insertion work (bounded fixed-word radix depth for cell keys); unchanged subtrees and input pairs
   are reused. A final quotient/codec walks O(n) distinct records, with O(n log n) refinement/order work.
   Thus **total**, not per-query, cost is O(n log n), space O(n) fixed-word records. These are required
-  algorithms, still unimplemented in #1121/#1098, not measured master performance:
+  algorithms. *As built (#1121, first part):* `Cond.Agg` is the apart aggregate (the arrival group with
+  its taken-element parents, base index and same-base pairs, repeats, approximation); `reachAgg` builds
+  each node's from its parts' (the larger extended by what `Radix.news` says the smaller adds); a
+  literal's one element and a together-join's root read it; each group records its predecessor, so
+  read-off's `apartImage` extends the image of the old group by one cell; and `ofSet` is the `and`
+  tree of the atom set's own trie, so a set one insertion larger builds only its spine. T and W meet
+  the bound (counted at 10/100/300). K's union reads (`dagKappa` per read context) and the production
+  limit (#1098's lanes) remain:
 
   | Family, from a finite seed | New work per level and required multiplicity |
   |---|---|
@@ -2973,12 +2980,12 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 700 |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 000 |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection}` | Ids, Place | ≤ 910 |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 960 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 800 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 940 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 300 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 600 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
@@ -3295,7 +3302,7 @@ The historical *As built* notes stay intact; this table records what has moved s
 | Code evidence | Status and tracking | Specified contract |
 |---|---|---|
 | Widen opens union/positions on a cycle and checks each class's pre-fold multiplicity on every fold; propagation stores repeats as lost. | #1125 landed, repairing #1128's reported equal-cell case. Symbolic substitution and precise choice controls remain work for the common primitive. | §2.3; §2.9; I-κ. |
-| Whole-set apart/excl/union reads and read-off mapping still revisit growing prefixes. | #1121/#1098 incremental aggregates, per-item/read-off work and lazy internal collect sets remain. | §2.9's total tower bound; §4.1. |
+| Apart reads are incremental aggregates; union reads (`dagKappa`) still walk a union's whole DAG per read context. | #1121: T and W n log n (counted 10/100/300); K's union reads and #1098's per-item/read-off lanes remain. | §2.9's total tower bound; §4.1. |
 | Fold relabelling keeps its observed self-link steps. | #1133 landed, closes #1129. | §2.9, §3.4, §3.6. |
 | κ path copying/relabel/merge and call linking use explicit stacks; further shape/summary/reader walks and cyclic graft knots follow. | #1130 done in #1135; #1138 done in #1142. Keep deep/small-stack probes. | §2.3, §2.11, §3.9; R-7.12. |
 | Tarjan's graft walk builds cyclic parts as records of their own kind, reading only built images; off-cycle parts use constructors. | #1144 merged (`c709bf771`), closes #1143. No waiting or retry passes; the transitive-reader probes remain regressions. | §2.11 cyclic-record protocol; §3.9's remaining native join/leq bound. |
