@@ -8593,7 +8593,7 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // §4.1: a value whose type's positions are not the declaration's source,
-    // re-read at a count that grows, is uses × positions: past K·S_f it is
+    // re-read at a count that grows, is uses × positions: past K·I_f it is
     // growth, and past the allowance the loud `ownership_summary_size`.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);

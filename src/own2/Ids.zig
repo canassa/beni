@@ -299,14 +299,16 @@ pub const Account = struct {
     allowance: u32 = default_allowance,
     /// G_f.
     growth: u32 = 0,
-    /// B_f: every baseline record ever reserved. 64 bits: §4.1 lets it
-    /// reach 10 304·S_f.
+    /// B_f: every baseline record ever reserved. 64 bits: §4.4 lets it
+    /// reach 11 328·S_f (the lanes' 10 304, and the source continuation's
+    /// 1 024 per written instruction).
     baseline: u64 = 0,
-    /// S_f: the written and imported atoms, recorded by the owner's walk.
+    /// I_f (§4.1): the declaration's written instructions only, never its
+    /// imports, set before its walk. The source continuation is K times it.
     source: u64 = 0,
     /// The source continuation spent (§4.1, *The source continuation*):
     /// records that would have been growth, taken from the declaration's
-    /// `continuation_per_atom`·S_f instead, and counted in B_f.
+    /// `continuation_per_atom`·I_f instead, and counted in B_f.
     continuation: u64 = 0,
     growth_by: [Category.count]u32 = @splat(0),
     baseline_by: [Category.count]u64 = @splat(0),
@@ -322,11 +324,11 @@ pub const Account = struct {
     pub const default_allowance: u32 = 65_536;
     /// K (§4.1, *The source continuation*): the records each source atom
     /// lends its declaration's work beyond the lanes. A huge, named bound,
-    /// an order of magnitude past every measurement and inside §4.1's
-    /// 10 304·S_f, never tuned.
+    /// an order of magnitude past every measurement, never tuned; it adds at
+    /// most 1 024·I_f to B_f (§4.4's 11 328·S_f).
     pub const continuation_per_atom: u64 = 1024;
 
-    /// K·S_f, what the source continuation may lend in all.
+    /// K·I_f, what the source continuation may lend in all.
     pub fn continuationCap(a: *const Account) u64 {
         return continuation_per_atom * a.source;
     }
@@ -383,7 +385,7 @@ pub const Account = struct {
     pub fn reserveGrowth(a: *Account, category: Category, n: u32) AccountError!void {
         if (a.failed) |f| return f.err();
         // The source continuation first, whole or not at all, decided at
-        // this reservation before its work: only what passes K·S_f is growth.
+        // this reservation before its work: only what passes K·I_f is growth.
         if (a.continuation + n <= a.continuationCap()) {
             a.continuation += n;
             a.baseline += n;
