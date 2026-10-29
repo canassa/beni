@@ -22,15 +22,19 @@ release), where the only differences are host APIs that are not ECMAScript and t
 `JSON.parse`'s error messages. It is clean under Zig's C sanitizer, it builds and runs for
 `wasm32-wasi`, and it ships a release a month.
 
-Bellard's QuickJS is equally exact on the same sweeps and **about 25 % faster**, but it traps
-under the sanitizer that beni's ReleaseSafe builds give C code (undefined behaviour in its
-bytecode optimiser, reached by ordinary emitted code), it does not build for `wasm32-wasi`, and a
-stack overflow is an `InternalError` where V8 throws a `RangeError`. Kiesel, the one Zig-native engine, fails: without
+Bellard's QuickJS is equally exact on the same sweeps and **24–32 % faster**, and it is a close
+second. Its three faults here are each small: it traps under the sanitizer that beni's
+ReleaseSafe builds give C code (a shift into the sign bit, one cast to fix, which QuickJS-ng has
+already made), it does not build for `wasm32-wasi` (which P5 does not need), and a stack overflow
+is an `InternalError` where V8 throws a `RangeError` (both fail the build). The reasons for
+QuickJS-ng are that it is clean as it ships, so beni carries no patch, and that it releases
+monthly with a team, where Bellard's releases come two or three times a year. Kiesel, the one Zig-native engine, fails: without
 Rust's toolchain it has no Unicode case mapping (`"ß".toUpperCase()` is `"ß"`), and it is 14 times
 slower than QuickJS. The other engines of the class are out on language level (Duktape,
 MicroQuickJS) or toolchain (Hermes, Boa, V8) (§1).
 
-**Three things in §5.1 do not hold as written** (§10), and P5 must answer them:
+**Three things in §5.1 do not hold as written, and a fourth follows in §11's P5 row** (§10); P5
+must answer them:
 
 1. *"The engine runs the emitted code, so the agreement §3 rests on stays true by
    construction."* It is true of ECMAScript and false of the host. `Url.fromString` is
@@ -38,14 +42,19 @@ MicroQuickJS) or toolchain (Hermes, Boa, V8) (§1).
    engine has. The three `Url*` programs of the corpus fail in both QuickJS builds with
    `'URL' is not defined`.
 2. *Numbers print the same on every engine.* `Number::toString` does, but `Math.pow` (beni's `^`
-   on `Float`), `Math.sin`, `Math.log` and the rest come from whatever libm the engine is linked
-   with. The same QuickJS-ng prints 29 lines of a whole-number sweep (`10.0 ^ k`, `k` an integer)
-   differently from V8 when linked with musl, and none when linked with glibc; a Debug build of
-   it gives other `sin` and `cos` values than its ReleaseFast build. So the page depends on the
+   on `Float`), `Math.sin`, `Math.log` and the rest come from whatever the Zig link resolves the
+   C names to: Zig's compiler-rt or the target's libc, per engine and per optimisation mode. The
+   same QuickJS-ng prints 29 lines of a whole-number sweep (`10.0 ^ k`, `k` an integer)
+   differently from V8 when linked with musl, and none when linked with glibc; its Debug build
+   gives other `sin` and `cos` values than its ReleaseFast build. So the page depends on the
    machine and the build that made it, which rule 5 forbids, not only on the engine.
 3. *Linking the engine changes the binary.* beni is a static executable with no libc today. An
    engine in C needs libc: on the native Linux target, `link_libc` makes `beni` a dynamically
    linked executable against the build machine's glibc (measured, §4).
+4. *P5 is done when every page "is byte-identical to what P1–P4 wrote under Node".* Once `Math`
+   is pinned (item 2), that holds for a page that prints a `sin` or a `pow` only if the pinned
+   implementation is V8's own, exactly. Either P5 ports V8's functions, or the criterion excepts
+   text computed by the functions §3.3 lists.
 
 | | QuickJS-ng 0.17.0 | QuickJS 2026-06-04 | Kiesel (Zig) | Node 24 |
 |---|---|---|---|---|
@@ -83,8 +92,11 @@ and the language beni emits (arrow functions, `const`, spread, template literals
 - **JerryScript**: ES2022 subset with modules, made for microcontrollers; last release v3.0.0 of
   2024-12-18, last push 2025-10-08. Credible on language level, not maintained at QuickJS-ng's
   rate. Not built or measured; it would be the next to try if both QuickJS lines failed.
-- **Hermes, Boa, Nova, V8, SpiderMonkey, JavaScriptCore**: C++ with CMake, GN or mach, or Rust
-  with `cargo`. Hermes runs no ES modules without a bundler. Out on the filter, not built.
+- **Boa, Nova**: Rust, built with `cargo`. Out on the filter, not built.
+- **Hermes, Escargot, V8, SpiderMonkey, JavaScriptCore**: C++, which Zig can compile, but their
+  own builds (CMake, GN, mach) would have to be rewritten in `build.zig`, and each is several
+  times QuickJS's size; Hermes runs no ES modules without a bundler. Not built; none is of the
+  class §5.1 names.
 
 ## 2. Method
 
@@ -140,12 +152,14 @@ them. On a cold cache it is longer than the self-hosted ReleaseSafe compile of b
 and beni's tests run a ReleaseSafe beni so that every safety check fires (CLAUDE.md, *Building*).
 With it on (less `-fsanitize=function`, whose handler Zig does not link), QuickJS-ng runs the
 stress sweep, `Strings`, `Numbers` and the fifty pages, in ReleaseSafe and in Debug, with no
-trap (`run.sh ubsan`). Bellard's QuickJS traps as soon as it compiles a `typeof x === "…"`, which
+trap (`run.sh ubsan`); the review ran the sanitized ReleaseSafe QuickJS-ng over all 1 226 corpus
+outputs of §6.3: no trap, no output changed. Bellard's QuickJS traps as soon as it compiles a `typeof x === "…"`, which
 its peephole pass rewrites: *left shift of 168 by 24 places cannot be represented in type 'int'*,
 `quickjs.c:35432` in `resolve_labels` (the `M4` macro shifts an opcode into the sign bit). Core's
 emitted code tests `typeof` in many places: `Strings` traps in both modes, as does a three-line
-test module; the stress sweep, `Numbers` and the pages happen not to reach it. It could
-be embedded only with the sanitizer turned off for its files, or with patches beni would carry.
+test module; the stress sweep, `Numbers` and the pages happen not to reach it. QuickJS-ng's
+`M4` casts to `uint32_t` (its `quickjs.c:34787`), so the fix is one cast; Bellard's could be
+embedded with that patch carried by beni, or with the sanitizer off for its files.
 
 ## 4. Size
 
@@ -166,8 +180,10 @@ committed; it is the first fifteen lines of P5's `build.zig` change.
 
 The engine's C gets the same flags in both modes, sanitizer off, plus what Zig adds per mode;
 why the stripped ReleaseSafe binary grows by 0.6 MB more than the ReleaseFast one was not
-traced. The
-whole LLVM build took 355–415 s in every column, so the engine's 12–15 s of C, compiled in
+traced. The ReleaseFast QuickJS-ng build was ended twice by a `SIGTERM` to the compiler at about
+six minutes, on the shared machine, with no compile error before it; the third attempt built.
+The cause was not found (another agent's process clean-up, or memory pressure, are the guesses);
+if P5 sees it again it is a finding. The whole LLVM build took 355–415 s in every column, so the engine's 12–15 s of C, compiled in
 parallel, did not show in it.
 
 The engine adds 0.9–1.0 MB to a stripped ReleaseFast binary, about what the static musl host
@@ -241,21 +257,26 @@ every code point below U+10000 that `trim` removes or `words` splits on, 22 samp
 order.
 
 - **`Strings`, development and release: identical** in both engines.
-- **`Numbers`: identical above the Math block** in both engines linked with glibc. In the block,
+- **`Numbers`: identical above the Math block** in both native (glibc) hosts. In the block,
   QuickJS differs from V8 in 15 values of 3 500 (`sin` 2, `cos` 3, `atan` 3, `log` 7) and
-  QuickJS-ng in 53 (`sin` 14, `cos` 17, `tan` 14, `atan` 3, `log` 7). `sqrt` and `x ^ 1.37`
-  agree. §3.3 of `prerender.md` expects this block to differ.
+  QuickJS-ng in 55 values on 53 rows (`sin` 14, `cos` 17, `tan` 14, `atan` 3, `log` 7). `sqrt`
+  and `x ^ 1.37` agree. §3.3 of `prerender.md` expects this block to differ. **The two engines do
+  not differ here; their links do.** `nm` of the two ReleaseFast hosts: Bellard's binds `sin`,
+  `cos`, `tan` and `log` to Zig's compiler-rt (`compiler_rt.sin.sin`, local symbols) and only
+  `pow` and `atan` to glibc; QuickJS-ng's leaves all six undefined, so glibc supplies them. The
+  15 are V8 against compiler-rt, the 55 V8 against glibc.
 - **The same QuickJS-ng linked with musl** (`x86_64-linux-musl`) differs in **29 lines above the
   block**, all `String.fromFloat (walk i)`, whose value is `base * 10.0 ^ k` with `k` a whole
   number: `1.4257512117142857e+128.0` from V8, `1.425751211714286e+128.0` from musl's `pow`. In the
   block it then agrees with V8 on `atan` and `tan`, and still differs on `sin`, `cos` and `log`.
 - **The same QuickJS-ng source built in Debug** (glibc, sanitizer on) gives the Math block of
-  Bellard's ReleaseFast build, 15 differences from V8, not the 53 of its own ReleaseFast build: the
-  optimisation mode alone changed the results (which implementation each build's calls resolve
-  to was not traced).
+  Bellard's ReleaseFast build, 15 differences from V8, not the 55 of its own ReleaseFast build:
+  its Debug host binds `sin`, `cos`, `tan` and `log` to compiler-rt again (found by the review,
+  with `nm`).
 
-So the engine's `Math` is whatever libm the link and the optimiser pick, which varies between
-machines and between builds of one beni; §6.4 draws the consequence. (The `.0` after an
+So the engine's `Math` is whichever symbol the Zig link resolves each function to, compiler-rt
+or the target's libc (glibc, musl, macOS's libSystem), per engine and per optimisation mode.
+That varies between machines and between builds of one beni. §6.4 draws the consequence. (The `.0` after an
 exponent is a separate defect of `String.fromFloat`, found here: #1164.)
 
 ### 6.3 The `run/` corpus
@@ -263,7 +284,10 @@ exponent is a separate defect of `String.fromFloat`, found here: #1164.)
 Every `tests/corpus/run/` program that is not a server (613), built twice as the gates build it
 (`--platform=node`, and `--release --allow-debug`), run under Node and both hosts with `--date
 --random` (the corpus reads the clock; a prerender may not): **1 226 runs, QuickJS-ng differs in
-26, QuickJS in 28.** Every difference, by cause:
+26, QuickJS in 28.** (The first pass used a host without the global `process` the `node`
+platform's `Io` reads, and every fiber program failed; the host was fixed and those programs run
+again. The review then ran the committed hosts over all 1 226 outputs and got the same 26 and 28,
+the same programs.) Every difference, by cause:
 
 | cause | programs (×2 builds) | ECMAScript? |
 |---|---|---|
@@ -288,13 +312,18 @@ identical to V8 on every input tried. Three things are not exact by the standard
 each:
 
 - **`Math`'s transcendental functions and `Math.pow`.** The standard leaves them
-  implementation-approximated. V8 does not call the host's libm: it compiles its own (fdlibm's
-  lineage, in `src/base/ieee754.cc`), which is why Node agrees with neither glibc nor musl here.
-  QuickJS calls `sin`, `pow` and the rest from libc. So P5 must compile a fixed implementation of
-  every `Math` function into the engine and never take the host's, or a page built on macOS
-  differs from one built on Linux (rule 5). Taking V8's own makes the prerendered text equal to
-  Chrome's as well, which §3.3 does not require but which costs nothing more. The `Numbers`
-  program's last block is the fixture.
+  implementation-approximated. Node agrees with none of compiler-rt, glibc and musl on all
+  inputs here, so V8 uses an implementation of its own; it is believed to be fdlibm-derived
+  (`src/base/ieee754.cc`), with `sin` and `cos` possibly from a vendored glibc copy in Chromium's
+  build (`v8_use_libm_trig_functions`), but neither was checked against V8's source for this
+  report. Both QuickJS lines call the C names `sin`, `pow` and the rest, and the link decides
+  what answers (§6.2). So P5 must route every `Math` function to one pinned implementation
+  compiled into beni and never let the link choose, or a page built on macOS, on Linux, or by a
+  Debug beni differs from another (rule 5). Zig already ships one with every build
+  (compiler-rt's, `std.math`), which pins the result but does not equal V8's. Equal to V8, and so
+  to Chrome, needs V8's own functions ported, their licence checked (a glibc-derived part would
+  be LGPL), and a measurement against Chrome, not Node alone. The `Numbers` program's last
+  block is the fixture.
 - **Engine-worded messages** (`JSON.parse`'s, an error's `message`) reach a page only through core
   code that copies them; #1166.
 - **Stack depth.** A recursion that fits in V8's stack may not fit the engine's, and the reverse.
@@ -334,8 +363,10 @@ The machine was shared with other builds; `run.sh timing` run again later at a l
 gave every figure within 10 % (fifty pages: Node 200 ms, QuickJS 334 ms, QuickJS-ng 418 ms). The
 development build of one page: Node 38.1 ms, QuickJS 10.0 ms, QuickJS-ng 11.7 ms. An
 interpreter starts in a third of a millisecond and Node in tens, so a site of a few pages
-prerenders faster in the engine than by starting Node; V8's JIT wins from about ten pages on and
-is twice as fast per page at fifty. A thousand routes of this page would take about 9 s in
+prerenders faster in the engine than by starting Node. From the table (35.1 + 3.4·(n−1) ms
+against 11.6 + 9.0·(n−1) ms) V8's JIT wins from about five such pages on, and is 2.6 times as
+fast per page at fifty. The static musl QuickJS-ng host P5 would ship was 6 % slower than the
+glibc one on the fifty pages (468 against 442 ms, measured by the review). A thousand routes of this page would take about 9 s in
 QuickJS-ng and 3.4 s in Node. The pages of a site are seldom 7 500 elements each, so that is an
 upper bound, and §10 question 4 already has incremental prerendering as the answer if `serve`
 finds it slow.
@@ -372,7 +403,9 @@ These are reported to the manager; the decision text is not edited.
    nothing an engine that runs ES modules lacks". The entry does not; core does. `Url.fromString`
    (`core/Url.beni:52`) is `Js.pure` and calls `URL.parse` or `new URL`, the WHATWG parser of the
    host. A `view` may call it (it is pure, so `prerender_impure` does not refuse it), and P3's
-   routing programs are the programs that will. No embeddable engine has `URL`. P5 must either
+   routing programs are the programs that will. Worse, §7.3 has the build give `init` the `Url`
+   of each route from `"build"."origin"`; if P3's entry makes that value with `Url.fromString`,
+   every prerendered `application` meets it, whatever its view does. No embeddable engine has `URL`. P5 must either
    (a) give the engine a WHATWG URL parser that equals the browsers' (a large surface: IDNA,
    percent-encoding sets, host parsing), or (b) write `Url.fromString` in beni over ECMAScript
    only, so the build and the browser run the same code, which is the "by construction" §5.1
@@ -382,18 +415,24 @@ These are reported to the manager; the decision text is not edited.
    timers and `MessageChannel` are on impure ones).
 2. **§3.1 item 4's "numbers print by the standard's `Number::toString`, which is exact and the same
    on every engine"** is true and measured (§6.1), but a float a page prints is often computed by
-   `^`, which is `Math.pow` and not exact by the standard; in the engine it is the linked libm's
-   (§6.2). §3.3 names `Math.pow` "of non-integers"; the measured difference is of integer
-   exponents. The answer is §6.4's first item, a fixed math library compiled in.
+   `^`, which is `Math.pow` and not exact by the standard; in the engine it is whatever the link
+   resolves `pow` to (§6.2). §3.3 names `Math.pow` "of non-integers"; the measured difference is
+   of integer exponents. The answer is §6.4's first item, one pinned math library compiled in.
 3. **§5.1's cost bullet** asks for the binary's growth; it should also require that `beni` stays a
-   static executable on Linux (§4), which `link_libc` breaks on the native target.
+   static executable on Linux (§4), which `link_libc` breaks on the native target. Linking libc
+   also changes the rest of beni: Zig's std then reaches threads and system calls through libc,
+   so the compile budgets of `fast-compiler.md` §2 need measuring again on the static build.
+4. **§11's P5 row: "every `browser/prerender/` page is byte-identical to what P1–P4 wrote under
+   Node".** With `Math` pinned to anything but V8's exact functions, a page that prints a `sin`,
+   a `log` or a `pow` is not. P5 must port V8's functions (and prove them against Chrome), or the
+   criterion must except text computed by the functions §3.3 lists. That is the owner's choice.
 
 ## 11. Recommendation, and what P5's brief must require
 
 Embed **QuickJS-ng**, pinned by Zig package hash at v0.17.0 or the release current when P5
-starts. Bellard's QuickJS is the fallback if QuickJS-ng's speed matters more than the sanitizer
-and the playground; it would need its UB-trapping files built with `-fno-sanitize=undefined` and a
-check that its stack-overflow error is mapped as `prerender_failed` like any throw.
+starts. Bellard's QuickJS is the fallback, 24–32 % faster: it would need the one-cast `M4` patch
+(or its files built with `-fno-sanitize=undefined`), and nothing for its stack-overflow error,
+which fails the build like any throw.
 
 P5's brief must require:
 
@@ -407,11 +446,19 @@ P5's brief must require:
    `Math.random`, timers or I/O; `console.log` for `Debug.log`, written to the build's standard
    error as §5.1 says of Node's streams; the module loader reading the prerender tree from memory;
    `JS_SetMaxStackSize` set below the stack of the thread the engine runs on, with the thread's
-   stack size chosen for it; an uncaught throw or a rejected evaluation is `prerender_failed` with
-   the engine's message and stack, as Node's standard error is quoted today.
-3. **A fixed `Math`.** Every `Math` function the engine exposes is compiled into beni from one
-   pinned implementation (preferably V8's own, so the page equals Chrome's), never the host
-   libm's; a fixture's page built on Linux and on macOS is byte-identical.
+   stack size chosen for it (and `JS_UpdateStackTop` if the runtime moves between threads); an
+   uncaught throw, a rejected evaluation or **an unhandled rejection**
+   (`JS_SetHostPromiseRejectionTracker`, fatal as in Node, so a swallowed throw cannot leave the
+   records short) is `prerender_failed` with the engine's message and stack, as Node's standard
+   error is quoted today. **The records channel**: whatever the entry imports to write its
+   records under Node (`node:fs` and a path, per §5.1 item 2) the host supplies as synthetic
+   modules, so that P5 changes no emitted byte. Strings leave the engine as Node writes them: a
+   lone surrogate becomes U+FFFD (`JS_ToCStringLen` passes it through as WTF-8; the prototype
+   does, and nothing in the corpus reached it).
+3. **A fixed `Math`.** Every `Math` function the engine exposes is routed to one pinned
+   implementation compiled into beni (compiler-rt's, or V8's ported), never to whatever the link
+   picks; a fixture's page built on Linux, on macOS and by a Debug beni is byte-identical. Which
+   implementation, with §10 item 4, is the owner's.
 4. **The URL question answered first** (§10 item 1), as its own slice before P5 or inside it:
    `Url.fromString` in beni, or a refusal. Until then a prerendered program that reaches it fails
    in the engine where it ran under Node.
@@ -421,8 +468,10 @@ P5's brief must require:
    not make, the prerender tree itself.
 6. **The costs stated**: the binary's growth stripped and not (§4's table is the expectation:
    1.0 MB stripped ReleaseFast, 1.7 MB ReleaseSafe), the cold build's growth (about 12–15 s of
-   `quickjs.c` on one core, once per mode), and the time per route against Node's (§8: about 9 ms against 3.4 ms on a 7 500
-   element page in one instance, and faster than Node for a site of under ten pages).
+   `quickjs.c` on one core, once per mode, sanitizer off; not measured with it on), the
+   compile budgets of `fast-compiler.md` §2 on the static build, and the time per route against
+   Node's (§8: about 9 ms against 3.4 ms on a 7 500 element page in one instance, and faster
+   than Node for a site of under about five such pages).
 
 ## 12. Reproducing
 
