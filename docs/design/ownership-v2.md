@@ -2881,6 +2881,14 @@ not killed according to which worker happened to fail first. No round, alias-dep
 Recursive folds are semantic rules, never a way to squeeze ordinary contexts under R_f. Baseline credit cannot
 be moved to a different lane, imported as spending credit, or refunded to finance later growth.
 
+**The cold re-check** (the owner, 2026-10-29, #1104). A module's tables are shared by its declarations, and a
+shared table's first miss is charged to whichever declaration meets it, so a declaration's account depends on
+where it sits. A declaration that exhausts R_f is therefore checked again alone, in fresh tables (with the
+other declarations' summaries copied in once a body reads them, S3b), and refused only if that cold run
+exhausts R_f too; its account is then the cold run's. The dump prints every declaration's cold account, so
+what it prints never depends on declaration order. A declaration whose warm run stays within R_f is not
+re-checked.
+
 **Raise attribute (new language feature).** A standalone line at column 1:
 
 ```text

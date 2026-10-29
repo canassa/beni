@@ -779,23 +779,15 @@ pub const Module = struct {
 
 /// Check every declaration of a module (§8 S3a): a worded one is its row,
 /// any other value with a body is walked, in the pre-pass's group order.
-/// The module owns its answer.
-pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
+/// The module owns its answer. A declaration the summary-size limit stops
+/// is checked again alone, in fresh tables, and refused only if that cold
+/// run is stopped too (§4.4, #1104): the module's shared tables charge a
+/// first miss to whoever meets it, so a warm account depends on where the
+/// declaration sits, a cold one never. Its account is then the cold run's;
+/// `cold_accounts` (the dump's) makes every declaration's so.
+pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocator.Error!void {
     const gpa = in.gpa;
-    mod.* = .{
-        .in = in,
-        .gpa = gpa,
-        .conds = undefined,
-        .adapter = undefined,
-        .account = undefined,
-        .prepass_arena = .init(gpa),
-    };
-    mod.account = &mod.base_account;
-    mod.conds = Cond.Table.init(gpa, .growth(&mod.base_account)) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => unreachable,
-    };
-    mod.adapter = .{ .in = in, .gpa = gpa, .places = &mod.places, .account = &mod.base_account };
+    try initModule(in, mod);
     const prepass = try Prepass.run(gpa, mod.prepass_arena.allocator(), .{ .bir = in.bir, .dispatch = in.dispatch });
     for (prepass.order) |di| {
         const d = in.bir.decls[di];
@@ -806,16 +798,62 @@ pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
         const allowance = if (d.summary_size != 0) d.summary_size else if (in.bir.summary_size != 0) in.bir.summary_size else Ids.Account.default_allowance;
         try mod.results.append(gpa, .{ .decl = di, .account = .{ .allowance = allowance } });
         const r = &mod.results.items[mod.results.items.len - 1];
-        mod.account = &r.account;
-        mod.adapter.account = &r.account;
-        mod.cur_locals = d.locals_start;
-        walkOne(mod, d, &prepass, r) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.OwnershipLimit, error.AccountingInvariant => r.failure = r.account.failed,
-        };
+        try walkIn(mod, d, &prepass, r);
+        const stopped = r.failure != null and r.failure.? == .exhausted;
+        if (!stopped and !cold_accounts) continue;
+        var cold: DeclResult = .{ .decl = di, .account = .{ .allowance = allowance } };
+        errdefer cold.account.deinit(gpa);
+        {
+            const alone = try gpa.create(Module);
+            defer gpa.destroy(alone);
+            try initModule(in, alone);
+            defer alone.deinit();
+            try walkIn(alone, d, &prepass, &cold);
+            gpa.free(cold.lines);
+        }
+        if (stopped and cold.failure == null) {
+            // Within the limit alone: walked again here, unbounded, for its
+            // class and lines in this module's tables.
+            gpa.free(r.lines);
+            r.account.deinit(gpa);
+            r.* = .{ .decl = di, .account = .{ .allowance = std.math.maxInt(u32) - 1 } };
+            try walkIn(mod, d, &prepass, r);
+        }
+        r.account.deinit(gpa);
+        r.account = cold.account;
+        if (stopped) r.failure = cold.failure;
     }
     mod.account = &mod.base_account;
     mod.adapter.account = &mod.base_account;
+}
+
+/// Empty tables for `in`'s module.
+fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
+    mod.* = .{
+        .in = in,
+        .gpa = in.gpa,
+        .conds = undefined,
+        .adapter = undefined,
+        .account = undefined,
+        .prepass_arena = .init(in.gpa),
+    };
+    mod.account = &mod.base_account;
+    mod.conds = Cond.Table.init(in.gpa, .growth(&mod.base_account)) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => unreachable,
+    };
+    mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
+}
+
+/// Walk `d` in `mod`'s tables on `r`'s account; a limit is `r`'s failure.
+fn walkIn(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Allocator.Error!void {
+    mod.account = &r.account;
+    mod.adapter.account = &r.account;
+    mod.cur_locals = d.locals_start;
+    walkOne(mod, d, prepass, r) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.OwnershipLimit, error.AccountingInvariant => r.failure = r.account.failed,
+    };
 }
 
 fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Error!void {
