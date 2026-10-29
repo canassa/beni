@@ -257,9 +257,8 @@ main = Prerender.pages (Page.schema ⊤) λ⊤ →
             Err "cannot read posts/hello.txt"
 ```
 
-To find the posts, list the directory: `Io.readDir "posts"` gives the entries sorted by name, so the
-routes come out in the same order on every build. Keep the entries whose `kind` is `Io.File`, and join
-`"posts/${entry.name}"` for `Io.readFile`.
+To find the posts, use `Io.readDir "posts"`: its entries are sorted by name, so the routes have one
+order on every build. Keep the entries whose `kind` is `Io.File`; read `"posts/${entry.name}"`.
 
 The site's `main` is `Browser.prerenderData schema λvalue → program`:
 
@@ -283,8 +282,7 @@ main = Browser.prerenderData (Page.schema ⊤) λpage →
   `subscriptions` is `program_shape`. The lambda's parameter is a name or `_`.
 - The schema must be a `schema` declaration's `X.schema ⊤`, `Schema.derived ⊤`, a primitive, or
   those composed by `Schema.list`, `Schema.nullable` or `Schema.converted`. A schema that the
-  library's builders make is `program_shape`. A conversion that may be impure is
-  `prerender_impure`.
+  library's builders make is `program_shape`. A conversion that may be impure is `prerender_impure`.
 - An `Err` from `body`, a throw, a value that the schema cannot encode, or a data `main` that is not
   `Prerender.pages`, is `prerender_data_failed`. A text that the site's schema cannot decode is
   `prerender_data_invalid`.
@@ -292,10 +290,8 @@ main = Browser.prerenderData (Page.schema ⊤) λpage →
   A `"data"` with any other `main` is the warning `prerender_data_ignored`.
 - `Debug.log` is allowed in the data program, also with `--release`: the data program is always a
   development build, and it does not ship.
-- `build --watch` and `serve` run the data program again when a file under its `"paths"` or its
-  `"inputs"` changes.
-- A page whose script was changed so that it does not decode, or was taken out, stops when it
-  loads.
+- `build --watch` and `serve` run the data program again when its `"paths"` or `"inputs"` change.
+- A page whose data script was changed so that it does not decode, or removed, stops on load.
 - Built alone (`beni build --platform=node --out=data-out data shared`) and run with no argument,
   the data program writes its records to standard output.
 
