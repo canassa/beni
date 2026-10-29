@@ -7,6 +7,9 @@ and compiler behavior do not change. Evidence: [research](research/webgpu-api-re
 [failure ledger](research/webgpu-errors.md), [source pins](research/webgpu/sources.json)
 and [complete coverage inventory](research/webgpu/coverage.md).
 
+**Owner decision, 2026-10-30:** expose WebGPU directly. Elm WebGL informs API
+ergonomics; the additional mesh/entity/view abstraction is removed.
+
 ## 1. Goals and the meaning of complete
 
 Expose **all of the pinned browser WebGPU standard**, including graphics,
@@ -55,7 +58,6 @@ foreign/type/arity/effect checks as other platform primitives.
 | `Gpu`, `Gpu.Types`, `Gpu.Flags`, `Gpu.Feature`, `Gpu.Limits`, `Gpu.WgslFeature` | Availability, typed descriptors/scalars/unions/constants, capability negotiation | Entire IDL and standard feature/format tables |
 | Resource and command modules | Checked native capabilities with managed state, mapping and encoding | Every inventoried interface/member/overload |
 | `Gpu.Batch`, `Gpu.Frame`, `Gpu.Diagnostics` | Scope-safe grouped operations, presentation and explicit diagnostics | Same native operations and typed errors; no hidden capability gap |
-| `Gpu.Layout`, `Gpu.Mesh`, `Gpu.Entity`, `Gpu.View` | Optional Elm-inspired convenience API | Lowers to the complete layer, never a second engine |
 | Supporting `Binary`, `Browser.Image`, `Browser.Video`, `Browser.Canvas`, worker transfers | Typed binary/source/canvas interoperability | Every native input union arm is constructible; no application FFI |
 
 The last row is **new API work**, not an assertion that those modules exist.
@@ -597,9 +599,8 @@ immutable `List Int` or a transferable general-purpose ArrayBuffer.
 The binary layer handles host-shareable WGSL layout explicitly: scalar types,
 vec/matrix alignment, struct offsets, member `@align`/`@size`, array stride,
 runtime arrays, uniform vs storage constraints and f16 encoding. Raw bytes are
-always available. Optional `Gpu.Layout a` supplies typed encoders/decoders and
-layout declarations; it cannot infer a correct GPU layout from an arbitrary
-beni record without a supplied schema.
+always available. Binary encoders/decoders use explicit WGSL layout
+descriptions; a GPU layout cannot be inferred from an arbitrary beni record.
 
 ## 8. Canvas, media, events, fibers and page integration
 
@@ -680,9 +681,9 @@ because it subscribed late. `eachEvent` is a scoped waiting operation, and
 In a direct browser program, use effects in handlers/owned fibers and return
 typed outcomes to the model. In TEA, `Cmd.task`/keyed commands and subscriptions
 carry the same effects. `init`, `update` and `view` keep their current sync
-contracts. A GPU view holds a stable canvas node; it never creates a device or
-changes the DOM during a pure `view`. Unmount cancels frame drivers and releases
-resources **owned by that view**, not shared devices supplied by the application.
+contracts. Applications retain a stable canvas node and create resources and
+render as effects. Unmount cancels owned fibers and releases their owned resources;
+shared devices stay under the application’s explicit lifetime management.
 Prerendering emits the canvas/placeholder only; runtime GPU access returns
 `ApiUnavailable` outside a GPU host, and prerender views need no GPU operation.
 
@@ -703,69 +704,10 @@ screen and release logs/stops under the existing contract. A GPU error expected
 for that operation stays a value; an application intentionally choosing to
 escalate that value is a separate application decision.
 
-## 9. The Elm-inspired rendering layer
+## 9. Reserved
 
-Keep Elm's distinction between reusable mesh data, a shader/pipeline, uniforms
-(bindings in WebGPU) and an entity. Explicit device setup and typed errors
-replace hidden compilation during `view`. No `[glsl| … |]` syntax is copied:
-WGSL is the standard source, and static literal/reflection support would be a
-separate language proposal.
-
-```text
-Gpu.Layout.vertex : VertexLayout a → Result InputError (VertexEncoder a)
-Gpu.Mesh.triangles : VertexEncoder a, List (a × a × a) → Result InputError (Mesh a)
-Gpu.Mesh.indexedTriangles : VertexEncoder a, List a, IndexData → Result InputError (Mesh a)
-Gpu.Mesh.upload : Device, Mesh a → Result Error (UploadedMesh a)
-Gpu.Entity.make : RenderPipeline, UploadedMesh a, List BindGroup → Result InputError Entity
-Gpu.Entity.withSettings : Entity, EntitySettings → Entity
-Gpu.Entity.draw : RenderPass, Entity → Result InputError ⊤
-Gpu.View.canvas : List (Html.Attribute msg), SurfaceKey → Html msg
-```
-
-These are conveniences, not the foundation's only topology or binding model.
-Points/lines/line-strip/triangle-strip, instancing, indirect draws, vertex-less
-fullscreen shaders, multiple streams, storage-backed rendering, compute-generated
-geometry and all explicit pipelines remain available below. Entities can combine
-different mesh/binding types in one pass after their layouts have been checked.
-Pipeline-static settings select or cache an appropriate pipeline; they cannot
-pretend WebGPU has WebGL's mutable fixed-function state. Viewport/scissor and
-other native dynamic state are separate explicit commands.
-
-Reuse uploaded meshes, bindings and pipelines by handle/source identity; avoid
-per-render resource creation. A cache key includes device generation, layout,
-shader entry/overrides, target formats and every pipeline-static setting.
-Do not use structural equality that collapses resource identity, and never reuse
-resources across restored devices. Caches expose disposal and bounded retention.
-Convenience image loaders preserve the supporting image API's typed load/decode
-errors before invoking the same checked GPU upload boundary.
-
-Typical flow, deliberately showing where checked results occur:
-
-```text
-initialize config =
-    -- Direct Result composition; all failures stay typed.
-    adapter ← Gpu.requestAdapter config.adapter
-    device ← Gpu.Adapter.requestDevice adapter config.device
-    shader ← Gpu.Shader.compile device config.shader
-    pipeline ← Gpu.Device.createRenderPipelineAsync device (pipelineFor shader)
-    mesh ← Gpu.Mesh.upload device config.mesh
-    surface ← Gpu.Surface.fromElement "scene"
-    Gpu.Surface.configure surface (canvasFor device config)
-    Ok { device, pipeline, mesh, surface }
-
-draw resources =
-    Gpu.Frame.submit resources.surface "scene" λframe →
-        -- Everything inside this callback is sync; GPU checks finish outside it.
-        target ← Gpu.Frame.getCurrentTexture frame
-        encoded ← Gpu.Frame.encode frame encoderDefaults λencoder →
-            Gpu.RenderPass.with encoder (clearPass target) λpass →
-                Gpu.Entity.draw pass (entityFor resources)
-        Gpu.Frame.submitCommands frame [ encoded.commands ]
-```
-
-The arrow lines are explanatory Result-composition pseudocode, not a proposed
-change to beni's existing `let … ← …`/`?` syntax. No example in this document is
-claimed to compile before the proposed API exists.
+The additional rendering abstraction was removed by the owner on 2026-10-30.
+The section number is retained for existing references.
 
 ## 10. Verification and delivery plan
 
@@ -781,7 +723,6 @@ where it adds a shipped surface.
 | Checked device/resource engine | Capability negotiation, resource state, all error channels, three-filter scope sections, cancellation and defects | Controlled host fault injection for every ledger row; interleaved fiber/cleanup tests; unexpected-class defects |
 | Complete compute and transfers | Pipelines/layouts, buffers/mapping, all copies/writes, command states, queries, immediate data | Native-vs-beni compute/readback differentials, alignment/limit/usage failures and exact u64 round trips |
 | Complete rendering and presentation | All graphics state, render bundles/queries, surfaces, all external sources, worker/offscreen path | Real-browser multi-pass/MSAA/depth/stencil/MRT/indirect/media/resize/loss tests; same-task expiry adversaries |
-| Ergonomic layer | Typed layouts, meshes/entities, stable canvas, owned frame driver and TEA adapters | Shared-device/unmount/cancellation cases; no resource churn in stable views |
 | Completeness and performance audit | Every inventory entry tied to public declaration and behavioral fixture; new standard delta process | CTS-derived boundary cases and native differential harness on available real implementations; measured overhead/output bytes |
 
 The current browser harness commonly disables the GPU and happy-dom is not a
@@ -815,7 +756,7 @@ mapping/transfer copies, initialization/pipeline work, brotli/raw bytes and idle
 retention. A validated batch can trade diagnostic granularity for fewer scopes;
 it may not disable error handling in release. Existing projects that do not
 import Gpu must ship zero GPU runtime, and compute-only projects must not ship
-mesh/view/media helpers. No performance claim is made before those measurements.
+canvas/media helpers. No performance claim is made before those measurements.
 
 ## 11. Proposed decisions for owner review
 
@@ -823,7 +764,7 @@ mesh/view/media helpers. No performance claim is made before those measurements.
    in §1. Literal capture of undetectable WGSL faults cannot be guaranteed by
    this host API. Future standard additions require tracked updates.
 2. Adopt browser-owned `Gpu.*` direct Result functions, typed descriptors and
-   complete WGSL source access, with an optional Elm-inspired layer.
+   complete WGSL source access.
 3. Adopt checked completion for resources, sync encode/frame callbacks for
    task-lived sources, provisional shared handle state and explicit batch
    failure semantics. Do not add linear/rank-2 types solely for GPU handles.
