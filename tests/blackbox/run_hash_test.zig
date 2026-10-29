@@ -346,15 +346,17 @@ test "a record file that comes back into the corpus fails the walk by name, with
     // them: a rebase can leave hundreds.
     try expectReported(r, "corpus/run/Good.run-hash: a run-hash record file; the records left git for the run-hash cache (#881): delete it");
     try expectReported(r, "corpus/run/Good.release-run-hash: a run-hash record file");
-    try expectReported(r, "2 run-hash record files left in the corpus (`git ls-files '*run-hash' tests/blackbox/run-hashes.txt` lists them): delete every one");
+    try expectReported(r, "2 stale run-hash files left in the corpus (`git ls-files '*run-hash' '*.value-fuzz' tests/blackbox/run-hashes.txt` lists them): delete every one");
     // Nothing ran: no digest.
     try testing.expect(!w.exists("cache"));
 }
 
-test "a page's old fuzz record is refused with the marker that replaces it" {
+test "a page's old fuzz record, and the marker that replaced it, are refused with the exclusion file that replaces both" {
     // A `browser/tea` page's `.fuzz-run-hash` also opted it into its value
-    // fuzz; one that comes back would silently stand where the page's
-    // `.value-fuzz` marker belongs. The project form is caught too.
+    // fuzz, as the `.value-fuzz` marker did for five days after it (#881).
+    // Every page is fuzzed now unless `no-value-fuzz.txt` names it, so
+    // either file that comes back says nothing true. The project form is
+    // caught too.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("corpus/run/Good.beni", hello);
@@ -363,9 +365,15 @@ test "a page's old fuzz record is refused with the marker that replaces it" {
     const r = try walker(&w);
     try expectExit(1, r);
     try expectReported(r, "corpus/run/Good.fuzz-run-hash: a run-hash record file");
-    try expectReported(r, "add an empty `<page>.value-fuzz` (`_expected.value-fuzz` in a project) beside the page");
+    try expectReported(r, "the page's value fuzz needs no opt-in now (to exclude it, name it with its reason in `no-value-fuzz.txt` beside the pages)");
 
     try w.tmp.dir.deleteFile(w.io, "corpus/run/Good.fuzz-run-hash");
+    try w.write("corpus/run/Good.value-fuzz", "");
+    const m = try walker(&w);
+    try expectExit(1, m);
+    try expectReported(m, "corpus/run/Good.value-fuzz: a value-fuzz marker; every browser/tea page is a value-fuzz case now (the owner, 2026-10-28, #881): delete it");
+
+    try w.tmp.dir.deleteFile(w.io, "corpus/run/Good.value-fuzz");
     try w.write("corpus/run/Project/Main.beni", hello);
     try w.write("corpus/run/Project/_expected", "hello\n");
     try w.write("corpus/run/Project/_expected.release-run-hash", "release abc\n");

@@ -309,6 +309,85 @@ test "a socket opened with no protocol when the page offered some fails the case
     try expectReported(r, "/corpus/browser/tea/Offer.beni: PageFailed\n");
 }
 
+/// `tests/corpus/browser/tea/Hello`, a static `browser-tea` page, copied
+/// into the world as the page `corpus/browser/tea/Hello`.
+fn writeHello(w: *World) !void {
+    for ([_][]const u8{ "beni", "steps", "expected" }) |ext| {
+        const name = try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/browser/tea/Hello.{s}", .{ext});
+        const text = try Io.Dir.cwd().readFileAlloc(w.io, name, w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(w.arena.allocator(), "corpus/browser/tea/Hello.{s}", .{ext}), text);
+    }
+}
+
+test "every browser/tea page is a value-fuzz case, unless no-value-fuzz.txt names it with its reason" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The owner, 2026-10-28 (#881): a page is fuzzed with messages as
+    // values unless someone wrote down why it cannot be. The page case
+    // writes three digests (its two pages and its fuzz of view events);
+    // the value-fuzz case writes a fourth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHello(&w);
+    try w.write("corpus/browser/tea/no-value-fuzz.txt", "# pages with no value fuzz\nHello: a static page, nothing to send it\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const excluded = try walker(&w);
+    try expectExit(0, excluded);
+    const three = try digests(&w);
+    try w.tmp.dir.deleteFile(w.io, "corpus/browser/tea/no-value-fuzz.txt");
+    const fuzzed = try walker(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, fuzzed);
+    try testing.expectEqual(3, three.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The page case's three were verified; the value fuzz ran and recorded.
+    try expectCounts(&w, 3, 1);
+    try testing.expectEqual(4, (try digests(&w)).len);
+}
+
+test "a no-value-fuzz.txt line that names no page, or gives no reason, fails the walk" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Fail closed: a stale line would excuse a page that comes back under
+    // that name, and a line with no reason is an opt-out nobody argued.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHello(&w);
+    try w.write("corpus/browser/tea/no-value-fuzz.txt", "Hello: a static page\nGone: it left\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const stale = try walker(&w);
+    try w.write("corpus/browser/tea/no-value-fuzz.txt", "Hello\n");
+    const bare = try walker(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(1, stale);
+    try expectReported(stale, "corpus/browser/tea/no-value-fuzz.txt:2: `Gone` names no page of browser/tea: delete the line");
+    try expectExit(1, bare);
+    try expectReported(bare, "corpus/browser/tea/no-value-fuzz.txt:1: `Hello`: a line is `<page>: <reason>`, and the reason says why the page cannot be fuzzed");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Both walks stopped before any page ran.
+    try testing.expect(!w.exists("cache"));
+}
+
 test "a malformed step fails the case before the page loads" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -1085,12 +1085,16 @@ with the seed, the step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
 fixture of the defect. A fuzz that agreed has a digest of its own in the
 run-hash cache. `zig build fuzz` runs fifty seeds of sixty steps.
-A `browser/tea/` page that carries an empty `<name>.value-fuzz` marker
-(`_expected.value-fuzz` in a project) has a value-fuzz case of its own,
+Every `browser/tea/` page has a value-fuzz case of its own as well,
 `<page> [value fuzz]`, budgeted apart from the page's: it builds the two
 `--fuzz` builds, development and release, dumps the message types and
 fuzzes them, messages as values included, with a digest of its own beside
-the page case's own fuzz of view events (`browser/tea/TypedInput`).
+the page case's own fuzz of view events (`browser/tea/TypedInput`). There
+is no opt-in (the owner, 2026-10-28, #881). A page that cannot be fuzzed
+is a line `<page>: <reason>` of `browser/tea/no-value-fuzz.txt` (a
+project by its directory's name), and the file fails closed: a line that
+names no page, or gives no reason, fails the walk, so a page that comes
+back is fuzzed until someone writes down again why it cannot be.
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering
