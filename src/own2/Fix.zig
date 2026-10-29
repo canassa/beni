@@ -580,10 +580,11 @@ pub const Prover = struct {
             const w = p.pending.items[i];
             switch (p.provs.items[w[0]].state) {
                 .absent => i += 1,
-                .conflicted => {
-                    try p.conflict(gpa, charge, try p.provIndex(gpa, charge, try cells.label(gpa, charge.account, w[1], .from(w[2]), true)));
-                    _ = p.pending.swapRemove(i);
-                },
+                // A copy waits only while its source is absent. A source turns
+                // conflicted only from recorded (`record`), and every path that
+                // records one (`foldPair`, `copyOf` here) drains at once, so no
+                // waiting copy outlives its source's recording.
+                .conflicted => unreachable,
                 .recorded => {
                     _ = p.pending.swapRemove(i);
                     _ = try p.copyOf(gpa, charge, conds, cells, w[0], .from(w[2]), w[1]);
@@ -2613,4 +2614,25 @@ test "#1189 round 3: an instantiation made before its callee's provenance waits 
         _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(3, .none, false), false), try f.label(30, try f.label(4, .none, false), false), l);
         try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
     }
+}
+
+test "#1189 round 3, F3: a label folded in before its pair is recorded still clears the bit (`allInside`)" {
+    // The order a read-off meets its labels in is no answer's business: the
+    // callee's own `arr` (`13·1`) folded into `13⋆` first, the pair after.
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const l13 = try f.label(13, .none, true);
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l13, try f.label(13, try f.label(1, .none, false), false));
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(13, try f.label(10, .none, false), false), try f.label(13, try f.label(11, .none, false), false), l13);
+    try testing.expect(!f.prover.provenanceOf(l13).?.bit);
+    const arr = try f.set(&.{try f.cells.result(gpa, &f.account, .result, l13, 1, try f.placeOf(0), .list)});
+    var w: World = .{ .f = &f, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = l13, .cells = arr } }} }} };
+    try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
+    // A label under a side folded in first keeps it.
+    const l14 = try f.label(14, .none, true);
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l14, try f.label(14, try f.label(10, try f.label(5, .none, false), false), false));
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(14, try f.label(10, .none, false), false), try f.label(14, try f.label(11, .none, false), false), l14);
+    try testing.expect(f.prover.provenanceOf(l14).?.bit);
 }
