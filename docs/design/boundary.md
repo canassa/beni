@@ -2015,8 +2015,9 @@ none of the four fields below is handed exactly what 1.5 hands it. S0 builds wha
 `cx.reads`, `cx.conflicts`, `cx.site`, `cx.carriers`, `cx.literal`) are added by the slices that
 consume them, each as a minor version of its own.
 
-- **`Lowering.programs`**, the program constructors the lowering compiles whole, each a `foreign`
-  of its platform named by module and value (`Tea.sandbox`). The compiler finds **every call** of
+- **`Lowering.programs`**, the program constructors the lowering compiles whole, each a declaration
+  of its platform named by module and value (`Tea.sandbox`; a `foreign` until 2026-10-29,
+  `plans/runtime-in-beni.md` step 9). The compiler finds **every call** of
   one in a surviving declaration before any declaration is lowered. A use of one that is not the
   callee of a call — `List.map apps Tea.sandbox` — makes programs whose `view`s are known only at
   run time, and is **`view_not_compiled`** at the use. An entry may carry **`refused`**, a message:
@@ -3155,7 +3156,7 @@ operation and returns its canceller (P2 §16.5); one that never parks is `impure
 `getJson`/`postJson` send and accept `application/json` and answer the body's text once it parses
 as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`schema.md`).
 
-*As built 2026-10-30 (`plans/runtime-in-beni.md` step 9).* `Browser.Events.size` and the
+*As built 2026-10-29 (`plans/runtime-in-beni.md` step 9).* `Browser.Events.size` and the
 `hidden` that `visibility` reads are beni over `Js` — `Js.global "innerWidth"`/`"innerHeight"`,
 and `document.visibilityState === "hidden"` through `Js.same` — and `Browser/Events.js` is gone;
 nothing is caught, since neither read can fail.

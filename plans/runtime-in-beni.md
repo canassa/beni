@@ -23,7 +23,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
-| 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **landed 2026-10-30**, below: both siblings deleted (row 8, `Dom.js`, is #1208's) |
+| 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **built 2026-10-29**, #1228, below: both siblings deleted (row 8, `Dom.js`, is #1208's) |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -883,7 +883,7 @@ read out of an array, neither of which fact 3 follows.
 
 *Decided by the owner, 2026-10-02:* a `Js` comparison intrinsic (`Js.lt` and its siblings, written in place as JavaScript's `<` and friends, specified in `boundary.md` §4.2 before it is built) so that `Hosted.js`'s last functions, `keyOf` and `compareKeys`, move to beni without reaching `String.compare`.
 
-## Step 9 — `Browser/Events.js` and `browser-inline`'s `Tea.js` (2026-10-30)
+## Step 9 — `Browser/Events.js` and `browser-inline`'s `Tea.js` (2026-10-29)
 
 **What moved.** Two siblings of two exports each. `Browser.Events.size` is a record of
 `Js.global "innerWidth"` and `"innerHeight"`, and the private `hidden`, which `visibility` reads,
@@ -895,10 +895,11 @@ that no call reaches, since the `inline` lowering compiles each call as the prog
 (`Lowering.constructs`) and refuses a constructor used as a value. The platform has no sibling
 left, so a development build copies none. Nothing is caught: none of the four reads can fail.
 
-**What changes shape.** `Size` keeps its field names: `width` and `height` are also written as
-plain properties (`innerWidth`, `innerHeight` are not, but `Dom.box` reads `width` and `height`
-of a rectangle, and item 4's closed list pins a text the build writes both ways). `Visibility`'s
-tags were integers already: the `foreign` returned a `Bool`. `emit/release/tea/WindowSize` pins
+**What changes shape.** `Size` keeps its field names only where `Dom.box` is live: `box` reads
+`width` and `height` of a rectangle as plain properties, and item 4's closed list pins a text the
+build writes both ways; a page that reads the window and measures no node renames them
+(`{c:globalThis.innerHeight,b:globalThis.innerWidth}`), which is right, since no JavaScript reads
+a `Size`. `Visibility`'s tags were integers already: the `foreign` returned a `Bool`. `emit/release/tea/WindowSize` pins
 the two reads in place. The `word-bodies.txt` rows of `Tea.sandbox` and `Tea.element` move from
 `Tea.js` to `Tea.beni`, with the hash of the beni body; their trusted `entry` words stand, since
 the body is never reached (`ownership-checker.md` §24.8). One representation-key golden moves,
@@ -909,9 +910,12 @@ now; JavaScript reads no unit value, so nothing observes it.
 **Sizes.** Measured against `master` at `eedceaaa0` as step 8 was (428 of 433 `browser/` pages
 built on both sides; `bench/size.mjs`). Four pages move, each smaller in raw and brotli bytes:
 `tea/WindowEvents` 4 193 → 4 170 (−23, raw −62), `tea/DefectReleasesHost` 7 125 → 7 117 (−8,
-raw −21), and two inline pages the unit key's leaving the wild set lets the release build unbox,
-`inline/InputInSend` 1 074 → 1 060 (−14) and `inline/PointerInSend` 1 407 → 1 389 (−18); the 424
-other pages and every `size.mjs` line are byte for byte. A release build of an inline page did
-not ship `Tea.js`'s exports before (`Minify` keeps only what a build imports), so there only
-development output trees change.
+raw −21), and two inline pages, `inline/InputInSend` 1 074 → 1 060 (−14) and
+`inline/PointerInSend` 1 407 → 1 389 (−18), where `Cmd` gets integer tags: the `foreign`
+`Tea.element`'s annotation named `Cmd msg`, which kept `Cmd`, `Main.Msg`, `List (Cmd Msg)` and
+`⊤` in the wild set, and no `foreign` names them now (`{$:"Batch",…}` → `{$:2,…}`, `case "None"`
+→ `case 0`; no hand-written code reads `Cmd`'s tags). The 424 other pages and every `size.mjs`
+line are byte for byte. A release build of an inline page never shipped `Tea.js`'s exports
+(`Minify` keeps only what a build imports), so an inline page's release bytes change only where
+a type left the wild set, as on those two; its development tree loses the sibling file.
 
