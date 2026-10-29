@@ -550,6 +550,15 @@ callers that instantiate it. A value a `Js.to` yields is therefore either one Ja
 which the optimiser already treats as unknown, or one that went in at a `Js.from` and is wild. This
 changes nothing that privileged code may write or must check.
 
+*Amended 2026-10-29 (`backend.md` §9 item 6; the review of #1127):* **a host function given a beni
+function type through `Js.to` must ignore the arguments past the type's arity and `this`.** Under
+`--release` a lambda that forwards its parameters to such a name is printed as the name, so a host
+that calls the value — `map`, `then`, `replaceAll`, a listener — passes the function what it passed
+the lambda: more arguments than the type names, and a receiver. An emitted function reads neither;
+`parseInt` reads a radix and `Object.prototype.toString` reads `this`. A value called through
+`Js.apply` or `Js.call` is a `Js.Value` and under no such duty: item 6 leaves a lambda whose call is
+one as written, and a `const` that holds an import is never its callee.
+
 **A mutable local is a `Js.Ref`** (R47-2; there is no `let mut`):
 
 | declaration | rung | written as |
