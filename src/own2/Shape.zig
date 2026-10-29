@@ -359,10 +359,22 @@ pub const Table = struct {
     /// `collect` with the root's cell set its caller accumulated by one
     /// insertion per item, on the item's lane (§2.3, §4.1, #1098): the
     /// internal nodes stay lazy.
-    pub fn collectRoot(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, root_cells: SetId) Error!NodeId {
-        const out = try t.collect(gpa, account, cellsets, members);
+    /// With `lanes`, the internal node at each split is made on the lane of the
+    /// item the split falls before: one node per item (§4.1, #1098).
+    pub fn collectRoot(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, root_cells: SetId, lanes: ?[]const Ids.Lane) Error!NodeId {
+        const out = if (lanes) |ls| try t.collectLaned(gpa, account, cellsets, members, ls) else try t.collect(gpa, account, cellsets, members);
         if (t.isLazy(out)) t.nodes.items(.cells)[out.int()] = root_cells;
         return out;
+    }
+
+    fn collectLaned(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, lanes: []const Ids.Lane) Error!NodeId {
+        if (members.len == 1) return members[0];
+        const mid = members.len / 2;
+        const l = try t.collectLaned(gpa, account, cellsets, members[0..mid], lanes[0..mid]);
+        const r = try t.collectLaned(gpa, account, cellsets, members[mid..], lanes[mid..]);
+        const kernel = try account.enter(gpa, lanes[mid]);
+        defer account.leave(kernel);
+        return t.positions(gpa, account, cellsets, l, r);
     }
 
     pub fn collect(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId) Error!NodeId {
@@ -2701,8 +2713,12 @@ test "#1098: a collection's internal positions sets are lazy: collect builds non
     // The root's set given (its caller inserted each item's cells on its
     // lane): collect makes 63 nodes and reads no set.
     const before = f.account.growth_by[@backingInt(Ids.Category.set)];
-    const root = try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &leaves, all);
+    const root = try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &leaves, all, null);
     try testing.expectEqual(before, f.account.growth_by[@backingInt(Ids.Category.set)]);
+    // On per-item lanes (#1139) it is the same DAG, node for node.
+    var lanes: [64]Ids.Lane = undefined;
+    for (&lanes, 0..) |*l, i| l.* = .{ .atom = @intCast(i), .role = .transfer_settlement };
+    try testing.expectEqual(root, try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &leaves, all, &lanes));
     try testing.expect(!f.shapes.isLazy(root));
     try testing.expectEqual(all, f.shapes.cells(root));
     const left: NodeId = .from(f.shapes.get(root).a);

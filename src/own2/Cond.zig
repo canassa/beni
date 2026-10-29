@@ -2019,26 +2019,39 @@ pub const Table = struct {
     pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, via: NodeId = .none };
 
     pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, out: *std.ArrayList(Next)) Error!void {
-        try t.steps(gpa, charge, v, n, summary, cursors, .none, out);
+        return t.frontierLaned(gpa, charge, v, n, summary, cursors, .none, out);
+    }
+
+    /// `frontier`, each cursor's share on its lane in `lanes` (§4.1, #1139).
+    fn frontierLaned(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, lanes: ItemLanes, out: *std.ArrayList(Next)) Error!void {
+        try t.steps(gpa, charge, v, n, summary, cursors, lanes, .none, out);
         var inners: std.ArrayList(NodeId) = .empty;
         defer inners.deinit(gpa);
         try innersOf(gpa, charge, v, n, &inners);
-        for (inners.items) |i| try t.steps(gpa, charge, v, i, summary, cursors, i, out);
+        for (inners.items) |i| try t.steps(gpa, charge, v, i, summary, cursors, lanes, i, out);
     }
 
-    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, via: NodeId, out: *std.ArrayList(Next)) Error!void {
+    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, lanes: ItemLanes, via: NodeId, out: *std.ArrayList(Next)) Error!void {
         var named: std.ArrayList(u32) = .empty;
         defer named.deinit(gpa);
         try explicitSteps(gpa, charge, v, n, &named);
         var cand: std.ArrayList(u32) = .empty;
         defer cand.deinit(gpa);
         try cand.appendSlice(gpa, named.items);
-        // A fold's links are the steps it saw (sparse below it too).
-        for (cursors) |c| {
+        // A fold's links are the steps it saw (sparse below it too). Each
+        // cursor's links on its lane, a step once: a wide run's cursors name
+        // the same few steps, so the sort is over the distinct ones (#1139).
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        for (named.items) |w| _ = try seen.getOrPut(gpa, .{w});
+        for (cursors, 0..) |c, ci| {
+            const lane = try lanes.enter(gpa, ci);
+            defer lanes.leave(lane);
             var it = t.kappaLinks(c);
             while (it.next()) |e| {
                 try charge.reserve(gpa, .inspection, 1);
-                try cand.append(gpa, e.step.word());
+                const got = try seen.getOrPut(gpa, .{e.step.word()});
+                if (!got.found_existing) try cand.append(gpa, e.step.word());
             }
         }
         try charge.reserve(gpa, .inspection, sortCost(cand.items.len) + sortCost(named.items.len));
@@ -2160,10 +2173,47 @@ pub const Table = struct {
     }
 
     /// `propagate`, the members read at their own class (a literal's `vᵢ`, §2.9).
+    /// Optional per-item lanes (§4.1, #1098): `enter(i)` is item `i`'s lane,
+    /// or nothing when there are none.
+    pub const ItemLanes = struct {
+        all: ?[]const Ids.Lane = null,
+        account: *Ids.Account = undefined,
+        pub const none: ItemLanes = .{};
+        fn enter(l: ItemLanes, g: Allocator, item: usize) Error!?Ids.Account.Kernel {
+            const ls = l.all orelse return null;
+            return try l.account.enter(g, ls[item]);
+        }
+        fn leave(l: ItemLanes, k: ?Ids.Account.Kernel) void {
+            if (k) |kk| l.account.leave(kk);
+        }
+        /// The lanes of `items`, the members a run's entries come from.
+        fn of(l: ItemLanes, g: Allocator, items: []const u32, out: *std.ArrayList(Ids.Lane)) Error!ItemLanes {
+            const ls = l.all orelse return l;
+            out.clearRetainingCapacity();
+            for (items) |i| try out.append(g, ls[i]);
+            return .{ .all = out.items, .account = l.account };
+        }
+    };
+
     pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
+        return t.propagateItems(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal, null);
+    }
+
+    /// `propagateFrom`, each member's share of every state on its own lane
+    /// (`lanes[i]` member `i`'s, a literal's item, §4.1, #1098): its run
+    /// record, its read, its projections below. What a state does once is
+    /// the caller's.
+    pub fn propagateItems(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal, lanes: ?[]const Ids.Lane) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
+        std.debug.assert(lanes == null or lanes.?.len == members.len);
         var runs: std.ArrayList(NodeId) = .empty;
         defer runs.deinit(gpa);
+        // Each run entry's member, whose lane its share is on.
+        var run_items: std.ArrayList(u32) = .empty;
+        defer run_items.deinit(gpa);
+        const item_lanes: ItemLanes = .{ .all = lanes, .account = charge.account };
+        var frame_lanes: std.ArrayList(Ids.Lane) = .empty;
+        defer frame_lanes.deinit(gpa);
         var run_ctxs: std.ArrayList(Kappas) = .empty;
         defer run_ctxs.deinit(gpa);
         // `route`: the joined nodes on the way to this frame, each with its
@@ -2176,6 +2226,7 @@ pub const Table = struct {
         defer stack.deinit(gpa);
         try runs.appendSlice(gpa, members);
         try run_ctxs.appendSlice(gpa, member_ctxs);
+        for (0..members.len) |i| try run_items.append(gpa, @intCast(i));
         // The output positions: path 0 the root, path k `(parent, step)`.
         const PathRec = struct { parent: u32, step: u32 };
         var paths: std.ArrayList(PathRec) = .empty;
@@ -2219,6 +2270,8 @@ pub const Table = struct {
             var r = f.len;
             while (r > 0) {
                 r -= 1;
+                const lane = try item_lanes.enter(gpa, run_items.items[f.first + r]);
+                defer item_lanes.leave(lane);
                 try charge.reserve(gpa, .memo, 1);
                 const got = try t.prop_runs.getOrPut(gpa, .{ runs.items[f.first + r].int(), run_ctxs.items[f.first + r].int(), run });
                 if (!got.found_existing) got.value_ptr.* = got.index;
@@ -2296,6 +2349,8 @@ pub const Table = struct {
             const by_agg = mode == .together and f.node == joined and traversal == null;
             var together: Agg = .{};
             for (0..f.len) |i| {
+                const lane = try item_lanes.enter(gpa, run_items.items[f.first + i]);
+                defer item_lanes.leave(lane);
                 const m = runs.items[f.first + i];
                 const c = run_ctxs.items[f.first + i];
                 const km = try t.kappaOf(gpa, charge, v, c, m, f.msummary);
@@ -2340,12 +2395,15 @@ pub const Table = struct {
             // Children: the joined node's frontier, the members projected
             // along each step of it, each at its position one step below.
             next.clearRetainingCapacity();
-            try t.frontier(gpa, charge, v, f.node, f.summary, run_ctxs.items[f.first..][0..f.len], &next);
+            try t.frontierLaned(gpa, charge, v, f.node, f.summary, run_ctxs.items[f.first..][0..f.len], try item_lanes.of(gpa, run_items.items[f.first..][0..f.len], &frame_lanes), &next);
             for (next.items) |e| {
                 const s = Step.fromWord(e.step);
                 const child = e.node;
                 const first: u32 = @intCast(runs.items.len);
                 for (0..f.len) |i| {
+                    const item = run_items.items[f.first + i];
+                    const lane = try item_lanes.enter(gpa, item);
+                    defer item_lanes.leave(lane);
                     try charge.reserve(gpa, .inspection, 1);
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
@@ -2353,6 +2411,7 @@ pub const Table = struct {
                     const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, sm, s)) orelse continue;
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, t.kappaChild(c, s));
+                    try run_items.append(gpa, item);
                 }
                 // The child's output position: a fold stays itself; a node
                 // the route has passed folds there (its knot); else one step.

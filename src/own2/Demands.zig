@@ -889,6 +889,10 @@ const Resolver = struct {
         // 4. Disjoint: no other operand reaches a cell of the base.
         var relied: CondId = Cond.yes;
         for (r.frame.operands[dm.operands.start..][0..dm.operands.len]) |op| {
+            // With one base cell, each operand's check is its own: on its
+            // own lane (§4.1, #1139), so a wide run's query is per item.
+            const own: ?Ids.Account.Kernel = if (product == null) try r.env.account().enter(r.gpa, .{ .atom = op.inst, .role = .direct_demand_query }) else null;
+            defer if (own) |k| r.env.account().leave(k);
             const rs = try r.reach(op.value.node);
             var ot = cellt.sets.iterate(rs);
             while (ot.next()) |x| {
