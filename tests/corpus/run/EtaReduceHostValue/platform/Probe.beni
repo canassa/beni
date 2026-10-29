@@ -25,26 +25,22 @@ parsedTwice xs =
 
 
 maxFn : Js.Value
-maxFn =
-    Js.get (Js.global "Math") "max"
+maxFn = Js.get (Js.global "Math") "max"
 
 
 pub maxed : List Int → List Int
-maxed xs =
-    Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
+maxed xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
 
 
 foreign pure counted : Int → Int
 
 
 countedAlias : Int → Int
-countedAlias =
-    counted
+countedAlias = counted
 
 
 pub viaAlias : List Int → List Int
-viaAlias xs =
-    Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
+viaAlias xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
 
 
 pub viaLocalAlias : List Int → List Int
@@ -56,8 +52,7 @@ viaLocalAlias xs =
 
 
 forward : Js.Value → (Js.Value → Js.Value)
-forward m =
-    λx → Js.apply m [ x ]
+forward m = λx → Js.apply m [ x ]
 
 
 pub receiver : ⊤ → String
@@ -69,8 +64,7 @@ receiver _ =
 
 
 store : Js.Ref (Int → Int)
-store =
-    Js.ref λx → x + 1
+store = Js.ref λx → x + 1
 
 
 pub viaRef : ⊤ → List Int
