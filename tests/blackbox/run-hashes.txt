@@ -42,7 +42,7 @@ build_test.test.Debug.todo compiles as anything and crashes with its message whe
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 992e5092eb29113fc8860fe5411633e8ce79c02371e9b6af8449589dba52a853
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ab66fa8d0a82c2517a68e5595e41e0168fb9c7d40802dd3f5678ab2131e125fd
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 e3076f318a1e33717a08e458dc096ac5b7405c5d8c8b9c65940423229a2d4978
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dfc36b2c18b6b109587cca1f27d7fad84ba5b81a2926ee12615804b00176330e
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dccd75722fdcfd94e1ee3c64ddcd74498245760fa1a7a3aee4f1f5ef05b7403d
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 a8056e025b8071846133906119b1e74ac8cfc27b38868de144734eafcd5bdc9d
@@ -70,7 +70,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 14e07af2e77af1735c74705b48dadaf49fa3dada181c657da8995a52318b55df
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 98cf233f8f7ebe6853aa8e078dd8220cd57d9f63d3ef95d64fdff9fcbc9f2fde
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 ec22783406d764f0896bae0e049de093fa9ebaa8826ec9f0a80768ce6f95faac
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
@@ -107,8 +107,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 b2798c9ff302c30d4b4719e90967bc5a4c70d8d4be28967123958de28cd33bdc
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 83fd6a41d8f7dec9ee13e22b28555e7b65a44dc5dfea42cb6707418058ae7dbf
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 a5a1c46beb44bb94060eecae96b3ab41f429fda266f0eb31e9d3ce0c305b3331
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 4f77d80fb4e133569f1b7a6abb70ea31d9fb096eb8531f29f8ffdee1972dfc55
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 c88a7087907a21a38164597b70dbc9eb8cc693f08abad487939a395e55528dcd
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 9b976aa78ed36ea467722eb4091a1c28a2094a79a9ddd01d5c9e3030ae803df2
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 680000718c2c73e947d2c0655390a4e22eb151ac900801f69ebd387764e58e35
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 5b9a520193e4195cbb2ed7f0e5ebe57d1fdb8fea726867d9563525f28d5f5b39
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cf135f9ef9cbe847f57f757e042a9d6acb5f04e5d254820d593158f71b57db2d
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 acb7f42dd9d63f835f1b1f642d1a3b9dc5eda59098ef359b9aad3f58b1cfb9d0
@@ -136,14 +136,14 @@ devloop_test.test.build --watch rebuilds after an edit, reports a failed build, 
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 6f6577880e663ccefa508fec190be3f3daf4c19657a9f29f469c96ff234e32e4
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
-iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 bb54fff10d76245e822b4fd8c97f544762bc82400cc1c33c1ca6fd199cebf960
+iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 0a3b21c95777c2b9adfa9ee2a2244259c00e5db1a5d379d93e62a805e1173900
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 8b88b91a97143e288728f1ae404f96838d6f51eb510902ecd8ff0cfcb52c9af8
-ordering_test.test.Json.decode inferred from use prints the same reversed #0 94fef238b9ea3c134989865561f46212a81596abc1d4178233009b367e6526aa
+ordering_test.test.Json.decode inferred from use prints the same reversed #0 dbe96268562792d5883dd8d678ad90108b5d3228d72fdbde21bca8129200108c
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cbc5d59ec352a57e3641057730527789fa37d425420444092aa0dfa2a94bb308
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 c3ed090860e1a92b7a4daa4c92afcc83d3b1c88b7e07baab0bd1905d9bd62964
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 46524e80892b7e0d6c5d40ddaaa0a935d0c1cc319af5f1b888356e2959293eb2
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 78699e5824e6792b066495bebb5004f86c7c9ead4248f52dd077eb8b213624be
-ordering_test.test.mutually recursive schema declarations print the same reversed #0 899bc0321426e5706fcff407b939c93e24358d70fc0c6fd54221c2ecbbfb277f
+ordering_test.test.mutually recursive schema declarations print the same reversed #0 96b79619ccf2358e7a1b2ee8d2b1a43e3e1847f702047004c080e95cef4a38cb
 ordering_test.test.nullary methods and record defaults print the same reversed #0 866a63c3d9a0d461b3a80c4b06b846fa28944d486889575b2a4305e77331c82d
 page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 92b060845e826d3968b09b8c1281920b3e6290a152b0f454d68343d40b42946b
 page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 4471200b780cc9c0fe9344a613a958220af3667ca0bc9d313ee6e44efc076e95
