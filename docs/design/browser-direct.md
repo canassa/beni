@@ -2105,7 +2105,12 @@ fixed cost per message is to be profiled (record spread against list copy) befor
   the page case builds the four pages and runs them, and the *value-fuzz* case builds the two
   `--fuzz` builds, dumps the message types and fuzzes them, messages as values and bursts
   included, with its record in `<page>.fuzz-run-hash` (since 2026-10-23 a digest in the run-hash
-  cache, the opt-in an empty `<page>.value-fuzz` marker; #881). Each is budgeted alone, so **every page's
+  cache; #881). (Amended 2026-10-28, the owner, #881: **every `browser/tea/` page has the
+  value-fuzz case**, with no opt-in — the `.fuzz-run-hash` had been one, and for five days an
+  empty `<page>.value-fuzz` marker was. The one way out is
+  `tests/corpus/browser/tea/no-value-fuzz.txt`, a line `<page>: <reason>` per page that cannot be
+  fuzzed, and it fails closed: a line that names no page, or gives no reason, fails the walk. The
+  pages it names, and why, are the file's own text.) Each is budgeted alone, so **every page's
   value fuzz runs in the gates** and `value_fuzz_in_sweep`, with the owner's opt-out it carried,
   is withdrawn: one test per branch, not an exemption (CLAUDE.md, *Building*). The heaviest case
   is 3.8 billion instructions of the 4.3 (research 67 §9). `browser/direct/ListValues` is the
