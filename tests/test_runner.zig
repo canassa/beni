@@ -58,6 +58,8 @@ comptime {
 }
 
 pub const std_options: std.Options = .{
+    // `attachCrashHandler` instead: std's handler can deadlock (#1197).
+    .enable_segfault_handler = false,
     .logFn = log,
 };
 
@@ -72,11 +74,15 @@ const runner_io: Io = Io.Threaded.global_single_threaded.io();
 var selected: []u32 = &.{};
 
 pub fn main(init: std.process.Init.Minimal) void {
+    attachCrashHandler();
     const args = init.args.toSlice(fba.allocator()) catch @panic("unable to parse command line arguments");
     executable = args[0];
     var listen = false;
     for (args[1..]) |arg| {
-        if (std.mem.startsWith(u8, arg, "--hang-guard-probe=")) {
+        if (std.mem.startsWith(u8, arg, "--crash-probe=")) {
+            crashProbe(arg["--crash-probe=".len..]);
+            return;
+        } else if (std.mem.startsWith(u8, arg, "--hang-guard-probe=")) {
             hangGuardProbe(arg["--hang-guard-probe=".len..]);
             return;
         } else if (std.mem.eql(u8, arg, "--listen=-")) {
@@ -352,6 +358,95 @@ fn hangGuardProbe(mode: []const u8) void {
         Io.sleep(runner_io, .fromMilliseconds(100), .awake) catch unreachable;
         return;
     }
-    if (!std.mem.eql(u8, mode, "timeout")) @panic("unknown hang guard probe");
+    // `locked`: the test holds stderr's lock as it hangs; the guard reports anyway.
+    if (std.mem.eql(u8, mode, "locked")) _ = std.debug.lockStderr(&.{}) else if (!std.mem.eql(u8, mode, "timeout")) @panic("unknown hang guard probe");
     while (true) Io.sleep(runner_io, .fromSeconds(1), .awake) catch unreachable;
+}
+
+/// `--crash-probe=<mode>`: a test that crashes, for the runner's own tests
+/// (`tests/blackbox/gates_test.zig`). `segv` writes through a bad pointer on
+/// a thread, `overflow` recurses on a 64 KiB thread until its stack is gone,
+/// `locked` crashes while another thread holds stderr's lock, as a test that
+/// is printing does. Each must fail at once, naming the test.
+fn crashProbe(mode: []const u8) void {
+    const Probe = struct {
+        fn segv() void {
+            const p: *volatile u32 = @ptrFromInt(64);
+            p.* = 1;
+        }
+        fn deep(n: u64) u64 {
+            var buf: [512]u8 = undefined;
+            buf[n % buf.len] = @truncate(n);
+            return @call(.never_inline, deep, .{n + 1}) +% buf[(n * 7) % buf.len];
+        }
+        fn overflow() void {
+            std.mem.doNotOptimizeAway(deep(0));
+        }
+        fn holdStderr() void {
+            _ = std.debug.lockStderr(&.{});
+            while (true) Io.sleep(runner_io, .fromSeconds(1), .awake) catch {};
+        }
+    };
+    timing.current_test = if (std.mem.eql(u8, mode, "segv")) "crash probe segv" else if (std.mem.eql(u8, mode, "overflow")) "crash probe overflow" else if (std.mem.eql(u8, mode, "locked")) "crash probe locked" else @panic("unknown crash probe");
+    var guard: HangGuard = .{};
+    guard.start(timing.current_test) catch @panic("cannot start probe guard");
+    if (std.mem.eql(u8, mode, "locked")) {
+        _ = std.Thread.spawn(.{}, Probe.holdStderr, .{}) catch @panic("cannot start probe thread");
+        Io.sleep(runner_io, .fromMilliseconds(50), .awake) catch {};
+    }
+    const crash: *const fn () void = if (std.mem.eql(u8, mode, "overflow")) &Probe.overflow else &Probe.segv;
+    const t = std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
+        fn run(f: *const fn () void) void {
+            f();
+        }
+    }.run, .{crash}) catch @panic("cannot start probe thread");
+    t.join();
+    guard.finish();
+}
+
+/// A crash (a bad pointer, a stack overflow, an illegal instruction) fails
+/// the process at once, naming the test (#1197). std's handler prints a
+/// stack trace under stderr's lock: a test thread holding that lock, or the
+/// hang guard waiting on it, left every thread asleep and the guard silent.
+/// This one takes no lock and allocates nothing: it writes one line with
+/// `write(2)`, kills the test's child process groups and exits. It runs on
+/// the per-thread alternate signal stack std sets up, so an overflowed
+/// stack can still report. For a stack trace, run the one test under a
+/// debugger.
+fn attachCrashHandler() void {
+    if (builtin.os.tag == .windows) return;
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .sigaction = onCrash },
+        .mask = std.posix.sigemptyset(),
+        .flags = std.posix.SA.SIGINFO | std.posix.SA.RESETHAND | std.posix.SA.ONSTACK,
+    };
+    for ([_]std.posix.SIG{ .SEGV, .ILL, .BUS, .FPE }) |sig| std.posix.sigaction(sig, &act, null);
+}
+
+fn onCrash(sig: std.posix.SIG, _: *const std.posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
+    const what = switch (sig) {
+        .SEGV => "segmentation fault",
+        .ILL => "illegal instruction",
+        .BUS => "bus error",
+        .FPE => "arithmetic exception",
+        else => "signal",
+    };
+    rawWrite("FAIL: test crashed (");
+    rawWrite(what);
+    rawWrite("): ");
+    rawWrite(if (timing.current_test.len > 0) timing.current_test else "(between tests)");
+    rawWrite("\n");
+    HangGuard.killChildrenNow();
+    std.process.exit(1);
+}
+
+/// `s` to stderr with `write(2)` alone: no lock, no buffer.
+pub fn rawWrite(s: []const u8) void {
+    var rest = s;
+    while (rest.len > 0) {
+        const rc = std.posix.system.write(2, rest.ptr, rest.len);
+        const n: isize = if (@TypeOf(rc) == usize) @bitCast(rc) else rc;
+        if (n <= 0) return;
+        rest = rest[@intCast(n)..];
+    }
 }

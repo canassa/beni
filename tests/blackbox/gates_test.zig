@@ -78,6 +78,10 @@ test "a hung test times out and names itself" {
     try expectProbe("timeout", 1, "FAIL: test timed out: hang guard probe");
 }
 
+test "a hung test that holds stderr times out and names itself" {
+    try expectProbe("locked", 1, "FAIL: test timed out: hang guard probe");
+}
+
 test "a finished test cancels its hang guard" {
     try expectProbe("cancel", 0, "");
 }
@@ -90,4 +94,19 @@ fn expectProbe(mode: []const u8, exit_code: u8, stderr: []const u8) !void {
     const r = try world.spawnAndCapture(arena, testing.allocator, testing.io, &.{ runner.executable, option }, .inherit, world.default_timeout_ms);
     try testing.expectEqual(exit_code, r.exit_code);
     if (exit_code == 0) try testing.expectEqualStrings(stderr, r.stderr) else try testing.expect(std.mem.indexOf(u8, r.stderr, stderr) != null);
+}
+
+test "a crashing test fails at once and names itself: a bad pointer, a stack overflow, a crash while stderr is held" {
+    for ([_][]const u8{ "segv", "overflow", "locked" }) |mode| {
+        var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        const option = try std.fmt.allocPrint(arena, "--crash-probe={s}", .{mode});
+        // Well inside the 120 s hang guard: a crash must not wait for it.
+        const r = try world.spawnAndCapture(arena, testing.allocator, testing.io, &.{ runner.executable, option }, .inherit, 10_000);
+        try testing.expect(r.exit_code != 0);
+        const named = try std.fmt.allocPrint(arena, "): crash probe {s}", .{mode});
+        try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL: test crashed (") != null);
+        try testing.expect(std.mem.indexOf(u8, r.stderr, named) != null);
+    }
 }
