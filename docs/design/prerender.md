@@ -537,16 +537,21 @@ amendment here before it is built, measured in bytes and in time to interactive.
 
 *Amended 2026-10-29, before slice P2b is built (#1206): the shape.*
 
-- **Which pages get it.** A page gets the script when its program has at least one listener the
-  lowering wires on an element of the unit — the program's own and those of every other module's
-  piece it places. A page whose program has none gets no script, and its client has no code of
-  this section (`browser/prerender/EarlyNone`). A listener a subscription adds to the window or
-  the document (`Listen`) is not the unit's: input before the takeover does not reach it.
+- **Which pages get it, and which events.** A page gets the script when its program has at least
+  one listener the lowering wires on an element of the unit — the program's own and those of every
+  other module's piece it places — of a kind the script records. It records every kind but the
+  pointer events (`pointerdown`, `pointermove`, … — `Html.onPointer*`): their payload is read while
+  the event is dispatched, the box of the element whose listener runs (`currentTarget`), which a
+  delivery after the dispatch cannot give, and a gesture is a run of them that a later delivery
+  cannot take part in; the `click` a tap makes is recorded. A page whose program has no such
+  listener gets no script, and its client has no code of this section
+  (`browser/prerender/EarlyNone`). A listener a subscription adds to the window or the document
+  (`Listen`) is not the unit's: input before the takeover does not reach it.
 - **Where it stands, and what it holds.** The render function of the program site writes it first
   in the unit's HTML, before the unit's top element, so it is the first child the build writes
   where `{{view}}` stands: a classic inline script, which the parser runs as it reaches it, before
-  any of the unit is shown. Its text is one constant of the lowering, the program's event kinds in
-  it (`K`, a JSON array of each kind once, sorted by code point, `"click"` for `onClick`):
+  any of the unit is shown. Its text is one constant of the lowering, the kinds it records in it
+  (`K`, a JSON array of each kind once, sorted by code point, `"click"` for `onClick`):
 
   ```text
   <script>(()=>{let d=document,r=[],k=K,f=e=>{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{for(let n of k)d.removeEventListener(n,f,!0);return r};d.currentScript.remove()})()</script>
@@ -566,37 +571,45 @@ amendment here before it is built, measured in bytes and in time to interactive.
   would add nothing a reference does not give.
 - **How the records reach the mount, and when the script stops.** The script defines one global,
   `window.$beni`, a function that removes its listeners and gives the records. The hydrating mount
-  calls it once, `Inline.caught(E[0])`, right after `take` (§6.1) and before any listener is added,
-  and sets `$beni` to `undefined`, so the records are not held after the delivery. A page where the
-  script did not run (a content security policy) has no `$beni`, and the mount has nothing to
-  deliver.
-- **On a fresh mount, the records are dropped.** `caught` keeps only the records whose target is
-  inside the unit's top element the mount took, `E[0]`. When `take` mounted fresh (§6.4), the
-  prerendered unit is out of the page and no record's target is inside the fresh one, so every
-  record is dropped: the input was made on elements the program did not take over, and the page
-  starts as the fresh page does. A record of a page other than the program's own is dropped the
-  same way.
+  calls it once, `Inline.caught(at)`, before `take` (§6.1), so the script stops however the mount
+  goes on — a development build's fault for a unit outside the mount element included — and sets
+  `$beni` to `undefined`, so the records are not held after the delivery. `caught` keeps the
+  records whose target is inside `at`, the mount element, and adds to each its target's control
+  state as it is then: the state the user left, before the first pass writes `init`'s. A page
+  where the script did not run (a content security policy) has no `$beni`, and the mount has
+  nothing to deliver.
+- **On a fresh mount, the records are dropped.** The delivery hands on only the records whose
+  target is inside the unit's top element the mount took, `E[0]`. When `take` mounted fresh
+  (§6.4), the prerendered unit is out of the page and no record's target is inside the fresh one,
+  so every record is dropped: the input was made on elements the program did not take over, and
+  the page starts as the fresh page does (`browser/prerender/EarlyFresh`).
 - **How a record finds its listener.** In the client of a prerendering build the lowering wires each
   listener through `Inline.listen(node, kind, f)` — and `onTaken`, `onArmTaken` in place of `on`
   and `onArm` (`browser-inline.md` §8.2) — which add the listener as before and, while `caught`
   holds a record, also note `f` under its element and kind in a `Map`. The map exists from `caught`
   to the delivery only, and only on a page whose script recorded something; the lowering of a
   program that does not prerender is unchanged.
-- **The delivery.** `Inline.deliver()`, the hydrating mount's last statement — after the first
-  pass, the title, the subscriptions' start, `arrived` (§7.3) and `init`'s command queued. For each
-  record, in order: the recorded `value`, `checked` and `selectedIndex` written back to the target,
-  each one the record has and the element does not show, in that order; then each listener the map
-  holds for the record's event type called with the recorded event, on the target first and then on
-  each of its ancestors when the event bubbles, until one calls `stopPropagation`. The event is the
-  user's own, not one made again: its `target` is the element and `currentTarget` is `null`, and
-  `preventDefault` does nothing, since its default has already run. The mount runs inside one
-  dispatch (`Inline.run`), so each listener's `via` extractor reads the control at once, after its
-  state is written back, and each message is queued: the messages reach `update` once each, in the
-  records' order, behind the bodies of `init`'s command, each followed by its write pass. The map
-  and the records are then dropped.
+- **The delivery.** `Inline.deliver(E[0])`, the hydrating mount's last statement — after the first
+  pass, the title, the subscriptions' start, `arrived` (§7.3) and `init`'s command queued. A record
+  is *heard* when the map holds a listener of its event's type on its target or, when the event
+  bubbles, on an ancestor. A record no listener hears changes nothing. For each record heard, in
+  order: the recorded `value`, `checked` and `selectedIndex` written back to the target, each one
+  the record has and the element does not show, in that order; then each listener the map holds for
+  the record's event type called with the recorded event, on the target first and then on each of
+  its ancestors when the event bubbles, until one calls `stopPropagation`; then the state `caught`
+  found written back the same way, so a record never undoes what the user did after it — the text
+  typed after a `focus`, the key after a `keydown`. A file input's state is never written, since
+  its `value` cannot be. The event is the user's own, not one made again: its `target` is the
+  element and `currentTarget` is `null`, and `preventDefault` does nothing, since its default has
+  already run. The mount runs inside one dispatch (`Inline.run`), so each listener's `via`
+  extractor reads the control at once, while the record's state is written back, and each message
+  is queued: the messages reach `update` once each, in the records' order, behind the bodies of
+  `init`'s command, each followed by its write pass. The map and the records are then dropped.
 - **What it does not restore.** A text control's caret (the write back puts it at the end), a
-  `select multiple`'s other selected options, and a radio button's group beyond the target. The
-  program's view of the controls is what its messages make of them, as on any page.
+  `select multiple`'s other selected options, and a radio button's group beyond the target. A
+  control no record is heard on keeps what the first pass writes, `init`'s, as before this
+  section. The program's view of the controls is what its messages make of them, as on any page.
+
 
 There is no `catch` anywhere in this (CLAUDE.md rule 9): a listener that throws when delivered is
 a defect, as it is when the event is dispatched.
@@ -1363,37 +1376,41 @@ moved, and `bench/size.mjs --pages-only` prints the same bytes. What prerenderin
 release, brotli, against the same program built with `--no-prerender`: 577 B for `Counter`, and
 1 049 B for `Blog`, whose `pageUrl`, `routeUrl` and `arrived` are the routes' share.
 
-**As built — P2b** (2026-10-29, #1206). §6.5's amendment as written: the lowering's
-`Page.captureScript` writes the script at the start of the program site's render function's string
-(`platforms/browser-inline/zig/inline.zig`), its kinds from the unit's events and each piece's
-(`PieceData.kinds`); the hydrating mount calls `Inline.caught(E[0])` after `take` and
-`Inline.deliver()` last; and in a prerendering client every listener, a piece's too, is wired
-through `Inline.listen`, `onTaken` or `onArmTaken`. The lowering interface does not change. The
-browser driver runs a prerendered page's inline scripts where the page holds them, and its setup
-step `early <step>` acts on the page before the program loads (`tests/corpus/README.md`,
-*Prerendered pages*). The fixtures are `browser/prerender/EarlyInput` (a click on a button's child,
-typed text, a checked box, a `select`'s `change` and a second click, delivered in that order; the
-box stays checked; the script's listeners are gone after the load), `EarlyNone` (no listener: no
-script in the page) and `EarlyFresh` (a page a host changed: the input is dropped). Every existing
-prerendered page whose program listens holds the script, so their `_expected/` pages moved, and
-the `emit/prerender/` goldens show the new calls. A page that does not prerender ships what it did:
-no `emit/inline/` or `emit/release/inline/` golden moved, and `bench/size.mjs --pages-only` prints
-the same bytes as `master`'s compiler.
+**As built — P2b** (2026-10-29, #1206). §6.5's amendment as written, with the review's fixes in
+it: the lowering's `Page.captureScript` writes the script at the start of the program site's
+render function's string (`platforms/browser-inline/zig/inline.zig`), its kinds from the unit's
+events and each piece's (`PieceData.kinds`), the pointer events left out (`capturedKinds`); the
+hydrating mount calls `Inline.caught(at)` before `take` and `Inline.deliver(E[0])` last; and in a
+prerendering client every listener, a piece's too, is wired through `Inline.listen`, `onTaken` or
+`onArmTaken`. The lowering interface does not change. The browser driver runs a prerendered page's
+inline scripts where the page holds them, and its setup step `early <step>` acts on the page before
+the program loads (`tests/corpus/README.md`, *Prerendered pages*). The fixtures are
+`browser/prerender/EarlyInput` (a click on a button's child, typed text, a checked box, a
+`select`'s `change` and a second click, delivered in that order; the box stays checked; the
+script's listeners are gone after the load), `EarlyKept` (a field no listener hears keeps the text
+typed into it; a field heard on `focus`, which does not bubble, gets its message and keeps the text
+typed after it; a `pointerdown` is not recorded, and the click after it is delivered), `EarlyParts`
+(a listener inside a shown eager arm, a form's `onSubmit`, which prevents its default, and a
+piece's buttons), `EarlyNone` (no listener: no script in the page) and `EarlyFresh` (a page a host
+changed: the input is dropped). Every existing prerendered page whose program listens holds the
+script, so their `_expected/` pages moved, and the `emit/prerender/` goldens show the new calls. A
+page that does not prerender ships what it did: no `emit/inline/` or `emit/release/inline/` golden
+moved, and `bench/size.mjs --pages-only` prints the same bytes as `master`'s compiler.
 
 The script is 294 B raw, 161 B brotli alone (one kind, `click`); in a page it adds 123–145 B
-brotli to the HTML. The runtime adds 270–294 B brotli to the client (`caught`, `listen`,
-`onTaken`, `deliver`): with `bench/ui/hydrate.mjs`, release, 61 loads per page and subject, what
-hydration adds against `--no-prerender` went from 583, 660 and 711 B to 861, 954 and 981 B on
-`counter`, `static` and `arms`, against Solid's 1 439 B. Time to interactive, by the same harness,
-two runs each of `master`'s compiler and this one, medians, ms (the machine was loaded, load
-average 8–14, so the second run is the quieter):
+brotli to the HTML. The runtime adds 382–403 B brotli to the client (`caught`, `listen`,
+`onTaken`, `deliver` and its walks): with `bench/ui/hydrate.mjs`, release, 61 loads per page and
+subject, what hydration adds against `--no-prerender` went from 583, 660 and 711 B to 967, 1 063
+and 1 093 B on `counter`, `static` and `arms`, against Solid's 1 439 B. Time to interactive, by the
+same harness, `master`'s compiler and this one run one after the other on a quiet machine (load
+average 4–6), medians, ms:
 
 | page | module start → handlers, before | after | navigation → handlers, before | after |
 |---|--:|--:|--:|--:|
-| `counter` | 0.695, 0.665 | 0.525, 0.505 | 12.2, 11.7 | 12.7, 12.1 |
-| `static` | 1.705, 1.540 | 1.460, 1.365 | 15.9, 14.9 | 18.4, 15.7 |
-| `arms` | 3.180, 1.740 | 1.660, 1.540 | 26.0, 13.1 | 15.9, 13.3 |
+| `counter` | 0.665 | 0.515 | 11.5 | 11.9 |
+| `static` | 1.530 | 1.380 | 14.8 | 15.3 |
+| `arms` | 1.735 | 1.570 | 13.3 | 13.3 |
 
-The mount itself is not slower; from the navigation's start the quieter runs differ by 0.2–0.8 ms,
-the page's larger HTML and client. The harness loads each page with no input before the takeover,
-so `deliver` has nothing to hand on: what a delivery costs is a call per record.
+The mount itself is not slower; from the navigation's start the two differ by 0–0.5 ms, the page's
+larger HTML and client. The harness loads each page with no input before the takeover, so `deliver`
+has nothing to hand on: what a delivery costs is a walk and a call per record.
