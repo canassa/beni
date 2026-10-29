@@ -8564,14 +8564,14 @@ test "the checker v2 gives each demand of one call its own query lane" {
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "direct_demand_query lanes 2,") != null);
 }
 
-test "the checker v2's lanes do not depend on where a declaration sits in its module" {
+test "the checker v2's dump does not depend on where a declaration sits in its module" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-v2.md` §4.1 (no lane aliases accidentally) and the
-    // declaration-order guarantee: a region's slots, an instruction's
-    // transfer and a local's binding are three key spaces, so moving a
-    // declaration (its instructions renumber) leaves its account the same.
+    // `ownership-v2.md` §4.4 and the declaration-order guarantee: the dump
+    // prints each declaration's cold account (checked alone, in fresh
+    // tables, #1104), so swapping two declarations leaves every account and
+    // summary line the same, records, lanes and categories included.
     const first =
         \\pub g : List (List Int) → List Int
         \\g xss =
@@ -8589,7 +8589,8 @@ test "the checker v2's lanes do not depend on where a declaration sits in its mo
         \\    List.push xs 2
         \\
     ;
-    var accounts: [2][]const u8 = undefined;
+    var lines: [2][4][]const u8 = @splat(@splat(""));
+    defer for (lines) |run| for (run) |l| testing.allocator.free(l);
     for (0..2) |run| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
@@ -8605,16 +8606,58 @@ test "the checker v2's lanes do not depend on where a declaration sits in its mo
         // │ VERIFY OUTPUT                           │
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
-        // The lanes by role (which source atoms each kernel used). The
-        // records a shared table's first miss costs still go to whichever
-        // declaration meets it first (#1104).
-        const at = std.mem.indexOf(u8, dump.stdout, "  account g:") orelse return error.NoAccount;
-        const end = std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n') orelse dump.stdout.len;
-        const lanes = std.mem.indexOf(u8, dump.stdout[at..end], ", direct_data lanes") orelse return error.NoLanes;
-        accounts[run] = try testing.allocator.dupe(u8, dump.stdout[at + lanes .. end]);
+        for ([_][]const u8{ "  account g:", "  account h:", "  summary g:", "  summary h:" }, 0..) |prefix, i| {
+            const at = std.mem.indexOf(u8, dump.stdout, prefix) orelse return error.NoLine;
+            const end = std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n') orelse dump.stdout.len;
+            lines[run][i] = try testing.allocator.dupe(u8, dump.stdout[at..end]);
+        }
+        if (run == 1) for (0..4) |i| try testing.expectEqualStrings(lines[0][i], lines[1][i]);
     }
-    defer for (accounts) |a| testing.allocator.free(a);
-    try testing.expectEqualStrings(accounts[0], accounts[1]);
+}
+
+/// A declaration a hundredth below the default summary-size limit (`h`, its
+/// cold growth about 64 600 of 65 536), after another (`g`) or before it:
+/// its dump in that order (#1104).
+fn nearLimitDump(w: *World, h_first: bool) !world.Result {
+    const a = testing.allocator;
+    var h: std.ArrayList(u8) = .empty;
+    defer h.deinit(a);
+    try h.appendSlice(a, "pub h : List Int → List Int\nh xs =\n");
+    for (1..1501) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
+    try h.appendSlice(a, "    x1500\n");
+    const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
+    const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
+    try w.write("Main.beni", src);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+fn expectNearLimitAccepted(h_first: bool) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try nearLimitDump(&w, h_first);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h:") == null);
+    const growth = try accountField(dump.stdout, "h", "growth");
+    try testing.expect(growth > 64_000 and growth <= 65_536);
+}
+
+test "the checker v2 accepts a declaration near the summary-size limit after another" {
+    try expectNearLimitAccepted(false);
+}
+
+test "the checker v2 accepts a declaration near the summary-size limit before another" {
+    try expectNearLimitAccepted(true);
 }
 
 /// `ownership-v2.md` §4.1: a wide run supplies its own written atoms, and a

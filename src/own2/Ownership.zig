@@ -58,7 +58,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
     for (in.modules, out) |*mi, *r| {
         const mod = try gpa.create(Groups.Module);
         defer gpa.destroy(mod);
-        try Groups.checkModule(mi, mod);
+        try Groups.checkModule(mi, mod, in.format_summaries);
         defer mod.deinit();
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
         var others: std.ArrayList([]const u8) = .empty;
