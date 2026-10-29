@@ -1550,59 +1550,91 @@ another scan of the old argument. Distinct actual snapshots remain distinct, and
 of the same handle still add multiplicity through the path-multiset primitive.
 
 
-**Representation of a view (S3b slice 2, #1097).** *Specified; not yet built.*
+**Representation of a view (S3b slice 2, #1097).** *Specified; not yet built. Revised after the review on
+#1097.*
 
 - **The node.** A call's result is `view(T, E)`. `T` is a node of the callee class's `res` (its
   template), in the same module tables. `E` is an interned environment record: the class, the call's
   actual values (shape root and κ snapshot per argument) and its invocation label `ι`. A view is
-  interned by `(T, E)`, so one template position read twice under one environment is one node. Its
-  place is `T`'s, and its cells are the `lazy_cells` marker until a reader asks, as a `positions`
-  node's are (§3.3).
+  interned by `(T, E)`, so one template position read twice under one environment is one node. Two
+  calls never share a view: their labels differ, and so may their argument snapshots, by design. Its
+  place is `T`'s. `isLazy` covers a view: its cells are the `lazy_cells` marker until a reader asks,
+  as a `positions` node's are (§3.3).
+- **Only settled classes.** A view is made of a settled class only: in slice 2 a call's callee is an
+  earlier group's, settled before the caller is walked (§8 S3b). Slice 4's recursive groups add the
+  group's settled generation (§2.12) to `E`, and so to the memo key.
 - **Step-at-a-time expansion.** `Shape.force(v)` expands one step and memoises the answer per view,
   keyed `(T, E)`. The answer's children are views again, never copies. By `T`'s kind:
-  - `leaf`: the image of its cells. A parameter cell `πᵢ·q` re-roots at the actual (below); the other
+  - `leaf`: the image of its cells. A parameter cell `πᵢ·q` re-roots at the actual (below). The other
     cells are mapped as the graft maps them (`fresh k ↦ result ι·k`, `esc k ↦ esc ι·k`, `shared` and
-    `⊤` kept). Several parts are joined, as `graftLeaf` joins them.
+    `⊤` kept). Several parts are joined, raw (below).
   - `node`: a `node` at `T`'s place, with the image of `T`'s own cells and the child `view(c, E)` for
     each child `c`.
   - `delta`: `delta(view(base, E), {step ↦ view(c, E)})`.
   - `recast`: `recast(place, view(inner, E))`.
-  - `union`, `choice`, `positions`: the same kind over the views of its sides.
+  - `union`, `choice`, `positions`: the same kind over the views of its sides, **built raw**. The
+    record has `lazy_cells` and is made with no absorption test (`unionHas`, `dagHas`), so a force
+    never reads its sides. Building one through `Shape.union` or `choice` would read the sides' cells
+    and cascade through views of views, a recursion on one lane:
+    `y_k = pick c_k y_{k-1} (List.push z k)` builds a chain of 1 000 of them. A reader of a raw node's
+    cells goes through `cellsOf`, a `dagWalk`, so in growth (§4.1).
 
-  A force costs `T`'s width. It runs on the reader's lane, except that a node wider than the lane's
-  fixed share, or a force inside a `dagWalk`, is growth chosen before the work (§4.1).
+  A force costs `T`'s own width: its cells' image and one view per child. It runs on the reader's lane,
+  except that a node wider than the lane's fixed share is growth chosen before the work (§4.1).
 - **Re-rooting at a parameter.** At a parameter position the answer *is* the actual's node there
   (`argAt`, through the preimage across `⟲`, a recast read approximately, #1219). Its origins,
   captures, loan regions, κ snapshot and completed aggregates are unchanged: nothing of the argument
-  is relabelled or re-keyed. A new invocation never re-scans an old argument, so `wrap (wrap … r)` adds
-  O(1) view records per call.
+  is relabelled or re-keyed. A new invocation never re-scans an old argument.
+- **Identity towers.** A class whose `res` root is one exact parameter cell at its root (`id x = x`)
+  answers the actual itself at `apply`: no view is made, so `y_k = id y_{k-1}` makes no tower. In
+  general, `force` memoises the first answer that is not a view. A chain of views (a view whose
+  answer is the actual, itself a view) is followed once, in a `dagWalk` (growth), and every view
+  on it then answers that node directly.
+- **κ and `fold_cond` at a view.** κ, a widened class's `fold_cond` and every position-keyed fact are
+  keyed by node id. The class's κ is relabelled onto the view ids, but a reader descending a value
+  meets the forced node. So a reader at a view position reads the fact **under the view id and the
+  forced id, joined**, as `recast`'s inner is read (`Cond.innersOf`). A forced node of a view is never
+  read alone; reading it alone would miss the class's binding, giving `lost` for a built node and,
+  for a leaf, a derived read that drops the class's constraint (a `FoldedBCall`-shaped callee's
+  instantiated `excl π1⟲·…`). At publish (below) the κ is relabelled through `force`, so the
+  published summary is keyed by forced ids. A call's κ is still relabelled **eagerly**, the callee's
+  κ size per call; making it lazy under `E` is #1265, accepted debt.
 - **Cycles, links and folds.** A widened class's knot needs no tie protocol. `view(T, E)` of a cyclic
   `T` expands to nodes whose children are views, and the cycle closes through the interned view id,
   so readers' existing seen sets (by `NodeId`) end their walks. The record of a view never changes;
   its expansion lives in the memo, not in a tie. A parameter at a `⟲` path re-roots at `argAt`'s
   recast or positions. That is a link, never an exactness upgrade. Distinct template positions that
-  graft one actual are distinct views over the same re-rooted node, so every route stays. κ is not in
-  a view: the call's result κ is the class's κ relabelled, with each argument's snapshot linked at its
-  positions, once per node (`linkArgs`, #1252). Two bindings mapped to one position are joined.
-- **Readers.** Every switch on a node's kind handles `view` by forcing it and reading the forced node,
-  as a `recast`'s inner is read: `Shape.force` is the one entry. `proj(view, s)` is
-  `proj(force(view), s)`. `cellsOf` is the forced node's. `reach(view)` is the image of `reach(T)`
-  under `E` (a parameter cell is replaced by the actual's reach at its path), memoised per view
-  without forcing the subgraph. `widen`, `join`, `leq` and `eq` force as they descend.
-  `Demands.holdPaths` and `laterUse` force one step where they read a node.
+  graft one actual are distinct views over the same re-rooted node, so every route stays. Each
+  argument's snapshot is linked at its positions once per node (`linkArgs`, #1252), and two bindings
+  mapped to one position are joined.
+- **Readers.** Every switch on a node's kind handles `view` by forcing it and reading the forced node
+  (and the view's own facts, above): `Shape.force` is the one entry. `proj(view, s)` is
+  `proj(force(view), s)`. `cellsOf` is the forced node's. `widen`, `join`, `leq` and `eq` force as
+  they descend. `Demands.holdPaths` and `laterUse` force one step where they read a node.
+- **`reach(view)` is structural.** The reach of `view(T, E)` is the image of `reach(T)` under `E`: a
+  parameter cell is replaced by the actual's reach at its path, any other cell is mapped. The image is
+  memoised per (radix node of `reach(T)`, `E`), and each node is charged before it is mapped. A nested
+  view's reach is a radix node of its parent's, so a depth-d result costs O(d) for all its reaches,
+  never O(d²) on a holder's lane.
 - **Blocks force a view at publish.** A block is self-contained (§3.6). A view's template is another
   class's node in these tables, and its environment holds this frame's values; neither is a
   block-level thing. Encoding views would put class references and environments in the block format,
-  and make BlockRead re-run instantiation, which is S6's import, not a format. So a summary's own `res`
-  and use shapes are forced when it is written: interned views make shared positions one node, the
-  write is O(distinct forced nodes), and Block's existing charges, to the publishing declaration,
-  cover it. A frame's temporaries are never forced for a block.
+  and make BlockRead re-run instantiation, which is S6's import, not a format. So a summary's own `res`,
+  use shapes and κ are forced when it is written. Interned views make shared positions one node, so
+  the write is O(Σ the widths of the callee nodes forced), not argument-sized. That work is the
+  publishing declaration's: it is charged to that declaration's source continuation, as read-off is
+  (§4.1), and to its growth only past it. A frame's temporaries are never forced for a block.
 - **At `apply`.** `apply` costs the view (the environment and `view(res root, E)`), the class's κ
-  relabelled (the callee's size), the node-shared link, and the writes, escapes and `xreq` read from the
-  class's marks and its `esc` cells (callee-sized, from a per-class list made once). It never costs the
-  arguments' size, and it stays on the `call_view` lane up to that lane's share. Done means the source
-  continuation per call of `x_k = List.push x_{k-1} k` is flat at 10, 100 and 1 000 pushes, and
-  `ValueCellsGuards.rebuilt`'s wide graft costs a constant per call.
+  relabelled (#1265), the node-shared link, and the writes, escapes and `xreq` read from the class's
+  marks and its `esc` cells (callee-sized, from a per-class list made once). It never costs the
+  arguments' size, and it stays on the `call_view` lane up to that lane's share.
+- **Done.** For `x_k = List.push x_{k-1} k` at 10, 100 and 1 000 pushes, publish and a later read of
+  `x_n`'s element included, the whole build's growth is 0 and its source continuation per call is
+  flat. `ValueCellsGuards.rebuilt`'s wide graft costs a constant per call. Slice 2a's first fixtures
+  pin review points 1–4: a `FoldedBCall`-shaped callee over a view (1), the `pick` chain of 1 000 (2),
+  the `id` tower of 1 000 (3), and a depth-d result's reaches, counted at d and 2d (4). A twin of the
+  chain, with an early read of an intermediate `x_k`, runs at `--jobs=1` and `--jobs=8` and compares
+  byte for byte (§3.8).
 Memo keys include template position, actual-root/substitution environment, invocation, effective cursor,
 position class and the **per-dependency version vector** defined as a settled generation in §2.12. A template's finite rank does not imply the instantiated view's
 finite rank: a parameter graft can introduce a recursive shape. Apply §2.9's clean-state proof to the
