@@ -864,6 +864,10 @@ root of the output. An app's own `beni.json` may name a template of its own inst
 placeholder must occur, inheritance down the chain, what `--library` and `--release` do — are
 `backend.md` §2's *The page shell*; a template that cannot be read or never names the entry is
 `invalid_html_shell`.
+*Specified 2026-10-29, not built (#1160):* a `browser-inline` program that prerenders writes one
+page per route through this shell, with the route's view at a new placeholder, `{{view}}`, and its
+title at `{{title}}`; it is a build of the same platform, not a new output shape
+([`prerender.md`](prerender.md) §2, §5.3, §7.4).
 
 **A `"runtime"` naming a file that is not there is `foreign_sibling_missing`, reported against the
 MANIFEST.** Every other manifest failure is an exit-2 line naming the path (§5.3, `src/platform.zig`),

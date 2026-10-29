@@ -1390,6 +1390,11 @@ server's own namespace, and no file the build writes can be there — no emitted
 `_manifest.txt` and the platform's entry). A failed build does not move the count, so a page keeps
 showing the last good build while the errors are on the terminal.
 
+*Specified 2026-10-29, not built (#1160):* a prerendered site's page for `/about` is `about.html`,
+so a path that names no file is answered with `<path>.html` when that file exists, before the
+single-page fallback, and `serve` prerenders after each build ([`prerender.md`](prerender.md) §5.2,
+§7.4). `"build"."origin"` joins §10.1's keys for a prerendering build (§7.3 there).
+
 It ends as `--watch` does; open connections are dropped. It is a development server: one thread per
 connection, no TLS, no compression, no range requests, and it is not meant to face a network.
 
