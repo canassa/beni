@@ -1,0 +1,37 @@
+-- An element inserted where no tag check sees it (docs/design/prerender.md
+-- §6.4): a second `<p>` before the last one, which no code refers to, so
+-- every tag the page is checked by matches. The page holds one element
+-- more than the program makes, so every build mounts fresh; a development
+-- build warns first.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+        <p data-role="last">The end.</p>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

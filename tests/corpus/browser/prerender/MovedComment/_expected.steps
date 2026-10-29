@@ -1,0 +1,4 @@
+inject [data-role=toggle] "<!--0-->"
+fresh
+click [data-role=toggle]
+click [data-role=toggle]

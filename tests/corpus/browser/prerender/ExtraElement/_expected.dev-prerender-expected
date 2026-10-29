@@ -1,0 +1,27 @@
+-- inject [data-role=last] "<p>ad</p>"
+-- fresh
+-- load
+console.warn: The prerendered page is not the one this program makes: the page holds more elements than the program makes, the first of them a <p>. The program mounts it fresh.
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"0"</output>
+      <button data-role="inc">"+"</button>
+      <p data-role="last">"The end."</p>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"1"</output>
+      <button data-role="inc">"+"</button>
+      <p data-role="last">"The end."</p>
+    </div>
+  </div>
+  "\n  "
+</body>

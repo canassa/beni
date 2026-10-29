@@ -1,0 +1,35 @@
+-- inject [data-role=toggle] "<!--0-->"
+-- fresh
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      ""
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=toggle]
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      <p data-role="note">"Note"</p>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=toggle]
+<body>
+  "\n    "
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Toggle"</button>
+      ""
+    </main>
+  </div>
+  "\n  "
+</body>

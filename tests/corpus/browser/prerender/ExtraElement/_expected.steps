@@ -1,0 +1,3 @@
+inject [data-role=last] "<p>ad</p>"
+fresh
+click [data-role=inc]
