@@ -15250,6 +15250,8 @@ pub const Lowerer = struct {
         const TermItem = struct { f: CodeFrame, term: Dispatch.TermIndex, at: Inst.Index };
         const seen = try l.scratch.alloc([]bool, l.in.graph.count());
         @memset(seen, &.{});
+        const seen_derived = try l.scratch.alloc([]bool, l.in.graph.count());
+        @memset(seen_derived, &.{});
         var stack: std.ArrayList(Visit) = .empty;
         var terms: std.ArrayList(TermItem) = .empty;
         var children: std.ArrayList(Inst.Index) = .empty;
@@ -15267,8 +15269,18 @@ pub const Lowerer = struct {
                         const vd = l.in.provenance[u.module.int()].valueDecl(@backingInt(u.value)) orelse break :blk null;
                         break :blk .{ .f = other, .d = vd.int() };
                     },
+                    // Each derived row once: a recursive type's row names
+                    // itself.
                     .derived => |u| blk: {
-                        if (u.index < d.derived.len) for (d.argsAt(d.derived[u.index].body)) |a| try terms.append(l.scratch, .{ .f = t.f, .term = a, .at = t.at });
+                        const mi = t.f.m.int();
+                        if (u.index >= d.derived.len or mi >= seen_derived.len) break :blk null;
+                        if (seen_derived[mi].len != d.derived.len) {
+                            seen_derived[mi] = try l.scratch.alloc(bool, d.derived.len);
+                            @memset(seen_derived[mi], false);
+                        }
+                        if (seen_derived[mi][u.index]) break :blk null;
+                        seen_derived[mi][u.index] = true;
+                        for (d.argsAt(d.derived[u.index].body)) |a| try terms.append(l.scratch, .{ .f = t.f, .term = a, .at = t.at });
                         break :blk null;
                     },
                     .ext_derived => |u| blk: {

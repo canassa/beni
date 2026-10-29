@@ -1,0 +1,49 @@
+-- A prerendered `view` that compares values of a recursive type with `==`
+-- (docs/design/prerender.md §3.1, amended for #1170): the walk that finds
+-- the constants the code may read follows the derived `eq` of `Expr`,
+-- whose row names itself. It follows each derived row once, so it ends;
+-- before, it never did, and the build hung.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Expr
+    = Add Expr Expr
+    | Lit Int
+
+
+type alias Model =
+    e : Expr
+    n : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1, e = Lit model.n }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{if model.e == Add (Lit 1) (Lit 2) then "same" else "other"}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { e = Add (Lit 1) (Lit 2), n = 0 }, update = update, view = view }
+            )
+            "root"
+        )
+        [ "/" ]
