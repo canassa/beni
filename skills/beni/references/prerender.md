@@ -178,6 +178,10 @@ program gets each event in order, once, as a message to `update`. The control's 
 and selected option are the ones the user left. The browser does not run a default action again.
 
 - A page whose program listens to no event gets no script.
+- Pointer events (`Html.onPointerDown` and the others) are not recorded. Their position is read
+  while the event is dispatched. The `click` of a tap is recorded.
+- An event that no listener hears changes nothing. A control keeps the text the user typed after
+  an event.
 - When the page differs from the program (below), the recorded events are dropped.
 - A content security policy that refuses inline scripts stops the script. Then the early input is
   lost, and nothing else changes.

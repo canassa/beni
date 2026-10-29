@@ -1,0 +1,68 @@
+-- Input made before the takeover on the listeners a prerendering client
+-- wires other than its own plain ones (docs/design/prerender.md §6.5,
+-- amended 2026-10-29): one inside an eager arm `init` shows (`onArmTaken`),
+-- a form's `onSubmit`, which prevents its default (the listener written in
+-- place, through `listen`), and the buttons of another module's piece
+-- (`Counter`, whose factory wires them). Each record reaches `update`
+-- once, in order.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    log : String
+    c : Counter.Model
+
+
+type Msg
+    = Note
+    | Hide
+    | Sent Html.Event
+    | CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Hide →
+            { model | open = False }
+
+        Note →
+            { model | log = model.log ++ " note" }
+
+        Sent _ →
+            { model | log = model.log ++ " sent" }
+
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c, log = model.log ++ " counter" }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {if model.open then <button data-role="note" onClick={Note}>Note</button> else <></>}
+        <form data-role="form" onSubmit={Sent}>
+            <button data-role="send">Send</button>
+        </form>
+        <button data-role="hide" onClick={Hide}>Hide</button>
+        <output data-role="log">{model.log}</output>
+        {Html.map (Counter.view model.c) CounterMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { open = True, log = "", c = Counter.init ⊤ }
+                , update = update
+                , view = view
+                }
+            )
+            "root"
+        )
+        [ "/" ]

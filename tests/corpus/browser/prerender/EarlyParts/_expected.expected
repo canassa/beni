@@ -1,0 +1,46 @@
+-- early click [data-role=inc]
+-- early event [data-role=form] submit
+-- early click [data-role=note]
+-- early click [data-role=dec]
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <button data-role="note">"Note"</button>
+      <form data-role="form">
+        <button data-role="send">"Send"</button>
+      </form>
+      <button data-role="hide">"Hide"</button>
+      <output data-role="log"></output>
+      <section data-role="counter">
+        <output>"3"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=hide]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      ""
+      <form data-role="form">
+        <button data-role="send">"Send"</button>
+      </form>
+      <button data-role="hide">"Hide"</button>
+      <output data-role="log"></output>
+      <section data-role="counter">
+        <output>"3"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+  "\n  "
+</body>

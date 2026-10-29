@@ -1,0 +1,6 @@
+early click [data-role=plain]
+early set [data-role=plain] "typed"
+early event [data-role=heard] focus
+early set [data-role=heard] "later"
+early event [data-role=go] pointerdown
+early click [data-role=go]

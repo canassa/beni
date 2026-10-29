@@ -1,0 +1,56 @@
+-- What the delivery of input made before the takeover leaves alone
+-- (docs/design/prerender.md §6.5, amended 2026-10-29). A click into a
+-- field no listener hears, and text set in it after, keep the text: a
+-- record no listener hears writes nothing back. A field heard only on
+-- `focus` (an event that does not bubble), focused and then typed into,
+-- gets its `focus` message and keeps the text typed after it: the state a
+-- record carries is written back for its listener's call, and then the
+-- state the user left. A `pointerdown` is not recorded at all: its payload
+-- is read while the event is dispatched, and its page has no script for
+-- it alone; the click after it is delivered.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    log : String
+
+
+type Msg
+    = Focused
+    | Pressed Html.Pointer
+    | Clicked
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Focused →
+            { model | log = model.log ++ " focus" }
+
+        Pressed _ →
+            { model | log = model.log ++ " down" }
+
+        Clicked →
+            { model | log = model.log ++ " click" }
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="app">
+        <input data-role="plain" />
+        <input data-role="heard" onFocus={Focused} />
+        <button data-role="go" onPointerDown={Pressed} onClick={Clicked}>Go</button>
+        <output data-role="log">{model.log}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { log = "" }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

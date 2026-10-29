@@ -55,7 +55,7 @@ module Inline
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
-  value deliver : ⊤ → ⊤  -- impure
+  value deliver : V → ⊤  -- impure
   value entry : V, V → V  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
