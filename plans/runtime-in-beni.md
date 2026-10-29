@@ -23,6 +23,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
+| 8 | **`Dom.js`**: `focus`, `blur`, `box`, `scrollTo`, `scrollIntoView`, `viewport` | **landed 2026-10-29**, below: the sibling deleted |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -881,3 +882,39 @@ relay's queue — a program array's `push` — and reaches the tagger through `J
 read out of an array, neither of which fact 3 follows.
 
 *Decided by the owner, 2026-10-02:* a `Js` comparison intrinsic (`Js.lt` and its siblings, written in place as JavaScript's `<` and friends, specified in `boundary.md` §4.2 before it is built) so that `Hosted.js`'s last functions, `keyOf` and `compareKeys`, move to beni without reaching `String.compare`.
+
+## Step 8 — `Dom.js` (2026-10-29)
+
+**What moved.** The six DOM capabilities of `boundary.md` §9.8.6 — `focus`, `blur`, `box`,
+`scrollTo`, `scrollIntoView` and `viewport` — are beni over `Js` in `Dom.beni`, beside the full
+screen functions that were written so on 2026-10-23, and `platforms/browser/Dom.js` is deleted.
+One private function finds the node: `Js.call (Js.global "document") "getElementById"
+[ Js.from id ]`, and `Js.isNull` on the answer is `Err (NotFound id)`. Each capability then calls
+the node's method through `Js.call` (`focus`, `blur`, `getBoundingClientRect`, `scrollTo`,
+`scrollIntoView`), and `viewport` reads `innerWidth`, `innerHeight`, `scrollX` and `scrollY` with
+`Js.global`. Every body is `impure` by inference, as the `foreign` declared. None of these host
+calls documents a failure, so nothing is caught (`CLAUDE.md` rule 9), as the sibling caught
+nothing.
+
+**What changes shape.** `Dom.Error`, `Box` and `Viewport` crossed the boundary through the
+`foreign` declarations, so every release build kept `NotFound`'s string tag and the two records'
+field names for the sibling to write (`boundary.md` §4, *What JavaScript may read of a beni
+value*). They cross nothing now: `NotFound` gets an integer tag. The records keep their field
+names all the same: `box` reads the host rectangle's `x`, `y`, `width` and `height` with
+`Js.get`, and a field name the build also writes as a plain property is never renamed
+(`backend.md` §9 item 4's closed list), so a page that measures a node ships those four names as
+before. `emit/release/tea/DomCapabilities` pins the shape, and `browser/tea/DomCapabilities` runs
+all six, and the `NotFound` of the five that take an id, under happy-dom in both builds.
+
+**Sizes.** Measured against `master` at `cdd26f460`, both compilers ReleaseSafe, release brotli 11
+over each concatenated bundle (`zig-out/scratch/pages.mjs` over the `browser/` corpus, 416 of 420
+pages built on both sides; `bench/size.mjs`). The six pages that use `Dom` are smaller in raw and
+in brotli bytes: `tea/AfterRenderFocus` 4 783 → 4 764 (−19, raw −41), `tea/FocusInFlush`
+3 218 → 3 192 (−26, raw −62), `tea/LogCommandContext` 9 777 → 9 748 (−29, raw −72), `tea/TodoMVC`
+9 007 → 8 960 (−47, raw −103), `tea/TodoRouting` 8 301 → 8 258 (−43, raw −117), and the new
+`tea/DomCapabilities` 3 536 → 3 518 (−18, raw −126); the 410 other pages are byte-identical, as is
+every one of the 642 node lines, and the TodoMVC app line of `size.mjs` is −47. The first cut
+wrote each capability over `Result.map` and a `done` helper, and two pages that only focus grew by
+35 and 17 raw bytes; the bodies then took the sibling's own shape — one `found id use` with the
+continuation, a block lambda per capability — and every page fell below the sibling's. No speed
+claim: a capability is one host call either way.
