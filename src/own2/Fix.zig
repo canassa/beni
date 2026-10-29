@@ -82,8 +82,9 @@ pub const Goal = struct { claim: Claim, port: u32, arg: u32 = 0 };
 
 pub const Answer = struct {
     status: Status,
-    /// A refusal's: exact only where a member's own alternative failed
-    /// exactly; a failure reached through a dependency or a cycle is not.
+    /// A refusal's: exact when some alternative of the goal's component
+    /// failed exactly (every member shares the component's answer); a
+    /// failure reached only through a dependency or a cycle is approximate.
     exactness: Exactness = .exact,
     /// The atoms left for the consumer (`Cond.yes` when none).
     xreq: CondId = Cond.yes,
@@ -144,12 +145,25 @@ pub const Equations = struct {
     expand: *const fn (ctx: *anyopaque, ex: *Expansion) Error!void,
 };
 
-/// What a callback's answer, or a known closure's call, needs: the `gen` goal
-/// of the actual family (`null`: unknown, `⊤call`).
+/// What a callback's answer, or a known closure's call, needs: the port of
+/// the actual family (`null`: unknown, `⊤call`). The goal is the family's
+/// `gen` at the cell's own path (`genAt`): an answer's element is not the
+/// answer.
 pub const Resolve = struct {
     ctx: *anyopaque,
-    callee: *const fn (ctx: *anyopaque, c: CellId) ?Goal,
+    callee: *const fn (ctx: *anyopaque, c: CellId) ?u32,
+
+    fn goal(r: Resolve, cells: *const Cell.Table, c: CellId) ?Goal {
+        const p = r.callee(r.ctx, c) orelse return null;
+        return genAt(p, .from(cells.get(c).b));
+    }
 };
+
+/// The family at `port` answers, at `path` of its answer, only objects each
+/// invocation allocated.
+pub fn genAt(port_id: u32, path: PathId) Goal {
+    return .{ .claim = .gen, .port = port_id, .arg = path.int() };
+}
 
 /// An invariant of a recursive value (§2.12, *Recursive proofs*): the step
 /// receives the value as parameter `incoming`; at every `owned` path the
@@ -481,23 +495,47 @@ pub const Prover = struct {
     /// recorded, only when the two calls are separate (`diverge`); one label
     /// met twice is a self pair a fold made, and two calls of which one may
     /// run inside the other are no pair of separate calls: both `lost`
-    /// (§2.9's `sep(c, c)`), never `within`.
+    /// (§2.9's `sep(c, c)`), never `within`. `folded` must be the fold of
+    /// both (§2.2's uniform fold: the first instruction kept, the tail
+    /// dropped). A label has one pre-fold pair: a second, different one is a
+    /// conflict, and the label's `within` is refused from then on.
     pub fn foldPair(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, a: LabelId, b: LabelId, folded: LabelId) Error!CondId {
         if (a == b or !diverge(cells, a, b)) return Cond.lost;
+        if (!isFoldOf(cells, folded, a) or !isFoldOf(cells, folded, b)) return Cond.lost;
+        return p.record(gpa, charge, conds, folded, if (a.int() < b.int()) .{ a, b } else .{ b, a });
+    }
+
+    /// `within(l)` instantiated at the call `inst` (§2.11 item 7): the label
+    /// `(inst·l)` with the pair `(inst·a, inst·b)`, still separate. A `within`
+    /// without provenance instantiates to `lost`.
+    pub fn prefixWithin(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table, l: LabelId, inst: u32) Error!CondId {
+        const pair = p.provenanceOf(l) orelse return Cond.lost;
+        const account = charge.account;
+        const out = try cells.label(gpa, account, inst, l, true);
+        return p.record(gpa, charge, conds, out, .{ try cells.label(gpa, account, inst, pair[0], false), try cells.label(gpa, account, inst, pair[1], false) });
+    }
+
+    fn record(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, folded: LabelId, pair: [2]LabelId) Error!CondId {
         try charge.reserve(gpa, .memo, 1);
         try p.pairs.ensureUnusedCapacity(gpa, 1);
         const got = try p.provenance.getOrPut(gpa, .{folded.int()});
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(p.pairs.items.len);
-            p.pairs.appendAssumeCapacity(if (a.int() < b.int()) .{ a, b } else .{ b, a });
+            p.pairs.appendAssumeCapacity(pair);
+        } else if (got.value_ptr.* == conflict or !std.mem.eql(LabelId, &p.pairs.items[got.value_ptr.*], &pair)) {
+            got.value_ptr.* = conflict;
+            return Cond.lost;
         }
         return conds.within(gpa, charge, folded);
     }
 
+    const conflict = Ids.none_int;
+
     /// `within(l)`'s recorded pre-fold pair; an atom without one (an imported
-    /// self atom, a `sep(c, c)`) has none.
+    /// self atom, a `sep(c, c)`) or with conflicting ones has none.
     pub fn provenanceOf(p: *const Prover, l: LabelId) ?[2]LabelId {
-        return if (p.provenance.get(.{l.int()})) |i| p.pairs.items[i] else null;
+        const i = p.provenance.get(.{l.int()}) orelse return null;
+        return if (i == conflict) null else p.pairs.items[i];
     }
 };
 
@@ -567,23 +605,26 @@ pub const Expansion = struct {
         const d = cells.get(c);
         switch (d.origin) {
             .site, .result => {},
-            .cb => if (resolve.callee(resolve.ctx, c)) |g| try ex.need(g) else ex.refute(.approximate),
+            .cb => if (resolve.goal(cells, c)) |g| try ex.need(g) else ex.refute(.approximate),
             .param => if (incoming != null and d.a == incoming.? and d.b == path.int()) try ex.need(ex.goal) else ex.refute(.approximate),
             .env, .shared => ex.refute(.exact),
             .esc, .msg, .top, .elem, .others, .level, .below, .loan, .mark => ex.refute(.approximate),
         }
     }
 
-    /// `gen`: every invocation answers, at `steps` of `n`, only objects
-    /// allocated by it (§2.14 Lemma 2's "a result not reached through a
-    /// feedback supply"). A call it makes answers objects allocated by this
-    /// invocation when that family's own `gen` holds: the one edge, to an
-    /// activation strictly inside this one, so induction on completed
-    /// activations is well founded. `gen` separates two invocations only
-    /// when neither runs inside the other (`diverge`).
-    pub fn gen(ex: *Expansion, v: Cond.View, n: NodeId, steps: []const Step, resolve: Resolve) Error!void {
+    /// `gen`: every invocation answers, at the goal's path of `n` (`genAt`;
+    /// the root for a demand), only objects allocated by it (§2.14 Lemma 2's
+    /// "a result not reached through a feedback supply"). A call it makes
+    /// answers objects allocated by this invocation when that family's own
+    /// `gen` at that cell's path holds: the one edge, to an activation
+    /// strictly inside this one, so induction on completed activations is
+    /// well founded. `gen` separates two invocations only when neither runs
+    /// inside the other (`diverge`).
+    pub fn gen(ex: *Expansion, v: Cond.View, n: NodeId, resolve: Resolve) Error!void {
         try ex.begin();
-        const s = try v.shapes.cellsAt(ex.gpa, ex.charge.account, v.places, v.cells, n, steps);
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(ex.gpa);
+        const s = if (ex.goal.claim == .gen) try ex.cellsAtPath(v, n, .from(ex.goal.arg), &steps) else try v.shapes.cellsAt(ex.gpa, ex.charge.account, v.places, v.cells, n, &.{});
         var it = v.cells.sets.iterate(s);
         while (it.next()) |e| {
             try ex.charge.reserve(ex.gpa, .inspection, 1);
@@ -660,7 +701,10 @@ pub const Expansion = struct {
     /// fresh `result`, a callee's generative answer, or a taken element whose
     /// mark certifies one traversal (under the container's κ). Otherwise one
     /// object answers twice: `sep(c, c)`. A `within` without its pre-fold
-    /// provenance fails first.
+    /// provenance fails first. A result, an answer or a split counts as per
+    /// call only when its own label is under `l` (`under`): one made by a
+    /// call outside the invocations `l` stands for (`r = mk ⊤` before the
+    /// map) is one object at every invocation.
     pub fn within(ex: *Expansion, conds: *Cond.Table, cells: *const Cell.Table, places: *const Cell.Places, l: LabelId, set: SetId, marks: *const Marks, resolve: Resolve) Error!void {
         try ex.begin();
         if (ex.p.provenanceOf(l) == null) return ex.refute(.approximate);
@@ -668,11 +712,38 @@ pub const Expansion = struct {
         while (it.next()) |e| {
             try ex.charge.reserve(ex.gpa, .inspection, 1);
             const c: CellId = .from(e.key);
-            switch (cells.origin(c)) {
+            const d = cells.get(c);
+            const own: ?LabelId = switch (d.origin) {
+                .result, .cb => .from(d.a),
+                .elem => .from(d.b),
+                else => null,
+            };
+            if (own == null or !under(cells, own.?, l)) {
+                try ex.require(conds, try conds.sep(ex.gpa, ex.charge, cells, places, c, c, e.value == 1, null));
+                continue;
+            }
+            switch (d.origin) {
                 .result => if (e.value == 1) ex.refute(.approximate),
-                .cb => if (resolve.callee(resolve.ctx, c)) |g| try ex.need(g) else ex.refute(.approximate),
+                .cb => if (resolve.goal(cells, c)) |g| try ex.need(g) else ex.refute(.approximate),
                 .elem => if (marks.certified(c)) |m| try ex.require(conds, m.cond) else ex.refute(.approximate),
-                else => try ex.require(conds, try conds.sep(ex.gpa, ex.charge, cells, places, c, c, e.value == 1, null)),
+                else => unreachable,
+            }
+        }
+    }
+
+    /// A writer of its captures, called through a function value: every
+    /// alternative's captured cells `set` are written. A top-level value is
+    /// never owned (O8): refused exactly; `⊤` approximately. A capture's
+    /// other holders are the write's own demand (§2.8), not this claim's.
+    pub fn writesCaptures(ex: *Expansion, cells: *const Cell.Table, set: SetId) Error!void {
+        try ex.begin();
+        var it = cells.sets.iterate(set);
+        while (it.next()) |e| {
+            try ex.charge.reserve(ex.gpa, .inspection, 1);
+            switch (cells.origin(.from(e.key))) {
+                .shared => ex.refute(.exact),
+                .top => ex.refute(.approximate),
+                else => if (e.value == 1) ex.refute(.approximate),
             }
         }
     }
@@ -693,7 +764,7 @@ pub const Expansion = struct {
                 if (cx != cy and cells.origin(cx) == .cb and cells.origin(cy) == .cb) {
                     // A call inside the other may answer the other's object.
                     if (!diverge(cells, .from(cells.get(cx).a), .from(cells.get(cy).a))) ex.refute(.approximate);
-                    for ([_]CellId{ cx, cy }) |c| if (resolve.callee(resolve.ctx, c)) |g| try ex.need(g) else ex.refute(.approximate);
+                    for ([_]CellId{ cx, cy }) |c| if (resolve.goal(cells, c)) |g| try ex.need(g) else ex.refute(.approximate);
                     continue;
                 }
                 try ex.require(conds, try conds.sep(ex.gpa, ex.charge, cells, places, cx, cy, x.value == 1 or y.value == 1, traversal));
@@ -719,6 +790,31 @@ pub fn diverge(cells: *const Cell.Table, a: LabelId, b: LabelId) bool {
         y = ly.callee_label;
     }
     return false;
+}
+
+/// Whether `x` names a call among those `l` stands for: its chain has `l`'s
+/// as a prefix, where a folded label without a tail stands for every call
+/// at its instruction.
+pub fn under(cells: *const Cell.Table, x: LabelId, l: LabelId) bool {
+    var a = x;
+    var b = l;
+    while (b != .none) {
+        if (a == .none) return false;
+        const la = cells.labelOf(a);
+        const lb = cells.labelOf(b);
+        if (la.inst != lb.inst) return false;
+        if (lb.folded and lb.callee_label == .none) return true;
+        a = la.callee_label;
+        b = lb.callee_label;
+    }
+    return true;
+}
+
+/// Whether `folded` is `x`'s fold: its first instruction, folded, the tail
+/// dropped (§2.2).
+fn isFoldOf(cells: *const Cell.Table, folded: LabelId, x: LabelId) bool {
+    const lf = cells.labelOf(folded);
+    return lf.folded and lf.callee_label == .none and lf.inst == cells.labelOf(x).inst;
 }
 
 /// Whether `c` is the incoming parameter's own cell at some path.
@@ -789,15 +885,22 @@ pub fn joinMarks(a: Mark, b: Mark) Mark {
 }
 
 /// The words a block writes for a mark, and their reading: a mark naming
-/// a cell, label or condition out of range, or a `single` word other than
-/// 0 or 1, is unknown — never `single` (§3.6).
+/// a cell, label or condition out of range, or a `single` word that is
+/// neither of its two spellings, is unknown — never `single` (§3.6). The
+/// spellings are far apart, so a flipped bit is caught; a word rewritten
+/// to the other spelling, or a valid but wrong id, is not detectable here:
+/// the block's integrity check must catch it (the S4 block extension, S6's
+/// cache entry), as for every other record.
 pub fn encodeMark(m: Mark) [4]u32 {
-    return .{ m.container.int(), m.entry.int(), @intFromBool(m.single), m.cond.int() };
+    return .{ m.container.int(), m.entry.int(), if (m.single) single_word else many_word, m.cond.int() };
 }
 
+const single_word: u32 = 0x5349_4e47;
+const many_word: u32 = 0x4d41_4e59;
+
 pub fn decodeMark(w: [4]u32, cell_count: u32, label_count: u32, cond_count: u32) ?Mark {
-    if (w[0] >= cell_count or (w[1] != Ids.none_int and w[1] >= label_count) or w[2] > 1 or w[3] >= cond_count) return null;
-    return .{ .container = .from(w[0]), .entry = .from(w[1]), .single = w[2] == 1, .cond = .from(w[3]) };
+    if (w[0] >= cell_count or (w[1] != Ids.none_int and w[1] >= label_count) or (w[2] != single_word and w[2] != many_word) or w[3] >= cond_count) return null;
+    return .{ .container = .from(w[0]), .entry = .from(w[1]), .single = w[2] == single_word, .cond = .from(w[3]) };
 }
 
 pub const Marks = struct {
@@ -957,6 +1060,15 @@ const TestGraph = struct {
                 try out.append(g.gpa, .{ .step = (Step.index(g.account, 1) catch unreachable), .@"var" = 2 });
                 return .{ .kind = .tuple };
             },
+            // 5 `Rose = Rose (List Rose)`, 6 its list.
+            5 => {
+                try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 5, 0) catch unreachable), .@"var" = 6 });
+                return .{ .kind = .ctor, .head = 500 };
+            },
+            6 => {
+                try out.append(g.gpa, .{ .step = Step.elem, .@"var" = 5 });
+                return .{ .kind = .list, .head = 200 };
+            },
             // 4 `List (List (List Int))`.
             4 => {
                 try out.append(g.gpa, .{ .step = Step.elem, .@"var" = 2 });
@@ -1060,6 +1172,11 @@ const Fixture = struct {
         return f.cells.refine(gpa, &f.account, .elem, container, l, 0, try f.placeOf(0), .list);
     }
 
+    /// The `gen` goal of the family at `port`, at its answer's root (a
+    /// `List Int`), as `Resolve` names it for a `cb` cell there.
+    fn fam(f: *Fixture, port_id: u32) !Goal {
+        return genAt(port_id, try f.path(0, &.{}));
+    }
     fn prove(f: *Fixture, w: *World, g: Goal) !Answer {
         return f.prover.prove(gpa, f.charge(), &f.conds, w.equations(), g);
     }
@@ -1073,6 +1190,7 @@ const AltSpec = union(enum) {
     within: struct { label: LabelId, cells: SetId },
     require: CondId,
     need: Goal,
+    captures: SetId,
 };
 
 const Entry = struct { goal: Goal, alts: []const AltSpec, reads: []const u32 = &.{} };
@@ -1085,7 +1203,7 @@ const World = struct {
     calls: []const Call = &.{},
     marks: bool = false,
 
-    const Call = struct { inst: u32, goal: Goal };
+    const Call = struct { inst: u32, port: u32 };
 
     fn equations(w: *World) Equations {
         return .{ .ctx = w, .expand = expandIt };
@@ -1095,10 +1213,10 @@ const World = struct {
         return .{ .ctx = w, .callee = callee };
     }
 
-    fn callee(ctx: *anyopaque, c: CellId) ?Goal {
+    fn callee(ctx: *anyopaque, c: CellId) ?u32 {
         const w: *World = @ptrCast(@alignCast(ctx));
         const inst = w.f.cells.labelInst(.from(w.f.cells.get(c).a));
-        for (w.calls) |k| if (k.inst == inst) return k.goal;
+        for (w.calls) |k| if (k.inst == inst) return k.port;
         return null;
     }
 
@@ -1106,7 +1224,8 @@ const World = struct {
         const w: *World = @ptrCast(@alignCast(ctx));
         const f = w.f;
         const e = for (w.entries) |e| {
-            if (std.meta.eql(e.goal, ex.goal)) break e;
+            // A family answers the same alternatives at every path a goal names.
+            if (e.goal.claim == ex.goal.claim and e.goal.port == ex.goal.port and (ex.goal.claim == .gen or e.goal.arg == ex.goal.arg)) break e;
         } else {
             // A goal the equations do not know: unknown, never empty (O10).
             try ex.begin();
@@ -1115,7 +1234,7 @@ const World = struct {
         for (e.reads) |r| try ex.read(r);
         const traversal: ?Cond.Traversal = if (w.marks) f.marks.traversal() else null;
         for (e.alts) |a| switch (a) {
-            .gen => |n| try ex.gen(f.view(), n, &.{}, w.resolver()),
+            .gen => |n| try ex.gen(f.view(), n, w.resolver()),
             .inv => |n| try ex.inv(&f.conds, f.view(), n, w.resolver(), traversal),
             .apart => |ab| try ex.apartCalls(&f.conds, &f.cells, &f.places, ab[0], ab[1], w.resolver(), traversal),
             .within => |lw| try ex.within(&f.conds, &f.cells, &f.places, lw.label, lw.cells, &f.marks, w.resolver()),
@@ -1123,6 +1242,7 @@ const World = struct {
                 try ex.begin();
                 try ex.require(&f.conds, k);
             },
+            .captures => |s| try ex.writesCaptures(&f.cells, s),
             .need => |g| {
                 try ex.begin();
                 try ex.need(g);
@@ -1156,7 +1276,7 @@ test "GrowFresh and GrowAlias: an independent base, a step under its assumption;
     // a = g ⊤ (call 40), b = g ⊤ (call 41): two calls of the family.
     const a = try f.set(&.{try f.cb(try f.label(40, .none, false))});
     const b = try f.set(&.{try f.cb(try f.label(41, .none, false))});
-    const calls = [_]World.Call{ .{ .inst = 30, .goal = gen(0) }, .{ .inst = 40, .goal = gen(0) }, .{ .inst = 41, .goal = gen(0) } };
+    const calls = [_]World.Call{ .{ .inst = 30, .port = 0 }, .{ .inst = 40, .port = 0 }, .{ .inst = 41, .port = 0 } };
     var w: World = .{ .f = &f, .calls = &calls, .entries = &.{
         .{ .goal = gen(0), .alts = &.{ .{ .gen = fresh }, .{ .gen = via_previous } } },
         .{ .goal = demand(0), .alts = &.{.{ .apart = .{ a, b } }} },
@@ -1181,7 +1301,7 @@ test "GrowFresh and GrowAlias: an independent base, a step under its assumption;
         .{ .goal = demand(0), .alts = &.{.{ .apart = .{ a2, b2 } }} },
         .{ .goal = demand(1), .alts = &.{.{ .apart = .{ copied, b2 } }} },
     } };
-    try expectAnswer(try g.prove(&w2, gen(0)), .refuted, .exact);
+    try expectAnswer(try g.prove(&w2, try g.fam(0)), .refuted, .exact);
     try expectAnswer(try g.prove(&w2, demand(0)), .refuted, .approximate);
     try expectAnswer(try g.prove(&w2, demand(1)), .proved, .exact);
 
@@ -1192,7 +1312,7 @@ test "GrowFresh and GrowAlias: an independent base, a step under its assumption;
     defer h.deinit();
     const only_previous = try h.leaf(0, &.{try h.cb(try h.label(30, .none, false))});
     var w3: World = .{ .f = &h, .calls = &calls, .entries = &.{.{ .goal = gen(0), .alts = &.{.{ .gen = only_previous }} }} };
-    try expectAnswer(try h.prove(&w3, gen(0)), .waiting, .approximate);
+    try expectAnswer(try h.prove(&w3, try h.fam(0)), .waiting, .approximate);
 }
 
 test "FoldCallbackIdentity: two fresh invocations are apart; one answer twice, a capture, a re-returned feedback are not; a cycle assuming itself waits" {
@@ -1207,10 +1327,10 @@ test "FoldCallbackIdentity: two fresh invocations are apart; one answer twice, a
     const c30 = try f.set(&.{try f.cb(try f.label(30, .none, false))});
     const c31 = try f.set(&.{try f.cb(try f.label(31, .none, false))});
     const calls = [_]World.Call{
-        .{ .inst = 10, .goal = gen(1) }, .{ .inst = 11, .goal = gen(1) },
-        .{ .inst = 20, .goal = gen(2) }, .{ .inst = 21, .goal = gen(2) },
-        .{ .inst = 30, .goal = gen(3) }, .{ .inst = 31, .goal = gen(3) },
-        .{ .inst = 40, .goal = gen(4) }, .{ .inst = 50, .goal = gen(5) },
+        .{ .inst = 10, .port = 1 }, .{ .inst = 11, .port = 1 },
+        .{ .inst = 20, .port = 2 }, .{ .inst = 21, .port = 2 },
+        .{ .inst = 30, .port = 3 }, .{ .inst = 31, .port = 3 },
+        .{ .inst = 40, .port = 4 }, .{ .inst = 50, .port = 5 },
     };
     var w: World = .{
         .f = &f,
@@ -1235,14 +1355,14 @@ test "FoldCallbackIdentity: two fresh invocations are apart; one answer twice, a
     };
     try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
     try expectAnswer(try f.prove(&w, demand(2)), .refuted, .exact);
-    try expectAnswer(try f.prove(&w, gen(2)), .refuted, .exact);
+    try expectAnswer(try f.prove(&w, try f.fam(2)), .refuted, .exact);
     try expectAnswer(try f.prove(&w, demand(3)), .refuted, .approximate);
     // A re-returned feedback value was allocated by an earlier invocation:
     // the [] base does not excuse the other alternative.
-    try expectAnswer(try f.prove(&w, gen(3)), .refuted, .approximate);
+    try expectAnswer(try f.prove(&w, try f.fam(3)), .refuted, .approximate);
     try expectAnswer(try f.prove(&w, demand(4)), .refuted, .approximate);
-    try expectAnswer(try f.prove(&w, gen(4)), .waiting, .approximate);
-    try expectAnswer(try f.prove(&w, gen(5)), .proved, .exact);
+    try expectAnswer(try f.prove(&w, try f.fam(4)), .waiting, .approximate);
+    try expectAnswer(try f.prove(&w, try f.fam(5)), .proved, .exact);
 
     // A re-entrant callback: the call 70 and a call inside it, (70·71) — a
     // callback that calls back into its caller, which calls it again. Both
@@ -1253,7 +1373,7 @@ test "FoldCallbackIdentity: two fresh invocations are apart; one answer twice, a
     const inner = try f.label(70, try f.label(71, .none, false), false);
     try testing.expect(!diverge(&f.cells, outer, inner));
     try testing.expect(diverge(&f.cells, try f.label(72, .none, false), inner));
-    const calls2 = [_]World.Call{ .{ .inst = 70, .goal = gen(1) }, .{ .inst = 72, .goal = gen(1) } };
+    const calls2 = [_]World.Call{ .{ .inst = 70, .port = 1 }, .{ .inst = 72, .port = 1 } };
     var w2: World = .{ .f = &f, .calls = &calls2, .entries = &.{
         .{ .goal = gen(1), .alts = &.{.{ .gen = try f.leaf(0, &.{try f.site(60, 0)}) }} },
         .{ .goal = demand(5), .alts = &.{.{ .apart = .{ try f.set(&.{try f.cb(outer)}), try f.set(&.{try f.cb(inner)}) } }} },
@@ -1382,11 +1502,12 @@ test "FeedbackPrevTwice: the step's duplicate is refused exactly, and after refi
     // `x` is the next round's `prev` and is pushed this round: one list twice.
     try expectAnswer(try f.prove(&w, g), .refuted, .exact);
     // The safe twin, `( x, List.push st prev )`, stores each list once. Its
-    // proof needs "the current supply is apart from every earlier list",
-    // Appendix C.9 gap 3's narrowed rule: an atom over the incoming value
-    // the invariant does not state. The verifier does not assume it, so the
-    // twin is refused approximately — a limit of the checker, kept until a
-    // separately reviewed proof replaces the decided `lost`.
+    // step needs "the current supply is apart from every earlier list", an
+    // atom between the supply and the incoming value; an `Invariant` states
+    // `sep` atoms over the incoming value alone, so the step is refused
+    // approximately. That is the invariant form's limit. Gap 3's obstacle
+    // proper is the caller-side discharge below: the same pair, instantiated,
+    // is one folded split twice, `lost`.
     const once = try f.pair(try f.leaf(0, &.{x}), try f.list(2, &.{st}, try f.leaf(0, &.{ st_e, prev })));
     const g_once: Goal = .{ .claim = .inv, .port = 1, .arg = spec };
     var w_once: World = .{ .f = &f, .entries = &.{.{ .goal = g_once, .alts = &.{ .{ .inv = base }, .{ .inv = once } } }} };
@@ -1429,11 +1550,16 @@ test "TwoTraversalsShared and FoldOverFoldShared: two entries are two traversals
     try testing.expectEqual(Cond.lost, k_ys);
     // `List.map ys λl → List.push l 1` relies on κ(ys[*]): refused, approximate.
     // Green: `List.map xs λl → List.push l 1` relies on κ(xs[*]) through its
-    // `within(ι_m⋆)`, whose cells are the map's own taken supply.
-    const rec_f = try f.label(11, try f.label(10, .none, true), false);
-    const rec_rec = try f.label(11, try f.label(11, .none, true), false);
-    const m_star = try f.label(100, try f.label(101, .none, true), true);
-    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, rec_f, rec_rec, m_star);
+    // `within(ι_m⋆)`, whose cells are the map's own taken supply. C.3's
+    // read-off at List.map folds `(ι_m·ι_f⋆)` and `(ι_m·ι_rec⋆)` into ι_m⋆;
+    // the caller's call ι₁ instantiates it as `(ι₁·ι_m⋆)`, the split's label.
+    const m_f = try f.label(101, try f.label(10, .none, true), false);
+    const m_rec = try f.label(101, try f.label(11, .none, true), false);
+    const l_m = try f.label(101, .none, true);
+    try testing.expectEqual(try f.conds.within(gpa, f.charge(), l_m), try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, m_f, m_rec, l_m));
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 100);
+    const m_star = try f.label(100, l_m, true);
+    try testing.expect(f.prover.provenanceOf(m_star) != null);
     var w: World = .{ .f = &f, .marks = true, .entries = &.{
         .{ .goal = demand(0), .alts = &.{.{ .require = k_ys }} },
         .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = m_star, .cells = try f.set(&.{by_map}) } }} },
@@ -1503,18 +1629,26 @@ test "NestedTraversalShared, and across a block: single is cleared through a fol
     try f.marks.put(gpa, f.charge(), nested, out_of_each);
     // The caller's `List.map inner (λl → List.push l 1)` relies on the inner
     // lists' within: refused. Green: `each [ 1, 2 ] xs (λ_ → [ 1 ])` answers a
-    // fresh result per call.
-    const w_l = try f.label(700, .none, true);
-    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(701, .none, false), try f.label(702, .none, false), w_l);
+    // fresh result per call. The within is List.map's `within(ι_m⋆)` (C.3's
+    // read-off), instantiated at the lambda's call 500 and carried out of
+    // `each` through the outer map at 600: `inner_l` itself.
+    const l_m = try f.label(101, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(101, try f.label(10, .none, true), false), try f.label(101, try f.label(11, .none, true), false), l_m);
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 500);
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, try f.label(500, l_m, true), 600);
+    const w_l = inner_l;
+    try testing.expect(f.prover.provenanceOf(w_l) != null);
     const fresh = try f.set(&.{try f.cells.result(gpa, acct, .result, inner_l, 1, try f.placeOf(0), .list)});
-    // The direct `List.map xs λl → List.push l 1` keeps single.
-    const direct = try f.taken(xs, try f.label(800, try f.label(101, .none, true), true));
+    // The direct `List.map xs λl → List.push l 1` at 800 keeps single.
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 800);
+    const d_l = try f.label(800, l_m, true);
+    const direct = try f.taken(xs, d_l);
     const direct_mark = try cross(&f.cells, gpa, acct, try cross(&f.cells, gpa, acct, enter(xs, k), 101, .plain), 800, .plain);
     try f.marks.put(gpa, f.charge(), direct, direct_mark);
     var w: World = .{ .f = &f, .entries = &.{
         .{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = w_l, .cells = try f.set(&.{nested}) } }} },
         .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = w_l, .cells = fresh } }} },
-        .{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = w_l, .cells = try f.set(&.{direct}) } }} },
+        .{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = d_l, .cells = try f.set(&.{direct}) } }} },
     } };
     try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
     try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
@@ -1537,9 +1671,11 @@ test "NestedTraversalShared, and across a block: single is cleared through a fol
     try g.init();
     defer g.deinit();
     const xs2 = try g.sym(.param, 2, 2, &.{});
-    const direct2 = try g.taken(xs2, try g.label(800, try g.label(101, .none, true), true));
-    const w2_l = try g.label(700, .none, true);
-    _ = try g.prover.foldPair(gpa, g.charge(), &g.conds, &g.cells, try g.label(701, .none, false), try g.label(702, .none, false), w2_l);
+    const m2 = try g.label(101, .none, true);
+    _ = try g.prover.foldPair(gpa, g.charge(), &g.conds, &g.cells, try g.label(101, try g.label(10, .none, true), false), try g.label(101, try g.label(11, .none, true), false), m2);
+    _ = try g.prover.prefixWithin(gpa, g.charge(), &g.conds, &g.cells, m2, 800);
+    const w2_l = try g.label(800, m2, true);
+    const direct2 = try g.taken(xs2, w2_l);
     var w2: World = .{ .f = &g, .entries = &.{.{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = w2_l, .cells = try g.set(&.{direct2}) } }} }} };
     try expectAnswer(try g.prove(&w2, demand(2)), .refuted, .approximate);
 }
@@ -1566,7 +1702,7 @@ fn classGrowth(f: *Fixture, last: ?NodeId, reversed: bool, entries: *[4]Entry, a
     return entries;
 }
 
-const growth_calls = [_]World.Call{ .{ .inst = 1, .goal = gen(1) }, .{ .inst = 2, .goal = gen(2) }, .{ .inst = 3, .goal = gen(0) }, .{ .inst = 9, .goal = gen(0) } };
+const growth_calls = [_]World.Call{ .{ .inst = 1, .port = 1 }, .{ .inst = 2, .port = 2 }, .{ .inst = 3, .port = 0 }, .{ .inst = 9, .port = 0 } };
 
 test "RecursiveClassGrowth: a, b and c settle together, the shared base refuses; a fresh base accepts; no base waits; order never changes an answer" {
     const Case = struct { last: enum { shared, fresh, none }, want: Status, exact: Exactness };
@@ -1584,8 +1720,8 @@ test "RecursiveClassGrowth: a, b and c settle together, the shared base refuses;
             var alts: [6]AltSpec = undefined;
             var w: World = .{ .f = &f, .calls = &growth_calls, .entries = try classGrowth(&f, last, reversed, &entries, &alts) };
             // Ask from another member first: the component is one answer.
-            _ = try f.prove(&w, gen(root));
-            for ([_]u32{ 0, 1, 2 }) |m| try expectAnswer((try f.prover.cached(testing.allocator, f.charge(), gen(m))).?, case.want, case.exact);
+            _ = try f.prove(&w, try f.fam(root));
+            for ([_]u32{ 0, 1, 2 }) |m| try expectAnswer((try f.prover.cached(testing.allocator, f.charge(), try f.fam(m))).?, case.want, case.exact);
             const bad = try f.prove(&w, demand(0));
             try testing.expectEqual(if (case.want == .proved) Status.proved else if (case.want == .refuted) Status.refuted else Status.waiting, bad.status);
             // One component of three, decided once: three expansions, no more.
@@ -1624,17 +1760,14 @@ test "JoinedClosurePorts: tables join by identity, never by index, and every alt
     // arm: every alternative's capture is written. The shared twin refuses;
     // without b2 it accepts.
     const Writer = struct {
-        fn alts(ff: *Fixture, families: *const Families, family: SetId, out: []AltSpec) []const AltSpec {
+        /// One alternative per closure of the family: the writer's call
+        /// writes that closure's captures (`Expansion.writesCaptures`).
+        fn alts(families: *const Families, family: SetId, out: []AltSpec) []const AltSpec {
             var n: usize = 0;
             var it = families.sets.iterate(family);
             while (it.next()) |e| {
-                var ct = ff.cells.sets.iterate(families.items.items[e.key].captures);
-                while (ct.next()) |c| {
-                    // A top-level value is never owned (O8); a capture's own
-                    // holders are the write's demand.
-                    out[n] = .{ .require = if (ff.cells.origin(.from(c.key)) == .shared) Cond.shared else Cond.yes };
-                    n += 1;
-                }
+                out[n] = .{ .captures = families.items.items[e.key].captures };
+                n += 1;
             }
             return out[0..n];
         }
@@ -1642,8 +1775,8 @@ test "JoinedClosurePorts: tables join by identity, never by index, and every alt
     var buf1: [4]AltSpec = undefined;
     var buf2: [4]AltSpec = undefined;
     var w: World = .{ .f = &f, .entries = &.{
-        .{ .goal = demand(0), .alts = Writer.alts(&f, &fam, joined, &buf1) },
-        .{ .goal = demand(1), .alts = Writer.alts(&f, &fam, try fam.join(gpa, f.charge(), t1, t3), &buf2) },
+        .{ .goal = demand(0), .alts = Writer.alts(&fam, joined, &buf1) },
+        .{ .goal = demand(1), .alts = Writer.alts(&fam, try fam.join(gpa, f.charge(), t1, t3), &buf2) },
     } };
     try expectAnswer(try f.prove(&w, demand(0)), .refuted, .exact);
     try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
@@ -1700,10 +1833,10 @@ const Helpers = struct {
 };
 
 const helper_calls = [_]World.Call{
-    .{ .inst = 100, .goal = gen(20) }, .{ .inst = 101, .goal = gen(21) },
-    .{ .inst = 110, .goal = gen(10) }, .{ .inst = 111, .goal = gen(11) },
-    .{ .inst = 120, .goal = gen(10) }, .{ .inst = 121, .goal = gen(11) },
-    .{ .inst = 130, .goal = gen(10) }, .{ .inst = 131, .goal = gen(11) },
+    .{ .inst = 100, .port = 20 }, .{ .inst = 101, .port = 21 },
+    .{ .inst = 110, .port = 10 }, .{ .inst = 111, .port = 11 },
+    .{ .inst = 120, .port = 10 }, .{ .inst = 121, .port = 11 },
+    .{ .inst = 130, .port = 10 }, .{ .inst = 131, .port = 11 },
 };
 
 test "CallFeedbackGeneration: a changed supply invalidates exactly its dependent goals, and late weakening refuses after an acceptance" {
@@ -1731,7 +1864,7 @@ test "CallFeedbackGeneration: a changed supply invalidates exactly its dependent
     try testing.expect((try f.prover.cached(gpa, f.charge(), demand(1))) != null);
     // The earlier acceptance is not served: the new generation refuses.
     try expectAnswer(try f.prove(&h.world, demand(0)), .refuted, .approximate);
-    try expectAnswer((try f.prover.cached(gpa, f.charge(), gen(20))).?, .refuted, .exact);
+    try expectAnswer((try f.prover.cached(gpa, f.charge(), try f.fam(20))).?, .refuted, .exact);
     try testing.expectEqual(expanded + 3, f.prover.stats.expanded);
     // The other instance is served from its memo, not expanded again.
     const hits = f.prover.stats.memo_hits;
@@ -1768,20 +1901,20 @@ test "a version that changes during a solve solves again on the new generation; 
                 // is of an old generation.
                 .gen => if (ex.goal.port == 0) {
                     try ex.read(m.port_id);
-                    try ex.gen(m.f.view(), if (m.captured) m.capture else m.fresh, &.{}, m.resolver());
-                    try ex.gen(m.f.view(), m.via, &.{}, m.resolver());
+                    try ex.gen(m.f.view(), if (m.captured) m.capture else m.fresh, m.resolver());
+                    try ex.gen(m.f.view(), m.via, m.resolver());
                 } else {
                     if (!m.moved) {
                         m.moved = true;
                         m.captured = true;
                         try m.f.prover.bump(ex.gpa, ex.charge, m.port_id);
                     }
-                    try ex.gen(m.f.view(), m.fresh, &.{}, m.resolver());
+                    try ex.gen(m.f.view(), m.fresh, m.resolver());
                 },
                 .demand => {
                     try ex.begin();
-                    try ex.need(gen(0));
-                    try ex.need(gen(1));
+                    try ex.need(try m.f.fam(0));
+                    try ex.need(try m.f.fam(1));
                 },
                 .inv => unreachable,
             }
@@ -1791,19 +1924,19 @@ test "a version that changes during a solve solves again on the new generation; 
             return .{ .ctx = m, .callee = callee };
         }
 
-        fn callee(_: *anyopaque, _: CellId) ?Goal {
-            return gen(0);
+        fn callee(_: *anyopaque, _: CellId) ?u32 {
+            return 0;
         }
     };
     var m: Moving = .{ .f = &f, .port_id = try f.prover.port(gpa, f.charge()), .fresh = try f.leaf(0, &.{try f.site(1, 0)}), .capture = try f.leaf(0, &.{try f.sym(.env, 2, 0, &.{})}), .via = try f.leaf(0, &.{try f.cb(try f.label(3, .none, false))}) };
     // The family first, proved under the fresh base.
     const eqs: Equations = .{ .ctx = &m, .expand = Moving.expand };
-    try expectAnswer(try f.prover.prove(gpa, f.charge(), &f.conds, eqs, gen(0)), .proved, .exact);
+    try expectAnswer(try f.prover.prove(gpa, f.charge(), &f.conds, eqs, try f.fam(0)), .proved, .exact);
     // The demand's solve sees the family's port change mid-way: it reads
     // the stale proof once, publishes nothing from it, and solves again.
     try expectAnswer(try f.prover.prove(gpa, f.charge(), &f.conds, eqs, demand(0)), .refuted, .approximate);
     try testing.expectEqual(@as(u64, 1), f.prover.stats.stale_reruns);
-    try expectAnswer((try f.prover.cached(gpa, f.charge(), gen(0))).?, .refuted, .exact);
+    try expectAnswer((try f.prover.cached(gpa, f.charge(), try f.fam(0))).?, .refuted, .exact);
     // The same with the family first expanded inside the demand's solve: its
     // own recorded read is what has gone stale.
     var g: Fixture = .{};
@@ -1813,7 +1946,7 @@ test "a version that changes during a solve solves again on the new generation; 
     const eqs2: Equations = .{ .ctx = &m2, .expand = Moving.expand };
     try expectAnswer(try g.prover.prove(gpa, g.charge(), &g.conds, eqs2, demand(0)), .refuted, .approximate);
     try testing.expectEqual(@as(u64, 1), g.prover.stats.stale_reruns);
-    try expectAnswer((try g.prover.cached(gpa, g.charge(), gen(0))).?, .refuted, .exact);
+    try expectAnswer((try g.prover.cached(gpa, g.charge(), try g.fam(0))).?, .refuted, .exact);
 }
 
 test "failure rollback: a refused reservation at any step publishes nothing and leaves every earlier answer served" {
@@ -1821,7 +1954,7 @@ test "failure rollback: a refused reservation at any step publishes nothing and 
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
-    const calls = [_]World.Call{ .{ .inst = 30, .goal = gen(0) }, .{ .inst = 40, .goal = gen(0) }, .{ .inst = 41, .goal = gen(0) } };
+    const calls = [_]World.Call{ .{ .inst = 30, .port = 0 }, .{ .inst = 40, .port = 0 }, .{ .inst = 41, .port = 0 } };
     const fresh = try f.leaf(0, &.{try f.site(10, 0)});
     const via = try f.leaf(0, &.{try f.cb(try f.label(30, .none, false))});
     const a = try f.set(&.{try f.cb(try f.label(40, .none, false))});
@@ -1856,7 +1989,7 @@ test "failure rollback: a refused reservation at any step publishes nothing and 
             // Nothing of the refused solve is served, the earlier answer
             // of the stale generation included; the unrelated one still is.
             try testing.expectEqual(@as(?Answer, null), try f.prover.cached(gpa, f.charge(), demand(0)));
-            try testing.expectEqual(@as(?Answer, null), try f.prover.cached(gpa, f.charge(), gen(0)));
+            try testing.expectEqual(@as(?Answer, null), try f.prover.cached(gpa, f.charge(), try f.fam(0)));
             try expectAnswer((try f.prover.cached(gpa, f.charge(), demand(9))).?, .proved, .exact);
         }
     }
@@ -1878,7 +2011,7 @@ fn chain(f: *Fixture, n: u32, ring: bool, entries: *std.ArrayList(Entry), alts: 
         if (k > 0 or ring) {
             const next: u32 = if (ring) (ki + 1) % (n + 1) else ki - 1;
             alts.appendAssumeCapacity(.{ .gen = try f.leaf(0, &.{try f.cb(try f.label(1000 + ki, .none, false))}) });
-            try calls.append(gpa, .{ .inst = 1000 + ki, .goal = gen(next) });
+            try calls.append(gpa, .{ .inst = 1000 + ki, .port = next });
         }
         _ = start;
         try entries.append(gpa, .{ .goal = gen(ki), .alts = &.{}, .reads = ports.items[k..][0..1] });
@@ -1891,7 +2024,7 @@ fn chain(f: *Fixture, n: u32, ring: bool, entries: *std.ArrayList(Entry), alts: 
         at += len;
     }
     alts.appendAssumeCapacity(.{ .gen = try f.leaf(0, &.{try f.cb(try f.label(999, .none, false))}) });
-    try calls.append(gpa, .{ .inst = 999, .goal = gen(n) });
+    try calls.append(gpa, .{ .inst = 999, .port = n });
     try entries.append(gpa, .{ .goal = demand(0), .alts = alts.items[alts.items.len - 1 ..] });
 }
 
@@ -1942,4 +2075,148 @@ test "proof work is counted and linear: chains and rings of 10, 100 and 1,000 go
         try expectAnswer(again, .proved, .exact);
         try testing.expectEqual(@as(u64, 2 * (n + 2)), f.prover.stats.expanded);
     };
+}
+
+test "#1189 review: holes pinned red-first" {
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    // 1. `r = mk ⊤` (call 900), `List.map xs (λ_ → r)`: every invocation
+    // answers r, a result made outside them.
+    const m_l = try f.label(101, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(101, try f.label(10, .none, true), false), try f.label(101, try f.label(11, .none, true), false), m_l);
+    const r = try f.set(&.{try f.cells.result(gpa, &f.account, .result, try f.label(900, .none, false), 1, try f.placeOf(0), .list)});
+    // 2. `f ⊤ = [ shared ]`: two calls' elements are the one shared object.
+    const one_shared = try f.list(2, &.{try f.site(5, 2)}, try f.leaf(0, &.{try f.sym(.shared, 6, 0, &.{})}));
+    const at_elem = struct {
+        fn cb(ff: *Fixture, l: LabelId) !CellId {
+            return ff.cells.symbolic(gpa, &ff.account, &ff.places, .cb, l.int(), try ff.path(2, &.{Step.elem}), 0);
+        }
+    }.cb;
+    const e10 = try f.set(&.{try at_elem(&f, try f.label(10, .none, false))});
+    const e11 = try f.set(&.{try at_elem(&f, try f.label(11, .none, false))});
+    const calls = [_]World.Call{ .{ .inst = 10, .port = 1 }, .{ .inst = 11, .port = 1 } };
+    var w: World = .{ .f = &f, .calls = &calls, .entries = &.{
+        .{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = m_l, .cells = r } }} },
+        .{ .goal = gen(1), .alts = &.{.{ .gen = one_shared }} },
+        .{ .goal = demand(1), .alts = &.{.{ .apart = .{ e10, e11 } }} },
+    } };
+    try expectAnswer(try f.prove(&w, demand(0)), .refuted, .exact);
+    try expectAnswer(try f.prove(&w, demand(1)), .refuted, .approximate);
+    try expectAnswer((try f.prover.cached(gpa, f.charge(), genAt(1, try f.path(2, &.{Step.elem})))).?, .refuted, .exact);
+    // 3a. A pair that does not fold into the label named.
+    try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(11, try f.label(10, .none, true), false), try f.label(11, try f.label(11, .none, true), false), try f.label(700, .none, true)));
+    // 3b. A second, different pre-fold pair for one label is a conflict.
+    const c_l = try f.label(30, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(1, .none, false), false), try f.label(30, try f.label(2, .none, false), false), c_l);
+    try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(3, .none, false), false), try f.label(30, try f.label(4, .none, false), false), c_l));
+    // H. A mark's `single` flipped 0 → 1 is not a mark.
+    const xs = try f.sym(.param, 1, 2, &.{});
+    var flipped = encodeMark(try cross(&f.cells, gpa, &f.account, enter(xs, Cond.yes), 600, .folded_callback));
+    flipped[2] ^= 1;
+    try testing.expectEqual(@as(?Mark, null), decodeMark(flipped, f.cells.count(), @intCast(f.cells.labels.len), f.conds.count()));
+}
+
+/// κ `yes` stored at every built node of `n`, where it stands.
+fn snapshotYes(f: *Fixture, n: NodeId, path: *std.ArrayList(Step), k: *Cond.Kappas) !void {
+    const gpa = testing.allocator;
+    const d = f.shapes.get(n);
+    switch (d.kind) {
+        .node, .delta => {
+            k.* = try f.conds.kappaSetAt(gpa, f.charge(), k.*, path.items, n, Cond.yes);
+            var it = f.shapes.overEntries(if (d.kind == .node) d.a else d.b);
+            while (it.next()) |e| {
+                try path.append(gpa, e.step);
+                try snapshotYes(f, e.node, path, k);
+                _ = path.pop();
+            }
+        },
+        .@"union", .choice, .positions => {
+            try snapshotYes(f, .from(d.a), path, k);
+            try snapshotYes(f, .from(d.b), path, k);
+        },
+        .leaf, .recast => {},
+    }
+}
+
+test "FoldCallbackIdentity: a folded accumulator that holds one kids list at two depths refuses; distinct lists do not" {
+    // `List.foldl xs (Rose []) λx acc → Rose [ acc, Rose [ Rose (kids acc) ] ]`:
+    // after a round the accumulator holds acc's kids list `k` at depth 1 (in
+    // acc) and at depth 2. The fixpoint widens it (§2.12), and the kids
+    // class's read is the path-multiset primitive's: a repeat across depths
+    // is `lost`, so a write into the kids lists is refused. The twin with a
+    // fresh list at depth 2 has no repeat.
+    const gpa = testing.allocator;
+    for ([_]bool{ true, false }) |alias| {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const kid = try f.places.ctorStep(gpa, &f.account, 5, 0);
+        const rose = struct {
+            fn of(ff: *Fixture, kids: NodeId) !NodeId {
+                return ff.shapes.node(gpa, &ff.account, try ff.placeOf(5), .none, try ff.shapes.overPut(gpa, &ff.account, Ids.none_int, try ff.places.ctorStep(gpa, &ff.account, 5, 0), kids));
+            }
+        }.of;
+        const k = try f.leaf(6, &.{try f.site(1, 6)});
+        const k2 = if (alias) k else try f.leaf(6, &.{try f.site(2, 6)});
+        const acc = try rose(&f, k);
+        const deeper = try rose(&f, try f.list(6, &.{try f.site(3, 6)}, try rose(&f, k2)));
+        const round = try rose(&f, try f.list(6, &.{try f.site(4, 6)}, try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ acc, deeper })));
+        var path: std.ArrayList(Step) = .empty;
+        defer path.deinit(gpa);
+        var snap: Cond.Kappas = .none;
+        try snapshotYes(&f, round, &path, &snap);
+        const widened = try f.conds.widenValue(gpa, f.charge(), f.view(), round, snap);
+        try testing.expect(widened.node != round);
+        const kids = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, widened.node, kid)).?;
+        const read = try f.conds.kappaOf(gpa, f.charge(), f.view(), f.conds.kappaChild(widened.kappas, kid), kids, false);
+        // A write into the kids lists relies on that read.
+        var w: World = .{ .f = &f, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .require = read }} }} };
+        const got = try f.prove(&w, demand(0));
+        // The class's own path-multiset obligation: `lost` for the repeat,
+        // `yes` for distinct lists. The distinct twin's whole read is still
+        // `lost` for other reasons (widen's collapsed fold, as in Cond's #1125
+        // test): a precision limit of the widen, not of this verifier.
+        try testing.expectEqual(if (alias) Cond.lost else Cond.yes, f.conds.fold_cond.get(kids).?);
+        try expectAnswer(got, .refuted, .approximate);
+    }
+}
+
+test "RefinementFeedbackTwice's positive control: one traversal edits each taken list once, after refinement folding, under κ(xs[*])" {
+    // `List.map xs λl → List.push l 1`, xs exclusive: no previous-item carry,
+    // no second traversal. mapHelp's split chains fold with its labels
+    // (`elem(xs·(ι_rec·(ι_rec·ι_t)))` is `elem(xs·ι_rec⋆)`), its own recursion
+    // keeps the mark; the split leaves mapHelp (ι_m 101) and List.map (the
+    // caller's call 100) plainly. The callback's write on its supply is a
+    // callsite demand on xs at `[*]`, relying on κ(xs[*]); a later write into
+    // the result's lists relies on List.map's `within`, discharged by that
+    // taken supply. Both leave exactly `excl xs` to the caller.
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const acct = &f.account;
+    const xs = try f.sym(.param, 1, 2, &.{});
+    const k = try f.conds.excl(gpa, f.charge(), xs);
+    const rec_star = try f.label(11, .none, true);
+    // Two unfolded chains of the split, one fold.
+    for ([_]LabelId{ try f.label(11, try f.label(12, .none, false), false), try f.label(11, try f.label(11, try f.label(12, .none, false), false), false) }) |c| try testing.expect(isFoldOf(&f.cells, rec_star, c));
+    const in_help = try cross(&f.cells, gpa, acct, enter(xs, k), 11, .own_recursion);
+    try testing.expect(in_help.single and in_help.entry == .none);
+    const l_m = try f.label(101, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(101, try f.label(10, .none, true), false), try f.label(101, rec_star, false), l_m);
+    _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 100);
+    const at_caller = try f.label(100, l_m, true);
+    const taken = try f.taken(xs, at_caller);
+    try f.marks.put(gpa, f.charge(), taken, try cross(&f.cells, gpa, acct, try cross(&f.cells, gpa, acct, in_help, 101, .plain), 100, .plain));
+    var w: World = .{ .f = &f, .marks = true, .entries = &.{
+        .{ .goal = demand(0), .alts = &.{.{ .require = (f.marks.certified(taken) orelse unreachable).cond }} },
+        .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = at_caller, .cells = try f.set(&.{taken}) } }} },
+    } };
+    for ([_]u32{ 0, 1 }) |d| {
+        const a = try f.prove(&w, demand(d));
+        try expectAnswer(a, .proved, .exact);
+        try testing.expectEqual(k, a.xreq);
+    }
 }
