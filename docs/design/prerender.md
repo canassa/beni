@@ -532,7 +532,10 @@ the address the page was opened at is not the route. What `init` gets is:
   §9.8.13 (e) says nothing hides the base from the program;
 - `query` and `fragment`: `Nothing`, since the build cannot know them;
 - `protocol`, `host` and `port_`: from the project's `"build"."origin"`, a new key of `frontend.md`
-  §10.1 that a prerendering build needs, `"https://example.com"`;
+  §10.1 that a prerendering build needs, `"https://example.com"`. *Added 2026-10-29 (#1177):*
+  `Url.fromString` is beni, not the host's `URL` (`boundary.md` §9.8.13 (a), its second
+  amendment), so the engine can make this `Url` with the code the browser runs; an origin whose
+  host is not ASCII is `Nothing` there, so it is written in its `xn--` form;
 
 and the address the page was opened at, when its `Url` differs from that one, reaches the program as
 `onUrlChange`'s message once the first render has run — an ordinary message, whose write pass

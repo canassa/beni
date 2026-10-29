@@ -1,0 +1,101 @@
+1: http example.com - / - - = http://example.com/
+2: http host 9000 /path [query] [frag] = http://host:9000/path?query#frag
+3: http example.com - / - - = http://example.com/
+4: http foo.com - / - - = http://foo.com/
+5: http example.com - / - - = http://example.com/
+6: http www.google.com - /foo - - = http://www.google.com/foo
+7: http example.com - //foo//bar - - = http://example.com//foo//bar
+8: Nothing
+9: Nothing
+10: http www.example.com - / - - = http://www.example.com/
+11: http www.example.com - / - - = http://www.example.com/
+12: https test - / - - = https://test/
+13: Nothing
+14: Nothing
+15: Nothing
+16: Nothing
+17: http foo.com - //@ - - = http://foo.com//@
+18: http f - /c - - = http://f/c
+19: http f 0 /c - - = http://f:0/c
+20: http f - /c - - = http://f/c
+21: http foo - / - - = http://foo/
+22: https foo - / - - = https://foo/
+23: https foo 80 / - - = https://foo:80/
+24: Nothing
+25: Nothing
+26: Nothing
+27: Nothing
+28: Nothing
+29: http 192.168.0.1 - / - - = http://192.168.0.1/
+30: Nothing
+31: Nothing
+32: Nothing
+33: Nothing
+34: Nothing
+35: http !"$&'()*+,-.;=_`{}~ - / - - = http://!"$&'()*+,-.;=_`{}~/
+36: http . - / - - = http://./
+37: Nothing
+38: Nothing
+39: http 1.2.3.4 - / - - = http://1.2.3.4/
+40: http 192.168.1.1 - / - - = http://192.168.1.1/
+41: http 192.168.0.1 - / - - = http://192.168.0.1/
+42: http 0.0.1.0 - / - - = http://0.0.1.0/
+43: http 59.154.201.255 - / - - = http://59.154.201.255/
+44: http 255.255.255.255 - / - - = http://255.255.255.255/
+45: Nothing
+46: Nothing
+47: https 0.0.0.0 - / - - = https://0.0.0.0/
+48: https 127.0.0.1 - / - - = https://127.0.0.1/
+49: http 192.168.257.com - / - - = http://192.168.257.com/
+50: Nothing
+51: Nothing
+52: Nothing
+53: Nothing
+54: http foo.09.. - / - - = http://foo.09../
+55: http 0x7f.0.0.0x7g - / - - = http://0x7f.0.0.0x7g/
+56: http [2001::1] - / - - = http://[2001::1]/
+57: http [::7f00:1] - / - - = http://[::7f00:1]/
+58: http [::d01:4403] - / - - = http://[::d01:4403]/
+59: http [1::] - / - - = http://[1::]/
+60: http [0:1:0:1:0:1:0:1] - / - - = http://[0:1:0:1:0:1:0:1]/
+61: Nothing
+62: Nothing
+63: Nothing
+64: Nothing
+65: Nothing
+66: Nothing
+67: Nothing
+68: Nothing
+69: Nothing
+70: Nothing
+71: Nothing
+72: Nothing
+73: Nothing
+74: http example.com - /a - - = http://example.com/a
+75: http example.com - / - - = http://example.com/
+76: http example.com - /foo/ - - = http://example.com/foo/
+77: http example.com - /%2e.bar - - = http://example.com/%2e.bar
+78: http example.com - // - - = http://example.com//
+79: http example.com - /foo/bar/ - - = http://example.com/foo/bar/
+80: http example.com - /.foo - - = http://example.com/.foo
+81: http example.com - /foo%2%C3%82%C2%A9zbar - - = http://example.com/foo%2%C3%82%C2%A9zbar
+82: http example.com - /foo%C2%91%91 - - = http://example.com/foo%C2%91%91
+83: http example.com - /%E4%BD%A0%E5%A5%BD%E4%BD%A0%E5%A5%BD - - = http://example.com/%E4%BD%A0%E5%A5%BD%E4%BD%A0%E5%A5%BD
+84: Nothing
+85: https x - /%00y - - = https://x/%00y
+86: https x - /%EF%BF%BFy - - = https://x/%EF%BF%BFy
+87: https example.com - /%22quoted%22 - - = https://example.com/%22quoted%22
+88: http f 21 /%20b%20 [%20d%20] [%20e] = http://f:21/%20b%20?%20d%20#%20e
+89: http foo - /path;a [?e] [f#g] = http://foo/path;a??e#f#g
+90: http foo - /abcd - [foo?bar] = http://foo/abcd#foo?bar
+91: http host - / [%27] - = http://host/?%27
+92: http example.org - /test [] [] = http://example.org/test?#
+93: http example.org - /test [%GH] - = http://example.org/test?%GH
+94: http example.org - /test [a] [b%00c] = http://example.org/test?a#b%00c
+95: http www.google.com - /foo [bar=baz] [%20%C2%BB] = http://www.google.com/foo?bar=baz#%20%C2%BB
+96: http foo.bar - /baz [qux] [foo%60bar] = http://foo.bar/baz?qux#foo%60bar
+97: https www.example.com - /path%7B%7Fpath.html [query%27%7F=query] [fragment%3C%7Ffragment] = https://www.example.com/path%7B%7Fpath.html?query%27%7F=query#fragment%3C%7Ffragment
+98: http xn--zca.xn--zca - / - - = http://xn--zca.xn--zca/
+99: http ab--c.xn--zca - / - - = http://ab--c.xn--zca/
+100: Nothing
+101: Nothing

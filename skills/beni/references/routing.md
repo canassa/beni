@@ -13,6 +13,10 @@
   The direct forms are `push`, `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`.
   `currentUrl ⊤` is the address, or `Nothing` for a file. A push is sent to every `onUrlChange`.
 - `Url.Parser` and `Url.Builder` are core modules.
+- `Url.fromString` parses an `http` or `https` URL as a browser does. It does not use the host's
+  `URL`, so it also runs where no `URL` exists. A host in Unicode (`bücher.de`) gives `Nothing`.
+  Write the host in its ASCII form (`xn--bcher-kva.de`). The address of a page is always in that
+  form.
 
 ```beni platform=browser-inline
 import Browser
@@ -81,4 +85,4 @@ main =
 - There is no `eachUrlRequest` or `eachUrlChange`. They need a fiber.
 - A link's `href` must be a literal. A `javascript:` URL is written as an empty `href`.
 
-Sources: `docs/design/boundary.md` §9.8.13, §9.8.17; `docs/design/browser-inline.md` §10.
+Sources: `docs/design/boundary.md` §9.8.13 (a) and its amendments, §9.8.17; `docs/design/browser-inline.md` §10.

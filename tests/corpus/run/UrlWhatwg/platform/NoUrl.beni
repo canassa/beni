@@ -1,0 +1,11 @@
+--! The host without its WHATWG `URL`, as an embeddable engine is
+--! (`docs/design/research/108-embedded-js-engine.md`).
+
+import Js
+
+
+--| Delete `globalThis.URL`; `True` when it is gone.
+pub removeUrl : ⊤ → Bool
+removeUrl ⊤ = Js.pure λ⊤ →
+    _ = Js.call (Js.global "Reflect") "deleteProperty" [ Js.global "globalThis", Js.from "URL" ]
+    Js.isUndefined (Js.get (Js.global "globalThis") "URL")

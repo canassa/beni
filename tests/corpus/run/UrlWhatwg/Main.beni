@@ -1,0 +1,172 @@
+-- `Url.fromString` is a parser in beni, the URL Standard's for `http` and
+-- `https` with no base (boundary.md §9.8.13 (a), its amendment of
+-- 2026-10-29), so a page prerendered by an engine with no host `URL` gets
+-- the `Url` the browser gets. The program deletes the host's `URL` before
+-- it parses anything, as such an engine has none: while `fromString` read
+-- the host's, this program stopped at its first case. Each input is a case
+-- of WPT's urltestdata.json (the last four, a host of its toascii.json in
+-- `http://…/`), and the expected output is what Node's `URL` makes of it,
+-- read into Elm's record as core read it before: `node
+-- tests/oracle/url-whatwg.mjs` writes it. The one departure is the
+-- parser's rule, and the script applies it too: a host that is not ASCII
+-- once percent-decoded is `Nothing`, where the host maps it to its `xn--`
+-- form. The cases cover trimming and tab removal, the scheme's case and
+-- slashes, empty and refused user information, ports, the host's
+-- percent-decoding and forbidden code points, IPv4 in every radix, IPv6
+-- with `::` and an IPv4 tail, `xn--` labels, dot segments, and each part's
+-- percent-encode set.
+import NoUrl
+import Node exposing (Program)
+import Url exposing (Url)
+
+
+describe : Maybe Url → String
+describe url =
+    case url of
+        Nothing →
+            "Nothing"
+
+        Just u →
+            protocol =
+                case u.protocol of
+                    Url.Http →
+                        "http"
+
+                    Url.Https →
+                        "https"
+
+            port_ =
+                case u.port_ of
+                    Just p →
+                        String.fromInt p
+
+                    Nothing →
+                        "-"
+            "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment} = ${Url.toString u}"
+
+
+shown : Maybe String → String
+shown s =
+    case s of
+        Just text →
+            "[${text}]"
+
+        Nothing →
+            "-"
+
+
+cases : List String
+cases =
+    [ "\u{0}\u{1B}\u{4}\u{12} http://example.com/\u{1F} \r "
+    , "h\tt\nt\rp://h\to\ns\rt:9\t0\n0\r0/p\ta\nt\rh?q\tu\ne\rry#f\tr\na\rg"
+    , "http://ExAmPlE.CoM"
+    , "http:foo.com"
+    , "http:/example.com/"
+    , "http:\\\\www.google.com\\foo"
+    , "http://example.com\\\\foo\\\\bar"
+    , "http:"
+    , "http:/"
+    , "http://@www.example.com"
+    , "http://:@www.example.com"
+    , "https://:@test"
+    , "http://a:@www.example.com"
+    , "http::b@www.example.com"
+    , "https://@@@example"
+    , "http://@/www.example.com"
+    , "http://foo.com/\\@"
+    , "http://f:/c"
+    , "http://f:0/c"
+    , "http://f:00000000000000000000080/c"
+    , "http://foo:80/"
+    , "https://foo:443/"
+    , "https://foo:80/"
+    , "http://f:999999/c"
+    , "http://f:b/c"
+    , "http://foo:-80/"
+    , "http://f:4294967377/c"
+    , "http://[1::2]:3:4"
+    , "http://%30%78%63%30%2e%30%32%35%30.01%2e"
+    , "http://ho%00st/"
+    , "http://ho%7Cst/"
+    , "http://a<b"
+    , "http://a%b/"
+    , "http://example example.com"
+    , "http://!\"\$&'()*+,-.;=_`{}~/"
+    , "http://./"
+    , "http://?"
+    , "http://%5B::1]"
+    , "http://1.2.3.4./"
+    , "http://192.168.257"
+    , "http://192.0x00A80001"
+    , "http://256"
+    , "http://999999999."
+    , "http://4294967295"
+    , "http://4294967296"
+    , "http://0xffffffff1"
+    , "https://0x.0x.0"
+    , "https://0000000000000000000000000000000000000000177.0.0.1"
+    , "http://192.168.257.com"
+    , "http://1.2.3.4.5"
+    , "http://1.2.3.09"
+    , "http://foo.09"
+    , "http://foo.0x4"
+    , "http://foo.09.."
+    , "http://0x7f.0.0.0x7g"
+    , "http://[2001::1]:80"
+    , "http://[::127.0.0.1]"
+    , "http://[0:0:0:0:0:0:13.1.68.3]"
+    , "http://[1:0::]"
+    , "http://[0:1:0:1:0:1:0:1]"
+    , "http://[0:1:2:3:4:5:6:7:8]"
+    , "https://[0::0::0]"
+    , "https://[0:0:]"
+    , "http://[::127.0.0.0.1]"
+    , "http://[::1.2.3.]"
+    , "https://[0:1:2:3:4:5:192.0.02.1]/"
+    , "http://[]"
+    , "http://[google.com]"
+    , "http://a.b.c.XN--pokxncvks"
+    , "https://xn--/"
+    , "https://fa\u{DF}.ExAmPlE/"
+    , "https://%e2%98%83"
+    , "http://\u{FF27}\u{FF4F}.com"
+    , "http://example.com/foo/bar/../ton/../../a"
+    , "http://example.com/foo/../../.."
+    , "http://example.com/foo/%2e"
+    , "http://example.com/foo/%2e./%2e%2e/.%2e/%2e.bar"
+    , "http://example.com////../.."
+    , "http://example.com/foo/bar//.."
+    , "http://example.com/./.foo"
+    , "http://example.com/foo%2\u{C2}\u{A9}zbar"
+    , "http://example.com/foo\t\u{91}%91"
+    , "http://example.com/\u{4F60}\u{597D}\u{4F60}\u{597D}"
+    , "http://`{}:`{}@h/`{}?`{}"
+    , "https://x/\u{0}y"
+    , "https://x/\u{FFFF}y"
+    , "https://example.com/\"quoted\""
+    , "http://f:21/ b ? d # e "
+    , "http://foo/path;a??e#f#g"
+    , "http://foo/abcd#foo?bar"
+    , "http://host/?'"
+    , "http://example.org/test?#"
+    , "http://example.org/test?%GH"
+    , "http://example.org/test?a#b\u{0}c"
+    , "http://www.google.com/foo?bar=baz# \u{BB}"
+    , "http://foo.bar/baz?qux#foo`bar"
+    , "https://www.example.com/path{\u{7F}path.html?query'\u{7F}=query#fragment<\u{7F}fragment"
+    , "http://xn--zca.xn--zca/"
+    , "http://ab--c.xn--zca/"
+    , "http://xn--ls8h=/"
+    , "http://xn--1ug.example/"
+    ]
+
+
+main : Program
+main =
+    if NoUrl.removeUrl ⊤ then
+        Node.printLines
+            (List.indexedMap cases λi input →
+                "${String.fromInt (i + 1)}: ${describe (Url.fromString input)}"
+            )
+    else
+        Node.printLines [ "the host's URL is still there" ]

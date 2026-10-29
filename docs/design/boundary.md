@@ -3306,7 +3306,9 @@ no longer coalesced.)*
   address after each `hashchange` or `popstate` (one that does not parse sends nothing). A filter
   in `#/active` is read by `init` from `currentUrl ()` and kept by `onUrlChange`.
   *Amended 2026-10-02:* `Url` is now core's, and `fromString` is the host's WHATWG parser, its
-  parts normalised as the browser normalises them (§9.8.13 (a), its amendment).
+  parts normalised as the browser normalises them (§9.8.13 (a), its amendment). *Amended
+  2026-10-29:* `fromString` is a parser in beni that gives the host's answers, and `Nothing` for a
+  Unicode host (§9.8.13 (a), its second amendment).
 - **`Storage`** has no Elm counterpart (Elm reaches Web Storage through ports): R45 §5's table
   with the area a value, since `localStorage` and `sessionStorage` are one API. Each failure the
   Web Storage standard documents is one value (rule 9, §4.1): **reading the area may throw
@@ -3877,6 +3879,56 @@ parser for the page, the request and the router, never two that disagree.
   bare `?` or `#`, as Elm's, which `search` and `hash` alone cannot tell from none.
 - `toString` is unchanged, so `toString` of a parsed URL is the host's `href` for every `Url`
   `fromString` gives.
+
+*Amended 2026-10-29 (#1177):* **`Url.fromString` is a parser written in beni over core**, not the
+host's `URL`. An embeddable engine has no `URL` (`research/108-embedded-js-engine.md` §10 item 1),
+and a prerendered page's `Url` is made in the build (`prerender.md` §3, §7.3): with the parser in
+beni, the build and the browser make it with the same code. The record, the `Nothing` rules of the
+amendment above and `toString` are unchanged, and so is every answer inside the subset below: it
+is the host's, which `tests/corpus/run/UrlWhatwg/` pins on WPT's cases with Node's answers
+(`tests/oracle/url-whatwg.mjs` writes them), with the host's `URL` deleted before the program
+runs. The code calls ECMAScript only (`encodeURIComponent`, `String.prototype.normalize`,
+`toLowerCase`, a `u` regular expression); nothing reads `URL`, and no fallback to it remains. It is
+the URL Standard's basic URL parser for a special scheme and no base:
+
+- **The input**: leading and trailing C0 controls and spaces removed, then every tab, LF and CR.
+- **The scheme**: the text before the first `:`, ASCII lower-cased, is `http` or `https`; every `/`
+  and `\` after the `:` is skipped, so `http:foo.com` and `http:\\a` parse.
+- **The authority** runs to the next `/`, `\`, `?` or `#`. Its last `@` ends the user information,
+  which may be empty or a lone `:`; any other is `Nothing`, as before.
+- **The port**: after the first `:` outside `[` `]`, ASCII digits only, leading zeros allowed, at
+  most 65535. Empty, or the scheme's default, is `Nothing`.
+- **The host**: `[…]` is the standard's IPv6 parser (`::`, an IPv4 tail, eight pieces) and its
+  serializer (lower-case hex, the first longest run of two or more zero pieces written `::`).
+  Anything else is percent-decoded (a `%` without two hex digits after it stays), ASCII
+  lower-cased, and `Nothing` when it holds a forbidden domain code point (C0 controls, space,
+  `#%/:<>?@[\]^|`, DEL). When its last label, a trailing empty one aside, is a number — decimal,
+  `0x` hexadecimal or `0` octal — it is the standard's IPv4 parser (one to four parts, the last
+  filling the bytes left, written dotted-decimal), and `Nothing` when that fails (`foo.09`).
+- **The path** is split at `/` and `\`; `.`, `..` and their `%2e` spellings, in either case, are
+  resolved, and each segment is UTF-8 percent-encoded with the path set (C0 controls, space,
+  `"#<>?^` `` ` `` `{}`, and every code point past `~`). An empty path is `/`.
+- **The query** runs to the first `#` and is encoded with the special-query set (C0 controls,
+  space, `"#'<>`, past `~`); **the fragment** is the rest, with the fragment set (C0 controls,
+  space, `"<>` `` ` ``, past `~`). An escape already there is never decoded or re-cased; a lone
+  surrogate is U+FFFD, `%EF%BF%BD`.
+
+**Where it refuses what the host accepts** — each a `Nothing`, never a different `Url`, except the
+one acceptance named last (#1179 tracks UTS #46 in core):
+
+- **A host that is not ASCII once percent-decoded** (`bücher.de`, `%C3%BC.de`, `Ｇｏ.com`) is
+  `Nothing`. The host maps it by UTS #46 to its `xn--` form, whose tables core does not carry. The
+  ASCII form parses, and it is what a browser's `location.href` and an `<a>`'s `href` hold, so a
+  page's own addresses are never refused.
+- **An `xn--` label** must be Punycode (RFC 3492; its last `-` is consumed even when it is the
+  first character, as Node's parser does) for a label with a non-ASCII code point, none of them a
+  control, a format character, a surrogate, private use, unassigned, a space, U+3002, U+FFFD or of
+  a right-to-left script, the first not a combining mark, and the label unchanged by NFKC and
+  lower-casing; it is kept as written, lower-cased, which is the label re-encoded. That is UTS
+  #46's validity without its tables: a right-to-left label is refused, valid ones too, because
+  the bidi rule needs the Bidi_Class table; and a label of a code point UTS #46 maps that NFKC and
+  lower-casing leave alone (`xn--wsg`, U+1FC2) **is accepted where the host refuses it**. Both
+  answers depend on the engine's Unicode version, as the host's do.
 
 **(b) The parser: elm/url 1.0's, with no currying.** Elm's `Url.Parser` threads a continuation
 through its type — `Parser (Int -> a) a` is "a parser that will hand an `Int` on" — and that shape
