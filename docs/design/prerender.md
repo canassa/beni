@@ -1027,7 +1027,7 @@ main = Prerender.pages (Page.schema ⊤) pages
 ```
 
 (Checked and formatted against a stub of `Prerender.pages` with this signature, 2026-10-29. The list
-of slugs is written in beni because `Io` has no directory listing yet, §8.11.)
+of slugs is written in beni because `Io.readDir` (#1210) came after this example; a data program may list `posts/` with it.)
 
 ### 8.4 The site: `Browser.prerenderData`
 
@@ -1246,9 +1246,8 @@ that a host answers the script's address with.
   each route's text as a file below `_data/` (the compiler's region of the output, §7.4), and
   `Browser.Navigation` gets a command that fetches one and decodes it with the program's schema
   (#1211).
-- **A directory listing in `node`'s `Io`.** Until it exists, a data program lists its files in beni
-  or reads an index file. It is a capability `node` owes (CLAUDE.md rule 7), filed on its own
-  (#1210).
+- **A directory listing in `node's `Io`** is `Io.readDir` (#1210, `transparent-effects-proposal.md`
+  §16.5): sorted names with their kinds, so a data program finds a blog's posts by listing `posts/`.
 - **HTML text from data**, such as Markdown rendered to HTML: `browser-inline` has no node that
   inserts HTML text. A data program that parses Markdown gives a structure the view renders.
 - A data program on another platform than `node`; a data site on `browser-tea`; a value read by

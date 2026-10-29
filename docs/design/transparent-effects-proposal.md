@@ -1989,6 +1989,41 @@ the same set the same way). The `AbortError` of the primitive's own `AbortSignal
 the fiber was cancelled and the rejection is dropped. **Any other rejection is re-thrown** from the
 handler, so it is a defect, below.
 
+*Amended 2026-10-29: `Io.readDir`* (#1210; `CLAUDE.md` rules 7 and 9). `Io` lists a directory in the
+shape of `readFile`: a suspending read on the calling fiber, one constructor per failure Node
+documents for `fs.promises.readdir`, any other error thrown again.
+
+```elm
+pub readDir : String → Result DirError (List Entry)
+
+pub type Entry = { name : String, kind : EntryKind }
+
+pub type EntryKind = File | Directory | Symlink | Other
+
+pub type DirError
+    = NotFound          -- ENOENT: no such directory, or a directory on the path is missing
+    | PermissionDenied  -- EACCES, EPERM
+    | NotADirectory     -- ENOTDIR: the path, or a component of it, is a file
+    | TooManyOpenFiles  -- EMFILE, ENFILE
+    | SymlinkLoop       -- ELOOP
+    | NameTooLong       -- ENAMETOOLONG
+    | InvalidPath       -- ERR_INVALID_ARG_VALUE: the path holds a NUL character
+```
+
+- **Entries are names, not paths.** `name` is the entry's own name, without the directory; the
+  caller joins it (`"posts/${entry.name}"`). `.` and `..` are never listed.
+- **The kind is the entry's own**, as `readdir` reports it, and a symbolic link is not followed:
+  `File`, `Directory`, `Symlink` (whatever it points at, even a missing target), `Other` (a socket,
+  a device, a pipe). A caller that wants the target reads the path with `readFile` or `readDir` and
+  gets that call's own error.
+- **The order is defined.** Entries are sorted by `name`, ascending, by the bytes of its UTF-8
+  encoding, which is code point order (not JavaScript's UTF-16 order, which differs above U+FFFF),
+  so a data program prints the same listing on every file system and every run. A name the host
+  cannot decode as UTF-8 reaches the program with U+FFFD in place of each bad byte.
+- `IsADirectory` and `TooLarge` of `FileError` have no counterpart: `readdir` cannot fail either
+  way. Cancelling the fiber drops the answer; `fs.promises.readdir` takes no `AbortSignal`, so the
+  listing finishes in the background and its result is ignored.
+
 **A defect on Node.** Nothing in `core/Task.js` or a Node primitive catches: a `foreign` that
 throws inside a fiber throws out of the scheduler's drain, a microtask, and a primitive's handler that
 re-throws rejects a promise no one handles. Node treats both alike under its default
