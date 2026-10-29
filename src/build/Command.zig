@@ -393,12 +393,15 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
 
 /// The prerender tree's directory: beside `--out`, never inside it, so no
 /// file of it is a file of the output, and named after it, so builds of two
-/// outputs do not share one (`prerender.md` §5.1 item 1, amended).
+/// outputs do not share one (`prerender.md` §5.1 item 1, amended). An
+/// output named only `.` or `..` has no name to take: its tree is
+/// `.beni-prerender` inside it, which the build removes before it writes
+/// the output, so no project's tree is another's.
 fn prerenderDir(arena: Allocator, out: []const u8) Allocator.Error![]const u8 {
     const trimmed = std.mem.trimEnd(u8, out, "/");
     const base = std.fs.path.basename(trimmed);
     const parent = std.fs.path.dirname(trimmed) orelse ".";
-    if (base.len == 0 or std.mem.eql(u8, base, ".") or std.mem.eql(u8, base, "..")) return std.fs.path.join(arena, &.{ trimmed, "..", ".beni-prerender" });
+    if (base.len == 0 or std.mem.eql(u8, base, ".") or std.mem.eql(u8, base, "..")) return std.fs.path.join(arena, &.{ if (trimmed.len == 0) "/" else trimmed, ".beni-prerender" });
     return std.fs.path.join(arena, &.{ parent, try std.fmt.allocPrint(arena, ".{s}.prerender", .{base}) });
 }
 

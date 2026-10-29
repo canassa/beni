@@ -1,0 +1,46 @@
+-- An effect behind a function bound point-free (docs/design/prerender.md
+-- §3.1, amended): `stamp` is `Clock.now`, so its body calls nothing, and
+-- the checker still answers the call `stamp ⊤` impure. The build takes the
+-- checker's word there: a call whose body shows no effect is the effect.
+-- Without it, the page would hold the build machine's clock, and the arm
+-- the clock chooses.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+stamp : ⊤ → Int
+stamp = Clock.now
+
+
+initial : ⊤ → Model
+initial = λ⊤ → { count = stamp ⊤ }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        {if model.count > 1000 then <p>late</p> else <></>}
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = initial, update = update, view = view }) "root"

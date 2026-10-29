@@ -14577,53 +14577,80 @@ pub const Lowerer = struct {
             .view => .{ "view", pc.view orelse return true },
             else => return true,
         };
-        const seen = try l.scratch.alloc(bool, l.bir.decls.len);
-        @memset(seen, false);
-        const body: ?Inst.Index = switch (l.bir.instTag(field)) {
-            .lambda => @fromBackingInt(@intCast(l.bir.instData(field).rhs)),
+        const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
+        @memset(verdicts, .unknown);
+        const found: Effect = switch (l.bir.instTag(field)) {
+            .lambda => try l.effectOf(@fromBackingInt(@intCast(l.bir.instData(field).rhs)), verdicts),
             .top => blk: {
                 const d = l.bir.instData(field).lhs;
-                if (d >= l.bir.decls.len or l.bir.decls[d].body.unwrap() == null) break :blk null;
-                seen[d] = true;
-                break :blk l.bodyOf(d);
+                if (d >= l.bir.decls.len or l.bir.decls[d].body.unwrap() == null) break :blk .{ .unread = field };
+                break :blk try l.declEffect(d, verdicts);
             },
-            else => null,
+            else => .{ .unread = field },
         };
-        const b = body orelse {
-            try l.report(.prerender_impure, field,
+        switch (found) {
+            .none, .debug => return true,
+            .unread => |at| try l.report(.prerender_impure, at,
                 \\This program prerenders, so its `{s}` must be pure: the build computes the page
                 \\from it, and the browser computes the same first render from it again
-                \\(`docs/design/prerender.md` §3.1). This `{s}` is not a function of this module, so
-                \\the build cannot read whether it is pure. Write it here, as a lambda that calls it:
-                \\`λ… → f …`.
-            , .{ part_name, part_name });
-            return false;
-        };
-        const site = try l.impureCall(b, seen) orelse return true;
-        try l.report(.prerender_impure, site,
-            \\This program prerenders, so its `{s}` must be pure, and this call may have an
-            \\effect: it may read or change something outside the program. The build computes the
-            \\page from `{s}`, and the browser computes the same first render from it again, so a
-            \\read of the host, the clock or randomness could make the two differ
-            \\(`docs/design/prerender.md` §3.1). Make the call where an effect may run — in
-            \\a command, after the first render — or leave it out.
-        , .{ part_name, part_name });
+                \\(`docs/design/prerender.md` §3.1). This is another module's value, and the build
+                \\cannot read whether it is computed purely: its code is not this module's. A limit
+                \\of the build (#1170): write a call of a function, `λ⊤ → Other.init ⊤`, or the
+                \\value in this module.
+            , .{part_name}),
+            .site => |at| try l.report(.prerender_impure, at,
+                \\This program prerenders, so its `{s}` must be pure, and this may have an effect:
+                \\it may read or change something outside the program. The build computes the page
+                \\from `{s}`, and the browser computes the same first render from it again, so a
+                \\read of the host, the clock or randomness could make the two differ
+                \\(`docs/design/prerender.md` §3.1). Make the call where an effect may run — in
+                \\a command, after the first render — or leave it out.
+            , .{ part_name, part_name }),
+        }
         return false;
     }
 
-    /// The first call under `root` that may have an effect other than
-    /// `Debug`'s: the checker's answer at the call, except that a call of
-    /// `Debug`'s is exempt and a call of a function of this module is
-    /// answered by that function's body, each body walked once (`seen`).
-    /// The body of a function a value makes is not evaluated where it is
-    /// made: a lambda, a `let` of a function. A call of one is the checker's
-    /// at the call that makes it run.
-    fn impureCall(l: *Lowerer, root: Inst.Index, seen: []bool) Allocator.Error!?Inst.Index {
+    /// What evaluating some code may do, as `prerender.md` §3.1 reads it:
+    /// nothing; only `Debug`'s effect; an effect at a site, named; or a
+    /// value whose code the build cannot read.
+    const Effect = union(enum) { none, debug, site: Inst.Index, unread: Inst.Index };
+
+    /// A declaration's `Effect`, once walked: `visiting` while its body is,
+    /// so a recursive call finds no effect the walk has not met already.
+    const Purity = union(enum) { unknown, visiting, done: Effect };
+
+    /// Declaration `d`'s body's `Effect`, walked once.
+    fn declEffect(l: *Lowerer, d: u32, verdicts: []Purity) Allocator.Error!Effect {
+        switch (verdicts[d]) {
+            .done => |e| return e,
+            // A call in a cycle adds no effect of its own: the cycle's
+            // bodies hold every call it makes, and the walk meets each.
+            .visiting => return .debug,
+            .unknown => {},
+        }
+        verdicts[d] = .visiting;
+        const e = try l.effectOf(l.bodyOf(d), verdicts);
+        verdicts[d] = .{ .done = e };
+        return e;
+    }
+
+    /// The `Effect` of evaluating `root`: the checker's answer at each call
+    /// that may be impure, except that a call of `Debug`'s is `Debug`'s and a
+    /// call of a function of this module is answered by that function's
+    /// body — and a call the checker answers impure whose body shows no
+    /// effect is the effect itself, since its value carries one the walk
+    /// cannot see (a function bound point-free, `stamp = Clock.now`). A
+    /// top-level constant of this module is evaluated where it is read: its
+    /// body's effect is the read's. Another app module's constant is
+    /// `unread`: its code is not this module's. The body of a function a
+    /// value makes is not evaluated where it is made — a lambda, a `let` of
+    /// a function — and a call of one is the checker's at the call.
+    fn effectOf(l: *Lowerer, root: Inst.Index, verdicts: []Purity) Allocator.Error!Effect {
         const debug = l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol());
+        var saw_debug = false;
         var stack: std.ArrayList(Inst.Index) = .empty;
         try stack.append(l.scratch, root);
-        var bodies: std.ArrayList(Inst.Index) = .empty;
-        while (stack.pop() orelse bodies.pop()) |at| {
+        while (stack.pop()) |at| {
             const d = l.bir.instData(at);
             switch (l.bir.instTag(at)) {
                 .lambda => continue,
@@ -14649,22 +14676,39 @@ pub const Lowerer = struct {
                         const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                         const cd = l.bir.instData(callee);
                         switch (l.bir.instTag(callee)) {
-                            .ext_value => if (debug == null or cd.lhs != debug.?.int()) return at,
+                            .ext_value => if (debug != null and cd.lhs == debug.?.int()) {
+                                saw_debug = true;
+                            } else return .{ .site = at },
                             .top => {
-                                if (site.own != .no) return at;
-                                if (cd.lhs >= l.bir.decls.len or l.bir.decls[cd.lhs].body.unwrap() == null) return at;
-                                if (!seen[cd.lhs]) {
-                                    seen[cd.lhs] = true;
-                                    try bodies.append(l.scratch, l.bodyOf(cd.lhs));
+                                if (site.own != .no) return .{ .site = at };
+                                if (cd.lhs >= l.bir.decls.len or l.bir.decls[cd.lhs].body.unwrap() == null) return .{ .site = at };
+                                switch (try l.declEffect(cd.lhs, verdicts)) {
+                                    .none => return .{ .site = at },
+                                    .debug => saw_debug = true,
+                                    else => |e| return e,
                                 }
                             },
-                            else => return at,
+                            else => return .{ .site = at },
                         }
                     }
                 },
                 .method_call, .type_dispatch => {
                     const site = l.in.dispatch.effectAt(at);
-                    if (site.impure or site.own != .no) return at;
+                    if (site.impure or site.own != .no) return .{ .site = at };
+                },
+                // A constant read: evaluated where the module loads, in the
+                // build as in the browser, so its effect is this read's.
+                .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].body.unwrap() != null and l.constantDecl(d.lhs)) {
+                    switch (try l.declEffect(d.lhs, verdicts)) {
+                        .none => {},
+                        .debug => saw_debug = true,
+                        .site, .unread => return .{ .site = at },
+                    }
+                },
+                .ext_value => {
+                    const m: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                    const use = Convention.ofImport(l.in.interfaces, m, d.rhs);
+                    if (l.in.graph.modulePackage(m) == .app and use.convention != .function and use.arity == 0) return .{ .unread = at };
                 },
                 else => {},
             }
@@ -14677,7 +14721,14 @@ pub const Lowerer = struct {
             std.mem.reverse(Inst.Index, children.items);
             try stack.appendSlice(l.scratch, children.items);
         }
-        return null;
+        return if (saw_debug) .debug else .none;
+    }
+
+    /// Whether top-level declaration `d` is a constant: no parameter and a
+    /// body that is not a lambda, so its body runs when the module loads.
+    fn constantDecl(l: *Lowerer, d: u32) bool {
+        if (l.paramsOf(d).len != 0) return false;
+        return l.bir.instTag(l.bodyOf(d)) != .lambda;
     }
 
     /// `cx.programSubscriptionStart` (version 1.14): declaration `i`'s start
