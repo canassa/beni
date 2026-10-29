@@ -94,11 +94,16 @@ by the causes §3.3 names, none of which is in the program.
    `init`'s and `view`'s bodies (the checker's `impure` answer, `checker-v2.md` §26): a call of a
    function of `Debug` is exempt, a call of a function of the program's own module is answered by
    that function's body, walked once, and any other call the checker says may be impure is the
-   call `prerender_impure` names. A function of another module whose only effect is `Debug`'s is
-   therefore refused by its rung; and an `init` or a `view` that is not a lambda or a function of
-   the program's module — another module's function named in the record — is refused at the
-   field, since the build cannot read whether it is pure (write `λ⊤ → Other.init ⊤`). Both are
-   limits of the build, not rules (#1170).
+   call `prerender_impure` names. A call the checker answers impure whose body the walk finds no
+   effect in — a function bound point-free, `stamp = Clock.now` — is refused at the call: its
+   value carries the effect. A read of a top-level constant of the program's module is answered by
+   the constant's body, since the constant is computed where the module loads, in the build as in
+   the browser (`seed = Clock.now ⊤`). What the build cannot read is refused too, as limits of the
+   build, not rules (#1170): an `init` or a `view` that is another module's function named in the
+   record (write `λ⊤ → Other.init ⊤`), a read of another app module's constant, a call of a
+   function of another module whose only effect is `Debug`'s, and a method call or an operator
+   dispatched to a type's function (`<` on a type whose `compare` logs) the checker answers
+   impure.
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the
@@ -259,7 +264,8 @@ for that program only:
 
 *Amended 2026-10-29, as built in P1 (#1165).* Item 1: the prerender tree's directory is beside
 `--out`, `.<out>.prerender` — never inside it, and named after it so that two builds of different
-outputs do not share one — rather than the cache directory, which a build need not have; the
+outputs do not share one (an output named `.` or `..` keeps it inside, as `.beni-prerender`,
+removed before the output is written) — rather than the cache directory, which a build need not have; the
 build removes it whether the build succeeds or not. Item 2: `_prerender.mjs` **exports** `routes`
 and `render` and runs nothing, so that it is the part of the tree an engine that runs ES modules
 runs as it is (and P5 changes no byte of it); beside it the build writes `_node.mjs`, Node's

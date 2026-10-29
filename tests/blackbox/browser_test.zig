@@ -708,3 +708,41 @@ test "a prerendering build with no node on PATH is refused, and writes nothing" 
     try testing.expect(!w.exists("out"));
     try testing.expect(!w.exists(".out.prerender"));
 }
+
+test "a Debug.log in a prerendered view is allowed, and what Node wrote reaches stderr as text" {
+    // `docs/design/prerender.md` §3.1: `Debug.log` is the one exempt call,
+    // directly and in a function of the program's module; its line goes to
+    // Node's standard output, which the build passes on to its own standard
+    // error under text diagnostics, and drops under JSON ones (§5.1,
+    // amended).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\shown : Int → Int
+        \\shown n = Debug.log "shown" n
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{shown (Debug.log "view" n)}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 7, update = λn _ → n, view = view }
+        \\
+    );
+    const path = try w.nodePath();
+    const text = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true, .path = path });
+    try expectExit(0, text);
+    try testing.expectEqualStrings("view: 7\nshown: 7\n", text.stderr);
+    try testing.expectEqualStrings("<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><p data-beni>7</p></body>\n", try w.read("out/index.html"));
+    const json = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=json", "Main.beni" }, .{ .path = path });
+    try expectExit(0, json);
+    try testing.expectEqualStrings("", json.stderr);
+    try testing.expect(!w.exists(".out.prerender") and !w.exists(".json.prerender"));
+}
