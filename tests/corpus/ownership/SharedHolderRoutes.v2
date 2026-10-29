@@ -1,0 +1,1 @@
+#1223 (ownership-v2.md §2.8): v1's verdicts; v2 walks a shared holder once per route, so a second route's path is never dropped.

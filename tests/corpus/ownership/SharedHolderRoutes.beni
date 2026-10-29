@@ -1,0 +1,58 @@
+-- ownership: one holder reached along two routes through a shared record
+-- (ownership-v2.md §2.8 *Dead*, #1223). `t` holds `xs` at `t.a.items` and
+-- at `t.b.items` (or `t.b.inner.items`) through the one `w`: every route
+-- is a path the later read can use, so each push is refused, as v1
+-- refuses it. v2 walked `w` once and accepted the push.
+type alias W =
+    items : List Int
+
+
+type alias T =
+    a : W
+    b : W
+
+
+type alias I =
+    inner : W
+
+
+type alias U =
+    a : W
+    b : I
+
+
+type alias V =
+    b : W
+    a : W
+
+
+pub equal : ⊤ → List Int × Int
+equal ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = { a = w, b = w }
+    ( List.push xs 2, List.length t.a.items )
+
+
+pub unequal : ⊤ → List Int × Int
+unequal ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = { a = w, b = { inner = w } }
+    ( List.push xs 2, List.length t.a.items )
+
+
+pub order : ⊤ → List Int × Int
+order ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = { b = w, a = w }
+    ( List.push xs 2, List.length t.a.items )
+
+
+pub deepFirst : ⊤ → List Int × Int
+deepFirst ⊤ =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = { a = w, b = { inner = w } }
+    ( List.push xs 2, List.length t.b.inner.items )

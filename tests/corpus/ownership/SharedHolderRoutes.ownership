@@ -1,0 +1,12 @@
+module SharedHolderRoutes
+  34:7 List.push xs: rejected alias: t.a.items holds it and is read at 34:23
+  42:7 List.push xs: rejected alias: t.a.items holds it and is read at 42:23
+  50:7 List.push xs: rejected alias: t.a.items holds it and is read at 50:23
+  58:7 List.push xs: rejected alias: t.b.inner.items holds it and is read at 58:23
+  summary equal: res .0 fresh1
+  summary unequal: res .0 fresh1
+  summary order: res .0 fresh1
+  summary deepFirst: res .0 fresh1
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4
