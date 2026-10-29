@@ -1,0 +1,21 @@
+-- load
+<body>
+  <button id="inc">"0"</button>
+</body>
+-- title
+(title: "Even 0")
+(the DOM did not change)
+-- click #inc
+<body>
+  <button id="inc">"1"</button>
+</body>
+-- title
+(title: "Even 0")
+(the DOM did not change)
+-- click #inc
+<body>
+  <button id="inc">"2"</button>
+</body>
+-- title
+(title: "Even 2")
+(the DOM did not change)

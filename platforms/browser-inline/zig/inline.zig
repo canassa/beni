@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 20 },
+    .targets = .{ .major = 1, .minor = 21 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -105,6 +105,11 @@ pub const lowering: m.Lowering = .{
         // `(root)`: the prerendered unit below the mount element, taken out
         // of the page (`prerender.md` §11, slice P1).
         .{ .name = "unprerender", .arity = 1 },
+        // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
+        // a document's title written (§10).
+        .{ .name = "address", .arity = 1 },
+        .{ .name = "navigationKey", .arity = 1 },
+        .{ .name = "title", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -112,6 +117,10 @@ pub const lowering: m.Lowering = .{
     .programs = &.{
         .{ .module = "Tea", .name = "sandbox" },
         .{ .module = "Tea", .name = "element" },
+        // `browser-inline.md` §10: an element whose view is a document,
+        // and one that owns the page's address too.
+        .{ .module = "Tea", .name = "document" },
+        .{ .module = "Tea", .name = "application" },
     },
     .program = program,
     .piece = piece,
@@ -201,6 +210,14 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     // or the build is refused, then the render function in the mount's
     // place.
     if (cx.build.prerender == .tree) {
+        // A document's title and an application's route are slice P3's
+        // (`prerender.md` §7, §11): until then neither prerenders.
+        if (p.constructor >= 2) return cx.programReport(.call, .not_implemented,
+            \\A limit of the compiler: `browser-inline` does not prerender a `Tea.document` or a
+            \\`Tea.application` yet: their title and their route are written per page, which routes
+            \\bring (`docs/design/prerender.md` §7; `docs/design/browser-inline.md` §5, class 1).
+            \\Prerender a `Tea.sandbox` or a `Tea.element`, or build this program without prerendering.
+        );
         try cx.programPure(.init);
         try cx.programPure(.view);
     }
@@ -718,6 +735,8 @@ const Page = struct {
     /// Per key, the buckets of the stateful controls its events are on.
     controls: []std.ArrayList(m.Program.BucketRef) = &.{},
     dispatch: ?m.Name = null,
+    /// A document's function that writes its title (§10).
+    retitle: ?m.Name = null,
     /// The page is another module's root, written as pieces (`piece`).
     piece: bool = false,
     pieces: std.ArrayList(PieceUse) = .empty,
@@ -1059,7 +1078,27 @@ const Page = struct {
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
-        if (it.url) return later(cx, n, "an attribute that holds a URL");
+        // A constant URL is checked here, by `safeUrl`'s rule (`backend.md`
+        // §15, the `dom` lowering's table), and written into the markup —
+        // as nothing for a script URL (§10.5). One whose answer turns on a
+        // character outside ASCII, and a URL that changes, are not compiled
+        // yet: the runtime has no `safeUrl`.
+        if (it.url) {
+            if (it.value.kind != .constant) return later(cx, n, "an attribute that holds a URL and whose value changes");
+            const c = it.value.constant;
+            switch (c.kind) {
+                .string => {
+                    const script = scriptUrl(tree.string(c.text)) orelse return later(cx, n, "a URL whose first characters are outside ASCII");
+                    try writeValue(pg.a(), out, name, if (script) "" else tree.string(c.text));
+                    return null;
+                },
+                .number => {
+                    try writeAttribute(pg.a(), out, name, c, tree);
+                    return null;
+                },
+                else => return later(cx, n, "an attribute that holds a URL"),
+            }
+        }
         switch (it.value.kind) {
             .constant => {
                 // A control's value in the markup would be its default, not
@@ -1103,7 +1142,7 @@ const Page = struct {
         const cx = pg.cx;
         const js = cx.js;
         if (pg.top_nodes.len > 1) return later(cx, view_node, "a `view` of more than one top-level node");
-        const element_ = pg.p.constructor == 1;
+        const element_ = pg.p.constructor >= 1;
         const keys = cx.programKeys();
         pg.handlers = try pg.a().alloc(?m.Name, keys.len);
         @memset(pg.handlers, null);
@@ -1143,9 +1182,22 @@ const Page = struct {
                 ),
             }
         }
+        // A value that reaches its key as a message (§10.3) goes through the
+        // dispatcher, as a command's messages do.
+        var messages = false;
         for (subs) |s| {
+            if (s.fields > 1) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                \\A limit of the compiler: `browser-inline` does not compile the subscription at {s} yet:
+                \\its message's constructor takes the value in more than one field
+                \\(`docs/design/browser-inline.md` §5, class 1). Give the constructor one field for the
+                \\value.
+            , .{s.where}));
+            if (s.message) {
+                messages = true;
+                continue;
+            }
             if (s.handler >= keys.len) return cx.programReport(.call, .not_implemented, "A limit of the compiler: a subscription's key has no handler.");
-            if (s.fields > 1 or keys[s.handler].fields != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+            if (keys[s.handler].fields != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
                 \\A limit of the compiler: `browser-inline` does not compile the subscription at {s} yet:
                 \\its message's constructor takes the value in more than one field
                 \\(`docs/design/browser-inline.md` §5, class 1). Give the constructor one field for the
@@ -1155,7 +1207,7 @@ const Page = struct {
         }
         // A command that runs sends messages of any key: every key is then
         // reached, through the dispatcher.
-        var runs = element_ and try pg.command(null);
+        var runs = (element_ and try pg.command(null)) or messages;
 
         pg.body = try js.block();
         const body = pg.body;
@@ -1175,10 +1227,19 @@ const Page = struct {
         // of the page and mounts fresh, in the same task (`prerender.md` §11,
         // slice P1; hydration is P2a's).
         if (cx.build.prerender == .client) try js.expression(body, try js.call(try js.name(try cx.runtime("unprerender")), &.{try js.name(at)}));
-        const init = try cx.programInit(body);
+        // An application's `init` is handed the page's address and key
+        // (§10), read inside the mount's guard.
+        const init = if (pg.p.constructor == 3)
+            try cx.programStart(body, &.{
+                try js.call(try js.name(try cx.runtime("address")), &.{}),
+                try js.call(try js.name(try cx.runtime("navigationKey")), &.{}),
+            })
+        else
+            try cx.programInit(body);
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
-        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs;
+        const titled = pg.p.constructor >= 2;
+        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs or titled;
         if (reads_model) {
             const first_model = if (element_) try js.member(init, "a") else init;
             // A root reaches the model through the program's cell when no
@@ -1188,6 +1249,16 @@ const Page = struct {
                 pg.cell = try cx.fresh("cell");
                 try js.constant(body, pg.cell.?, try js.array(&.{first_model}));
             } else try js.let(body, pg.model, first_model);
+        }
+        // A document's title (§10): one function of the model, called after
+        // the first pass and after each handler's write pass, which writes
+        // the title when it differs from the page's.
+        if (titled) {
+            const blk = try js.block();
+            const value = try cx.programField(blk, .title, try pg.modelRef());
+            try js.expression(blk, try js.call(try js.name(try cx.runtime("title")), &.{value}));
+            pg.retitle = try cx.fresh("retitle");
+            try js.constant(body, pg.retitle.?, try js.arrow(&.{}, blk));
         }
         if (pg.top_nodes.len == 1) {
             cx.at(view_node);
@@ -1303,10 +1374,10 @@ const Page = struct {
         @memset(refs, 0);
         const named = try pg.a().alloc(bool, keys.len);
         @memset(named, false);
-        for (subs) |s| {
+        for (subs) |s| if (!s.message) {
             refs[s.handler] += 1;
             named[s.handler] = true;
-        }
+        };
         for (plans.items, 0..) |pl, i| {
             refs[pl.key] += 1;
             if (stateful_at.get(pg.events.items[i].target)) |fs| try addRefs(pg.a(), &pg.controls[pl.key], fs.items);
@@ -1495,6 +1566,7 @@ const Page = struct {
         // Every root has made its entries: the first pass, before the
         // subscriptions start and `init`'s command runs.
         if (pg.functions.items.len != 0 or pg.pieces.items.len != 0) try js.expression(body, try js.call(try js.name(try cx.runtime("first")), &.{}));
+        if (pg.retitle) |r| try js.expression(body, try js.call(try js.name(r), &.{}));
 
         // Each subscription started: the first declaration of each key
         // starts it, and each value goes through every declaration of that
@@ -1507,12 +1579,18 @@ const Page = struct {
             for (subs) |t| {
                 if (t.first == i) declarations += 1;
             }
-            for (subs) |t| {
+            for (subs, 0..) |t, j| {
                 if (t.first != i) continue;
                 // A message with no payload passes none: `send`'s argument is
                 // `undefined` either way.
-                const handler_ = try js.name(try pg.handler(t.handler));
-                const call = try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });
+                // A value that reaches its key as a message is the message,
+                // sent to the dispatcher (§10.3).
+                const call = if (t.message)
+                    try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)) })
+                else blk: {
+                    const handler_ = try js.name(try pg.handler(t.handler));
+                    break :blk try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });
+                };
                 // One declaration's send is the runtime's `send` itself, whose
                 // result is `undefined` and which no start reads (§3, amended
                 // 2026-10-24).
@@ -2684,7 +2762,7 @@ const Page = struct {
     fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const m.Program.BucketRef) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
-        const element_ = pg.p.constructor == 1;
+        const element_ = pg.p.constructor >= 1;
         const incoming = try cx.fresh("before");
         try js.constant(blk, incoming, try pg.modelRef());
         const before = try js.name(incoming);
@@ -2700,6 +2778,7 @@ const Page = struct {
         if (kept and !commands) {
             if (next != before) try js.expression(blk, next);
             try pg.writePass(blk, pass);
+            if (pg.retitle) |r| try js.expression(blk, try js.call(try js.name(r), &.{}));
             return;
         }
         var result = next;
@@ -2717,6 +2796,7 @@ const Page = struct {
         // holds, for an element's pair too, and there is nothing to store.
         if (!kept and (element_ or next != before)) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
         try pg.writePass(blk, pass);
+        if (pg.retitle) |r| try js.expression(blk, try js.call(try js.name(r), &.{}));
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
@@ -3145,6 +3225,55 @@ fn writeAttribute(a: std.mem.Allocator, out: *std.ArrayList(u8), name: []const u
         },
         else => {},
     }
+}
+
+/// Whether the `browser` runtime's `safeUrl` refuses `url`, as the `dom`
+/// lowering decides a constant one (`platforms/browser/zig/dom.zig`,
+/// `scriptUrl`, whose pattern this is): `^[\s\x00-\x20]*(javascript:|
+/// data:text/html[,;])`, letters in any case and `\s` between any two, or
+/// null when the answer turns on a character outside ASCII, which `\s` may
+/// match.
+fn scriptUrl(url: []const u8) ?bool {
+    var i: usize = 0;
+    while (i < url.len and url[i] <= 0x20) i += 1;
+    if (i < url.len and url[i] >= 0x80) return null;
+    const javascript = scriptPrefix(url, i, "javascript:") orelse return null;
+    if (javascript) return true;
+    return scriptPrefix(url, i, "data:text/html");
+}
+
+fn scriptPrefix(url: []const u8, start: usize, word: []const u8) ?bool {
+    var i = start;
+    const html = word[word.len - 1] == 'l';
+    for (word, 0..) |w, n| {
+        if (n != 0) {
+            while (i < url.len and isUrlSpace(url[i])) i += 1;
+        }
+        if (i == url.len) return false;
+        if (url[i] >= 0x80) return null;
+        if (std.ascii.toLower(url[i]) != w) return false;
+        i += 1;
+    }
+    if (!html) return true;
+    while (i < url.len and isUrlSpace(url[i])) i += 1;
+    if (i == url.len) return false;
+    if (url[i] >= 0x80) return null;
+    return url[i] == ',' or url[i] == ';';
+}
+
+/// `\s` in ASCII.
+fn isUrlSpace(c: u8) bool {
+    return (c >= 0x09 and c <= 0x0D) or c == ' ';
+}
+
+test "a constant URL is checked as the browser runtime's safeUrl checks it" {
+    const t = std.testing;
+    try t.expectEqual(@as(?bool, false), scriptUrl("/blog/7"));
+    try t.expectEqual(@as(?bool, true), scriptUrl(" \x01\tJaVa\nscript :x"));
+    try t.expectEqual(@as(?bool, true), scriptUrl("DATA: text / html ;base64,eA=="));
+    try t.expectEqual(@as(?bool, false), scriptUrl("javascript.html"));
+    try t.expectEqual(@as(?bool, null), scriptUrl("\xc2\xa0javascript:x"));
+    try t.expectEqual(@as(?bool, false), scriptUrl("/caf\xc3\xa9"));
 }
 
 /// ` name=value`: unquoted where the parser reads it back so, bare when

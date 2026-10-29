@@ -1,0 +1,30 @@
+-- A prerendering build of a `Tea.application` is refused until routes
+-- prerender (docs/design/prerender.md §7, slice P3; browser-inline.md
+-- §10): its `init` takes the route, which this build does not have yet,
+-- and its title goes in the shell. A limit of the compiler, class 1.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Changed Url
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.application
+            { init = λurl _ → ( url.path, Cmd.none )
+            , update = λ_ m → ( m, Cmd.none )
+            , view = λpath → { title = path, body = <p>{path}</p> }
+            , subscriptions = λ_ → Sub.none
+            , onUrlRequest = Requested
+            , onUrlChange = Changed
+            }
+        )
+        "root"

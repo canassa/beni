@@ -71,4 +71,7 @@ browser-tea Tea.application       ownership/EntryUrlTaggers.beni   1:entry>-
 browser-tea Tea.document          browser/tea/DocumentTitle.beni        -
 browser-inline Tea.sandbox        ownership/EntryPush.beni         1:entry>-
 browser-inline Tea.element        ownership/EntryCommand.beni      1:entry>-
+browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
+# document delegates to element with the same protocol; no further ownership promise.
+browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-

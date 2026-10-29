@@ -57,7 +57,10 @@ const std = @import("std");
 /// Version 1.20 adds prerendered pages (`prerender.md` §4.4): the tree a
 /// lowering writes for (`Build.prerender`) and `programPure`, which refuses
 /// an `init` or a `view` that may have an effect.
-pub const version: Version = .{ .major = 1, .minor = 20 };
+/// Version 1.21 adds a subscription whose value reaches its key as a
+/// message, through the dispatcher (`Program.Subscription.message`,
+/// `programSubscriptionMessage`; `browser-inline.md` §10.3, #1163).
+pub const version: Version = .{ .major = 1, .minor = 21 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -534,6 +537,13 @@ pub const Program = struct {
         first: u32,
         /// Where the declaration's start is written, `Push.beni:23:12`.
         where: []const u8,
+        /// 1.21: the key tree splits the tagger's constructor again on the
+        /// value itself, so which key a value reaches is known only when it
+        /// is sent: the value goes, as the message the tagger makes of it
+        /// (`Context.programSubscriptionMessage`), through the program's
+        /// dispatcher, and `handler` names no key (`browser-inline.md`
+        /// §10.3).
+        message: bool = false,
     };
 
     /// 1.14: what `Context.programSubscriptions` says of the set.
@@ -1754,6 +1764,13 @@ pub const Context = struct {
         return cx.vtable.program_subscription_start(cx.impl, block, i, send);
     }
 
+    /// 1.21: the message declaration `i`'s tagger makes of `payload`, for a
+    /// declaration whose value reaches its key through the program's
+    /// dispatcher (`Program.Subscription.message`).
+    pub fn programSubscriptionMessage(cx: *Context, i: u32, payload: Expr) Error!Expr {
+        return cx.vtable.program_subscription_message(cx.impl, i, payload);
+    }
+
     /// 1.14: what key `key`'s command is, or `init`'s for null
     /// (`browser-inline.md` §4).
     pub fn programCommand(cx: *Context, key: ?u32) Program.Command {
@@ -1982,6 +1999,7 @@ pub const VTable = struct {
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
+    program_subscription_message: *const fn (impl: *anyopaque, i: u32, payload: Expr) Error!Expr,
     program_command: *const fn (impl: *anyopaque, key: ?u32) Program.Command,
     program_pure: *const fn (impl: *anyopaque, part: Program.Part) error{ OutOfMemory, Reported }!void,
     program_rows: *const fn (impl: *anyopaque) []const u32,

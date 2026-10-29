@@ -1,0 +1,29 @@
+-- An application opened from a file stops at start on `browser-inline`, as
+-- a defect (browser-inline.md §10.3; boundary.md §9.8.13 (d)): its address
+-- is not a `Url`, so no route can be computed. The mount reads it inside
+-- the dispatch guard, so the page stops before `init` runs, and the
+-- development crash screen shows the reason; the release build has no
+-- crash screen (`ApplicationNotHttp.release-expected`).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Changed Url
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = λurl _ → ( url.path, Cmd.none )
+        , update = λ_ m → ( m, Cmd.none )
+        , view = λpath → { title = path, body = <p>{path}</p> }
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = Requested
+        , onUrlChange = Changed
+        }

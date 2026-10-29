@@ -182,6 +182,11 @@ pub const Declaration = struct {
     /// The constructor the tagger gives, and the key of `Program.keys` it is.
     ctor: u32 = none,
     key_index: u32 = none,
+    /// The key tree splits the constructor again on the value: the value
+    /// reaches its key through the program's dispatcher, as the message the
+    /// constructor makes of it (`browser-inline.md` §10.3), and `key_index`
+    /// is none.
+    message: bool = false,
     /// Per field of the constructor: `payload` or a literal term.
     fields: []const u32 = &.{},
     /// Where the start is: its lambda's instruction or its declaration's
@@ -452,7 +457,18 @@ pub const Caps = packed struct(u8) {
     }
 };
 
-pub const ProgramKind = enum { sandbox, program, element, document, application };
+pub const ProgramKind = enum {
+    sandbox,
+    program,
+    element,
+    document,
+    application,
+
+    /// Whether `init` and `update` give a `model × Cmd msg`.
+    pub fn commands(k: ProgramKind) bool {
+        return k == .element or k == .document or k == .application;
+    }
+};
 
 pub const KeyStep = struct {
     /// The message path split.
@@ -3095,16 +3111,46 @@ fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscript
         o.ctor = c;
         switch (leafOf(keys, c)) {
             .key => |ki| o.key_index = ki,
-            .deeper => return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] },
+            // The key tree splits the message again on the value itself:
+            // which key it is is known only when the value is, so it goes
+            // through the dispatcher as the message (`browser-inline.md`
+            // §10.3).
+            .deeper => o.message = true,
             .none => {},
         }
         const fields = try a.arena().alloc(u32, a.termLen(v) - 2);
         for (fields, 2..) |*fld, k| fld.* = if (a.termWord(v, k) == payload) field_payload else a.termWord(v, k);
         o.fields = fields;
         for (fields) |fld| if (fld != field_payload) return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] };
-        if (o.key_index == none) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
+        if (o.key_index == none and !o.message) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
     }
     return .{ .class = .set, .decls = out };
+}
+
+/// An application's subscription set (`browser-inline.md` §10.3): `sub`'s
+/// declarations, then those of the platform's `Navigation.onUrlRequest`
+/// and `Navigation.onUrlChange` applied to the record's fields of those
+/// names, read as any declaration is. Null-valued (`none`) when a part is
+/// not a set, which `readSubscriptions` refuses as unknown.
+fn applicationSubscriptions(a: *Writes, frame: *Frame, fs: Fields, sub: u32) Error!u32 {
+    const nav = a.moduleNamed(.platform, "Browser.Navigation") orelse return none;
+    var parts: std.ArrayList(u32) = .empty;
+    try parts.appendSlice(a.arena(), a.effectParts(sub, .sub) orelse return none);
+    const fields = [_]struct { name: []const u8, inst: ?Inst.Index }{
+        .{ .name = "onUrlRequest", .inst = fs.on_url_request },
+        .{ .name = "onUrlChange", .inst = fs.on_url_change },
+    };
+    for (fields) |field| {
+        const inst = field.inst orelse return none;
+        const d = for (a.bir(nav).decls, 0..) |decl, di| {
+            if (decl.kind == .value and std.mem.eql(u8, a.declName(nav, @intCast(di)), field.name)) break @as(u32, @intCast(di));
+        } else return none;
+        const tag = try a.eval(frame, inst, 0);
+        const declared = try a.callTop(nav, d, &.{tag}, fs.m, inst, 0);
+        // Copied at once: the term table grows, and moves, as it interns.
+        try parts.appendSlice(a.arena(), a.effectParts(declared, .sub) orelse return none);
+    }
+    return a.effectTerm(.sub, parts.items);
 }
 
 /// A call of the top-level `(m, d)`: a core row, `Fresh` for a `foreign` or
@@ -5630,7 +5676,7 @@ pub fn conflicts(a: *const Writes, r: u32, ws: []const Write) bool {
 // Programs (§1.1)
 // ---------------------------------------------------------------------------
 
-const Fields = struct { m: u32, frame_decl: u32, init: ?Inst.Index = null, update: ?Inst.Index = null, view: ?Inst.Index = null, subscriptions: ?Inst.Index = null };
+const Fields = struct { m: u32, frame_decl: u32, init: ?Inst.Index = null, update: ?Inst.Index = null, view: ?Inst.Index = null, subscriptions: ?Inst.Index = null, on_url_request: ?Inst.Index = null, on_url_change: ?Inst.Index = null };
 
 fn programKind(a: *Writes, m: u32, inst: Inst.Index) ?ProgramKind {
     const t = a.valueTarget(m, inst) orelse return null;
@@ -5668,6 +5714,8 @@ fn programRecord(a: *Writes, m: u32, d: u32, arg: Inst.Index) ?Fields {
             if (std.mem.eql(u8, name, "update")) out.update = fld.value;
             if (std.mem.eql(u8, name, "view")) out.view = fld.value;
             if (std.mem.eql(u8, name, "subscriptions")) out.subscriptions = fld.value;
+            if (std.mem.eql(u8, name, "onUrlRequest")) out.on_url_request = fld.value;
+            if (std.mem.eql(u8, name, "onUrlChange")) out.on_url_change = fld.value;
         }
         return out;
     }
@@ -5977,6 +6025,12 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         }
         // The pushed-state routes (`findRoutes`), before any key is read.
         if (a.in.in_place.len != 0 and prog.update_decl != none and prog.update_module == fs.m and a.model_type != null) prog.routes = try a.findRoutes(fs.m, prog.update_decl, kind);
+        // Under `Input.effects`, `init` and each key are read through the
+        // platform's functions, as the subscriptions are: a command a
+        // layer's function makes — `Navigation.pushUrl` — is read as its
+        // `Cmd.perform` (`browser-inline.md` §10.4).
+        a.walk_platform = a.in.effects != null;
+        defer a.walk_platform = false;
         // init (§3.5).
         a.ctx = .{ .mode = .init };
         init_model = blk: {
@@ -5991,7 +6045,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                     error.WorkCap => break :blk try a.freshEmpty(),
                     else => |e| return e,
                 };
-                if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
+                if (a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
                 if (kind == .element or kind == .document) r = try a.proj(r, .tuple, 0, 0);
                 break :blk r;
             };
@@ -6005,7 +6059,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                 error.WorkCap => break :blk try a.freshEmpty(),
                 else => |e| return e,
             };
-            if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
+            if (a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
             if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
             break :blk r;
         };
@@ -6043,7 +6097,15 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         a.walk_platform = a.in.effects != null;
         defer a.walk_platform = false;
         const fun = try a.eval(&frame, si, 0);
-        const result = a.applyDirect(fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
+        var result = a.applyDirect(fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
+            error.WorkCap => none,
+            else => |e| return e,
+        };
+        // An application's set is the program's followed by
+        // `Navigation.onUrlRequest onUrlRequest` and
+        // `Navigation.onUrlChange onUrlChange`, as `browser-tea`'s
+        // `Tea.application` batches them (`browser-inline.md` §10.3).
+        if (kind == .application and a.in.effects != null and result != none) result = a.applicationSubscriptions(&frame, fs, result) catch |err| switch (err) {
             error.WorkCap => none,
             else => |e| return e,
         };
@@ -6646,7 +6708,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
-        if (a.in.effects != null and kind == .element) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
+        if (a.in.effects != null and kind.commands()) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
         if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
         r = try a.capSize(r);
         // A message placed in the model is a value (browser-direct.md §11).

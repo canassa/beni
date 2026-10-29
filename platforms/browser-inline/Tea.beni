@@ -1,14 +1,18 @@
 --! The Elm Architecture on `browser-inline` (`docs/design/browser-inline.md`):
---! `browser-tea`'s `sandbox` and `element`, so one source builds on both.
+--! `browser-tea`'s `sandbox`, `element`, `document` and `application`, so one
+--! source builds on both (`browser-inline.md` §10 for the last two).
 --! Here a program is compiled, not run: each constructor is a `foreign` the
 --! platform's `inline` lowering recognises where it is called
 --! (`boundary.md` §9.4.6, version 1.6), and the call is compiled as the
 --! constructor applied to the program's mount. The record is never a value.
 
-import Browser
+import Browser exposing (UrlRequest)
+import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
 import Html exposing (Html)
+import Js
 import Sub exposing (Sub)
+import Url exposing (Url)
 
 
 --| What `main` is: `Browser.Program` under this platform's name.
@@ -39,3 +43,61 @@ pub foreign pure element :
             , subscriptions : sync (model → Sub msg)
             }
     → Program
+
+
+--| What the `view` of a `document` or an `application` makes: the page's
+--| title and its body.
+pub type alias Document msg =
+    title : String
+    body : Html msg
+
+
+--| An `element` that owns the page's title: its `view` makes a `Document`,
+--| a record of a `title` and a `body` written in place, and the title is
+--| written after each message that changes it, so the page's title and
+--| its body never disagree.
+pub document :
+      entry { init : sync (⊤ → model × Cmd msg)
+            , update : sync (msg, model → model × Cmd msg)
+            , view : sync (model → Document msg)
+            , subscriptions : sync (model → Sub msg)
+            }
+    → Program
+document app = unreachable app
+
+
+--| A `document` that owns the page's address (`docs/design/boundary.md`
+--| §9.8.13 (d)): `init` is handed the address the page was opened at and
+--| the page's navigation key, a click on a link the page should handle is
+--| sent through `onUrlRequest`, and every change of the address through
+--| `onUrlChange`. A page whose address is not `http` or `https` (opened
+--| from a file) stops at start: no route can be computed there.
+--|
+--|     main =
+--|         Tea.application
+--|             { init = λurl key → ( { key = key, route = toRoute url }, Cmd.none )
+--|             , update = update
+--|             , view = view
+--|             , subscriptions = λ_ → Sub.none
+--|             , onUrlRequest = ClickedLink
+--|             , onUrlChange = UrlChanged
+--|             }
+pub application :
+      entry { init : sync (Url, Navigation.Key → model × Cmd msg)
+            , update : sync (msg, model → model × Cmd msg)
+            , view : sync (model → Document msg)
+            , subscriptions : sync (model → Sub msg)
+            , onUrlRequest : sync (UrlRequest → msg)
+            , onUrlChange : sync (Url → msg)
+            }
+    → Program
+application app = unreachable app
+
+
+-- What `document` and `application` give if a call reached them: none
+-- does, since the `inline` lowering compiles each call as the program's
+-- mount (`Lowering.constructs`) and refuses either used as a value. They
+-- are beni rather than `foreign`, so a page that names neither ships no
+-- sibling export of theirs (`browser-inline.md` §10.5).
+unreachable : a → Program
+unreachable _ = Js.to Js.undefined

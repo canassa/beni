@@ -1,0 +1,31 @@
+-- `Tea.document` owns the page's title on `browser-inline`
+-- (browser-inline.md §10.2; boundary.md §9.8.13 (d)): the mount writes the
+-- view's title after its first pass, and each message's handler writes it
+-- after its write pass, when it differs from the page's, so after the
+-- load and after a message the title and the body agree. The title here
+-- changes only on even counts, so one message leaves it as it was.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Tea.Document Msg
+view n =
+    { title = "Even ${String.fromInt (n // 2 * 2)}"
+    , body = <button id="inc" onClick={Inc}>{String.fromInt n}</button>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = λInc n → ( n + 1, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

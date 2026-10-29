@@ -1,0 +1,57 @@
+-- Link requests on `browser-inline` (browser-inline.md §10.3; boundary.md
+-- §9.8.13 (c)): `onUrlRequest`, a subscription of a `Tea.element`, hears a
+-- plain click — the main button, no modifier, its default not prevented —
+-- on an `<a href>` with no `download` and an empty or `_self` target,
+-- prevents the host from following it, and sends `Internal` for the page's
+-- own protocol, host and port and `External` with the `href` for any
+-- other. A click inside a `<span>` in a link is the link's. Every other
+-- click is left to the host, which the driver shows as `(the host follows
+-- the link …)`: `_blank`, `download`, each modifier and the middle button.
+-- `update` splits the request on its constructor, so the compiled
+-- subscription sends it through the dispatcher as the message.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Requested Browser.UrlRequest
+
+
+update : Msg, String → String × Cmd Msg
+update msg last =
+    case msg of
+        Requested (Browser.Internal url) →
+            ( "Internal ${url.path}", Cmd.none )
+
+        Requested (Browser.External href) →
+            ( "External ${href}", Cmd.none )
+
+
+view : String → Html Msg
+view last =
+    <main>
+        <a id="relative" href="/blog/42?x=1#c">relative</a>
+        <a id="fragment" href="#top">fragment</a>
+        <a id="host" href="http://example.com/x">host</a>
+        <a id="mail" href="mailto:a@example.com">mail</a>
+        <a id="blank" href="/b" target="_blank">blank</a>
+        <a id="self" href="/s" target="_SELF">self</a>
+        <a id="download" href="/d" download="">download</a>
+        <a id="nested" href="/n"><span id="inner">inner</span></a>
+        <a id="nohref">no href</a>
+        <p>{last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Navigation.onUrlRequest Requested
+        }

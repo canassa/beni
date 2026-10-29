@@ -3,12 +3,22 @@
 --! `document.body` unless `mountAt` names an element.
 
 import Js
+import Url exposing (Url)
 
 
 --| What `main` is: the page's one program and where it mounts. Only a
 --| program constructor of `Tea` makes one: the `inline` lowering compiles
 --| the program where the constructor is called.
 pub foreign type Program
+
+
+--| A click on a link the page should handle itself (`boundary.md` §9.8.13
+--| (c)): `Internal` for one on the page's own protocol, host and port,
+--| `External` for any other, with its `href`. What
+--| `Browser.Navigation.onUrlRequest` sends.
+pub type UrlRequest
+    = Internal Url
+    | External String
 
 
 --| The same program, mounted at the element whose `id` is the string

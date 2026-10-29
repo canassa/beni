@@ -6,8 +6,10 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
+import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
 import Js
+import Url exposing (Url)
 
 
 type alias V =
@@ -193,6 +195,41 @@ fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
 pub commands : Cmd V, V → ⊤
 commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
     send (Js.from λ_ → body λmsg → send dispatch (Js.from msg) Js.undefined) Js.null Js.undefined
+
+
+-- ---- Documents and applications (`browser-inline.md` §10) ---------------
+
+--| `(⊤)`: the address an application's `init` is handed, read inside the
+--| mount's guard. A page whose address is not an `http` or `https` one
+--| (opened from a file) has no route, and stops there as a defect
+--| (`boundary.md` §9.8.13 (d)).
+pub address : ⊤ → Url
+address ⊤ =
+    case Navigation.currentUrl ⊤ of
+        Just url →
+            url
+
+        Nothing →
+            Js.throw
+                (Js.construct (Js.global "Error")
+                    [ Js.from
+                        "Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle."
+                    ]
+                )
+
+
+--| `(⊤)`: the page's navigation key, which an application's `init` is
+--| handed.
+pub navigationKey : ⊤ → Navigation.Key
+navigationKey ⊤ = Navigation.key ⊤
+
+
+--| `(title)`: a document's title, written when it differs from the page's.
+pub title : String → ⊤
+title value =
+    document = Js.global "document"
+    if not (Js.same (Js.get document "title") (Js.from value)) then
+        Js.set document "title" (Js.from value)
 
 
 -- ---- The unmount (`boundary.md` §9.4.5, amended 2026-10-17) -------------

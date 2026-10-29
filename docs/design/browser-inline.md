@@ -1948,7 +1948,9 @@ is refused on it; `core/Dict` gets `Dict.keyAt`; the index maps a key to its ent
 `Tea.document`, `Tea.application` and `Browser.Navigation` on this platform, for a program the
 browser renders. What they do is `boundary.md` §9.8.13 (c)–(d) and §9.8.17 (b), which this section
 does not repeat; it says what the `inline` lowering compiles, from which facts, and what it
-refuses. What a prerendered page's `init` receives is `prerender.md` §7.3's, not this section's.
+refuses. What a prerendered page's `init` receives is `prerender.md` §7.3's, not this section's:
+until slice P3, a prerendering build of a `document` or an `application` is refused at its call,
+class 1.
 
 ### 10.1 The modules
 
@@ -2033,5 +2035,7 @@ no `safeUrl` (#1169).
 
 A program that names none of `document`, `application` and `Browser.Navigation` ships not one byte
 more: the runtime's `address`, `navigationKey` and `title`, and the module `Browser.Navigation`,
-are reached only from the mount of such a program or from a call of one of its values, and
+are reached only from the mount of such a program or from a call of one of its values. `document`
+and `application` are beni declarations whose body is never reached (the lowering compiles each
+call), not `foreign` ones, since a development build copies a sibling file whole. And
 `bench/size.mjs`'s `page` lines and the `emit/inline/` goldens did not move.

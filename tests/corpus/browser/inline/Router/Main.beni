@@ -1,0 +1,120 @@
+-- `Tea.application` routes a page on `browser-inline` (browser-inline.md
+-- §10; boundary.md §9.8.13 (d)). `browser/tea/InlineRouter.beni` is this
+-- file, byte for byte, built for `browser-tea`: one source builds on both
+-- (§1), and the transcripts differ only where an empty text is shown as
+-- `""` there and as nothing here. Started at a
+-- deep link (`/blog/42`), `init` is handed that address and the page's key
+-- and computes the route with `Url.Parser`. A click on a link is a request:
+-- `update` splits it on `Internal` and `External`, which the compiled
+-- `onUrlRequest` sends through the dispatcher as the message; an
+-- `Internal` one is pushed with `pushUrl`, and the push comes back through
+-- `onUrlChange` as the new route. The button goes back with the `back`
+-- command, and the driver's `back` and `forward` arrive the same way. The
+-- `External` link is noted, not loaded, which would leave the page; an
+-- address no route matches is `NotFound`. The title is the route's,
+-- written in the dispatch that renders it.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, int, map, oneOf, s, slash, top)
+
+
+type Route
+    = Home
+    | Blog Int
+    | NotFound
+
+
+route : Parser (Route → a) a
+route =
+    oneOf
+        [ map top Home
+        , s "blog" ▷ slash int ▷ map Blog
+        ]
+
+
+toRoute : Url → Route
+toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | GoBack
+    | Refused Navigation.Error
+
+
+type alias Model =
+    key : Navigation.Key
+    route : Route
+    note : String
+
+
+init : Url, Navigation.Key → Model × Cmd Msg
+init url key = ( { key = key, route = toRoute url, note = "" }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) →
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+
+        ClickedLink (Browser.External href) →
+            ( { model | note = "external ${href}" }, Cmd.none )
+
+        UrlChanged url →
+            ( { model | route = toRoute url }, Cmd.none )
+
+        GoBack →
+            ( model, Navigation.back model.key 1 Refused )
+
+        Refused _ →
+            ( { model | note = "refused" }, Cmd.none )
+
+
+title : Route → String
+title r =
+    case r of
+        Home →
+            "Home"
+
+        Blog n →
+            "Blog ${String.fromInt n}"
+
+        NotFound →
+            "Not found"
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = title model.route
+    , body =
+        <main>
+            <nav>
+                <a id="home" href="/">home</a>
+                <a id="blog" href="/blog/7">blog</a>
+                <a id="lost" href="/nowhere">lost</a>
+                <a id="away" href="https://example.org/x">away</a>
+            </nav>
+            <button id="back" onClick={GoBack}>back</button>
+            <h1>{title model.route}</h1>
+            <p>{model.note}</p>
+        </main>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }

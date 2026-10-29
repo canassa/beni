@@ -701,6 +701,9 @@ pub const Direct = struct {
         captures: ?[]const []const u8 = &.{},
         /// When `captures` is null: the capture that is not a literal, by name.
         computed: []const u8 = "",
+        /// 1.21: the constructor the value is a message of, when it reaches
+        /// its key through the dispatcher (`Program.Subscription.message`).
+        message: ?Ctor = null,
     };
 
     pub const LostSite = struct { module: u32, inst: u32 };
@@ -14229,7 +14232,15 @@ pub const Lowerer = struct {
         var at = body;
         while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
         if (l.program_now) |pc| if (field == pc.view and pc.constructor >= 2) {
+            // A document's `view` (`browser-inline.md` §10.2): a record of
+            // its title and its body, written in place, the body's markup the
+            // root. With no `let`s before the record it is markup in place.
+            const lets = at != body;
             at = l.documentPart(at, "body") orelse return .{ .function, null };
+            if (l.bir.instTag(at) != .markup) return .{ .function, null };
+            const st = l.mk orelse return .{ .function, null };
+            const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
+            return .{ if (lets) .function else .markup, root };
         };
         if (l.bir.instTag(at) != .markup) return .{ .function, null };
         const st = l.mk orelse return .{ .function, null };
@@ -19458,6 +19469,24 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(n);
     }
 
+    fn programSubscriptionMessage(impl: *anyopaque, i: u32, payload: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const p = pos(l);
+        const pc = l.program_now orelse return expr(try l.nullNode(p));
+        const d = pc.direct orelse return expr(try l.nullNode(p));
+        if (i >= d.starts.len) return expr(try l.nullNode(p));
+        const c = d.starts[i].message orelse return expr(try l.nullNode(p));
+        const fields = switch (d.subscriptions) {
+            .set => |set| set[i].fields,
+            else => 0,
+        };
+        const rt = l.directCtor(c) orelse return expr(try l.nullNode(p));
+        // Each field of the constructor is the value (`Writes.field_payload`).
+        const args = try l.scratch.alloc(Node.Index, fields);
+        @memset(args, node(payload));
+        return expr(try l.ctorValue(rt[0], rt[1], args, p));
+    }
+
     fn programCommand(impl: *anyopaque, key: ?u32) M.Program.Command {
         return lowerer(impl).directCommand(key);
     }
@@ -19757,6 +19786,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_let = programLet,
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
+        .program_subscription_message = programSubscriptionMessage,
         .program_command = programCommand,
         .program_pure = programPure,
         .program_rows = programRows,
