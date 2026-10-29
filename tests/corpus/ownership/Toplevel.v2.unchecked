@@ -1,4 +1,4 @@
 Toplevel addModel: lines 29-30 (not built: record_update)
-Toplevel addFresh: lines 37-40 (not built: call)
+Toplevel addFresh: lines 37-40 (not built: record_update)
 Toplevel bump: lines 47-54 (not built: call)
 Toplevel fromEmpty: lines 57-58 (not built: call)

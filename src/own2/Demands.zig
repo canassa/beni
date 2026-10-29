@@ -90,6 +90,12 @@ pub const Demand = struct {
     token: u32,
     /// A writer call's callee instruction, for its name; `none` otherwise.
     callee_inst: u32 = none,
+    /// A writer call's write: its path below the base's value, for its text
+    /// (`.none` at the root).
+    write_path: PathId = .none,
+    /// A writer call's callee's `xreq` instantiated on the arguments: what its
+    /// acceptance relies on beside its own splits (§2.11 step 7, R-4.6.6).
+    relies: CondId = Cond.yes,
     /// The other operands of the operation, a run of `Frame.operands`.
     operands: Ids.Range = .empty,
 };
@@ -1004,7 +1010,7 @@ const Resolver = struct {
             if (cellt.origin(cellt.base(c)) == .shared) return .{ .verdict = .refused, .cause = .top_level, .exactness = .position, .cell = cellt.base(c) };
         }
         // 4. Disjoint: no other operand reaches a cell of the base.
-        var relied: CondId = Cond.yes;
+        var relied: CondId = dm.relies;
         {
             // Every operand's reach against the base's cells: as large as the
             // operands, a product, so growth chosen before it, never the

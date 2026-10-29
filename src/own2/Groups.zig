@@ -517,6 +517,8 @@ pub const Module = struct {
     shared: Ids.FixedDict(2) = .{},
     shared_of: std.ArrayList([2]u32) = .empty,
     results: std.ArrayList(DeclResult) = .empty,
+    /// Per declaration of the module: its index in `results`, or `none`.
+    result_of: []u32 = &.{},
     prepass_arena: std.heap.ArenaAllocator,
     /// The local index the walked declaration's locals start at.
     cur_locals: u32 = 0,
@@ -538,6 +540,7 @@ pub const Module = struct {
             r.account.deinit(gpa);
         }
         mod.results.deinit(gpa);
+        gpa.free(mod.result_of);
         mod.prepass_arena.deinit();
         mod.base_account.deinit(gpa);
     }
@@ -606,6 +609,19 @@ pub const Module = struct {
         };
     }
 
+    /// The `(module, constructor index)` a constructor reference names, or
+    /// null: what a line calls a constructor application by (`<Node …>`).
+    pub fn ctorIndexCtx(ctx: *anyopaque, ref: u32) ?[2]u32 {
+        const mod = self(ctx);
+        const bir = mod.in.bir;
+        const d = bir.instData(@fromBackingInt(ref));
+        const at: [2]u32 = switch (bir.instTag(@fromBackingInt(ref))) {
+            .ctor => .{ mod.in.module, d.lhs },
+            .ext_ctor => if (d.lhs < mod.in.provenance.len and d.rhs < mod.in.provenance[d.lhs].ctor_index.len) .{ d.lhs, mod.in.provenance[d.lhs].ctor_index[d.rhs] } else return null,
+            else => return null,
+        };
+        return if (at[0] < mod.in.birs.len and at[1] < mod.in.birs[at[0]].ctors.len) at else null;
+    }
     fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
         const mod = self(ctx);
         const bir = mod.in.bir;
@@ -688,6 +704,11 @@ pub const Module = struct {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
             if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, t[0], owner.decls[t[1]]) };
+            // A declaration of this module walked before this one (an
+            // earlier group, §8 S3b): its class, applied at this call. One
+            // of this group (recursion) or one past its limit is not built
+            // here.
+            if (t[0] == mod.in.module and words.len == 0) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
             // A container's `eq`/`compare` with no words (`List.eq`, written
             // in JavaScript over its element evidence): the derived class when
             // no evidence it is handed is written by hand (§2.13.13).
@@ -705,6 +726,16 @@ pub const Module = struct {
         return .harmless;
     }
 
+    /// The class of declaration `di`'s walk when it is done, built and within its
+    /// limits; null before its walk, or when a limit stopped it.
+    fn walkedClass(mod: *const Module, di: u32) ?ClassId {
+        if (di >= mod.result_of.len or mod.result_of[di] == none) return null;
+        const r = mod.results.items[mod.result_of[di]];
+        // An unbuilt walk's class is the pessimistic one: applying it would
+        // check the call against a class the callee never earned.
+        if (r.failure != null or r.unbuilt != none or r.class == .none) return null;
+        return r.class;
+    }
     fn isSequence(mod: *const Module, at: PlaceId) bool {
         return mod.places.kind(at) == .list and mod.places.child(at, Step.elem) != null;
     }
@@ -797,6 +828,7 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
         // module's, else the default.
         const allowance = if (d.summary_size != 0) d.summary_size else if (in.bir.summary_size != 0) in.bir.summary_size else Ids.Account.default_allowance;
         try mod.results.append(gpa, .{ .decl = di, .account = .{ .allowance = allowance } });
+        mod.result_of[di] = @intCast(mod.results.items.len - 1);
         const r = &mod.results.items[mod.results.items.len - 1];
         try walkIn(mod, d, &prepass, r);
         const stopped = r.failure != null and r.failure.? == .exhausted;
@@ -808,6 +840,10 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
             defer gpa.destroy(alone);
             try initModule(in, alone);
             defer alone.deinit();
+            // The callees it reaches, walked first in the same tables on the
+            // module's own account: the cold run's tables hold the classes
+            // its calls apply, as the warm run's do (§8 S3b).
+            try walkCallees(alone, di, &prepass);
             try walkIn(alone, d, &prepass, &cold);
             gpa.free(cold.lines);
         }
@@ -822,6 +858,41 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
         r.account.deinit(gpa);
         r.account = cold.account;
         if (stopped) r.failure = cold.failure;
+    }
+    mod.account = &mod.base_account;
+    mod.adapter.account = &mod.base_account;
+}
+
+/// Walk in `mod`, on its base account and in group order, every
+/// declaration of an earlier group that `di` reaches by calls: what a cold
+/// run of `di` needs in its tables for its calls to apply a class.
+fn walkCallees(mod: *Module, di: u32, prepass: *const Facts.Prepass) Allocator.Error!void {
+    const gpa = mod.gpa;
+    const bir = mod.in.bir;
+    const reached = try gpa.alloc(bool, bir.decls.len);
+    defer gpa.free(reached);
+    @memset(reached, false);
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, di);
+    while (stack.pop()) |x| {
+        const d = bir.decls[x];
+        for (d.inst_start.int()..d.inst_end.int()) |i| {
+            const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            if (bir.instTag(inst) != .top) continue;
+            const t = bir.instData(inst).lhs;
+            if (t >= bir.decls.len or reached[t] or prepass.group_of[t] >= prepass.group_of[di]) continue;
+            reached[t] = true;
+            try stack.append(gpa, t);
+        }
+    }
+    for (prepass.order) |x| {
+        if (!reached[x]) continue;
+        const d = bir.decls[x];
+        if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) continue;
+        try mod.results.append(gpa, .{ .decl = x, .account = .{ .allowance = std.math.maxInt(u32) - 1 } });
+        mod.result_of[x] = @intCast(mod.results.items.len - 1);
+        try walkIn(mod, d, prepass, &mod.results.items[mod.results.items.len - 1]);
     }
     mod.account = &mod.base_account;
     mod.adapter.account = &mod.base_account;
@@ -843,6 +914,8 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
         else => unreachable,
     };
     mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
+    mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
+    @memset(mod.result_of, none);
 }
 
 /// Walk `d` in `mod`'s tables on `r`'s account; a limit is `r`'s failure.

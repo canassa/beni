@@ -56,6 +56,9 @@ pub const Error = Ids.ChargeError;
 pub const Write = struct { param: u32, steps: Ids.Range, deep: bool };
 /// A parameter path the class lets escape (`E`).
 pub const Escape = struct { param: u32, steps: Ids.Range };
+/// A parameter path the class marks, and whether it holds what is there
+/// (answers or lets it escape: `A`, `E`).
+pub const Touch = struct { param: u32, steps: Ids.Range, held: bool };
 
 pub const Applied = struct {
     result: Value,
@@ -63,6 +66,9 @@ pub const Applied = struct {
     xreq: CondId,
     writes: []const Write,
     escapes: []const Escape,
+    /// Every parameter path the class marks (R, A, W or E): what a write's
+    /// Disjoint checks against, beside the other arguments (§2.11 item 3).
+    touched: []const Touch = &.{},
     /// The values the result lets escape (an `esc k`), deeply.
     escaped: []const NodeId,
     /// The steps the `Write`s and `Escape`s name, root first.
@@ -75,6 +81,7 @@ pub const Scratch = struct {
     writes: std.ArrayList(Write) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
     escaped: std.ArrayList(NodeId) = .empty,
+    touched: std.ArrayList(Touch) = .empty,
     steps: std.ArrayList(Step) = .empty,
     members: std.ArrayList(NodeId) = .empty,
 
@@ -83,6 +90,7 @@ pub const Scratch = struct {
         s.writes.deinit(gpa);
         s.escapes.deinit(gpa);
         s.escaped.deinit(gpa);
+        s.touched.deinit(gpa);
         s.steps.deinit(gpa);
         s.members.deinit(gpa);
     }
@@ -1041,10 +1049,10 @@ const Grafter = struct {
 /// The writes and escapes a use shape marks, with their paths: a walk of
 /// its explicit structure (a leaf's marks hold below it, so a leaf ends a
 /// path). Every node visited is a record.
-fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
+fn marked(env: Env, use: NodeId, param: u32, res_reach: SetId, s: *Scratch) Error!void {
     if (use == .none) return;
     // Paths as parent chains: a node's path is its entry's.
-    const Entry = struct { step: Step, parent: u32 };
+    const Entry = struct { step: Step, parent: u32, path: PathId };
     var entries: std.ArrayList(Entry) = .empty;
     defer entries.deinit(env.gpa);
     const Frame = struct { node: NodeId, entry: u32 };
@@ -1053,6 +1061,9 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
     try stack.append(env.gpa, .{ .node = use, .entry = Ids.none_int });
     while (stack.pop()) |f| {
         try env.charge.reserve(env.gpa, .inspection, 1);
+        var any = false;
+        var held = false;
+        var answered = false;
         var w = false;
         var e = false;
         var deep = false;
@@ -1060,14 +1071,19 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
         while (it.next()) |x| {
             const c: CellId = .from(x.key);
             if (env.cells.origin(c) != .mark) continue;
+            any = true;
             switch (env.cells.markOf(c)) {
                 .w => w = true,
-                .e => e = true,
+                .e => {
+                    e = true;
+                    held = true;
+                },
+                .a => answered = true,
                 .deep => deep = true,
                 else => {},
             }
         }
-        if (w or e) {
+        if (any) {
             const start: u32 = @intCast(s.steps.items.len);
             var at = f.entry;
             while (at != Ids.none_int) : (at = entries.items[at].parent) try s.steps.append(env.gpa, entries.items[at].step);
@@ -1075,12 +1091,20 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
             const r: Ids.Range = .{ .start = start, .len = @intCast(s.steps.items.len - start) };
             if (w) try s.writes.append(env.gpa, .{ .param = param, .steps = r, .deep = deep });
             if (e) try s.escapes.append(env.gpa, .{ .param = param, .steps = r });
+            // Answered exactly: the result holds this very object.
+            if (answered and !held) {
+                const path = if (f.entry == Ids.none_int) try env.places.rootPath(env.gpa, env.shapes.place(use)) else entries.items[f.entry].path;
+                const me = try env.cells.symbolic(env.gpa, env.account(), env.places, .param, param, path, 0);
+                held = (env.cells.sets.get(res_reach, me.int()) orelse 1) == 0;
+            }
+            try s.touched.append(env.gpa, .{ .param = param, .steps = r, .held = held });
         }
         if (env.shapes.kind(f.node) != .node) continue;
         var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
         while (kt.next()) |k| {
             const id: u32 = @intCast(entries.items.len);
-            try entries.append(env.gpa, .{ .step = k.step, .parent = f.entry });
+            const parent_path = if (f.entry == Ids.none_int) try env.places.rootPath(env.gpa, env.shapes.place(use)) else entries.items[f.entry].path;
+            try entries.append(env.gpa, .{ .step = k.step, .parent = f.entry, .path = (try env.places.extend(env.gpa, env.charge, parent_path, k.step)) orelse parent_path });
             try stack.append(env.gpa, .{ .node = k.node, .entry = id });
         }
     }
@@ -1094,6 +1118,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     s.writes.clearRetainingCapacity();
     s.escapes.clearRetainingCapacity();
     s.escaped.clearRetainingCapacity();
+    s.touched.clearRetainingCapacity();
     s.steps.clearRetainingCapacity();
     const cls = sums.get(class);
     const label = try env.cells.label(gpa, env.account(), inst, .none, false);
@@ -1101,7 +1126,10 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     defer g.folded.deinit(gpa);
     defer g.deeps.deinit(gpa);
     // 2, 3: the writes and escapes the use shapes mark.
-    for (sums.paramUses(class), 0..) |u, i| try marked(env, u, @intCast(i), s);
+    // What the result reaches, exactly or not: whether an answered path
+    // holds its object for certain (`Touch.held`).
+    const res_reach = if (cls.res == .none) SetId.none else try env.shapes.reach(gpa, env.account(), &env.cells.sets, cls.res);
+    for (sums.paramUses(class), 0..) |u, i| try marked(env, u, @intCast(i), res_reach, s);
     // 4: the result.
     const res = try g.graft(cls.res);
     // 5: the class's κ relabelled onto the result, each entry's path
@@ -1122,6 +1150,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
         .xreq = xreq,
         .writes = s.writes.items,
         .escapes = s.escapes.items,
+        .touched = s.touched.items,
         .escaped = s.escaped.items,
         .steps = s.steps.items,
     };
