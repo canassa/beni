@@ -492,6 +492,10 @@ amendment here before it is built, measured in bytes and in time to interactive.
 its route, so **per-route pages come with routing (slice P3)**, not before: P1 and P2 prerender
 `index.html` alone, for `sandbox` and `element`.
 
+*Amended 2026-10-29 (#1163):* `Tea.document`, `Tea.application` and `Browser.Navigation` are built
+on `browser-inline` for a page the browser renders (`browser-inline.md` §10); §7.2's
+`Browser.prerender` and §7.3–§7.5 are still P3's.
+
 ### 7.2 `Tea.application` and `Browser.prerender`
 
 `browser-inline` gets `browser-tea`'s `Tea.application` and `Tea.document`, with the same signatures,

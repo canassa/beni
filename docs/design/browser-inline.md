@@ -27,6 +27,9 @@ fall back on.
 | `Listen` | `on`, a listener on the window or the document |
 | `Html` | `html`'s vocabulary, re-exported |
 
+*Amended 2026-10-29 (§10, #1163):* `Tea` adds `Document`, `document` and `application`, `Browser`
+adds `UrlRequest`, and the platform has `Browser.Navigation`.
+
 One program per page: `Browser.mountAt p id` mounts it at the element `id` names, and a program
 not placed mounts at `document.body`. The runtime exports `run` and `stop` (`boundary.md` §9.4.5,
 amended 2026-10-17).
@@ -71,7 +74,8 @@ of, in order: `batch` concatenates, `map` composes its function onto each declar
   constructor among them). The value the start sends then calls that key's handler directly — no
   message is made. A tagger that gives no constructor of the message type is refused (§5, class
   3); one whose key splits further, on the payload's own shape, is a limit of the compiler (§5,
-  class 4), since only the handler could tell.
+  class 4), since only the handler could tell. *Amended 2026-10-29 (§10.3):* one whose tagger is a
+  constructor of one field reaches its key through the dispatcher, as the message, and is compiled.
 - **`start` must not suspend**: `Sub.on`'s `start` is `sync`, so the checker refuses one that
   does, before the lowering sees it.
 
@@ -93,7 +97,9 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
   handler's write pass, in the same dispatch, through the guard's queue (`boundary.md` §9.8.4,
   amended 2026-10-17);
 - a body that may suspend is refused (§5, class 2);
-- a command the pass cannot read as one of these is refused (§5, class 4).
+- a command the pass cannot read as one of these is refused (§5, class 4). *Amended 2026-10-29
+  (§10.4):* the pass reads `init` and each key through the platform's functions, so a command a
+  layer makes (`Navigation.pushUrl`) is read as its `perform`.
 
 ## 5. What the lowering refuses
 
@@ -318,7 +324,8 @@ beni over `Js` in `Inline.beni`:
   a number only; a text hole beside an element is a limit of the compiler (§8.7).
 - **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
   markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
-  class or style list that changes are limits of the compiler.
+  class or style list that changes are limits of the compiler. *Amended 2026-10-29 (§10.5):* a
+  constant URL is checked and written into the markup.
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
@@ -1934,3 +1941,97 @@ is refused on it; `core/Dict` gets `Dict.keyAt`; the index maps a key to its ent
    where vanilla writes the label in its loop), and 2.2× on the snapshot. The alternative, holding
    N = 1 to tea-inline as generated, means S2 closes above its bar the way S1 did, with the reason
    known in advance.
+
+## 10. Documents, applications and `Browser.Navigation`
+
+*Added 2026-10-29 (#1163, part of #1160; `prerender.md` §7.1–§7.2).* `browser-tea`'s
+`Tea.document`, `Tea.application` and `Browser.Navigation` on this platform, for a program the
+browser renders. What they do is `boundary.md` §9.8.13 (c)–(d) and §9.8.17 (b), which this section
+does not repeat; it says what the `inline` lowering compiles, from which facts, and what it
+refuses. What a prerendered page's `init` receives is `prerender.md` §7.3's, not this section's.
+
+### 10.1 The modules
+
+| Module | What a program may use |
+|---|---|
+| `Tea` | adds `Document`, `document`, `application`, with `browser-tea`'s signatures, each field `sync` as `element`'s are |
+| `Browser` | adds `UrlRequest` (`Internal Url`, `External String`) |
+| `Browser.Navigation` | `Key`, `key`, `Error`, `currentUrl`; the commands `pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload`; their direct forms `push`, `replace`, `goBack`, `goForward`, `loadPage`, `reloadPage`; `onUrlRequest`, `onUrlChange` |
+
+`Browser.Navigation` is a port of `browser`'s, over `Js`, not an import of it: the platform still
+depends on `html` alone (§1). Two things differ, both because this platform has no task kernel:
+there is no `eachUrlRequest` and no `eachUrlChange`, which run in a fiber, and a command's tagger
+for its refusal is `sync` (`pushUrl : Key, String, sync (Error → msg) → Cmd msg`), since the body
+that calls it must not suspend (§4). A program that passes a constructor, as every Elm program
+does, builds on both platforms. Its listeners read only the host — the event and `location` — so
+they are added as they are, not through `Listen.on`: the `send` the mount hands a start enters the
+dispatch guard itself (§3).
+
+### 10.2 `Tea.document`
+
+The lowering recognises `Tea.document` where it is called, as it does `element` (§2): `init`,
+`update`, `subscriptions` and the commands are `element`'s. Its `view`'s body is a record of a
+`title` and a `body` written in place; the `body`'s markup is the program's view, compiled as §8
+compiles a `view` whose body is markup. A `view` of any other shape is refused as §5 refuses one
+that does not give its markup in place (class 1, or class 3 for a `view` computed when the page
+runs).
+
+The title is one function of the model in the mount, which evaluates the record's `title` and
+writes it to `document.title` when it differs from what the page shows (the runtime's `title`). The
+mount calls it after its first pass, and each key's handler calls it after its write pass, in the
+same dispatch, so the title and the body never disagree after a message. *A later precision, not a
+rule:* a handler whose writes the title does not read calls it too; the write-set pass does not yet
+give the title's read set (#1168).
+
+### 10.3 `Tea.application`
+
+`Tea.application` is `document` with two more fields and an `init` of two parameters.
+
+- **`init`** is applied to the runtime's `address ⊤` and `navigationKey ⊤`, evaluated inside the
+  mount's dispatch guard (`cx.programStart`). `address` is `Navigation.currentUrl`, and a page
+  whose address is not a `Url` throws there: the page stops as for any defect, before `init` runs,
+  with the development crash screen (§6) showing why (`boundary.md` §9.8.13 (d)).
+- **The subscription set** the write-set pass reads is the program's `subscriptions ρ` followed by
+  `Navigation.onUrlRequest onUrlRequest` and `Navigation.onUrlChange onUrlChange`, as
+  `browser-tea`'s `Tea.application` batches them. §3's rules apply to them as to any declaration:
+  their keys are constants of `Browser.Navigation`, so a program that also writes
+  `Navigation.onUrlChange` in its `subscriptions` shares the one listener; and each tagger must give
+  a constructor of the message type with the value as its field.
+- **A value whose key the tree splits again on the value itself** — `update` matching
+  `ClickedLink (Browser.Internal url)` and `ClickedLink (Browser.External href)` — reaches its key
+  through the program's dispatcher (§4), as the message the tagger makes of it, since which key it
+  is is known only when it is sent. *Amended here:* §3's class 4 refusal of such a tagger is lifted
+  for every subscription whose tagger is a constructor of one field, of any program; one that wraps
+  the value (`λv → Pushed (Box v)`) is still class 4. The dispatcher hands each key's handler its
+  leaf's fields however deep the key, so §4's refusal of a dispatcher whose keys split a message
+  inside another is lifted with it (#1167).
+
+The start of `onUrlRequest` is one `click` listener on the window, in the bubbling phase, and that
+of `onUrlChange` one listener on the window for `popstate` and for `"beni:navigate"`, the
+announcement every `push` and `replace` dispatches; each is a lifted piece of `Browser.Navigation`
+(§7), and what it returns is owned by the mount, so `stop` removes it.
+
+### 10.4 Navigation's commands
+
+Each command is a `Cmd.perform` whose body calls the direct form and, on `Err`, sends the refusal.
+Under `Input.effects` the write-set pass reads `init` and each key through the platform's functions,
+as it reads the subscriptions (§3), so `Navigation.pushUrl model.key url Refused` is read as its
+`Cmd.perform`, which runs (§4). A push announces itself synchronously, inside the dispatch that runs
+the command: `onUrlChange`'s listener reads `location` then, and its send is queued behind the
+dispatch (`boundary.md` §9.8.4), so two pushes in one command are two messages, in order. `back`
+and `forward` change the address when the host traverses, and `onUrlChange` hears the `popstate`
+then.
+
+### 10.5 Links, and what a page without them pays
+
+A link needs `href`, an attribute that holds a URL, which this platform did not compile (§8.7).
+*Amended here:* a **constant** URL attribute is checked when the program is built, by the rule of
+`browser`'s runtime `safeUrl` (`backend.md` §15.10, the `dom` lowering's table), and written into the
+markup — as an empty value for a script URL (`javascript:`, `data:text/html`). A constant whose
+answer turns on a character outside ASCII, and a URL that changes, stay class 1: this runtime has
+no `safeUrl` (#1169).
+
+A program that names none of `document`, `application` and `Browser.Navigation` ships not one byte
+more: the runtime's `address`, `navigationKey` and `title`, and the module `Browser.Navigation`,
+are reached only from the mount of such a program or from a call of one of its values, and
+`bench/size.mjs`'s `page` lines and the `emit/inline/` goldens did not move.
