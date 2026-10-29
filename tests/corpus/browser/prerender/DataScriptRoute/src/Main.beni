@@ -26,6 +26,11 @@ type alias Model =
     name : String
 
 
+-- The address below its origin, which the build and the host do not share.
+shown : Url → String
+shown url = url.path ++ Maybe.withDefault (Maybe.map url.query λq → "?${q}") ""
+
+
 update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
@@ -33,7 +38,7 @@ update msg model =
             ( model, Cmd.none )
 
         UrlChanged url →
-            ( { model | address = Url.toString url }, Cmd.none )
+            ( { model | address = shown url }, Cmd.none )
 
 
 view : Model → Tea.Document Msg
@@ -53,7 +58,7 @@ main = Browser.prerenderData (Page.schema ⊤) λpage →
     Tea.application
         { init =
             λurl _ →
-                ( { address = Url.toString url, first = Url.toString url, name = page.name }
+                ( { address = shown url, first = shown url, name = page.name }
                 , Cmd.none
                 )
         , update = update
