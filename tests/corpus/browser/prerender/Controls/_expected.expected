@@ -1,0 +1,64 @@
+-- load
+<body>
+  <div id="root">
+    <section data-role="controls">
+      <input data-role="name" .value="Ada">
+      <input type="checkbox" data-role="agree" .value="on" .checked=true>
+      <select data-role="plan" .value="pro">
+        <option value="free">"Free"</option>
+        <option value="pro">"Pro"</option>
+        <option value="pro">"Pro again"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output>"Ada agrees to pro"</output>
+    </section>
+  </div>
+</body>
+-- input [data-role=name] "Bo"
+<body>
+  <div id="root">
+    <section data-role="controls">
+      <input data-role="name" .value="Bo">
+      <input type="checkbox" data-role="agree" .value="on" .checked=true>
+      <select data-role="plan" .value="pro">
+        <option value="free">"Free"</option>
+        <option value="pro">"Pro"</option>
+        <option value="pro">"Pro again"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output>"Bo agrees to pro"</output>
+    </section>
+  </div>
+</body>
+-- click [data-role=agree]
+<body>
+  <div id="root">
+    <section data-role="controls">
+      <input data-role="name" .value="Bo">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <select data-role="plan" .value="pro">
+        <option value="free">"Free"</option>
+        <option value="pro">"Pro"</option>
+        <option value="pro">"Pro again"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output>"Bo does not agree to pro"</output>
+    </section>
+  </div>
+</body>
+-- input [data-role=plan] "team"
+<body>
+  <div id="root">
+    <section data-role="controls">
+      <input data-role="name" .value="Bo">
+      <input type="checkbox" data-role="agree" .value="on" .checked=false>
+      <select data-role="plan" .value="team">
+        <option value="free">"Free"</option>
+        <option value="pro">"Pro"</option>
+        <option value="pro">"Pro again"</option>
+        <option value="team">"Team"</option>
+      </select>
+      <output>"Bo does not agree to team"</output>
+    </section>
+  </div>
+</body>

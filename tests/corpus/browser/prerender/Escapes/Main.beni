@@ -1,0 +1,66 @@
+-- The string form's escaping (docs/design/prerender.md §4.1, write-sets.md
+-- §9.1): `&`, `<` and a carriage return in a text are written as
+-- references, a `"` in an attribute too; a text of a `pre` or a `textarea`
+-- that begins with a newline gets one more in front, which the parser
+-- drops; a NUL is written as it is. Each value is one `update` writes, so
+-- none is baked into the page's markup at build time: the runtime's
+-- escaping writes it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    text : String
+    notes : String
+    raw : String
+    title : String
+
+
+type Msg
+    = Shout
+    | SetNotes String
+    | SetTitle String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Shout →
+            { model | text = model.text ++ "!", raw = model.raw ++ "!" }
+
+        SetNotes typed →
+            { model | notes = typed }
+
+        SetTitle typed →
+            { model | title = typed }
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="escapes">
+        <p data-role="text">{model.text}</p>
+        <pre data-role="pre">{model.notes}</pre>
+        <textarea data-role="notes" value={model.notes} onInput={SetNotes} />
+        <p data-role="raw">{model.raw}</p>
+        <input data-role="title" value={model.title} onInput={SetTitle} />
+        <button data-role="shout" onClick={Shout}>Shout</button>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ →
+                    { text = "a < b & c\r\nd"
+                    , notes = "\nfirst line"
+                    , raw = "x\u{0000}y"
+                    , title = "say \"hi\" & <go>"
+                    }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

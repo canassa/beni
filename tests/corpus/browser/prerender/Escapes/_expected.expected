@@ -1,0 +1,52 @@
+-- load
+<body>
+  <div id="root">
+    <section data-role="escapes">
+      <p data-role="text">"a < b & c\r\nd"</p>
+      <pre data-role="pre">"\nfirst line"</pre>
+      <textarea data-role="notes" .value="\nfirst line"></textarea>
+      <p data-role="raw">"x\u0000y"</p>
+      <input data-role="title" .value="say \"hi\" & <go>">
+      <button data-role="shout">"Shout"</button>
+    </section>
+  </div>
+</body>
+-- click [data-role=shout]
+<body>
+  <div id="root">
+    <section data-role="escapes">
+      <p data-role="text">"a < b & c\r\nd!"</p>
+      <pre data-role="pre">"\nfirst line"</pre>
+      <textarea data-role="notes" .value="\nfirst line"></textarea>
+      <p data-role="raw">"x\u0000y!"</p>
+      <input data-role="title" .value="say \"hi\" & <go>">
+      <button data-role="shout">"Shout"</button>
+    </section>
+  </div>
+</body>
+-- input [data-role=title] "a & b"
+<body>
+  <div id="root">
+    <section data-role="escapes">
+      <p data-role="text">"a < b & c\r\nd!"</p>
+      <pre data-role="pre">"\nfirst line"</pre>
+      <textarea data-role="notes" .value="\nfirst line"></textarea>
+      <p data-role="raw">"x\u0000y!"</p>
+      <input data-role="title" .value="a & b">
+      <button data-role="shout">"Shout"</button>
+    </section>
+  </div>
+</body>
+-- input [data-role=notes] "typed"
+<body>
+  <div id="root">
+    <section data-role="escapes">
+      <p data-role="text">"a < b & c\r\nd!"</p>
+      <pre data-role="pre">"typed"</pre>
+      <textarea data-role="notes" .value="typed"></textarea>
+      <p data-role="raw">"x\u0000y!"</p>
+      <input data-role="title" .value="a & b">
+      <button data-role="shout">"Shout"</button>
+    </section>
+  </div>
+</body>

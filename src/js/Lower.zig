@@ -14564,6 +14564,122 @@ pub const Lowerer = struct {
         return if (k < d.commands.len) d.commands[k] else .unknown;
     }
 
+    /// `cx.programPure` (version 1.20, `prerender.md` §3.1): `prerender_impure`
+    /// at the first call of `init`'s or `view`'s body that may have an
+    /// effect other than `Debug`'s, by the checker's inferred rung; false
+    /// then. A field whose body the compiler cannot read here — another
+    /// module's function, a value computed at run time — is refused at the
+    /// field: nothing says it is pure.
+    fn directPure(l: *Lowerer, part: beni_markup.Program.Part) Allocator.Error!bool {
+        const pc = l.program_now orelse return true;
+        const part_name, const field = switch (part) {
+            .init => .{ "init", pc.init orelse return true },
+            .view => .{ "view", pc.view orelse return true },
+            else => return true,
+        };
+        const seen = try l.scratch.alloc(bool, l.bir.decls.len);
+        @memset(seen, false);
+        const body: ?Inst.Index = switch (l.bir.instTag(field)) {
+            .lambda => @fromBackingInt(@intCast(l.bir.instData(field).rhs)),
+            .top => blk: {
+                const d = l.bir.instData(field).lhs;
+                if (d >= l.bir.decls.len or l.bir.decls[d].body.unwrap() == null) break :blk null;
+                seen[d] = true;
+                break :blk l.bodyOf(d);
+            },
+            else => null,
+        };
+        const b = body orelse {
+            try l.report(.prerender_impure, field,
+                \\This program prerenders, so its `{s}` must be pure: the build computes the page
+                \\from it, and the browser computes the same first render from it again
+                \\(`docs/design/prerender.md` §3.1). This `{s}` is not a function of this module, so
+                \\the build cannot read whether it is pure. Write it here, as a lambda that calls it:
+                \\`λ… → f …`.
+            , .{ part_name, part_name });
+            return false;
+        };
+        const site = try l.impureCall(b, seen) orelse return true;
+        try l.report(.prerender_impure, site,
+            \\This program prerenders, so its `{s}` must be pure, and this call may have an
+            \\effect: it may read or change something outside the program. The build computes the
+            \\page from `{s}`, and the browser computes the same first render from it again, so a
+            \\read of the host, the clock or randomness could make the two differ
+            \\(`docs/design/prerender.md` §3.1). Make the call where an effect may run — in
+            \\a command, after the first render — or leave it out.
+        , .{ part_name, part_name });
+        return false;
+    }
+
+    /// The first call under `root` that may have an effect other than
+    /// `Debug`'s: the checker's answer at the call, except that a call of
+    /// `Debug`'s is exempt and a call of a function of this module is
+    /// answered by that function's body, each body walked once (`seen`).
+    /// The body of a function a value makes is not evaluated where it is
+    /// made: a lambda, a `let` of a function. A call of one is the checker's
+    /// at the call that makes it run.
+    fn impureCall(l: *Lowerer, root: Inst.Index, seen: []bool) Allocator.Error!?Inst.Index {
+        const debug = l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol());
+        var stack: std.ArrayList(Inst.Index) = .empty;
+        try stack.append(l.scratch, root);
+        var bodies: std.ArrayList(Inst.Index) = .empty;
+        while (stack.pop() orelse bodies.pop()) |at| {
+            const d = l.bir.instData(at);
+            switch (l.bir.instTag(at)) {
+                .lambda => continue,
+                .let => {
+                    for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                        const dd = l.bir.instData(def);
+                        switch (l.bir.instTag(def)) {
+                            .let_def => {
+                                const ld = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
+                                if (ld.params_end != ld.params_start) continue;
+                                try stack.append(l.scratch, @fromBackingInt(@intCast(dd.rhs)));
+                            },
+                            .let_pattern, .let_stmt => try stack.append(l.scratch, @fromBackingInt(@intCast(dd.rhs))),
+                            else => {},
+                        }
+                    }
+                    try stack.append(l.scratch, @fromBackingInt(@intCast(d.rhs)));
+                    continue;
+                },
+                .call => {
+                    const site = l.in.dispatch.effectAt(at);
+                    if (site.impure or site.own != .no) {
+                        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                        const cd = l.bir.instData(callee);
+                        switch (l.bir.instTag(callee)) {
+                            .ext_value => if (debug == null or cd.lhs != debug.?.int()) return at,
+                            .top => {
+                                if (site.own != .no) return at;
+                                if (cd.lhs >= l.bir.decls.len or l.bir.decls[cd.lhs].body.unwrap() == null) return at;
+                                if (!seen[cd.lhs]) {
+                                    seen[cd.lhs] = true;
+                                    try bodies.append(l.scratch, l.bodyOf(cd.lhs));
+                                }
+                            },
+                            else => return at,
+                        }
+                    }
+                },
+                .method_call, .type_dispatch => {
+                    const site = l.in.dispatch.effectAt(at);
+                    if (site.impure or site.own != .no) return at;
+                },
+                else => {},
+            }
+            var children: std.ArrayList(Inst.Index) = .empty;
+            // Markup's values: its holes, attributes and handlers.
+            if (l.bir.instTag(at) == .markup) try l.bir.markupValues(l.scratch, @fromBackingInt(@intCast(d.lhs)), &children);
+            try l.instChildren(at, &children);
+            // Reversed, so the first operand is walked first: the first call
+            // in source order is the one named.
+            std.mem.reverse(Inst.Index, children.items);
+            try stack.appendSlice(l.scratch, children.items);
+        }
+        return null;
+    }
+
     /// `cx.programSubscriptionStart` (version 1.14): declaration `i`'s start
     /// applied to `send`. The start is a lambda of this module, lowered
     /// where its declaration's other code is; what it captures from the
@@ -19278,6 +19394,10 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directCommand(key);
     }
 
+    fn programPure(impl: *anyopaque, part: M.Program.Part) error{ OutOfMemory, Reported }!void {
+        if (!try lowerer(impl).directPure(part)) return error.Reported;
+    }
+
     fn directPlan(l: *Lowerer) ?*const Direct.Plan {
         const pc = l.program_now orelse return null;
         const d = pc.direct orelse return null;
@@ -19570,6 +19690,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
         .program_command = programCommand,
+        .program_pure = programPure,
         .program_rows = programRows,
         .program_root_row = programRootRow,
         .program_model_cell = programModelCell,

@@ -400,6 +400,11 @@ artifact's shape and differs by platform â `node` has none.
   `invalid_html_shell`, reported against the template at `1:1` with no excerpt. A template that
   cannot be read is the same code, reported against the manifest that named it. More than one
   occurrence is allowed â it is the author's page.
+  *Amended 2026-10-29* (`prerender.md` §5.3, slice P1): a third placeholder, `{{view}}`, is where
+  a prerendering build writes the program's first render, and it must occur exactly once in such a
+  build's template (`invalid_html_shell` otherwise, against the template at `1:1`); every other
+  build replaces it with nothing. It is replaced last, so nothing the program renders is read as a
+  placeholder.
 - **The output.** It is written as `index.html` at the root of `--out`, through `pending` like every
   other output, so rule 2's folding check, the `_manifest.txt` record and stale-file removal all
   apply to it unchanged. **`index.html` needs no `_`**: rule 1 is about names a MODULE can take, and

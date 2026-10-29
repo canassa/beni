@@ -1,0 +1,59 @@
+-- The popup `init` closes (docs/design/prerender.md §1, §4.1): an arm the
+-- first model hides is not in the page, and in its place stands the
+-- comment `<!--0-->`, its ordinal among the unit's eager arms in document
+-- order; the arm inside it writes nothing at all, and the arm after it,
+-- shown, is written, its ordinal 2. Opening the popup on the page the
+-- client mounted makes it from its template, as on a page with no view.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    pinned : Bool
+    title : String
+
+
+type Msg
+    = Toggle
+    | Pin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+        Pin →
+            { model | pinned = not model.pinned }
+
+
+view : Model → Html Msg
+view model =
+    <main data-role="app">
+        <button data-role="toggle" onClick={Toggle}>Menu</button>
+        {if model.open then
+            <div data-role="popup">
+                <p>{model.title}</p>
+                <button data-role="pin" onClick={Pin}>Pin</button>
+                {if model.pinned then <span>pinned</span> else <></>}
+            </div>
+         else
+            <></>
+        }
+        {if model.open then <></> else <p data-role="closed">Closed</p>}
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { open = False, pinned = True, title = "Settings" }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

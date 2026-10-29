@@ -1,0 +1,48 @@
+-- load
+<body>
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Menu"</button>
+      ""
+      <p data-role="closed">"Closed"</p>
+    </main>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Menu"</button>
+      <div data-role="popup">
+        <p>"Settings"</p>
+        <button data-role="pin">"Pin"</button>
+        <span>"pinned"</span>
+      </div>
+      ""
+    </main>
+  </div>
+</body>
+-- click [data-role=pin]
+<body>
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Menu"</button>
+      <div data-role="popup">
+        <p>"Settings"</p>
+        <button data-role="pin">"Pin"</button>
+        ""
+      </div>
+      ""
+    </main>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main data-role="app">
+      <button data-role="toggle">"Menu"</button>
+      ""
+      <p data-role="closed">"Closed"</p>
+    </main>
+  </div>
+</body>

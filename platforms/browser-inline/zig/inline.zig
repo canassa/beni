@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 19 },
+    .targets = .{ .major = 1, .minor = 20 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -96,6 +96,15 @@ pub const lowering: m.Lowering = .{
         .{ .name = "loadAllShapedConst", .arity = 4 },
         .{ .name = "loadShapedPlannedConst", .arity = 5 },
         .{ .name = "loadAllShapedPlannedConst", .arity = 4 },
+        // The string form (`prerender.md` §4.3): a text as an element's
+        // content holds it, one in a `pre`, a `textarea` or a `listing`, and
+        // an attribute's value, quoted.
+        .{ .name = "escape", .arity = 1 },
+        .{ .name = "escapePre", .arity = 1 },
+        .{ .name = "escapeAttribute", .arity = 1 },
+        // `(root)`: the prerendered unit below the mount element, taken out
+        // of the page (`prerender.md` §11, slice P1).
+        .{ .name = "unprerender", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -114,6 +123,7 @@ pub const lowering: m.Lowering = .{
     .arm_fields = true,
     .effects = .{ .sub = "Sub", .cmd = "Cmd" },
     .no_markup_values = no_markup_values,
+    .prerenders = true,
 };
 
 const no_markup_values =
@@ -187,9 +197,17 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     }
     const index = p.view_root.?;
     const r = tree.root(index);
+    // The prerender tree (`prerender.md` §3.1, §4): `init` and `view` pure,
+    // or the build is refused, then the render function in the mount's
+    // place.
+    if (cx.build.prerender == .tree) {
+        try cx.programPure(.init);
+        try cx.programPure(.view);
+    }
     var page: Page = .{ .cx = cx, .tree = tree, .p = p, .index = index };
     try page.ctxs.append(cx.arena, .{ .parent = null, .node = .none, .arm = 0, .root = index });
     page.top_nodes = try page.markup(r.node, .{}, 0, true);
+    if (cx.build.prerender == .tree) return page.render(r.node);
     return page.mount(r.node);
 }
 
@@ -220,6 +238,13 @@ const PieceData = struct {
     /// the scope it places the piece in: the parser rebuilds markup by
     /// what is open around it, across the boundary of the piece (#373).
     nodes: []const Html,
+    /// The prerender tree's (`prerender.md` §4.1): the name of the root's
+    /// render function, `<Module>$<declaration>$$render$<n>`, which takes
+    /// the ordinal of the root's first eager arm in the unit, then what the
+    /// factory takes after the elements; and how many eager arms the root
+    /// has.
+    render: ?[]const u8 = null,
+    arms: u32 = 0,
 };
 
 /// A constructor the root's events send, its fields, and the buckets of the
@@ -401,6 +426,27 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         try cx.pieceExport(base, try js.arrow(all.items, body));
         root_name = base;
     }
+    // The prerender tree's render function of the root (`prerender.md`
+    // §4.1), beside its factory and its string.
+    var render_name: ?[]const u8 = null;
+    var arms: u32 = 0;
+    for (pg.writes.items) |w| {
+        if (w.what == .when) arms += 1;
+    }
+    if (cx.build.prerender == .tree) {
+        const rblk = try js.block();
+        const base = try cx.fresh("arm");
+        try cx.pieceViewEnter(rblk, try pg.viewArgs());
+        var rn: Render = .{ .pg = pg, .out = try cx.fresh("html"), .base = base };
+        try rn.unit(rblk);
+        cx.programViewLeave();
+        const render_params = try cx.arena.alloc(m.Name, 1 + holders.len);
+        render_params[0] = base;
+        @memcpy(render_params[1..], holders);
+        const render_base = try std.fmt.allocPrint(a, "{s}$$render${d}", .{ req.decl, req.ordinal });
+        try cx.pieceExport(render_base, try js.arrow(render_params, rblk));
+        render_name = render_base;
+    }
     const data = try a.create(PieceData);
     // The static markup, a piece of its own: every end tag of the top
     // element written, since the program site writes more after it.
@@ -418,6 +464,8 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         .own_row = pg.used_own,
         .table = pg.used_table,
         .handlers = out_handlers,
+        .render = render_name,
+        .arms = arms,
     };
     req.facts.* = .{ .written = true, .data = data };
 }
@@ -465,6 +513,8 @@ fn copyHtml(a: std.mem.Allocator, nodes: []const Html) std.mem.Allocator.Error![
         o.name = try a.dupe(u8, x.name);
         o.attributes = try a.dupe(u8, x.attributes);
         o.children = try copyHtml(a, x.children);
+        o.dynamic = try a.dupe(Dynamic, x.dynamic);
+        o.value = if (x.value) |v| try a.dupe(u8, v) else null;
     }
     return out;
 }
@@ -496,7 +546,25 @@ const Html = struct {
     attributes: []const u8 = "",
     void: bool = false,
     children: []const Html = &.{},
+    /// The context the node's values are evaluated in (`Page.ctxs`): what
+    /// the string form enters to write it (`prerender.md` §4.1).
+    ctx: u32 = 0,
+    /// An element's place (`Write.target`): null for the unit's top
+    /// element.
+    target: ?u32 = null,
+    /// Where in `attributes` each write of an attribute whose value changes
+    /// stands, in the order of the element's items: the string form writes
+    /// the value `init` gives it there.
+    dynamic: []const Dynamic = &.{},
+    /// The value of a `value` attribute written into `attributes`, as the
+    /// program gives it: what an `option` is selected by (`prerender.md`
+    /// §4.1).
+    value: ?[]const u8 = null,
 };
+
+/// A write of an attribute whose value changes, at byte `at` of its
+/// element's `attributes`.
+const Dynamic = struct { at: u32, write: u32 };
 
 /// Where a binding's or an event's values are evaluated: the `view`'s root
 /// (context 0), or an eager arm of a branch in an enclosing context.
@@ -530,8 +598,10 @@ const Write = struct {
     groups: []const u32,
     what: union(enum) {
         text: []const Part,
-        /// `key` null: the control's `value`.
-        prop: struct { value: m.Value.Index, key: ?[]const u8 },
+        /// `key` null: the control's `value`. `attribute`: its name as the
+        /// markup writes it, and `boolean`, whether its value is a `Bool`:
+        /// what the string form writes it as (`prerender.md` §4.1).
+        prop: struct { value: m.Value.Index, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false },
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
@@ -694,7 +764,7 @@ const Page = struct {
                 if (parser.movesText(scope.parent)) return pg.cx.report(n, "the parser moves text written here out of the table");
                 var text: std.ArrayList(u8) = .empty;
                 try escapeText(pg.a(), &text, tree.string(tree.text(n).text));
-                return pg.a().dupe(Html, &.{.{ .kind = .text, .name = text.items }});
+                return pg.a().dupe(Html, &.{.{ .kind = .text, .name = text.items, .ctx = ctx }});
             },
             // An `html` hole among a fragment's children — a view helper's
             // body (§8.4) — is a helper call or an eager `when`, as among an
@@ -727,8 +797,22 @@ const Page = struct {
             break :blk pg.count - 1;
         };
         var attributes: std.ArrayList(u8) = .empty;
-        for (tree.itemsOf(e.items), 0..) |it, i| try pg.item(n, target, ctx, it, e.items.start + @as(u32, @intCast(i)), &attributes);
-        if (facts.void) return .{ .kind = .element, .name = name, .attributes = attributes.items, .void = true };
+        // Each attribute whose value changes, where it stands among the
+        // written ones, and a written `value` (`prerender.md` §4.1).
+        var dynamic: std.ArrayList(Dynamic) = .empty;
+        var value: ?[]const u8 = null;
+        for (tree.itemsOf(e.items), 0..) |it, i| {
+            const before = pg.writes.items.len;
+            if (try pg.item(n, target, ctx, it, e.items.start + @as(u32, @intCast(i)), &attributes)) |v| value = v;
+            if (pg.writes.items.len != before and pg.writes.items[before].what == .prop)
+                try dynamic.append(pg.a(), .{ .at = @intCast(attributes.items.len), .write = @intCast(before) });
+        }
+        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value };
+        if (facts.void) {
+            var out = base;
+            out.void = true;
+            return out;
+        }
         const inner = scope.enter(name);
         const children = tree.childrenOf(e.children);
         if (parser.content(name) != .normal and children.len != 0) return later(pg.cx, n, "the content of an element whose content the parser reads as text");
@@ -746,7 +830,9 @@ const Page = struct {
         } else true;
         if (texts and holes != 0) {
             if (parser.movesText(inner.parent)) return pg.cx.report(n, "the parser moves text written here out of the table");
-            return .{ .kind = .element, .name = name, .attributes = attributes.items, .children = try pg.textOf(target, ctx, children) };
+            var out = base;
+            out.children = try pg.textOf(target, ctx, children);
+            return out;
         }
         var out: std.ArrayList(Html) = .empty;
         for (children) |child| {
@@ -764,7 +850,9 @@ const Page = struct {
             }
             try out.appendSlice(pg.a(), try pg.markup(child, inner, ctx, false));
         }
-        return .{ .kind = .element, .name = name, .attributes = attributes.items, .children = out.items };
+        var element_ = base;
+        element_.children = out.items;
+        return element_;
     }
 
     /// The text of element `n` (`target`), its children texts and holes:
@@ -801,7 +889,7 @@ const Page = struct {
             if (baked.items.len == 0) return &.{};
             var escaped: std.ArrayList(u8) = .empty;
             try escapeText(pg.a(), &escaped, baked.items);
-            return pg.a().dupe(Html, &.{.{ .kind = .text, .name = escaped.items }});
+            return pg.a().dupe(Html, &.{.{ .kind = .text, .name = escaped.items, .ctx = ctx }});
         }
         try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .text = parts.items }, .string = string or parts.items.len > 1 });
         return &.{};
@@ -838,7 +926,7 @@ const Page = struct {
         if (ctx != 0) return later(pg.cx, n, "another module's markup inside an `if` or a `case` of the `view`");
         try pg.pieces.append(pg.a(), .{ .node = n, .target = pg.count, .data = data });
         pg.count += 1 + data.count;
-        return .{ .kind = .piece, .name = data.top, .piece = @intCast(pg.pieces.items.len - 1) };
+        return .{ .kind = .piece, .name = data.top, .piece = @intCast(pg.pieces.items.len - 1), .ctx = ctx };
     }
 
     /// An `html` hole whose value calls a function of the program's own
@@ -931,8 +1019,9 @@ const Page = struct {
 
     /// An attribute or an event of element `n` (`target`): a constant one
     /// written into the markup, one `init` bakes too, any other a write; an
-    /// event recorded for the mount to wire.
-    fn item(pg: *Page, n: m.Node.Index, target: ?u32, ctx: u32, it: m.Item, index: u32, out: *std.ArrayList(u8)) m.Error!void {
+    /// event recorded for the mount to wire. Returns the value of a `value`
+    /// attribute it wrote into the markup, as the program gives it.
+    fn item(pg: *Page, n: m.Node.Index, target: ?u32, ctx: u32, it: m.Item, index: u32, out: *std.ArrayList(u8)) m.Error!?[]const u8 {
         const tree = pg.tree;
         const cx = pg.cx;
         switch (it.kind) {
@@ -957,7 +1046,7 @@ const Page = struct {
                 const ei: u32 = @intCast(pg.events.items.len);
                 try pg.events.append(pg.a(), .{ .node = n, .target = target, .ctx = ctx, .item = it, .index = index, .captures = captures.items });
                 if (captures.items.len != 0) try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .event = ei } });
-                return;
+                return null;
             },
             else => return later(cx, n, "an escape attribute"),
         }
@@ -976,7 +1065,9 @@ const Page = struct {
                 // A control's value in the markup would be its default, not
                 // what it shows: a constant one is a write too.
                 if (stateful) return later(cx, n, "a constant value of a control");
-                return writeAttribute(pg.a(), out, name, it.value.constant, tree);
+                try writeAttribute(pg.a(), out, name, it.value.constant, tree);
+                const c = it.value.constant;
+                return if (std.mem.eql(u8, name, "value") and c.kind == .string) tree.string(c.text) else null;
             },
             .dynamic => {},
             else => return later(cx, n, "this attribute's value"),
@@ -984,7 +1075,8 @@ const Page = struct {
         const v = it.value.dynamic.?;
         const facts = try pg.known(n, cx.programHole(.{ .item = index }));
         if (facts.bake) |b| if (!stateful and property == null) {
-            return writeValue(pg.a(), out, name, b);
+            try writeValue(pg.a(), out, name, b);
+            return if (std.mem.eql(u8, name, "value")) b else null;
         };
         // A boolean attribute whose DOM property has its name, or a
         // property: written through it (§8.2).
@@ -994,7 +1086,8 @@ const Page = struct {
             name
         else
             return later(cx, n, "an attribute that is not a DOM property and whose value changes");
-        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = v, .key = key } }, .stateful = stateful });
+        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = v, .key = key, .attribute = name, .boolean = it.class == .bool } }, .stateful = stateful });
+        return null;
     }
 
     // ---- The mount ----------------------------------------------------
@@ -1078,6 +1171,10 @@ const Page = struct {
             else => try js.name(id),
         };
         try js.constant(body, at, try js.call(try js.name(try cx.runtime("root")), &.{which}));
+        // The client of a prerendering build takes the prerendered unit out
+        // of the page and mounts fresh, in the same task (`prerender.md` §11,
+        // slice P1; hydration is P2a's).
+        if (cx.build.prerender == .client) try js.expression(body, try js.call(try js.name(try cx.runtime("unprerender")), &.{try js.name(at)}));
         const init = try cx.programInit(body);
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
@@ -1437,6 +1534,34 @@ const Page = struct {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
         }
         return js.arrow(&.{id}, body);
+    }
+
+    // ---- The string form (`prerender.md` §4) ---------------------------
+
+    /// The program's render function, in the prerender tree in the mount's
+    /// place (`prerender.md` §4.1): given the route, it evaluates `init` and
+    /// gives the unit's HTML — the static string with each hole's value in
+    /// its place, the arms `init`'s model hides left out.
+    fn render(pg: *Page, view_node: m.Node.Index) m.Error!m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        if (pg.top_nodes.len > 1) return later(cx, view_node, "a `view` of more than one top-level node");
+        if (pg.top_nodes.len == 0 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0)
+            return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
+        const body = try js.block();
+        const route = try cx.fresh("route");
+        const init = try cx.programInit(body);
+        const first_model = if (pg.p.constructor == 1) try js.member(init, "a") else init;
+        pg.model = try cx.fresh("model");
+        if (cx.programModelCell()) {
+            pg.cell = try cx.fresh("cell");
+            try js.constant(body, pg.cell.?, try js.array(&.{first_model}));
+        } else try js.let(body, pg.model, first_model);
+        try cx.programViewEnter(body, try pg.modelRef());
+        var r: Render = .{ .pg = pg, .out = try cx.fresh("html") };
+        try r.unit(body);
+        cx.programViewLeave();
+        return js.arrow(&.{route}, body);
     }
 
     /// What a key's handler is refused by (§8.7): an `update` computed when
@@ -2651,6 +2776,328 @@ const Plan = struct {
     args: []const m.Expr,
     kind: ?[]const u8,
     flags: m.EventFacts,
+};
+
+/// The string form of a unit (`prerender.md` §4.1): code that evaluates
+/// each hole's value as a binding would, in its context, and writes the
+/// unit's HTML into one string, `out`.
+///
+/// It writes every end tag but a void element's. §8.2 leaves out the end
+/// tags the parser closes the same way, which depends on the next sibling;
+/// in the string form a sibling may be an arm `init` hides, and an end tag
+/// written is closed by the parser exactly as one left out would be, so the
+/// tree is §8.2's either way (§4.2).
+const Render = struct {
+    pg: *Page,
+    /// The string, appended to.
+    out: m.Name,
+    /// The constant text written since the last value, not yet appended.
+    pending: std.ArrayList(u8) = .empty,
+    /// The next eager arm's ordinal among the unit's, in document order,
+    /// from `base` — the parameter a piece's render function is handed, the
+    /// ordinal of its first arm in the unit it is written into — or from 0.
+    arm: u32 = 0,
+    base: ?m.Name = null,
+    /// The value of the `select` whose options are being written, and the
+    /// flag that one of them is marked selected by it.
+    select: ?Select = null,
+
+    const Select = struct { value: m.Name, marked: m.Name };
+
+    /// An arm's branch, chosen in `blk` once for the sibling arms of one
+    /// branch.
+    const Taken = struct { ctx: u32, node: m.Node.Index, name: m.Name };
+
+    fn js(r: *Render) m.Js {
+        return r.pg.cx.js;
+    }
+
+    fn text(r: *Render, bytes: []const u8) m.Error!void {
+        try r.pending.appendSlice(r.pg.a(), bytes);
+    }
+
+    /// The constant text written so far appended to the string.
+    fn flush(r: *Render, blk: m.Block) m.Error!void {
+        if (r.pending.items.len == 0) return;
+        const js_ = r.js();
+        try js_.assign(blk, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), try js_.string(try r.pg.a().dupe(u8, r.pending.items))));
+        r.pending.clearRetainingCapacity();
+    }
+
+    /// `e`, a string, appended after the text written so far.
+    fn append(r: *Render, blk: m.Block, e: m.Expr) m.Error!void {
+        try r.flush(blk);
+        const js_ = r.js();
+        try js_.assign(blk, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), e));
+    }
+
+    /// The runtime's function `name` of the string form applied to `v`.
+    fn runtime(r: *Render, name: []const u8, v: m.Expr) m.Error!m.Expr {
+        const js_ = r.js();
+        return js_.call(try js_.name(try r.pg.cx.runtime(name)), &.{v});
+    }
+
+    /// The unit into `blk`: the string, every node of the view, and the
+    /// string returned.
+    fn unit(r: *Render, blk: m.Block) m.Error!void {
+        const js_ = r.js();
+        try js_.let(blk, r.out, try js_.string(""));
+        try r.enter(blk, 0);
+        try r.nodes(blk, r.pg.top_nodes, 0);
+        try r.flush(blk);
+        try js_.@"return"(blk, try js_.name(r.out));
+    }
+
+    /// Context `c` entered: the `let`s of its root that anything written in
+    /// it reads, bound (D-d), and the choices whose only reachable markup is
+    /// empty evaluated, as a binding evaluates them.
+    fn enter(r: *Render, blk: m.Block, c: u32) m.Error!void {
+        const pg = r.pg;
+        var reads: std.ArrayList(m.Value.Index) = .empty;
+        for (pg.writes.items) |w| if (pg.within(w.ctx, c)) try pg.writeReads(w, &reads);
+        for (pg.ctxs.items, 0..) |x, ci| {
+            if (ci == c or x.kind != .call or !pg.within(@intCast(ci), c)) continue;
+            const call = pg.tree.hole(x.node).call orelse continue;
+            for (0..call.args.len) |i| try reads.append(pg.a(), call.args.at(@intCast(i)));
+        }
+        try pg.bindLets(blk, pg.ctxs.items[c].root, reads.items);
+        for (pg.writes.items) |w| if (w.ctx == c and w.what == .observe) {
+            try r.js().expression(blk, try pg.cx.programBranchArm(blk, w.what.observe));
+        };
+    }
+
+    /// The context directly below `c` on the way to `target`, which is
+    /// inside it.
+    fn below(r: *Render, c: u32, target: u32) u32 {
+        var at = target;
+        while (r.pg.ctxs.items[at].parent.? != c) at = r.pg.ctxs.items[at].parent.?;
+        return at;
+    }
+
+    /// `list`, nodes of context `c` or of contexts inside it, into `blk`: a
+    /// run of the markup of one call written in place entered once, an arm
+    /// written when the branch takes it.
+    fn nodes(r: *Render, blk: m.Block, list: []const Html, c: u32) m.Error!void {
+        const pg = r.pg;
+        const cx = pg.cx;
+        var taken: std.ArrayList(Taken) = .empty;
+        var i: usize = 0;
+        while (i < list.len) {
+            const n = list[i];
+            if (n.ctx == c) {
+                try r.node(blk, n, c);
+                i += 1;
+                continue;
+            }
+            const step = r.below(c, n.ctx);
+            const x = pg.ctxs.items[step];
+            switch (x.kind) {
+                .call => {
+                    var end = i + 1;
+                    while (end < list.len and pg.within(list[end].ctx, step)) end += 1;
+                    // The call's arguments are values of the enclosing
+                    // root, evaluated as a binding entering it evaluates them.
+                    if (pg.tree.hole(x.node).call) |call| {
+                        const args = try pg.a().alloc(m.Value.Index, call.args.len);
+                        for (args, 0..) |*v, k| v.* = call.args.at(@intCast(k));
+                        try cx.rootValues(blk, pg.ctxs.items[c].root, args);
+                    }
+                    const args = try cx.programInlineArgs(blk, x.node);
+                    try cx.programInlineEnter(blk, x.node, args, false);
+                    try r.enter(blk, step);
+                    try r.nodes(blk, list[i..end], step);
+                    cx.programInlineLeave();
+                    i = end;
+                },
+                .arm => {
+                    std.debug.assert(n.kind == .element and n.ctx == step);
+                    try r.armOf(blk, n, c, step, &taken);
+                    i += 1;
+                },
+            }
+        }
+    }
+
+    /// Eager arm `step`'s element `n`, in context `c`: written when the
+    /// branch takes the arm, and in its place, when it does not, the
+    /// comment that names its ordinal (`prerender.md` §4.1, §6.3). An arm
+    /// inside it writes nothing then.
+    fn armOf(r: *Render, blk: m.Block, n: Html, c: u32, step: u32, taken: *std.ArrayList(Taken)) m.Error!void {
+        const pg = r.pg;
+        const cx = pg.cx;
+        const js_ = r.js();
+        const x = pg.ctxs.items[step];
+        try r.flush(blk);
+        const branch = for (taken.items) |t| {
+            if (t.ctx == c and t.node == x.node) break try js_.name(t.name);
+        } else blk_: {
+            const name = try cx.fresh("arm");
+            try js_.constant(blk, name, try cx.programBranchArm(blk, x.node));
+            try taken.append(pg.a(), .{ .ctx = c, .node = x.node, .name = name });
+            break :blk_ try js_.name(name);
+        };
+        // Of two arms, the number is the test, as `when`'s: the first arm
+        // is shown while it is falsy. Of more, a comparison.
+        const shown = if (x.arms > 2)
+            try js_.binary(.strict_eq, branch, try js_.number(try std.fmt.allocPrint(pg.a(), "{d}", .{x.arm})))
+        else if (x.arm == 0) try js_.unary(.not, branch) else branch;
+        const ordinal = r.arm;
+        r.arm += 1;
+        const then = try js_.block();
+        try cx.programBranchEager(x.node, x.arm);
+        try r.enter(then, step);
+        try r.element(then, n, step);
+        cx.programInlineLeave();
+        try r.flush(then);
+        const otherwise = try js_.block();
+        const comment = if (r.base) |base|
+            try js_.template(&.{
+                .{ .text = "<!--" },
+                .{ .expr = try js_.binary(.add, try js_.name(base), try js_.number(try std.fmt.allocPrint(pg.a(), "{d}", .{ordinal}))) },
+                .{ .text = "-->" },
+            })
+        else
+            try js_.string(try std.fmt.allocPrint(pg.a(), "<!--{d}-->", .{ordinal}));
+        try r.append(otherwise, comment);
+        try js_.@"if"(blk, shown, then, otherwise);
+    }
+
+    /// One node of context `c`.
+    fn node(r: *Render, blk: m.Block, n: Html, c: u32) m.Error!void {
+        switch (n.kind) {
+            .text => try r.text(n.name),
+            .element => try r.element(blk, n, c),
+            .piece => try r.piece(blk, n),
+        }
+    }
+
+    /// Another module's root, written by the render function its module
+    /// wrote for it, handed the ordinal of its first arm and what the
+    /// program hands its factory.
+    fn piece(r: *Render, blk: m.Block, n: Html) m.Error!void {
+        const pg = r.pg;
+        const cx = pg.cx;
+        const js_ = r.js();
+        const u = pg.pieces.items[n.piece];
+        const holders = try cx.programRootArgs(blk, u.node, pg.model, pg.cell);
+        const args = try pg.a().alloc(m.Expr, 1 + holders.len);
+        args[0] = try js_.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.arm}));
+        @memcpy(args[1..], holders);
+        r.arm += u.data.arms;
+        try r.append(blk, try js_.call(try js_.name(try cx.programPieceName(u.node, u.data.render.?)), args));
+    }
+
+    /// Write `wi`'s value, evaluated into `blk` in context `c` and bound:
+    /// a text as its binding writes it, a property's value.
+    fn value(r: *Render, blk: m.Block, c: u32, wi: u32) m.Error!m.Expr {
+        const pg = r.pg;
+        const cx = pg.cx;
+        const js_ = r.js();
+        const w = pg.writes.items[wi];
+        const root_ = pg.ctxs.items[c].root;
+        const v = switch (w.what) {
+            .text => |parts| v: {
+                var values: std.ArrayList(m.Value.Index) = .empty;
+                for (parts) |part| switch (part) {
+                    .value => |x| try values.append(pg.a(), x),
+                    else => {},
+                };
+                try cx.rootValues(blk, root_, values.items);
+                const shown = if (parts.len == 1 and parts[0] == .value)
+                    try cx.value(parts[0].value)
+                else shown: {
+                    const tp = try pg.a().alloc(m.TemplatePart, parts.len);
+                    for (tp, parts) |*t, part| t.* = switch (part) {
+                        .text => |s| .{ .text = s },
+                        .value => |x| .{ .expr = try cx.value(x) },
+                    };
+                    break :shown try js_.template(tp);
+                };
+                break :v if (w.string) shown else try js_.template(&.{.{ .expr = shown }});
+            },
+            .prop => |x| v: {
+                try cx.rootValues(blk, root_, &.{x.value});
+                break :v try cx.value(x.value);
+            },
+            else => unreachable,
+        };
+        const name = try cx.fresh("value");
+        try js_.constant(blk, name, v);
+        return js_.name(name);
+    }
+
+    /// ` name="value"`, the value a string of `v`, escaped.
+    fn quoted(r: *Render, blk: m.Block, name: []const u8, v: m.Expr) m.Error!void {
+        try r.text(" ");
+        try r.text(name);
+        try r.text("=\"");
+        try r.append(blk, try r.runtime("escapeAttribute", try r.js().template(&.{.{ .expr = v }})));
+        try r.text("\"");
+    }
+
+    /// Element `n` of context `c`: its start tag with every attribute
+    /// `init` gives a value, its text or its children, and its end tag.
+    fn element(r: *Render, blk: m.Block, n: Html, c: u32) m.Error!void {
+        const pg = r.pg;
+        const js_ = r.js();
+        try r.text("<");
+        try r.text(n.name);
+        var at: usize = 0;
+        // A control's value that is its content, or its options'.
+        var content: ?m.Expr = null;
+        var chosen: ?m.Expr = null;
+        for (n.dynamic) |d| {
+            try r.text(n.attributes[at..d.at]);
+            at = d.at;
+            const x = pg.writes.items[d.write].what.prop;
+            const v = try r.value(blk, c, d.write);
+            if (x.key == null and std.mem.eql(u8, n.name, "textarea")) {
+                content = v;
+            } else if (x.key == null and std.mem.eql(u8, n.name, "select")) {
+                chosen = v;
+            } else if (x.boolean) {
+                // A boolean attribute: present when true.
+                try r.flush(blk);
+                const yes = try js_.block();
+                try js_.assign(yes, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), try js_.string(try std.fmt.allocPrint(pg.a(), " {s}", .{x.attribute}))));
+                try js_.@"if"(blk, v, yes, null);
+            } else try r.quoted(blk, x.attribute, v);
+        }
+        try r.text(n.attributes[at..]);
+        // An option whose value is the `select`'s: the first such is
+        // marked selected, as the select's `value` selects it.
+        if (std.mem.eql(u8, n.name, "option")) if (r.select) |s| if (n.value) |own| {
+            try r.flush(blk);
+            const yes = try js_.block();
+            try js_.assign(yes, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), try js_.string(" selected")));
+            try js_.assign(yes, try js_.name(s.marked), try js_.literal(.true));
+            const test_ = try js_.binary(.logical_and, try js_.unary(.not, try js_.name(s.marked)), try js_.binary(.strict_eq, try js_.name(s.value), try js_.string(own)));
+            try js_.@"if"(blk, test_, yes, null);
+        };
+        if (n.target == null and c == 0 and !pg.piece) try r.text(" data-beni");
+        try r.text(">");
+        if (n.void) return;
+        const pre = std.mem.eql(u8, n.name, "pre") or std.mem.eql(u8, n.name, "textarea") or std.mem.eql(u8, n.name, "listing");
+        const escape = if (pre) "escapePre" else "escape";
+        for (pg.writes.items, 0..) |w, wi| {
+            if (w.what != .text or w.target != n.target or w.ctx != c) continue;
+            try r.append(blk, try r.runtime(escape, try r.value(blk, c, @intCast(wi))));
+        }
+        if (content) |v| try r.append(blk, try r.runtime(escape, try js_.template(&.{.{ .expr = v }})));
+        const outer = r.select;
+        if (chosen) |v| {
+            const value_name = try pg.cx.fresh("chosen");
+            try js_.constant(blk, value_name, v);
+            const marked = try pg.cx.fresh("marked");
+            try js_.let(blk, marked, try js_.literal(.false));
+            r.select = .{ .value = value_name, .marked = marked };
+        }
+        try r.nodes(blk, n.children, c);
+        r.select = outer;
+        try r.text("</");
+        try r.text(n.name);
+        try r.text(">");
+    }
 };
 
 fn textHole(kind: m.HoleKind) bool {

@@ -141,6 +141,10 @@ pub const RunOptions = struct {
     /// Another compiler to run instead of the one under test, by absolute
     /// path (`variantExePath`).
     exe: ?[]const u8 = null,
+    /// The child's `PATH`, its one environment variable, when given: a
+    /// prerendering build runs the `node` on it (`prerender.md` §5.1).
+    /// Null: the empty environment, where no `node` is found.
+    path: ?[]const u8 = null,
 };
 
 /// The compiler `build.zig` builds with a variant core (`BENI_VARIANT_EXE`,
@@ -468,6 +472,14 @@ pub const World = struct {
     /// compiler differently too (the corpus walker's `BENI_CASE_TIMEOUT_MS`).
     /// `node <args>…` in the project directory: a script of the test's own
     /// with its arguments, always run (no record covers it).
+    /// A `PATH` that finds the `node` the suite runs programs with, and
+    /// nothing else of the machine's: what a prerendering build is given
+    /// (`RunOptions.path`).
+    pub fn nodePath(world: *World) ![]const u8 {
+        const exe = world.node_exe orelse return error.NodeNotOnPath;
+        return std.fs.path.dirname(exe) orelse ".";
+    }
+
     pub fn runNode(world: *World, args: []const []const u8) !Result {
         const arena = world.arena.allocator();
         const exe = world.node_exe orelse return error.NodeNotOnPath;
@@ -548,7 +560,10 @@ pub const World = struct {
         if (wants_json) try argv.append(arena, "--diagnostics=json");
 
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
-        var result = try spawnAndCapture(arena, world.gpa, world.io, argv.items, cwd, options.timeout_ms);
+        var env = std.process.Environ.Map.init(world.gpa);
+        defer env.deinit();
+        if (options.path) |path| try env.put("PATH", path);
+        var result = try spawnAndCaptureIn(arena, world.io, argv.items, cwd, options.timeout_ms, &env);
         if (wants_json) {
             const trimmed = std.mem.trim(u8, result.stderr, " \r\n");
             if (trimmed.len != 0) {

@@ -1,0 +1,37 @@
+-- A prerendered program's `view` must be pure (docs/design/prerender.md
+-- §3.1): the build computes the page from it and the browser computes the
+-- same first render from it again, and a read of the clock would make the
+-- two differ. `prerender_impure`, at the call.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <p>{Clock.now ⊤}</p>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

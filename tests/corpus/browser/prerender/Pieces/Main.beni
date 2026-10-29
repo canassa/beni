@@ -1,0 +1,47 @@
+-- Another module's view in a prerendered page (docs/design/prerender.md
+-- §4.1): `Counter` writes its render function beside its string and its
+-- factory, and the program's calls it with the ordinal of the piece's
+-- first eager arm in the unit — 1, after the program's own arm — so the arm
+-- the piece hides is `<!--1-->`.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    c : Counter.Model
+
+
+type Msg
+    = Toggle
+    | CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <button data-role="toggle" onClick={Toggle}>Help</button>
+        {if model.open then <p data-role="help">Count to five.</p> else <></>}
+        {Html.map (Counter.view model.c) CounterMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { open = False, c = Counter.init ⊤ }, update = update, view = view }
+        )
+        "root"

@@ -28,6 +28,13 @@
 // development build again as a `--fiber-page` when that build carries the
 // hook: Node starts, and compiles the DOM, once for all of them.
 //
+// A `--html-page=<entry.mjs>@<report.json>` is such a page opened on the
+// page the build wrote — the `index.html` beside the entry file, its body
+// and the body's attributes, its scripts left out, since the driver
+// imports the program itself — where every other page opens on an empty
+// body (docs/design/prerender.md §11, slice P1: a prerendered page holds
+// the program's first render before the program runs).
+//
 // A `--fuzz=<spec.json>@<report.json>` is a run of the page fuzzer
 // (`fuzz.mjs`, docs/design/browser-direct.md §8.3) in the same process:
 // two builds the spec names, replayed against each other on random
@@ -274,7 +281,7 @@ import { Console } from "node:console";
 import { fstatSync, mkdirSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { Writable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -1465,6 +1472,20 @@ function fiberSubscriptions() {
   return null;
 }
 
+// `--html-page`: the page the build wrote, `html`, in place of the empty
+// one — its body's nodes and attributes. Its scripts are left out: the
+// driver imports the program. Under happy-dom with `--parser` the body is
+// parsed by the standard's algorithm (`standardParsing`), as Chrome's
+// `DOMParser` parses it.
+function openPage(html) {
+  const parse = globalThis.__beniParseBody;
+  const parsed = parse === undefined ? new DOMParser().parseFromString(html, "text/html").body : parse(html);
+  for (const script of parsed.querySelectorAll("script")) script.remove();
+  for (const a of parsed.attributes) document.body.setAttribute(a.name, a.value);
+  document.body.replaceChildren(...[...parsed.childNodes].map((n) => document.importNode(n, true)));
+  return null;
+}
+
 // The numbers of the requests no step answered and nothing aborted.
 function pendingRequests() {
   return globalThis.__beniHarness.requests.filter((r) => !r.settled).map((r) => r.n);
@@ -1638,11 +1659,11 @@ const positional = [];
 const pages = [];
 for (const arg of process.argv.slice(2)) {
   const m = arg.match(/^--(dom|chrome|steps|parser|server)=(.+)$/);
-  const p = arg.match(/^--(page|fiber-page|fuzz)=(.+)@(.+)$/);
+  const p = arg.match(/^--(page|fiber-page|html-page|fuzz)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
   else if (arg === "--no-comments") comments = false;
   else if (arg === "--wait-handshakes") options.waitHandshakes = true;
-  else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz" });
+  else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz", html: p[1] === "html-page" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
 }
@@ -2107,7 +2128,7 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
+  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const openPage = ${openPage};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -2147,7 +2168,7 @@ async function released(page, s, why) {
 // One page: load `entry` into a fresh page, run the steps, and resolve to
 // what a run of it alone would give — its exit code, its transcript (stdout)
 // and why it failed (stderr).
-async function runPage(entry, fiber) {
+async function runPage(entry, fiber, html = false) {
   entryFile = resolve(entry);
   const script = [...steps];
   const transcript = [];
@@ -2159,6 +2180,8 @@ async function runPage(entry, fiber) {
   const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
   // The test hook goes in before anything of the program runs.
   if (fiber) await page.run(fiberSubscriptions);
+  // The page the build wrote, before the setup steps and the program.
+  if (html) await page.run(openPage, readFileSync(join(dirname(entryFile), "index.html"), "utf8"));
 
   let shown = null;
   let result = null;
@@ -2282,7 +2305,7 @@ if (pages[0].report === null) {
   await written(process.stderr, r.stderr);
   process.exit(r.code);
 } else {
-  for (const p of pages) writeFileSync(p.report, JSON.stringify(p.fuzz ? await runFuzz(p.entry) : await runPage(p.entry, p.fiber)));
+  for (const p of pages) writeFileSync(p.report, JSON.stringify(p.fuzz ? await runFuzz(p.entry) : await runPage(p.entry, p.fiber, p.html)));
   process.exit(0);
 }
 
@@ -2327,6 +2350,15 @@ async function standardParsing(parserPath) {
     const into = node.tagName === "template" && node.namespaceURI === html ? el.content : el;
     for (const c of (node.tagName === "template" ? node.content : node).childNodes) into.appendChild(build(doc, c));
     return el;
+  };
+  // `openPage`'s parser: the page's `<body>` element, its start tag and
+  // content, parsed where the standard parses it, below `<html>`.
+  globalThis.__beniParseBody = (page) => {
+    const start = page.search(/<body[\s>]/i);
+    const end = page.lastIndexOf("</body>");
+    const text = page.slice(start === -1 ? 0 : start, end === -1 ? page.length : end + "</body>".length);
+    const root = parseFragment(defaultTreeAdapter.createElement("html", html, []), text);
+    return build(globalThis.document, root.childNodes.find((n) => n.tagName === "body"));
   };
   const proto = globalThis.Element.prototype;
   const own = proto.insertAdjacentHTML;

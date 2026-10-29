@@ -1,0 +1,1 @@
+[{"code":"prerender_failed","severity":"error","span":{"file":"Main.beni","start":{"line":38,"col":1},"end":{"line":38,"col":5}},"title":"PRERENDER FAILED","message":"This program prerenders, and its render of the route `/` failed, so the build\nhas no page for it (`docs/design/prerender.md` §5.5):\n\nError: TODO: a label for no clicks"}]

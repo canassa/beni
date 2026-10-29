@@ -352,7 +352,58 @@ pub const Options = struct {
     /// development build; under `release` only when asked for, and then
     /// the one scope-hoisted file has one map of its own (§11.2).
     source_maps: bool = false,
+    /// Which tree of a prerendering build this is (`prerender.md` §5.1,
+    /// switched on by the hidden `--prerender` until slice P3): none, the
+    /// prerender tree, or the client tree with what running the prerender
+    /// tree gave.
+    prerender: Prerender = .none,
 };
+
+/// The trees of a prerendering build (`prerender.md` §5.1).
+pub const Prerender = union(enum) {
+    /// A build that does not prerender: the page shell's `{{view}}` is
+    /// replaced with nothing.
+    none,
+    /// The prerender tree (§5.1 item 1): the lowering writes each program
+    /// site's render function in place of its mount, the entry file is
+    /// `prerender_entry`, which exports the routes and the render function
+    /// and runs nothing, and no page is written — the shell is read and
+    /// checked, so a shell the client build would refuse is refused first.
+    tree,
+    /// The client tree (§5.1 item 3), and what running the prerender tree
+    /// gave: the page's view, or why there is none, which is the build's
+    /// failure.
+    client: Outcome,
+
+    pub const Outcome = union(enum) {
+        /// The HTML of the route `/`, for the shell's `{{view}}`.
+        view: []const u8,
+        /// No `node` on `PATH` (§5.1, `prerender_needs_node`).
+        needs_node,
+        /// The run failed (§5.5, `prerender_failed`): the route with no
+        /// record (null: the route list), and why, in prose.
+        failed: struct { route: ?[]const u8, why: []const u8 },
+    };
+
+    pub fn mode(p: Prerender) beni_markup.Build.Prerender {
+        return switch (p) {
+            .none => .none,
+            .tree => .tree,
+            .client => .client,
+        };
+    }
+};
+
+/// The prerender tree's entry file (`prerender.md` §5.1 item 2): an ES
+/// module that exports `routes`, the list of routes in order, and
+/// `render`, the program's render function, and runs nothing, so an engine
+/// that runs ES modules and nothing else can run it. `_` begins it, as every
+/// name the compiler reserves in an output tree (`backend.md` §2, rule 1).
+pub const prerender_entry = "_prerender.mjs";
+
+/// What a page shell writes where the program's prerendered view goes
+/// (`prerender.md` §5.3).
+pub const view_placeholder = "{{view}}";
 
 pub const Result = struct {
     /// Owned; messages are gpa-owned.
@@ -487,7 +538,7 @@ pub fn run(
         if (entry) |at| try e.emitEntry(at);
     }
     // §2's page shell, beside the entry file, in either layout.
-    if (entry != null) try e.emitShell();
+    if (entry) |at| try e.emitShell(at);
     try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
@@ -4993,7 +5044,7 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz },
+                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode() },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
                 };
@@ -7031,7 +7082,10 @@ const Emitter = struct {
         const runtime: ?*HandFile = if (h.runtime) |x| &h.files[x] else null;
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
-        if (h.start) |s| {
+        // The prerender tree's entry runs nothing (`prerender.md` §5.1).
+        if (e.options.prerender == .tree) {
+            try out.appendSlice(scratch, try e.prerenderExports(main_name));
+        } else if (h.start) |s| {
             const callee = if (s.file) |x| blk: {
                 const f = &h.files[x];
                 break :blk if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
@@ -7041,7 +7095,9 @@ const Emitter = struct {
         const run_name = if (e.suppliedAs("run") != null)
             try e.moduleSpelling(e.runtime_module.?, "run")
         else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        if (e.exportsProgram()) {
+        if (e.options.prerender == .tree) {
+            // No call: the exports above are the whole entry.
+        } else if (e.exportsProgram()) {
             // `boundary.md` §9.12 (c): the hoisted file exports what `run`
             // returns. The bindings are longer than any short name `Rename`
             // spells (8 characters at most), so no hoisted declaration can
@@ -7594,6 +7650,7 @@ const Emitter = struct {
         // move: it is the platform manifest's runtime export, read by
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
+        if (e.options.prerender == .tree) return e.emitPrerenderEntry(module_path, imported);
         const start = try e.startData();
         // `checkEntryExports` has refused the one chain this cannot serve,
         // a runtime module, so `exportsProgram` here means a runtime file.
@@ -7651,6 +7708,39 @@ const Emitter = struct {
         // by `checkEntryFileName`), so the manifest is what a collision
         // would have to name: no beni source asked for this file.
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// The prerender tree's entry file (`prerender.md` §5.1 item 2), named
+    /// `prerender_entry`: `main`, which the lowering made the render
+    /// function, and the routes, exported. It starts nothing: the program
+    /// runtime is not called, so nothing of a page runs.
+    fn emitPrerenderEntry(e: *Emitter, module_path: []const u8, imported: []const u8) !void {
+        const text = if (e.options.release)
+            try std.fmt.allocPrint(e.scratch,
+                \\import{{{s}}}from"./{s}";
+                \\{s}
+                \\
+            , .{ imported, module_path, try e.prerenderExports(imported) })
+        else
+            try std.fmt.allocPrint(e.scratch,
+                \\// Generated by `beni build` (docs/design/prerender.md §5.1): the prerender
+                \\// tree's entry, which runs nothing.
+                \\import {{ {s} }} from "./{s}";
+                \\
+                \\{s}
+                \\
+            , .{ imported, module_path, try e.prerenderExports(imported) });
+        try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// The prerender entry's exports, `main` spelled `main_name`: the routes
+    /// — the one route `/` until the route list (§11, slice P3) — and the
+    /// render function.
+    fn prerenderExports(e: *Emitter, main_name: []const u8) ![]const u8 {
+        return if (e.options.release)
+            std.fmt.allocPrint(e.scratch, "export const routes=[\"/\"],render={s};", .{main_name})
+        else
+            std.fmt.allocPrint(e.scratch, "export const routes = [\"/\"];\nexport const render = {s};", .{main_name});
     }
 
     /// Whether the chain declares `"exports": "program"` (`boundary.md`
@@ -7852,9 +7942,18 @@ const Emitter = struct {
     /// `index.html`. A template that cannot be read is reported against
     /// the manifest that named it; one that never names the entry, against
     /// itself — a page that loads nothing is a build that does nothing.
-    fn emitShell(e: *Emitter) !void {
+    fn emitShell(e: *Emitter, entry: Entry) !void {
         const p = e.options.platform;
-        const html = p.html orelse return;
+        const html = p.html orelse {
+            // A prerendering build writes its page into a shell
+            // (`prerender.md` §5.3): with none, it would write nothing.
+            if (e.options.prerender != .none) return e.reportAtEntry(entry, .invalid_html_shell,
+                \\This program prerenders, and neither its platform nor its `beni.json` names a
+                \\page shell in "html", so the build has no page to write its first render into
+                \\(`docs/design/prerender.md` §5.3).
+            , .{});
+            return;
+        };
         // The app's own root is usually `.`, and a message says `index.html`
         // rather than `./index.html`.
         const here = p.html_root.len == 0 or std.mem.eql(u8, p.html_root, ".");
@@ -7884,9 +7983,58 @@ const Emitter = struct {
         ,
             .{ html_placeholder, html_placeholder, html_placeholder, replacement },
         );
+        // `prerender.md` §5.3: a prerendering build's shell says `{{view}}`
+        // once, where the program mounts; a build that does not prerender
+        // replaces any with nothing.
+        const views = std.mem.count(u8, template, view_placeholder);
+        if (e.options.prerender != .none and views != 1) return e.reportInFile(
+            .invalid_html_shell,
+            .{ .path = path },
+            \\This program prerenders, and its page shell says `{s}` {s}: the build writes
+            \\the program's first render where the shell says `{s}`, once.
+            \\
+            \\Write `{s}` once, inside the element the program mounts at, as its last
+            \\content (`docs/design/prerender.md` §5.3).
+        ,
+            .{ view_placeholder, if (views == 0) "nowhere" else "more than once", view_placeholder, view_placeholder },
+        );
+        const view: []const u8 = switch (e.options.prerender) {
+            .none => "",
+            // The shell is checked and no page written: the client tree
+            // writes it.
+            .tree => return,
+            .client => |outcome| switch (outcome) {
+                .view => |unit| unit,
+                .needs_node => return e.reportAtEntry(entry, .prerender_needs_node,
+                    \\This program prerenders, and the build runs its prerender tree with Node, but
+                    \\there is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`
+                    \\(`docs/design/prerender.md` §5.1).
+                , .{}),
+                .failed => |f| if (f.route) |route| return e.reportAtEntry(entry, .prerender_failed,
+                    \\This program prerenders, and its render of the route `{s}` failed, so the build
+                    \\has no page for it (`docs/design/prerender.md` §5.5):
+                    \\
+                    \\{s}
+                , .{ route, f.why }) else return e.reportAtEntry(entry, .prerender_failed,
+                    \\This program prerenders, and the run of its prerender tree failed before it
+                    \\rendered any route, so the build has no page (`docs/design/prerender.md` §5.5):
+                    \\
+                    \\{s}
+                , .{f.why}),
+            },
+        };
+        // The view last: what the program writes is never read as a
+        // placeholder.
         const with_entry = try std.mem.replaceOwned(u8, e.scratch, template, html_placeholder, replacement);
-        const out = try std.mem.replaceOwned(u8, e.scratch, with_entry, base_placeholder, p.base);
+        const with_base = try std.mem.replaceOwned(u8, e.scratch, with_entry, base_placeholder, p.base);
+        const out = try std.mem.replaceOwned(u8, e.scratch, with_base, view_placeholder, view);
         try e.produce(html_file, out, path);
+    }
+
+    /// `code` at the entry declaration's name: a fault of the program as a
+    /// whole, which no expression of it names (`prerender.md` §9).
+    fn reportAtEntry(e: *Emitter, entry: Entry, code: diagnostic.Code, comptime fmt: []const u8, args: anytype) !void {
+        try e.report(code, e.graph().moduleFile(entry.module), e.bir(entry.module).decl(entry.decl).name_token, fmt, args);
     }
 
     /// `<platform root>/beni.json` of the package that declared the entry

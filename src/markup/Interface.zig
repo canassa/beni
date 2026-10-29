@@ -54,7 +54,10 @@ const std = @import("std");
 /// Version 1.19 adds a branch hole's selector group
 /// (`Program.HoleFacts.selector_group`; `browser-inline.md` §8.2, amended
 /// 2026-10-24, #936).
-pub const version: Version = .{ .major = 1, .minor = 19 };
+/// Version 1.20 adds prerendered pages (`prerender.md` §4.4): the tree a
+/// lowering writes for (`Build.prerender`) and `programPure`, which refuses
+/// an `init` or a `view` that may have an effect.
+pub const version: Version = .{ .major = 1, .minor = 20 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -152,6 +155,11 @@ pub const Lowering = struct {
     /// text as the message, and the markup runtime is not held to the
     /// primitives (§9.4.5). Null: markup is a value, as before.
     no_markup_values: ?[]const u8 = null,
+    /// 1.20 (`prerender.md` §4): the lowering writes a program's render
+    /// function in the prerender tree (`Build.prerender`), so a build of a
+    /// chain that names it may prerender. False: a prerendering build is
+    /// refused.
+    prerenders: bool = false,
 
     pub const Effects = struct { sub: []const u8, cmd: []const u8 };
 };
@@ -1050,6 +1058,16 @@ pub const Build = struct {
     /// a program lowering makes each mounted program's messages reachable
     /// as values from outside the page, for differential fuzzing.
     fuzz: bool = false,
+    /// 1.20 (`prerender.md` §4–§5): which tree of a prerendering build this
+    /// is. `none`: a build that does not prerender, written as before.
+    /// `tree`: the prerender tree, which the build runs to get the page: a
+    /// program lowering returns, in place of the mount, the program's
+    /// render function, which takes the route and gives the unit's HTML.
+    /// `client`: the tree the browser loads, whose page holds the
+    /// prerendered unit.
+    prerender: Prerender = .none,
+
+    pub const Prerender = enum(u8) { none, tree, client, _ };
 };
 
 /// Everything a lowering may do, and there is nothing else.
@@ -1741,6 +1759,15 @@ pub const Context = struct {
     pub fn programCommand(cx: *Context, key: ?u32) Program.Command {
         return cx.vtable.program_command(cx.impl, key);
     }
+
+    /// 1.20 (`prerender.md` §3.1), inside `Lowering.program` only: refuse
+    /// `part` — `init` or `view` — when the checker's inferred rung says it
+    /// may have an effect other than `Debug`'s. The compiler reports
+    /// `prerender_impure` at the call that makes it so, and the lowering
+    /// returns the error; a part that is pure returns.
+    pub fn programPure(cx: *Context, part: Program.Part) error{ OutOfMemory, Reported }!void {
+        return cx.vtable.program_pure(cx.impl, part);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -1956,6 +1983,7 @@ pub const VTable = struct {
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
     program_command: *const fn (impl: *anyopaque, key: ?u32) Program.Command,
+    program_pure: *const fn (impl: *anyopaque, part: Program.Part) error{ OutOfMemory, Reported }!void,
     program_rows: *const fn (impl: *anyopaque) []const u32,
     program_root_row: *const fn (impl: *anyopaque, node: ?Node.Index) ?u32,
     program_model_cell: *const fn (impl: *anyopaque) bool,

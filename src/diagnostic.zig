@@ -476,6 +476,16 @@ pub const Code = enum {
     /// §8.4, amended 2026-10-26): a top-level value computed by an impure
     /// call whose type leaves a variable open where a write could reach it.
     impure_polymorphic_value,
+    /// Appended on 2026-10-29 with prerendered pages (`prerender.md` §9):
+    /// an `init` or a `view` of a prerendered program that may have an
+    /// effect other than `Debug`'s, at the call that makes it so; a render
+    /// that threw, or a run of the prerender tree that gave no record for a
+    /// route, naming the route and quoting what the engine wrote; and a
+    /// prerendered program built where no `node` is on `PATH`. `build`'s,
+    /// all errors.
+    prerender_impure,
+    prerender_failed,
+    prerender_needs_node,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -663,6 +673,9 @@ pub fn title(code: Code) []const u8 {
         .record_may_be_shared => "RECORD MAY BE SHARED",
         .invalid_ownership_summary_size => "INVALID OWNERSHIP SUMMARY SIZE",
         .impure_polymorphic_value => "IMPURE POLYMORPHIC VALUE",
+        .prerender_impure => "IMPURE PRERENDERED PROGRAM",
+        .prerender_failed => "PRERENDER FAILED",
+        .prerender_needs_node => "PRERENDER NEEDS NODE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

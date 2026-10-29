@@ -1,0 +1,26 @@
+-- A prerendering build's shell must say `{{view}}` once
+-- (docs/design/prerender.md §5.3): this one never does, so the page would
+-- hold no view, a build that succeeds and shows nothing.
+-- `invalid_html_shell`, against the shell at 1:1, and Node is never run.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+
+view : Int → Html Msg
+view n = <button data-role="app" onClick={Inc}>{n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"

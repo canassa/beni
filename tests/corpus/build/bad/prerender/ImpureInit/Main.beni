@@ -1,0 +1,42 @@
+-- A prerendered program's `init` must be pure (docs/design/prerender.md
+-- §3.1), and so must every function of the program's module it calls: the
+-- call that reads the clock is in `started`, which `init` calls, and
+-- `prerender_impure` names it there.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    at : Int
+
+
+type Msg
+    = Reset
+
+
+started : ⊤ → Int
+started ⊤ = Clock.now ⊤ - 1
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | at = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.at}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { at = started ⊤ }, update = update, view = view })
+        "root"

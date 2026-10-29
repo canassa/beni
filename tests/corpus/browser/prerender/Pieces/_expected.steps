@@ -1,0 +1,4 @@
+click [data-role=inc]
+click [data-role=inc]
+click [data-role=toggle]
+click [data-role=dec]

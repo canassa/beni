@@ -1,0 +1,45 @@
+-- A prerendered page (docs/design/prerender.md §4.1, §11 slice P1): the
+-- page the build writes holds `init`'s first render — a text hole, a mixed
+-- text, and a `disabled` that `init` makes true — and the client takes it
+-- out and mounts fresh, so the page from the shell with no view and the
+-- prerendered one show the same transcript.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Inc
+    | Dec
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1, label = "Clicked" }
+
+        Dec →
+            { model | count = model.count - 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <p>{model.label}: {model.count} times</p>
+        <output>{model.count}</output>
+        <button data-role="dec" disabled={model.count ≤ 0} onClick={Dec}>-</button>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "Never" }, update = update, view = view })
+        "root"
