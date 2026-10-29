@@ -453,8 +453,8 @@ On a difference, the mount **removes the prerendered unit and mounts fresh**, in
 the browser paints no frame between the two; a development build first writes a `console.warn` that
 names the first element that differs. The program is then exactly the fresh page: no binding is
 attached to an element it was not compiled for. The cost is the prerender's benefit for that page
-load — focus, selection and scroll inside the unit are reset. Whether this, or stopping the page as
-a defect, is right is the owner's decision (§10, question 3).
+load — focus, selection and scroll inside the unit are reset. The owner decided this over stopping the
+page as a defect (§10, question 3, 2026-10-29).
 
 *Amended 2026-10-29, as built in P2a (#1178).* An arm opens where its comment stands, so the
 check covers the comments too, in every build: a comment whose text is a number names an arm;
@@ -590,8 +590,8 @@ guarantee has nothing to hold.
 
 A prerendering build of an `application` with no `"build"."origin"` is `prerender_needs_origin`
 (§9), against the app's `beni.json` at `1:1`, as `invalid_entry_export` is. That is a departure from `browser-tea`'s `application`, whose `init` sees the address with
-its query; a program that reads the query reads it in `onUrlChange`. It is the owner's (§10,
-question 2).
+its query; a program that reads the query reads it in `onUrlChange`. The owner decided it (§10,
+question 2, 2026-10-29).
 
 ### 7.4 From a route to a file
 
@@ -686,7 +686,8 @@ decided and is not a question.
    every `foreign` of core — while the guarantee of §3 is exactly that the two computations agree.
    An engine runs the emitted code, so that agreement stays true by construction. The write-set
    pass's evaluator (`write-sets.md` §9.1) stays narrow on purpose and does not grow into one.
-2. **What does `init` receive on a prerendered page?** I recommend §7.3: the route as the page
+2. ~~**What does `init` receive on a prerendered page?**~~ **Decided** (the owner, 2026-10-29: "go
+   with the recommendation"): §7.3 as written. I recommended §7.3: the route as the page
    carries it, with the origin from `"build"."origin"` and no query or fragment, and the real
    address afterwards as an `onUrlChange` message. The alternative is Elm's: `init` gets the address
    the page was opened at. Then any page opened with a query, a fragment, a `.html` suffix or on a
@@ -694,7 +695,8 @@ decided and is not a question.
    gone for exactly the pages people share. The cost of the recommendation is a departure from
    `browser-tea`'s `application`: a program that reads the query does it in `update`. One source
    still builds on both platforms; it can differ in its first render only.
-3. **What does a page do when its HTML is not what the program would make?** I recommend §6.4: mount
+3. ~~**What does a page do when its HTML is not what the program would make?**~~ **Decided** (the
+   owner, 2026-10-29: "go with the recommendation"): §6.4 as written, built in P2a. I recommended §6.4: mount
    fresh in the same task, with a warning in development. The page is then correct; it loses only
    the prerender's benefit for that load. The causes are outside the program — a browser extension
    that inserts an element, a CDN that rewrites links — and stopping the page as a defect would make
@@ -703,7 +705,8 @@ decided and is not a question.
    2026-10-15). This is not one of that kind: it is not code the compiler could not prove, but a page
    the host changed after the build, found by a check at run time, and the fresh mount is the
    program as written. If you want it to stop instead, it is the same check with a different answer.
-4. **Should `beni serve` prerender on every rebuild?** I recommend yes (§5.2): development then takes
+4. ~~**Should `beni serve` prerender on every rebuild?**~~ **Decided** (the owner, 2026-10-29: "go
+   with the recommendation"): yes, §5.2 as written. I recommended yes (§5.2): development then takes
    the page over as production does, and a hydration fault is found where the developer works. It
    costs one run of the prerender tree per rebuild, measured in P1; if it is slow for a large site, the step is
    to prerender only the routes whose pages changed, not to skip it.
