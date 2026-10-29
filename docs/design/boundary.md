@@ -4732,6 +4732,13 @@ its output and exit code, `Io.js` calls `Task.shutdown` with a deadline of 1 000
 still running — a `Task.spawnDetached` one — is cancelled and cleaned up rather than keeping the
 process alive. A page is not affected: it is alive while it is open.
 
+*As built 2026-10-30 (`plans/runtime-in-beni.md` step 10).* `Io.js` is gone: `finish` and
+`startRead` are beni over `Js` in `Io.beni`. A beni platform module reaches a Node built-in
+module through `process.getBuiltinModule` (`Js.call (Js.global "process") "getBuiltinModule"
+[ Js.from "node:fs/promises" ]`), asked at each call so that a replaced export is seen; the
+rejection handler of a read names the canceller's `AbortError` and the twelve `code`s of
+`FileError`, and throws everything else again (§4.1, `CLAUDE.md` rule 9).
+
 **Nothing else moves.** `Tea`'s command table and policies, `Sub.listen`, `Dom.rendered` and the
 teardown of §9.8.14 are unchanged; the combinators of §17.7 cancel and wait exactly as
 `closeScope` does, so they inherit §9.8.14 (e)'s order and its deadline.
