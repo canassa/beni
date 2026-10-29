@@ -281,7 +281,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
                             leaf;
                         // A built node's own κ at ε is its cells', as for `res` below.
                         const kappa: Cond.Kappas = if (node == leaf) .none else blk: {
-                            const own = try env.shapes.leaf(gpa, env.account(), fp, env.shapes.cells(node));
+                            const own = try env.shapes.leaf(gpa, env.account(), fp, try env.shapes.cellsOf(gpa, env.account(), &env.cells.sets, node));
                             break :blk (try env.conds.kappaSet(gpa, env.charge, .none, node, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
                         };
                         try supplies.append(gpa, .{ .j = j, .k = 0, .node = node, .label = .none, .owned = true, .taken = true, .kappa = kappa });
@@ -464,7 +464,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
     // A built node's own κ at ε is its cells', as a leaf of them reads:
     // its children's conditions are the map's, set where they were built.
     if (res != .none and env.shapes.kind(res) == .node and env.conds.kappaGet(kappas, res) == null) {
-        const own = try env.shapes.leaf(gpa, env.account(), env.shapes.place(res), env.shapes.cells(res));
+        const own = try env.shapes.leaf(gpa, env.account(), env.shapes.place(res), try env.shapes.cellsOf(gpa, env.account(), &env.cells.sets, res));
         kappas = (try env.conds.kappaSet(gpa, env.charge, kappas, res, try env.conds.kappaOf(gpa, env.charge, env.view(), .none, own, false))).ctx;
     }
     return sums.add(env, .{

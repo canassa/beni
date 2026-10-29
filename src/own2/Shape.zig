@@ -148,6 +148,47 @@ pub const Table = struct {
         return t.nodes.items(.cells)[n.int()];
     }
 
+    /// A `positions` node's cell set is lazy (§2.3, #1098): built when a
+    /// reader asks (`cellsOf`), never eagerly at every level of a
+    /// collection. Until then its `cells` is this marker, which no set
+    /// operation accepts.
+    pub const lazy_cells: SetId = .from(std.math.maxInt(u32) - 1);
+
+    pub fn isLazy(t: *const Table, n: NodeId) bool {
+        return t.cells(n) == lazy_cells;
+    }
+
+    /// `n`'s cells, a lazy `positions` node's built from its sides' (each
+    /// built first, on an explicit stack) and kept in its record: a record per
+    /// node built, its unions charged as any.
+    pub fn cellsOf(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
+        if (!t.isLazy(n)) return t.cells(n);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (!t.isLazy(x)) {
+                _ = stack.pop();
+                continue;
+            }
+            const d = t.get(x);
+            // A recast's or a delta's cells are its inner's or base's, lazy
+            // with them; a positions node's its sides'.
+            const l: NodeId = .from(d.a);
+            const r: NodeId = if (d.kind == .positions) .from(d.b) else l;
+            if (t.isLazy(l) or t.isLazy(r)) {
+                if (t.isLazy(l)) try stack.append(gpa, l);
+                if (r != l and t.isLazy(r)) try stack.append(gpa, r);
+                continue;
+            }
+            try account.reserve(.shape, 1);
+            t.nodes.items(.cells)[x.int()] = if (r == l) t.cells(l) else try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
+            _ = stack.pop();
+        }
+        return t.cells(n);
+    }
+
     // ---- the persistent step map ------------------------------------------------
 
     const over_none: u32 = Ids.none_int;
@@ -292,7 +333,7 @@ pub const Table = struct {
         if (try t.unionHas(gpa, account, r, l)) return r;
         const x = @min(l.int(), r.int());
         const y = @max(l.int(), r.int());
-        const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
+        const c = try cellsets.unionWith(gpa, .growth(account), try t.cellsOf(gpa, account, cellsets, l), try t.cellsOf(gpa, account, cellsets, r));
         return t.make(gpa, account, .{ .kind = .@"union", .place = t.place(l), .cells = c, .a = x, .b = y, .reach = .none });
     }
 
@@ -303,7 +344,7 @@ pub const Table = struct {
         if (l == r) return l;
         if (try t.dagHas(gpa, account, .choice, l, r)) return l;
         if (try t.dagHas(gpa, account, .choice, r, l)) return r;
-        const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
+        const c = try cellsets.unionWith(gpa, .growth(account), try t.cellsOf(gpa, account, cellsets, l), try t.cellsOf(gpa, account, cellsets, r));
         return t.make(gpa, account, .{ .kind = .choice, .place = t.place(l), .cells = c, .a = @min(l.int(), r.int()), .b = @max(l.int(), r.int()), .reach = .none });
     }
 
@@ -311,6 +352,15 @@ pub const Table = struct {
     /// balanced `positions` DAG — never deduplicated or absorbed: the same
     /// node on both sides is two positions, which κ reads as `shared`. One
     /// element is itself, so `[ x ]` joined with `[ x ]` stays one position.
+    /// `collect` with the root's cell set its caller accumulated by one
+    /// insertion per item, on the item's lane (§2.3, §4.1, #1098): the
+    /// internal nodes stay lazy.
+    pub fn collectRoot(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, root_cells: SetId) Error!NodeId {
+        const out = try t.collect(gpa, account, cellsets, members);
+        if (t.isLazy(out)) t.nodes.items(.cells)[out.int()] = root_cells;
+        return out;
+    }
+
     pub fn collect(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
@@ -393,8 +443,9 @@ pub const Table = struct {
         // `[*]` past the empty list is `x`'s alone, not a new node per level.
         if (t.kind(r) == .leaf and t.cells(r) == .none) return l;
         if (t.kind(l) == .leaf and t.cells(l) == .none) return r;
-        const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
-        return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
+        _ = cellsets;
+        // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
+        return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
     }
 
     /// Whether `x` is a member of the union DAG `u` (its sides, through
@@ -579,7 +630,7 @@ pub const Table = struct {
     pub fn cellsAt(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, steps: []const Step) Error!SetId {
         var at = n;
         for (steps) |s| at = (try t.proj(gpa, account, places, cellt, at, s)) orelse return .none;
-        return t.cells(at);
+        return t.cellsOf(gpa, account, &cellt.sets, at);
     }
 
     // ---- reach ------------------------------------------------------------------------------
@@ -669,6 +720,8 @@ pub const Table = struct {
 
         /// A member's own cells, filtered in `arrivals` mode: a record each.
         fn own(r: *Reach, m: NodeId) Error!SetId {
+            // A lazy node's cells are its parts', which the reach takes anyway.
+            if (r.t.isLazy(m)) return .none;
             const cellt = r.filter orelse return r.t.cells(m);
             var out: SetId = .none;
             var it = r.sets.iterate(r.t.cells(m));
@@ -1180,16 +1233,17 @@ pub const Table = struct {
                 switch (d.kind) {
                     .leaf => try t.memo_map.put(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
                     .recast => {
-                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
+                        // A lazy node's image is lazy too: its parts' images hold its cells.
+                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
                         try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
                     },
                     .@"union", .choice, .positions => {
-                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
+                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
                         try stack.appendSlice(gpa, &.{ .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
                     },
                     .node, .delta => {
                         // Pre-allocate so a cyclic child finds its image (the knot).
-                        const c = try f(ctx, d.cells);
+                        const c = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells);
                         try account.reserve(.shape, 1);
                         const out: NodeId = .from(t.count());
                         try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
@@ -1331,7 +1385,7 @@ pub const Table = struct {
         // assumption only ever makes an answer more true).
         got.value_ptr.* = leq_assumed;
         try t.leq_provisional.append(gpa, .{ n.int(), m.int() });
-        const ok = try cellt.sets.subset(gpa, .growth(account), t.cells(n), t.cells(m));
+        const ok = try cellt.sets.subset(gpa, .growth(account), try t.cellsOf(gpa, account, &cellt.sets, n), try t.cellsOf(gpa, account, &cellt.sets, m));
         try stack.append(gpa, .{ .n = n, .m = m, .step = 0, .ok = ok });
         return null;
     }
@@ -1695,7 +1749,7 @@ pub const Table = struct {
                 while (m != none) : (m = w.next_member.items[m]) {
                     try w.account.reserve(.inspection, 1);
                     const d = w.t.get(.from(m));
-                    c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, d.cells);
+                    c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, try w.t.cellsOf(w.gpa, w.account, &w.cellt.sets, .from(m)));
                     switch (d.kind) {
                         .leaf => {
                             has_leaf = true;
@@ -1764,7 +1818,7 @@ pub const Table = struct {
         try stack.append(gpa, .{ .node = n, .depth = 0, .step = Step.level });
         while (stack.pop()) |f| {
             if (out.items.len >= bound) return;
-            try out.append(gpa, .{ .depth = f.depth, .step = f.step, .cells = t.cells(f.node) });
+            try out.append(gpa, .{ .depth = f.depth, .step = f.step, .cells = try t.cellsOf(gpa, account, &cellt.sets, f.node) });
             const steps = places.steps(t.place(f.node));
             for (steps.steps) |s| {
                 const c = (try t.proj(gpa, account, places, cellt, f.node, s)) orelse continue;
@@ -1789,8 +1843,8 @@ pub const Table = struct {
 
     fn crossCheckAt(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, joined: NodeId, members: *std.ArrayList(NodeId), depth: u32) Error!void {
         var want: SetId = .none;
-        for (members.items) |m| want = try cellt.sets.unionWith(gpa, .growth(account), want, t.cells(m));
-        const got = t.cells(joined);
+        for (members.items) |m| want = try cellt.sets.unionWith(gpa, .growth(account), want, try t.cellsOf(gpa, account, &cellt.sets, m));
+        const got = try t.cellsOf(gpa, account, &cellt.sets, joined);
         std.debug.assert(try cellt.sets.subset(gpa, .growth(account), want, got));
         std.debug.assert(try cellt.sets.subset(gpa, .growth(account), got, want));
         if (depth == 0) return;
@@ -2451,7 +2505,7 @@ test "collect keeps positions: a repeated member stays two, proj and map keep th
     try testing.expectEqual(Kind.positions, f.shapes.kind(xx));
     try testing.expectEqual(x, try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, x, x));
     const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y });
-    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(f.shapes.cells(xy)));
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, xy)));
     // proj keeps the kind and so the multiplicity: `[*].a` of `[ x, x ]` is
     // `positions(x.a, x.a)`.
     const pa = try f.proj(xx, fa);
@@ -2625,4 +2679,33 @@ test "#1128: a choice is its own kind: interned apart from a union, projected an
     // A projection of a choice is a choice of the projections.
     const p = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, jc, Step.elem)).?;
     try testing.expectEqual(Kind.choice, f.shapes.kind(p));
+}
+
+test "#1098: a collection's internal positions sets are lazy: collect builds none, a reader builds what it asks for" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    var leaves: [64]NodeId = undefined;
+    var all: SetId = .none;
+    for (&leaves, 0..) |*l, i| {
+        const s = try f.site(@intCast(i + 1), list, .list);
+        l.* = try f.shapes.leaf(gpa, &f.account, list, s);
+        all = try f.cells.sets.unionWith(gpa, .growth(&f.account), all, s);
+    }
+    // The root's set given (its caller inserted each item's cells on its
+    // lane): collect makes 63 nodes and reads no set.
+    const before = f.account.growth_by[@backingInt(Ids.Category.set)];
+    const root = try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &leaves, all);
+    try testing.expectEqual(before, f.account.growth_by[@backingInt(Ids.Category.set)]);
+    try testing.expect(!f.shapes.isLazy(root));
+    try testing.expectEqual(all, f.shapes.cells(root));
+    const left: NodeId = .from(f.shapes.get(root).a);
+    try testing.expect(f.shapes.isLazy(left));
+    // Asked, a side's set is built from its own sides, and kept.
+    var half: SetId = .none;
+    for (leaves[0..32]) |l| half = try f.cells.sets.unionWith(gpa, .growth(&f.account), half, f.shapes.cells(l));
+    try testing.expectEqual(half, try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, left));
+    try testing.expect(!f.shapes.isLazy(left));
 }

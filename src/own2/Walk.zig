@@ -249,7 +249,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         const v = frame.locals[u.local];
         if (v.node == .none) continue;
         try stepsOf(env.places, u.path, gpa, &use_steps);
-        var it = env.cells.sets.iterate(env.shapes.cells(v.node));
+        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, v.node));
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try env.charge.reserve(gpa, .inspection, 1);
             var at = pq[1];
@@ -259,7 +259,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     }
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {
-        var it = env.cells.sets.iterate(env.shapes.cells(d.base.node));
+        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node));
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };

@@ -708,7 +708,7 @@ const Resolver = struct {
         while (stack.pop()) |f| {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             if (!r.env.cells.sets.member(try r.reach(f.node), d.int())) continue;
-            const cells = shapes.cells(f.node);
+            const cells = try shapes.cellsOf(r.gpa, r.env.account(), &r.env.cells.sets, f.node);
             // A symbolic cell stands for what is below it only in a leaf: a
             // built node's children are explicit (a view's `[*]` is its
             // `others`), so there it is the object at its own path alone.
@@ -855,7 +855,7 @@ const Resolver = struct {
     fn resolve(r: *Resolver, dm: Demand) Error!Outcome {
         const deep = dm.kind.isDeep();
         const cellt = r.env.cells;
-        const base_cells = if (deep) try r.reach(dm.base.node) else r.env.shapes.cells(dm.base.node);
+        const base_cells = if (deep) try r.reach(dm.base.node) else try r.env.shapes.cellsOf(r.gpa, r.env.account(), &r.env.cells.sets, dm.base.node);
         var out: Outcome = .{ .verdict = .accepted, .accepted = .fresh };
         // The base's cells, in the order the conditions read them.
         var cells: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;

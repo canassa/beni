@@ -2257,6 +2257,14 @@ memo_map   : stamped column NodeId → NodeId within one immutable substitution 
 in two arms is one, the maximum). Every switch on the kind handles `choice` with `union`'s set reading; the
 multiplicity reader (§2.9's primitive) is the only one that tells them apart.
 
+*As built (#1098, first part):* a `positions` node's `cells` is the marker `lazy_cells` until a reader asks
+(`cellsOf`, which builds it from its sides on an explicit stack and keeps it in the record); a recast or a
+delta over a lazy node is lazy with it. No set operation accepts the marker, so an unasked read fails loudly
+in a safety build. `collectRoot` takes the root set its caller accumulated by one insertion per item, on the
+item's lane (a literal), and leaves every internal node lazy; `reach` and the reach aggregates take a lazy
+node's cells from its parts, which they read anyway; every other reader of a node that may be lazy asks
+`cellsOf`. Interning keys a lazy node by the marker, so a node asked once stays one node.
+
 κ is **not** a column of this table, and neither is a use label: no node owns a mutable fact (§2.9).
 `Cond`'s per-value snapshots carry κ (§3.4); `mark` cells carry use labels (§2.2).
 The inverted holder index belongs to `Demands` (S3a), over Cell's persistent set nodes: dense

@@ -447,7 +447,7 @@ pub const Table = struct {
         var i: usize = 0;
         var out: NodeId = while (true) : (i += 1) {
             try env.charge.reserve(gpa, .shape, 1);
-            const here: SetId = if (n == .none) .none else env.shapes.cells(n);
+            const here: SetId = if (n == .none) .none else try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n);
             if (n != .none and env.shapes.kind(n) == .leaf and here != .none) {
                 break try env.shapes.leaf(gpa, env.account(), place, try env.cells.sets.unionWith(gpa, env.charge, here, marks));
             }
@@ -486,7 +486,7 @@ pub const Table = struct {
             try env.charge.reserve(env.gpa, .inspection, 1);
             at = (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, at, s)) orelse return m;
         }
-        var it = env.cells.sets.iterate(env.shapes.cells(at));
+        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, at));
         while (it.next()) |e| {
             const c: CellId = .from(e.key);
             if (env.cells.origin(c) != .mark) continue;
@@ -962,7 +962,7 @@ pub const Table = struct {
                     try n.tag(.node_new);
                     try n.put(@backingInt(d.kind));
                     try n.put(d.place.int());
-                    try n.cellSet(d.cells);
+                    try n.cellSet(try n.env.shapes.cellsOf(n.env.gpa, n.env.account(), &n.env.cells.sets, id));
                     try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
                     // The parts, pushed in reverse.
                     switch (d.kind) {
@@ -1232,7 +1232,7 @@ pub const Table = struct {
                     const e = p.t.supply(f, @intCast(s));
                     var sb: std.Io.Writer.Allocating = .init(arena);
                     try sb.writer.print("supply {d} ", .{e.k + 1});
-                    try p.cellsText(&sb.writer, p.env.shapes.cells(e.node));
+                    try p.cellsText(&sb.writer, try p.env.shapes.cellsOf(p.env.gpa, p.env.account(), &p.env.cells.sets, e.node));
                     try sb.writer.print(" {s}{s}", .{ if (e.owned) "owned" else "borrowed", if (e.taken) " taken" else "" });
                     try p.cond(&sb.writer, try p.env.conds.kappaOf(p.env.gpa, p.env.charge, p.env.view(), e.kappa, e.node, false));
                     if (e.label != .none) {
@@ -1428,7 +1428,7 @@ pub const Table = struct {
                     try stack.appendSlice(p.env.gpa, &.{ .from(d.b), .from(d.a) });
                     continue;
                 }
-                try p.gatherCells(d.cells, d.kind == .recast, texts);
+                try p.gatherCells(try p.env.shapes.cellsOf(p.env.gpa, p.env.account(), &p.env.cells.sets, n), d.kind == .recast, texts);
             }
         }
 
