@@ -131,6 +131,30 @@ const Grafter = struct {
         return n;
     }
 
+    /// `excl` of argument `i` at a template path `p` that crosses `⟲`, null
+    /// for one that does not: the argument at the re-entered place (the
+    /// path before its first `⟲`) read deeply there, and the class `p`
+    /// names in its fold compared across depths (`Cond.foldedRead`).
+    fn foldedArg(g: *Grafter, i: u32, p: PathId) Error!?CondId {
+        const places = g.env.places;
+        var lv: PathId = .none;
+        var at = p;
+        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+            if (places.pathStep(at).kind == .level) lv = at;
+        }
+        if (lv == .none) return null;
+        const prefix = places.pathParent(lv);
+        var post: std.ArrayList(Step) = .empty;
+        defer post.deinit(g.gpa());
+        at = p;
+        while (at != lv) : (at = places.pathParent(at)) try post.append(g.gpa(), places.pathStep(at));
+        std.mem.reverse(Step, post.items);
+        const n = try g.argAt(i, prefix, places.pathPlace(prefix));
+        const k = try g.env.conds.deep(g.gpa(), g.env.charge, g.env.view(), try g.argKappa(i, prefix), n, true);
+        if (i >= g.args.len or g.args[i].node == .none) return k;
+        return try g.env.conds.@"and"(g.gpa(), g.env.charge, k, try g.env.conds.foldedRead(g.gpa(), g.env.charge, g.env.view(), n, post.items));
+    }
+
     fn topLeaf(g: *Grafter, at: PlaceId) Error!NodeId {
         const top = try g.env.cells.top(g.gpa(), g.account());
         return g.env.shapes.leaf(g.gpa(), g.account(), at, try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, top.int(), 0));
@@ -624,6 +648,12 @@ const Grafter = struct {
                 const c: CellId = .from(a.a);
                 const x = g.env.cells.get(c);
                 if (x.origin != .param) return if (x.origin == .result or x.origin == .esc) Cond.yes else Cond.lost;
+                // Through `⟲`, the template path stands for every position of the
+                // argument the fold maps to it (§2.9, #1128): each read where it
+                // stands (`deep` over the argument below the re-entered place, a
+                // superset of those positions), and their arrivals as a multiset
+                // across depths, never each path's read alone.
+                if (try g.foldedArg(x.a, .from(x.b))) |k| return k;
                 const at = g.placeOfCell(c);
                 const n = try g.argAt(x.a, .from(x.b), at);
                 const kappa = try g.argKappa(x.a, .from(x.b));
@@ -1481,4 +1511,57 @@ test "#1149 review: a merge after a backedge's fold is a step the collapsed fold
     try testing.expect(want != got);
     try testing.expectEqual(@as(u8, 1), linkDiff(&x.conds, want, got, 0));
     try testing.expect(x.conds.isCollapsed(got));
+}
+
+test "#1128: a template path through ⟲ compares the argument's arrivals across the depths it folds" {
+    const gpa = testing.allocator;
+    for ([_]bool{ true, false }) |repeat| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        // The class relies on `excl π1·⟲.arg`: every kids list below the root
+        // exclusive. The actual: `T{arg: L0}`, `L0[*] = [ T{arg: K}, T{arg:
+        // L2} ]`, `L2[*] = T{arg: K or K′}` — one kids list at two depths, or
+        // two distinct ones. No single path of the actual holds K twice.
+        const root = try x.places.rootPath(gpa, x.t_place);
+        const down = (try x.places.extend(gpa, .growth(&x.account), (try x.places.extend(gpa, .growth(&x.account), root, x.arg)).?, Place.Step.elem)).?;
+        try testing.expectEqual(Place.StepKind.level, x.places.pathStep(down).kind);
+        const kids = (try x.places.extend(gpa, .growth(&x.account), down, x.arg)).?;
+        const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, kids, 0);
+        const xreq = try x.conds.flat(gpa, x.env().charge, try x.conds.excl(gpa, x.env().charge, p));
+        const c = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = xreq });
+        const k = try x.site(1, x.list);
+        const k2 = if (repeat) k else try x.site(2, x.list);
+        const tOf = struct {
+            fn of(f: *KnotFixture, kidsl: NodeId) !NodeId {
+                return f.shapes.node(testing.allocator, &f.account, f.t_place, .none, try f.one(f.arg, kidsl));
+            }
+        }.of;
+        const listOf = struct {
+            fn of(f: *KnotFixture, i: u32, elems: NodeId) !NodeId {
+                return f.shapes.node(testing.allocator, &f.account, f.list, f.shapes.cells(try f.site(i, f.list)), try f.one(Place.Step.elem, elems));
+            }
+        }.of;
+        const t3 = try tOf(&x, k2);
+        const l2 = try listOf(&x, 3, t3);
+        const t1 = try tOf(&x, k);
+        const t2 = try tOf(&x, l2);
+        const l0 = try listOf(&x, 4, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ t1, t2 }));
+        const arg = try tOf(&x, l0);
+        // The actual's own snapshot: every built node `yes` where it stands.
+        const e = Place.Step.elem;
+        const at = [_]struct { n: NodeId, p: []const Step }{
+            .{ .n = arg, .p = &.{} },                    .{ .n = l0, .p = &.{x.arg} },
+            .{ .n = t1, .p = &.{ x.arg, e } },           .{ .n = t2, .p = &.{ x.arg, e } },
+            .{ .n = k, .p = &.{ x.arg, e, x.arg } },     .{ .n = l2, .p = &.{ x.arg, e, x.arg } },
+            .{ .n = t3, .p = &.{ x.arg, e, x.arg, e } }, .{ .n = k2, .p = &.{ x.arg, e, x.arg, e, x.arg } },
+        };
+        var ak: Cond.Kappas = .none;
+        for (at) |q| ak = try x.conds.kappaSetAt(gpa, x.env().charge, ak, q.p, q.n, Cond.yes);
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
+        try testing.expectEqual(repeat, Cond.Table.fails(applied.xreq));
+    }
 }

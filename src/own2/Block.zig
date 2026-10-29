@@ -608,7 +608,14 @@ const Writer = struct {
         // same after a round trip.
         if (kappas == null) {
             try w.tok(.ref, none);
-        } else try w.ref(.cond, if (conds.kappaGet(cur, p.node)) |k| k.int() else none);
+        } else {
+            // A widened class image's path-multiset obligation (§2.9, §3.6,
+            // #1128) is stored with it, a settled certificate: the reader has no
+            // fold to derive it from.
+            var stored: ?CondId = conds.kappaGet(cur, p.node);
+            if (conds.fold_cond.get(p.node)) |fc| stored = try conds.@"and"(gpa, w.env.charge, stored orelse Cond.yes, fc);
+            try w.ref(.cond, if (stored) |k| k.int() else none);
+        }
         // The projections that lead to a stored κ beyond the node's parts
         // (`entries`), each a position.
         var made: std.ArrayList(Over) = .empty;

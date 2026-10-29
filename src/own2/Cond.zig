@@ -157,6 +157,7 @@ pub const Table = struct {
     /// A folded class's obligation from the path-multiset primitive, by
     /// its image node (`widenValue`, §2.9, #1128).
     fold_cond: stamped.Column(NodeId, CondId) = .{},
+    fold_cond_n: u32 = 0,
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
@@ -955,6 +956,14 @@ pub const Table = struct {
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+        const k = try t.kappaRead(gpa, charge, v, ctx, n, at_summary);
+        // A widened class image owes its path-multiset obligation wherever it
+        // is read, a union's side included (§2.9, #1128).
+        const fc = t.fold_cond.get(n) orelse return k;
+        return t.@"and"(gpa, charge, k, fc);
+    }
+
+    fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
         const stored = t.kappaGet(ctx, n);
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
@@ -1414,8 +1423,53 @@ pub const Table = struct {
             if (!fold.folded.contains(.from(e.key))) continue;
             try charge.reserve(gpa, .inspection, 1);
             try t.fold_cond.put(gpa, .from(e.key), try t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[e.value]));
+            t.fold_cond_n += 1;
         }
         return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null) };
+    }
+
+    /// The path-multiset obligation of the class at `post` when `x` is
+    /// folded (§2.9, *A call instantiates κ(res)*, #1128): a template path
+    /// that crosses `⟲` stands for every position of `x` the fold maps to
+    /// it, so its arrivals there are compared as a multiset across depths —
+    /// a repeat `lost`, distinct arrivals `apart`. `yes` where nothing folds.
+    pub fn foldedRead(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, post: []const Step) Error!CondId {
+        var fold: Shape.Table.Fold = .{};
+        defer fold.deinit(gpa);
+        _ = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
+        if (!fold.merged) return yes;
+        const at = fold.classAt(post) orelse return yes;
+        if (!fold.folded.contains(at)) return yes;
+        const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
+        const a = t.mapGet(per.map, at.int()) orelse return yes;
+        return t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[a]);
+    }
+
+    /// The fold obligations a read of `n` meets at its own position: its
+    /// own, and through a union, choice or positions DAG its sides' (a class
+    /// image rides there beside the class's other members).
+    fn foldCondOf(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
+        if (t.fold_cond_n == 0) return yes;
+        var acc: CondId = yes;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (seen.contains(x)) continue;
+            try seen.put(gpa, x, {});
+            try charge.reserve(gpa, .inspection, 1);
+            if (t.fold_cond.get(x)) |fc| acc = try t.@"and"(gpa, charge, acc, fc);
+            switch (v.shapes.kind(x)) {
+                .@"union", .choice, .positions => {
+                    const d = v.shapes.get(x);
+                    try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                },
+                else => {},
+            }
+        }
+        return acc;
     }
 
     /// A folded class's obligation from its aggregate: a repeat is
@@ -2185,11 +2239,15 @@ pub const Table = struct {
             if (mode == .alternatives and f.len == 0) k = lost;
             // The repeats of a class `widen` opened a collection into are stored,
             // so the block carries them (§2.3, #1120).
-            if (t.fold_cond.get(f.node)) |fc| k = try t.@"and"(gpa, charge, k, fc);
+            // A folded class's obligation, stored so the block carries it: the
+            // class image's own, or its sides' where it rides in a union.
+            k = try t.@"and"(gpa, charge, k, try t.foldCondOf(gpa, charge, v, f.node));
             // A leaf's read is the stored ⊔ the derivation, so a κ no
             // stronger than the derivation stores nothing: what a reader
             // derives there is the same before and after the join.
-            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaOf(gpa, charge, v, .none, f.node, f.summary));
+            // (Against the read without its fold obligation, so the snapshot
+            // stores the obligation itself, #1128.)
+            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, f.node, f.summary));
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });

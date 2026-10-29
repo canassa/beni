@@ -1378,11 +1378,28 @@ pub const Table = struct {
         folded: stamped.Column(NodeId, void) = .{},
         opened: stamped.Column(NodeId, void) = .{},
         merged: bool = false,
+        /// The root's class image, and each class's step to a child class:
+        /// `(image, step word)` → child image (what `classAt` follows).
+        root: NodeId = .none,
+        steps: Ids.FixedDict(2) = .{},
 
         pub fn deinit(f: *Fold, gpa: Allocator) void {
             f.image.deinit(gpa);
             f.folded.deinit(gpa);
             f.opened.deinit(gpa);
+            f.steps.deinit(gpa);
+        }
+
+        /// The class image at `steps` below the root, a `⟲` staying in its
+        /// class (a re-entry is its ancestor's class); null where no source
+        /// position is.
+        pub fn classAt(f: *const Fold, steps: []const Step) ?NodeId {
+            var at = f.root;
+            for (steps) |s| {
+                if (s.kind == .level) continue;
+                at = .from(f.steps.get(.{ at.int(), s.word() }) orelse return null);
+            }
+            return at;
         }
     };
 
@@ -1608,7 +1625,10 @@ pub const Table = struct {
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
             const out = try w.emit(root);
-            if (w.out) |fo| try w.exportFold(fo);
+            if (w.out) |fo| {
+                try w.exportFold(fo);
+                fo.root = out;
+            }
             return out;
         }
 
@@ -1616,12 +1636,23 @@ pub const Table = struct {
         /// image folded when its class has two members or one reached twice.
         fn exportFold(w: *Widen, fo: *Fold) Error!void {
             fo.merged = true;
+            var done: stamped.Column(NodeId, void) = .{};
+            defer done.deinit(w.gpa);
             for (w.seen_order.items) |n| {
                 try w.account.reserve(.inspection, 1);
                 const rep = w.find(n.int());
                 const img = w.image.get(.from(rep)) orelse continue;
                 try fo.image.put(w.gpa, n, img);
                 if (w.opened.contains(n)) try fo.opened.put(w.gpa, n, {});
+                if (!done.contains(img)) {
+                    try done.put(w.gpa, img, {});
+                    var e = w.edge_head.items[rep];
+                    while (e != none) : (e = w.entries.items(.next)[e]) {
+                        try w.account.reserve(.inspection, 1);
+                        const child = w.image.get(.from(w.find(w.entries.items(.child)[e]))) orelse continue;
+                        (try fo.steps.getOrPut(w.gpa, .{ img.int(), w.entries.items(.step)[e] })).value_ptr.* = child.int();
+                    }
+                }
                 if (fo.folded.contains(img)) continue;
                 const many = w.head.items[rep] != w.tail.items[rep] or (w.occurs.get(n) orelse 0) >= 2;
                 if (many) try fo.folded.put(w.gpa, img, {});
