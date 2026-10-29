@@ -2455,6 +2455,19 @@ again on the value itself, so the value reaches its key through the program's di
 tagger makes of `payload`. Before 1.21 such a declaration made the set a `limit`. Only a lowering
 that declares `Lowering.effects` is handed a set, and `inline`, the one that does, targets 1.21.
 
+**Version 1.22** (*added 2026-10-29*, additive, gated on nothing; `prerender.md` §7, slice P3,
+#1194): routes. `Placement.Places.prerender`, a placement whose first argument is a program the
+build prerenders at each route of its second, a `List String` (`Browser.prerender`): a program
+prerenders when `main`'s body is such a call, or reaches one through the first arguments of
+`first` placements, and a call anywhere else is `program_shape`. In every tree but the prerender
+tree the call is compiled as its first argument, and reachability follows neither the callee nor
+the list; in the prerender tree it is called as written, the list checked pure
+(`prerender_impure`), and the entry exports what it gives, `[render, routes]`. In that tree a
+`first` placement around a program call is compiled away whatever its element. `Named.routed`
+marks a constructor whose `init` is handed its route's `Url`, so a prerendering build of it needs
+`"build"."origin"` (`prerender_needs_origin`); `Build.address` is that origin with the base after
+it, its last `/` left out. A lowering that targets 1.21 sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

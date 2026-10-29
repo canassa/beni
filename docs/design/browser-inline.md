@@ -1950,7 +1950,8 @@ browser renders. What they do is `boundary.md` §9.8.13 (c)–(d) and §9.8.17 (
 does not repeat; it says what the `inline` lowering compiles, from which facts, and what it
 refuses. What a prerendered page's `init` receives is `prerender.md` §7.3's, not this section's:
 until slice P3, a prerendering build of a `document` or an `application` is refused at its call,
-class 1.
+class 1. *Amended 2026-10-29 (#1194):* slice P3 lifts that refusal; both prerender, with their
+title (`prerender.md` §7.5) and an application's route (§7.3).
 
 ### 10.1 The modules
 

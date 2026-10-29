@@ -1,0 +1,18 @@
+-- A route whose first segment begins with `_` would name a file of the
+-- compiler's own region of the output (`_main.mjs`, `_core/`) or the
+-- server's (`/_beni/`): `invalid_route`, naming the route and the rule
+-- (docs/design/prerender.md §7.4). A `_` further down is a name like any.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) "root")
+        [ "/", "/blog/_drafts", "/_admin" ]

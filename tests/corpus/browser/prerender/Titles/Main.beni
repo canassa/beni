@@ -1,0 +1,55 @@
+-- A title per page (docs/design/prerender.md §7.5): the shell says
+-- `<title>{{title}}</title>`, and each page the build writes holds its
+-- route's title there, escaped — `&` and `<` as `&amp;` and `&lt;`. The
+-- page is opened at `/cartoons/`, whose file is `cartoons/index.html`, and
+-- the client takes the title over unchanged.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, map, oneOf, s, top)
+
+
+type Page
+    = Home
+    | Cartoons
+    | Missing
+
+
+page : Parser (Page → a) a
+page = oneOf [ map top Home, map (s "cartoons") Cartoons ]
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Changed Url
+
+
+name : Page → String
+name p =
+    case p of
+        Home →
+            "Home"
+
+        Cartoons →
+            "Tom & Jerry <cartoons>"
+
+        Missing →
+            "Missing"
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.application
+            { init = λurl _ → ( Maybe.withDefault (Url.Parser.parse page url) Missing, Cmd.none )
+            , update = λ_ m → ( m, Cmd.none )
+            , view = λp → { title = name p, body = <h1>{name p}</h1> }
+            , subscriptions = λ_ → Sub.none
+            , onUrlRequest = Requested
+            , onUrlChange = Changed
+            }
+        )
+        [ "/", "/cartoons/" ]

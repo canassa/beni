@@ -1,0 +1,152 @@
+-- A blog prerendered at a page per route (docs/design/prerender.md §7): the
+-- routes come from the list of posts, so the build writes `index.html`,
+-- `about.html`, `blog/hello.html` and `blog/second.html`. Each page's
+-- `init` is handed its route's `Url`, made with the project's origin, not
+-- the address the page was opened at (§7.3). The page here is opened at
+-- `/blog/hello?ref=feed#comments`: the prerendered page takes it over with
+-- the route `/blog/hello`, no query and no fragment, and the address, which
+-- differs, comes after the first render as an `onUrlChange` message, whose
+-- write pass shows the query and the fragment — the same page the
+-- client-rendered build makes from the address directly. A click on a link
+-- is a request pushed on the client, with no page load, and `back` returns
+-- to the post. `browser/tea/PrerenderedBlog.beni` is this file, byte for
+-- byte, built for `browser-tea`, where `Browser.prerender` returns the
+-- program as it is; the transcripts differ only where an empty text is
+-- shown as `""` there and as nothing here.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, fragment, map, oneOf, questionMark, s, slash, string, top)
+import Url.Parser.Query as Query
+
+
+type alias Post =
+    slug : String
+    title : String
+
+
+posts : List Post
+posts =
+    [ { slug = "hello", title = "Hello, world" }
+    , { slug = "second", title = "A second post" }
+    ]
+
+
+type Route
+    = Home
+    | About
+    | Article String (Maybe String) (Maybe String)
+    | NotFound
+
+
+route : Parser (Route → a) a
+route =
+    oneOf
+        [ map top Home
+        , map (s "about") About
+        , s "blog"
+            ▷ slash string
+            ▷ questionMark (Query.string "ref")
+            ▷ slash (fragment λf → f)
+            ▷ map λslug → λref → λsection → Article slug ref section
+        ]
+
+
+toRoute : Url → Route
+toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | Refused Navigation.Error
+
+
+type alias Model =
+    key : Navigation.Key
+    route : Route
+
+
+init : Url, Navigation.Key → Model × Cmd Msg
+init url key = ( { key = key, route = toRoute url }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) →
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+
+        ClickedLink (Browser.External _) →
+            ( model, Cmd.none )
+
+        UrlChanged url →
+            ( { model | route = toRoute url }, Cmd.none )
+
+        Refused _ →
+            ( model, Cmd.none )
+
+
+title : Route → String
+title r =
+    case r of
+        Home →
+            "Home"
+
+        About →
+            "About"
+
+        Article slug _ _ →
+            "Post ${slug}"
+
+        NotFound →
+            "Not found"
+
+
+detail : Route → String
+detail r =
+    case r of
+        Article _ ref section →
+            "from "
+                ++ Maybe.withDefault ref "nowhere"
+                ++ ", at "
+                ++ Maybe.withDefault section "the top"
+
+        _ →
+            ""
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = title model.route
+    , body =
+        <main>
+            <nav>
+                <a id="home" href="/">home</a>
+                <a id="about" href="/about">about</a>
+                <a id="hello" href="/blog/hello">hello</a>
+                <a id="second" href="/blog/second">second</a>
+            </nav>
+            <h1>{title model.route}</h1>
+            <p>{detail model.route}</p>
+        </main>
+    }
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.none
+            , onUrlRequest = ClickedLink
+            , onUrlChange = UrlChanged
+            }
+        )
+        ([ "/", "/about" ] ++ List.map posts λpost → "/blog/${post.slug}")

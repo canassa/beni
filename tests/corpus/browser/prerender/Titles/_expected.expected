@@ -1,0 +1,11 @@
+-- url "/cartoons/"
+-- load
+<body>
+  <h1>"Tom & Jerry <cartoons>"</h1>
+</body>
+-- title
+(title: "Tom & Jerry <cartoons>")
+(the DOM did not change)
+-- location
+(location: /cartoons/)
+(the DOM did not change)

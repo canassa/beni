@@ -34,3 +34,28 @@ mountAt page id =
     -- element's id. Where the id is a literal written at the program's call,
     -- the lowering mounts there itself and this is not called.
     Js.to (Js.from λ_ → Js.to (Js.apply (Js.from page) [ Js.from id ]))
+
+
+--| The same program, and a page the build writes for each route of the
+--| list (`docs/design/prerender.md` §7): `index.html` for `/`,
+--| `about.html` for `/about`, `blog/index.html` for `/blog/`. Each page
+--| holds the program's first render for its route, and the program takes
+--| it over when it loads. The build runs Node to render the pages. A
+--| route begins with `/`; its segments hold only ASCII letters, digits,
+--| `-`, `.`, `_` and `~`, are not `.` or `..`, and the first does not begin
+--| with `_`. The list, `init` and `view` must be pure. A `Tea.application`
+--| is handed its route's `Url`, made with the project's
+--| `"build"."origin"`; the address the page was opened at comes after the
+--| first render, as an `onUrlChange` message.
+--|
+--|     main : Program
+--|     main =
+--|         Browser.prerender (Tea.application app) [ "/", "/about" ]
+pub prerender : Program, List String → Program
+prerender page routes =
+    -- Where `main` says so, the build compiles the call away: a page holds
+    -- the program alone. The prerender tree runs it, and its entry reads
+    -- the render function and the routes from what it gives.
+    list = Js.array []
+    List.foldl routes ⊤ λroute _ → Js.to (Js.call list "push" [ Js.from route ])
+    Js.to (Js.array [ Js.from page, list ])

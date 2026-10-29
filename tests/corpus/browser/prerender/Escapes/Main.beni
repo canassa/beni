@@ -50,17 +50,20 @@ view model =
 
 main : Tea.Program
 main =
-    Browser.mountAt
-        (Tea.sandbox
-            { init =
-                λ⊤ →
-                    { text = "a < b & c\r\nd"
-                    , notes = "\nfirst line"
-                    , raw = "x\u{0000}y"
-                    , title = "say \"hi\" & <go>"
-                    }
-            , update = update
-            , view = view
-            }
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init =
+                    λ⊤ →
+                        { text = "a < b & c\r\nd"
+                        , notes = "\nfirst line"
+                        , raw = "x\u{0000}y"
+                        , title = "say \"hi\" & <go>"
+                        }
+                , update = update
+                , view = view
+                }
+            )
+            "root"
         )
-        "root"
+        [ "/" ]

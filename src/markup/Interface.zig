@@ -60,7 +60,11 @@ const std = @import("std");
 /// Version 1.21 adds a subscription whose value reaches its key as a
 /// message, through the dispatcher (`Program.Subscription.message`,
 /// `programSubscriptionMessage`; `browser-inline.md` §10.3, #1163).
-pub const version: Version = .{ .major = 1, .minor = 21 };
+/// Version 1.22 adds routes (`prerender.md` §7): the placement that says a
+/// program prerenders and holds its route list (`Placement.Places.prerender`),
+/// a constructor whose `init` is handed its route (`Named.routed`), and the
+/// origin and base a route's `Url` is made with (`Build.address`).
+pub const version: Version = .{ .major = 1, .minor = 22 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -178,6 +182,10 @@ pub const Named = struct {
     /// constructor that its runtime cannot run (`Browser.hosted` under one
     /// that compiles The Elm Architecture itself).
     refused: ?[]const u8 = null,
+    /// 1.22 (`prerender.md` §7.3): a program constructor whose `init` is
+    /// handed the `Url` of its page's route, so a prerendering build of it
+    /// needs the project's `"build"."origin"` (`prerender_needs_origin`).
+    routed: bool = false,
 };
 
 /// 1.6: a value that places programs, and which of its arguments are them.
@@ -191,6 +199,18 @@ pub const Placement = struct {
         list,
         /// Its first argument (`mountAt`).
         first,
+        /// 1.22 (`prerender.md` §7.2): its first argument, a program, which
+        /// the build prerenders at each route of its second, a `List String`
+        /// (`Browser.prerender`). `main`'s body says so, or a `first`
+        /// placement there whose first argument does, or this call's first
+        /// argument is such a placement; anywhere else the call is refused.
+        /// In every tree but the prerender tree the call is compiled as its
+        /// first argument, and the list is never evaluated; in the prerender
+        /// tree it is called as written, the list checked pure, so `main` is
+        /// what it gives: `[render, routes]`, the render function and the
+        /// routes as an array, which the prerender entry exports. Only a
+        /// lowering that `prerenders` declares one.
+        prerender,
         _,
     };
 };
@@ -1076,6 +1096,13 @@ pub const Build = struct {
     /// `client`: the tree the browser loads, whose page holds the
     /// prerendered unit.
     prerender: Prerender = .none,
+    /// 1.22 (`prerender.md` §7.3): in a prerendering build, the project's
+    /// `"build"."origin"` with its base after it, the base's last `/` left
+    /// out — `https://example.com/app` — which a route is written after to
+    /// make its `Url`. Empty in a build that does not prerender, and in one
+    /// whose project names no origin, which a `Named.routed` program is
+    /// refused for.
+    address: []const u8 = "",
 
     pub const Prerender = enum(u8) { none, tree, client, _ };
 };

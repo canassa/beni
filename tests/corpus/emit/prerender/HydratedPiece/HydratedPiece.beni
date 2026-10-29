@@ -3,6 +3,7 @@
 -- from the page, which lacks the elements of the piece's hidden arm; it is
 -- the slice of the merged table below the top element. `take`'s arms hold
 -- the piece's arm after the program's, numbered in the unit.
+import Browser
 import Html exposing (Html)
 import Tea
 import Widget
@@ -39,4 +40,8 @@ view model =
 
 main : Tea.Program
 main =
-    Tea.sandbox { init = λ⊤ → { open = False, w = { on = False } }, update = update, view = view }
+    Browser.prerender
+        (Tea.sandbox
+            { init = λ⊤ → { open = False, w = { on = False } }, update = update, view = view }
+        )
+        [ "/" ]

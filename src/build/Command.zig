@@ -162,12 +162,28 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .rep_keys = build.rep_keys,
         .source_maps = build.source_maps,
     };
+    // `prerender.md` §5.2: a program prerenders when its `main` says so,
+    // with the lowering's `prerender` placement, in every build of it —
+    // `build`, `--watch` and `serve` alike. The hidden, test-only
+    // `--no-prerender` builds it as if it did not (the corpus compares the
+    // two pages).
+    const lowering = if (loaded.platform.lowering) |name| Emit.findLowering(name) else null;
+    const says: ?Emit.Prerenders = if (build.library or build.no_prerender or lowering == null) null else Emit.prerenders(&session, lowering.?);
     // `prerender.md` §5.1: the prerender tree first, run under Node, and
-    // what it gave handed to the client tree's build, which writes the page
+    // what it gave handed to the client tree's build, which writes the pages
     // or refuses the build.
-    if (build.prerender) {
-        const lowering = if (loaded.platform.lowering) |name| Emit.findLowering(name) else null;
-        if (lowering == null or !lowering.?.prerenders) return fail(stderr, "beni: --prerender needs a platform whose markup lowering prerenders, as browser-inline's does", .{});
+    if (says) |s| {
+        // `"build"."origin"` (`prerender.md` §7.3, `frontend.md` §10.1): what
+        // an application's routes are `Url`s below.
+        const origin: ?[]const u8 = if (app) |m| m.build.origin else null;
+        if (origin) |o| if (!validOrigin(o)) {
+            return fail(stderr, "beni: beni.json's \"build\" \"origin\" must be an http or https origin with no path, as \"https://example.com\", not '{s}'", .{o});
+        };
+        emit_options.origin = origin;
+        emit_options.routed = s.routed;
+        emit_options.app_root = app_root;
+        if (origin) |o| emit_options.address = std.fmt.allocPrint(arena, "{s}{s}", .{ o, std.mem.trimEnd(u8, build.base, "/") }) catch
+            return fail(stderr, "beni: out of memory", .{});
         const tree = prerender(gpa, io, arena, &session, emit_options, options.path, stderr, options.diagnostics == .text) catch |err| switch (err) {
             error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
             error.OutputPath => {
@@ -287,15 +303,26 @@ const node_runner =
     \\";
     \\
     \\const records = process.argv[2];
-    \\for (const route of routes) appendFileSync(records, JSON.stringify({ route, html: render(route) }) + "\n");
+    \\appendFileSync(records, JSON.stringify({ routes }) + "\n");
+    \\for (const route of routes) {
+    \\  const page = render(route);
+    \\  const record = typeof page === "string" ? { route, html: page } : { route, html: page[0], title: page[1] };
+    \\  appendFileSync(records, JSON.stringify(record) + "\n");
+    \\}
     \\
 ;
 
 const node_runner_file = "_node.mjs";
 const records_file = "_records.jsonl";
 
-/// A record of the prerender tree's run.
-const Record = struct { route: []const u8, html: []const u8 };
+/// A record of the prerender tree's run: the first is the route list, each
+/// after it one route's page, a document's with its title.
+const Record = struct {
+    routes: ?[]const []const u8 = null,
+    route: ?[]const u8 = null,
+    html: ?[]const u8 = null,
+    title: ?[]const u8 = null,
+};
 
 /// `prerender.md` §5.1, items 1, 2 and 4: the prerender tree built into a
 /// directory of its own beside `--out`, run under the `node` on `PATH`,
@@ -375,23 +402,40 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
         .exited => |code| code == 0,
         else => false,
     };
-    // The routes, until the route list (slice P3): `/` alone.
-    const routes = [_][]const u8{"/"};
+    const not_records = "Its records file holds a line that is not a record of the prerender tree.";
     var lines = std.mem.splitScalar(u8, bytes, '\n');
-    var view: ?[]const u8 = null;
-    var count: usize = 0;
+    var routes: ?[]const []const u8 = null;
+    var pages: std.ArrayList(Emit.Prerender.Page) = .empty;
     while (lines.next()) |line| {
         if (line.len == 0) continue;
         const record = std.json.parseFromSliceLeaky(Record, arena, line, .{}) catch
-            return .{ .ran = .{ .failed = .{ .route = null, .why = "Its records file holds a line that is not a record of the prerender tree." } } };
-        if (count >= routes.len or !std.mem.eql(u8, record.route, routes[count]))
+            return .{ .ran = .{ .failed = .{ .route = null, .why = not_records } } };
+        if (routes == null) {
+            routes = record.routes orelse return .{ .ran = .{ .failed = .{ .route = null, .why = not_records } } };
+            // A route the build would refuse is refused whatever its render
+            // did (`prerender.md` §7.4): the pages are the routes alone.
+            for (routes.?) |route| if (Emit.routeFault(route) != null) {
+                const all = try arena.alloc(Emit.Prerender.Page, routes.?.len);
+                for (all, routes.?) |*p, r| p.* = .{ .route = r, .html = "" };
+                return .{ .ran = .{ .pages = all } };
+            };
+            continue;
+        }
+        const n = pages.items.len;
+        const route = record.route orelse return .{ .ran = .{ .failed = .{ .route = null, .why = not_records } } };
+        if (n >= routes.?.len or !std.mem.eql(u8, route, routes.?[n]))
             return .{ .ran = .{ .failed = .{ .route = null, .why = "Its records file holds a record of a route the build did not list, or out of the list's order." } } };
-        count += 1;
-        view = record.html;
+        try pages.append(arena, .{ .route = route, .html = record.html orelse return .{ .ran = .{ .failed = .{ .route = null, .why = not_records } } }, .title = record.title });
     }
-    if (exited and count == routes.len) return .{ .ran = .{ .view = view.? } };
+    const listed = routes orelse {
+        // No record at all: the route list threw, or Node did not run it.
+        const why = if (exited) "Node ended with no record of the route list." else try thrown(arena, ran.stderr);
+        return .{ .ran = .{ .failed = .{ .route = null, .why = why } } };
+    };
+    if (exited and pages.items.len == listed.len) return .{ .ran = .{ .pages = pages.items } };
+    if (pages.items.len == listed.len) return .{ .ran = .{ .failed = .{ .route = null, .why = try thrown(arena, ran.stderr) } } };
     const why = if (exited) "Node ended with no record of it." else try thrown(arena, ran.stderr);
-    return .{ .ran = .{ .failed = .{ .route = routes[count], .why = why } } };
+    return .{ .ran = .{ .failed = .{ .route = listed[pages.items.len], .why = why } } };
 }
 
 /// The prerender tree's directory: beside `--out`, never inside it, so no
@@ -446,6 +490,38 @@ fn thrown(arena: Allocator, stderr: []const u8) Allocator.Error![]const u8 {
     }
     const text = std.mem.trim(u8, out.items, "\n ");
     return if (text.len == 0) "Node ended with an error and wrote nothing about it." else text;
+}
+
+/// Whether `origin` is what `"build"."origin"` names (`frontend.md` §10.1):
+/// `http://` or `https://`, a host of ASCII letters, digits, `.` and `-`,
+/// and at most a port — no path, query or fragment, nor anything that
+/// could end the string a page's code holds it in.
+pub fn validOrigin(origin: []const u8) bool {
+    const rest = if (std.mem.startsWith(u8, origin, "https://"))
+        origin["https://".len..]
+    else if (std.mem.startsWith(u8, origin, "http://"))
+        origin["http://".len..]
+    else
+        return false;
+    const colon = std.mem.indexOfScalar(u8, rest, ':');
+    const host = rest[0 .. colon orelse rest.len];
+    if (host.len == 0) return false;
+    for (host) |c| if (!std.ascii.isAlphanumeric(c) and c != '.' and c != '-') return false;
+    if (colon) |at| {
+        const port = rest[at + 1 ..];
+        if (port.len == 0 or port.len > 5) return false;
+        for (port) |c| if (!std.ascii.isDigit(c)) return false;
+    }
+    return true;
+}
+
+test "an origin is a scheme, a host and at most a port" {
+    try std.testing.expect(validOrigin("https://example.com"));
+    try std.testing.expect(validOrigin("http://localhost:8000"));
+    try std.testing.expect(!validOrigin("https://example.com/"));
+    try std.testing.expect(!validOrigin("ftp://example.com"));
+    try std.testing.expect(!validOrigin("https://"));
+    try std.testing.expect(!validOrigin("https://a\"b"));
 }
 
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {

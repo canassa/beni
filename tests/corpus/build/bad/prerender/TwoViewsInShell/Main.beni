@@ -23,4 +23,7 @@ view n = <button data-role="app" onClick={Inc}>{n}</button>
 
 
 main : Tea.Program
-main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root")
+        [ "/" ]

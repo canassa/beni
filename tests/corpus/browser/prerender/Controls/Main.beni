@@ -55,11 +55,14 @@ view model =
 
 main : Tea.Program
 main =
-    Browser.mountAt
-        (Tea.sandbox
-            { init = λ⊤ → { name = "Ada", agree = True, plan = "pro" }
-            , update = update
-            , view = view
-            }
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { name = "Ada", agree = True, plan = "pro" }
+                , update = update
+                , view = view
+                }
+            )
+            "root"
         )
-        "root"
+        [ "/" ]

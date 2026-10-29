@@ -416,12 +416,12 @@ pub const Build = struct {
     /// `js/RepKeys.zig`). What the corpus pins them by. It changes no
     /// emitted byte.
     rep_keys: bool = false,
-    /// `--prerender` — **hidden**, for `--allow-debug`'s reason: the build
-    /// writes `index.html` with the program's first render in its shell's
-    /// `{{view}}` (`prerender.md` §5, slices P1 and P2). It is the switch
-    /// until a program says so itself with `Browser.prerender` (slice P3),
-    /// which retires it.
-    prerender: bool = false,
+    /// `--no-prerender` — **hidden**, for `--allow-debug`'s reason: a
+    /// program whose `main` says `Browser.prerender` is built as if it did
+    /// not — the call compiled as its program, no page written but the
+    /// shell with no view (`prerender.md` §5.2). The corpus builds each
+    /// prerendered project both ways and compares the pages' transcripts.
+    no_prerender: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
     watch: bool = false,
@@ -925,7 +925,7 @@ const BuildSpecific = struct {
     check_call_graph: bool = false,
     points_to_largest: bool = false,
     rep_keys: bool = false,
-    prerender: bool = false,
+    no_prerender: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
@@ -1005,10 +1005,10 @@ const BuildSpecific = struct {
             if (value != null) return noValue(name);
             self.check_call_graph = true;
             self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--prerender")) {
-            // A hidden flag (see `Build.prerender`).
+        } else if (std.mem.eql(u8, name, "--no-prerender")) {
+            // A hidden flag (see `Build.no_prerender`).
             if (value != null) return noValue(name);
-            self.prerender = true;
+            self.no_prerender = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--points-to-largest")) {
             // A hidden flag (see `Build.points_to_largest`).
@@ -1062,14 +1062,6 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     if (s.specific.sanitize_lists and s.specific.release) {
         return .{ .usage = .init("beni: --sanitize-lists is for development builds, not --release", .{}) };
     }
-    // The hidden `--prerender` builds once (`prerender.md` §5.2: `serve`
-    // and `--watch` prerender from slice P3, when a program says so).
-    if (s.specific.prerender and (s.specific.watch or std.mem.eql(u8, command, "serve"))) {
-        return .{ .usage = .init("beni: --prerender is for one build, not --watch or serve", .{}) };
-    }
-    if (s.specific.prerender and s.specific.library) {
-        return .{ .usage = .init("beni: --prerender builds a program, not --library", .{}) };
-    }
     const platform = s.specific.platform orelse defaults.platform orelse
         return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
     if (defaults.base) |base| if (!validBase(base)) {
@@ -1102,7 +1094,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .points_to_largest = s.specific.points_to_largest,
         .check_call_graph = s.specific.check_call_graph,
         .rep_keys = s.specific.rep_keys,
-        .prerender = s.specific.prerender,
+        .no_prerender = s.specific.no_prerender,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,

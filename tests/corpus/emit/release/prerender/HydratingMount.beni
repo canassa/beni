@@ -4,6 +4,7 @@
 -- table is by index, and an element no code refers to moves those code
 -- does; `take`, its merge and its checks are in the one file, with no
 -- warning: the development build's prose is not shipped.
+import Browser
 import Html exposing (Html)
 import Tea
 
@@ -32,4 +33,6 @@ view model =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view }
+main =
+    Browser.prerender (Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view })
+        [ "/" ]
