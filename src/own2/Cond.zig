@@ -1475,12 +1475,29 @@ pub const Table = struct {
         return out;
     }
 
-    /// The obligation of the occurrences at `key`: a repeat `lost` (through
-    /// a fold, never `shared`), distinct arrivals `apart`; `yes` where none.
+    /// The obligation of the occurrences at `key` (§2.9's three parts): a
+    /// repeat `lost` (through a fold, never `shared`), distinct arrivals
+    /// `apart`, and `summaryExcl` — `excl c` — for each symbolic arrival at
+    /// a summary path, which stands for many objects whose own separation is
+    /// its holder's (#1199); `yes` where no occurrence maps.
     pub fn classesRead(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: ClassAggs, key: u32) Error!CondId {
         try charge.reserve(gpa, .memo, 1);
         const a = t.mapGet(x.map, key) orelse return yes;
-        return t.foldCond(gpa, charge, cellt, places, t.aggs.items[a]);
+        var k = try t.foldCond(gpa, charge, cellt, places, t.aggs.items[a]);
+        var it = cellt.sets.iterate(t.aggs.items[a].all);
+        while (it.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            const o = cellt.origin(c);
+            if (o.isSymbolic() and o != .top and places.isSummary(.from(cellt.get(c).b))) k = try t.@"and"(gpa, charge, k, try t.excl(gpa, charge, c));
+        }
+        return k;
+    }
+
+    /// The cells occurring at `key`, as a set (their approximation kept).
+    pub fn classesCells(t: *const Table, x: ClassAggs, key: u32) SetId {
+        const a = t.mapGet(x.map, key) orelse return .none;
+        return t.aggs.items[a].all;
     }
 
     /// A client walk's result by `(node, key)`, kept across reads and calls:

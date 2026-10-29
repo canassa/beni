@@ -993,10 +993,13 @@ position is a state `(node, canonical path)`.
 - A node's parts and a `positions` node's sides add.
 - A `choice`'s arms take the maximum.
 - A `union` holds its cells at its position as a set, and its sides' structure below it adds.
-- A leaf's symbolic cell or refinement, a `⊤` cell and a recast contribute `⊤` at every canonical
-  path below, so the read there is `lost`, as master reads it. A symbolic projection owes its
-  `summaryExcl` and an `apart` instantiated through `⟲` (§2.9's condition (2)), and the call does not
-  build those yet. The precise version is #1199, due with S3b.
+- A leaf's symbolic cells and refinements contribute their projections at every canonical path
+  below, found by a pair walk over the argument's path and the cell's own path. A `⊤` cell, a recast,
+  or a symbolic cell at another place contributes `⊤`.
+- The read at a key conjoins §2.9's three parts: a repeat is `lost`, distinct arrivals are `apart`,
+  and each symbolic arrival at a summary path owes its `summaryExcl`, `excl c` (#1199).
+- A caller instantiating such an `apart` or `sep` through `⟲` reads that side's cells from the
+  actual's own preimage at the path, never from a recast's shallow cells (#1199).
 
 The states settle by component (Tarjan, explicit stack). A cycle makes every occurrence it and its
 parts hold repeated, which is the least solution of these equations in {absent, one, repeated}. The
@@ -3153,7 +3156,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 930 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 660 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 700 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 650 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
