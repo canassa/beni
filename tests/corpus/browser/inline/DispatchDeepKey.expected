@@ -3,6 +3,7 @@
   <main>
     <button id="go">"go"</button>
     <button id="zero">"zero"</button>
+    <button id="ten">"ten"</button>
     <output>"1"</output>
   </main>
 </body>
@@ -11,6 +12,7 @@
   <main>
     <button id="go">"go"</button>
     <button id="zero">"zero"</button>
+    <button id="ten">"ten"</button>
     <output>"6"</output>
   </main>
 </body>
@@ -19,6 +21,7 @@
   <main>
     <button id="go">"go"</button>
     <button id="zero">"zero"</button>
+    <button id="ten">"ten"</button>
     <output>"11"</output>
   </main>
 </body>
@@ -27,6 +30,16 @@
   <main>
     <button id="go">"go"</button>
     <button id="zero">"zero"</button>
+    <button id="ten">"ten"</button>
     <output>"0"</output>
+  </main>
+</body>
+-- click #ten
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="zero">"zero"</button>
+    <button id="ten">"ten"</button>
+    <output>"42"</output>
   </main>
 </body>

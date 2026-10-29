@@ -3693,13 +3693,11 @@ const Emitter = struct {
     /// subscriptions.
     fn subscribed(prog: *const Writes.Program, k: u32) bool {
         if (prog.subscriptions.class != .set) return false;
-        for (prog.subscriptions.decls) |dcl| {
-            if (dcl.key_index == k) return true;
-            // A value that reaches its key as a message (`browser-inline.md`
-            // §10.3) may reach any key below its constructor.
-            const steps = prog.keys[k].steps;
-            if (dcl.message and steps.len != 0 and steps[0].ctor == dcl.ctor) return true;
-        }
+        // A value that reaches its key as a message (`browser-inline.md`
+        // §10.3) names no key here: it goes through the dispatcher, whose
+        // handler of each key is the program's own, so a root may still
+        // handle that key for its events (`browser/inline/MessageIntoMovedKey`).
+        for (prog.subscriptions.decls) |dcl| if (dcl.key_index == k) return true;
         return false;
     }
 

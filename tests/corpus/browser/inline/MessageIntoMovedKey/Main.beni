@@ -1,0 +1,73 @@
+-- `browser/inline/MainOwnedKeys` with one more subscription, `Sub.on Feed
+-- feed W2Msg`, whose start sends `W2.Write "fed"` when the page mounts
+-- (`docs/design/browser-inline.md` §10.3). `update` splits `W2Msg` again on
+-- the widget's message, so the value reaches its key through the
+-- dispatcher as the message, which calls the program's handler of the key;
+-- `W2`'s root still handles the same key for its own input (§8.4, amended
+-- 2026-10-22). Both reach the venue: "fed" after the load, then what is
+-- typed.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Interval
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { w1 = W1.init ⊤, w2 = W2.init ⊤ }, Cmd.none )
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Tick
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        W1Msg sub →
+            ( { model | w1 = W1.update sub model.w1, w2 = W2.mark model.w2 }, Cmd.none )
+
+        W2Msg sub →
+            ( { model | w2 = W2.update sub model.w2 }, Cmd.none )
+
+        Tick →
+            ( { model | w1 = W1.bump model.w1, w2 = W2.mark model.w2 }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.batch [ Interval.every 1000 Tick, Sub.on Feed feed W2Msg ]
+
+
+type Feed
+    = Feed
+
+
+feed : (W2.Msg → ⊤) → (⊤ → ⊤)
+feed send =
+    send (W2.Write "fed")
+    λ⊤ → ⊤
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+    </div>
