@@ -1,0 +1,21 @@
+-- run: an error `Io.readDir` does not name is a defect, and a defect ends
+-- the program (transparent-effects-proposal.md §16.5, CLAUDE.md rule 9).
+-- The test platform makes the listing fail with `EIO`; the program must
+-- exit 1 with Node's report of that error, never see it as an `Err`, and
+-- print nothing after it. What it logged before stands.
+import Debug
+import Fault
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Fault.failListings "EIO"
+    Debug.log "before the listing" ⊤
+    case Io.readDir "." of
+        Ok _ →
+            Node.print "listed it"
+
+        Err _ →
+            Node.print "an error value"

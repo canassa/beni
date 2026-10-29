@@ -1,0 +1,8 @@
+--! A test platform's one capability: make every later directory listing
+--! fail with an error code of the caller's choosing, to reach the failures
+--! `Io.readDir` names that no program can arrange by itself (`EACCES` when
+--! the tests run as root, `EMFILE`) and the one it does not (`EIO`).
+
+--| From now on, every `fs.promises.readdir` rejects with an error whose
+--| `code` is the given one.
+pub foreign impure failListings : String → ⊤

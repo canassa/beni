@@ -1,0 +1,9 @@
+missing: not found
+a file: not a directory
+through a file: not a directory
+a link to a file: not a directory
+a dangling link: not found
+a loop: symlink loop
+long name: name too long
+nul: invalid path
+a directory: listed 11

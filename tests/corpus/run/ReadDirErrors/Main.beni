@@ -1,0 +1,66 @@
+-- run: `Io.readDir` answers each failure Node documents that a program can
+-- arrange with its own file system with its own constructor of
+-- `Io.FileError` (transparent-effects-proposal.md §16.5, CLAUDE.md rule 9):
+-- a missing directory, a file, a path through a file, a link that points at
+-- itself, a name longer than any file system's and a NUL character, then a
+-- directory that lists. The test platform writes `data/` first.
+import Io exposing (FileError)
+import Node exposing (Program)
+import Tree
+
+
+describe : FileError → String
+describe error =
+    case error of
+        Io.NotFound →
+            "not found"
+
+        Io.PermissionDenied →
+            "permission denied"
+
+        Io.IsADirectory →
+            "is a directory"
+
+        Io.TooLarge →
+            "too large"
+
+        Io.NotADirectory →
+            "not a directory"
+
+        Io.TooManyOpenFiles →
+            "too many open files"
+
+        Io.SymlinkLoop →
+            "symlink loop"
+
+        Io.NameTooLong →
+            "name too long"
+
+        Io.InvalidPath →
+            "invalid path"
+
+
+attempt : String, String → String
+attempt label path =
+    case Io.readDir path of
+        Ok entries →
+            "${label}: listed ${List.length entries}"
+
+        Err error →
+            label ++ ": " ++ describe error
+
+
+main : Program
+main = Io.run λ⊤ →
+    Tree.makeTree ⊤
+    Node.printLines
+        [ attempt "missing" "data/nothing"
+        , attempt "a file" "data/a.txt"
+        , attempt "through a file" "data/a.txt/inside"
+        , attempt "a link to a file" "data/link"
+        , attempt "a dangling link" "data/dangling"
+        , attempt "a loop" "data/loop"
+        , attempt "long name" (String.repeat "a" 4096)
+        , attempt "nul" "a\u{0}b"
+        , attempt "a directory" "data"
+        ]

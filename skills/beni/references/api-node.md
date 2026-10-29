@@ -39,6 +39,13 @@ module Http.Server
   value text : Int, String → Response
   value wait : Server → ⊤  -- suspends
 module Io
+  alias Entry
+    Entry
+  type EntryKind
+    File
+    Directory
+    Symlink
+    Other
   type FileError
     NotFound
     PermissionDenied
@@ -49,6 +56,7 @@ module Io
     NameTooLong
     InvalidPath
     TooLarge
+  value readDir : String → Result FileError (List Entry)  -- suspends
   value readFile : String → Result FileError String  -- suspends
   value run : (⊤ → Program) → Program  -- impure
   value sleep : Int → ⊤  -- suspends

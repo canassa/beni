@@ -1,0 +1,18 @@
+data:
+Z.txt file
+a.txt file
+b.txt file
+dangling symlink
+empty directory
+link symlink
+loop symlink
+sub directory
+é.txt file
+ｱ.txt file
+😀.txt file
+data/sub:
+inner.txt file
+data/empty:
+.keep file
+data/sub/:
+inner.txt file

@@ -1994,21 +1994,16 @@ shape of `readFile`: a suspending read on the calling fiber, one constructor per
 documents for `fs.promises.readdir`, any other error thrown again.
 
 ```elm
-pub readDir : String → Result DirError (List Entry)
+pub readDir : String → Result FileError (List Entry)
 
-pub type Entry = { name : String, kind : EntryKind }
+pub type alias Entry = { name : String, kind : EntryKind }
 
 pub type EntryKind = File | Directory | Symlink | Other
-
-pub type DirError
-    = NotFound          -- ENOENT: no such directory, or a directory on the path is missing
-    | PermissionDenied  -- EACCES, EPERM
-    | NotADirectory     -- ENOTDIR: the path, or a component of it, is a file
-    | TooManyOpenFiles  -- EMFILE, ENFILE
-    | SymlinkLoop       -- ELOOP
-    | NameTooLong       -- ENAMETOOLONG
-    | InvalidPath       -- ERR_INVALID_ARG_VALUE: the path holds a NUL character
 ```
+
+The error is `FileError`, above: constructors of a module share one namespace, and the failures of
+`readdir` are the same ones under the same names (ENOENT is `NotFound`, ENOTDIR `NotADirectory`, and
+so on). `IsADirectory` and `TooLarge` are never the answer, because `readdir` cannot fail either way.
 
 - **Entries are names, not paths.** `name` is the entry's own name, without the directory; the
   caller joins it (`"posts/${entry.name}"`). `.` and `..` are never listed.
@@ -2020,8 +2015,7 @@ pub type DirError
   encoding, which is code point order (not JavaScript's UTF-16 order, which differs above U+FFFF),
   so a data program prints the same listing on every file system and every run. A name the host
   cannot decode as UTF-8 reaches the program with U+FFFD in place of each bad byte.
-- `IsADirectory` and `TooLarge` of `FileError` have no counterpart: `readdir` cannot fail either
-  way. Cancelling the fiber drops the answer; `fs.promises.readdir` takes no `AbortSignal`, so the
+- Cancelling the fiber drops the answer; `fs.promises.readdir` takes no `AbortSignal`, so the
   listing finishes in the background and its result is ignored.
 
 **A defect on Node.** Nothing in `core/Task.js` or a Node primitive catches: a `foreign` that

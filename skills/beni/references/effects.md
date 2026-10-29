@@ -220,7 +220,7 @@ ticker gate tick = Task.forever λ⊤ →
 `main` is evaluated once, when the program starts, and must not wait.
 
 - On `node`, `main = Io.run λ⊤ → …` starts a fiber that can wait: `Io.sleep ms`,
-  `Io.readFile path`, `Http.Server.listen`, `Deferred.wait`.
+  `Io.readFile path`, `Io.readDir path`, `Http.Server.listen`, `Deferred.wait`.
 - On `browser-tea`, work that waits runs in a command's body (`platforms.md`): `Cmd.task`,
   `Cmd.perform`, `Cmd.keyed`. An event handler and `view` must not wait.
 - On `browser`, a handler sends a message and does nothing else.
