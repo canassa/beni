@@ -58,6 +58,9 @@ if (imported === null) {
     case "solid":
       // Solid 2 is an ES module per page; Solid 1 is js-framework-benchmark's IIFE.
       return `${head(subject.name)}<body><div id="main"></div><script ${subject.module === false ? "" : 'type="module" '}src="${subject.src ?? `/out/solid2/${subject.entry}.js`}"></script></body></html>`;
+    // A page written whole, such as one a prerendering build wrote.
+    case "html":
+      return subject.html;
     case "script":
       return `${head(subject.name)}<body>${subject.body === "static" ? staticBody() : ""}<script ${subject.module ? 'type="module" ' : ""}src="${subject.src}"></script></body></html>`;
   }
