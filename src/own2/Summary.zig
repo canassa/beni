@@ -966,6 +966,7 @@ pub const Table = struct {
                     try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
                     // The parts, pushed in reverse.
                     switch (d.kind) {
+                        .view => unreachable, // a summary holds no views: blocks force them at publish (§2.11)
                         .leaf => {},
                         .node => try stack.append(n.env.gpa, .{ .kind = .overs, .id = d.a, .at_summary = at_summary, .cur = cur }),
                         .delta => {
@@ -1401,6 +1402,11 @@ pub const Table = struct {
                 const d = env.shapes.get(n);
                 switch (d.kind) {
                     .leaf, .recast => {},
+                    .view => {
+                        var b = a;
+                        b.n = try env.shapes.force(env.gpa, env.account(), n);
+                        try stack.append(env.gpa, b);
+                    },
                     .@"union", .choice, .positions => {
                         try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
                         try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });

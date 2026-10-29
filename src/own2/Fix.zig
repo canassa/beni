@@ -2417,6 +2417,7 @@ fn snapshotYes(f: *Fixture, n: NodeId, path: *std.ArrayList(Step), k: *Cond.Kapp
     const gpa = testing.allocator;
     const d = f.shapes.get(n);
     switch (d.kind) {
+        .view => unreachable, // the fixtures make no views
         .node, .delta => {
             k.* = try f.conds.kappaSetAt(gpa, f.charge(), k.*, path.items, n, Cond.yes);
             var it = f.shapes.overEntries(if (d.kind == .node) d.a else d.b);

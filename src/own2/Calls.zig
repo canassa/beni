@@ -246,7 +246,7 @@ const Pre = struct {
                 var it = shapes.overEntries(over);
                 while (it.next()) |e| try w.child(st.path, e.step, e.node);
                 if (d.kind == .delta) {
-                    const base: NodeId = .from(d.a);
+                    const base = try shapes.force(gpa, w.env.account(), .from(d.a));
                     if (shapes.kind(base) == .node) {
                         var bt = shapes.overEntries(shapes.get(base).a);
                         while (bt.next()) |e| if (shapes.overGet(d.b, e.step) == null) try w.child(st.path, e.step, e.node);
@@ -268,6 +268,8 @@ const Pre = struct {
                 if (!st.below) try w.addAll(st.path, try shapes.cellsOf(gpa, w.env.account(), &w.env.cells.sets, st.node), false);
                 try w.unionSides(st.node, st.path);
             },
+            // A view is its answer at the same path: one part (§2.11).
+            .view => try w.part(try shapes.force(gpa, w.env.account(), st.node), st.path, st.below),
             .choice, .positions => {
                 max = d.kind == .choice;
                 try w.part(.from(d.a), st.path, st.below);
@@ -307,6 +309,8 @@ const Pre = struct {
                 .@"union" => try stack.appendSlice(gpa, &.{ .from(shapes.get(m).a), .from(shapes.get(m).b) }),
                 .choice, .positions => try w.part(m, path, false),
                 .node, .delta, .leaf, .recast => try w.part(m, path, true),
+                // A side that is a view stands for its answer (§2.11).
+                .view => try stack.append(gpa, try shapes.force(gpa, w.env.account(), m)),
             }
         }
     }
@@ -590,6 +594,7 @@ const Grafter = struct {
                 },
                 .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .exit = false }),
                 .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .exit = false }, .{ .node = .from(d.b), .exit = false } }),
+                .view => unreachable, // a callee's template: summaries are published forced (§2.11)
             }
         }
         return true;
@@ -759,6 +764,7 @@ const Grafter = struct {
                 },
                 .recast => try kids.append(g.gpa(), .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }),
                 .@"union", .choice, .positions => try kids.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
+                .view => unreachable, // a callee's template: summaries are published forced (§2.11)
             }
             var k = kids.items.len;
             while (k > 0) {
@@ -851,6 +857,7 @@ const Grafter = struct {
                 },
                 .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .parent = me, .expanded = false }),
                 .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .parent = me, .expanded = false }, .{ .node = .from(d.b), .parent = me, .expanded = false } }),
+                .view => unreachable, // a callee's template: summaries are published forced (§2.11)
             }
         }
         return g.s.memo.get(root).?;
@@ -922,7 +929,7 @@ const Grafter = struct {
                 rec.b = g.s.memo.get(.from(d.b)).?.int();
                 rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
             },
-            .leaf, .node => unreachable,
+            .leaf, .node, .view => unreachable,
         }
         const k = knots.get(t) orelse try shapes.knot(g.gpa(), g.account());
         shapes.tie(k, rec);
@@ -991,6 +998,7 @@ const Grafter = struct {
                 var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
                 break :blk try shapes.joinChoice(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
             },
+            .view => unreachable, // a callee's template: summaries are published forced (§2.11)
         };
         try g.s.memo.put(g.gpa(), t, out);
     }
@@ -1723,6 +1731,7 @@ fn linkByRootPaths(g: *Grafter, kappa: Cond.Kappas, root: NodeId) !Cond.Kappas {
         defer kids.deinit(gpa);
         const d = shapes.get(f.node);
         switch (d.kind) {
+            .view => unreachable, // the fixtures make no views
             .leaf => {},
             .node, .delta => {
                 if (d.kind == .delta) try kids.append(gpa, .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false });
@@ -2105,6 +2114,7 @@ fn snapshotYes(x: *KnotFixture, n: NodeId, path: *std.ArrayList(Step), ak: *Cond
     const gpa = testing.allocator;
     const d = x.shapes.get(n);
     switch (d.kind) {
+        .view => unreachable, // the fixtures make no views
         .node, .delta => {
             // A cyclic source (a knot) is snapshotted to a bounded depth.
             if (path.items.len > 16) return;

@@ -861,6 +861,12 @@ const Resolver = struct {
                     }
                 },
                 .recast => try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path, .cast = true, .blur = f.blur }),
+                // A view holds what its answer holds, at its path (§2.11).
+                .view => {
+                    var g = f;
+                    g.node = try shapes.force(r.gpa, r.env.account(), f.node);
+                    try stack.append(r.gpa, g);
+                },
                 .@"union", .choice, .positions => {
                     const alt = f.alt or k.kind == .@"union" or k.kind == .choice;
                     try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur }, .{ .node = .from(k.b), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur } });

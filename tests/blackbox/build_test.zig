@@ -8493,6 +8493,103 @@ test "the checker v2's cold run applies no class the warm run stopped at a limit
     try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "main", "growth"));
 }
 
+/// The continuation `owner`'s walk spent, from `dump`, for a source of `n`
+/// statements: the cost-per-call guards below compare it at n and 4n.
+fn continuationFor(w: *World, src: []const u8, owner: []const u8) !u64 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, owner, "growth"));
+    return accountField(dump.stdout, owner, "continuation");
+}
+
+test "the checker v2's call costs are flat per call through chains of calls and linear in a result's depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 *Representation of a view*, the review's
+    // points 2–4, pinned before calls answer views so slice 2b keeps them:
+    // `y_k = pick c y_{k-1} (List.push z k)` (a chain of joins), `y_k = id
+    // y_{k-1}` (an identity tower) and a push through a depth-d path. At n
+    // and 4n calls the caller's continuation is at most 4n's share plus a
+    // tenth; at depths d and 2d at most twice d's plus a tenth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2][3]u64 = undefined;
+    for ([_]u32{ 50, 200 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pick : Bool, List Int, List Int → List Int\npick c a b =\n    if c then a else b\n\n\npub chain : Bool, List Int → Int\nchain c z =\n    y0 = [ 0 ]\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = pick c y{d} (List.push z {d})\n", .{ k, k - 1, k });
+        try src.print(a, "    List.length y{d}\n", .{n});
+        cost[run][0] = try continuationFor(&w, src.items, "chain");
+        src.clearRetainingCapacity();
+        try src.appendSlice(a, "id : List Int → List Int\nid x = x\n\n\npub tower : List Int → List Int\ntower y0 =\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = id y{d}\n", .{ k, k - 1 });
+        try src.print(a, "    List.push y{d} 1\n", .{n});
+        cost[run][1] = try continuationFor(&w, src.items, "tower");
+    }
+    for ([_]u32{ 32, 64 }, 0..) |d, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.print(a, "type alias R{d} =\n    x : List Int\n", .{d});
+        var k = d - 1;
+        while (k >= 1) : (k -= 1) try src.print(a, "\n\ntype alias R{d} =\n    a : R{d}\n", .{ k, k + 1 });
+        try src.appendSlice(a, "\n\ndeepPush : R1 → List Int\ndeepPush r = List.push r");
+        for (1..d) |_| try src.appendSlice(a, ".a");
+        try src.appendSlice(a, ".x 1\n\n\npub caller : R1 → List Int\ncaller r = deepPush r\n");
+        cost[run][2] = try continuationFor(&w, src.items, "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (0..3) |i| {
+        if (cost[1][i] * 10 > cost[0][i] * 44) {
+            std.debug.print("guard {d}: {d} at the first size, {d} at the second\n", .{ i, cost[0][i], cost[1][i] });
+            return error.TestUnexpectedResult;
+        }
+    }
+    try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
+}
+
+test "the checker v2's dump of push chains with an early read is the same at --jobs=1 and --jobs=8" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §3.8, §2.11 *Representation of a view*: eight
+    // chains `x_k = List.push x_{k-1} k`, each with a later read of an
+    // intermediate `x_5`, through a helper call so the chains' groups and
+    // their calls' answers are walked in parallel at `--jobs=8`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "step : List Int, Int → List Int\nstep x k = List.push x k\n");
+    for (1..9) |c| {
+        try src.print(a, "\n\npub chain{d} : List Int → Int\nchain{d} x0 =\n", .{ c, c });
+        for (1..41) |k| try src.print(a, "    x{d} = step x{d} {d}\n", .{ k, k - 1, k });
+        try src.appendSlice(a, "    List.length x5 + List.length x40\n");
+    }
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--jobs=1", "Main.beni" });
+    const many = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--jobs=8", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expect(std.mem.indexOf(u8, one.stdout, "== ownership v2") != null);
+    try testing.expectEqualStrings(one.stdout, many.stdout);
+    try testing.expectEqualStrings(one.stderr, many.stderr);
+}
+
 test "the checker v2 charges an instruction's records to its source lanes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
