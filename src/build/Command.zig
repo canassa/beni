@@ -181,22 +181,22 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // What the build renders with the client tree's diagnostics.
     var extra_late: std.ArrayList(Session.LateItem) = .empty;
     if (data_site and data_config == null) {
-        const item: Session.LateItem = .{ .code = .prerender_needs_data, .file = @enumFromInt(0), .token = 0, .at = .{ .path = app_manifest }, .message =
-        \\This program says `Browser.prerenderData`, so each of its pages is made from a value a
-        \\data program gives, and this project names no data program.
-        \\
-        \\Add one to `"build"`: `"data": { "paths": ["data", "shared"] }`, the paths of a
-        \\program built for `node` whose `main` is `Prerender.pages`
-        \\(`docs/design/prerender.md` §8.2, §8.3).
+        const item: Session.LateItem = .{ .code = .prerender_needs_data, .file = @fromBackingInt(@intCast(0)), .token = 0, .at = .{ .path = app_manifest }, .message =
+            \\This program says `Browser.prerenderData`, so each of its pages is made from a value a
+            \\data program gives, and this project names no data program.
+            \\
+            \\Add one to `"build"`: `"data": { "paths": ["data", "shared"] }`, the paths of a
+            \\program built for `node` whose `main` is `Prerender.pages`
+            \\(`docs/design/prerender.md` §8.2, §8.3).
         };
         _ = session.renderLate(&.{item}, stderr) catch return 2;
         return 1;
     }
     if (data_config != null and !data_site and !build.library and !Emit.mainCalls(&session, "Prerender", "pages")) {
-        extra_late.append(arena, .{ .code = .prerender_data_ignored, .severity = .warning, .file = @enumFromInt(0), .token = 0, .at = .{ .path = app_manifest }, .message =
-        \\This project names a data program in `"build"."data"`, and its `main` does not say
-        \\`Browser.prerenderData`, so the build neither builds nor runs it. Make `main` a
-        \\`Browser.prerenderData`, or take `"data"` out (`docs/design/prerender.md` §8.5).
+        extra_late.append(arena, .{ .code = .prerender_data_ignored, .severity = .warning, .file = @fromBackingInt(@intCast(0)), .token = 0, .at = .{ .path = app_manifest }, .message =
+            \\This project names a data program in `"build"."data"`, and its `main` does not say
+            \\`Browser.prerenderData`, so the build neither builds nor runs it. Make `main` a
+            \\`Browser.prerenderData`, or take `"data"` out (`docs/design/prerender.md` §8.5).
         }) catch return fail(stderr, "beni: out of memory", .{});
     }
     // The data program's build, which lives until the build's last render
@@ -765,7 +765,7 @@ fn failedRun(d: *DataBuild, arena: Allocator, comptime fmt: []const u8, args: an
         \\The build runs it once, under Node, before it writes any page
         \\(`docs/design/prerender.md` §8.3).
     , .{why});
-    const m = d.main orelse return .{ .failed = .{ .code = .prerender_data_failed, .file = @enumFromInt(0), .token = 0, .at = .{ .path = d.dir }, .message = message } };
+    const m = d.main orelse return .{ .failed = .{ .code = .prerender_data_failed, .file = @fromBackingInt(@intCast(0)), .token = 0, .at = .{ .path = d.dir }, .message = message } };
     return .{ .failed = .{ .code = .prerender_data_failed, .file = m.file, .token = m.token, .message = message } };
 }
 
