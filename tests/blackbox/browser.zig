@@ -37,11 +37,11 @@
 //! is about 500 million instructions of a page's 550 to 600 on a TodoMVC-
 //! sized program, and the second page does not pay it again.
 //!
-//! **Run hashes.** A browser build's record line is
-//! `<pass> <node version> <dom> <sha-256>` (`run_hash.lineWith`): the
-//! digest covers what a `run/` one does — the output tree, the golden, the
-//! Node version — plus the DOM's name and checksum, the driver's bytes and
-//! the steps, so a change to any of them runs the page again.
+//! **Run hashes.** A browser build's digest (`run_hash.digestWith`) covers
+//! what a `run/` one does — the output tree, the golden, the Node version —
+//! plus the DOM's name and checksum, the driver's bytes and the steps, so a
+//! change to any of them runs the page again. Chrome (`test-browser`) looks
+//! nothing up and records nothing: every page runs.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -170,8 +170,8 @@ pub fn writePlatform(arena: Allocator, w: *World, h: Harness) !void {
     for (h.platform) |file| try w.write(try std.fs.path.join(arena, &.{ platform_dir, file.name }), file.bytes);
 }
 
-/// What a browser build's record line covers besides the output tree and
-/// the golden (`run_hash.lineWith`).
+/// What a browser build's digest covers besides the output tree and the
+/// golden (`run_hash.digestWith`).
 pub fn page(arena: Allocator, h: Harness, steps: []const u8) !run_hash.Page {
     return .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
         .{ .name = "dom sha-256", .bytes = dom_sha256 },
@@ -362,22 +362,22 @@ pub fn fuzz(w: *World, h: Harness, chrome: ?[]const u8, f: Fuzz, timeout_ms: i64
     return error.FuzzReportMissing;
 }
 
-/// The record line of a fuzz run that agreed (`run_hash.lineWith`, pass
-/// `fuzz`): it covers build `a`'s output tree as a page's line covers its
+/// The digest of a fuzz run that agreed (`run_hash.digestWith`, pass
+/// `fuzz`): it covers build `a`'s output tree as a page's digest covers its
 /// build, and as inputs the DOM, the driver, the fuzzer, build `b`'s tree,
 /// the message types, the script and the spec.
-pub fn fuzzLine(arena: Allocator, w: *World, h: Harness, f: Fuzz) ![]const u8 {
-    const b_line = try run_hash.lineWith(arena, w, f.b, "tree", "", "", null);
+pub fn fuzzDigest(arena: Allocator, w: *World, h: Harness, f: Fuzz) ![]const u8 {
+    const b_digest = try run_hash.digestWith(arena, w, f.b, "tree", "", "", null);
     const types: []const u8 = if (f.types) |t| try w.read(t) else "";
     const script: []const u8 = if (f.script) |s| try w.read(s) else "";
     var digested = f;
     digested.replay = false;
-    return run_hash.lineWith(arena, w, f.a, "fuzz", "spec", try fuzzSpec(arena, digested), .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
+    return run_hash.digestWith(arena, w, f.a, "fuzz", "spec", try fuzzSpec(arena, digested), .{ .dom = dom_id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
         .{ .name = "dom sha-256", .bytes = dom_sha256 },
         .{ .name = "parser sha-256", .bytes = parser_sha256 },
         .{ .name = "driver", .bytes = h.driver_bytes },
         .{ .name = "fuzz", .bytes = h.fuzz_bytes },
-        .{ .name = "b", .bytes = b_line[std.mem.lastIndexOfScalar(u8, b_line, ' ').? + 1 ..] },
+        .{ .name = "b", .bytes = b_digest },
         .{ .name = "types", .bytes = types },
         .{ .name = "script", .bytes = script },
     }) });

@@ -82,18 +82,17 @@
 //! only the fixtures whose repo-relative path contains it, in either mode;
 //! one that matches no fixture at all is a failure.
 //!
-//! A `run/` fixture may carry a `.run-hash` (`run_hash.zig`): a digest of
-//! the emitted output tree, the golden and the Node version, per build,
-//! recorded when that JavaScript ran and matched. A build whose digest is
-//! listed there is not run under Node again; any other build is run exactly
-//! as without the record. `BENI_RUN_HASHES=record` (`zig build
-//! test-run-hashes`) walks `run/` and `browser/` alone, runs every program,
-//! and rewrites each record with the builds that matched.
-//! `BENI_RUN_HASH_REPORT=<dir>`
-//! makes each process write its `run/` counts there — how many programs ran
-//! for want of a record — which the build prints as one line. `browser/`
-//! fixtures carry the same records, over their page as well
-//! (`browser.zig`), and are counted with them.
+//! A `run/` build's digest (`run_hash.zig`) — the emitted output tree, the
+//! golden and the Node version — is looked up in the run-hash cache
+//! (`BENI_RUN_HASH_DIR`) before Node runs: a verified digest means that
+//! JavaScript ran and matched before, and the build is not run again; any
+//! other build runs exactly as without the cache, and a build that ran and
+//! matched puts its digest into the cache. `BENI_RUN_HASH_REPORT=<dir>`
+//! makes each process write its counts there — how many programs ran for
+//! want of a verified digest — which the build prints as one line.
+//! `browser/` pages and `workers/` Workers use the cache the same way, their
+//! digests covering their page or driver as well (`browser.zig`,
+//! `workers.zig`), and are counted with them.
 //!
 //! `BENI_BROWSER=chrome` (`zig build test-browser`) walks `browser/` alone
 //! and runs every page in one headless Chrome instead of happy-dom, against
@@ -108,6 +107,13 @@ const Io = std.Io;
 const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
+
+/// The file beside `browser/tea/`'s pages that names each page with no
+/// value-fuzz case and why, one per line, `<page>: <reason>` (the owner,
+/// 2026-10-28, #881: every other page of the directory is one, so a page
+/// is fuzzed unless someone wrote down why it cannot be). A line that names
+/// no page, or gives no reason, fails the walk.
+const no_value_fuzz = "no-value-fuzz.txt";
 const browser = @import("browser.zig");
 const serve = @import("serve.zig");
 const worker_harness = @import("workers.zig");
@@ -512,8 +518,6 @@ fn walk(kind: Kind) !void {
     const cfg = try Config.read(arena);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
-    // Recording run hashes is about the kinds that run programs alone.
-    if (cfg.run_hashes == .record and !kind.runs()) return;
     // Chrome runs pages, and only pages.
     if (cfg.chrome != null and kind != .browser) return;
     // Written whatever the cases say, so the build's summary never reads
@@ -639,8 +643,21 @@ fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const
 }
 
 /// Every fixture of `kind` under the root, in the order the walker runs
-/// them.
+/// them. A run-hash record file anywhere the collection walks, or the old
+/// index beside the root, fails it before any program runs, every one of
+/// them named (`isRecordFile`).
 fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const Fixture {
+    record_files = 0;
+    try reportIndex(arena, cfg.root);
+    const fixtures = try collectFixtures(arena, cfg, kind);
+    if (record_files != 0) {
+        std.debug.print("{d} stale run-hash file{s} left in the corpus (`git ls-files '*run-hash' '*.value-fuzz' tests/blackbox/run-hashes.txt` lists them): delete every one\n", .{ record_files, if (record_files == 1) "" else "s" });
+        return error.RecordFileInCorpus;
+    }
+    return fixtures;
+}
+
+fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const Fixture {
     const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
     const core_dir = try std.fs.path.join(arena, &.{ kind_dir, "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
@@ -741,21 +758,24 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const start = fixtures.items.len;
         try collect(arena, tea_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
-        // A page that carries a `.fuzz-run-hash` opts into a value-fuzz
-        // case of its own (`Fixture.values`): its development build
-        // against its release build, both with `--fuzz`, messages as
-        // values. The page case keeps its own fuzz of view events.
+        // Every page is a value-fuzz case of its own as well
+        // (`Fixture.values`): its development build against its release
+        // build, both with `--fuzz`, messages as values. The page case
+        // keeps its own fuzz of view events. `no-value-fuzz.txt` names the
+        // pages that are not, each with its reason, and fails closed: a
+        // line that names no page is stale and fails the walk.
         const end = fixtures.items.len;
-        if (cfg.mode == .strict) for (start..end) |i| {
-            const record = try fixtureGoldenPath(arena, fixtures.items[i], "fuzz-" ++ run_hash.ext);
-            Io.Dir.cwd().access(testing.io, record, .{}) catch |err| switch (err) {
-                error.FileNotFound => continue,
-                else => return err,
-            };
-            var values = fixtures.items[i];
-            values.values = true;
-            try fixtures.append(arena, values);
-        };
+        if (cfg.mode == .strict) {
+            var excluded = try noValueFuzz(arena, tea_dir);
+            for (start..end) |i| {
+                const fixture = fixtures.items[i];
+                if (excluded.use(pageKey(fixture))) continue;
+                var values = fixture;
+                values.values = true;
+                try fixtures.append(arena, values);
+            }
+            try excluded.checkUsed();
+        }
     }
     // `workers/`: each project is two cases, the development build and the
     // release build, each run under Miniflare once (`Fixture.release_case`).
@@ -975,10 +995,8 @@ const Config = struct {
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture, pending mode only.
     red: []const world.pending.RedLine,
-    /// `BENI_RUN_HASHES`: what `run/` does with its `.run-hash` records.
-    run_hashes: RunHashes,
     /// `BENI_RUN_HASH_REPORT`: the directory this process writes its
-    /// `run/` counts into (`RunCounts.report`), or null for none.
+    /// run counts into (`RunCounts.report`), or null for none.
     report_dir: ?[]const u8,
     /// `BENI_BROWSER=chrome`: the Chrome every `browser/` page runs in
     /// (`browser.findChrome`), or null for happy-dom.
@@ -999,14 +1017,6 @@ const Config = struct {
     in_place: InPlace = .none,
 
     const InPlace = enum { none, records, lists };
-
-    const RunHashes = enum {
-        /// Unset: a build whose digest is recorded is not run under Node.
-        check,
-        /// `record`: only `run/` is walked, every program runs, and each
-        /// record is rewritten with the builds that matched their golden.
-        record,
-    };
 
     const Mode = enum {
         /// Unset: every fixture must pass (today's behaviour).
@@ -1048,26 +1058,13 @@ const Config = struct {
             std.debug.print("BENI_CORPUS_PART is refused in pending mode: rule (d) compares whole fixtures\n", .{});
             return error.BadCorpusPart;
         }
-        const run_hashes: RunHashes = if (envOr(arena, "BENI_RUN_HASHES")) |text|
-            std.meta.stringToEnum(RunHashes, text) orelse {
-                std.debug.print("BENI_RUN_HASHES must be `record` (or unset), not `{s}`\n", .{text});
-                return error.BadRunHashes;
-            }
-        else
-            .check;
-        // Pending mode never records: its goldens are the CORRECT output,
-        // written by hand, and the binary under test is known to be wrong.
-        if (run_hashes == .record and mode == .pending) {
-            std.debug.print("BENI_RUN_HASHES=record is refused in pending mode\n", .{});
-            return error.BadRunHashes;
-        }
         const chrome: ?[]const u8 = if (envOr(arena, "BENI_BROWSER")) |text| chrome: {
             if (!std.mem.eql(u8, text, "chrome")) {
                 std.debug.print("BENI_BROWSER must be `chrome` (or unset), not `{s}`\n", .{text});
                 return error.BadBrowser;
             }
-            if (run_hashes == .record or mode == .pending) {
-                std.debug.print("BENI_BROWSER=chrome records nothing and is not a pending run\n", .{});
+            if (mode == .pending) {
+                std.debug.print("BENI_BROWSER=chrome is not a pending run\n", .{});
                 return error.BadBrowser;
             }
             break :chrome browser.findChrome(arena, testing.io) orelse {
@@ -1096,7 +1093,6 @@ const Config = struct {
             .in_place = in_place,
             .fuzz_steps = fuzz_steps,
             .chrome = chrome,
-            .run_hashes = run_hashes,
             .report_dir = envOr(arena, "BENI_RUN_HASH_REPORT"),
             .root = std.mem.trimEnd(u8, root, "/"),
             .part = part,
@@ -1139,17 +1135,13 @@ fn envOr(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
     return if (value.len == 0) null else value;
 }
 
-/// What this process's `run/` builds did with their `.run-hash` records,
-/// summed over every worker.
+/// What this process's program runs did with the run-hash cache, summed
+/// over every worker.
 const RunCounts = struct {
-    /// Not run: the digest was recorded.
+    /// Not run: the cache held the digest.
     skipped: std.atomic.Value(u32) = .init(0),
-    /// Run under Node because the digest was not recorded.
+    /// Run under Node, because it did not.
     stale: std.atomic.Value(u32) = .init(0),
-    /// Recording mode: builds whose line was written.
-    recorded: std.atomic.Value(u32) = .init(0),
-    /// Recording mode: builds that failed, so nothing was written for them.
-    refused: std.atomic.Value(u32) = .init(0),
 
     fn add(counter: *std.atomic.Value(u32)) void {
         _ = counter.fetchAdd(1, .monotonic);
@@ -1161,11 +1153,9 @@ const RunCounts = struct {
         const io = testing.io;
         try Io.Dir.cwd().createDirPath(io, dir);
         const path = try std.fmt.allocPrint(arena, "{s}/{s}.txt", .{ dir, if (part) |p| @tagName(p) else "all" });
-        const text = try std.fmt.allocPrint(arena, "skipped {d}\nstale {d}\nrecorded {d}\nrefused {d}\n", .{
+        const text = try std.fmt.allocPrint(arena, "skipped {d}\nstale {d}\n", .{
             counts.skipped.load(.monotonic),
             counts.stale.load(.monotonic),
-            counts.recorded.load(.monotonic),
-            counts.refused.load(.monotonic),
         });
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = text });
     }
@@ -1374,8 +1364,8 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
-    /// A `browser/tea/` page's second case, when it carries a
-    /// `.fuzz-run-hash`: its page fuzz alone, with
+    /// A `browser/tea/` page's second case, unless `no-value-fuzz.txt`
+    /// names it (`no_value_fuzz`): its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
     /// two `--fuzz` builds, the message types dump and the fuzz are a case
     /// of their own, guarded on their own, so that no page's value fuzz
@@ -1389,8 +1379,7 @@ const Fixture = struct {
     /// Miniflare as the first case runs the development build. Two cases,
     /// each starting Miniflare once (`boundary.md` §9.12 (k)); the per-test
     /// budget that first set the split is gone (#744), the split stays as
-    /// the kind's shape. The release case records into
-    /// `_expected.release-run-hash`, so neither writes the other's.
+    /// the kind's shape. Each case has a digest of its own.
     release_case: bool = false,
     /// An ownership fixture's case for one token of its `.platform` file,
     /// which alone it checks and dumps; null for a fixture without one.
@@ -1427,7 +1416,12 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
         if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers")) {
+            try refuseRecordsIn(try std.fs.path.join(arena, &.{ dir_path, entry.name }));
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
+            continue;
+        }
+        if (entry.kind == .file and isRecordFile(entry.name)) {
+            reportRecord(dir_path, entry.name);
             continue;
         }
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
@@ -1438,6 +1432,126 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
             return std.mem.lessThan(u8, a.name, b.name);
         }
     }.lessThan);
+}
+
+/// Whether `name` is a run-hash record file — `<fixture>.run-hash`,
+/// `.release-run-hash` or `.fuzz-run-hash` (`_expected.…` in a project) —
+/// or a `.value-fuzz` marker. The records left git for the run-hash cache
+/// (#881, `run_hash.zig`); one that comes back — a pull request from
+/// before the change, a rebase that kept a modified record — would be
+/// ignored by every reader, and a `browser/tea` page's `.fuzz-run-hash`,
+/// once its opt-in to the value fuzz, would say nothing of whether the
+/// page is excluded now. The marker was the opt-in between 2026-10-23 and
+/// 2026-10-28 (`no_value_fuzz`), and is as dead. So the walk refuses every
+/// one of them, by name, with the fix (`fixturesOf`).
+fn isRecordFile(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, ".run-hash") or std.mem.endsWith(u8, name, "-run-hash") or std.mem.endsWith(u8, name, ".value-fuzz");
+}
+
+/// The record files, markers and the index `fixturesOf`'s collection found
+/// so far: each is named as it is met, and the count fails the collection
+/// at its end, so one walk names every one a rebase left.
+var record_files: usize = 0;
+
+fn reportRecord(dir_path: []const u8, name: []const u8) void {
+    if (std.mem.endsWith(u8, name, ".value-fuzz")) {
+        std.debug.print(
+            "{s}/{s}: a value-fuzz marker; every browser/tea page is a value-fuzz case now (the owner, 2026-10-28, #881): delete it, and to exclude the page name it with its reason in `no-value-fuzz.txt` beside the pages\n",
+            .{ dir_path, name },
+        );
+    } else {
+        const fuzz = std.mem.endsWith(u8, name, ".fuzz-run-hash");
+        std.debug.print(
+            "{s}/{s}: a run-hash record file; the records left git for the run-hash cache (#881): delete it{s}\n",
+            .{ dir_path, name, if (fuzz) ", and the page's value fuzz needs no opt-in now (to exclude it, name it with its reason in `no-value-fuzz.txt` beside the pages)" else "" },
+        );
+    }
+    record_files += 1;
+}
+
+/// The pages `no-value-fuzz.txt` excludes from the value fuzz
+/// (`no_value_fuzz`), each line's page and whether a page of the walk
+/// took it.
+const Excluded = struct {
+    path: []const u8,
+    entries: []Entry,
+
+    const Entry = struct { page: []const u8, line: usize, used: bool = false };
+
+    fn use(e: *Excluded, page: []const u8) bool {
+        for (e.entries) |*entry| if (std.mem.eql(u8, entry.page, page)) {
+            entry.used = true;
+            return true;
+        };
+        return false;
+    }
+
+    /// A line that names no page is stale: it would excuse a page that
+    /// comes back under that name without a look at it.
+    fn checkUsed(e: Excluded) !void {
+        var stale = false;
+        for (e.entries) |entry| if (!entry.used) {
+            std.debug.print("{s}:{d}: `{s}` names no page of browser/tea: delete the line\n", .{ e.path, entry.line, entry.page });
+            stale = true;
+        };
+        if (stale) return error.StaleValueFuzzExclusion;
+    }
+};
+
+/// `no-value-fuzz.txt` under `tea_dir`, or no exclusion when there is
+/// none: `<page>: <reason>` per line, `#` a comment. A line without a
+/// page or without a reason fails the walk.
+fn noValueFuzz(arena: std.mem.Allocator, tea_dir: []const u8) !Excluded {
+    const path = try std.fs.path.join(arena, &.{ tea_dir, no_value_fuzz });
+    const text = Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 20)) catch |err| switch (err) {
+        error.FileNotFound => "",
+        else => return err,
+    };
+    var entries: std.ArrayList(Excluded.Entry) = .empty;
+    var n: usize = 0;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        n += 1;
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse 0;
+        const page = std.mem.trim(u8, line[0..colon], " \t");
+        const reason = if (colon == 0) "" else std.mem.trim(u8, line[colon + 1 ..], " \t");
+        if (page.len == 0 or reason.len == 0) {
+            std.debug.print("{s}:{d}: `{s}`: a line is `<page>: <reason>`, and the reason says why the page cannot be fuzzed\n", .{ path, n, line });
+            return error.MalformedValueFuzzExclusion;
+        }
+        try entries.append(arena, .{ .page = page, .line = n });
+    }
+    return .{ .path = path, .entries = entries.items };
+}
+
+/// A page's name in `no-value-fuzz.txt`: the file's stem, or the project's
+/// directory.
+fn pageKey(fixture: Fixture) []const u8 {
+    return if (fixture.project) fixture.name else fixture.name[0 .. fixture.name.len - ".beni".len];
+}
+
+/// `reportRecord` for the files directly under a project directory, where
+/// a project's records were.
+fn refuseRecordsIn(project_path: []const u8) !void {
+    const io = testing.io;
+    var dir = Io.Dir.cwd().openDir(io, project_path, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| if (entry.kind == .file and isRecordFile(entry.name)) reportRecord(project_path, entry.name);
+}
+
+/// The old run-hash index, `tests/blackbox/run-hashes.txt` beside the
+/// corpus root, is reported for the same reason as a record file.
+fn reportIndex(arena: std.mem.Allocator, root: []const u8) !void {
+    const path = try std.fs.path.join(arena, &.{ root, "..", "blackbox", "run-hashes.txt" });
+    Io.Dir.cwd().access(testing.io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    std.debug.print("{s}: the run-hash index; it left git for the run-hash cache (#881): delete it\n", .{path});
+    record_files += 1;
 }
 
 /// The `BENI_BLESS_ONLY` substring, if set and non-empty.
@@ -2256,6 +2370,32 @@ const Case = struct {
         }
     }
 
+    /// A `run/` program checked by both checkers with the check enforced
+    /// everywhere (§7.2's differential, in the gates): v2's demands against
+    /// v1's, fail-closed, and its unchecked declarations against the
+    /// fixture's `.v2.unchecked`.
+    fn runV2Parity(case: Case, platform_arg: []const u8, sources: anytype, own_platform: bool, page: ?browser.Harness) !void {
+        // One file is dumped as that file, a project as its directory, in a
+        // world of its own (no other fixture's files in it).
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        if (sources.len > 1 and !own_platform) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            _ = try c.writeSources();
+            // A page's test platform, written beside it as `runPage` writes it.
+            if (page) |h| if (std.mem.eql(u8, platform_arg, "--platform=" ++ browser.platform_dir)) try browser.writePlatform(c.arena, c.w, h);
+        }
+        const paths: []const []const u8 = if (sources.len == 1) try buildPaths(c.arena, sources) else &.{ "--root=.", "." };
+        // Both reports from one check (`--ownership-both`).
+        const r = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", platform_arg }, paths }));
+        try expectExit(0, r);
+        const both = try splitBoth(r.stdout);
+        try c.v2Unchecked("v2.unchecked", both[1], false);
+        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name }), both[0], both[1]);
+    }
+
     /// Compile the fixture for the Node platform and run what came out.
     ///
     /// The fixture is COPIED into the world's project directory rather than
@@ -2292,38 +2432,13 @@ const Case = struct {
     /// is `build/bad-release/`'s, where no flag is passed.
     ///
     /// **A build is run under Node only when its run hash is not
-    /// recorded** (`run_hash.zig`). Both builds happen every time and must
+    /// verified** (`run_hash.zig`). Both builds happen every time and must
     /// be clean; then the digest of the output tree, the golden and the
-    /// Node version is looked up in the fixture's `.run-hash`, and a listed
+    /// Node version is looked up in the run-hash cache, and a verified
     /// digest means Node already ran exactly this JavaScript and it printed
     /// exactly this golden. Anything else — a changed emitter, runtime or
-    /// golden, another Node — runs the program as if there were no record.
-    /// A `run/` program checked by both checkers with the check enforced
-    /// everywhere (§7.2's differential, in the gates): v2's demands against
-    /// v1's, fail-closed, and its unchecked declarations against the
-    /// fixture's `.v2.unchecked`.
-    fn runV2Parity(case: Case, platform_arg: []const u8, sources: anytype, own_platform: bool, page: ?browser.Harness) !void {
-        // One file is dumped as that file, a project as its directory, in a
-        // world of its own (no other fixture's files in it).
-        var c = case;
-        var own: ?World = null;
-        defer if (own) |*w| w.deinit();
-        if (sources.len > 1 and !own_platform) {
-            own = try World.init(testing.allocator, testing.io);
-            c.w = &own.?;
-            _ = try c.writeSources();
-            // A page's test platform, written beside it as `runPage` writes it.
-            if (page) |h| if (std.mem.eql(u8, platform_arg, "--platform=" ++ browser.platform_dir)) try browser.writePlatform(c.arena, c.w, h);
-        }
-        const paths: []const []const u8 = if (sources.len == 1) try buildPaths(c.arena, sources) else &.{ "--root=.", "." };
-        // Both reports from one check (`--ownership-both`).
-        const r = try c.inProject(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", platform_arg }, paths }));
-        try expectExit(0, r);
-        const both = try splitBoth(r.stdout);
-        try c.v2Unchecked("v2.unchecked", both[1], false);
-        try c.v2Parity(try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name }), both[0], both[1]);
-    }
-
+    /// golden, another Node — runs the program as if there were no cache,
+    /// and a run that matched puts its digest in.
     fn runProgram(case: Case) !void {
         // A project with a `platform/` directory builds for that platform,
         // as a `build/bad/` fixture does: a test platform layered on `node`
@@ -2349,16 +2464,6 @@ const Case = struct {
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
         try dev.appendSlice(c.arena, try buildPaths(c.arena, sources));
-        // The fixture's run hashes (`run_hash.zig`): read to skip a build
-        // already verified, or — recording — rewritten below with the
-        // builds that verify now.
-        const record_path = try c.goldenPath(run_hash.ext);
-        const recording = c.cfg.run_hashes == .record;
-        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [8]?[]const u8 = @splat(null);
-        // Recording runs both builds whatever the first did, so one failing
-        // build does not cost the other its line.
-        var first_error: ?anyerror = null;
         // A fixture that declares a schema is built again with every schema
         // root forced through the library (`schema.md` §10): the two paths
         // must print the one golden, which is written by hand.
@@ -2368,24 +2473,19 @@ const Case = struct {
         // the two build to different `--out` directories and compare with
         // their own golden, so neither reads anything the other wrote.
         if (c.cfg.runs(Kind.run.partOf(.dev))) {
-            verified[0] = c.runOnce("out", .dev, dev.items, "expected", c.bless, record) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                first_error = err;
-                break :blk null;
-            };
-            if (first_error == null) try c.checkCompiledSchemas("out");
+            try c.runOnce("out", .dev, dev.items, "expected", c.bless);
+            try c.checkCompiledSchemas("out");
             // A fixture of the records' differential corpus (`.in-place`,
             // its reason; `ownership-checker.md` §31.12 slice 3) is built
             // three times more with its records written in place
             // (`--records-in-place`) — under the hidden stale-read
             // sanitiser, then the stores as they ship, then as a release
             // ships them (§31.10, *The form*) — and each must print the same
-            // golden, which was recorded under spreads. Their run hashes are
-            // the fixture's, as its other passes' are; `BENI_IN_PLACE=all`
-            // records none and runs every one.
+            // golden, which was recorded under spreads. Their digests go to
+            // the run-hash cache, as the other passes' do; under
+            // `BENI_IN_PLACE=all` they look nothing up, record nothing and
+            // run every one (`runOnceCrash`).
             if (c.cfg.in_place == .records or c.goldenExists("in-place")) in_place: {
-                const in_place_record = if (c.cfg.in_place == .records) "" else record;
                 // Every fixture, under `BENI_IN_PLACE=all`: one the ownership
                 // checker refuses under the flag has nothing to run in place.
                 if (c.cfg.in_place == .records and !c.goldenExists("in-place")) {
@@ -2400,18 +2500,8 @@ const Case = struct {
                 if (c.cfg.mode == .pending) try stores.append(c.arena, "--diagnostics=json");
                 try stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 // The sanitiser first: a stale read traps there, naming its field.
-                verified[5] = c.runOnce("out-in-place", .dev, in_place.items, "expected", false, in_place_record) catch |err| blk: {
-                    if (!recording) return err;
-                    RunCounts.add(&run_counts.refused);
-                    if (first_error == null) first_error = err;
-                    break :blk null;
-                };
-                verified[4] = c.runOnce("out-stores", .dev, stores.items, "expected", false, in_place_record) catch |err| blk: {
-                    if (!recording) return err;
-                    RunCounts.add(&run_counts.refused);
-                    if (first_error == null) first_error = err;
-                    break :blk null;
-                };
+                try c.runOnce("out-in-place", .dev, in_place.items, "expected", false);
+                try c.runOnce("out-stores", .dev, stores.items, "expected", false);
                 // And the stores as a release ships them: the specialiser and the
                 // optimiser over records written in place (`backend.md` §9;
                 // `ownership-checker.md` §31.10, *The optimiser barrier*).
@@ -2419,12 +2509,7 @@ const Case = struct {
                 try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
                 if (c.cfg.mode == .pending) try release_stores.append(c.arena, "--diagnostics=json");
                 try release_stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
-                verified[6] = c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false, in_place_record) catch |err| blk: {
-                    if (!recording) return err;
-                    RunCounts.add(&run_counts.refused);
-                    if (first_error == null) first_error = err;
-                    break :blk null;
-                };
+                try c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false);
             }
             // A fixture of the lists' differential corpus (`.sanitize-lists`,
             // its reason; `ownership-v2.md` §7.3) is built once more under
@@ -2434,9 +2519,9 @@ const Case = struct {
             // than the write traps. It must print the same golden, or crash
             // as its `.sanitize-lists-crash` says. Lists are not written in
             // place yet, so this is the one list pass (§8, S8b adds the
-            // stores). `BENI_IN_PLACE=lists` records none and runs every one.
+            // stores). Under `BENI_IN_PLACE=lists` it looks nothing up,
+            // records nothing and runs every one (`runOnceCrash`).
             if (c.cfg.in_place == .lists or c.goldenExists("sanitize-lists")) lists: {
-                const lists_record = if (c.cfg.in_place == .lists) "" else record;
                 if (c.cfg.in_place == .lists and !c.goldenExists("sanitize-lists")) {
                     if (try c.ownershipRefuses(platform_arg, "--ownership-everywhere", sources)) break :lists;
                 }
@@ -2445,14 +2530,9 @@ const Case = struct {
                 if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
                 try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 const crash = if (c.goldenExists("sanitize-lists-crash")) "sanitize-lists-crash" else "crash";
-                verified[7] = c.runOnceCrash("out-lists", .dev, lists.items, "expected", false, lists_record, crash) catch |err| blk: {
-                    if (!recording) return err;
-                    RunCounts.add(&run_counts.refused);
-                    if (first_error == null) first_error = err;
-                    break :blk null;
-                };
+                try c.runOnceCrash("out-lists", .dev, lists.items, "expected", false, crash);
                 // And it wrapped exactly the writes v1 accepted.
-                if (!recording or verified[7] != null) try c.checkSanitisedSites(platform_arg, &.{"--ownership-everywhere"}, sources, "out-lists");
+                try c.checkSanitisedSites(platform_arg, &.{"--ownership-everywhere"}, sources, "out-lists");
             }
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
@@ -2460,14 +2540,9 @@ const Case = struct {
             try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--schema-library", "--out=out-library" });
             if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
             try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            verified[2] = c.runOnce("out-library", .dev_library, forced.items, "expected", false, record) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
+            try c.runOnce("out-library", .dev_library, forced.items, "expected", false);
         }
-        if (c.cfg.runs(Kind.run.partOf(.release))) release: {
+        if (c.cfg.runs(Kind.run.partOf(.release))) {
             // The release pass never blesses `expected`: it is the DEV pass's
             // golden and a release build that disagrees with it is the finding
             // this pass exists to make. A fixture that is allowed to differ says
@@ -2477,19 +2552,13 @@ const Case = struct {
             try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--out=release" });
             if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
             try release.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            verified[1] = c.runOnce(
+            try c.runOnce(
                 "release",
                 .release,
                 release.items,
                 if (separate) "release-expected" else "expected",
                 c.bless and separate,
-                record,
-            ) catch |err| {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :release;
-            };
+            );
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.release_library))) {
             const separate = c.goldenExists("release-expected");
@@ -2497,25 +2566,14 @@ const Case = struct {
             try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--schema-library", "--out=release-library" });
             if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
             try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            verified[3] = c.runOnce(
+            try c.runOnce(
                 "release-library",
                 .release_library,
                 forced.items,
                 if (separate) "release-expected" else "expected",
                 false,
-                record,
-            ) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
+            );
         }
-        if (recording) {
-            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
-            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
-        }
-        if (first_error) |err| return err;
     }
 
     /// Whether a fixture's sources declare a `schema`: a line that begins
@@ -2668,8 +2726,8 @@ const Case = struct {
     /// `_expected.steps` script, built for `cloudflare` and run under
     /// Miniflare by `tests/workers/driver.mjs` (`workers.zig`); the
     /// transcript is the golden. The case is one build — development, or
-    /// `--release --allow-debug` for `Fixture.release_case` — with a record
-    /// file of its own.
+    /// `--release --allow-debug` for `Fixture.release_case` — with a digest
+    /// of its own.
     fn runWorker(case: Case) !void {
         var c = case;
         var own = try World.init(testing.allocator, testing.io);
@@ -2679,13 +2737,6 @@ const Case = struct {
         try c.w.copyTree(try c.fixturePath(), "_expected.");
         const h = try worker_harness.harness(testing.io);
         if (h.miniflare.len == 0) {
-            // Recording hashes in a shell without Miniflare leaves this
-            // kind's records as they are: `test-run-hashes` is run from the
-            // default shell too, and the gates never read them.
-            if (c.cfg.run_hashes == .record) {
-                RunCounts.add(&run_counts.refused);
-                return;
-            }
             detail("{s}: a workers/ fixture needs Miniflare: `nix develop .#workers` sets BENI_MINIFLARE, or give `-Dminiflare=`\n", .{c.fixture.name});
             return error.MiniflareNotFound;
         }
@@ -2717,10 +2768,6 @@ const Case = struct {
         try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{out_dir}));
         try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
 
-        const record_path = try c.goldenPath(if (release) "release-" ++ run_hash.ext else run_hash.ext);
-        const recording = c.cfg.run_hashes == .record;
-        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-
         const built = try c.inProject(args.items);
         if (built.exit_code != 0) {
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
@@ -2733,21 +2780,19 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
         const golden = "expected";
-        const line_for = struct {
-            fn of(cc: Case, dir: []const u8, p: RunPass, hh: worker_harness.Harness, g: []const u8, expected: []const u8, st: []const u8, cf: []const u8) ![]const u8 {
-                return run_hash.lineWith(cc.arena, cc.w, dir, @tagName(p), g, expected, try worker_harness.inputs(cc.arena, hh, st, cf));
-            }
-        };
         // Skip Miniflare when this exact output tree, golden, driver and
-        // script were verified together before.
-        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !c.bless) {
+        // script were verified together before; else remember the digest
+        // to record once the run matched.
+        var digest: ?[]const u8 = null;
+        if (c.cfg.mode == .strict and !c.bless) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try line_for.of(c, out_dir, pass, h, golden, bytes, steps, config);
-                if (run_hash.listed(record, line)) {
+                const d = try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, bytes, try worker_harness.inputs(c.arena, h, steps, config));
+                if (try run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
                     return;
                 }
                 RunCounts.add(&run_counts.stale);
+                digest = d;
             } else |_| {}
         }
         const program = c.w.runNode(&.{
@@ -2765,10 +2810,12 @@ const Case = struct {
             return error.ProgramFailed;
         }
         try c.expectGoldenMaybeBless(golden, program.stdout, c.bless);
-        if (!recording) return;
-        const line = try line_for.of(c, out_dir, pass, h, golden, program.stdout, steps, config);
-        RunCounts.add(&run_counts.recorded);
-        try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &.{line}));
+        // Verified: the golden holds exactly what the Worker printed. The
+        // digest recorded is of those bytes, not of the golden read before
+        // the run: a blessing run of another pass may rewrite the golden
+        // between the two reads, and the cache must say what this run
+        // showed.
+        if (digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout, try worker_harness.inputs(c.arena, h, steps, config)));
     }
 
     fn runPage(case: Case) !void {
@@ -2807,12 +2854,6 @@ const Case = struct {
 
         if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg);
 
-        const record_path = try c.goldenPath(run_hash.ext);
-        const recording = c.cfg.run_hashes == .record;
-        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        // A line per page, and the fourth the page fuzzer's (`fuzzPages`).
-        var verified: [4]?[]const u8 = @splat(null);
-        var first_error: ?anyerror = null;
         // Both builds first, then every page that must run in one Node
         // process (`browser.driveAll`), then each page's verdict.
         // A failure is reported in the order a page at a time would meet
@@ -2831,18 +2872,13 @@ const Case = struct {
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug", "--check-call-graph" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            pages[slot] = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
-                if (!recording) {
-                    if (pass == .dev) return err;
-                    if (release_error == null) release_error = err;
-                    break :blk null;
-                }
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
+            pages[slot] = c.pagePlan(pass, args.items, h, script) catch |err| blk: {
+                if (pass == .dev) return err;
+                if (release_error == null) release_error = err;
                 break :blk null;
             };
         }
-        if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
+        if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script);
         // `BENI_IN_PLACE`'s pages, for a page of `browser-inline`.
         const in_browser_inline = !platform and c.fixture.platform != null and std.mem.eql(u8, c.fixture.platform.?, "browser-inline");
         const differential: [4]?PagePlan = if (pages[0] != null and in_browser_inline) try c.differentialPages(platform_arg, sources) else @splat(null);
@@ -2850,7 +2886,7 @@ const Case = struct {
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
         // process, after the pages.
-        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
+        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         for (differential) |plan| if (plan) |p| try entries.append(c.arena, .{ .path = p.entry });
@@ -2863,40 +2899,35 @@ const Case = struct {
             };
         }
         var next: usize = 0;
-        for (pages, verified[0..3]) |plan, *line| {
+        for (pages) |plan| {
             const p = plan orelse continue;
-            if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
+            if (p.digest != null) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
             const page = shown.pages[next];
             next += 1;
-            line.* = c.pageVerdict(p, shown.run, page, h, script) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
+            try c.pageVerdict(p, shown.run, page);
+            // Verified: the golden holds exactly what the page showed. The
+            // digest recorded is of the transcript the verdict compared, not
+            // of the golden `checkedPlan` read before the pages ran: a
+            // blessing run writes the development page's golden first, and
+            // the release page is compared with that one, so its digest must
+            // cover the golden it showed, not the one the blessing replaced.
+            if (p.digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (page orelse shown.run).stdout, try browser.page(c.arena, h, script.bytes)));
         }
         for (differential) |plan| {
             const p = plan orelse continue;
             const page = shown.pages[next];
             next += 1;
-            _ = try c.pageVerdict(p, shown.run, page, h, script);
+            try c.pageVerdict(p, shown.run, page);
         }
         if (release_error) |err| return err;
         if (fuzz_plan) |f| {
             if (f.checked) RunCounts.add(if (f.skip) &run_counts.skipped else &run_counts.stale);
-            verified[3] = if (f.skip) f.line else c.fuzzVerdict(f, shown.run, shown.pages[next]) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
+            if (!f.skip) {
+                try c.fuzzVerdict(f, shown.run, shown.pages[next]);
+                if (f.checked) try run_hash.record(testing.io, f.digest);
+            }
         }
-        if (recording) {
-            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
-            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
-        }
-        if (first_error) |err| return err;
     }
 
     /// A `browser/` fixture's steps: the file's name in the project, null
@@ -2921,24 +2952,26 @@ const Case = struct {
         bless: bool,
         out: []const u8,
         entry: []const u8,
-        /// `record` lists this build: the page is not run.
-        skip: bool,
-        /// Its run hash was looked for (counted `skipped` or `stale` when
-        /// the page's turn comes).
-        checked: bool = false,
+        /// The cache holds this build's digest: the page is not run.
+        skip: bool = false,
+        /// The digest looked up (`checkedPlan`), counted `skipped` or
+        /// `stale` when the page's turn comes and recorded once the page
+        /// matched; null when none was — a blessing run, pending mode, no
+        /// golden — and then nothing is counted or recorded.
+        digest: ?[]const u8 = null,
     };
 
     /// One build of a `browser/` fixture. The golden is `.expected`, or the
     /// build's own `.release-expected`, or under Chrome the fixture's
-    /// `.chrome-expected` when it has one. The page is skipped when
-    /// `record` lists this build.
-    fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
+    /// `.chrome-expected` when it has one. The page is skipped when the
+    /// cache holds this build's digest.
+    fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script) !PagePlan {
         const plan = try c.builtPage(pass, pageOut(pass), args);
-        return c.checkedPlan(plan, h, script, record);
+        return c.checkedPlan(plan, h, script);
     }
 
     /// `pagePlan`'s build, written to `out`, and its page's golden: the
-    /// plan before its run hash is looked for.
+    /// plan before its digest is looked for.
     fn builtPage(c: Case, pass: RunPass, out: []const u8, args: []const []const u8) !PagePlan {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
@@ -2980,7 +3013,7 @@ const Case = struct {
     /// the records written in place under the record sanitiser, as they
     /// ship and as a release ships them, or the lists under the list
     /// sanitiser. Each is a build of its own directory, run whatever the
-    /// fixture's run hashes say, and never blessed. None when the ownership
+    /// run-hash cache says, and never blessed. None when the ownership
     /// checker refuses the program under the pass's flags.
     fn differentialPages(c: Case, platform_arg: []const u8, sources: []const []const u8) ![4]?PagePlan {
         var plans: [4]?PagePlan = @splat(null);
@@ -3020,7 +3053,7 @@ const Case = struct {
     /// copied to a directory of its own first, because the driver's one
     /// Node process has already loaded the development build's modules
     /// once, and an import of the same files would answer from that.
-    fn fiberPlan(c: Case, dev: PagePlan, h: browser.Harness, script: Script, record: []const u8) !?PagePlan {
+    fn fiberPlan(c: Case, dev: PagePlan, h: browser.Harness, script: Script) !?PagePlan {
         const out = "out-fiber";
         // A project may be one an earlier fixture used: nothing of its copy
         // may stay in this one's.
@@ -3039,19 +3072,19 @@ const Case = struct {
         plan.entry = out ++ "/_main.mjs";
         plan.bless = false;
         plan.skip = false;
-        plan.checked = false;
-        return try c.checkedPlan(plan, h, script, record);
+        plan.digest = null;
+        return try c.checkedPlan(plan, h, script);
     }
 
-    /// `plan`, skipped when its output tree, golden, DOM, driver and script
-    /// were verified together before. Chrome always runs.
-    fn checkedPlan(c: Case, plan: PagePlan, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
-        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !plan.bless and c.cfg.chrome == null) {
+    /// `plan` with its digest, skipped when its output tree, golden, DOM,
+    /// driver and script were verified together before. Chrome always
+    /// runs; a blessing run and pending mode look nothing up.
+    fn checkedPlan(c: Case, plan: PagePlan, h: browser.Harness, script: Script) !PagePlan {
+        if (c.cfg.mode == .strict and !plan.bless and c.cfg.chrome == null) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(plan.golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try run_hash.lineWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
                 var checked = plan;
-                checked.skip = run_hash.listed(record, line);
-                checked.checked = true;
+                checked.digest = try run_hash.digestWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
+                checked.skip = try run_hash.verified(testing.io, checked.digest.?);
                 return checked;
             } else |_| {
                 // No golden: the comparison below reports it.
@@ -3064,7 +3097,7 @@ const Case = struct {
     /// (browser-direct.md §8.3), or null: a `browser/tea/` page's
     /// development and release builds, which must behave alike (backend.md
     /// §9) — in its page case, and with messages as values in its
-    /// value-fuzz case when it has one.
+    /// value-fuzz case.
     ///
     /// Messages go as values only between two `--fuzz` builds
     /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
@@ -3077,7 +3110,7 @@ const Case = struct {
         const platform = c.fixture.platform orelse return null;
         if (!std.mem.eql(u8, platform, "browser-tea")) return null;
         // A page case fuzzes the two pages it built; a value-fuzz case
-        // (a page with a `.fuzz-run-hash`) built none and builds its pair.
+        // (every page's second, `no_value_fuzz`) built none and builds its pair.
         if (!c.fixture.values and (pages[0] == null or pages[1] == null)) return null;
         var pair: browser.Fuzz = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
         // What each side is built with: the fixture's own platform,
@@ -3086,8 +3119,8 @@ const Case = struct {
         pair.script = script.name;
         // Messages as values cost a page two more builds and a dump
         // (browser-direct.md §8.3, amended for S1): the gates send them on
-        // a `browser/tea/` pair in its value-fuzz case, when the page has
-        // one, and in `zig build fuzz`'s sweep.
+        // a `browser/tea/` pair in its value-fuzz case, and in `zig build
+        // fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         if (!c.fixture.values and !sweep) return pair;
         const flag = try fuzzFlag(c);
@@ -3142,35 +3175,24 @@ const Case = struct {
         return pair;
     }
 
-    /// A page's value-fuzz case (`Fixture.values`): the
-    /// pair `fuzzPair` builds, fuzzed in one Node process, its record in
-    /// the page's `.fuzz-run-hash` — a file of its own, since the page case
-    /// writes `.run-hash` beside this one, in parallel.
+    /// A page's value-fuzz case (`Fixture.values`): the pair `fuzzPair`
+    /// builds, fuzzed in one Node process, with a digest of its own beside
+    /// the page case's.
     fn valueFuzz(c: Case, h: browser.Harness, script: Script, sources: []const []const u8, platform_arg: []const u8) !void {
-        const record_path = try c.goldenPath("fuzz-" ++ run_hash.ext);
-        const recording = c.cfg.run_hashes == .record;
-        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        const pair = try c.fuzzPair(@splat(null), script, sources, platform_arg) orelse {
-            if (recording) try run_hash.write(testing.io, record_path, null);
-            return;
-        };
-        const plan = try c.fuzzPlan(pair, h, record);
+        const pair = try c.fuzzPair(@splat(null), script, sources, platform_arg) orelse return;
+        const plan = try c.fuzzPlan(pair, h);
         if (plan.checked) RunCounts.add(if (plan.skip) &run_counts.skipped else &run_counts.stale);
+        if (plan.skip) return;
         // The sweep's fifty seeds of sixty steps are a hundred times the
         // gates' one of thirty: the time a run may take grows with them.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         const timeout_ms = if (sweep) c.cfg.timeout_ms * 10 else c.cfg.timeout_ms;
-        const line = if (plan.skip) plan.line else blk: {
-            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms) catch |err| {
-                detail("{s}: cannot run the page fuzzer ({t}); is node on PATH?\n", .{ c.fixture.name, err });
-                return err;
-            };
-            break :blk try c.fuzzVerdict(plan, shown.run, if (shown.pages.len != 0) shown.pages[0] else null);
+        const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms) catch |err| {
+            detail("{s}: cannot run the page fuzzer ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+            return err;
         };
-        if (recording) {
-            RunCounts.add(&run_counts.recorded);
-            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &.{line}));
-        }
+        try c.fuzzVerdict(plan, shown.run, if (shown.pages.len != 0) shown.pages[0] else null);
+        if (plan.checked) try run_hash.record(testing.io, plan.digest);
     }
 
     var fuzz_flag_mutex: Io.Mutex = .init;
@@ -3188,13 +3210,14 @@ const Case = struct {
         return fuzz_flag.?;
     }
 
-    /// A fixture's page fuzz: what it compares, its record line, and
-    /// whether the record lists it (then it does not run).
+    /// A fixture's page fuzz: what it compares, its digest, and whether the
+    /// cache holds it (then it does not run).
     const FuzzPlan = struct {
         pair: browser.Fuzz,
-        line: []const u8,
+        digest: []const u8,
         skip: bool,
-        /// Its record was looked for (counted `skipped` or `stale`).
+        /// Its digest was looked up (counted `skipped` or `stale`, and
+        /// recorded once the fuzz agreed).
         checked: bool,
 
         /// The spec's file in the project (`browser.writeFuzzSpec`).
@@ -3202,26 +3225,26 @@ const Case = struct {
     };
 
     /// The fuzz of `gate`, at the gates' length unless `BENI_FUZZ_SEEDS`
-    /// or `BENI_FUZZ_STEPS` asks for a longer one, which no record covers.
-    fn fuzzPlan(c: Case, gate: browser.Fuzz, h: browser.Harness, record: []const u8) !FuzzPlan {
+    /// or `BENI_FUZZ_STEPS` asks for a longer one, which no digest covers.
+    fn fuzzPlan(c: Case, gate: browser.Fuzz, h: browser.Harness) !FuzzPlan {
         var pair = gate;
         if (c.cfg.fuzz_seeds) |s| pair.seeds = s;
         if (c.cfg.fuzz_steps) |n| pair.steps = n;
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
-        const checking = c.cfg.run_hashes == .check and c.cfg.mode == .strict and c.cfg.chrome == null and !sweep;
+        const checking = c.cfg.mode == .strict and c.cfg.chrome == null and !sweep;
         // A verdict that may be recorded, or a sweep's, proves the page
         // replays itself first.
-        pair.replay = c.cfg.run_hashes == .record or sweep;
+        pair.replay = checking or sweep;
         try browser.writeFuzzSpec(c.arena, c.w, pair, FuzzPlan.spec);
-        const line = try browser.fuzzLine(c.arena, c.w, h, pair);
-        return .{ .pair = pair, .line = line, .skip = checking and run_hash.listed(record, line), .checked = checking };
+        const digest = try browser.fuzzDigest(c.arena, c.w, h, pair);
+        return .{ .pair = pair, .digest = digest, .skip = checking and try run_hash.verified(testing.io, digest), .checked = checking };
     }
 
     /// The fuzz's report (`report`, null when the driver's `run` stopped
-    /// before it): the record line of a run that agreed; a difference
-    /// fails the case with the fuzzer's report — the seed, the step, the
-    /// sequence and where the two DOMs differ.
-    fn fuzzVerdict(c: Case, plan: FuzzPlan, driver: world.Result, report: ?world.Result) ![]const u8 {
+    /// before it): nothing for a run that agreed; a difference fails the
+    /// case with the fuzzer's report — the seed, the step, the sequence
+    /// and where the two DOMs differ.
+    fn fuzzVerdict(c: Case, plan: FuzzPlan, driver: world.Result, report: ?world.Result) !void {
         const r = report orelse {
             detail("{s}: the page fuzzer did not finish\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, driver.stdout, driver.stderr });
             because("[fuzz] the driver stopped", .{});
@@ -3234,18 +3257,15 @@ const Case = struct {
             because("[fuzz] {s} and {s} differ", .{ plan.pair.label_a, plan.pair.label_b });
             return error.FuzzDifference;
         }
-        return plan.line;
     }
 
     /// One build's page, as `browser.driveAll` ran it (`page`, null when
     /// the driver's `run` stopped before it), against its golden.
-    /// Recording, the line of a page that ran and matched is returned.
-    fn pageVerdict(c: Case, plan: PagePlan, driver: world.Result, page: ?world.Result, h: browser.Harness, script: Script) !?[]const u8 {
+    fn pageVerdict(c: Case, plan: PagePlan, driver: world.Result, page: ?world.Result) !void {
         const pass_name = @tagName(plan.pass);
         const chrome = c.cfg.chrome != null;
         const golden = plan.golden;
         const bless = plan.bless;
-        const out = plan.out;
         // No report: the driver stopped before the page ran — it refused its
         // arguments or the steps, or ran out of time — and says why as it
         // would have for this page alone.
@@ -3266,22 +3286,19 @@ const Case = struct {
             return error.PageFailed;
         }
         try c.expectGoldenMaybeBless(golden, shown.stdout, bless);
-        if (c.cfg.run_hashes != .record) return null;
-        return try run_hash.lineWith(c.arena, c.w, out, pass_name, golden, shown.stdout, try browser.page(c.arena, h, script.bytes));
     }
 
     /// One build-and-run of a `run/` fixture, against `golden`. Node is not
-    /// run when `record` (the fixture's `.run-hash`) lists this build's
-    /// line. Recording, it returns the line of a build that Node ran and
-    /// that matched; otherwise null.
-    fn runOnce(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, record: []const u8) !?[]const u8 {
-        return c.runOnceCrash(out_dir, pass, args, golden, bless, record, "crash");
+    /// run when the cache holds this build's digest; a build that Node ran
+    /// and that matched puts its digest into the cache.
+    fn runOnce(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool) !void {
+        return c.runOnceCrash(out_dir, pass, args, golden, bless, "crash");
     }
 
     /// `runOnce`, the program's crash text read from the golden `crash_golden`
     /// names: a pass that must crash where the others do not has one of its
     /// own (`.sanitize-lists-crash`).
-    fn runOnceCrash(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, record: []const u8, crash_golden: []const u8) !?[]const u8 {
+    fn runOnceCrash(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, crash_golden: []const u8) !void {
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
@@ -3307,7 +3324,7 @@ const Case = struct {
         };
 
         // A server program's script (`serve.zig`): the fixture is driven
-        // rather than run, and its record covers the script.
+        // rather than run, and its digest covers the script.
         const requests: ?[]const u8 = if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("requests"), c.arena, .limited(world.max_stream_bytes))) |bytes|
             bytes
         else |err| switch (err) {
@@ -3316,16 +3333,24 @@ const Case = struct {
         };
 
         // Skip Node when this exact output tree, golden and Node were
-        // verified together before. Pending mode has no records, and a
-        // blessing run exists to look at the output.
-        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless) {
+        // verified together before; else remember the digest, to record
+        // once the run matched. Pending mode looks nothing up, a
+        // blessing run exists to look at the output, and the in-place
+        // sweeps (`BENI_IN_PLACE=all`, `=lists`) run every pass of theirs.
+        var digest: ?[]const u8 = null;
+        const sweep = (c.cfg.in_place == .records and
+            (std.mem.eql(u8, out_dir, "out-in-place") or std.mem.eql(u8, out_dir, "out-stores") or
+                std.mem.eql(u8, out_dir, "release-stores"))) or
+            (c.cfg.in_place == .lists and std.mem.eql(u8, out_dir, "out-lists"));
+        if (c.cfg.mode == .strict and !bless and !sweep) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try c.recordLine(out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash), requests);
-                if (run_hash.listed(record, line)) {
+                const d = try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash), requests);
+                if (try run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
-                    return null;
+                    return;
                 }
                 RunCounts.add(&run_counts.stale);
+                digest = d;
             } else |_| {
                 // No golden: the comparison below reports it.
             }
@@ -3369,19 +3394,22 @@ const Case = struct {
             classify("{s}: exit=0 stdout-differs", .{passName(out_dir)});
             return err;
         };
-        // Verified: the golden now holds exactly what the program printed.
-        if (c.cfg.run_hashes != .record) return null;
-        return try c.recordLine(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests);
+        // Verified: the golden holds exactly what the program printed. The
+        // digest recorded is of those bytes, not of the golden read before
+        // the run: the release pass runs in another process than the
+        // development pass, and under `BENI_WRITE_EXPECTED=1` that one may
+        // rewrite the golden between the two reads.
+        if (digest != null) try run_hash.record(testing.io, try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests));
     }
 
-    /// A build's record line: a plain `run/` one's, or, for a server program,
+    /// A build's digest: a plain `run/` one's, or, for a server program,
     /// one that also covers the driver, the preload and the script.
-    fn recordLine(c: Case, out_dir: []const u8, pass: []const u8, golden: []const u8, expected: []const u8, requests: ?[]const u8) ![]const u8 {
-        const script = requests orelse return run_hash.line(c.arena, c.w, out_dir, pass, golden, expected);
-        return run_hash.lineWith(c.arena, c.w, out_dir, pass, golden, expected, try serve.inputs(c.arena, try serve.harness(testing.io), script));
+    fn runDigest(c: Case, out_dir: []const u8, pass: []const u8, golden: []const u8, expected: []const u8, requests: ?[]const u8) ![]const u8 {
+        const script = requests orelse return run_hash.digest(c.arena, c.w, out_dir, pass, golden, expected);
+        return run_hash.digestWith(c.arena, c.w, out_dir, pass, golden, expected, try serve.inputs(c.arena, try serve.harness(testing.io), script));
     }
 
-    /// What a `run/` build's record covers of its goldens: the stdout, and
+    /// What a `run/` build's digest covers of its goldens: the stdout, and
     /// after it the crash text when the fixture has one. A fixture without
     /// one is digested exactly as before `.crash` existed.
     fn withCrash(arena: std.mem.Allocator, stdout: []const u8, crash: ?[]const u8) ![]const u8 {

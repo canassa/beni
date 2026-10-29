@@ -1,5 +1,10 @@
 # S0 brief — `browser-inline`: the host boundary without the task kernel, and the empty page
 
+> Run hashes, 2026-10-23: the record files and `zig build test-run-hashes` were removed (#881).
+> The verified digests live in a cache outside git (`BENI_RUN_HASH_DIR`), and every ordinary
+> test run records. A line below that records or re-records run hashes describes a historical
+> step, not a current one.
+
 *2026-10-17. Slice S0 of #295 (`plans/direct-rewrite.md` §5), issue #296. The implementer's brief;
 the manager reviews against it. The plan is the parent; where this brief and the plan differ, this
 brief records the owner's decision that changed the plan.*

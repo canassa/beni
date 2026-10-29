@@ -1,0 +1,6 @@
+# The browser/tea pages that have no value-fuzz case, and why (the owner,
+# 2026-10-28, #881): every page not named here is fuzzed with messages as
+# values in the gates. One line per page, `<page>: <reason>`, a project by
+# its directory's name. The walk fails on a line that names no page, or
+# gives no reason. Every page passes its value fuzz today, so the file
+# names none.
