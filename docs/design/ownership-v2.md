@@ -1590,15 +1590,22 @@ of the same handle still add multiplicity through the path-multiset primitive.
   general, `force` memoises the first answer that is not a view. A chain of views (a view whose
   answer is the actual, itself a view) is followed once, in a `dagWalk` (growth), and every view
   on it then answers that node directly.
-- **κ and `fold_cond` at a view.** κ, a widened class's `fold_cond` and every position-keyed fact are
-  keyed by node id. The class's κ is relabelled onto the view ids, but a reader descending a value
-  meets the forced node. So a reader at a view position reads the fact **under the view id and the
-  forced id, joined**, as `recast`'s inner is read (`Cond.innersOf`). A forced node of a view is never
-  read alone; reading it alone would miss the class's binding, giving `lost` for a built node and,
-  for a leaf, a derived read that drops the class's constraint (a `FoldedBCall`-shaped callee's
-  instantiated `excl π1⟲·…`). At publish (below) the κ is relabelled through `force`, so the
-  published summary is keyed by forced ids. A call's κ is still relabelled **eagerly**, the callee's
-  κ size per call; making it lazy under `E` is #1265, accepted debt.
+- **κ at a view.** κ and every position-keyed fact are keyed by node id. The class's κ is relabelled
+  onto the view ids, and each argument's snapshot is linked where `linkArgs` meets it, but a reader
+  descending a value meets the forced node. So at a view position the stored entries under **every
+  id on its chain**, the view, each view a chain passes through (a view whose answer is another
+  view, an earlier call's result) and the forced node, are **joined as stored entries, before the
+  kind's rule reads them** (joining the two reads instead would give `lost`). The join is one stored
+  value per view, memoised with its expansion, and it is how `recast`'s inner is read
+  (`Cond.innersOf`). A forced node is never read alone. Read alone it would miss the class's binding,
+  or the argument's snapshot keyed by a middle view (`wrap x = { v = x }` over an earlier call's
+  result), giving `lost` for a built node and, for a leaf, a derived read that drops the
+  constraint (a `FoldedBCall`-shaped callee's instantiated `excl π1⟲·…`). At publish (below) the κ is
+  relabelled through `force`, so the published summary is keyed by forced ids. A call's κ is still
+  relabelled **eagerly**, the callee's κ size per call; making it lazy under `E` is #1265, accepted
+  debt.
+- **`fold_cond` never keys a view.** `widen` forces as it descends, so its fold certificates
+  (`Cond.fold_cond`) are made over forced nodes and keyed by them; Block reads them there (§3.6).
 - **Cycles, links and folds.** A widened class's knot needs no tie protocol. `view(T, E)` of a cyclic
   `T` expands to nodes whose children are views, and the cycle closes through the interned view id,
   so readers' existing seen sets (by `NodeId`) end their walks. The record of a view never changes;
@@ -1609,12 +1616,15 @@ of the same handle still add multiplicity through the path-multiset primitive.
   mapped to one position are joined.
 - **Readers.** Every switch on a node's kind handles `view` by forcing it and reading the forced node
   (and the view's own facts, above): `Shape.force` is the one entry. `proj(view, s)` is
-  `proj(force(view), s)`. `cellsOf` is the forced node's. `widen`, `join`, `leq` and `eq` force as
+  `proj(force(view), s)`. `cellsOf` is the forced node's, and it takes both sides of a `union` or a
+  `choice` as it does a `positions` node's, forcing any view it meets in its loop: a raw node's left
+  side alone, or a view's template cells, would be a silent loss. `widen`, `join`, `leq` and `eq` force as
   they descend. `Demands.holdPaths` and `laterUse` force one step where they read a node.
 - **`reach(view)` is structural.** The reach of `view(T, E)` is the image of `reach(T)` under `E`: a
   parameter cell is replaced by the actual's reach at its path, any other cell is mapped. The image is
   memoised per (radix node of `reach(T)`, `E`), and each node is charged before it is mapped. A nested
   view's reach is a radix node of its parent's, so a depth-d result costs O(d) for all its reaches,
+  as the d/2d fixture below measures (the bound is that fixture's, not the radix premise's),
   never O(d²) on a holder's lane.
 - **Blocks force a view at publish.** A block is self-contained (§3.6). A view's template is another
   class's node in these tables, and its environment holds this frame's values; neither is a
@@ -1629,10 +1639,13 @@ of the same handle still add multiplicity through the path-multiset primitive.
   marks and its `esc` cells (callee-sized, from a per-class list made once). It never costs the
   arguments' size, and it stays on the `call_view` lane up to that lane's share.
 - **Done.** For `x_k = List.push x_{k-1} k` at 10, 100 and 1 000 pushes, publish and a later read of
-  `x_n`'s element included, the whole build's growth is 0 and its source continuation per call is
-  flat. `ValueCellsGuards.rebuilt`'s wide graft costs a constant per call. Slice 2a's first fixtures
+  `x_n`'s element included, every `dagWalk` (the publish force and the element read among them) is
+  paid from its declaration's source continuation, so the whole build's growth past the continuation
+  is 0, and the continuation per call is flat. `ValueCellsGuards.rebuilt`'s wide graft costs a
+  constant per call. Slice 2a's first fixtures
   pin review points 1–4: a `FoldedBCall`-shaped callee over a view (1), the `pick` chain of 1 000 (2),
-  the `id` tower of 1 000 (3), and a depth-d result's reaches, counted at d and 2d (4). A twin of the
+  the `id` tower of 1 000 (3), a depth-d result's reaches, counted at d and 2d (4), and `wrap x =
+  { v = x }` over an earlier call's result, its κ read through the chain (the re-check's 1). A twin of the
   chain, with an early read of an intermediate `x_k`, runs at `--jobs=1` and `--jobs=8` and compares
   byte for byte (§3.8).
 Memo keys include template position, actual-root/substitution environment, invocation, effective cursor,
