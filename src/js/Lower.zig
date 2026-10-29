@@ -14177,6 +14177,30 @@ pub const Lowerer = struct {
                 try calls.append(l.scratch, .{ .inst = @intCast(at), .spine = false });
             }
         }
+        // `Browser.prerender` used as a value — bound to a name, passed to a
+        // function — would run as written in a page and hand it the pair
+        // the prerender tree reads (`prerender.md` §7.2): refused, as a
+        // program constructor used as a value is.
+        for (l.bir.decls, 0..) |d, di| {
+            if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .ext_value and tags[at] != .top) continue;
+                const placement = l.placementOf(@fromBackingInt(@intCast(at))) orelse continue;
+                if (placement.places != .prerender) continue;
+                const called = for (calls.items) |c| {
+                    if (data[c.inst].lhs == at) break true;
+                } else false;
+                if (called) continue;
+                try l.report(.program_shape, @fromBackingInt(@intCast(at)),
+                    \\`{s}` is used here as a value rather than called, so the build cannot see which
+                    \\program it prerenders, and a page would run it as written. Call it where `main`
+                    \\says what the page's program is (`docs/design/prerender.md` §7.2):
+                    \\
+                    \\    main = Browser.prerender (Tea.sandbox app) routes
+                , .{"Browser.prerender"});
+            }
+        }
         if (calls.items.len == 0) return;
         std.mem.sort(PrerenderCall, calls.items, {}, struct {
             fn less(_: void, a: PrerenderCall, b: PrerenderCall) bool {

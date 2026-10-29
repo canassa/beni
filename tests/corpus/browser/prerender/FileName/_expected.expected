@@ -1,0 +1,8 @@
+-- url "/about.html?from=feed#team"
+-- load
+<body>
+  <p>"about.html from feed at team"</p>
+</body>
+-- location
+(location: /about.html?from=feed#team)
+(the DOM did not change)

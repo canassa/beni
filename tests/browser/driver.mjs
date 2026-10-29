@@ -36,7 +36,7 @@
 // the program's first render before the program runs). When the script's
 // setup steps hold a `url`, the page is the file a static host answers that
 // address with (§7.4, `beni serve`'s rule): `/` and a path ending in `/` its
-// `index.html`, any other path the file itself, else `<path>.html`, else
+// `index.html`, any other path the file itself, else its `index.html`, else `<path>.html`, else
 // the root `index.html`, the single-page fallback.
 //
 // A `--fuzz=<spec.json>@<report.json>` is a run of the page fuzzer
@@ -1507,7 +1507,7 @@ function servedFile(dir, address) {
       throw error;
     }
   };
-  const tried = path === "" || path.endsWith("/") ? [`${path}index.html`] : [path, `${path}.html`, `${path}/index.html`];
+  const tried = path === "" || path.endsWith("/") ? [`${path}index.html`] : [path, `${path}/index.html`, `${path}.html`];
   return tried.find(isFile) ?? "index.html";
 }
 

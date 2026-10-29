@@ -1,0 +1,71 @@
+-- A prerendered page opened at its file's name, `/about.html?from=feed#team`
+-- (docs/design/prerender.md §7.3): `init` is handed the route `/about`,
+-- and after the first render the address is replaced by the route, its
+-- query and fragment kept — so a `.html` suffix never reaches the program —
+-- and, since it still differs from the route's `Url`, comes as an
+-- `onUrlChange` message, which the page shows. The build that does not
+-- prerender hands `init` the address as it is, so its transcript is the
+-- shared golden and each prerendering build has its own.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, fragment, map, oneOf, questionMark, s, slash, top)
+import Url.Parser.Query as Query
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Changed Url
+
+
+page : Parser (String → a) a
+page =
+    oneOf
+        [ map top "home"
+        , s "about"
+            ▷ questionMark (Query.string "from")
+            ▷ slash (fragment λf → f)
+            ▷ map λfrom → λsection → shown "about" from section
+        , s "about.html"
+            ▷ questionMark (Query.string "from")
+            ▷ slash (fragment λf → f)
+            ▷ map λfrom → λsection → shown "about.html" from section
+        ]
+
+
+shown : String, Maybe String, Maybe String → String
+shown name from section =
+    name
+        ++ " from "
+        ++ Maybe.withDefault from "nowhere"
+        ++ " at "
+        ++ Maybe.withDefault section "the top"
+
+
+parsed : Url → String
+parsed url = Maybe.withDefault (Url.Parser.parse page url) "lost"
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.application
+            { init = λurl _ → ( { text = parsed url }, Cmd.none )
+            , update =
+                λmsg m →
+                    case msg of
+                        Changed url →
+                            ( { m | text = parsed url }, Cmd.none )
+
+                        Requested _ →
+                            ( m, Cmd.none )
+            , view = λmodel → { title = "About", body = <p>{model.text}</p> }
+            , subscriptions = λ_ → Sub.none
+            , onUrlRequest = Requested
+            , onUrlChange = Changed
+            }
+        )
+        [ "/", "/about" ]

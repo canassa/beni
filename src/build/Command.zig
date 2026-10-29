@@ -175,6 +175,12 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     if (says) |s| {
         // `"build"."origin"` (`prerender.md` §7.3, `frontend.md` §10.1): what
         // an application's routes are `Url`s below.
+        // A page below the root, `blog/hello.html`, names its entry by a
+        // path from the base, so the base must be absolute (`prerender.md`
+        // §5.3), and a route's `Url` has it in its path (§7.3).
+        if (build.base.len == 0 or build.base[0] != '/') {
+            return fail(stderr, "beni: this program prerenders, and beni.json's \"build\" \"base\" must then be an absolute URL path, beginning with '/', not '{s}'", .{build.base});
+        }
         const origin: ?[]const u8 = if (app) |m| m.build.origin else null;
         if (origin) |o| if (!validOrigin(o)) {
             return fail(stderr, "beni: beni.json's \"build\" \"origin\" must be an http or https origin with no path, as \"https://example.com\", not '{s}'", .{o});

@@ -1,10 +1,10 @@
 -- url "/cartoons/"
 -- load
 <body>
-  <h1>"Tom & Jerry <cartoons>"</h1>
+  <h1>"Tom & Jerry <cartoons> \"live\""</h1>
 </body>
 -- title
-(title: "Tom & Jerry <cartoons>")
+(title: "Tom & Jerry <cartoons> \"live\"")
 (the DOM did not change)
 -- location
 (location: /cartoons/)

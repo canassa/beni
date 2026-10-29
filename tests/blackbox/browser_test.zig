@@ -726,6 +726,34 @@ fn expectNeedsNode(empty_dir_on_path: bool) !void {
     try testing.expect(!w.exists(".out.prerender"));
 }
 
+test "a prerendering build refuses a relative base, which a page below the root cannot load from" {
+    // `docs/design/prerender.md` §5.3, §7.3: `blog/hello.html` names its
+    // entry by a path from the base, and a route's `Url` has the base in
+    // its path, so `"base": "./"` would make a page that loads nothing.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{ \"html\": \"shell.html\", \"build\": { \"base\": \"./\" } }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{n}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/blog/hello" ]
+        \\
+    );
+    const r = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true, .path = try w.nodePath() });
+    try expectExit(2, r);
+    try testing.expectEqualStrings("beni: this program prerenders, and beni.json's \"build\" \"base\" must then be an absolute URL path, beginning with '/', not './'\n", r.stderr);
+    try testing.expect(!w.exists("out"));
+}
+
 test "a Debug.log in a prerendered view is allowed, and what Node wrote reaches stderr as text" {
     // `docs/design/prerender.md` §3.1: `Debug.log` is the one exempt call,
     // directly and in a function of the program's module; its line goes to

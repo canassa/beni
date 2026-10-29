@@ -397,7 +397,7 @@ test "serve prerenders every build, and answers /about with about.html" {
         \\
         \\
         \\main : Tea.Program
-        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → START, update = λn _ → n, view = view }) [ "/", "/about" ]
+        \\main = Browser.prerender (Tea.sandbox { init = λ⊤ → START, update = λn _ → n, view = view }) [ "/", "/about", "/blog", "/blog/x" ]
         \\
     ;
     const arena = w.arena.allocator();
@@ -414,6 +414,8 @@ test "serve prerenders every build, and answers /about with about.html" {
     const about = try get(&w, port, "/about");
     const about_file = try get(&w, port, "/about.html");
     const missing = try get(&w, port, "/missing");
+    // `/blog` is a page and a directory, `blog/x.html`'s, with no `index.html`.
+    const blog = try get(&w, port, "/blog");
     try w.write("src/Main.beni", try std.mem.replaceOwned(u8, arena, source, "START", "2"));
     try live.waitFor("beni: built in ", 2);
     const rebuilt = try get(&w, port, "/about");
@@ -431,6 +433,7 @@ test "serve prerenders every build, and answers /about with about.html" {
     try testing.expectEqualStrings(about.body, about_file.body);
     // A route the list does not hold is the single-page fallback.
     try testing.expectEqualStrings(root.body, missing.body);
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "/blog", 1 }), blog.body);
     // The rebuild prerendered again.
     try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "/about", 2 }), rebuilt.body);
     try testing.expect(!w.exists(".out.prerender"));

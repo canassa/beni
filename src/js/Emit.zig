@@ -287,6 +287,17 @@ pub fn prerenders(session: *const Session, lowering: *const beni_markup.Lowering
     var call: ?Bir.Inst.Index = null;
     var depth: u32 = 0;
     while (depth < 64) : (depth += 1) {
+        // The program may be a top-level value of `main`'s module that the
+        // spine names: its body is what is prerendered.
+        if (call != null and b.instTag(at) == .top) {
+            const td = b.instData(at).lhs;
+            if (td < b.decls.len and b.decls[td].kind == .value and b.decls[td].params == 0) {
+                if (b.decls[td].body.unwrap()) |body| {
+                    at = body;
+                    continue;
+                }
+            }
+        }
         if (b.instTag(at) != .call) break;
         const d = b.instData(at);
         const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
@@ -8244,7 +8255,7 @@ const Emitter = struct {
     }
 
     /// The shell with its `{{title}}` and its `{{view}}` filled: the title
-    /// escaped for the text of a `<title>`, and both last, so that what the
+    /// escaped for a text and for a quoted attribute, and both last, so that what the
     /// program writes is never read as a placeholder (`prerender.md` §5.3,
     /// §7.5). No title, or none given, is nothing.
     fn fillShell(a: Allocator, shell: []const u8, view: []const u8, title: ?[]const u8) Allocator.Error![]const u8 {
@@ -8253,6 +8264,10 @@ const Emitter = struct {
             '&' => try escaped.appendSlice(a, "&amp;"),
             '<' => try escaped.appendSlice(a, "&lt;"),
             '\r' => try escaped.appendSlice(a, "&#13;"),
+            // A shell may write `{{title}}` in a quoted attribute too
+            // (`<meta content="{{title}}">`), whose quote must not end it.
+            '"' => try escaped.appendSlice(a, "&quot;"),
+            '\'' => try escaped.appendSlice(a, "&#39;"),
             else => try escaped.append(a, c),
         };
         // One pass over the shell, so a title that says `{{view}}` stays text.
@@ -8282,8 +8297,61 @@ const Emitter = struct {
         var found = false;
         const folded = try e.scratch.alloc([]const u8, files.len);
         for (files, folded) |f, *slot| slot.* = try std.ascii.allocLowerString(e.scratch, f);
-        for (folded, 0..) |f, i| for (folded[0..i], 0..) |g, j| {
-            if (!std.mem.eql(u8, f, g) and !isDirOf(f, g) and !isDirOf(g, f)) continue;
+        // Each folded page file by its first page, and each folded file the
+        // build writes besides: one pass over every path's directories, so
+        // a site of many routes costs what its paths' length does.
+        var by_file: std.StringHashMapUnmanaged(usize) = .empty;
+        var others: std.StringHashMapUnmanaged(usize) = .empty;
+        const other_folded = try e.scratch.alloc([]const u8, e.pending.items.len);
+        for (e.pending.items, other_folded, 0..) |output, *slot, k| {
+            slot.* = try std.ascii.allocLowerString(e.scratch, output.path);
+            try others.put(e.scratch, slot.*, k);
+        }
+        for (folded, 0..) |f, i| {
+            const got = try by_file.getOrPut(e.scratch, f);
+            if (!got.found_existing) got.value_ptr.* = i;
+        }
+        for (folded, 0..) |f, i| {
+            // The page whose file this one is, or one whose file is a
+            // directory of this one's.
+            var clash: ?usize = null;
+            if (by_file.get(f)) |j| if (j != i) {
+                clash = j;
+            };
+            var at: usize = 0;
+            while (clash == null) {
+                const slash = std.mem.indexOfScalarPos(u8, f, at, '/') orelse break;
+                if (by_file.get(f[0..slash])) |j| clash = j;
+                if (others.get(f[0..slash])) |k| {
+                    const output = e.pending.items[k];
+                    try e.reportAtEntry(entry, .output_path_collision,
+                        \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
+                        \\written for `{s}`, are a file and a directory of the same name on a file
+                        \\system that folds case (`docs/design/prerender.md` §7.4;
+                        \\`docs/design/backend.md` §2). Rename the route.
+                    , .{ pages[i].route, files[i], output.path, output.origin });
+                    found = true;
+                }
+                at = slash + 1;
+            }
+            // A file the build writes inside this page's file, as a
+            // directory.
+            for (other_folded, 0..) |g, k| {
+                if (!isDirOf(f, g)) continue;
+                const output = e.pending.items[k];
+                try e.reportAtEntry(entry, .output_path_collision,
+                    \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
+                    \\written for `{s}`, are a file and a directory of the same name on a file
+                    \\system that folds case (`docs/design/prerender.md` §7.4;
+                    \\`docs/design/backend.md` §2). Rename the route.
+                , .{ pages[i].route, files[i], output.path, output.origin });
+                found = true;
+                break;
+            }
+            const j = clash orelse continue;
+            // Each pair once: an exact match is reported at its later page.
+            if (std.mem.eql(u8, f, folded[j]) and j > i) continue;
+            const g = folded[j];
             try e.reportAtEntry(entry, .output_path_collision,
                 \\This program prerenders the routes `{s}` and `{s}`, whose pages are {s} on a
                 \\file system that folds case, as macOS (APFS) and Windows (NTFS) do:
@@ -8296,22 +8364,6 @@ const Emitter = struct {
                 \\`docs/design/backend.md` §2). List each page once, under one spelling.
             , .{ pages[j].route, pages[i].route, if (std.mem.eql(u8, f, g)) "one file" else "a file and a directory of the same name", files[j], pages[j].route, files[i], pages[i].route });
             found = true;
-        };
-        if (found) return true;
-        // A page's directory that is a file the build writes, or the
-        // other way round.
-        for (e.pending.items) |output| {
-            const other = try std.ascii.allocLowerString(e.scratch, output.path);
-            for (folded, 0..) |f, i| {
-                if (!isDirOf(f, other) and !isDirOf(other, f)) continue;
-                try e.reportAtEntry(entry, .output_path_collision,
-                    \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
-                    \\written for `{s}`, are a file and a directory of the same name on a file
-                    \\system that folds case (`docs/design/prerender.md` §7.4;
-                    \\`docs/design/backend.md` §2). Rename the route.
-                , .{ pages[i].route, files[i], output.path, output.origin });
-                found = true;
-            }
         }
         return found;
     }
