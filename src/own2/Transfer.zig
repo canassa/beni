@@ -1043,7 +1043,7 @@ pub const Frame = struct {
                                 if (tsteps.len == wsteps.len) continue;
                                 if (tsteps.len > wsteps.len and exactPath(wsteps)) continue;
                             }
-                            const folded = try f.readThroughLeaf(argv.items[w.param], wsteps) and try f.readThroughLeaf(argv.items[w.param], tsteps);
+                            const folded = try f.foldBelowLeaf(argv.items[w.param], wsteps, tsteps);
                             const pos = (try f.besides((try f.positionsAt(argv.items[w.param], tsteps)) orelse continue, base, &f.demands.items[f.demands.items.len - 1], folded)) orelse continue;
                             try f.operands.append(f.gpa, .{ .value = pos, .inst = arg_insts[w.param].int() });
                             dm.operands.len += 1;
@@ -1074,22 +1074,32 @@ pub const Frame = struct {
         for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse break;
         return p;
     }
-
-    /// Whether `v` at `steps` is read through a leaf: every position there is
-    /// a symbolic cell's projection, not a cell a built value holds. Two class
-    /// paths that fold onto one such cell stand for distinct positions of one
-    /// projected value; one built value holding a cell at two places does not
-    /// (§2.11 item 3 (c)).
-    fn readThroughLeaf(f: *Frame, v: Value, steps: []const Step) Error!bool {
+    /// How many steps of `steps` read `v` before a leaf, when the path meets
+    /// one (null when it does not): every position below is then a symbolic
+    /// cell's projection, not a cell a built value holds.
+    fn leafDepth(f: *Frame, v: Value, steps: []const Step) Error!?usize {
         const shapes = f.env.shapes;
         var at = v.node;
-        for (steps) |s| {
+        for (steps, 0..) |s, i| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
-            if (shapes.kind(at) == .leaf) return true;
-            if (s.kind == .level) return false;
-            at = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, at, s)) orelse return false;
+            if (shapes.kind(at) == .leaf) return i;
+            if (s.kind == .level) return null;
+            at = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, at, s)) orelse return null;
         }
-        return false;
+        return null;
+    }
+
+    /// Whether two class paths over `v` fold onto one cell as distinct
+    /// positions of one projected value (§2.11 item 3 (c)): both meet the
+    /// same leaf through the same prefix, so they part below it. Two paths
+    /// meeting one leaf through different prefixes (`{ x = l, y = l }`) are
+    /// one value held twice.
+    fn foldBelowLeaf(f: *Frame, v: Value, a: []const Step, b: []const Step) Error!bool {
+        const da = (try f.leafDepth(v, a)) orelse return false;
+        const db = (try f.leafDepth(v, b)) orelse return false;
+        if (da != db) return false;
+        for (a[0..da], b[0..db]) |x, y| if (!std.meta.eql(x, y)) return false;
+        return true;
     }
 
     /// The argument `v` at a class's parameter path `steps`: every position
@@ -1152,7 +1162,7 @@ pub const Frame = struct {
     /// marks both and its callers check them, so a cell of another of its
     /// paths is dropped. The base's own cell at a path through `[*]` or `⟲`
     /// stands for several positions: when both paths are read through a leaf
-    /// (`readThroughLeaf`), the class's two paths folded them into
+    /// (`foldBelowLeaf`), the class's two paths folded them into
     /// one: the write relies on them being distinct, `excl c`, owed upward as
     /// the fold's reliance (§8 S3b). Null when nothing is left.
     fn besides(f: *Frame, v: Value, base: Value, dm: *Demands.Demand, folded: bool) Error!?Value {
