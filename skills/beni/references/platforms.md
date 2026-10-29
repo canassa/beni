@@ -21,8 +21,8 @@ WebSocket on a server and in a page.
 - `main : Program` is a value: `Node.print text`, `Node.printLines lines`, `Node.exitWith message
   code`, or `Node.done`. A `node` program writes its standard output only through the `Program` it
   ends with.
-- `main = Io.run λ⊤ → …` runs a fiber that can wait: `Io.sleep ms`, `Io.readFile path`
-  (`Result FileError String`), `Deferred.wait`, `Task.sleep`.
+- `main = Io.run λ⊤ → …` runs a fiber that can wait: `Io.sleep ms`, `Io.readFile path`, `Io.readDir path`
+  (entries sorted by name; `prerender.md`), `Deferred.wait`, `Task.sleep`; both reads give `Result FileError _`.
 - `Http.Server.listen { host, port } handler` starts a server; the handler is `Request → Response`
   and runs once per request, in a fiber of its own. `Server.text status body` is a response;
   `Server.wait server` waits until it closes; `Server.close server` stops it.

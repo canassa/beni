@@ -1,0 +1,11 @@
+--! A test platform's one capability: write the directory tree `Io.readDir`'s
+--! fixtures list into the program's working directory, since a fixture
+--! stages only its `.beni` files and a tree needs names, subdirectories and
+--! links a source file cannot be.
+
+--| Write `data/` below the working directory: files `b.txt`, `a.txt`,
+--| `Z.txt`, `é.txt`, `ｱ.txt` (U+FF71) and `😀.txt` (U+1F600); the
+--| directories `sub/` (holding `inner.txt`) and `empty/` (holding nothing
+--| but `.keep`); the links `link` to `a.txt`, `dangling` to nothing and
+--| `loop` to itself.
+pub foreign impure makeTree : ⊤ → ⊤

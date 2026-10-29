@@ -1,0 +1,8 @@
+ENOENT: not found
+EACCES: permission denied
+EPERM: permission denied
+ENOTDIR: not a directory
+EMFILE: too many open files
+ENFILE: too many open files
+ELOOP: symlink loop
+ENAMETOOLONG: name too long

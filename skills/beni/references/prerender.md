@@ -250,6 +250,10 @@ main = Prerender.pages (Page.schema ⊤) λ⊤ →
             Err "cannot read posts/hello.txt"
 ```
 
+To find the posts, list the directory: `Io.readDir "posts"` gives the entries sorted by name, so the
+routes come out in the same order on every build. Keep the entries whose `kind` is `Io.File`, and join
+`"posts/${entry.name}"` for `Io.readFile`.
+
 The site's `main` is `Browser.prerenderData schema λvalue → program`:
 
 ```text

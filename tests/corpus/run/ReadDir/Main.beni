@@ -1,0 +1,55 @@
+-- run: `Io.readDir` lists a directory without following symbolic links:
+-- names, not paths, with the kind of each entry, sorted by the bytes of the
+-- UTF-8 name (code point order, so U+FF71 comes before U+1F600, which
+-- JavaScript's own UTF-16 order would reverse; the capitals come before the
+-- lower case), an empty directory's only entry a dot file, and `.` and `..`
+-- never listed (transparent-effects-proposal.md §16.5). A trailing slash
+-- names the same directory. The test platform writes `data/` first.
+import Io exposing (Entry, EntryKind)
+import Node exposing (Program)
+import Tree
+
+
+kindName : EntryKind → String
+kindName kind =
+    case kind of
+        Io.File →
+            "file"
+
+        Io.Directory →
+            "directory"
+
+        Io.Symlink →
+            "symlink"
+
+        Io.Other →
+            "other"
+
+
+show : Entry → String
+show entry = "${entry.name} ${kindName entry.kind}"
+
+
+list : String → List String
+list path =
+    case Io.readDir path of
+        Ok entries →
+            List.map entries show
+
+        Err _ →
+            [ "error" ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    Tree.makeTree ⊤
+    Node.printLines
+        [ "data:"
+        , …list "data"
+        , "data/sub:"
+        , …list "data/sub"
+        , "data/empty:"
+        , …list "data/empty"
+        , "data/sub/:"
+        , …list "data/sub/"
+        ]

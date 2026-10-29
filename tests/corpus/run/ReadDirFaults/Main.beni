@@ -1,0 +1,64 @@
+-- run: the failures of `Io.readDir` that a program cannot arrange (a
+-- directory it may not read when the tests run as root, no descriptor to
+-- spare, a loop of links) each have their own constructor. The test
+-- platform makes every listing reject with the code named
+-- (transparent-effects-proposal.md §16.5, CLAUDE.md rule 9).
+import Fault
+import Io exposing (FileError)
+import Node exposing (Program)
+
+
+describe : FileError → String
+describe error =
+    case error of
+        Io.NotFound →
+            "not found"
+
+        Io.PermissionDenied →
+            "permission denied"
+
+        Io.IsADirectory →
+            "is a directory"
+
+        Io.TooLarge →
+            "too large"
+
+        Io.NotADirectory →
+            "not a directory"
+
+        Io.TooManyOpenFiles →
+            "too many open files"
+
+        Io.SymlinkLoop →
+            "symlink loop"
+
+        Io.NameTooLong →
+            "name too long"
+
+        Io.InvalidPath →
+            "invalid path"
+
+
+attempt : String → String
+attempt code =
+    Fault.failListings code
+    case Io.readDir "." of
+        Ok _ →
+            code ++ ": listed"
+
+        Err error →
+            code ++ ": " ++ describe error
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ attempt "ENOENT"
+        , attempt "EACCES"
+        , attempt "EPERM"
+        , attempt "ENOTDIR"
+        , attempt "EMFILE"
+        , attempt "ENFILE"
+        , attempt "ELOOP"
+        , attempt "ENAMETOOLONG"
+        ]

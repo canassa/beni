@@ -1,0 +1,1 @@
+{ "platform": true, "name": "fault", "platforms": ["node"], "reexports": ["Node", "Io"] }

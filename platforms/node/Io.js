@@ -6,7 +6,8 @@
 // §16.5): a cancelled fiber's timer is cleared and its read aborted.
 
 import process from "node:process";
-import { readFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
+import { readFile, readdir } from "node:fs/promises";
 
 // How a fiber `Io.run` started ended: its program's output and exit code,
 // or 130 when it was cancelled. `runtime.js` has already run the empty
@@ -64,6 +65,63 @@ export const startRead = (path, resume) => {
   );
   return (unit) => {
     abort.abort();
+    return unit;
+  };
+};
+
+// `FileError`'s constructor for each failure Node documents for
+// `fs.promises.readdir`, by the error's `code`.
+const dirErrors = {
+  ENOENT: "NotFound",
+  EACCES: "PermissionDenied",
+  EPERM: "PermissionDenied",
+  ENOTDIR: "NotADirectory",
+  EMFILE: "TooManyOpenFiles",
+  ENFILE: "TooManyOpenFiles",
+  ELOOP: "SymlinkLoop",
+  ENAMETOOLONG: "NameTooLong",
+  // A TypeError: the path holds a NUL character.
+  ERR_INVALID_ARG_VALUE: "InvalidPath",
+};
+
+// `EntryKind` is all nullary, so a constructor is its tag.
+const kindOf = (entry) =>
+  entry.isFile()
+    ? "File"
+    : entry.isDirectory()
+      ? "Directory"
+      : entry.isSymbolicLink()
+        ? "Symlink"
+        : "Other";
+
+// Code point order, which is the order of the UTF-8 bytes. `<` on strings
+// is UTF-16 code unit order, which differs above U+FFFF.
+const byName = (a, b) => Buffer.compare(Buffer.from(a.name), Buffer.from(b.name));
+
+export const startReadDir = (path, resume) => {
+  let cancelled = false;
+  readdir(path, { withFileTypes: true }).then(
+    (entries) => {
+      // `fs.promises.readdir` takes no signal: a cancelled fiber's listing
+      // finishes and no one waits for it.
+      if (cancelled) return;
+      const list = entries.map((entry) => ({ name: entry.name, kind: kindOf(entry) }));
+      list.sort(byName);
+      resume({ $: "Ok", a: list });
+    },
+    (error) => {
+      if (cancelled) return;
+      const code = error instanceof Error ? error.code : undefined;
+      if (typeof code === "string" && Object.hasOwn(dirErrors, code)) {
+        resume({ $: "Err", a: dirErrors[code] });
+        return;
+      }
+      // Anything else is a defect (CLAUDE.md rule 9): see `startRead`.
+      throw error;
+    },
+  );
+  return (unit) => {
+    cancelled = true;
     return unit;
   };
 };
