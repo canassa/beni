@@ -1,5 +1,3 @@
--- CK-313: (#1252) calls of a doubling DAG check under the default allowance;
--- S3b PR 2 unpins it. Red: `Calls.linkArgs` walks the result once per path.
 -- Building `==` on a doubling DAG type costs its distinct nodes.
 -- `w6 1` has a tuple type 32 levels deep whose every level shares one
 -- node; its derived `eq` evidence is a DAG of 32 distinct terms. The

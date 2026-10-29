@@ -553,8 +553,46 @@ const Grafter = struct {
         var w: LinkWalk = .{};
         defer w.deinit(g.gpa());
         try w.builders.append(g.gpa(), .{ .at = kappa });
+        w.acyclic = try g.knotFree(res);
         try g.linkAt(&w, res, 0);
         return g.finishBuilder(w.builders.items[0]);
+    }
+
+    /// Whether `res`'s graph has no cycle (no knot): a coloured depth-first
+    /// walk, each node once.
+    fn knotFree(g: *Grafter, res: NodeId) Error!bool {
+        const shapes = g.env.shapes;
+        var colour: stamped.Column(NodeId, bool) = .{};
+        defer colour.deinit(g.gpa());
+        const Frame = struct { node: NodeId, exit: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(g.gpa());
+        try stack.append(g.gpa(), .{ .node = res, .exit = false });
+        while (stack.pop()) |f| {
+            if (f.exit) {
+                try colour.put(g.gpa(), f.node, true);
+                continue;
+            }
+            if (colour.get(f.node)) |done| {
+                if (!done) return false;
+                continue;
+            }
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            try colour.put(g.gpa(), f.node, false);
+            try stack.append(g.gpa(), .{ .node = f.node, .exit = true });
+            const d = shapes.get(f.node);
+            switch (d.kind) {
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try stack.append(g.gpa(), .{ .node = .from(d.a), .exit = false });
+                    var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (kt.next()) |e| try stack.append(g.gpa(), .{ .node = e.node, .exit = false });
+                },
+                .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .exit = false }),
+                .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .exit = false }, .{ .node = .from(d.b), .exit = false } }),
+            }
+        }
+        return true;
     }
 
     const LinkWalk = struct {
@@ -571,6 +609,10 @@ const Grafter = struct {
         arg_at: Ids.FixedDict(2) = .{},
         /// The `(argument, path)`s a level step or a missing position stopped.
         arg_stopped: Ids.FixedDict(2) = .{},
+        /// When `res` has no knot: each finished position by `(node, snapshot it
+        /// starts from)`, so a node shared by many paths is linked once (#1252).
+        acyclic: bool = false,
+        shared: Ids.FixedDict(2) = .{},
 
         fn deinit(w: *LinkWalk, gpa_: Allocator) void {
             w.builders.deinit(gpa_);
@@ -579,11 +621,12 @@ const Grafter = struct {
             w.visited.deinit(gpa_);
             w.arg_at.deinit(gpa_);
             w.arg_stopped.deinit(gpa_);
+            w.shared.deinit(gpa_);
         }
     };
 
     /// A position's snapshot being built, and whether a backedge folds it.
-    const Builder = struct { at: Cond.Kappas, fold: bool = false };
+    const Builder = struct { at: Cond.Kappas, fold: bool = false, node: NodeId = .none, start: Cond.Kappas = .none };
 
     fn finishBuilder(g: *Grafter, b: Builder) Error!Cond.Kappas {
         if (!b.fold or g.env.conds.isFold(b.at)) return b.at;
@@ -622,6 +665,14 @@ const Grafter = struct {
         return cur;
     }
 
+
+    /// A finished child position's snapshot linked into its parent's builder
+    /// at `s` (merged when the parent folds).
+    fn linkChild(g: *Grafter, w: *LinkWalk, s: Step, child: Cond.Kappas) Error!void {
+        const conds = g.env.conds;
+        const top = &w.builders.items[w.builders.items.len - 1];
+        top.at = if (conds.isFold(top.at)) try conds.kappaMerge(g.gpa(), g.env.charge, top.at, child) else try conds.withLink(g.gpa(), g.env.charge, top.at, s, child);
+    }
     fn linkAt(g: *Grafter, w: *LinkWalk, root: NodeId, root_pid: u32) Error!void {
         const shapes = g.env.shapes;
         const conds = g.env.conds;
@@ -639,13 +690,27 @@ const Grafter = struct {
             if (f.exit) {
                 w.active.remove(f.node);
                 if (f.step) |s| {
-                    const child = try g.finishBuilder(w.builders.pop().?);
-                    const top = &w.builders.items[w.builders.items.len - 1];
-                    top.at = if (conds.isFold(top.at)) try conds.kappaMerge(g.gpa(), g.env.charge, top.at, child) else try conds.withLink(g.gpa(), g.env.charge, top.at, s, child);
+                    const b = w.builders.pop().?;
+                    const child = try g.finishBuilder(b);
+                    if (w.acyclic) {
+                        try g.env.charge.reserve(g.gpa(), .memo, 1);
+                        (try w.shared.getOrPut(g.gpa(), .{ b.node.int(), b.start.int() })).value_ptr.* = child.int();
+                    }
+                    try g.linkChild(w, s, child);
                 }
                 continue;
             }
             const t = f.node;
+            // A position whose node and starting snapshot were linked
+            // already, on another path: its finished snapshot as it was.
+            if (w.acyclic) if (f.step) |s| {
+                const start = conds.kappaChild(w.builders.items[w.builders.items.len - 1].at, s);
+                try g.env.charge.reserve(g.gpa(), .memo, 1);
+                if (w.shared.get(.{ t.int(), start.int() })) |done| {
+                    try g.linkChild(w, s, .from(done));
+                    continue;
+                }
+            };
             try g.env.charge.reserve(g.gpa(), .memo, 1);
             const seen = try w.visited.getOrPut(g.gpa(), .{ t.int(), f.pid });
             if (seen.found_existing) continue;
@@ -659,7 +724,8 @@ const Grafter = struct {
             }
             if (f.step) |s| {
                 const parent = w.builders.items[w.builders.items.len - 1].at;
-                try w.builders.append(g.gpa(), .{ .at = conds.kappaChild(parent, s) });
+                const start = conds.kappaChild(parent, s);
+                try w.builders.append(g.gpa(), .{ .at = start, .node = t, .start = start });
             }
             const here: u32 = @intCast(w.builders.items.len - 1);
             try w.active.put(g.gpa(), t, here);
