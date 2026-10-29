@@ -105,10 +105,11 @@ pub const lowering: m.Lowering = .{
         // `(root, html, arms, tags)`: the hydrating mount's table, the
         // prerendered page taken over or mounted fresh (`prerender.md` §6).
         .{ .name = "take", .arity = 4 },
-        // Input before the takeover (`prerender.md` §6.5): `(top)` the
-        // capture script's records taken, `(node, kind, f)` a listener
-        // added and noted, `on` and `onArm` through it, and `(⊤)` the
-        // records handed to the listeners noted.
+        // Input before the takeover (`prerender.md` §6.5): `(at)` the
+        // capture script's records taken, before `take`; `(node, kind, f)`
+        // a listener added and noted, `on` and `onArm` through it; and
+        // `(top)` the records inside the unit taken over handed to the
+        // listeners noted.
         .{ .name = "caught", .arity = 1 },
         .{ .name = "listen", .arity = 3 },
         .{ .name = "onTaken", .arity = 4 },
@@ -885,12 +886,25 @@ const Page = struct {
         return kinds.items;
     }
 
+    /// The kinds the capture script records: `eventKinds` but the pointer
+    /// events, whose payload is read while the event is dispatched — the
+    /// box of the element whose listener runs, its `currentTarget` — which
+    /// a delivery after the dispatch cannot give (`prerender.md` §6.5,
+    /// amended 2026-10-29).
+    fn capturedKinds(pg: *Page) m.Error![]const []const u8 {
+        var kinds: std.ArrayList([]const u8) = .empty;
+        for (try pg.eventKinds()) |k| {
+            if (std.mem.indexOf(u8, k, "pointer") == null) try kinds.append(pg.a(), k);
+        }
+        return kinds.items;
+    }
+
     /// The capture script of a prerendered page (`prerender.md` §6.5,
     /// amended 2026-10-29): it records each event of `kinds` on the unit
     /// before the takeover, for the mount's `caught`. Empty when the unit
     /// listens to nothing.
     fn captureScript(pg: *Page) m.Error![]const u8 {
-        const kinds = try pg.eventKinds();
+        const kinds = try pg.capturedKinds();
         if (kinds.len == 0) return "";
         var list: std.ArrayList(u8) = .empty;
         for (kinds, 0..) |k, i| {
@@ -1423,16 +1437,14 @@ const Page = struct {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
             try serialise(pg.a(), &html, pg.top_nodes, null, true);
-            try pg.take(at, html.items);
-            // A unit that listens takes the input its page's capture script
-            // recorded before any listener is added (`prerender.md` §6.5,
-            // amended 2026-10-29).
-            if ((try pg.eventKinds()).len != 0) {
+            // A unit whose page has a capture script takes the input it
+            // recorded, before `take` and before any listener is added
+            // (`prerender.md` §6.5, amended 2026-10-29).
+            if ((try pg.capturedKinds()).len != 0) {
                 pg.taking = true;
-                try js.expression(body, try js.call(try js.name(try cx.runtime("caught")), &.{
-                    try js.index(try js.name(pg.elements.?), try js.number("0")),
-                }));
+                try js.expression(body, try js.call(try js.name(try cx.runtime("caught")), &.{try js.name(at)}));
             }
+            try pg.take(at, html.items);
         } else if (pg.top_nodes.len == 1) {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
@@ -1794,7 +1806,9 @@ const Page = struct {
         }
         // The input made before the takeover, handed to its listeners last
         // (`prerender.md` §6.5, amended 2026-10-29).
-        if (pg.taking) try js.expression(body, try js.call(try js.name(try cx.runtime("deliver")), &.{}));
+        if (pg.taking) try js.expression(body, try js.call(try js.name(try cx.runtime("deliver")), &.{
+            try js.index(try js.name(pg.elements.?), try js.number("0")),
+        }));
         return js.arrow(&.{id}, body);
     }
 

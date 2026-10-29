@@ -775,7 +775,9 @@ warn why =
 -- ---- Input before the takeover (`prerender.md` §6.5) -------------------
 
 -- The records the page's capture script made that `deliver` is to hand on,
--- each `[event, value, checked, selectedIndex]`; null when there are none.
+-- each `[event, value, checked, selectedIndex]` as the event found its
+-- target, then the same three as `caught` found it; null when there are
+-- none.
 early : Js.Ref V
 early = Js.ref Js.null
 
@@ -786,21 +788,29 @@ heard : Js.Ref V
 heard = Js.ref Js.null
 
 
---| `(top)`: the records of the page's capture script, which it stops — the
---| global `$beni` it defined, called once and cleared. The records kept are
---| those whose target is inside `top`, the unit's top element the mount
---| took: on a fresh mount, none. While some are kept, `listen` notes each
---| listener wired, for `deliver`.
+--| `(at)`: the records of the page's capture script, which it stops — the
+--| global `$beni` it defined, called once and cleared — before `take`, so
+--| that the script stops however the mount goes on. The records kept are
+--| those whose target is inside `at`, the element the program mounts at,
+--| each with its target's control state now, the state the user left. While
+--| some are kept, `listen` notes each listener wired, for `deliver`.
 pub caught : V → ⊤
-caught top =
+caught at =
     capture = Js.global "$beni"
     if not (Js.isUndefined capture) then
         Js.set (Js.global "window") "$beni" Js.undefined
         kept =
             Js.call (Js.apply capture []) "filter"
                 [ Js.from λrecord →
+                    target = Js.get (Js.at record 0) "target"
+                    _ =
+                        Js.call record "push"
+                            [ Js.get target "value"
+                            , Js.get target "checked"
+                            , Js.get target "selectedIndex"
+                            ]
                     inside : Bool
-                    inside = Js.to (Js.call top "contains" [ Js.get (Js.at record 0) "target" ])
+                    inside = Js.to (Js.call at "contains" [ target ])
                     inside
                 ]
         if Js.to (Js.get kept "length") > 0 then
@@ -839,15 +849,19 @@ onArmTaken node f kind arms read =
     listen node kind (Js.from λevent → if armsShown arms then send f event read)
 
 
---| The records `caught` kept, handed on in order, and then dropped with
---| the listeners noted: for each, the control state it recorded written
---| back to its target, then each listener of its event's type called with
---| the event, on the target and, while the event bubbles and no listener
---| stopped it, on each ancestor. The event is not dispatched again, so no
+--| `(top)`: the records `caught` kept whose target is inside `top`, the
+--| unit's top element the mount took — none on a fresh mount — handed on in
+--| order, then dropped with the listeners noted. A record some listener
+--| noted on its target or, while its event bubbles, on an ancestor hears:
+--| the control state it recorded is written back to its target, each such
+--| listener of its event's type is called with the event, the target's
+--| first, until one stops it, and then the state `caught` found is written
+--| back, so a record never undoes what the user did after it. A record no
+--| listener hears changes nothing. The event is not dispatched again, so no
 --| default action runs twice. The last statement of the hydrating mount,
 --| inside its dispatch: each message is queued, in order.
-pub deliver : ⊤ → ⊤
-deliver ⊤ =
+pub deliver : V → ⊤
+deliver top =
     records = Js.read early
     if not (Js.isNull records) then
         map = Js.read heard
@@ -856,10 +870,24 @@ deliver ⊤ =
         Js.each records λrecord →
             event = Js.at record 0
             target = Js.get event "target"
-            restore target "value" (Js.at record 1)
-            restore target "checked" (Js.at record 2)
-            restore target "selectedIndex" (Js.at record 3)
-            hand map event target
+            inside : Bool
+            inside = Js.to (Js.call top "contains" [ target ])
+            if inside && hears map event target then
+                state target record 1
+                hand map event target
+                state target record 4
+            ⊤
+
+
+-- The record's control state from its element `i` on — `value`, `checked`,
+-- `selectedIndex` — written to `el`, each one it has that `el` does not
+-- show. A file input's `value` cannot be written, and is left alone.
+state : V, V, Int → ⊤
+state el record i =
+    if not (Js.same (Js.get el "type") (Js.from "file")) then
+        restore el "value" (Js.at record i)
+        restore el "checked" (Js.at record (i + 1))
+        restore el "selectedIndex" (Js.at record (i + 2))
 
 
 -- The property `name` of `el` set to `v`, when `v` is one and `el` does not
@@ -868,6 +896,36 @@ restore : V, String, V → ⊤
 restore el name v =
     if not (Js.isUndefined v) && not (Js.same (Js.get el name) v) then
         Js.set el name v
+
+
+-- Whether a listener noted under `node`, or under an ancestor while `event`
+-- bubbles, is one of `event`'s type.
+hears : V, V, V → Bool
+hears map event node =
+    if Js.isNull node then
+        False
+    else
+        noted = Js.call map "get" [ node ]
+        bubbles : Bool
+        bubbles = Js.to (Js.get event "bubbles")
+        if not (Js.isUndefined noted) && noteOf noted event 0 then
+            True
+        else if bubbles then
+            hears map event (Js.get node "parentNode")
+        else
+            False
+
+
+-- Whether `noted`, `[kind, f, …]`, from pair `i`, holds a listener of
+-- `event`'s type.
+noteOf : V, V, Int → Bool
+noteOf noted event i =
+    if i ≥ Js.to (Js.get noted "length") then
+        False
+    else if Js.same (Js.at noted i) (Js.get event "type") then
+        True
+    else
+        noteOf noted event (i + 2)
 
 
 -- Each listener noted under `node` for `event`'s type called with it, then

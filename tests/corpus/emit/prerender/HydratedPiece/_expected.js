@@ -1,11 +1,11 @@
-import { Inline$root, Inline$take, Inline$caught, Inline$when, Inline$entry, Inline$pass, Inline$onTaken, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
+import { Inline$root, Inline$caught, Inline$take, Inline$when, Inline$entry, Inline$pass, Inline$onTaken, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
 import { Widget$view$$html$0, Widget$view$$root$0 } from "./Widget.mjs";
 const HydratedPiece$main = ($id$1) => {
   const $root$2 = Inline$root(undefined);
   const $init$3 = { open: false, w: { on: false } };
   let $model$4 = $init$3;
+  Inline$caught($root$2);
   const $elements$5 = Inline$take($root$2, `<main><button>Toggle</button><p>Open</p>${Widget$view$$html$0}`, [2, 1, 0, 5, 1, 3], "main button p section button strong");
-  Inline$caught($elements$5[0]);
   const $elements$6 = $elements$5.slice(4, 6);
   const $table$7 = [[[]], [[]]];
   Inline$entry(() => {
@@ -20,7 +20,7 @@ const HydratedPiece$main = ($id$1) => {
   });
   Widget$view$$root$0($elements$6, $model$4.w, $table$7[1]);
   Inline$first();
-  Inline$deliver();
+  Inline$deliver($elements$5[0]);
 };
 export { HydratedPiece$main };
 //# sourceMappingURL=HydratedPiece.mjs.map

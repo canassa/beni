@@ -1,0 +1,5 @@
+early click [data-role=inc]
+early event [data-role=form] submit
+early click [data-role=note]
+early click [data-role=dec]
+click [data-role=hide]

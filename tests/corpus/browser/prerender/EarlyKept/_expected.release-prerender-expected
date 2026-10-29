@@ -1,0 +1,19 @@
+-- early click [data-role=plain]
+-- early set [data-role=plain] "typed"
+-- early event [data-role=heard] focus
+-- early set [data-role=heard] "later"
+-- early event [data-role=go] pointerdown
+-- early click [data-role=go]
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <input data-role="plain" .value="typed">
+      <input data-role="heard" .value="later">
+      <button data-role="go">"Go"</button>
+      <output data-role="log">" focus click"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
