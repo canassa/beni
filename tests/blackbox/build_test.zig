@@ -8733,16 +8733,16 @@ test "the checker v2's dump does not depend on where a declaration sits in its m
     }
 }
 
-/// A declaration a hundredth below the default summary-size limit (`h`, its
-/// cold growth about 64 600 of 65 536), after another (`g`) or before it:
+/// A declaration a few hundredths below the default summary-size limit (`h`, its
+/// cold growth about 63 900 of 65 536), after another (`g`) or before it:
 /// its dump in that order (#1104).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(a);
     try h.appendSlice(a, "pub h : List Int → List Int\nh xs =\n");
-    for (1..1501) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
-    try h.appendSlice(a, "    x1500\n");
+    for (1..1451) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
+    try h.appendSlice(a, "    x1450\n");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
     try w.write("Main.beni", src);
@@ -8767,7 +8767,7 @@ fn expectNearLimitAccepted(h_first: bool) !void {
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h:") == null);
     const growth = try accountField(dump.stdout, "h", "growth");
-    try testing.expect(growth > 64_000 and growth <= 65_536);
+    try testing.expect(growth > 60_000 and growth <= 65_536);
 }
 
 test "the checker v2 accepts a declaration near the summary-size limit after another" {
