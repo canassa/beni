@@ -1,0 +1,36 @@
+-- A shell whose `{{view}}` is outside the element the program mounts at
+-- (docs/design/prerender.md §5.3): the build cannot see it without parsing
+-- HTML, so the page does. A development build's mount faults, naming the
+-- element; a release build takes the prerendered view out and mounts
+-- fresh, as for a page that is not the program's (§6.4).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

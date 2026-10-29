@@ -1,0 +1,42 @@
+-- Another module's markup on a page taken over (docs/design/prerender.md
+-- §6.2): the piece's table is not `Inline.part` of its top element, read
+-- from the page, which lacks the elements of the piece's hidden arm; it is
+-- the slice of the merged table below the top element. `take`'s arms hold
+-- the piece's arm after the program's, numbered in the unit.
+import Html exposing (Html)
+import Tea
+import Widget
+
+
+type alias Model =
+    open : Bool
+    w : Widget.Model
+
+
+type Msg
+    = Toggle
+    | WidgetMsg Widget.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+        WidgetMsg sub →
+            { model | w = Widget.update sub model.w }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Toggle}>Toggle</button>
+        {if model.open then <p>Open</p> else <></>}
+        {Html.map (Widget.view model.w) WidgetMsg}
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = λ⊤ → { open = False, w = { on = False } }, update = update, view = view }

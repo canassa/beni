@@ -1,0 +1,36 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">""</div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=app]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p data-role="note">"Note"</p>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=note]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">""</div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=app]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p data-role="note">"Note"</p>
+    </div>
+  </div>
+  "\n  "
+</body>

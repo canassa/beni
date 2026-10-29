@@ -83,9 +83,9 @@ module Inline
   value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
+  value take : V, V, V, V → V  -- impure
   value text : V, V → ⊤  -- impure
   value title : String → ⊤  -- impure
-  value unprerender : V → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
   value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure

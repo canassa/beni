@@ -1,0 +1,37 @@
+-- The client of a prerendering build takes the page over
+-- (docs/design/prerender.md §6.1–§6.4): no string is written into the page
+-- and no element is found by `querySelectorAll` or by a path. The mount asks
+-- the runtime's `take` for the unit's table, handing it the unit's string,
+-- each eager arm as its element's index, its size and its parent's index,
+-- and the tag of every element, which a development build checks all of;
+-- every element is then `E[n + 1]`, the top element `E[0]`, though the
+-- page's code refers to one element alone.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <div onClick={Toggle}>
+        <h1>Title</h1>
+        {if model.open then <p>Open</p> else <></>}
+    </div>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view }

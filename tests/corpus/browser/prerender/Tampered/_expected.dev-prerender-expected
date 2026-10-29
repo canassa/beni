@@ -1,0 +1,36 @@
+-- inject [data-role=inc] "<i>ad</i>"
+-- fresh
+-- load
+console.warn: The prerendered page is not the one this program makes: its element 2 is a <i>, where the program makes a <button>. The program mounts it fresh.
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"0"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"1"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"2"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

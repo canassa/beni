@@ -1,0 +1,38 @@
+-- An element no code refers to replaced, before the program loads, by one
+-- of another tag (docs/design/prerender.md §6.4): the `<h1>` is an `<h2>`
+-- on the page. A release build checks the tags of the elements its code
+-- refers to only — no binding can attach to this one — so it takes the
+-- page over and keeps the `<h2>`; a development build checks every tag,
+-- warns and mounts fresh, which its own steps and golden say.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <h1>Counter</h1>
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

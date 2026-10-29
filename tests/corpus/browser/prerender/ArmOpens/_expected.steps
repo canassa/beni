@@ -1,0 +1,6 @@
+click [data-role=bump]
+click [data-role=toggle]
+click [data-role=inner]
+click [data-role=toggle]
+click [data-role=toggle]
+click [data-role=inner]

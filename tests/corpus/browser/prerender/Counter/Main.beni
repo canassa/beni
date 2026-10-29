@@ -1,8 +1,8 @@
 -- A prerendered page (docs/design/prerender.md §4.1, §11 slice P1): the
 -- page the build writes holds `init`'s first render — a text hole, a mixed
 -- text, and a `disabled` that `init` makes true — and the client takes it
--- out and mounts fresh, so the page from the shell with no view and the
--- prerendered one show the same transcript.
+-- over (§6.1), its first pass writing nothing, so the page from the shell
+-- with no view and the prerendered one show the same transcript.
 import Browser
 import Html exposing (Html)
 import Tea

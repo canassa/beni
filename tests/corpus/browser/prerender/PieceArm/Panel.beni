@@ -1,0 +1,39 @@
+--! A panel, as a module of its own, whose view hides its body behind an
+--! arm the model closes.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    open : Bool
+    label : String
+
+
+pub type Msg
+    = Open
+    | Close
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Open →
+            { model | open = True }
+
+        Close →
+            { model | open = False }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button data-role="open" onClick={Open}>{model.label}</button>
+        {if model.open then
+            <div>
+                <span>{model.label} is open</span>
+                <button data-role="close" onClick={Close}>Close</button>
+            </div>
+         else
+            <></>
+        }
+    </section>
