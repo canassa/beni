@@ -88,12 +88,12 @@
 > not json
 < 400
 < content-type: text/plain; charset=utf-8
-< content-length: 88
+< content-length: 36
 < connection: keep-alive
 < keep-alive: timeout=5
 <
 < the body is not a todo:
-< invalid JSON: Unexpected token 'o', "not json" is not valid JSON
+< invalid JSON
 > PUT /api/todos/9
 > content-type: application/json
 >

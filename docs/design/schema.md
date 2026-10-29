@@ -763,8 +763,8 @@ user =
   where one is needed). `InvalidValue`: a number outside the safe-integer range, or a non-finite one
   for `finiteFloat`. `MissingKey` at the key; `UnknownKey` at the key, under `Reject`, in the
   object's own-key order; `UnknownTag` at the discriminator, for an unknown or non-string tag;
-  `DepthExceeded` at the child the bound stopped; `ParseFailed` at the root, with the host's
-  message; `PrintFailed` at the value JSON cannot hold.
+  `DepthExceeded` at the child the bound stopped; `ParseFailed` at the root, with the fixed text `invalid JSON` (A.13);
+  `PrintFailed` at the value JSON cannot hold.
 - **Host values.** Reading tests own keys only. Writing builds each object with no prototype, its
   keys in field order and a variant's discriminator first, so `__proto__` and `constructor` are
   ordinary keys both ways.
@@ -3024,7 +3024,7 @@ program that only builds schemas with the library builds and runs, under `--rele
   and one 20 000 deep), `SchemaProtoKeys`, `SchemaDescribe` (both endpoints, nested recursive
   definitions met once, two definitions with one name, no conversion run), `SchemaConstruction`
   (every construction failure, a reference used while its body is built, a nonproductive cycle),
-  `SchemaJson` (`ParseFailed` with the host's message, `PrintFailed` at the key, `JSON.parse`'s
+  `SchemaJson` (`ParseFailed` with the fixed text `invalid JSON`, `PrintFailed` at the key, `JSON.parse`'s
   rounding, a `Value` holding NaN). Each was red against the library before it: no builder
   existed. Not covered: a `.crash` scenario for the `JSON.parse` re-throw — it throws nothing but
   a `SyntaxError` for a string, so no input forces another error.

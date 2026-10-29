@@ -1,7 +1,7 @@
-Err decoding Encoded ParseFailed / invalid JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)
-Err decoding Encoded ParseFailed / invalid JSON: Unexpected end of JSON input
-Err decoding Encoded ParseFailed / invalid JSON: Unexpected token ']', "[1,]" is not valid JSON
-Err decoding Encoded ParseFailed / invalid JSON: Unexpected end of JSON input
+Err decoding Encoded ParseFailed / invalid JSON
+Err decoding Encoded ParseFailed / invalid JSON
+Err decoding Encoded ParseFailed / invalid JSON
+Err decoding Encoded ParseFailed / invalid JSON
 Ok {"a":[1,true,null,"x"],"b":{}}
 -- numbers
 9007199254740991 => Ok 9007199254740991

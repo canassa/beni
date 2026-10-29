@@ -5,7 +5,7 @@ Err decoding Encoded UnknownKey /0/x unexpected key "x"
 Err decoding Encoded DepthExceeded /0/id the depth limit is reached
 Err decoding Encoded DepthExceeded /0 the depth limit is reached
 Err decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1
-Err decoding Encoded ParseFailed / invalid JSON: Expected double-quoted property name in JSON at position 9 (line 1 column 10)
+Err decoding Encoded ParseFailed / invalid JSON
 Err decoding Encoded WrongShape / expected an array
 Err encoding Type InvalidValue /1/id expected a safe integer
 Ok null
