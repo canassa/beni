@@ -9430,6 +9430,77 @@ test "the checker v2 sweeps one holder of a value at many paths without passing 
     }
 }
 
+test "the checker v2 prints a summary of shared positions once per node, not once per route" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1182: `bᵢ = [ …bᵢ₋₁, …bᵢ₋₁ ]` is a DAG whose positions reach `b₀` along
+    // 2ⁱ routes. The summary print expanded each route and gathered each
+    // route's cells: 2¹⁰ copies of `π1[*]` at ten bindings, and 101.8 s and
+    // 6.8 GB at 25. It expands a shared node once per prefix now, and a
+    // position's cells are a set.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub g : List (List Int) → List (List Int)\ng xs =\n    b0 = [ …xs, [ 0 ] ]\n");
+    for (1..11) |i| try src.print(a, "    b{d} = [ …b{d}, …b{d} ]\n", .{ i, i - 1, i - 1 });
+    try src.appendSlice(a, "    b10\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: π1 RAW, π1[*] A; res [*] fresh1 π1[*]{shared}, π1\n") != null);
+}
+
+test "the checker v2 says why a summary is not printed" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1182: the summary print reads the class on the declaration's account,
+    // so it can pass the allowance the walk stayed under. The dump dropped
+    // that error, and the `summary` line was simply missing. A 214-field
+    // record of records re-read 15 times checks at growth 65 276, and its
+    // print passes 65 536: the dump says so.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
+    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
+    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
+    for (1..214) |i| try src.print(a, "\n    , r{d} : S", .{i});
+    try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
+    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
+    try src.appendSlice(a, " }\n    r = { r0 = s");
+    for (1..214) |i| try src.print(a, ", r{d} = s", .{i});
+    try src.appendSlice(a, " }\n    [ r");
+    for (1..15) |_| try src.appendSlice(a, ", r");
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
+}
+
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
 /// cold growth about 62 700 of 65 536), after another (`g`) or before it:
 /// its dump in that order (#1104). Its growth is a genuine product, a

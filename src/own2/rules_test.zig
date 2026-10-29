@@ -53,7 +53,7 @@ const layers = [_]Entry{
     .{ .file = "Cond.zig", .layer = 4, .max_lines = 2700 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1650 },
+    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
     .{ .file = "Demands.zig", .layer = 6, .max_lines = 1200 },

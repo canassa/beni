@@ -1180,11 +1180,17 @@ pub const Table = struct {
         seen: Ids.FixedDict(3) = .{},
         /// The path each `seen` entry was first printed at (#1122).
         firsts: std.ArrayList([]const u8) = .empty,
+        /// The (node, cursor, summary, prefix) whose structure was expanded:
+        /// a union's or positions node's sides that share a node expand it
+        /// once at one prefix, never once per route through the DAG (#1182).
+        /// The prefix by identity: both sides carry the one slice.
+        expanded: Ids.FixedDict(4) = .{},
 
         const WErr = std.Io.Writer.Error;
 
         fn deinit(p: *Printer) void {
             p.seen.deinit(p.env.gpa);
+            p.expanded.deinit(p.env.gpa);
         }
 
         fn summary(p: *Printer, w: *std.Io.Writer, name: []const u8) (Error || WErr)!void {
@@ -1387,7 +1393,11 @@ pub const Table = struct {
                 // The children of the explicit structure under `n`: a node's
                 // or a delta's projections (so a delta's unchanged fields
                 // print), a union's sides' in turn; a leaf's or a recast's
-                // are implied by its cells and never enumerated.
+                // are implied by its cells and never enumerated. Once per
+                // (node, cursor, summary, prefix): a second expansion's lines
+                // are all at a printed route already (#1182).
+                const pp: u64 = @intFromPtr(a.prefix.ptr);
+                if ((try p.expanded.getOrPut(env.gpa, .{ n.int(), a.cur.int(), @as(u32, @intFromBool(a.at_summary)) | @as(u32, @truncate(pp >> 32)) << 1, @truncate(pp) })).found_existing) continue;
                 const d = env.shapes.get(n);
                 switch (d.kind) {
                     .leaf, .recast => {},
@@ -1422,7 +1432,12 @@ pub const Table = struct {
             var stack: std.ArrayList(NodeId) = .empty;
             defer stack.deinit(p.env.gpa);
             try stack.append(p.env.gpa, root);
+            // Each node once per gather (#1182).
+            var gathered: Ids.FixedDict(1) = .{};
+            defer gathered.deinit(p.env.gpa);
             while (stack.pop()) |n| {
+                // A node the DAG reaches twice gives its cells once (#1182).
+                if ((try gathered.getOrPut(p.env.gpa, .{n.int()})).found_existing) continue;
                 const d = p.env.shapes.get(n);
                 if (d.kind == .@"union" or d.kind == .choice or d.kind == .positions) {
                     try stack.appendSlice(p.env.gpa, &.{ .from(d.b), .from(d.a) });
