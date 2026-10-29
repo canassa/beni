@@ -108,10 +108,12 @@ const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
 
-/// The golden-adjacent extension of the empty file that opts a
-/// `browser/tea/` page into its value-fuzz case: `<page>.value-fuzz`, or
-/// `_expected.value-fuzz` in a project.
-const value_fuzz_marker = "value-fuzz";
+/// The file beside `browser/tea/`'s pages that names each page with no
+/// value-fuzz case and why, one per line, `<page>: <reason>` (the owner,
+/// 2026-10-28, #881: every other page of the directory is one, so a page
+/// is fuzzed unless someone wrote down why it cannot be). A line that names
+/// no page, or gives no reason, fails the walk.
+const no_value_fuzz = "no-value-fuzz.txt";
 const browser = @import("browser.zig");
 const serve = @import("serve.zig");
 const worker_harness = @import("workers.zig");
@@ -649,7 +651,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     try reportIndex(arena, cfg.root);
     const fixtures = try collectFixtures(arena, cfg, kind);
     if (record_files != 0) {
-        std.debug.print("{d} run-hash record file{s} left in the corpus (`git ls-files '*run-hash' tests/blackbox/run-hashes.txt` lists them): delete every one\n", .{ record_files, if (record_files == 1) "" else "s" });
+        std.debug.print("{d} stale run-hash file{s} left in the corpus (`git ls-files '*run-hash' '*.value-fuzz' tests/blackbox/run-hashes.txt` lists them): delete every one\n", .{ record_files, if (record_files == 1) "" else "s" });
         return error.RecordFileInCorpus;
     }
     return fixtures;
@@ -756,21 +758,24 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         const start = fixtures.items.len;
         try collect(arena, tea_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
-        // A page that carries an empty `.value-fuzz` marker opts into a
-        // value-fuzz case of its own (`Fixture.values`): its development
-        // build against its release build, both with `--fuzz`, messages as
-        // values. The page case keeps its own fuzz of view events.
+        // Every page is a value-fuzz case of its own as well
+        // (`Fixture.values`): its development build against its release
+        // build, both with `--fuzz`, messages as values. The page case
+        // keeps its own fuzz of view events. `no-value-fuzz.txt` names the
+        // pages that are not, each with its reason, and fails closed: a
+        // line that names no page is stale and fails the walk.
         const end = fixtures.items.len;
-        if (cfg.mode == .strict) for (start..end) |i| {
-            const marker = try fixtureGoldenPath(arena, fixtures.items[i], value_fuzz_marker);
-            Io.Dir.cwd().access(testing.io, marker, .{}) catch |err| switch (err) {
-                error.FileNotFound => continue,
-                else => return err,
-            };
-            var values = fixtures.items[i];
-            values.values = true;
-            try fixtures.append(arena, values);
-        };
+        if (cfg.mode == .strict) {
+            var excluded = try noValueFuzz(arena, tea_dir);
+            for (start..end) |i| {
+                const fixture = fixtures.items[i];
+                if (excluded.use(pageKey(fixture))) continue;
+                var values = fixture;
+                values.values = true;
+                try fixtures.append(arena, values);
+            }
+            try excluded.checkUsed();
+        }
     }
     // `workers/`: each project is two cases, the development build and the
     // release build, each run under Miniflare once (`Fixture.release_case`).
@@ -1359,8 +1364,8 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
-    /// A `browser/tea/` page's second case, when it carries a
-    /// `.value-fuzz` marker: its page fuzz alone, with
+    /// A `browser/tea/` page's second case, unless `no-value-fuzz.txt`
+    /// names it (`no_value_fuzz`): its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
     /// two `--fuzz` builds, the message types dump and the fuzz are a case
     /// of their own, guarded on their own, so that no page's value fuzz
@@ -1429,30 +1434,102 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     }.lessThan);
 }
 
-/// Whether `name` is a run-hash record file: `<fixture>.run-hash`,
-/// `.release-run-hash` or `.fuzz-run-hash` (`_expected.…` in a project).
-/// The records left git for the run-hash cache (#881, `run_hash.zig`); one
-/// that comes back — a pull request from before the change, a rebase that
-/// kept a modified record — would be ignored by every reader, and a
-/// `browser/tea` page's `.fuzz-run-hash` would silently stand where its
-/// `.value-fuzz` marker belongs. So the walk refuses every one of them, by
-/// name, with the fix (`fixturesOf`).
+/// Whether `name` is a run-hash record file — `<fixture>.run-hash`,
+/// `.release-run-hash` or `.fuzz-run-hash` (`_expected.…` in a project) —
+/// or a `.value-fuzz` marker. The records left git for the run-hash cache
+/// (#881, `run_hash.zig`); one that comes back — a pull request from
+/// before the change, a rebase that kept a modified record — would be
+/// ignored by every reader, and a `browser/tea` page's `.fuzz-run-hash`,
+/// once its opt-in to the value fuzz, would say nothing of whether the
+/// page is excluded now. The marker was the opt-in between 2026-10-23 and
+/// 2026-10-28 (`no_value_fuzz`), and is as dead. So the walk refuses every
+/// one of them, by name, with the fix (`fixturesOf`).
 fn isRecordFile(name: []const u8) bool {
-    return std.mem.endsWith(u8, name, ".run-hash") or std.mem.endsWith(u8, name, "-run-hash");
+    return std.mem.endsWith(u8, name, ".run-hash") or std.mem.endsWith(u8, name, "-run-hash") or std.mem.endsWith(u8, name, ".value-fuzz");
 }
 
-/// The record files and the index `fixturesOf`'s collection found so far:
-/// each is named as it is met, and the count fails the collection at its
-/// end, so one walk names every one a rebase left.
+/// The record files, markers and the index `fixturesOf`'s collection found
+/// so far: each is named as it is met, and the count fails the collection
+/// at its end, so one walk names every one a rebase left.
 var record_files: usize = 0;
 
 fn reportRecord(dir_path: []const u8, name: []const u8) void {
-    const fuzz = std.mem.endsWith(u8, name, ".fuzz-run-hash");
-    std.debug.print(
-        "{s}/{s}: a run-hash record file; the records left git for the run-hash cache (#881): delete it{s}\n",
-        .{ dir_path, name, if (fuzz) ", and for a browser/tea page's value fuzz add an empty `<page>.value-fuzz` (`_expected.value-fuzz` in a project) beside the page" else "" },
-    );
+    if (std.mem.endsWith(u8, name, ".value-fuzz")) {
+        std.debug.print(
+            "{s}/{s}: a value-fuzz marker; every browser/tea page is a value-fuzz case now (the owner, 2026-10-28, #881): delete it, and to exclude the page name it with its reason in `no-value-fuzz.txt` beside the pages\n",
+            .{ dir_path, name },
+        );
+    } else {
+        const fuzz = std.mem.endsWith(u8, name, ".fuzz-run-hash");
+        std.debug.print(
+            "{s}/{s}: a run-hash record file; the records left git for the run-hash cache (#881): delete it{s}\n",
+            .{ dir_path, name, if (fuzz) ", and the page's value fuzz needs no opt-in now (to exclude it, name it with its reason in `no-value-fuzz.txt` beside the pages)" else "" },
+        );
+    }
     record_files += 1;
+}
+
+/// The pages `no-value-fuzz.txt` excludes from the value fuzz
+/// (`no_value_fuzz`), each line's page and whether a page of the walk
+/// took it.
+const Excluded = struct {
+    path: []const u8,
+    entries: []Entry,
+
+    const Entry = struct { page: []const u8, line: usize, used: bool = false };
+
+    fn use(e: *Excluded, page: []const u8) bool {
+        for (e.entries) |*entry| if (std.mem.eql(u8, entry.page, page)) {
+            entry.used = true;
+            return true;
+        };
+        return false;
+    }
+
+    /// A line that names no page is stale: it would excuse a page that
+    /// comes back under that name without a look at it.
+    fn checkUsed(e: Excluded) !void {
+        var stale = false;
+        for (e.entries) |entry| if (!entry.used) {
+            std.debug.print("{s}:{d}: `{s}` names no page of browser/tea: delete the line\n", .{ e.path, entry.line, entry.page });
+            stale = true;
+        };
+        if (stale) return error.StaleValueFuzzExclusion;
+    }
+};
+
+/// `no-value-fuzz.txt` under `tea_dir`, or no exclusion when there is
+/// none: `<page>: <reason>` per line, `#` a comment. A line without a
+/// page or without a reason fails the walk.
+fn noValueFuzz(arena: std.mem.Allocator, tea_dir: []const u8) !Excluded {
+    const path = try std.fs.path.join(arena, &.{ tea_dir, no_value_fuzz });
+    const text = Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 20)) catch |err| switch (err) {
+        error.FileNotFound => "",
+        else => return err,
+    };
+    var entries: std.ArrayList(Excluded.Entry) = .empty;
+    var n: usize = 0;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        n += 1;
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse 0;
+        const page = std.mem.trim(u8, line[0..colon], " \t");
+        const reason = if (colon == 0) "" else std.mem.trim(u8, line[colon + 1 ..], " \t");
+        if (page.len == 0 or reason.len == 0) {
+            std.debug.print("{s}:{d}: `{s}`: a line is `<page>: <reason>`, and the reason says why the page cannot be fuzzed\n", .{ path, n, line });
+            return error.MalformedValueFuzzExclusion;
+        }
+        try entries.append(arena, .{ .page = page, .line = n });
+    }
+    return .{ .path = path, .entries = entries.items };
+}
+
+/// A page's name in `no-value-fuzz.txt`: the file's stem, or the project's
+/// directory.
+fn pageKey(fixture: Fixture) []const u8 {
+    return if (fixture.project) fixture.name else fixture.name[0 .. fixture.name.len - ".beni".len];
 }
 
 /// `reportRecord` for the files directly under a project directory, where
@@ -3020,7 +3097,7 @@ const Case = struct {
     /// (browser-direct.md §8.3), or null: a `browser/tea/` page's
     /// development and release builds, which must behave alike (backend.md
     /// §9) — in its page case, and with messages as values in its
-    /// value-fuzz case when it has one.
+    /// value-fuzz case.
     ///
     /// Messages go as values only between two `--fuzz` builds
     /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
@@ -3033,7 +3110,7 @@ const Case = struct {
         const platform = c.fixture.platform orelse return null;
         if (!std.mem.eql(u8, platform, "browser-tea")) return null;
         // A page case fuzzes the two pages it built; a value-fuzz case
-        // (a page with a `.value-fuzz` marker) built none and builds its pair.
+        // (every page's second, `no_value_fuzz`) built none and builds its pair.
         if (!c.fixture.values and (pages[0] == null or pages[1] == null)) return null;
         var pair: browser.Fuzz = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
         // What each side is built with: the fixture's own platform,
@@ -3042,8 +3119,8 @@ const Case = struct {
         pair.script = script.name;
         // Messages as values cost a page two more builds and a dump
         // (browser-direct.md §8.3, amended for S1): the gates send them on
-        // a `browser/tea/` pair in its value-fuzz case, when the page has
-        // one, and in `zig build fuzz`'s sweep.
+        // a `browser/tea/` pair in its value-fuzz case, and in `zig build
+        // fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         if (!c.fixture.values and !sweep) return pair;
         const flag = try fuzzFlag(c);

@@ -450,7 +450,10 @@ a DOM, driven by a `.steps` script of clicks, input and keys, and compared as
 a transcript of the page after each step. The gates run it under happy-dom
 in Node — one vendored, checksummed file, `tests/browser/happy-dom.mjs`, no
 network — with run hashes like `run/`'s; `zig build test-browser` runs the
-same fixtures in headless Chrome. On Linux, run it as `nix develop .#browser
+same fixtures in headless Chrome, every page every time, with no run hash
+(the owner, 2026-10-28). Every `browser/tea/` page is also a value-fuzz
+case unless `tests/corpus/browser/tea/no-value-fuzz.txt` names it with a
+reason (the owner, 2026-10-28). On Linux, run it as `nix develop .#browser
 -c zig build test-browser`. The shell's Chromium is the flake's own, and it
 ignores the caller's `LD_LIBRARY_PATH`. Thus a host library directory on
 that path, such as an `alsa-lib` for a newer glibc, cannot stop it. A
