@@ -1,0 +1,26 @@
+--! A schema whose conversion reads a constant computed from the clock.
+
+import Clock
+import Schema exposing (Conversion)
+
+
+seed : Int
+seed = Clock.now ⊤
+
+
+shifted : Conversion String Int
+shifted =
+    Schema.conversion
+        (λs →
+            case String.toInt s of
+                Just n →
+                    Ok (n + seed)
+
+                Nothing →
+                    Err []
+        )
+        λn → Ok (String.fromInt n)
+
+
+pub schema Count =
+    String via shifted

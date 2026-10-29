@@ -1,0 +1,35 @@
+-- A prerendered program's `init` that is another module's function bound
+-- point-free (docs/design/prerender.md §3.1, amended for #1170):
+-- `Stamp.init = Clock.now` has no body a call runs, so its walk says nothing
+-- of what calling it does, and the checker does not prove it total. The
+-- build refuses the field.
+import Browser
+import Html exposing (Html)
+import Stamp
+import Tea
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Reset →
+            0
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = Stamp.init, update = update, view = view }) "root")
+        [ "/" ]

@@ -1,0 +1,7 @@
+--! A model that is the time it was made, bound point-free.
+
+import Clock
+
+
+pub init : ⊤ → Int
+init = Clock.now

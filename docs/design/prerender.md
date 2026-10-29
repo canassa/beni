@@ -104,6 +104,59 @@ by the causes §3.3 names, none of which is in the program.
    function of another module whose only effect is `Debug`'s, and a method call or an operator
    dispatched to a type's function (`<` on a type whose `compare` logs) the checker answers
    impure.
+
+   *Amended 2026-10-29, as built for #1170.* The walk reads code in every module of the app and
+   of its platforms, not only the program's, and needs no new fact of the checker: it reads the
+   checker's `impure` answer at each call of the module it is in (`Dispatch.EffectSite`, every
+   module's table, as `checkDataSchema` reads them, §8.4's amendment), and the total bit
+   (`checker-v2.md` §26.1). Core's code is answered at its calls, as before. So:
+
+   - **A call of a function of another module** that the checker answers impure is answered by
+     that function's body, walked once in its own module, as a function of the program's is. A
+     function whose only effect is `Debug`'s, in whichever module, adds `Debug`'s effect and no
+     other; a call it makes that may be impure is named where it is, in its module's file.
+   - **A field that names a top-level function**, of the program's module or of another
+     (`init = Counter.init`), is answered as a call of it: pure when the checker proves the
+     function total, else by its body.
+   - **A read of another module's constant** is answered by the constant's body, as a constant of
+     the program's module is: it is computed where its module loads, in the build as in the
+     browser (`Theme.seed = Clock.now ⊤` is refused at the read). So is a read of another
+     module's function bound point-free, whose body runs there too: `shift = (at = Clock.now ⊤;
+     λn → n + at)` is pure to call and impure to make. The build accepted that read before, as a
+     function's (`build/bad/prerender/OtherImpureClosure`), and the page held the clock.
+   - **A constant is found wherever the code may read it.** The checker does not count a read of
+     a constant as an effect, so a call that reads one is answered pure (`addSeed n = n + seed`),
+     and the walk of calls above never enters it; nor a lambda's body. A second walk follows every
+     reference of `init`, `view` and the route list instead — each declaration of the app's and
+     the platforms' modules they name, lambdas' bodies, and the functions each dispatch site and
+     its evidence name, the bodies of this module's derived functions among them — each once, and
+     answers each constant it meets by its body. A dispatch to another module's derived function
+     or to a codec, and a use of a schema's member (`Count.parse`, whose conversions its plan
+     holds), are not followed; each is refused when any constant of those modules may have an
+     effect at all, a limit of the build. Before this, a read behind a pure call, in a lambda or in
+     a schema's conversion was accepted, in the program's module too
+     (`build/bad/prerender/ConstantBehindCall`, `ConstantInLambda`, `ConstantInSchema`): a
+     defect, not a limit.
+   - **Only a function with parameters, or whose whole body is a lambda, has a body a call
+     runs.** A function bound point-free — `stamp = Clock.now`, `stamp = Debug.log "s"
+     Clock.now` — is a value its body computes, and the body's walk says nothing of what calling
+     that value does. A call of one the checker answers impure is the effect, whatever its body
+     shows, and a field that names one is refused unless the checker proves it total. Before
+     this, both were accepted when the body showed no effect, or only `Debug`'s, and the page held
+     the build machine's clock (`build/bad/prerender/PointFreeInit`, `PointFreeDebug`): a
+     defect, not a limit.
+
+   A method call or an operator the checker answers impure is still refused at the call, whatever
+   the type's function does: the walk does not follow a dispatch target yet (#1247). Since the
+   walk reads another module's body and not only its interface, the program module's lowering
+   depends on that body; the program module is the app's, and an app module is lowered by every
+   build, never read from a row (`backend.md` §9, *The join*), so no build answers with a stale
+   body. The fixtures are `browser/prerender/NamedInit` (`init = Counter.init`, a view that reads
+   `Theme.title`) and `DebugHelper` (another module's helper that logs), and
+   `build/bad/prerender/` `OtherImpureInit`, `OtherImpureHelper` (the clock read two modules
+   away, behind a `Debug.log`), `OtherPointFree`, `OtherImpureConstant`, `OtherImpureClosure`,
+   `ConstantBehindCall`, `ConstantInLambda`, `ConstantInSchema`,
+   `PointFreeInit` and `PointFreeDebug`.
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the

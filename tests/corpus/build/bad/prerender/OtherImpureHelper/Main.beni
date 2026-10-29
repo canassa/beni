@@ -1,0 +1,42 @@
+-- An impure helper reached through another module (docs/design/prerender.md
+-- §3.1, amended for #1170): `Steps.first` logs with `Debug.log`, which is
+-- exempt, and then calls `Clock2.read`, a function of a third module that
+-- reads the clock. The build follows each call into its module and names
+-- the one that reads the clock, in `Clock2.beni`: `Debug` does not hide it.
+import Browser
+import Html exposing (Html)
+import Steps
+import Tea
+
+
+type alias Model =
+    at : Int
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | at = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.at}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { at = Steps.first ⊤ }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

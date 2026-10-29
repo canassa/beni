@@ -1,0 +1,35 @@
+-- A prerendered program whose `view` reads another module's constant
+-- computed by reading the clock (docs/design/prerender.md §3.1, amended for
+-- #1170): the constant is computed where `Theme` loads, in the build and
+-- again in the browser, so the two would differ. The build follows the
+-- read into the constant's body and refuses the read.
+import Browser
+import Html exposing (Html)
+import Tea
+import Theme
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model + Theme.seed}</output>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root")
+        [ "/" ]

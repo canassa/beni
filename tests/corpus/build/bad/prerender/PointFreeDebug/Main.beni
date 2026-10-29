@@ -1,0 +1,42 @@
+-- A call of a function bound point-free whose body logs
+-- (docs/design/prerender.md §3.1, amended for #1170): `stamp`'s body is
+-- `Debug.log "s" Clock.now`, whose one call is `Debug`'s, and its value is
+-- `Clock.now`, which the call `stamp ⊤` runs. The build took the body's
+-- `Debug` for the call's only effect and accepted it, writing the build
+-- machine's clock into the page. A call of a function whose body a call
+-- does not run is the effect itself.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+stamp : ⊤ → Int
+stamp = Debug.log "s" Clock.now
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model}</output>
+        {if model > 1000 then <p>late</p> else <></>}
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → stamp ⊤, update = update, view = view }) "root")
+        [ "/" ]

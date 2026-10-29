@@ -1,0 +1,22 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"4"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <output>"5"</output>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

@@ -1,0 +1,9 @@
+--! A function made when the module loads, from the clock.
+
+import Clock
+
+
+pub shift : Int → Int
+shift =
+    at = Clock.now ⊤
+    λn → n + at

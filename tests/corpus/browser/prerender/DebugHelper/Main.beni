@@ -1,0 +1,46 @@
+-- A prerendered program whose `init` calls another module's function whose
+-- only effect is `Debug.log` (docs/design/prerender.md §3.1, amended for
+-- #1170): the checker answers the call `Trace.checked "start" 4` impure, and
+-- the build follows it into `Trace`, where the one call with an effect is
+-- `Debug.log`'s, in a second function, whose value is its argument. So the
+-- program prerenders, as it does when the same helper is in this module.
+-- The build refused it before.
+import Browser
+import Html exposing (Html)
+import Tea
+import Trace
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { count = Trace.checked "start" 4 }, update = update, view = view }
+            )
+            "root"
+        )
+        [ "/" ]

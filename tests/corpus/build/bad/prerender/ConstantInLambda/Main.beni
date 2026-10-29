@@ -1,0 +1,40 @@
+-- A constant of the program's module computed from the clock, read inside
+-- a lambda that `view` hands to `List.foldl` (docs/design/prerender.md
+-- §3.1, amended for #1170): a lambda's body is not evaluated where it is
+-- made, so the walk of `view`'s calls never met the read, and the build
+-- accepted it, writing the build machine's clock into the page. The build
+-- follows every reference, lambdas' too, and refuses the read.
+import Browser
+import Clock
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+seed : Int
+seed = Clock.now ⊤
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{List.foldl [ model ] 0 λy acc → y + acc + seed}</output>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root")
+        [ "/" ]

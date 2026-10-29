@@ -1,0 +1,37 @@
+-- A function of another module bound point-free, whose body reads the
+-- clock when the module loads (docs/design/prerender.md §3.1, amended for
+-- #1170): calling `Offset.shift` is pure, but its value is made where
+-- `Offset` loads, in the build and again in the browser, from the clock.
+-- The build answers the read of `Offset.shift` by its body, as it does a
+-- constant's, and refuses the read. It accepted it before, and the page held
+-- the build machine's clock.
+import Browser
+import Html exposing (Html)
+import Offset
+import Tea
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Inc →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div data-role="app">
+        <output>{Offset.shift model}</output>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root")
+        [ "/" ]

@@ -6104,6 +6104,7 @@ const Emitter = struct {
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
                 .dispatch = e.dispatchOf(m),
+                .dispatches = e.session.checked.dispatch,
                 // The table says its demands were all accepted; the records are
                 // written in place only when this build enforces (§31.10).
                 .ownership = own: {
