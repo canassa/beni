@@ -1,0 +1,44 @@
+-- A widget's messages are link requests, mapped into the program's with
+-- `Html.map … LinkMsg`, and `Navigation.onUrlRequest LinkMsg` sends them
+-- too (browser-inline.md §10.3). `LinkMsg` splits again on the request,
+-- so the subscription's value reaches its key through the dispatcher; the
+-- widget's keys are then handled at the program site, not inside the
+-- widget, and both senders reach the same handlers: the input adds 100
+-- (`External`), the click on the page's own link adds 1 (`Internal`).
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Links
+import Sub
+import Tea
+
+
+type alias Model =
+    l : Links.Model
+
+
+type Msg
+    = LinkMsg Browser.UrlRequest
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        LinkMsg sub →
+            ( { model | l = Links.update sub model.l }, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { l = { count = 0 } }, Cmd.none )
+        , update = update
+        , view =
+            λmodel →
+                <div>
+                    <a id="in" href="/x">in</a>
+                    {Html.map (Links.view model.l) LinkMsg}
+                </div>
+        , subscriptions = λ_ → Navigation.onUrlRequest LinkMsg
+        }

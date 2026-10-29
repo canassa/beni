@@ -1,0 +1,26 @@
+--! A widget with messages of its own.
+
+import Html exposing (Html)
+
+
+pub type Msg
+    = Add Int
+    | Bump
+
+
+pub update : Msg, Int → Int
+update msg n =
+    case msg of
+        Add k →
+            n + k
+
+        Bump →
+            n + 1
+
+
+pub view : Int → Html Msg
+view n =
+    <section>
+        <button id="add" onClick={Bump}>add</button>
+        <output>{String.fromInt n}</output>
+    </section>

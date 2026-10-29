@@ -27,11 +27,12 @@
 --! it, so no program falls out of step with the address.
 --!
 --! The listeners here read only the host — the event and `location` — so
---! they are added as they are: the `send` the program's mount hands a
---! subscription's start enters the dispatch guard itself.
+--! they are added as they are, inert once the page has stopped: the `send`
+--! the program's mount hands a subscription's start enters the guard itself.
 
 import Browser
 import Cmd exposing (Cmd)
+import Inline
 import Js
 import Sub exposing (Sub)
 import Url exposing (Url)
@@ -39,13 +40,13 @@ import Url exposing (Url)
 
 --| What changes the page's address: one per page, handed out by `key`. A
 --| model may hold it.
-pub opaque type Key
-    = Page
+pub type alias Key =
+    Inline.NavigationKey
 
 
 --| The page's key.
 pub key : ⊤ → Key
-key ⊤ = Page
+key ⊤ = Inline.navigationKey ⊤
 
 
 --| Why the address did not change: the URL does not resolve against the
@@ -297,7 +298,7 @@ sendUrl send url =
 listen : String, String, sync (Js.Value → ⊤) → (⊤ → ⊤)
 listen name other f =
     host = Js.global "window"
-    handler = Js.from f
+    handler = live f
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     _ = Js.call host "addEventListener" [ Js.from other, handler ]
 
@@ -310,9 +311,16 @@ listen name other f =
 listenOne : String, sync (Js.Value → ⊤) → (⊤ → ⊤)
 listenOne name f =
     host = Js.global "window"
-    handler = Js.from f
+    handler = live f
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+
+
+-- The host's listener: nothing once the page has stopped. A defect stops
+-- the page without removing its listeners, and a stopped page must not
+-- keep preventing the host from following a link (`boundary.md` §9.8.14).
+live : sync (Js.Value → ⊤) → Js.Value
+live f = Js.from λevent → if Inline.stopped ⊤ then ⊤ else f event
 
 
 -- The event every push and replace is announced by: the platform's own,

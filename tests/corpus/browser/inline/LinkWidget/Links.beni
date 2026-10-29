@@ -1,0 +1,26 @@
+--! A widget whose messages are link requests.
+
+import Browser
+import Html exposing (Html)
+
+
+pub type alias Model =
+    count : Int
+
+
+pub update : Browser.UrlRequest, Model → Model
+update msg model =
+    case msg of
+        Browser.Internal _ →
+            { model | count = model.count + 1 }
+
+        Browser.External _ →
+            { model | count = model.count + 100 }
+
+
+pub view : Model → Html Browser.UrlRequest
+view model =
+    <section>
+        <input id="ext" onInput={Browser.External} />
+        <output>{String.fromInt model.count}</output>
+    </section>

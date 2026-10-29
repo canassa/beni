@@ -1,0 +1,32 @@
+-- url "/"
+-- load
+<body>
+  <main>
+    <a id="about" href="/about">"about"</a>
+    <a id="away" href="https://example.org/">"away"</a>
+    <button id="boom">"boom"</button>
+    <p>"/"</p>
+  </main>
+</body>
+-- click #about
+(click's default prevented)
+<body>
+  <main>
+    <a id="about" href="/about">"about"</a>
+    <a id="away" href="https://example.org/">"away"</a>
+    <button id="boom">"boom"</button>
+    <p>"requested"</p>
+  </main>
+</body>
+-- throws click #boom
+(threw: RangeError: Maximum call stack size exceeded)
+(the DOM did not change)
+-- click #about
+(the host follows the link to "/about")
+(the DOM did not change)
+-- location
+(location: /)
+(the DOM did not change)
+-- click #away
+(the host follows the link to "https://example.org/")
+(the DOM did not change)

@@ -1,0 +1,57 @@
+-- A defect stops the page, and a stopped page leaves every link to the
+-- host (browser-inline.md §10.3; boundary.md §9.8.14): `onUrlRequest`'s
+-- window listener, which a defect does not remove, prevents nothing once
+-- the page has stopped. The button's `update` throws (a stack overflow);
+-- after it both links are followed by the host. Before, the listener kept
+-- preventing every link of the document for the rest of the page's life.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | Boom
+
+
+depth : Int → String
+depth n = String.fromInt (String.length (depth (n + 1)) + 1)
+
+
+update : Msg, String → String × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink _ →
+            ( "requested", Cmd.none )
+
+        UrlChanged url →
+            ( url.path, Cmd.none )
+
+        Boom →
+            ( depth 0, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = λurl _ → ( url.path, Cmd.none )
+        , update = update
+        , view =
+            λmodel →
+                { title = model
+                , body =
+                    <main>
+                        <a id="about" href="/about">about</a>
+                        <a id="away" href="https://example.org/">away</a>
+                        <button id="boom" onClick={Boom}>boom</button>
+                        <p>{model}</p>
+                    </main>
+                }
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }

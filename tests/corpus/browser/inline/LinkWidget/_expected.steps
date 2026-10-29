@@ -1,0 +1,4 @@
+url "/"
+input #ext "a"
+click #in
+input #ext "b"

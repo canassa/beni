@@ -1,0 +1,42 @@
+-- url "/"
+-- load
+<body>
+  <div>
+    <a id="in" href="/x">"in"</a>
+    <section>
+      <input id="ext" .value="">
+      <output>"0"</output>
+    </section>
+  </div>
+</body>
+-- input #ext "a"
+<body>
+  <div>
+    <a id="in" href="/x">"in"</a>
+    <section>
+      <input id="ext" .value="a">
+      <output>"100"</output>
+    </section>
+  </div>
+</body>
+-- click #in
+(click's default prevented)
+<body>
+  <div>
+    <a id="in" href="/x">"in"</a>
+    <section>
+      <input id="ext" .value="a">
+      <output>"101"</output>
+    </section>
+  </div>
+</body>
+-- input #ext "b"
+<body>
+  <div>
+    <a id="in" href="/x">"in"</a>
+    <section>
+      <input id="ext" .value="b">
+      <output>"201"</output>
+    </section>
+  </div>
+</body>
