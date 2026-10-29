@@ -825,6 +825,8 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     const gpa = in.gpa;
     try initModule(in, mod);
     const prepass = try Prepass.run(gpa, mod.prepass_arena.allocator(), .{ .bir = in.bir, .dispatch = in.dispatch });
+    var pool: ColdPool = .{};
+    defer pool.deinit(gpa);
     for (prepass.order) |di| {
         const d = in.bir.decls[di];
         if (d.kind != .value or d.body == .none) continue;
@@ -840,18 +842,7 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
         if (!stopped and !cold_accounts) continue;
         var cold: DeclResult = .{ .decl = di, .account = .{ .allowance = allowance } };
         errdefer cold.account.deinit(gpa);
-        {
-            const alone = try gpa.create(Module);
-            defer gpa.destroy(alone);
-            try initModule(in, alone);
-            defer alone.deinit();
-            // The callees it reaches, walked first in the same tables on the
-            // module's own account: the cold run's tables hold the classes
-            // its calls apply, as the warm run's do (§8 S3b).
-            try walkCallees(alone, di, &prepass);
-            try walkIn(alone, d, &prepass, &cold);
-            gpa.free(cold.lines);
-        }
+        try coldRun(mod, &pool, di, &prepass, &cold);
         if (stopped and cold.failure == null) {
             // Within the limit alone: walked again here, unbounded, for its
             // class and lines in this module's tables.
@@ -868,12 +859,33 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     mod.adapter.account = &mod.base_account;
 }
 
-/// Walk in `mod`, on its base account and in group order, every
-/// declaration of an earlier group that `di` reaches by calls: what a cold
-/// run of `di` needs in its tables for its calls to apply a class.
-fn walkCallees(mod: *Module, di: u32, prepass: *const Facts.Prepass) Allocator.Error!void {
+/// The cold run's tables (§4.4, #1104): a module holding exactly the walks
+/// of a set of declarations, each once. A cold run whose callees include
+/// that set reuses it and walks only what is missing; any other starts
+/// afresh. So a dump's cold accounts cost each walk once along a chain of
+/// calls, and each cold run's tables hold exactly its callees' walks.
+const ColdPool = struct {
+    mod: ?*Module = null,
+    walked: []bool = &.{},
+
+    fn deinit(p: *ColdPool, gpa: Allocator) void {
+        if (p.mod) |m| {
+            m.deinit();
+            gpa.destroy(m);
+        }
+        gpa.free(p.walked);
+        p.* = .{};
+    }
+};
+
+/// `di` walked cold on `cold`'s account, after every declaration of an
+/// earlier group it reaches by calls (`.top` references and dispatched
+/// method calls). A callee the warm run stopped at a limit, or left
+/// unbuilt, is not walked: the cold run applies no class for it either.
+fn coldRun(mod: *Module, pool: *ColdPool, di: u32, prepass: *const Facts.Prepass, cold: *DeclResult) Allocator.Error!void {
     const gpa = mod.gpa;
-    const bir = mod.in.bir;
+    const in = mod.in;
+    const bir = in.bir;
     const reached = try gpa.alloc(bool, bir.decls.len);
     defer gpa.free(reached);
     @memset(reached, false);
@@ -883,24 +895,52 @@ fn walkCallees(mod: *Module, di: u32, prepass: *const Facts.Prepass) Allocator.E
     while (stack.pop()) |x| {
         const d = bir.decls[x];
         for (d.inst_start.int()..d.inst_end.int()) |i| {
-            const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
-            if (bir.instTag(inst) != .top) continue;
-            const t = bir.instData(inst).lhs;
-            if (t >= bir.decls.len or reached[t] or prepass.group_of[t] >= prepass.group_of[di]) continue;
+            const md = mod.declOf(@intCast(i)) orelse continue;
+            const t = md[1];
+            if (md[0] != in.module or t >= bir.decls.len or reached[t] or prepass.group_of[t] >= prepass.group_of[di]) continue;
             reached[t] = true;
             try stack.append(gpa, t);
         }
     }
+    // Reuse the pool only when everything it holds is a callee of `di`.
+    if (pool.mod != null) for (pool.walked, 0..) |w, x| if (w and !reached[x]) {
+        pool.deinit(gpa);
+        break;
+    };
+    if (pool.mod == null) {
+        const m = try gpa.create(Module);
+        errdefer gpa.destroy(m);
+        try initModule(in, m);
+        pool.mod = m;
+        pool.walked = try gpa.alloc(bool, bir.decls.len);
+        @memset(pool.walked, false);
+    }
+    const alone = pool.mod.?;
     for (prepass.order) |x| {
-        if (!reached[x]) continue;
+        if (!reached[x] or pool.walked[x]) continue;
+        pool.walked[x] = true;
         const d = bir.decls[x];
         if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) continue;
-        try mod.results.append(gpa, .{ .decl = x, .account = .{ .allowance = std.math.maxInt(u32) - 1 } });
-        mod.result_of[x] = @intCast(mod.results.items.len - 1);
-        try walkIn(mod, d, prepass, &mod.results.items[mod.results.items.len - 1]);
+        const warm = mod.results.items[mod.result_of[x]];
+        try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
+        alone.result_of[x] = @intCast(alone.results.items.len - 1);
+        const r = &alone.results.items[alone.results.items.len - 1];
+        if (warm.failure != null or warm.unbuilt != none) {
+            r.failure = warm.failure;
+            r.unbuilt = warm.unbuilt;
+            continue;
+        }
+        try walkIn(alone, d, prepass, r);
     }
-    mod.account = &mod.base_account;
-    mod.adapter.account = &mod.base_account;
+    try walkIn(alone, bir.decls[di], prepass, cold);
+    gpa.free(cold.lines);
+    cold.lines = &.{};
+    // `di` itself, for the next cold run that calls it.
+    pool.walked[di] = true;
+    try alone.results.append(gpa, .{ .decl = di, .class = cold.class, .unbuilt = cold.unbuilt, .failure = cold.failure });
+    alone.result_of[di] = @intCast(alone.results.items.len - 1);
+    alone.account = &alone.base_account;
+    alone.adapter.account = &alone.base_account;
 }
 
 /// Empty tables for `in`'s module.
