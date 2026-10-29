@@ -336,11 +336,12 @@ pub const Index = struct {
 
     /// The steps of `q` from the root, in a caller's buffer; each node read
     /// is one record on `charge` before it is read.
-    fn stepsOf(gpa: Allocator, charge: Charge, places: *const Place.Table, q: PathId, out: *std.ArrayList(Place.Step)) Error!void {
+    /// With `lanes`, each node's record is on its step's lane (#1225).
+    fn stepsOf(gpa: Allocator, charge: Charge, places: *const Place.Table, q: PathId, out: *std.ArrayList(Place.Step), lanes: ?StepLanes) Error!void {
         out.clearRetainingCapacity();
         var at = q;
         while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
-            try charge.reserve(gpa, .path, 1);
+            try stepCharge(charge, places, lanes, at).reserve(gpa, .path, 1);
             try out.append(gpa, places.pathStep(at));
         }
         std.mem.reverse(Place.Step, out.items);
@@ -465,16 +466,30 @@ pub const Index = struct {
     /// the remainder of `q` below it). O(depth · log² U) steps plus the
     /// candidates visited, each a record on `charge`.
     pub fn useAfter(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter) Error!?UseId {
+        return x.useAfterIn(gpa, charge, places, regions, h, q, p, filter, null);
+    }
+
+    /// A query's step lanes (§4.4's `(written demand, slot, k)` words): the
+    /// query at prefix `k` of `q` goes on `(atom, role, step | k's path)`.
+    pub const StepLanes = struct { atom: u32, role: Ids.Role, step: u32 };
+
+    /// `useAfter`, each prefix's range query on its own step lane when
+    /// `lanes` names them, never one lane for the whole path (#1225).
+    pub fn useAfterIn(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter, lanes: ?StepLanes) Error!?UseId {
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
-        try stepsOf(gpa, charge, places, q, &steps);
+        try stepsOf(gpa, charge, places, q, &steps, lanes);
+        // `prefix`: the path of the query's depth, walked up with it.
+        var prefix = q;
         var best: ?UseId = null;
         var depth = steps.items.len + 1;
         while (depth > 0) : (depth -= 1) {
-            try charge.reserve(gpa, .inspection, 1);
+            defer prefix = places.pathParent(prefix);
+            const at = stepCharge(charge, places, lanes, prefix);
+            try at.reserve(gpa, .inspection, 1);
             const r = x.range(places, h, steps.items[0 .. depth - 1], false);
-            if (try x.earliest(gpa, charge, r, p, t, filter)) |u| {
+            if (try x.earliest(gpa, at, r, p, t, filter)) |u| {
                 if (best == null or x.uses.items(.point)[u.int()] < x.uses.items(.point)[best.?.int()]) best = u;
             }
         }
@@ -485,13 +500,26 @@ pub const Index = struct {
     /// compatible, the earliest the filter accepts. The caller passes `q.f`
     /// for a record demand's written field and `q` for a list demand.
     pub fn useUnder(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter) Error!?UseId {
+        return x.useUnderIn(gpa, charge, places, regions, h, q, p, filter, null);
+    }
+
+    /// `useUnder`, its steps and its one range query on step lanes (#1225).
+    pub fn useUnderIn(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter, lanes: ?StepLanes) Error!?UseId {
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
-        try stepsOf(gpa, charge, places, q, &steps);
-        try charge.reserve(gpa, .inspection, 1);
+        try stepsOf(gpa, charge, places, q, &steps, lanes);
+        const at = stepCharge(charge, places, lanes, q);
+        try at.reserve(gpa, .inspection, 1);
         const r = x.range(places, h, steps.items, true);
-        return x.earliest(gpa, charge, r, p, t, filter);
+        return x.earliest(gpa, at, r, p, t, filter);
+    }
+
+    /// The charge of step `path` on `lanes`, or `charge` at a root or with none.
+    fn stepCharge(charge: Charge, places: *const Place.Table, lanes: ?StepLanes, path: PathId) Charge {
+        const l = lanes orelse return charge;
+        if (path == .none or places.pathParent(path) == .none) return charge;
+        return .in(charge.account, .{ .atom = l.atom, .role = l.role, .step = l.step | path.int() });
     }
 };
 

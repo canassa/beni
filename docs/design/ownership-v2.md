@@ -3312,7 +3312,7 @@ L0  Ids
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
-| `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 200 |
+| `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 280 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
@@ -3797,6 +3797,17 @@ termination must not discard a second acyclic route. Pin both field-order twins 
 call twins before consuming these proofs for call W paths or S5 field hoists. *As built (#1223):*
 `Demands.holdPaths` keys its walk by node, path and route flags; `SharedHolderRoutes` pins the equal-depth,
 unequal-depth and field-order twins. The call twins wait for S3b, which builds calls of ordinary functions.
+Before S3b, implement and verify step-provenance accounting for the whole demand resolution, not only
+`Liveness.useAfter` (#1225, Astra's review). Run deep direct writes and the same writes exported as callee
+W paths at 32/64/128/256 steps. Every original step uses its own fixed kernel; additional alternatives,
+holders and instantiated contexts reserve general tasks before traversal. Keep the post-`Calls.apply`
+W/E/xreq consumer work in this audit; an eager graft's separate growth task does not cover work done after
+it returns. *As built (#1225):* a lane has a `step` word beside its atom, role and phase. A demand's step
+lanes are `(base instruction, direct_demand_query, slot · path)`, §4.4's `(written demand, slot, k)` words:
+slot 0 the demanded value's own path, slot 1 a holder's. `escaped`, `candidates` and its refinement
+`chain`, `anchorsOf`, and `Liveness.useAfterIn`/`useUnderIn` with their `stepsOf` charge each step there.
+A base of several cells is decided several from its set before its cells are read. `DeepWrittenPath` pins
+the direct writes at 32/64/128/256; the callee W paths wait for S3b.
 
 **Code/design reconciliation (master `c709bf771`).** Existing issues are retained rather than duplicated.
 The historical *As built* notes stay intact; this table records what has moved since their baseline.

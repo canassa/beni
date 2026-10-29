@@ -158,6 +158,33 @@ pub const Outcome = struct {
 // The live inverted index (§2.8)
 // ---------------------------------------------------------------------------
 
+/// A step's slot (§4.4 *holder and callee path words*): the demanded value's
+/// own path, or the path a holder holds it at.
+const StepSlot = enum(u1) { base, holder };
+
+/// The kernel of demand `atom`'s step `path` (§2.8, §4.4's `(written demand,
+/// slot, k)` words on direct-demand-query lanes): the prefix work at one step
+/// of a path (its escape, its candidates and anchors, its refinement chain,
+/// a use query at it) is that step's, never the demand's whole lane (#1225).
+/// Null at a root path, or outside a demand's query.
+fn stepLane(env: Env, gpa: Allocator, atom: ?u32, slot: StepSlot, path: PathId) Error!?Ids.Account.Kernel {
+    const a = atom orelse return null;
+    if (path == .none or env.places.pathParent(path) == .none) return null;
+    return try env.account().enter(gpa, .{ .atom = a, .role = .direct_demand_query, .step = (@as(u32, @backingInt(slot)) << 31) | path.int() });
+}
+
+/// `stepLane` of a cell's canonical path, for a symbolic cell; null for any
+/// other, whose work stays the demand's.
+fn cellLane(env: Env, gpa: Allocator, atom: ?u32, c: CellId) Error!?Ids.Account.Kernel {
+    const x = env.cells.get(c);
+    if (!x.origin.isSymbolic() or x.origin == .top) return null;
+    return stepLane(env, gpa, atom, .base, .from(x.b));
+}
+
+fn leaveLane(env: Env, k: ?Ids.Account.Kernel) void {
+    if (k) |kk| env.account().leave(kk);
+}
+
 const Live = struct {
     gpa: Allocator,
     env: Env,
@@ -307,13 +334,17 @@ const Live = struct {
     /// The anchor keys of a symbolic cell's canonical path (§2.8): every
     /// prefix on a cyclic SCC whose next step stays on it. A refinement
     /// anchors by its canonical position.
-    fn anchorsOf(l: *Live, c: CellId, out: *std.ArrayList([4]u32)) Error!void {
+    /// `atom`: the demand whose query reads them, each step on its lane
+    /// (#1225); null when a holder registers.
+    fn anchorsOf(l: *Live, c: CellId, out: *std.ArrayList([4]u32), atom: ?u32) Error!void {
         const sym = (try l.env.cells.unrefined(l.gpa, l.env.account(), l.env.places, c)) orelse return;
         const x = l.env.cells.get(sym);
         if (!x.origin.isSymbolic() or x.origin == .top) return;
         const places = l.env.places;
         var at: PathId = .from(x.b);
         while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+            const lane = try stepLane(l.env, l.gpa, atom, .base, at);
+            defer leaveLane(l.env, lane);
             try l.env.charge.reserve(l.gpa, .inspection, 1);
             const parent = places.pathParent(at);
             const step = places.pathStep(at);
@@ -352,7 +383,7 @@ const Live = struct {
         var keys: std.ArrayList([4]u32) = .empty;
         defer keys.deinit(l.gpa);
         const cell = l.leafCell(leaf);
-        try l.anchorsOf(cell, &keys);
+        try l.anchorsOf(cell, &keys, null);
         // A refinement is also in the chain of its canonical path and split.
         const rk = try l.refinementKey(cell);
         if (rk) |k| try keys.append(l.gpa, k.members);
@@ -425,6 +456,12 @@ const Resolver = struct {
     /// at one path its lane has (§4.1's *direct demand query*, #1201): left
     /// when the query ends.
     spill: ?Ids.Account.Kernel = null,
+    /// Set inside a step's lane (`chain`), where `spill` cannot be entered:
+    /// the sweep enters it once back at its own level.
+    want_spill: bool = false,
+    /// The demand being resolved's atom (its base's instruction), whose step
+    /// lanes its path work goes on (`stepLane`, #1225).
+    atom: ?u32 = null,
     steps: std.ArrayList(Step) = .empty,
     /// Per holder: whether it is registered.
     on: []bool = &.{},
@@ -531,6 +568,8 @@ const Resolver = struct {
     fn escaped(r: *Resolver, c: CellId, p: u32, deep: bool) Error!?u32 {
         var at = c;
         while (at != .none) : (at = r.env.cells.parent(at)) {
+            const lane = try cellLane(r.env, r.gpa, r.atom, at);
+            defer leaveLane(r.env, lane);
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             if (r.escapedAt(at, p)) |e| return e;
         }
@@ -575,6 +614,8 @@ const Resolver = struct {
         try out.append(r.gpa, try r.env.cells.top(r.gpa, r.env.account()));
         var at = c;
         while (at != .none) : (at = r.env.cells.parent(at)) {
+            const lane = try cellLane(r.env, r.gpa, r.atom, at);
+            defer leaveLane(r.env, lane);
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             try out.append(r.gpa, at);
         }
@@ -589,12 +630,18 @@ const Resolver = struct {
             if (u != c) {
                 at = u;
                 while (at != .none) : (at = r.env.cells.parent(at)) {
+                    const lane = try cellLane(r.env, r.gpa, r.atom, at);
+                    defer leaveLane(r.env, lane);
                     try r.env.charge.reserve(r.gpa, .inspection, 1);
                     try out.append(r.gpa, at);
                 }
             }
             var path: PathId = .from(r.env.cells.get(u).b);
-            while (path != .none) : (path = r.env.places.pathParent(path)) try r.chain(u, path, c, out);
+            while (path != .none) : (path = r.env.places.pathParent(path)) {
+                const lane = try stepLane(r.env, r.gpa, r.atom, .base, path);
+                defer leaveLane(r.env, lane);
+                try r.chain(u, path, c, out);
+            }
         }
         // And at the canonical path of each refinement `c` lies in (§2.8: "at
         // c's canonical path and at each of its trie ancestors"): a view's
@@ -604,6 +651,8 @@ const Resolver = struct {
         // is `conflict`'s to drop for a shallow demand.
         at = r.env.cells.parent(c);
         while (at != .none and r.env.cells.origin(at).isRefinement()) : (at = r.env.cells.parent(at)) {
+            const lane = try cellLane(r.env, r.gpa, r.atom, at);
+            defer leaveLane(r.env, lane);
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             const ua = (try r.env.cells.unrefined(r.gpa, r.env.account(), r.env.places, at)) orelse continue;
             try r.chain(ua, .from(r.env.cells.get(ua).b), at, out);
@@ -627,7 +676,7 @@ const Resolver = struct {
         // its `⟲` chain.
         var keys: std.ArrayList([4]u32) = .empty;
         defer keys.deinit(r.gpa);
-        try r.live.anchorsOf(c, &keys);
+        try r.live.anchorsOf(c, &keys, r.atom);
         for (keys.items) |key| {
             const class = key[3] & 1;
             if (class == 0 and !deep) continue;
@@ -655,8 +704,12 @@ const Resolver = struct {
         try r.env.charge.reserve(r.gpa, .inspection, 1);
         var g = r.live.group_heads.get(r.live.pathKey(sym, path)) orelse return;
         // Past the first member the live refinements here are a sweep: growth
-        // (`spillNow`, #1201).
+        // for the rest of this chain, and for the query once back at the
+        // sweep's level (`want_spill`, #1201). `chain` runs on a step's lane,
+        // so its growth is scoped to it.
         var members: u32 = 0;
+        var past: ?Ids.Account.Kernel = null;
+        defer leaveLane(r.env, past);
         while (g != none) : (g = r.live.groups.items[g].next) {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             const group = r.live.groups.items[g];
@@ -668,7 +721,10 @@ const Resolver = struct {
                 link = a.next;
                 const d = r.live.leafCell(a.leaf);
                 if (one and d == self) continue;
-                if (members == 1) try r.spillNow();
+                if (members == 1 and past == null) {
+                    past = try r.env.account().enter(r.gpa, null);
+                    r.want_spill = true;
+                }
                 members += 1;
                 try out.append(r.gpa, d);
                 if (one) break;
@@ -816,8 +872,10 @@ const Resolver = struct {
         };
         var ctx: Ctx = .{ .r = r, .q = q };
         const filter: Liveness.Filter = .{ .ctx = &ctx, .accept = Ctx.accept };
-        const above = try r.frame.index.useAfter(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, filter);
-        const under = try r.frame.index.useUnder(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, Liveness.Filter.all);
+        // Each prefix of the held path on the demand's holder-slot step lane (#1225).
+        const lanes: ?Liveness.Index.StepLanes = if (r.atom) |a| .{ .atom = a, .role = .direct_demand_query, .step = @as(u32, @backingInt(StepSlot.holder)) << 31 } else null;
+        const above = try r.frame.index.useAfterIn(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, filter, lanes);
+        const under = try r.frame.index.useUnderIn(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, Liveness.Filter.all, lanes);
         if (above == null) return under;
         if (under == null) return above;
         const pa = r.frame.index.get(above.?).point;
@@ -883,10 +941,18 @@ const Resolver = struct {
     }
 
     fn resolve(r: *Resolver, dm: Demand) Error!Outcome {
+        r.atom = dm.base_inst;
+        defer r.atom = null;
         const deep = dm.kind.isDeep();
         const cellt = r.env.cells;
         const base_cells = if (deep) try r.reach(dm.base.node) else try r.env.shapes.cellsOf(r.gpa, r.env.account(), &r.env.cells.sets, dm.base.node);
         var out: Outcome = .{ .verdict = .accepted, .accepted = .fresh };
+        // Several cells (alternatives, or a deep demand's reach) make every
+        // query below a product of the demand with them: growth, chosen
+        // here before the work, the list of them too (§4.1, *direct demand
+        // query*; #1225: decided from the set before reading it).
+        const product: ?Ids.Account.Kernel = if (several(cellt, base_cells)) try r.env.account().enter(r.gpa, null) else null;
+        defer if (product) |k| r.env.account().leave(k);
         // The base's cells, in the order the conditions read them.
         var cells: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
         defer cells.deinit(r.gpa);
@@ -898,11 +964,6 @@ const Resolver = struct {
             if (!isFresh(o) and o != .mark) out.accepted = .param;
         }
         // A base with no cell holds no object: nothing to write.
-        // Several cells (alternatives, or a deep demand's reach) make every
-        // query below a product of the demand with them: growth, chosen
-        // here before the work (§4.1, *direct demand query*).
-        const product: ?Ids.Account.Kernel = if (cells.items.len > 1) try r.env.account().enter(r.gpa, null) else null;
-        defer if (product) |k| r.env.account().leave(k);
         // 1. Known.
         for (cells.items) |e| if (cellt.origin(.from(e.key)) == .top) {
             return .{ .verdict = .refused, .cause = .unknown, .exactness = .approximate };
@@ -968,6 +1029,10 @@ const Resolver = struct {
             const c: CellId = .from(e.key);
             cands.clearRetainingCapacity();
             try r.candidates(c, deep, &cands);
+            if (r.want_spill) {
+                r.want_spill = false;
+                try r.spillNow();
+            }
             r.seen_holder.clear();
             for (cands.items) |d| {
                 if (r.seen_holder.contains(d)) continue;

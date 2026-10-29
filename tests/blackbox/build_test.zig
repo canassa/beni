@@ -9393,6 +9393,37 @@ test "the checker v2's dump does not depend on where a declaration sits in its m
     }
 }
 
+test "the checker v2 decides a base of 700 alternatives is several before reading its cells" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1225: a demand whose base has several cells is a product, growth;
+    // the query read every cell on its own lane first, and a choice of 700
+    // lists passed the lane's ceiling. It decides from the set before the
+    // work now. Raised allowance: the product is measured, not refused.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "@ownership_summary_size(module, 4194304)\n\n\npub g : Int → List Int\ng k =\n    c =\n        case k of\n");
+    for (0..700) |i| try src.print(a, "            {d} →\n                [ {d} ]\n\n", .{ i, i });
+    try src.appendSlice(a, "            _ →\n                []\n    List.push c 1\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-totals", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limits ") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "total 1: accepted 1") != null);
+}
+
 test "the checker v2 sweeps one holder of a value at many paths without passing a lane's ceiling" {
     // #1212's review (#1201): one holder holding the demanded cell at k
     // paths (a record whose k fields are one list) gave the demand's lane a

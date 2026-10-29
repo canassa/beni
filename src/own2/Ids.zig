@@ -235,7 +235,10 @@ pub const Phase = enum(u8) { inference, validation };
 /// source identity unique in the owning declaration: an instruction, a use's
 /// operand occurrence, a region id, or a canonical path node marked with
 /// `atom_path_bit` so it never meets an instruction in one role.
-pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference };
+/// `step`: within one atom's role, the step of a path it walks, for a kernel
+/// §4.4 counts per step (*holder and callee path words*: `(written demand,
+/// slot, k)`); 0 for every other kernel (#1225).
+pub const Lane = struct { atom: u32, role: Role, phase: Phase = .inference, step: u32 = 0 };
 
 /// The atom kinds beside an instruction, each its own bit so no two share a
 /// role's counter: a canonical path node (a `PathId`), a local (a binding,
@@ -315,7 +318,7 @@ pub const Account = struct {
     /// Set by the first refusal and never cleared: the exhaustion marker of
     /// §4.4, which makes every later reservation fail at once.
     failed: ?Failure = null,
-    lanes: FixedDict(3) = .{},
+    lanes: FixedDict(4) = .{},
     /// The kernel the walk is in (§4.1), `lanes`' slot of `lane` or growth
     /// (`none_int`): where a reservation naming no lane goes (`enter`).
     lane_slot: u32 = none_int,
@@ -354,7 +357,7 @@ pub const Account = struct {
             a.lane_slot = none_int;
             return prev;
         };
-        const got = try a.lanes.getOrPut(gpa, .{ l.atom, @backingInt(l.role), @backingInt(l.phase) });
+        const got = try a.lanes.getOrPut(gpa, .{ l.atom, @backingInt(l.role), @backingInt(l.phase), l.step });
         if (!got.found_existing) got.value_ptr.* = 0;
         a.lane_slot = got.index;
         a.lane = l;
@@ -406,7 +409,7 @@ pub const Account = struct {
     /// `ownership_accounting_invariant`, never growth (§4.1).
     pub fn reserveLane(a: *Account, gpa: Allocator, lane: Lane, category: Category, n: u32) ChargeError!void {
         if (a.failed) |f| return f.err();
-        const slot = try a.lanes.getOrPut(gpa, .{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase) });
+        const slot = try a.lanes.getOrPut(gpa, .{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase), lane.step });
         if (!slot.found_existing) slot.value_ptr.* = 0;
         const next = @as(u64, slot.value_ptr.*) + n;
         if (next > lane.role.ceiling()) {
@@ -443,7 +446,7 @@ pub const Account = struct {
 
     /// How many records `lane` has used.
     pub fn laneUsed(a: *const Account, lane: Lane) u32 {
-        return a.lanes.get(.{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase) }) orelse 0;
+        return a.lanes.get(.{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase), lane.step }) orelse 0;
     }
 };
 
