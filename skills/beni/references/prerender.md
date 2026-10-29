@@ -108,9 +108,9 @@ main =
 
 - A program prerenders when `main` says `Browser.prerender program routes`. Write it in `main`,
   around the program or around a `Browser.mountAt`, or inside one. Anywhere else it is refused
-  (`program_shape`).
+  (`program_shape`), and so is `Browser.prerender` used as a value.
 - `build`, `build --watch` and `serve` all prerender. `serve` prerenders after each build.
-- The build runs the pages under the `node` on `PATH`. With no `node` there, the build fails
+- `"build"."base"` must begin with `/`. The build runs the pages under the `node` on `PATH`. With no `node` there, the build fails
   (`prerender_needs_node`).
 - On `browser-tea`, `Browser.prerender` gives the program back and reads no route. The same source
   builds there, rendered in the browser.
@@ -165,7 +165,7 @@ computes the same first render again. A call that may read the clock, randomness
 
 The shell needs `{{view}}` exactly once, in the element the program mounts at, as its last content:
 `<body>{{view}}</body>`, or `<div id="root">{{view}}</div>` with `Browser.mountAt`. None, or two,
-is `invalid_html_shell`. `{{title}}` is the page's title, escaped, from a `document`'s or an
+is `invalid_html_shell`. `{{title}}` is the page's title, escaped for a text or an attribute, from a `document`'s or an
 `application`'s `view`: write `<title>{{title}}</title>`. A build that does not prerender writes
 both as nothing.
 
