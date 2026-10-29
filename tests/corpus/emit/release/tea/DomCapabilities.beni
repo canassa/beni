@@ -1,0 +1,50 @@
+-- The DOM capabilities' shape under `--release` once `Dom.js` is gone
+-- (plans/runtime-in-beni.md step 8): `Dom.Error`, `Box` and `Viewport` no
+-- longer cross the boundary, so `NotFound` carries an integer tag; the
+-- records keep `x`, `y`, `width` and `height`, which `box` also reads as
+-- plain properties of the host rectangle (backend.md §9 item 4's closed
+-- list); the node lookup, the method calls and the four window reads are
+-- written in place.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Measure
+    | Measured (Result Dom.Error Dom.Box)
+
+
+update : Msg, String → String × Cmd Msg
+update msg text =
+    case msg of
+        Measure →
+            ( text, Cmd.perform λsend → send (Measured (Dom.box "field")) )
+
+        Measured (Ok box) →
+            viewport = Dom.viewport ⊤
+            ( "${String.fromFloat box.width} of ${String.fromFloat viewport.width}", Cmd.none )
+
+        Measured (Err (Dom.NotFound id)) →
+            ( "no ${id}", Cmd.none )
+
+
+view : String → Html Msg
+view text =
+    <main>
+        <button onClick={Measure}>measure</button>
+        <input id="field" />
+        <p>{text}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
