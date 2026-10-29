@@ -766,6 +766,10 @@ const Opt = struct {
             if (o.imported[k] or o.ir.name(held).module != .none) return;
             j = k;
         }
+        // At the bound the chain is not known to end in an emitted
+        // function: refuse, the safe exit. Unreachable today — an earlier
+        // pass folds a chain of `const` aliases to one — and kept so.
+        if (steps == 64) return;
         o.inlined[arrow.int()] = target.toOptional();
     }
 

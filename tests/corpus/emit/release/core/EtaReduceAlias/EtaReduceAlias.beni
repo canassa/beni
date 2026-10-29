@@ -1,0 +1,19 @@
+-- Item 6 of the release optimiser (`backend.md` §9, *The name's value must
+-- be an emitted function too*): the rule that a `const` holding an import
+-- is never a callee is `Opt`'s, and `Opt` runs per module. `Counted`
+-- refuses its own `countedAlias` (as `run/EtaReduceHostValue` runs);
+-- named from here, the alias is an export of another beni module and
+-- passes, so `viaOther`'s lambda is printed as the alias. Harmless today:
+-- a sibling's export is an arrow of the declared arity that names no
+-- `arguments` (`boundary.md` §4, checks 3 and 4). This golden shows the
+-- shape, so that a change to either check shows here.
+import Counted
+import Js
+
+
+pub viaOther : List Int → List Int
+viaOther xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Counted.countedAlias x ])
+
+
+pub viaOwn : List Int → List Int
+viaOwn xs = Counted.viaAlias xs
