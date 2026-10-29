@@ -1712,11 +1712,14 @@ the fold maps to ℓ. When |M| ≥ 2, `within(ℓ)` is emitted at P only if all 
 - **W3, self.** Each member is unfolded, or folded and met once at P, or folded with its own
   `within` at P, which the new one uses up.
 
-Otherwise the merged self pair is `sep(ℓ, ℓ)`, which is `lost`. When |M| = 1, the member's own
-`within` is renamed. The certificate (P, ℓ, M) is published with the atom, with each member's
+Otherwise the merged self pair is `sep(ℓ, ℓ)`, which is `lost`. A failing pre-fold κ(P) (`shared` or
+`lost`) is the answer whatever M is. When |M| = 1, the member's own `within` is renamed, and otherwise
+κ(P) stands as it is.
+The certificate (P, ℓ, M) is published with the atom, with each member's
 multiplicity at P, so W3 is checked from published facts.
 
-*Supplies at the fold.* `supply(·, k)` is joined: owned only if every member's is owned, taken
+*Supplies at the fold.* `supply(·, k)` is joined: the nodes joined and the κ merged, so no member's
+is dropped and the join does not depend on order; owned only if every member's is owned, taken
 only if every member's is taken. A merged split cell is `single` only if every part is `single`,
 with the same lineage and entry. Translating a supply through a call ANDs its owned bit with Dead
 at that call.
@@ -1728,7 +1731,8 @@ and instantiating it is plain κ substitution.
 *Discharge (actual in hand).* For every class alternative, `res` is instantiated at q under ι·ℓ,
 and each cell is tagged with **every** route that reaches it:
 
-- **D1, minted.** `fresh k` becomes `result (ι·ℓ)·k`, and passes.
+- **D1, minted.** `fresh k` becomes `result (ι·ℓ)·k`, and passes. A `minted` route passes only on a
+  `site` or `result` cell.
 - **D2, a call inside the invocation.** A captured or own function parameter's `cb`, a closure's
   answer, or the forwarded own parameter. If that call's actual is in hand, the route passes when
   the family's `gen` holds at the path. Otherwise the cell joins the consumer's own `within`.
@@ -1740,7 +1744,7 @@ and each cell is tagged with **every** route that reaches it:
   containers are compared pairwise with `Cond.sep`.
 - **D4, everything else fails.** That covers a non-taken or borrowed supply (a feedback included),
   a projection or refinement of a supply, `env` and `shared` (exactly), and `⊤`, `esc` and `loan`
-  (approximately). One failing route fails the cell.
+  (approximately). One failing route fails the cell, and so does a cell that no route reaches.
 
 *Proof sketch.*
 
@@ -3501,7 +3505,9 @@ verifier decides finite recursive obligation graphs with the existing summary/va
 every guarantee, and its work is linear in the graph. `within` fits the algebra as built once it is
 re-derived (§2.12 *`within`: emission and discharge*): an ordinary κ atom emitted by W1–W3 with a
 published certificate, and discharged by route. That costs S4's read-off and Calls five computed
-facts (that section's list), and one precision loss (#1220). The fold-element condition stays `lost`.*
+facts (that section's list), and one precision loss (#1220). The witnesses supply those facts by hand
+(Dead, affine closures, route tags, W2's guard, D2 without coinduction, consuming the certificate);
+producing them is S4's, #1229. The fold-element condition stays `lost`.*
 `Fix.Prover` (§5) is the verifier. A goal is a Boolean claim `(claim, port, arg)`; the layer above's
 equations (test-written here, S4's walker and read-off later) expand it, once per settled generation,
 into its settled alternatives. A goal holds when every alternative holds, and an alternative when its
@@ -3582,7 +3588,9 @@ fold and instantiation rules above, not named by hand.
   - A folded member met twice is accepted with its own `within`, and the published certificate
     keeps its multiplicity. Without that `within` it is refused, and so is FeedbackPrevTwice's
     folded split met twice. One member renames its own `within`.
-  - The supply join: borrowed wins, and a supply is taken only if both are.
+  - The supply join: borrowed wins, a supply is taken only if both are, and both nodes and both κ
+    are kept, so `handOff` agrees in either order.
+  - A failing pre-fold κ is the answer, and one member keeps the pre-fold κ as it is.
 - **`within`'s discharge (D1–D4):**
   - Kept: C.6's push (D3), `λ_ → [ 1 ]` (D1) and `edit` (D2 beside D3), each leaving exactly
     `excl xs`. A nested call with no actual in hand owes the consumer's own `within`.
@@ -3633,7 +3641,8 @@ invalidation, `gen`'s path, the codec's spellings and `writesCaptures`. For `wit
 its coexistence, W2's divergence and its guard, W3 for many members and for one, membership in the
 fold, the published multiplicity, the supply join's owned and taken, A3's `env` test, Dead at the
 call, D1, D2's `gen`, its `cb`-only check and its fallback, D3's owned, taken, self (`m.cond`),
-`single` and pairwise checks, and D4's exact and approximate arms. Each removal fails a witness.
+`single` and pairwise checks, D4's exact and approximate arms, the refusal of a cell with no route, D1's
+origin check, the join's node and κ, and a failing pre-fold κ kept. Each removal fails a witness.
 
 **Measured proof work.** A chain and a ring of n + 1 families with a demand on top, at
 n = 10 / 100 / 1,000: one expansion per goal (n + 2) and n + 1 (+ 1) dependency edges. The account's
