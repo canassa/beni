@@ -857,6 +857,11 @@ holder, so no cell without a holder is visited: O(Σ over the cell set of its an
 per demand. Holders found this way are charged as §2.7 says for holders beyond the direct one. `RoseKidsHeld`,
 `RoseAlias`, `MaybeTreeAlias` and `MutualAlias` (Appendix B) check a write under `⟲` while an on-cycle container
 or a level above is held, and a deep demand on an on-cycle container while a level below it is held.
+*As built (#1236):* a cycle anchor's prefixes are found through `Place.PathNode.anchor_up`, the nearest node at
+or above a path node whose step stays on a cycle, set when the node is made. A holder's registration visits its
+anchors, never every step of its path. `Place.extend` looks for re-entry only along the cycle `here` and the
+target share, stopping at the first place off it, so a long written path below a list element costs a
+constant per step (`DeepPathThroughList`).
 
 **Verdicts** (R-0.3): `accepted` {`fresh`, `call`, `param`, `callback-param`, `once`, `entry`}; `pending detail`
 (§2.11); `refused cause` per R-6.3, exact/approximate/position by the pairs it rested on; among failing holders
@@ -3310,7 +3315,7 @@ L0  Ids
 | `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 700 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
-| `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
+| `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 280 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |

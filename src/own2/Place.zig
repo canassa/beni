@@ -237,6 +237,12 @@ pub const PathNode = struct {
     depth: u32,
     /// At or below a summary position: a `[*]` or a `⟲` on the way.
     summary: bool,
+    /// The nearest node at or above this one whose step stays on a cycle (a
+    /// `⟲`, or a step between two places of one cyclic SCC): the prefixes
+    /// §2.8's cycle anchors key, so a reader visits them alone, never every
+    /// step of a long path (#1236). Set when the node is made: SCCs are
+    /// settled before any path reaches their places.
+    anchor_up: PathId = .none,
 };
 
 pub const Error = Ids.ChargeError;
@@ -633,6 +639,13 @@ pub const Table = struct {
         return t.paths.items(.step)[p.int()];
     }
 
+    /// `p` itself or its nearest ancestor that is a cycle anchor's prefix
+    /// (`PathNode.anchor_up`), `.none` when there is none.
+    pub fn anchorUp(t: *const Table, p: PathId) PathId {
+        if (p == .none) return .none;
+        return t.paths.items(.anchor_up)[p.int()];
+    }
+
     pub fn pathDepth(t: *const Table, p: PathId) u32 {
         return t.paths.items(.depth)[p.int()];
     }
@@ -660,15 +673,23 @@ pub const Table = struct {
             (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = Ids.none_int;
             return null;
         };
-        // Re-entry: is `target` on the path?
+        // Re-entry: is `target` on the path? Only if it shares a cycle with
+        // `here` (a place above on the path that `here` steps back to closes
+        // one), and then among the path's last places on that cycle: they are
+        // a suffix of it, so the walk stops at the first one off the cycle.
+        // As long as the cycle, never the path (#1236).
         var out: ?PathId = null;
-        var at = path;
-        while (at != .none) : (at = t.pathParent(at)) {
-            try charge.reserve(gpa, .path, 1);
-            if (t.pathPlace(at) == target) {
-                // Already `⟲` here (the root's placeholder step is not one).
-                out = if (t.pathParent(at) != .none and t.pathStep(at).kind == .level) at else try t.node(gpa, charge.account, at, Step.level, target);
-                break;
+        if (t.sameCycle(here, target)) {
+            var at = path;
+            while (at != .none) : (at = t.pathParent(at)) {
+                try charge.reserve(gpa, .path, 1);
+                const there = t.pathPlace(at);
+                if (there == target) {
+                    // Already `⟲` here (the root's placeholder step is not one).
+                    out = if (t.pathParent(at) != .none and t.pathStep(at).kind == .level) at else try t.node(gpa, charge.account, at, Step.level, target);
+                    break;
+                }
+                if (!t.sameCycle(there, target)) break;
             }
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
@@ -683,7 +704,9 @@ pub const Table = struct {
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(t.paths.len);
             const summary = t.paths.items(.summary)[parent.int()] or step.kind == .elem or step.kind == .level;
-            try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary });
+            const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
+            const up: PathId = if (anchor) .from(@intCast(t.paths.len)) else t.paths.items(.anchor_up)[parent.int()];
+            try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up });
         }
         return .from(got.value_ptr.*);
     }
@@ -844,7 +867,7 @@ comptime {
     Ids.assertRecord(PathNode);
     std.debug.assert(@sizeOf(Place) == 24);
     std.debug.assert(@sizeOf(StepEntry) == 8);
-    std.debug.assert(@sizeOf(PathNode) == 20);
+    std.debug.assert(@sizeOf(PathNode) == 24);
 }
 
 // ---------------------------------------------------------------------------

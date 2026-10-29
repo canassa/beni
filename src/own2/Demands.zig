@@ -350,17 +350,17 @@ const Live = struct {
         const x = l.env.cells.get(sym);
         if (!x.origin.isSymbolic() or x.origin == .top) return;
         const places = l.env.places;
-        var at: PathId = .from(x.b);
-        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+        // Only the anchor prefixes, nearest first (`Place.anchorUp`, #1236): a
+        // step off every cycle names no anchor, so it is never visited.
+        var at: PathId = places.anchorUp(.from(x.b));
+        while (at != .none and places.pathParent(at) != .none) : (at = places.anchorUp(places.pathParent(at))) {
             const lane = try stepLane(l.env, l.gpa, atom, .base, at);
             defer leaveLane(l.env, lane);
             try l.env.charge.reserve(l.gpa, .inspection, 1);
             const parent = places.pathParent(at);
             const step = places.pathStep(at);
-            const pp = places.pathPlace(parent);
             // `⟲` re-enters its place, which is on a cycle by that alone.
             const on_level = step.kind == .level;
-            if (!on_level and !places.sameCycle(pp, places.pathPlace(at))) continue;
             const class: u32 = if (on_level) 1 else 0;
             try out.append(l.gpa, .{ (@as(u32, @backingInt(x.origin)) << 8) | 1, x.a, parent.int(), (x.c << 1) | class });
         }
