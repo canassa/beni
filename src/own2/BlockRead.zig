@@ -3015,17 +3015,24 @@ test "#1138: a snapshot as deep as the source is written and read back on explic
 
 fn deepBlock() !void {
     const gpa = testing.allocator;
-    var a: Tables = .{};
+    // The tables live on the heap: the 64 KiB stack is for the walks, so a
+    // larger table record cannot overflow it (#1197) — only a native frame
+    // per level would.
+    const a = try gpa.create(Tables);
+    defer gpa.destroy(a);
+    a.* = .{};
     try a.init();
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
     const depth = 1_000;
-    const c = try deepClass(&a, depth);
-    var b: Tables = .{};
+    const c = try deepClass(a, depth);
+    const b = try gpa.create(Tables);
+    defer gpa.destroy(b);
+    b.* = .{};
     try b.init();
     defer b.deinit();
     b.account.allowance = std.math.maxInt(u32) - 1;
-    const back = b.sums.get(try roundTrip(&a, &b, c));
+    const back = b.sums.get(try roundTrip(a, b, c));
     // The bottom level reads what it read.
     const s0 = try b.places.ctorStep(gpa, &b.account, 0, 0);
     var at = back.res;

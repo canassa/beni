@@ -96,9 +96,9 @@ pub const Scratch = struct {
 /// `positions` node's sides coexist (they add); a `choice`'s arms take the
 /// maximum, whole arm by whole arm; a `union` holds its cells at its own
 /// position as a set, its sides' structure below coexisting (§2.3, *One
-/// reading of `union`*). A leaf's symbolic cells and refinements stand for
-/// their projections at every canonical path below them, and a `⊤` cell or
-/// a recast for `⊤` there. A source on a cycle reaches each key below it at
+/// reading of `union`*). Below a leaf's symbolic cells and refinements,
+/// a `⊤` cell or a recast, every canonical path reads `⊤` (`lost`, as master;
+/// the precise projections are #1199). A source on a cycle reaches each key below it at
 /// unboundedly many coexisting positions, so the components of the walk
 /// (Tarjan, explicit stack) settle once each, a cycle's occurrences all
 /// repeated — a backedge is an equation, never a count per visit. Kept by
@@ -176,45 +176,33 @@ const Pre = struct {
         }
     }
 
-    /// What `c`, held at `path`, stands for below it: its projection at
-    /// every canonical path below (a pair walk over the argument's paths and
-    /// the cell's own, each pair once); `⊤` for a `⊤` cell or one whose own
-    /// place differs from the position's; nothing for a concrete cell.
-    fn project(w: *Pre, c: CellId, approx: bool, path: PathId) Error!void {
+    /// What `c`, held at `path`, stands for below it: nothing for a concrete
+    /// cell; for a symbolic cell, a refinement or `⊤`, `⊤` at every canonical
+    /// path below (`lost` there, as master reads it). A symbolic cell's own
+    /// projections would owe their `summaryExcl` and an `apart` instantiated
+    /// through `⟲` (§2.9 item 2), which the call does not build yet (#1199).
+    fn project(w: *Pre, c: CellId, path: PathId) Error!void {
         const gpa = w.env.gpa;
         const charge = w.env.charge;
-        const cells = w.env.cells;
         const places = w.env.places;
-        const account = w.env.account();
-        var sym: ?CellId = null;
-        switch (cells.origin(c)) {
+        switch (w.env.cells.origin(c)) {
             .site, .result, .esc, .mark => return,
-            .top => {},
-            .elem, .others, .level, .below, .loan => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
-            .param, .env, .shared, .cb, .msg => sym = c,
+            .top, .elem, .others, .level, .below, .loan, .param, .env, .shared, .cb, .msg => {},
         }
-        if (sym) |s| if (!cells.origin(s).isSymbolic() or cells.origin(s) == .top or places.pathPlace(.from(cells.get(s).b)) != places.pathPlace(path)) {
-            sym = null;
-        };
-        const top = if (sym == null) try cells.top(gpa, account) else CellId.none;
-        var seen: Ids.FixedDict(2) = .{};
+        const top = try w.env.cells.top(gpa, w.env.account());
+        var seen: stamped.Column(PathId, void) = .{};
         defer seen.deinit(gpa);
-        var stack: std.ArrayList([2]PathId) = .empty;
+        var stack: std.ArrayList(PathId) = .empty;
         defer stack.deinit(gpa);
-        try stack.append(gpa, .{ path, if (sym) |s| PathId.from(cells.get(s).b) else .none });
+        try stack.append(gpa, path);
         while (stack.pop()) |at| {
-            for (places.steps(places.pathPlace(at[0])).steps) |s| {
+            for (places.steps(places.pathPlace(at)).steps) |s| {
                 try charge.reserve(gpa, .inspection, 1);
-                const ap = (try places.extend(gpa, charge, at[0], s)) orelse continue;
-                const cp: PathId = if (sym != null) (try places.extend(gpa, charge, at[1], s)) orelse continue else .none;
-                const got = try seen.getOrPut(gpa, .{ ap.int(), cp.int() });
-                if (got.found_existing) continue;
-                got.value_ptr.* = 0;
-                if (sym) |x| {
-                    const d = cells.get(x);
-                    try w.add(ap, try cells.symbolic(gpa, account, places, d.origin, d.a, cp, d.c), approx);
-                } else try w.add(ap, top, true);
-                try stack.append(gpa, .{ ap, cp });
+                const ap = (try places.extend(gpa, charge, at, s)) orelse continue;
+                if (seen.contains(ap)) continue;
+                try seen.put(gpa, ap, {});
+                try w.add(ap, top, true);
+                try stack.append(gpa, ap);
             }
         }
     }
@@ -251,10 +239,10 @@ const Pre = struct {
                     try charge.reserve(gpa, .inspection, 1);
                     const approx = e.value == 1 or d.kind == .recast;
                     if (!st.below) try w.add(st.path, .from(e.key), approx);
-                    if (d.kind == .leaf) try w.project(.from(e.key), approx, st.path);
+                    if (d.kind == .leaf) try w.project(.from(e.key), st.path);
                 }
                 // Below a recast, its inner read at another type: `⊤`.
-                if (d.kind == .recast) try w.project(try w.env.cells.top(gpa, w.env.account()), true, st.path);
+                if (d.kind == .recast) try w.project(try w.env.cells.top(gpa, w.env.account()), st.path);
             },
             .@"union" => {
                 if (!st.below) try w.addAll(st.path, try shapes.cellsOf(gpa, w.env.account(), &w.env.cells.sets, st.node), false);
@@ -2067,16 +2055,9 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
             // writing both paths is caught by the caller's Disjoint across its
             // W paths (§2.11 item 3), not by this read.
             3 => try testing.expectEqual(Cond.yes, got),
-            // The symbolic leaf: its projections below it are occurrences
-            // too, compared with the leaf's own cell as an `apart` the caller
-            // instantiates — no `lost` invented here, no repeat hidden.
-            4 => {
-                try testing.expect(!Cond.Table.fails(got));
-                var it = x.conds.atoms.iterate(try x.conds.flat(gpa, x.env().charge, got));
-                var apart = false;
-                while (it.next()) |a| apart = apart or x.conds.get(.from(a.key)).atom == .apart;
-                try testing.expect(apart);
-            },
+            // The symbolic leaf: positions below it read `⊤`, as master reads
+            // them, until #1199 builds their `summaryExcl` and apart.
+            4 => try testing.expectEqual(Cond.lost, got),
             else => try testing.expectEqual(Cond.yes, got),
         }
     }
@@ -2303,4 +2284,25 @@ test "#1159: a cyclic source settles once, every occurrence below the cycle repe
     var top = root;
     top = (try x.places.extend(gpa, .growth(&x.account), top, b1)).?;
     try testing.expectEqual(Cond.yes, try x.conds.classesRead(gpa, x.env().charge, &x.cells, &x.places, pre, top.int()));
+}
+
+test "#1196 review: a symbolic leaf below the prefix reads `lost` — Repro A and Repro B" {
+    // A callee relying on `excl π0·⟲·arg`. Repro A: the middle argument
+    // `T [ p, T k ]`, `p` the middle's own parameter (a `T`): a caller's
+    // `T [ T k′, T [ T k′ ] ]` for `p` holds `k′` at two depths, which the
+    // projections' apart could only see through `⟲`. Repro B: `T [ p, q ]`,
+    // two parameters. Both read `lost` here, so no caller can find `yes`.
+    const gpa = testing.allocator;
+    const e = Place.Step.elem;
+    for (0..2) |repro| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const T = x.t_place;
+        const p = try x.param(3);
+        const second = if (repro == 0) try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 1, null)) else try x.param(4);
+        const arg = try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 2, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ p, second })));
+        try testing.expectEqual(Cond.lost, try foldProbe(&x, T, &.{ x.arg, e, x.arg }, arg));
+    }
 }
