@@ -1710,32 +1710,48 @@ its caller does not, so neither a `sep` over two such labels nor a `within` from
 follows from it (`Fix.diverge`; S4-verifier, §8).
 
 **Invocation-only folds (#1189).** A `within(l)` says that the calls `l` stands for answer distinct
-objects. Its pre-fold pair `(a, b)` parts at a depth `d`: the first instruction where the two chains
-differ. A cell made inside one of those calls has a label that agrees with the pair down to `d` and
-names a call at `d`. The read-off fold drops the tail, and so loses that. `result 13·1`, an allocation
-of the callee's own call 13 before both callback calls, folds into `13⋆` beside `(13·10)` and
-`(13·11)`. So each folded label with provenance carries an **invocation-only** bit:
+objects. Its justification is one pre-fold pair `(a, b)` of separate calls, so it covers only cells
+made inside one of those two calls. Such a cell's label is **under one of the pair's sides**: its chain
+extends `a`'s or `b`'s, where a folded side without a tail stands for every call at its instruction.
+Agreeing down to the depth where the pair parts is not enough. Another call there (`13·1` beside
+`13·10` and `13·11`) was never compared with either side, nor was another call inside one side's
+prefix (`13·5·12` beside `13·5·10`). The read-off fold drops the tail, and so loses which call a
+label came from. `result 13·1`, an allocation of the callee's own call 13 before both callback calls,
+folds into `13⋆` beside `(13·10)` and `(13·11)`. So each folded label with provenance carries an
+**invocation-only** bit, computed over the labels of the answer and allocation cells (`cb`,
+`result`, `esc`) that the fold merges into `l`. Taken splits folded there are certified by the
+traversal marks instead (§2.2), not by the bit.
 
-- **Set** when the fold records the pair: every label folded into `l` so far reaches depth `d`.
-- **Cleared** when the read-off folds into `l` a label that stops above `d`, or that a fold has
-  collapsed (its tail dropped above `d`). Examples are the callee's own allocation, the call itself,
-  and another label with a dropped tail.
+- **Set** when the fold records the pair, if every such label folded into `l` so far is under one
+  of its sides.
+- **Cleared** when the read-off folds into `l` an answer or allocation label that is not under a
+  side. Examples are the callee's own allocation, another call of the callback, a helper's own
+  allocation, and a label whose tail a fold dropped.
 - **ANDed** at a join: two classes that carry `within(l)` keep the bit only if both set it.
-- **Kept** by instantiation: `within(ι·l)` has the pair `(ι·a, ι·b)`, which parts at `d + 1`, and the
-  bit of `l`. A later clearing of `l` clears it too.
+- **Kept** by instantiation: `within(ι·l)` has the pair `(ι·a, ι·b)` and the bit of `l`. A later
+  conflict or clearing at `l` reaches the copy. An instantiation made before `l`'s provenance is
+  recorded waits for it: its readers are refused meanwhile and invalidated when the provenance
+  arrives, so the order in which S4 settles a callee and its callers changes no verdict.
 
 A `within(l)` holds over a `result`, `cb` or taken cell in two cases:
 
-- its label agrees with the pair down to `d` and names a call there;
+- its label is under one of the pair's sides;
 - its label is `l` itself, and `l`'s bit is set.
 
 Otherwise the cell is one object at every call, `sep(c, c)`. A `result` label names an allocation
 site. Instantiation maps a callee class's `fresh k`, an allocation its activation made, to
-`result (ι·L)·k`. A callee that returns a capture, a top-level value or a supply yields that `env`,
-`shared` or supplied cell, never a `result` (§2.11 item 6). So a call that returns a captured or
-shared value never yields an exact `result` cell at its label; the bit relies on that. S4's read-off
-computes the bit at the uniform fold, from every label it folds into `l`, and publishes it with the
-pair. A block carries it with the pair; a missing bit decodes as cleared.
+`result (ι·L)·k`. A callee that returns a value it did not allocate never yields a `result`:
+- a capture becomes `⊤` (`Calls.mapCell`);
+- a top-level value stays its `shared` cell;
+- a supply becomes the supplied cell (§2.11 item 6).
+
+So a call that returns a captured or shared value never yields an exact `result` cell at its label;
+the bit relies on that. S4's read-off computes the bit at the uniform fold, from every answer and
+allocation label it folds into `l`, and publishes it with the pair. A block carries it with the
+pair; a missing bit decodes as cleared. C.3's `List.map` keeps it for that reason: the labels with
+answers that its read-off folds into `ι_m⋆` are mapHelp's `cb₂@(ι_m·ι_f⋆)` and `cb₂@(ι_m·ι_rec⋆)`,
+which are the pair itself. mapHelp allocates nothing at `ι_m`, and the builder's `result` is at its
+own call, never folded there.
 
 
 
@@ -3533,7 +3549,7 @@ inside this invocation (`gen`). The evaluators read values with `Shape.cellsAt` 
   atom is re-read at the outgoing cells. An atom over the incoming value is discharged only when the
   invariant states it; an atom it does not state fails approximately.
 - `within`, at a consumer: a fresh result, a generative answer or a certified split counts as one
-  object per call only when its label is inside one of the calls the pre-fold pair stands for, or is
+  object per call only when its label is under one side of the pre-fold pair, or is
   the `within`'s label with its invocation-only bit set (§2.12 *Invocation-only folds*). A result
   made outside those calls (`r = mk ⊤` before a map, a callee's own allocation folded beside them)
   is one object at every call.
@@ -3568,7 +3584,7 @@ two callback labels before `gen` separates them, and of a pre-fold pair before `
 `within` (§2.12 *Recursive proofs*). mapHelp's pair `(ι_rec·ι_f⋆, ι_rec·ι_rec⋆)` diverges. A call and
 a call made inside it do not diverge.
 
-**Witnesses** (`src/own2/Fix.zig`, 18 tests, each under 0.2 s). Every label in them is built by the
+**Witnesses** (`src/own2/Fix.zig`, 20 tests, each under 0.2 s). Every label in them is built by the
 fold and instantiation rules above, not named by hand.
 
 - **GrowFresh and GrowAlias:** GrowFresh is accepted; GrowAlias's base is refused exactly and its copy
@@ -3591,7 +3607,12 @@ fold and instantiation rules above, not named by hand.
   [ cb arr, cb arr ])`) is refused, and so are its `13⋆·1` form, its `prefixWithin` copy, a callback
   whose nested call answers a capture, and a join of a set bit with a cleared one. C.6's
   `List.map xs (λ_ → [ 1 ])` and NestedTraversalShared stay accepted. A later clearing at List.map
-  reaches the caller's copy.
+  reaches the caller's copy. Round 3 adds: the repro `help cb = (x = once cb; [ cb ⊤, cb ⊤, x, x ])`
+  is refused at `cb 13·1·5` (exactly) and at `result 13⋆·1`. Four attacks on the rule follow. A
+  nested call inside a side is accepted, and so is a cell under the other side. A helper's own
+  allocation beside the sides is refused and clears the bit. A second pair at another depth is a
+  conflict. With sides under different prefixes, a call inside one prefix but not under its side
+  is refused. An instantiation made before its callee's provenance waits for it, in either order.
 - **`gen` by path:** `f ⊤ = [ shared ]` refuses two calls' elements, though their roots are fresh.
 - **C.6 and RefinementFeedbackTwice:**
   - C.6's held-once accumulator: the keeping arm is accepted, and the second store is refused exactly

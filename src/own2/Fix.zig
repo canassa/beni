@@ -192,6 +192,8 @@ pub const Prover = struct {
     provs: std.ArrayList(Provenance) = .empty,
     absorbed: std.ArrayList([2]u32) = .empty,
     copies: std.ArrayList([2]u32) = .empty,
+    /// Copies waiting for their source: `(source entry, call, source label)`.
+    pending: std.ArrayList([3]u32) = .empty,
     stats: Stats = .{},
 
     pub fn deinit(p: *Prover, gpa: Allocator) void {
@@ -210,6 +212,7 @@ pub const Prover = struct {
         p.provs.deinit(gpa);
         p.absorbed.deinit(gpa);
         p.copies.deinit(gpa);
+        p.pending.deinit(gpa);
     }
 
     // ---- ports and generations ---------------------------------------------
@@ -507,10 +510,12 @@ pub const Prover = struct {
     /// that read it invalidated (its port). The invocation-only bit is set
     /// unless a label folded into `folded` (`foldInto`) stops above the depth
     /// where the pair parts (§2.12 *Invocation-only folds*).
-    pub fn foldPair(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, a: LabelId, b: LabelId, folded: LabelId) Error!CondId {
+    pub fn foldPair(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table, a: LabelId, b: LabelId, folded: LabelId) Error!CondId {
         if (a == b or !diverge(cells, a, b)) return Cond.lost;
         if (!isFoldOf(cells, folded, a) or !isFoldOf(cells, folded, b)) return Cond.lost;
-        return p.record(gpa, charge, conds, cells, folded, if (a.int() < b.int()) .{ a, b } else .{ b, a }, partDepth(cells, a, b), none);
+        const k = try p.record(gpa, charge, conds, cells, folded, if (a.int() < b.int()) .{ a, b } else .{ b, a }, partDepth(cells, a, b), none);
+        try p.drain(gpa, charge, conds, cells);
+        return k;
     }
 
     /// The read-off folds `x` into `folded` too (beside its pair): one that
@@ -536,14 +541,56 @@ pub const Prover = struct {
     /// `within(l)` instantiated at the call `inst` (§2.11 item 7): the label
     /// `(inst·l)` with the pair `(inst·a, inst·b)`, still separate, parting
     /// one deeper, with `l`'s bit; a later conflict or clearing of `l`
-    /// reaches the copy. A `within` without provenance instantiates to `lost`.
+    /// reaches the copy. `l` not recorded yet: the copy waits for it (its
+    /// readers refused meanwhile, then invalidated when it arrives), so no
+    /// order of settling callee and caller changes a verdict. `l` conflicted:
+    /// `lost`.
     pub fn prefixWithin(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table, l: LabelId, inst: u32) Error!CondId {
-        const src = p.provenance.get(.{l.int()}) orelse return Cond.lost;
+        const out = try cells.label(gpa, charge.account, inst, l, true);
+        const src = try p.provIndex(gpa, charge, l);
+        switch (p.provs.items[src].state) {
+            .conflicted => return Cond.lost,
+            .absent => {
+                _ = try p.provIndex(gpa, charge, out);
+                try charge.reserve(gpa, .other, 1);
+                try p.pending.append(gpa, .{ src, inst, l.int() });
+                return conds.within(gpa, charge, out);
+            },
+            .recorded => {
+                const k = try p.copyOf(gpa, charge, conds, cells, src, l, inst);
+                try p.drain(gpa, charge, conds, cells);
+                return k;
+            },
+        }
+    }
+
+    fn copyOf(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table, src: u32, l: LabelId, inst: u32) Error!CondId {
         const sp = p.provs.items[src];
-        if (sp.state != .recorded) return Cond.lost;
         const account = charge.account;
         const out = try cells.label(gpa, account, inst, l, true);
         return p.record(gpa, charge, conds, cells, out, .{ try cells.label(gpa, account, inst, sp.pair[0], false), try cells.label(gpa, account, inst, sp.pair[1], false) }, sp.part + 1, src);
+    }
+
+    /// The waiting copies whose source is recorded now, made, until none is
+    /// left that can be (a worklist; a copy's own waiting copies follow).
+    fn drain(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *Cell.Table) Error!void {
+        var i: usize = 0;
+        while (i < p.pending.items.len) {
+            try charge.reserve(gpa, .inspection, 1);
+            const w = p.pending.items[i];
+            switch (p.provs.items[w[0]].state) {
+                .absent => i += 1,
+                .conflicted => {
+                    try p.conflict(gpa, charge, try p.provIndex(gpa, charge, try cells.label(gpa, charge.account, w[1], .from(w[2]), true)));
+                    _ = p.pending.swapRemove(i);
+                },
+                .recorded => {
+                    _ = p.pending.swapRemove(i);
+                    _ = try p.copyOf(gpa, charge, conds, cells, w[0], .from(w[2]), w[1]);
+                    i = 0;
+                },
+            }
+        }
     }
 
     fn record(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, folded: LabelId, pair: [2]LabelId, part: u32, source: u32) Error!CondId {
@@ -642,21 +689,32 @@ fn partDepth(cells: *const Cell.Table, a: LabelId, b: LabelId) u32 {
     return d;
 }
 
-/// Whether label `x` names a call inside one of those `pv`'s pair stands
-/// for: it agrees with the pair down to the parting depth and names a call
-/// there; a tail a fold dropped above it does not.
+/// Whether label `x` names a call inside one of the two calls `pv`'s pair
+/// stands for: under `pair[0]` or under `pair[1]` (its chain extends the
+/// side's; a folded side without a tail stands for every call at its
+/// instruction). Agreeing down to the parting depth is not enough: another
+/// call there (`13·1` beside `13·10` and `13·11`), or another call inside the
+/// same prefix (`13·5·12` beside `13·5·10`), was never compared with the
+/// other side.
 fn inside(cells: *const Cell.Table, x: LabelId, pv: Prover.Provenance) bool {
-    var at = x;
-    var ref = pv.pair[0];
-    var d: u32 = 0;
-    while (d < pv.part) : (d += 1) {
-        if (at == .none or ref == .none) return false;
-        const la = cells.labelOf(at);
-        if (la.inst != cells.labelOf(ref).inst) return false;
-        at = la.callee_label;
-        ref = cells.labelOf(ref).callee_label;
+    return under(cells, x, pv.pair[0]) or under(cells, x, pv.pair[1]);
+}
+
+/// Whether `x`'s chain extends `side`'s: equal instructions down `side`, a
+/// folded label without a tail matching any continuation at its instruction.
+fn under(cells: *const Cell.Table, x: LabelId, side: LabelId) bool {
+    var a = x;
+    var b = side;
+    while (b != .none) {
+        if (a == .none) return false;
+        const la = cells.labelOf(a);
+        const lb = cells.labelOf(b);
+        if (la.inst != lb.inst) return false;
+        if (lb.folded and lb.callee_label == .none) return true;
+        a = la.callee_label;
+        b = lb.callee_label;
     }
-    return at != .none;
+    return true;
 }
 
 // ---- expanding a goal ----------------------------------------------------------------
@@ -2432,13 +2490,20 @@ test "#1189 re-review: the invocation-only bit — a callee's own allocation fol
     try f.prover.joinWithin(gpa, f.charge(), lj, false);
     try expectAnswer(try f.prove(&wj, demand(4)), .refuted, .approximate);
 
-    // C.6's `List.map xs (λ_ → [ 1 ])` at the caller's call 100: List.map's
-    // read-off folds the two callback chains and the taken splits (inside the
-    // calls) into ι_m⋆, its builder's `result` has another instruction and is
-    // never folded there. The bit stays set; the fresh answer per call passes.
+    // C.6's `List.map xs (λ_ → [ 1 ])` at the caller's call 100. List.map's
+    // read-off (C.3) folds into ι_m⋆ every label whose first instruction is
+    // ι_m (101). The labels with answers are mapHelp's `res[*]`, `cb₂@(ι_m·ι_f⋆)`
+    // and `cb₂@(ι_m·ι_rec⋆)`: the pair itself, under its sides. Its supplies'
+    // splits `elem(π₁·(ι_m·ι_t))`, `elem(π₁·(ι_m·ι_rec⋆))` are taken cells, which
+    // the traversal marks certify, not the bit. mapHelp allocates nothing at
+    // ι_m, and the builder's `result` is at its own call, never folded there.
+    // So the bit stays set for that reason: every answer folded in is a
+    // callback's, and the fresh answer per call passes.
     const l_m = try f.label(101, .none, true);
-    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(101, try f.label(10, .none, true), false), try f.label(101, try f.label(11, .none, true), false), l_m);
-    try f.prover.foldInto(gpa, f.charge(), &f.cells, l_m, try f.label(101, try f.label(12, .none, false), false));
+    const m_f = try f.label(101, try f.label(10, .none, true), false);
+    const m_rec = try f.label(101, try f.label(11, .none, true), false);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, m_f, m_rec, l_m);
+    for ([_]LabelId{ m_f, m_rec }) |answer| try f.prover.foldInto(gpa, f.charge(), &f.cells, l_m, answer);
     _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l_m, 100);
     const at_caller = try f.label(100, l_m, true);
     try testing.expect(f.prover.provenanceOf(at_caller).?.bit);
@@ -2448,4 +2513,104 @@ test "#1189 re-review: the invocation-only bit — a callee's own allocation fol
     // A later clearing at List.map reaches the caller's copy.
     try f.prover.foldInto(gpa, f.charge(), &f.cells, l_m, try f.label(101, .none, false));
     try expectAnswer(try f.prove(&wm, demand(5)), .refuted, .approximate);
+}
+
+test "#1189 round 3: within holds only under one side of its pair — the repro, and the attacks on the rule" {
+    const gpa = testing.allocator;
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const L0 = try f.placeOf(0);
+    const lab = struct {
+        fn of(ff: *Fixture, insts: []const u32) !LabelId {
+            var l: LabelId = .none;
+            var i = insts.len;
+            while (i > 0) {
+                i -= 1;
+                l = try ff.label(insts[i], l, false);
+            }
+            return l;
+        }
+    }.of;
+    const result = struct {
+        fn of(ff: *Fixture, l: LabelId) !SetId {
+            return ff.set(&.{try ff.cells.result(testing.allocator, &ff.account, .result, l, 1, try ff.placeOf(0), .list)});
+        }
+    }.of;
+    const answer = struct {
+        fn of(ff: *Fixture, l: LabelId) !SetId {
+            return ff.set(&.{try ff.cells.symbolic(testing.allocator, &ff.account, &ff.places, .cb, l.int(), try ff.path(0, &.{}), 0)});
+        }
+    }.of;
+    _ = L0;
+    // The family every callback answer here comes from: fresh.
+    const calls = [_]World.Call{ .{ .inst = 13, .port = 1 }, .{ .inst = 14, .port = 1 }, .{ .inst = 15, .port = 1 }, .{ .inst = 16, .port = 1 } };
+    // The repro: `help cb = (x = once cb; [ cb ⊤, cb ⊤, x, x ])` at 13. The
+    // pair is `13·10`, `13·11`; `x` is the call `13·1`, folded in beside them.
+    const l13 = try f.label(13, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try lab(&f, &.{ 13, 10 }), try lab(&f, &.{ 13, 11 }), l13);
+    for ([_][]const u32{ &.{ 13, 10 }, &.{ 13, 11 }, &.{ 13, 1 } }) |c| try f.prover.foldInto(gpa, f.charge(), &f.cells, l13, try lab(&f, c));
+    // Attack a: a nested call inside one side's call (`13·10·5`) is inside.
+    // Attack b, through a helper: sides `14·20·7`, `14·21·7`; the helper's own
+    // allocation at `14·20` is not under a side, and clears the bit.
+    const l14 = try f.label(14, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try lab(&f, &.{ 14, 20, 7 }), try lab(&f, &.{ 14, 21, 7 }), l14);
+    try f.prover.foldInto(gpa, f.charge(), &f.cells, l14, try lab(&f, &.{ 14, 20 }));
+    // Attack c: a second pair, at another depth, for one label: a conflict.
+    const l15 = try f.label(15, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try lab(&f, &.{ 15, 10 }), try lab(&f, &.{ 15, 11 }), l15);
+    try testing.expectEqual(Cond.lost, try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try lab(&f, &.{ 15, 5, 10 }), try lab(&f, &.{ 15, 5, 11 }), l15));
+    // Attack d: sides under different prefixes, `16·5·10` and `16·6·11`: a
+    // call `16·5·12` inside the first prefix but not the side was never
+    // compared with the other side.
+    const l16 = try f.label(16, .none, true);
+    _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try lab(&f, &.{ 16, 5, 10 }), try lab(&f, &.{ 16, 6, 11 }), l16);
+    var w: World = .{ .f = &f, .calls = &calls, .entries = &.{
+        .{ .goal = gen(1), .alts = &.{.{ .gen = try f.leaf(0, &.{try f.site(60, 0)}) }} },
+        .{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = l13, .cells = try answer(&f, try lab(&f, &.{ 13, 1, 5 })) } }} },
+        .{ .goal = demand(1), .alts = &.{.{ .within = .{ .label = l13, .cells = try result(&f, l13) } }} },
+        .{ .goal = demand(2), .alts = &.{.{ .within = .{ .label = l13, .cells = try result(&f, try lab(&f, &.{ 13, 10, 5 })) } }} },
+        .{ .goal = demand(3), .alts = &.{.{ .within = .{ .label = l14, .cells = try result(&f, try lab(&f, &.{ 14, 20 })) } }} },
+        .{ .goal = demand(4), .alts = &.{.{ .within = .{ .label = l14, .cells = try result(&f, l14) } }} },
+        .{ .goal = demand(5), .alts = &.{.{ .within = .{ .label = l14, .cells = try result(&f, try lab(&f, &.{ 14, 20, 7, 3 })) } }} },
+        .{ .goal = demand(6), .alts = &.{.{ .within = .{ .label = l15, .cells = try result(&f, try lab(&f, &.{ 15, 10 })) } }} },
+        .{ .goal = demand(7), .alts = &.{.{ .within = .{ .label = l16, .cells = try result(&f, try lab(&f, &.{ 16, 5, 12 })) } }} },
+        .{ .goal = demand(8), .alts = &.{.{ .within = .{ .label = l16, .cells = try result(&f, try lab(&f, &.{ 16, 6, 11, 2 })) } }} },
+    } };
+    try expectAnswer(try f.prove(&w, demand(0)), .refuted, .exact); // the repro's `cb 13·1·5`: one answer at every call
+    try expectAnswer(try f.prove(&w, demand(1)), .refuted, .approximate); // the repro's `result 13⋆·1`
+    try expectAnswer(try f.prove(&w, demand(2)), .proved, .exact); // a: inside `13·10`
+    try expectAnswer(try f.prove(&w, demand(3)), .refuted, .exact); // b: the helper's own
+    try expectAnswer(try f.prove(&w, demand(4)), .refuted, .approximate); // b: the bit is cleared
+    try expectAnswer(try f.prove(&w, demand(5)), .proved, .exact); // b: inside a side
+    try expectAnswer(try f.prove(&w, demand(6)), .refuted, .approximate); // c: conflicted
+    try expectAnswer(try f.prove(&w, demand(7)), .refuted, .exact); // d: not under a side
+    try expectAnswer(try f.prove(&w, demand(8)), .proved, .exact); // d: under the other side
+}
+
+test "#1189 round 3: an instantiation made before its callee's provenance waits for it, in either order" {
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |callee_first| {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const l = try f.label(30, .none, true);
+        const a = try f.label(30, try f.label(1, .none, false), false);
+        const b = try f.label(30, try f.label(2, .none, false), false);
+        if (callee_first) _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, a, b, l);
+        _ = try f.prover.prefixWithin(gpa, f.charge(), &f.conds, &f.cells, l, 50);
+        const copy = try f.label(50, l, true);
+        const fresh = try f.set(&.{try f.cells.result(gpa, &f.account, .result, copy, 1, try f.placeOf(0), .list)});
+        var w: World = .{ .f = &f, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .within = .{ .label = copy, .cells = fresh } }} }} };
+        if (!callee_first) {
+            // Read while the callee's provenance is absent: refused, then
+            // invalidated and redone when it arrives.
+            try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
+            _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, a, b, l);
+        }
+        try expectAnswer(try f.prove(&w, demand(0)), .proved, .exact);
+        // A conflict at the callee reaches the copy, whichever came first.
+        _ = try f.prover.foldPair(gpa, f.charge(), &f.conds, &f.cells, try f.label(30, try f.label(3, .none, false), false), try f.label(30, try f.label(4, .none, false), false), l);
+        try expectAnswer(try f.prove(&w, demand(0)), .refuted, .approximate);
+    }
 }
