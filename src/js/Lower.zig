@@ -18081,15 +18081,7 @@ pub const Lowerer = struct {
             try l.dispatchKeys(&inner, msg, handlers, k, end, depth + 1);
             var condition: ?Node.Index = null;
             if (step.named) {
-                var subject = msg;
-                for (step.access) |a| switch (a) {
-                    .ctor => |c| {
-                        const rt = l.directCtor(c.ctor) orelse continue;
-                        subject = try l.ctorField(subject, rt[0], c.field, p);
-                    },
-                    .record => |field| subject = try l.fieldMember(subject, field, p),
-                    .tuple => |i| subject = try l.member(subject, try l.slotName(i), p),
-                };
+                const subject = try l.dispatchSubject(msg, step.access);
                 if (l.directCtor(step.ctor)) |rt| condition = try l.ctorIs(subject, rt[0], rt[1], p);
             }
             if (condition) |c| {
@@ -18099,13 +18091,38 @@ pub const Lowerer = struct {
         }
     }
 
+    /// The part of the message a step's access path reaches.
+    fn dispatchSubject(l: *Lowerer, msg: Node.Index, access: []const Direct.Access) Allocator.Error!Node.Index {
+        const p = l.mk.?.pos;
+        var subject = msg;
+        for (access) |a| switch (a) {
+            .ctor => |c| {
+                const rt = l.directCtor(c.ctor) orelse continue;
+                subject = try l.ctorField(subject, rt[0], c.field, p);
+            },
+            .record => |field| subject = try l.fieldMember(subject, field, p),
+            .tuple => |i| subject = try l.member(subject, try l.slotName(i), p),
+        };
+        return subject;
+    }
+
     fn dispatchLeaf(l: *Lowerer, out: *StmtList, msg: Node.Index, handlers: []const JsIr.NameIndex, k: usize) Allocator.Error!void {
         const p = l.mk.?.pos;
         const key = l.directKeys()[k];
         const steps = l.directSteps(@intCast(k));
-        const args = try l.scratch.alloc(Node.Index, key.params);
-        const fields: ?struct { CtorRep, Symbol } = if (steps.len == 1 and steps[0].named) l.directCtor(steps[0].ctor) else null;
-        for (args, 0..) |*a, i| a.* = if (fields) |rt| try l.ctorField(msg, rt[0], @intCast(i), p) else msg;
+        // The handler takes its leaf's fields (`Program.Key.fields`), as
+        // `programArmFields` writes it: the fields of the constructor the
+        // last step names, however deep, or the value the last step tests
+        // at a default one — the message itself for a key of no steps.
+        const args = try l.scratch.alloc(Node.Index, key.fields);
+        if (steps.len == 0) {
+            for (args) |*a| a.* = msg;
+        } else {
+            const leaf = steps[steps.len - 1];
+            const subject = try l.dispatchSubject(msg, leaf.access);
+            const fields: ?struct { CtorRep, Symbol } = if (leaf.named) l.directCtor(leaf.ctor) else null;
+            for (args, 0..) |*a, i| a.* = if (fields) |rt| try l.ctorField(subject, rt[0], @intCast(i), p) else subject;
+        }
         const called = try l.call(try l.ident(handlers[k], p), args, p);
         try out.append(l.scratch, try l.add(.expr_stmt, p, called.int(), Node.Data.unused));
         try out.append(l.scratch, try l.add(.return_stmt, p, @backingInt(Node.OptionalIndex.none), Node.Data.unused));

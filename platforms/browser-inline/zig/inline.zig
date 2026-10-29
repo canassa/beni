@@ -1333,14 +1333,8 @@ const Page = struct {
             if (try pg.command(@intCast(k))) runs = true;
         };
         if (runs) {
-            // The dispatcher hands a handler the message's fields as `params`
-            // reads them; a handler of a deeper key takes its leaf's.
-            for (keys) |key| if (key.fields != key.params) return cx.programReport(.call, .not_implemented,
-                \\A limit of the compiler: this program's commands send messages, which reach their handlers
-                \\through a dispatcher, and `browser-inline`'s dispatcher does not yet hand a key of a
-                \\message inside another its leaf's fields (`docs/design/browser-inline.md` §4, §8.4; §5,
-                \\class 1). Build this program with `--platform=browser-tea`.
-            );
+            // The dispatcher hands each handler its leaf's fields, however
+            // deep the key (`programDispatch`).
             for (0..keys.len) |k| {
                 refs[k] += 1;
                 named[k] = true;
