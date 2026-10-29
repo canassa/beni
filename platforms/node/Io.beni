@@ -153,9 +153,8 @@ pub type EntryKind
 
 --| One entry of a directory: its own name, without the directory's path.
 pub type alias Entry =
-    { name : String
-    , kind : EntryKind
-    }
+    name : String
+    kind : EntryKind
 
 
 --| List a directory without blocking other fibers: `Ok` with its entries, or
