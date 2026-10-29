@@ -202,7 +202,8 @@
 //   retag <selector> <name>     the same, the element replaced by one of
 //                               element `name` with its attributes and
 //                               children
-//   fresh                       before the program loads: the prerendered
+//   remove <selector>           the same, the element taken out
+//   fresh                      before the program loads: the prerendered
 //                               unit is to be mounted fresh, not taken over
 //                               (docs/design/prerender.md §6.4). Without
 //                               it, a `--html-page` page whose unit the load
@@ -1191,7 +1192,7 @@ function step(s) {
     globalThis.__beniHarness.selection = true;
     return null;
   }
-  if (s.command === "inject" || s.command === "retag") return editPage(s);
+  if (s.command === "inject" || s.command === "retag" || s.command === "remove") return editPage(s);
   if (s.command === "element") {
     const at = document.createElement("div");
     at.id = s.text;
@@ -1547,7 +1548,7 @@ function takenOver(fresh) {
   return null;
 }
 
-// An `inject` or `retag` step: the prerendered page edited before the
+// An `inject`, `retag` or `remove` step: the prerendered page edited before the
 // program loads, as a host or an extension edits it. On a page that holds
 // no prerendered unit it does nothing: there is no view to edit.
 function editPage(s) {
@@ -1556,6 +1557,10 @@ function editPage(s) {
   if (el === null) return `no element matches ${s.selector}`;
   if (s.command === "inject") {
     el.insertAdjacentHTML("beforebegin", s.text);
+    return null;
+  }
+  if (s.command === "remove") {
+    el.remove();
     return null;
   }
   const other = document.createElement(s.text);
@@ -1787,7 +1792,7 @@ if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: 
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // The steps that set the page up, before the program loads.
-const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag"];
+const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove"];
 
 // Parse the whole script before the page loads, so a malformed step is
 // reported without running anything.
@@ -1842,7 +1847,9 @@ if (stepsPath !== undefined) {
       } catch {
         s.text = undefined;
       }
-      if (typeof s.text !== "string") usage(`${where}: \`insert\` takes a selector and its HTML as a JSON string`);
+      if (typeof s.text !== "string") usage(`${where}: \`inject\` takes a selector and its HTML as a JSON string`);
+    } else if (command === "remove") {
+      if (argument !== undefined) usage(`${where}: \`remove\` takes a selector alone`);
     } else if (command === "retag") {
       if (argument === undefined || !/^[a-z][a-z0-9-]*$/.test(argument)) usage(`${where}: \`retag\` takes a selector and an element name`);
       s.text = argument;

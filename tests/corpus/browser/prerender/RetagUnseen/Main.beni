@@ -1,9 +1,9 @@
 -- An element no code refers to replaced, before the program loads, by one
 -- of another tag (docs/design/prerender.md §6.4): the `<h1>` is an `<h2>`
--- on the page. A release build checks the tags of the elements its code
--- refers to only — no binding can attach to this one — so it takes the
--- page over and keeps the `<h2>`; a development build checks every tag,
--- warns and mounts fresh, which its own steps and golden say.
+-- on the page. Every build checks every tag (§6.4, amended 2026-10-29,
+-- #1186: the table is by index, so an element no code refers to can move
+-- those code does, as `Shifted` shows), so release mounts fresh too; a
+-- development build warns first.
 import Browser
 import Html exposing (Html)
 import Tea

@@ -262,11 +262,9 @@ const PieceData = struct {
     /// has.
     render: ?[]const u8 = null,
     arms: u32 = 0,
-    /// The hydrating mount's (`prerender.md` §6.2, §6.4): the root's eager
-    /// arms, by index in its table — its top element 0 — and the places of
-    /// the elements its factory refers to, whose tags the mount checks.
+    /// The hydrating mount's (`prerender.md` §6.2): the root's eager arms,
+    /// by index in its table, its top element 0.
     arm_runs: []const ArmRun = &.{},
-    refs: []const u32 = &.{},
 };
 
 /// A constructor the root's events send, its fields, and the buckets of the
@@ -469,12 +467,10 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         try cx.pieceExport(render_base, try js.arrow(render_params, rblk));
         render_name = render_base;
     }
-    // The root's arms and the elements its factory refers to, for the
-    // hydrating mount of the program that shows it (`prerender.md` §6.2).
+    // The root's arms, for the hydrating mount of the program that shows
+    // it (`prerender.md` §6.2).
     var layout: Layout = .{ .a = cx.arena };
     try layout.unit(pg, pg.top_nodes[0]);
-    var refs: std.ArrayList(u32) = .empty;
-    for (layout.referenced.items[1..], 0..) |yes, i| if (yes) try refs.append(a, @intCast(i));
     const data = try a.create(PieceData);
     // The static markup, a piece of its own: every end tag of the top
     // element written, since the program site writes more after it.
@@ -495,7 +491,6 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         .render = render_name,
         .arms = arms,
         .arm_runs = try a.dupe(ArmRun, layout.arms.items),
-        .refs = refs.items,
     };
     req.facts.* = .{ .written = true, .data = data };
 }
@@ -700,13 +695,12 @@ const ArmRun = struct { at: u32, len: u32, parent: u32 };
 
 /// A unit's elements in document order, as the hydrating mount's table
 /// holds them (`prerender.md` §6.2, §6.4): each one's name, lower case, as
-/// the page's `localName` gives it; whether some code of the unit refers to
-/// it; and the unit's eager arms in document order, which is the order of
-/// their ordinals (§4.1).
+/// the page's `localName` gives it, every one checked in every build
+/// (§6.4, amended 2026-10-29, #1186); and the unit's eager arms in document
+/// order, which is the order of their ordinals (§4.1).
 const Layout = struct {
     a: std.mem.Allocator,
     names: std.ArrayList([]const u8) = .empty,
-    referenced: std.ArrayList(bool) = .empty,
     arms: std.ArrayList(ArmRun) = .empty,
 
     /// The unit of `pg`, whose top element is `top`.
@@ -719,20 +713,12 @@ const Layout = struct {
         try l.push(top.name);
         try l.walk(top.children, 0, 0, arm_at, pg.pieces.items);
         std.debug.assert(l.names.items.len == pg.count + 1);
-        // What the unit's own code refers to: a write's element — but a
-        // choice's whose markup is all empty, which has none — and an
-        // event's.
-        for (pg.writes.items) |w| if (w.what != .observe) {
-            l.referenced.items[if (w.target) |t| t + 1 else 0] = true;
-        };
-        for (pg.events.items) |ev| l.referenced.items[if (ev.target) |t| t + 1 else 0] = true;
     }
 
     fn push(l: *Layout, name: []const u8) m.Error!void {
         const lower = try l.a.alloc(u8, name.len);
         _ = std.ascii.lowerString(lower, name);
         try l.names.append(l.a, lower);
-        try l.referenced.append(l.a, false);
     }
 
     /// `nodes`, the children of the element at index `parent`, of the unit
@@ -750,9 +736,8 @@ const Layout = struct {
                 try l.walk(n.children, at, base, arm_at, pieces);
                 if (arm) l.arms.items[slot].len = @as(u32, @intCast(l.names.items.len)) - at;
             },
-            // Another module's root: its top element, its elements, its
-            // arms and the elements its factory refers to, all numbered
-            // after its top element's index.
+            // Another module's root: its top element, its elements and its
+            // arms, numbered after its top element's index.
             .piece => {
                 const u = pieces[n.piece];
                 const at: u32 = @intCast(l.names.items.len);
@@ -761,7 +746,6 @@ const Layout = struct {
                 for (u.data.arm_runs) |r| try l.arms.append(l.a, .{ .at = r.at + at, .len = r.len, .parent = r.parent + at });
                 try l.walk(u.data.nodes[0].children, at, at, &.{}, &.{});
                 std.debug.assert(l.names.items.len == at + 1 + u.data.count);
-                for (u.data.refs) |r| l.referenced.items[at + 1 + r] = true;
             },
         };
     }
@@ -1728,8 +1712,10 @@ const Page = struct {
     /// runtime's `take` given the mount element, the unit's string, each
     /// eager arm as three numbers — its element's index in the table, how
     /// many elements it holds, its parent's index — and the tag of each
-    /// element of the table, space-separated, empty in a release build for
-    /// one no code refers to, which the mount checks the page against.
+    /// element of the table, space-separated, which the mount checks the
+    /// page against in every build: the table is by index, so an element no
+    /// code refers to, taken out or put in, moves those that code refers to
+    /// (§6.4, amended 2026-10-29, #1186).
     fn take(pg: *Page, at: m.Name, html: []const u8) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
@@ -1740,9 +1726,9 @@ const Page = struct {
             arms[3 * k + j] = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{x}));
         };
         var tags: std.ArrayList(u8) = .empty;
-        for (layout.names.items, layout.referenced.items, 0..) |name, yes, i| {
+        for (layout.names.items, 0..) |name, i| {
             if (i != 0) try tags.append(pg.a(), ' ');
-            if (yes or !cx.build.release) try tags.appendSlice(pg.a(), name);
+            try tags.appendSlice(pg.a(), name);
         }
         pg.elements = try cx.fresh("elements");
         try js.constant(pg.body, pg.elements.?, try js.call(try js.name(try cx.runtime("take")), &.{

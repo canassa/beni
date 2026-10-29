@@ -927,8 +927,8 @@ or a `view` that is not pure, a render that throws, a shell without
   attributes and a textarea's children out, the properties being printed
   anyway, and prints a comment whose text is a number as the empty text
   `""`.
-- **A page the host changed.** The setup steps `inject <selector> "<html>"`
-  and `retag <selector> <name>` edit the prerendered unit before the program
+- **A page the host changed.** The setup steps `inject <selector> "<html>"`,
+  `retag <selector> <name>` and `remove <selector>` edit the prerendered unit before the program
   loads, as an extension or a CDN does; on a page with no unit they do
   nothing.
 - **A build whose page differs on purpose.** A prerendering build may have
@@ -936,8 +936,7 @@ or a `view` that is not pure, a render that throws, a shell without
   `_expected.release-prerender-expected`, and its own steps beside it,
   `_expected.dev-prerender-steps` or `_expected.release-prerender-steps`:
   a development build that warns before it mounts fresh, or whose mount
-  faults (`WrongPlace`), and a release build that takes over a page whose
-  development build refuses it (`RetagUnseen`). The other builds keep the
+  faults (`WrongPlace`). The other builds keep the
   one `.expected`.
 
 `emit/prerender/` and `emit/release/prerender/` are built the same way, for

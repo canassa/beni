@@ -458,7 +458,7 @@ replace s from to = Js.call s "replaceAll" [ Js.from from, Js.from to ]
 --| `arms` is three numbers per arm, in the order of the arms' ordinals:
 --| its element's index in the table, how many elements it holds, and its
 --| parent's index. `tags` is the tag of each element of the table,
---| space-separated, empty where the mount does not check it. A page that
+--| space-separated, every one checked in every build. A page that
 --| does not hold what the program makes — a tag, a count, or a comment
 --| that differs — is mounted fresh in the same task, the unit taken out
 --| first, and a development build says why in a warning. A page with no
@@ -675,8 +675,8 @@ push table list i end =
         push table list (i + 1) end
 
 
--- Whether an element of `table` from `i` on is not the one `names` says,
--- a name left empty matching any; a development build says which.
+-- Whether an element of `table` from `i` on is not the one `names` says;
+-- a development build says which.
 tagsDiffer : V, V, Int → Bool
 tagsDiffer table names i =
     if i == Js.to (Js.get table "length") then
@@ -686,7 +686,7 @@ tagsDiffer table names i =
         want = Js.to (Js.at names i)
         has : String
         has = Js.to (Js.get (Js.at table i) "localName")
-        if want == "" || want == has then
+        if want == has then
             tagsDiffer table names (i + 1)
         else
             if Js.development ⊤ then
