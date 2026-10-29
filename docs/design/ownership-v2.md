@@ -2688,6 +2688,17 @@ read-off set mapping and κ relabelling (#1121). The treatment of module-wide me
 per-owner accounts and declaration-order independence is left to the owner in #1104. A run-wide
 or export operation cannot assign all costs to the first or last item's lane.
 
+*As built (#1139, the second part of #1098):* a literal's, a spread chain's and an append chain's item does
+its share on its own `transfer_settlement` lane: its fit, its stored projection, the merge of its κ, its
+freshness check before a spread, its `[*]` κ, and the positions node `collectRoot` makes where the split
+falls before it. `Cond.propagateItems` keeps each run entry's item, so a member's run record, its read, its
+projections and its cursor's links at every state are on that item's lane; the frontier sorts the distinct
+steps only, not one per cursor. A construction's demand query checks each operand on that operand's
+`direct_demand_query` lane when the base has one cell. A width of 1 000 is checked at the default
+allowance in all three shapes, in linear growth (`build_test.zig`). Still growth, not yet by item: the
+declaration's read-off, the walks of a positions DAG (`namedSteps`, `rank`, `dagKappa`, `cellsOf`), and a
+prepend's read of its base's reach. Those are the read-off continuations above, the series' third part.
+
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
 record work, and comparison-tree navigation/canonical export adds at most a logarithmic time factor.

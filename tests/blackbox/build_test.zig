@@ -8401,6 +8401,72 @@ test "the checker v2's growth is linear in a recursive tower's height: a one-mem
     try testing.expect(growth[2] <= 14 * growth[1] + 200);
 }
 
+const WideRun = enum { literal, spreads, fronts };
+
+/// A list of `n` items in one of three shapes, checked at the default allowance:
+/// its growth in `g`.
+fn wideRunGrowth(shape: WideRun, n: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    switch (shape) {
+        .literal => try src.appendSlice(a, "pub g : ⊤ → List (List Int)\ng ⊤ =\n    [ "),
+        .spreads, .fronts => try src.appendSlice(a, "pub g : List (List Int) → List (List Int)\ng xs =\n    [ "),
+    }
+    for (0..n) |i| switch (shape) {
+        .literal => try src.print(a, "{s}[ {d} ]", .{ if (i == 0) "" else ", ", i }),
+        .spreads => try src.print(a, "{s}…xs", .{if (i == 0) "" else ", "}),
+        .fronts => try src.print(a, "[ {d} ], ", .{i}),
+    };
+    if (shape == .fronts) try src.appendSlice(a, "…xs");
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked g") == null);
+    return accountField(dump.stdout, "g", "growth");
+}
+
+fn expectWideRunLinear(shape: WideRun) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1139: each item's share of a run is on the item's own lane (§4.1):
+    // its fit, its stored projection, its positions node, its demand query,
+    // its share of the run's condition. Before, the run's root lane took
+    // every item's share, and a width of 1 000 was
+    // `ownership_accounting_invariant`. What a run still reads whole (its
+    // read-off, the walks of its positions DAG) is growth, linear in the
+    // width, until read-off continuations charge it by item (#1098).
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const small = try wideRunGrowth(shape, 100);
+    const wide = try wideRunGrowth(shape, 1000);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Ten times the width, at most 12 times the growth.
+    try testing.expect(wide <= 12 * small + 200);
+}
+
+test "the checker v2 checks a literal of 1 000 lists at the default allowance, in linear growth" {
+    try expectWideRunLinear(.literal);
+}
+
+test "the checker v2 checks 1 000 spreads of one list at the default allowance, in linear growth" {
+    try expectWideRunLinear(.spreads);
+}
+
+test "the checker v2 checks 1 000 items before a spread at the default allowance, in linear growth" {
+    try expectWideRunLinear(.fronts);
+}
+
 test "the checker v2's growth in a tower of joins of one value at two depths is at most quadratic" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

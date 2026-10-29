@@ -672,16 +672,24 @@ pub const Frame = struct {
                 try ctxs.append(f.gpa, v.kappa);
                 elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             }
-            // The positions DAG and the run's condition: a general task over
-            // the whole run, growth until its work is split by item (#1098).
+            // The positions DAG, one node per item, and each member's share of
+            // the run's condition on its item's lane (§4.1, #1098); what the
+            // run does once is a general task.
+            const lanes = try f.gpa.alloc(Ids.Lane, items.len);
+            defer f.gpa.free(lanes);
+            for (items, lanes) |item, *l| l.* = .{ .atom = item, .role = .transfer_settlement };
             const task = try f.account().enter(f.gpa, null);
             defer f.account().leave(task);
-            const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells);
-            elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
+            const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells, lanes);
+            elem_k = try f.env.conds.propagateItems(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null, lanes);
             // Each element at the literal's `[*]`: its own κ there (§2.9: the
             // conditions of `vᵢ` at `p`, relative to `vᵢ`), what a read of a
-            // side of the positions node finds.
-            for (members.items, ctxs.items) |m, c| elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
+            // side of the positions node finds, on its item's lane.
+            for (members.items, ctxs.items, items) |m, c, item| {
+                const kernel = try f.lane(item);
+                defer f.account().leave(kernel);
+                elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
+            }
             kids = try shapes.overPut(f.gpa, f.account(), kids, Step.elem, elems);
             kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, kappa, Step.elem, elem_k);
         }
@@ -728,7 +736,9 @@ pub const Frame = struct {
     /// The stores of a construction into `base` (§2.9's construction rule):
     /// the base's `[*]` and the stored elements as positions, κ lowered by
     /// each stored value in turn; the result is the base's object.
-    fn construct(f: *Frame, base: Value, stored: []const Value) Error!Value {
+    /// `atoms[i]` the instruction `stored[i]` comes from, `base_atom` the
+    /// base's: each stored item's share on its own lane (§4.1, #1139).
+    fn construct(f: *Frame, base: Value, stored: []const Value, base_atom: u32, atoms: []const u32) Error!Value {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const at = shapes.place(base.node);
@@ -748,14 +758,20 @@ pub const Frame = struct {
         var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
         var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), elem_k, old, true);
         var held = (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, old));
-        for (stored) |s| {
+        for (stored, atoms) |s, atom| {
+            const kernel = try f.lane(atom);
+            defer f.account().leave(kernel);
             const v = try f.fit(s, elem_place);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             k = try f.env.conds.lower(f.gpa, f.env.charge, f.env.view(), v.kappa, k, held, v.node, true, null);
             held = try cells.sets.unionWith(f.gpa, f.env.charge, held, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
             try members.append(f.gpa, v.node);
         }
-        const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
+        const lanes = try f.gpa.alloc(Ids.Lane, members.items.len);
+        defer f.gpa.free(lanes);
+        lanes[0] = .{ .atom = base_atom, .role = .transfer_settlement };
+        for (atoms, lanes[1..]) |atom, *l| l.* = .{ .atom = atom, .role = .transfer_settlement };
+        const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, Shape.Table.lazy_cells, lanes);
         const node = try shapes.put(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem, elems, true, .none);
         elem_k = try f.kappaSet(elem_k, elems, k);
         var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, base.kappa, Step.elem, elem_k);
@@ -798,7 +814,13 @@ pub const Frame = struct {
         defer stored.deinit(f.gpa);
         var built = try f.fit(f.val(items[first][0]).value, at);
         if (first + 1 < items.len) {
+            var atoms: std.ArrayList(u32) = .empty;
+            defer atoms.deinit(f.gpa);
             for (items[first + 1 ..]) |it| {
+                // Each item's part of the run on its own lane (§4.1, #1139).
+                const kernel = try f.lane(it[0]);
+                defer f.account().leave(kernel);
+                try atoms.append(f.gpa, it[0]);
                 const v = f.val(it[0]).value;
                 if (it[1] == 1) {
                     // A spread's elements are stored.
@@ -809,16 +831,16 @@ pub const Frame = struct {
             defer others.deinit(f.gpa);
             for (insts.items, 0..) |o, k| if (k != first) try others.append(f.gpa, o);
             try f.demand(root, .construction, items[first][0], built, others.items, none);
-            built = try f.construct(built, stored.items);
+            built = try f.construct(built, stored.items, items[first][0], atoms.items);
         }
         if (first == 0) return built;
-        return f.prepend(root, at, items[0..first], built);
+        return f.prepend(root, at, items[0..first], built, items[first][0]);
     }
 
     /// `[ x₁…xₖ, …xs ]` (§2.13.2): a fresh list unless it may answer the
     /// base (a re-cons), elements the fronts' and the base's, κ lost —
     /// except when every front is a fresh object by construction.
-    fn prepend(f: *Frame, root: u32, at: PlaceId, fronts: []const [2]u32, base: Value) Error!Value {
+    fn prepend(f: *Frame, root: u32, at: PlaceId, fronts: []const [2]u32, base: Value, base_atom: u32) Error!Value {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const elem_place = f.env.places.child(at, Step.elem) orelse {
@@ -832,8 +854,16 @@ pub const Frame = struct {
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);
         var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
-        const base_reach = try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
+        // The base's reach reads every item it was built from: a run-wide
+        // read, growth until read-off continuations charge it by item (#1098).
+        const base_reach = blk: {
+            const task = try f.account().enter(f.gpa, null);
+            defer f.account().leave(task);
+            break :blk try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
+        };
         for (fronts) |it| {
+            const kernel = try f.lane(it[0]);
+            defer f.account().leave(kernel);
             const v = try f.fit(f.val(it[0]).value, elem_place);
             try members.append(f.gpa, v.node);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
@@ -854,7 +884,12 @@ pub const Frame = struct {
             if (!any) fresh = false;
         }
         try members.append(f.gpa, (try shapes.proj(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem)).?);
-        const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
+        // One positions node per item, on its lane (§4.1, #1139).
+        const lanes = try f.gpa.alloc(Ids.Lane, members.items.len);
+        defer f.gpa.free(lanes);
+        for (fronts, lanes[0..fronts.len]) |it, *l| l.* = .{ .atom = it[0], .role = .transfer_settlement };
+        lanes[fronts.len] = .{ .atom = base_atom, .role = .transfer_settlement };
+        const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, Shape.Table.lazy_cells, lanes);
         var c = try f.set1(try cells.site(f.gpa, f.account(), root, at, .list));
         if (!fresh) {
             var bt = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, base.node)));
@@ -889,9 +924,13 @@ pub const Frame = struct {
         const base = try f.fit(f.val(ops.items[0]).value, at);
         var stored: std.ArrayList(Value) = .empty;
         defer stored.deinit(f.gpa);
-        for (ops.items[1..]) |o| try stored.append(f.gpa, try f.projectAt(f.val(o).value, Step.elem, f.env.places.child(at, Step.elem) orelse at));
+        for (ops.items[1..]) |o| {
+            const kernel = try f.lane(o);
+            defer f.account().leave(kernel);
+            try stored.append(f.gpa, try f.projectAt(f.val(o).value, Step.elem, f.env.places.child(at, Step.elem) orelse at));
+        }
         try f.demand(root, .append, ops.items[0], base, ops.items[1..], none);
-        return f.construct(base, stored.items);
+        return f.construct(base, stored.items, ops.items[0], ops.items[1..]);
     }
 
     // ---- calls -------------------------------------------------------------------
