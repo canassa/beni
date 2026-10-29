@@ -6,8 +6,7 @@ import Probe
 
 
 ints : List Int → String
-ints xs =
-    String.join (List.map xs String.fromInt) " "
+ints xs = String.join (List.map xs String.fromInt) " "
 
 
 main : Node.Program
