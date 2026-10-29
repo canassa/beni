@@ -49,7 +49,7 @@ const layers = [_]Entry{
     // links, merges, folds and relabelling) and the one-alternative link.
     // 2 550 since #1128: the path-multiset primitive (arrivals, aggregates by
     // destination class, the fold conditions), which §3.4 puts in Cond.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2600 },
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2660 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1650 },

@@ -158,6 +158,10 @@ pub const Table = struct {
     /// its image node (`widenValue`, §2.9, #1128).
     fold_cond: stamped.Column(NodeId, CondId) = .{},
     fold_cond_n: u32 = 0,
+    /// `foldCondOf` by node.
+    fold_of: stamped.Column(NodeId, CondId) = .{},
+    /// `placeBelow` by `(from, to)`.
+    place_below: Ids.FixedDict(2) = .{},
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
@@ -202,6 +206,8 @@ pub const Table = struct {
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
         t.fold_cond.deinit(gpa);
+        t.place_below.deinit(gpa);
+        t.fold_of.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_merge.deinit(gpa);
     }
@@ -1434,10 +1440,15 @@ pub const Table = struct {
     /// that crosses `⟲` stands for every position of `x` the fold maps to
     /// it, so its arrivals there are compared as a multiset across depths —
     /// a repeat `lost`, distinct arrivals `apart`. `yes` where nothing folds.
-    pub fn foldedRead(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, post: []const Step) Error!CondId {
+    /// `target` is the template path's place: a node the fold keeps whole (an
+    /// unopened union, choice or positions node, a leaf's symbolic cells, a
+    /// recast) hides positions below it from the multiset, so where one can
+    /// reach `target` the read is `lost` (#1157's review) until that walk opens it.
+    pub fn foldedRead(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, post: []const Step, target: Ids.PlaceId) Error!CondId {
         var fold: Shape.Table.Fold = .{};
         defer fold.deinit(gpa);
         _ = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
+        if (try t.hidesBelow(gpa, charge, v, x, &fold, target)) return lost;
         if (!fold.merged) return yes;
         const at = fold.classAt(post) orelse return yes;
         const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
@@ -1446,31 +1457,103 @@ pub const Table = struct {
         return t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[a]);
     }
 
+    /// Whether a node of `x`'s source structure the fold keeps whole can hold
+    /// a position at `target` below it, out of the multiset's sight.
+    fn hidesBelow(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, fold: *const Shape.Table.Fold, target: Ids.PlaceId) Error!bool {
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, x);
+        while (stack.pop()) |n| {
+            if (seen.contains(n)) continue;
+            try seen.put(gpa, n, {});
+            try charge.reserve(gpa, .inspection, 1);
+            const d = v.shapes.get(n);
+            const whole = switch (d.kind) {
+                .@"union", .choice, .positions => !fold.opened.contains(n),
+                .recast => true,
+                .leaf => blk: {
+                    var it = v.cells.sets.iterate(d.cells);
+                    break :blk while (it.next()) |e| {
+                        if (!isConcrete(v.cells.origin(.from(e.key)))) break true;
+                    } else false;
+                },
+                .node, .delta => false,
+            };
+            if (whole and try t.placeBelow(gpa, charge, v.places, d.place, target)) return true;
+            const before = stack.items.len;
+            try sourceParts(gpa, v, fold, n, &stack);
+            _ = before;
+        }
+        return false;
+    }
+
+    /// Whether place `to` lies one step or more below place `from`, by the
+    /// place graph (memoised; places are immutable).
+    fn placeBelow(t: *Table, gpa: Allocator, charge: Charge, places: *const Cell.Places, from: Ids.PlaceId, to: Ids.PlaceId) Error!bool {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.place_below.get(.{ from.int(), to.int() })) |hit| return hit == 1;
+        var seen: stamped.Column(Ids.PlaceId, void) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(Ids.PlaceId) = .empty;
+        defer stack.deinit(gpa);
+        for (places.steps(from).children) |c| try stack.append(gpa, c);
+        const found = while (stack.pop()) |p| {
+            if (p == to) break true;
+            if (seen.contains(p)) continue;
+            try seen.put(gpa, p, {});
+            try charge.reserve(gpa, .inspection, 1);
+            for (places.steps(p).children) |c| try stack.append(gpa, c);
+        } else false;
+        (try t.place_below.getOrPut(gpa, .{ from.int(), to.int() })).value_ptr.* = @intFromBool(found);
+        return found;
+    }
+
     /// The fold obligations a read of `n` meets at its own position: its
     /// own, and through a union, choice or positions DAG its sides' (a class
     /// image rides there beside the class's other members).
     fn foldCondOf(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
         if (t.fold_cond_n == 0) return yes;
-        var acc: CondId = yes;
+        // Memoised per node: `fold_cond` only gains entries for fresh image
+        // ids, which no existing DAG holds, so an answer never goes stale.
+        try charge.reserve(gpa, .memo, 1);
+        if (t.fold_of.get(n)) |hit| return hit;
+        return t.foldCondWalk(gpa, charge, v, n);
+    }
+
+    fn foldCondWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
+        // Post-order on an explicit stack: a side's answer from the memo, so
+        // a chain of unions costs each its own node.
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
         try stack.append(gpa, n);
-        while (stack.pop()) |x| {
-            if (seen.contains(x)) continue;
-            try seen.put(gpa, x, {});
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.fold_of.get(x) != null) {
+                _ = stack.pop();
+                continue;
+            }
             try charge.reserve(gpa, .inspection, 1);
-            if (t.fold_cond.get(x)) |fc| acc = try t.@"and"(gpa, charge, acc, fc);
+            var acc: CondId = t.fold_cond.get(x) orelse yes;
             switch (v.shapes.kind(x)) {
                 .@"union", .choice, .positions => {
                     const d = v.shapes.get(x);
-                    try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                    const l = t.fold_of.get(.from(d.a));
+                    const r = t.fold_of.get(.from(d.b));
+                    if (l == null or r == null) {
+                        if (l == null) try stack.append(gpa, .from(d.a));
+                        if (r == null) try stack.append(gpa, .from(d.b));
+                        continue;
+                    }
+                    acc = try t.@"and"(gpa, charge, acc, try t.@"and"(gpa, charge, l.?, r.?));
                 },
                 else => {},
             }
+            try t.fold_of.put(gpa, x, acc);
+            _ = stack.pop();
         }
-        return acc;
+        return t.fold_of.get(n).?;
     }
 
     /// A folded class's obligation from its aggregate: a repeat is
@@ -4986,4 +5069,33 @@ test "#1150 review: a group's image numbers its cells in set order, whatever ord
     try testing.expectEqual(@as(u32, 0), (try t.reachAgg(gpa, f.charge(), f.view(), n)).all_len);
     f.shapes.tie(k, .{ .kind = .leaf, .place = rec, .cells = try f.set(&.{p1}), .a = 0, .b = 0, .reach = .none });
     try testing.expectEqual(@as(u32, 1), (try t.reachAgg(gpa, f.charge(), f.view(), n)).all_len);
+}
+
+test "#1157 review: a fold obligation read through a chain of unions costs each union its own node" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    f.account.allowance = std.math.maxInt(u32) - 1;
+    const list = try f.placeOf(1);
+    var cost: [3]u64 = undefined;
+    for ([_]u32{ 100, 200, 400 }, 0..) |n, run| {
+        // A left-deep chain of unions over leaves each carrying an obligation,
+        // read at every link, as `propagate` reads each state.
+        var u = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 100_000 * n, list, .list)}));
+        var read: u64 = 0;
+        for (0..n) |i| {
+            const l = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(100_000 * n + i + 1), list, .list)}));
+            try f.conds.fold_cond.put(gpa, l, lost);
+            f.conds.fold_cond_n += 1;
+            u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, u, l);
+            const before = f.account.total();
+            try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u));
+            read += f.account.total() - before;
+        }
+        cost[run] = read;
+    }
+    // Twice the links, about twice the work, never four times.
+    try testing.expect(cost[1] <= 3 * cost[0]);
+    try testing.expect(cost[2] <= 3 * cost[1]);
 }
