@@ -1,4 +1,4 @@
--- The module that declares the alias of a sibling's export: in its own
+-- The module that declares an alias of its sibling's export: in its own
 -- `viaAlias` the lambda stays, since `Opt` walks the alias to the import.
 import Js
 
