@@ -2151,7 +2151,7 @@ so the codec does not spend it). Encoding and decoding a block are the *codec/im
 writer's lookups, tokens, scans, sorts, refinements and output words, and the reader's trial decode, are
 baseline records (B_f) on one codec lane per block, each reserved before its step. The lane is bounded by
 `codec_factor`·(S + 16)·⌈log₂(S + 2)⌉ records, where S counts the records and edges the writer reads from the
-tables — including the source-derived place graph, so a type's depth or width never spends R_f — or the words a
+tables — including the source-derived place graph, so a type's depth or width never spends R_f, and each snapshot's maps, entries and links (#1141), so a snapshot as deep as the source brings its own room — or the words a
 reader decodes. `codec_factor` is **16**. The algorithm's own bound is O(S log S) (the refinements and the
 ranking's sorts above), and the measured maximum over the block tests is 1.9·(S + 16)·⌈log₂(S + 2)⌉, so 16 is
 margin for a defect, not a budget. Past the bound the writer stops with `ownership_accounting_invariant` (the
