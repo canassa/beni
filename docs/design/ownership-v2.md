@@ -993,9 +993,10 @@ position is a state `(node, canonical path)`.
 - A node's parts and a `positions` node's sides add.
 - A `choice`'s arms take the maximum.
 - A `union` holds its cells at its position as a set, and its sides' structure below it adds.
-- A leaf's symbolic cells and refinements contribute their projections at every canonical path
-  below, found by a pair walk over the argument's path and the cell's own path.
-- A `⊤` cell, a recast, or a symbolic cell at another place contributes `⊤` below.
+- A leaf's symbolic cell or refinement, a `⊤` cell and a recast contribute `⊤` at every canonical
+  path below, so the read there is `lost`, as master reads it. A symbolic projection owes its
+  `summaryExcl` and an `apart` instantiated through `⟲` (§2.9's condition (2)), and the call does not
+  build those yet. The precise version is #1199, due with S3b.
 
 The states settle by component (Tarjan, explicit stack). A cycle makes every occurrence it and its
 parts hold repeated, which is the least solution of these equations in {absent, one, repeated}. The
