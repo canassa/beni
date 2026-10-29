@@ -364,6 +364,11 @@ pub const Account = struct {
         return prev;
     }
 
+    /// Whether the kernel the walk is in is growth (no lane).
+    pub fn inGrowth(a: *const Account) bool {
+        return a.lane_slot == none_int;
+    }
+
     pub fn leave(a: *Account, k: Kernel) void {
         a.lane_slot = k.slot;
         a.lane = k.lane;

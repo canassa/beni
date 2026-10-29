@@ -470,7 +470,8 @@ pub const Index = struct {
     }
 
     /// A query's step lanes (§4.4's `(written demand, slot, k)` words): the
-    /// query at prefix `k` of `q` goes on `(atom, role, step | k's path)`.
+    /// query at prefix `k` of `q` goes on `(atom, role, step | k)`, `k` the
+    /// prefix's depth.
     pub const StepLanes = struct { atom: u32, role: Ids.Role, step: u32 };
 
     /// `useAfter`, each prefix's range query on its own step lane when
@@ -515,11 +516,14 @@ pub const Index = struct {
         return x.earliest(gpa, at, r, p, t, filter);
     }
 
-    /// The charge of step `path` on `lanes`, or `charge` at a root or with none.
+    /// The charge of step `path` on `lanes`, or `charge` at a root, with
+    /// none, or when `charge` is growth: a query already in growth keeps its
+    /// steps there (#1233's review).
     fn stepCharge(charge: Charge, places: *const Place.Table, lanes: ?StepLanes, path: PathId) Charge {
         const l = lanes orelse return charge;
         if (path == .none or places.pathParent(path) == .none) return charge;
-        return .in(charge.account, .{ .atom = l.atom, .role = l.role, .step = l.step | path.int() });
+        if (charge.lane == null and charge.account.inGrowth()) return charge;
+        return .in(charge.account, .{ .atom = l.atom, .role = l.role, .step = l.step | places.pathDepth(path) });
     }
 };
 

@@ -163,14 +163,23 @@ pub const Outcome = struct {
 const StepSlot = enum(u1) { base, holder };
 
 /// The kernel of demand `atom`'s step `path` (§2.8, §4.4's `(written demand,
-/// slot, k)` words on direct-demand-query lanes): the prefix work at one step
-/// of a path (its escape, its candidates and anchors, its refinement chain,
-/// a use query at it) is that step's, never the demand's whole lane (#1225).
-/// Null at a root path, or outside a demand's query.
+/// slot, k)` words on direct-demand-query lanes, `k` the step's depth): the
+/// prefix work at one step of a path (its escape, its candidates and anchors,
+/// its refinement chain, a use query at it) is that step's, never the demand's
+/// whole lane (#1225). Null at a root path, outside a demand's query, or when
+/// the query is already growth (a product, a sweep past the direct holder):
+/// there the step's work is the growth task's, never piled onto one lane per
+/// step (#1233's review).
 fn stepLane(env: Env, gpa: Allocator, atom: ?u32, slot: StepSlot, path: PathId) Error!?Ids.Account.Kernel {
     const a = atom orelse return null;
     if (path == .none or env.places.pathParent(path) == .none) return null;
-    return try env.account().enter(gpa, .{ .atom = a, .role = .direct_demand_query, .step = (@as(u32, @backingInt(slot)) << 31) | path.int() });
+    if (env.account().inGrowth()) return null;
+    return try env.account().enter(gpa, .{ .atom = a, .role = .direct_demand_query, .step = stepWord(slot, env.places.pathDepth(path)) });
+}
+
+/// A step lane's word: its slot and its depth `k` (§4.4).
+fn stepWord(slot: StepSlot, depth: u32) u32 {
+    return (@as(u32, @backingInt(slot)) << 28) | depth;
 }
 
 /// `stepLane` of a cell's canonical path, for a symbolic cell; null for any
@@ -873,7 +882,7 @@ const Resolver = struct {
         var ctx: Ctx = .{ .r = r, .q = q };
         const filter: Liveness.Filter = .{ .ctx = &ctx, .accept = Ctx.accept };
         // Each prefix of the held path on the demand's holder-slot step lane (#1225).
-        const lanes: ?Liveness.Index.StepLanes = if (r.atom) |a| .{ .atom = a, .role = .direct_demand_query, .step = @as(u32, @backingInt(StepSlot.holder)) << 31 } else null;
+        const lanes: ?Liveness.Index.StepLanes = if (r.atom) |a| (if (r.env.account().inGrowth()) null else .{ .atom = a, .role = .direct_demand_query, .step = stepWord(.holder, 0) }) else null;
         const above = try r.frame.index.useAfterIn(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, filter, lanes);
         const under = try r.frame.index.useUnderIn(r.gpa, r.env.charge, r.env.places, r.frame.regions, local, q, p, Liveness.Filter.all, lanes);
         if (above == null) return under;
