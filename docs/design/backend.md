@@ -301,6 +301,7 @@ a subdirectory, which only moves the collision. The reserved names are:
 | `_core/` | the `core` package's directory | `core/` |
 | `_platform/` | the platform package's directory, holding its modules, their siblings and its runtime | `platform/` |
 | `_manifest.txt` | the list of files the last build wrote (*The output directory holds what the last build wrote*) | â |
+| `_data/` | *specified 2026-10-29, not built:* each route's data file of a prerendered data site whose client fetches another route's value (`prerender.md` §8.12.1) | none |
 
 All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
 `Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.

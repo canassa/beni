@@ -1393,7 +1393,7 @@ file `beni build` or `beni serve` writes carries it**, development or `--release
 keeps the release output and every `emit/` golden free of it by construction. `/_beni/` is the
 server's own namespace, and no file the build writes can be there — no emitted path begins with
 `_beni` (`backend.md` §2, rule 1's reserved names are `_main.mjs`, `_core/`, `_platform/`,
-`_manifest.txt` and the platform's entry). A failed build does not move the count, so a page keeps
+`_manifest.txt` and the platform's entry, and from slice P4b of `prerender.md` §8.12 `_data/`, which does not begin with `_beni` either). A failed build does not move the count, so a page keeps
 showing the last good build while the errors are on the terminal.
 
 *Specified 2026-10-29, built the same day (#1160, slice P3, #1194):* a prerendered site's page for `/about` is `about.html`,
