@@ -1,4 +1,4 @@
-## 2026-10-29 21:12 CET — Ownership v2: `within` fails closed, a symmetric supply join
+## 2026-10-29 20:23 CET — Ownership v2: `within` fails closed, a symmetric supply join
 
 **What I did**
 
