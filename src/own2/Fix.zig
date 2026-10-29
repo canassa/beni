@@ -509,17 +509,20 @@ pub const Prover = struct {
     /// have `sep` in the pre-fold κ `pre`. W2: they diverge, through no folded
     /// component without its `within` (`guard`). W3: each member is unfolded,
     /// folded and met once, or folded with its own `within`. One member: its
-    /// own `within` renamed, or nothing when it is unfolded or met once.
+    /// own `within` renamed, or `pre` as it is when it is unfolded or met
+    /// once. A failing `pre` (`shared`, `lost`) is the answer whatever M is:
+    /// the fold never invents a separation the pre-fold class lacks.
     pub fn foldWithin(p: *Prover, gpa: Allocator, charge: Charge, conds: *Cond.Table, cells: *const Cell.Table, point: u32, folded: LabelId, members: []const Member, pre: CondId, coexist: Coexist, guard: ?Guard) Error!CondId {
+        if (Cond.Table.fails(pre)) return pre;
         for (members) |m| if (!isFoldOf(cells, folded, .from(cells.get(m.cell).a))) return Cond.lost;
-        if (members.len == 0) return Cond.yes;
+        if (members.len == 0) return pre;
         if (members.len == 1) {
             const m = members[0];
             if (m.within) return conds.within(gpa, charge, folded);
-            return if (!chainFolded(cells, .from(cells.get(m.cell).a)) or m.met <= 1) Cond.yes else Cond.lost;
+            return if (!chainFolded(cells, .from(cells.get(m.cell).a)) or m.met <= 1) pre else Cond.lost;
         }
         for (members) |m| if (chainFolded(cells, .from(cells.get(m.cell).a)) and m.met > 1 and !m.within) return Cond.lost;
-        const stated = if (pre == Cond.yes or Cond.Table.fails(pre)) SetId.none else try conds.flat(gpa, charge, pre);
+        const stated = if (pre == Cond.yes) SetId.none else try conds.flat(gpa, charge, pre);
         for (members, 0..) |a, i| for (members[i + 1 ..], i + 1..) |b, j| {
             try charge.reserve(gpa, .inspection, 1);
             if (!coexist.both(coexist.ctx, i, j)) continue;
@@ -539,13 +542,23 @@ pub const Prover = struct {
         return conds.within(gpa, charge, try cells.label(gpa, charge.account, inst, l, true));
     }
 
-    /// The fold's join of two members' supplies at one index: owned only if
-    /// both are, taken only if both are.
-    pub fn joinSupply(a: Facts.Supply, b: Facts.Supply) Facts.Supply {
-        var out = a;
-        out.owned = a.owned and b.owned;
-        out.taken = a.taken and b.taken;
-        return out;
+    /// The fold's join of two members' supplies at one index (§2.12
+    /// *Supplies at the fold*), under the folded label `folded`: the nodes
+    /// joined, the κ merged, owned only if both are, taken only if both are.
+    /// Symmetric: neither member's node or κ is dropped.
+    pub fn joinSupply(gpa: Allocator, charge: Charge, shapes: *Shape.Table, places: *Cell.Places, cells: *Cell.Table, conds: *Cond.Table, folded: LabelId, a: Facts.Supply, b: Facts.Supply) Error!Facts.Supply {
+        std.debug.assert(a.j == b.j and a.k == b.k);
+        var nodes = [_]NodeId{ a.node, b.node };
+        const node: NodeId = if (a.node == .none) b.node else if (b.node == .none or a.node == b.node) a.node else try shapes.join(gpa, charge.account, places, cells, &nodes);
+        return .{
+            .j = a.j,
+            .k = a.k,
+            .node = node,
+            .label = folded,
+            .owned = a.owned and b.owned,
+            .taken = a.taken and b.taken,
+            .kappa = try conds.kappaMerge(gpa, charge, a.kappa, b.kappa),
+        };
     }
 
     /// A3 at the hand-off (§2.12): a closure's environment holds each of its
@@ -766,10 +779,16 @@ pub const Expansion = struct {
         var splits: std.ArrayList(CellId) = .empty;
         defer splits.deinit(ex.gpa);
         for (routed) |r| {
+            // Fail closed: a cell no route reaches is not known to be per call.
+            if (r.routes.len == 0) ex.refute(.approximate);
             for (r.routes) |route| {
                 try ex.charge.reserve(ex.gpa, .inspection, 1);
                 switch (route) {
-                    .minted => {},
+                    // D1 holds of an allocation only.
+                    .minted => switch (cells.origin(r.cell)) {
+                        .site, .result => {},
+                        else => ex.refute(.approximate),
+                    },
                     .nested => |family| if (family) |port_id| {
                         if (cells.origin(r.cell) != .cb) {
                             ex.refute(.approximate);
@@ -2236,8 +2255,14 @@ test "within's emission (W1–W3): complete, separate through certified componen
     const two = [_]Prover.Member{ .{ .cell = try f.cb(three[0]) }, .{ .cell = try f.cb(three[1]) } };
     try testing.expectEqual(within_l, try f.prover.foldWithin(gpa, f.charge(), &f.conds, &f.cells, 0, l, &two, Cond.yes, arms, null));
     // Hole 4, `x = once cb; [ cb ⊤, cb ⊤, x, x ]`: the pre-fold κ is
-    // `shared`, so W1 finds no `sep`.
-    try testing.expectEqual(Cond.lost, try foldAt(&f, l, &three, Cond.shared, null));
+    // `shared`, and that is the answer.
+    try testing.expectEqual(Cond.shared, try foldAt(&f, l, &three, Cond.shared, null));
+    // One member never turns a failing pre-fold κ into `yes`.
+    const lone = [_]Prover.Member{.{ .cell = try f.cb(three[0]) }};
+    try testing.expectEqual(Cond.lost, try f.prover.foldWithin(gpa, f.charge(), &f.conds, &f.cells, 0, l, &lone, Cond.lost, every, null));
+    // Nor drops its atoms: the pre-fold κ stands as it is.
+    const atom = try f.conds.within(gpa, f.charge(), try f.label(71, .none, true));
+    try testing.expectEqual(atom, try f.prover.foldWithin(gpa, f.charge(), &f.conds, &f.cells, 0, l, &lone, atom, every, null));
     // W2's guard: chains that part only below a folded component (`80⋆`)
     // are separate only when that component carries its `within` at P.
     const below = [_]LabelId{ try f.label(70, try f.label(80, try f.label(1, .none, false), true), false), try f.label(70, try f.label(80, try f.label(2, .none, false), true), false) };
@@ -2262,14 +2287,28 @@ test "within's emission (W1–W3): complete, separate through certified componen
     try testing.expectEqual(Cond.lost, try f.prover.foldWithin(gpa, f.charge(), &f.conds, &f.cells, 0, l, &without, pre, every, null));
     // One member: its own `within` renamed.
     try testing.expectEqual(within_l, try f.prover.foldWithin(gpa, f.charge(), &f.conds, &f.cells, 0, l, with_own[0..1], Cond.yes, every, null));
-    // The supply join: borrowed wins, taken only if both are.
+    // The supply join: borrowed wins, taken only if both are, both nodes
+    // and κ kept, in either order.
     const s: Facts.Supply = .{ .j = 0, .k = 0, .node = .none, .label = l, .owned = true, .taken = true, .kappa = .none };
     var b = s;
     b.owned = false;
     b.taken = false;
-    const joined = Prover.joinSupply(s, b);
+    const joined = try Prover.joinSupply(gpa, f.charge(), &f.shapes, &f.places, &f.cells, &f.conds, l, s, b);
     try testing.expect(!joined.owned and !joined.taken);
-    try testing.expect(Prover.joinSupply(s, s).owned and Prover.joinSupply(s, s).taken);
+    const both = try Prover.joinSupply(gpa, f.charge(), &f.shapes, &f.places, &f.cells, &f.conds, l, s, s);
+    try testing.expect(both.owned and both.taken);
+    var clean = s;
+    clean.node = try f.leaf(0, &.{try f.site(61, 0)});
+    var via_env = s;
+    via_env.node = try f.leaf(0, &.{try f.sym(.env, 7, 0, &.{})});
+    clean.kappa = (try f.conds.kappaSet(gpa, f.charge(), .none, clean.node, Cond.lost)).ctx;
+    via_env.kappa = (try f.conds.kappaSet(gpa, f.charge(), .none, via_env.node, Cond.shared)).ctx;
+    const ab = try Prover.handOff(&f.shapes, gpa, &f.account, &f.cells, try Prover.joinSupply(gpa, f.charge(), &f.shapes, &f.places, &f.cells, &f.conds, l, clean, via_env), false);
+    const ba = try Prover.handOff(&f.shapes, gpa, &f.account, &f.cells, try Prover.joinSupply(gpa, f.charge(), &f.shapes, &f.places, &f.cells, &f.conds, l, via_env, clean), false);
+    try testing.expect(!ab.owned and !ba.owned);
+    try testing.expectEqual(ab.node, ba.node);
+    try testing.expectEqual(ab.kappa, ba.kappa);
+    try testing.expect(ab.kappa != clean.kappa and ab.kappa != via_env.kappa);
 }
 
 test "within's discharge by route (D1–D4): the holes refused, C.6's callers kept" {
@@ -2309,6 +2348,7 @@ test "within's discharge by route (D1–D4): the holes refused, C.6's callers ke
     const by_f = try f.cb(try f.label(100, try f.label(10, .none, false), false));
     const calls = [_]World.Call{.{ .inst = 10, .port = 1 }};
     const fresh = try f.cells.result(gpa, acct, .result, m_star, 1, try f.placeOf(0), .list);
+    const stray = try f.sym(.env, 8, 0, &.{});
     var w: World = .{
         .f = &f,
         .calls = &calls,
@@ -2329,6 +2369,10 @@ test "within's discharge by route (D1–D4): the holes refused, C.6's callers ke
             .{ .goal = demand(6), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = one, .routes = &.{graftOf(many)} }} } }} },
             .{ .goal = demand(7), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = one, .routes = &.{.{ .graft = .{ .taken = false, .owned = true } }} }} } }} },
             .{ .goal = demand(8), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = one, .routes = &.{ owned_graft, .shared } }} } }} },
+            // Fail closed (the review's probes): an `env` cell with no route,
+            // or tagged minted.
+            .{ .goal = demand(13), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = stray, .routes = &.{} }} } }} },
+            .{ .goal = demand(14), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = stray, .routes = &.{.minted} }} } }} },
             // D4: a projection of a supply; a nested route on a cell no call answers.
             .{ .goal = demand(11), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = one, .routes = &.{.refined} }} } }} },
             .{ .goal = demand(12), .alts = &.{.{ .within = .{ .label = m_star, .routed = &.{.{ .cell = fresh, .routes = &.{.{ .nested = 1 }} }} } }} },
@@ -2346,7 +2390,7 @@ test "within's discharge by route (D1–D4): the holes refused, C.6's callers ke
     try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
     try expectAnswer(try f.prove(&w, demand(3)), .refuted, .approximate);
     try expectAnswer((try f.prover.cached(gpa, f.charge(), try f.fam(2))).?, .refuted, .exact);
-    for ([_]u32{ 4, 5, 6, 7, 11, 12 }) |d| try expectAnswer(try f.prove(&w, demand(d)), .refuted, .approximate);
+    for ([_]u32{ 4, 5, 6, 7, 11, 12, 13, 14 }) |d| try expectAnswer(try f.prove(&w, demand(d)), .refuted, .approximate);
     try expectAnswer(try f.prove(&w, demand(8)), .refuted, .exact);
     const owed = try f.prove(&w, demand(10));
     try expectAnswer(owed, .proved, .exact);
