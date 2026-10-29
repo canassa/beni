@@ -959,6 +959,10 @@ This is also why `--platform` cannot be a global flag with one value per invocat
 build contract needs to express "this entry point, that platform" as a pair. M3 may ship one pair
 per invocation, but the manifest concept M4 introduces should carry the set.
 
+*Specified 2026-10-29, not built* (#1207): a prerendered site may name a second pair, its build-time
+data program, built for `node` and run by the build before the prerender, as `"build"."data"`
+([`prerender.md`](prerender.md) §8.2). It names one pair for one purpose and is not the set.
+
 **How a platform is located, and which subcommands may say so.** `--platform=<name>` is either the
 name of a platform that ships in the binary — embedded like `core/`, modules, siblings, runtime and
 manifest all — or a path to a directory holding a package whose `beni.json` says `"platform": true`
