@@ -31,6 +31,12 @@ One program per page: `Browser.mountAt p id` mounts it at the element `id` names
 not placed mounts at `document.body`. The runtime exports `run` and `stop` (`boundary.md` §9.4.5,
 amended 2026-10-17).
 
+*Specified 2026-10-29, not built (#1160):* a build of this platform may also write one page per
+route, each the program's first render, which the program then takes over in the browser:
+[`prerender.md`](prerender.md). It adds a string form of each view to the `inline` lowering
+(§4 there), a hydrating mount (§6 there) and `Tea.application` with `Browser.prerender` (§7
+there); a program that does not prerender is compiled as this document says, byte for byte.
+
 ## 2. What the lowering takes, and from where
 
 The lowering re-derives nothing. Every fact below is an analysis's, through the markup lowering

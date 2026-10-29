@@ -411,6 +411,11 @@ artifact's shape and differs by platform â `node` has none.
   same name, so the page is identical; nothing is inlined. No live-reload script is ever in it â that
   is `beni serve`'s, injected into the HTTP response and never written (`frontend.md` Â§10.4).
 - **Deterministic**: the bytes are a function of the template, the entry name and the base alone.
+- *Specified 2026-10-29, not built (#1160):* a prerendering build writes one page per route through
+  the same template — the first build that runs JavaScript: the view at `{{view}}`, the title at
+  `{{title}}`, each page through `pending` like every output here, with route paths that obey
+  rules 1 and 2 ([`prerender.md`](prerender.md) §5, §7.4). A build that does not prerender replaces
+  both placeholders with nothing.
 - **Absolute, from the base** (*amended 2026-10-01, the manager's decision before merge*). The
   entry path is the project's `"build"."base"` (`frontend.md` Â§10.1) followed by the entry file's
   name, and the base defaults to `/`, so the page loads `/_main.mjs`. An absolute path is what makes
