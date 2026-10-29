@@ -931,13 +931,15 @@ choice-sensitive coverage representation. There is no #1121 implementation branc
 local/remote refs or PR list. Those obligations remain before S3b; linear block bytes prove neither
 I-κ nor total linear work.
 
-**Update after rebase (master `5d02c7d81`).** The preceding *As built* note is retained as
+**Update after rebase (master `c709bf771`).** The preceding *As built* note is retained as
 its historical review record. #1125 is now merged: opening and the every-fold multiset cross-member
-check store `lost` in the snapshot. #1133 preserves relabelled fold steps; #1135 closes #1130;
-#1142 closes #1138 with further explicit stacks and cyclic graft knots. #1145 counts snapshot maps,
+check store `lost` in the snapshot. #1133 preserves relabelled fold steps; #1135 closes #1130.
+The further explicit stacks and cyclic graft knots in #1142 close #1138. #1145 counts snapshot maps,
 entries and links in codec size. #1132 preserves the built inner's matching part through a recast
 and keeps hidden holds at the cast's path (§2.13.9). Choice-sensitive symbolic aggregates and the
-call preimage rule remain planned; #1143/#1144's transitive pending-knot safety remains open.
+call preimage rule remain planned. #1144 is merged and #1143 closed: Tarjan's walk builds each
+cyclic part as a record of its own kind, reading only built images (§2.11). Cursor-local κ linking
+(#1146) remains before S3b.
 
 **A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
 construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
@@ -1375,29 +1377,57 @@ pairwise xreq; `two` must discharge its recorded requirement (#1016 comment 6421
 inline twin must get the same verdict. Check other arguments, other touched paths of the same argument,
 captures and pending operands; matching only callee xreq misses the first case.
 
-**Cyclic graft: tie before any read.** Reserve a transaction-local image/knot id on first entering
-an effective `(template node, substitution context)` state. A backedge names that id; it is not a
-completed node or a `none`/empty leaf. Construction may name a pending child without inspecting it.
-Every operation that reads a node record must instead wait for it to be tied, including join's
-transitive delta override children and `proj(base,s)` through unchanged delta steps, union/positions
-sides and recasts. Checking only direct parts is insufficient (#1144 review 6484771597): aliased
-arguments can turn two deltas into one base group whose join then reads a pending override child.
-No reader, including an internal normaliser, κ derivation, rank query or codec, may observe an untied
-knot. A defensive invariant guard catches an attempted read before dereferencing; it is not the
-implementation of a valid input's semantics.
+**Cyclic graft: build cycle parts as records (#1144, landed `c709bf771`).** The explicit
+post-order graft walk also runs Tarjan's visit numbers, lowlinks and component stack. A backedge
+reserves a transaction-local knot image once; the part ties that image when its record is built.
+Every part on a cycle is built as `map` builds a cyclic image: a record of its **own kind**, naming
+its parts' images and reading only images already built, with the image of its own `ε` cells.
+A node names its children; a delta names its base and override images (composing a built delta
+base's map); a recast names its inner image (composing a built recast); a union or positions record
+names both side images. Pending references may be named, never inspected. In particular cyclic
+parts do not invoke `join`, `put` or `collect`: those constructors can read transitively through
+delta overrides or unchanged base projections and encounter a pending knot. Off a cycle no pending
+image is reachable, so the ordinary constructors apply. This covers node-less cycles too; the
+absence of a node does not justify an invariant refusal.
 
-Use explicit continuation frames and a waiter list keyed by pending knot id. A suspended operation
-registers each missing dependency once, retains its progress, and resumes from that point when tying
-the knot wakes it. Reserve each inspection, waiter edge and wake-up before work. Never rescan the
-whole deferred list until one more knot is ready: #1144's chain takes n−1 such quadratic passes.
-For n records/edges the scheduling overhead is O(n); join/projection/aggregate work keeps its own
-charged bound. Constructor-supported SCCs first allocate all handles, then tie child maps, then
-run record-reading normalisation; results and correspondence memos become visible only after this
-transaction succeeds. Failure discards pending handles and dependent provisional answers. A stalled
-read-dependency SCC is diagnosed as an invariant failure if its grammar is unsupported; do not claim
-that no value could have it merely because no current producer makes it. Valid producer/BlockRead
-shapes must pass the transitive-reader tests before S3b consumes cyclic results. #1142 supplies the
-basic graft knots; #1143/#1144 must complete this protocol, not weaken it to direct-side safety.
+There is **no waiting, no waiter list and no retry pass**. Tarjan's bookkeeping visits each part
+and edge once; construction reads only completed records and ties the reserved images in the same
+walk. Its graph bookkeeping is O(nodes + edges), with cell mapping and constructor work charged
+separately before it runs. No κ reader, normaliser, rank query or codec sees an untied knot; completed
+roots and correspondence memos are published only after the operation succeeds. Failure discards
+pending handles and dependent provisional answers. Keep the transitive delta-override/base-projection
+probes from #1144 as regressions for this landed protocol. #1143 is closed; the separate κ-linking
+cost defect is #1146 below.
+
+**κ linking at a knot's own cursor (#1146, before S3b).** `linkArgs` walks value positions with
+an explicit frame carrying `(node, input κ cursor, output cursor-builder, position class, context)`.
+Its output builder is rooted **at that position**, as `Block.entries` identifies stored entries by
+`(node, cursor)`, not by a route replay from the result root. On first entering a knot at cursor c,
+retain that frame's builder. A backedge to it places the κ fold **at c itself** (the empty relative
+path ε), not at the backedge's descendant cursor and not by calling `kappaAt` from the result root.
+The incoming edge refers to this local fold. Its observed step links lead back to the fold, and its
+per-class coverage/arrival maps retain §2.9's complete preimage obligations. A fold that lacks that
+coverage stays collapsed; relocating its construction never upgrades it to exact.
+
+Keep a context-scoped stamped `NodeId → active frame id` column, set on entry and restored on exit,
+so a backedge finds its first active cursor in O(1); never scan the route to find it. This column is
+only the current-route cycle test, not a completed-value memo: two noncyclic routes or different
+snapshots/contexts still have their own position interpretations. Completed work uses the full
+node/cursor/class/context identity and the choice/coexistence keys of §2.9.
+
+Merge a parameter's selected argument κ **at the current local cursor**, with an empty relative
+path; reuse the argument aggregate as above. A child step selects the input child cursor once and
+links its completed output subtree into the parent once on unwind. A same-path part keeps the
+cursor. Fold and merge summaries compose from the persistent subtree aggregates; marking an ancestor
+builder as folded must not rescan all of its descendants. Finish each builder once, on an explicit
+stack, and publish immutable snapshots after tying their local fold references. There is no full-path
+merge per parameter, no fold walk from the result root, and no copied prefix per node. Shared child
+summaries and unchanged map spines stay shared, preserving separate positional multiplicity.
+
+For the fixed-width chain in Appendix B, traversal and local linking are O(n) records, with at most
+O(n log n) total work including persistent map operations. Count the whole link step separately from
+shape grafting: a linear graft alone does not close #1146. General context/pair products retain §4.1's
+accounting, but the chain cannot spend quadratic κ-trie work merely because its knots are deep.
 
 At an ordinary call the retained views, selected direct obligations and fixed-width forwarding are
 source-laned (#1097). If reading/exporting the result forces more structure, it uses the same incremental
@@ -2142,7 +2172,10 @@ kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a
             (NodeId, position class) → CondId per value; S3a gives frame values their own roots and moves the key
             to the trie (`kappaGet`/`kappaSet` at a cursor, `kappaSetAt` along steps from a root, `kappaLink`,
             `kappaMerge`, `kappaFold`, `kappaOf` the read); S3b relabels nodes through Shape.map and links an
-            argument's snapshot at the graft of a summarised declaration. It travels with its value and is
+            argument's snapshot at the graft of a summarised declaration. For cyclic results,
+            linkArgs builds the fold at the first-entry cursor itself and merges parameters at the
+            current cursor (§2.11, #1146); active-frame lookup replaces route scans, and completed
+            child cursors link on unwind without replaying root paths. It travels with its value and is
             joined only where values join (a branch or fixpoint join, a union, a construction of its children),
             never mutated through another value; equal immutable roots may be shared across values and remain
             shared after decode. Reads obey §2.9's kind-specific rule: stored construction certificate (or lost)
@@ -3195,9 +3228,9 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked owner-original-atom/role/phase lane counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 |
 | S2 | **Conditions and summaries** | `Cond` (per-value immutable κ snapshots (NodeId, position class) → CondId that travel with their value's shape root, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions, the `positions` kind and its κ rule, a multiset `apart` (§2.3, §2.9)), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 |
 | S2b | **Words, the spread fact, core in-process** | Frontend type/value ownership columns, placement/companion validation, Builder/List/Ref/Deferred words implemented by #1057–#1059; type `sender` metadata without an alias-use port column; `Bir.Spread` and verification (single-spread identity has no fact); package-qualified body-pin gate, taken readers/forwarders and codegen pins; Appendix C construction/instantiation tests with read-off supplied explicitly; minimal `Block`/`BlockRead`/`Refine` with observable κ positions and shared owners (§3.6), no disk directory; `@ownership_summary_size` grammar/formatting/BIR and skills. Log/Task/Js/Dict wording belongs to S8 (#1053); missing result selectors/write-back belong to S3a (#1052). Hook publication, type-kind errors, behavioural raise test and real-owner instrumentation are S3a (#1056); structural place re-interning is S6 (#1055). | gates under unchanged v1; column isolation and frontend/cache version bumps; every #1060 round-trip test compares observable κ, shared-owner and cyclic/build-order twins; the derivation tests do not claim walker inference; BIR raise fixture only | S2 | — |
-| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed by node and root-relative step route, re-rooted at links (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Pre-work codec reservations (#1066) are repaired. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Before S3b, complete the common path-multiset primitive and its choice/symbolic controls, incremental reads (#1121), read-off/run-wide lanes (#1098), the repeated-path publication audit (#1122), and transitive pending-knot safety (#1143/#1144). The equal-cell fold check (#1128 in #1125), fold-step transport (#1129 in #1133), and the first explicit-stack conversion (#1130 in #1135) are done; #1138's further stacks/basic cyclic graft knots landed in #1142. Keep those regressions. Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures of one declaration at a time, with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice (once #1052's `copyof` words `List.copy`), Spreads, SelfSpreads, ViewAliases (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Inside fixtures S3b finishes, S3a already pins the single-declaration lines: Split's `bumpHead` and `readAfter` (the latter accepted, R-4.3.5), Nest's `pushInner` and `local`, PathCut's `writeRead`, ParamHole's `hole`, DeeperLevel's `inner`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — |
+| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed by node and root-relative step route, re-rooted at links (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Pre-work codec reservations (#1066) are repaired. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Before S3b, complete the common path-multiset primitive and its choice/symbolic controls, incremental reads (#1121), read-off/run-wide lanes (#1098), the repeated-path publication audit (#1122), and cursor-local κ linking with counted deep-knot acceptance (#1146). The equal-cell fold check (#1128 in #1125), fold-step transport (#1129 in #1133), and the first explicit-stack conversion (#1130 in #1135) are done; #1138's further stacks/basic cyclic graft knots landed in #1142, and #1143 is closed by merged #1144's Tarjan/record construction. Keep those regressions. Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures of one declaration at a time, with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice (once #1052's `copyof` words `List.copy`), Spreads, SelfSpreads, ViewAliases (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Inside fixtures S3b finishes, S3a already pins the single-declaration lines: Split's `bumpHead` and `readAfter` (the latter accepted, R-4.3.5), Nest's `pushInner` and `local`, PathCut's `writeRead`, ParamHole's `hole`, DeeperLevel's `inner`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — |
 | S4-verifier | **Recursive-proof verifier spike (before S3b)** | Decide feasibility of §2.12's independent base/preservation verifier on finite recursive obligation graphs. Use the existing summary/value algebra with explicit test equations, without waiting for the S3b call consumer or claiming walker inference. Retain captures, feedback, choice/coexistence and pre-fold within provenance; waiting proof cycles cannot establish their own assumptions. | The hardest Appendix B recursive-proof rows: every C.11 red twin (TwoTraversalsShared, FoldOverFoldShared, NestedTraversalShared/AcrossModules), FeedbackPrevTwice, FoldCallbackIdentity, RefinementFeedbackTwice, JoinedClosurePorts and CallFeedbackGeneration/GrowFresh/GrowAlias, with the named positive controls. Independently check base and step, reject circular self-proof, test late weakening and failure rollback, and count proof/dependency work. Deliver a feasibility result and executable verifier witnesses. If the existing guarantees cannot be met, stop and report the obstacle before S3b; keep fold-element lost unless a separately reviewed proof justifies its change. | S3a | — |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), a call's view by reference (§4.1's *call view and direct obligation*: template plus actual-root references and a constant-width substitution, never a copy of the callee's class over the arguments, #1097), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off keeps each recorded pair of distinct pre-fold `sep` labels through direct calls of summarised declarations, for S4's `within`; calls of a function parameter, and with them Appendix C.2–C.5's walker derivation, are S4's. | Appendix B's recursive combination matrix (every S3b row), same-module and imported as soon as calls work; LevelLimit alias/disjoint and LevelPlacesKinds folded-W probes; a straight-line chain of pushes and `ValueCellsGuards.rebuilt` both have G_f flat at the per-instruction cost, and the wide graft never spends growth (#1097); Split, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (their calls of summarised declarations of the module; MarkerAcross's `incAll` a recursive group; moved from S3a, whose lines of one declaration they keep), RoseKidsHeld (Appendix B; defined by such a call); ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces* (LevelPlacesKinds' 64:5 stays refused: where `viaKid` folds `twoR`'s two `W` paths into one, the fold creates the reliance v1 records, `xreq excl π1#Rose.1`), AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. Count `wrap (wrap … r)` at 10/100/1,000 calls, same-module and imported, with existing argument aggregates reused; all eight tower families meet the total O(n log n) bound. FoldedBCall refuses the reused-k actual and accepts distinct allocation and whole-choice controls. Run the transitive pending-knot delta-override/base-projection and waiter-chain probes from #1144. | S3a, S4-verifier | — |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), a call's view by reference (§4.1's *call view and direct obligation*: template plus actual-root references and a constant-width substitution, never a copy of the callee's class over the arguments, #1097), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off keeps each recorded pair of distinct pre-fold `sep` labels through direct calls of summarised declarations, for S4's `within`; calls of a function parameter, and with them Appendix C.2–C.5's walker derivation, are S4's. | Appendix B's recursive combination matrix (every S3b row), same-module and imported as soon as calls work; LevelLimit alias/disjoint and LevelPlacesKinds folded-W probes; a straight-line chain of pushes and `ValueCellsGuards.rebuilt` both have G_f flat at the per-instruction cost, and the wide graft never spends growth (#1097); Split, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (their calls of summarised declarations of the module; MarkerAcross's `incAll` a recursive group; moved from S3a, whose lines of one declaration they keep), RoseKidsHeld (Appendix B; defined by such a call); ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces* (LevelPlacesKinds' 64:5 stays refused: where `viaKid` folds `twoR`'s two `W` paths into one, the fold creates the reliance v1 records, `xreq excl π1#Rose.1`), AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. Count `wrap (wrap … r)` at 10/100/1,000 calls, same-module and imported, with existing argument aggregates reused; all eight tower families meet the total O(n log n) bound. FoldedBCall refuses the reused-k actual and accepts distinct allocation and whole-choice controls. Keep #1144's cyclic-record delta-override/base-projection regressions. Count #1146's X_k chain at 4/16/64/256/1,024: linkArgs has no per-node route scan, root-path merge or source-depth fold walk, and its total link work is O(n log n) at most. | S3a, S4-verifier | — |
 | S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1.  Replace S2 positional nested-class arrays with the keyed code/port/context graph; selected callback stored effects; exact run/worklist keys; constructor-supported cyclic class/environment codec and traversal marks before any import, with canonical cross-module twins. Read-off creates `within` from distinct pre-fold `sep` labels (§2.11 *Carried-class boundary (S4)*). | Appendix B's S4 combinations, independent base/preservation verification and failure-after-reservation cases; Appendix C.2–C.5 (`mapHelp`, `List.map`, `foldlFrom`, `List.foldl`/`foldr`) derived by the walker, not supplied by a test; Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — |
 | S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — |
 | S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 |
@@ -3238,17 +3271,17 @@ accepted program requirement. Closing #1121 must replace these curves with count
 acceptance for all families.
 
 **S3a exit gate and the next critical dependency.** Close #1121's incremental reads, #1098's source
-lanes and #1122's publication audit, and implement the common path-multiset primitive with its
-choice/symbolic controls. #1125's every-fold cross-member check, #1133's fold-step transport and
-#1135's explicit stacks are landed, not remaining work under #1128/#1129/#1130. #1138 is also closed
-by #1142's further stacks and basic cyclic graft knots. **#1143/#1144 remains before S3b**: no
-reader may see an untied knot, including through a delta override or base projection; pending-reader
-scheduling must be charged and incremental. The S4-verifier feasibility slice then passes before
-S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as its call/transport consumers land.
-Declaration-order independence of accounts remains an open owner decision in #1104; no resolution
-or implementation dependency for that decision is prescribed here.
+lanes, #1122's publication audit and **#1146's cursor-local κ linking**, with its counted deep-knot
+chain. Implement the common path-multiset primitive with its choice/symbolic controls. The every-fold
+cross-member check in #1125, fold-step transport in #1133 and explicit stacks in #1135 are landed,
+not remaining work under #1128/#1129/#1130. #1138 is closed by #1142's further stacks and basic
+cyclic graft knots; #1143 is closed by merged #1144's Tarjan walk and cyclic records. The native
+`Summary.Table.join`/`leq` bound is stated in §3.9. Keep these regressions. The S4-verifier feasibility
+slice passes before S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as its call/transport
+consumers land. Declaration-order independence of accounts remains an open owner decision in #1104;
+no resolution or implementation dependency for that decision is prescribed here.
 
-**Code/design reconciliation (master `5d02c7d81`).** Existing issues are retained rather than duplicated.
+**Code/design reconciliation (master `c709bf771`).** Existing issues are retained rather than duplicated.
 The historical *As built* notes stay intact; this table records what has moved since their baseline.
 
 | Code evidence | Status and tracking | Specified contract |
@@ -3257,7 +3290,8 @@ The historical *As built* notes stay intact; this table records what has moved s
 | Whole-set apart/excl/union reads and read-off mapping still revisit growing prefixes. | #1121/#1098 incremental aggregates, per-item/read-off work and lazy internal collect sets remain. | §2.9's total tower bound; §4.1. |
 | Fold relabelling keeps its observed self-link steps. | #1133 landed, closes #1129. | §2.9, §3.4, §3.6. |
 | κ path copying/relabel/merge and call linking use explicit stacks; further shape/summary/reader walks and cyclic graft knots follow. | #1130 done in #1135; #1138 done in #1142. Keep deep/small-stack probes. | §2.3, §2.11, §3.9; R-7.12. |
-| A union join can inspect a pending knot through a delta override or base projection even after direct-side guards; repeated deferred passes can be quadratic. | #1143 open; #1144 review 6484771597 requires transitive reader safety and charged waiter scheduling before S3b. | §2.11 tie-before-read protocol. |
+| Tarjan's graft walk builds cyclic parts as records of their own kind, reading only built images; off-cycle parts use constructors. | #1144 merged (`c709bf771`), closes #1143. No waiting or retry passes; the transitive-reader probes remain regressions. | §2.11 cyclic-record protocol; §3.9's remaining native join/leq bound. |
+| `linkArgs` scans its route per node and folds/merges κ by replaying the full root path at each knot/parameter. | #1146 remains before S3b; the X_k chain must have O(n log n) total link work at most. | §2.11 cursor-local folds, active-frame column and child linking; Appendix B counts. |
 | Recast projection keeps a built inner's matching part; hidden holds stay at the cast's path. | #1132 landed, including #1136 and CastProjections/CastHolds. | §2.13.9. |
 | Codec size includes each snapshot map, entry and link before its work. | #1145 landed, closes #1141; depth is not summary growth. | §4.1's S and codec lane. |
 | Printer deduplicates `(node,cursor)` although two explicit paths can share both. Block's child edges alone do not prove semantic transport. | #1122 printer/read-off/caller audit; no claim of a reproduced block loss. | One path-multiset primitive, §2.9/§3.6; RepeatedPathCall and FoldedBCall. |
@@ -3677,14 +3711,30 @@ control chooses between the two placements in mutually exclusive whole-value arm
 only once per arm; it also accepts. Compare inline, helper and imported forms, then read-off,
 printer and BlockRead images; no prior widening of the actual is permitted to mask the call defect.
 
-**Pending-knot probes (before S3b, #1143/#1144).** Exercise the review's legal block
+**Cyclic-record graft regressions (#1144 merged; #1143 closed).** Keep the review's legal block
 `T{arg:L}`, `L{[*]:U}`, `U=union(D1,D2)`, `D1=delta(param0,{arg:L})`,
-`D2=delta(param1,{arg:M})` with aliased actuals. Join must wait for the cyclic override child,
-not crash or drop its alternative; also test an unchanged step projected through a delta base and
-positions/recast readers. Identity graft, κ reads and block round trips agree after all knots tie.
-Count the deferred-union chain at 4/16/64/256/1,024 records: waiter/inspection scheduling is linear,
-not n−1 full-list passes. Failure followed by success cannot reuse a pending image. No test treats
-an invariant refusal of this legal graph as a successful implementation.
+`D2=delta(param1,{arg:M})` with aliased actuals. Tarjan identifies the cyclic parts, which are built
+as records without reading the pending override child; no alternative is dropped. Also exercise an
+unchanged step projected through a delta base, positions/recast readers and a node-less cycle.
+Identity graft, κ reads and block round trips agree after all knots tie. Failure followed by success
+cannot reuse a pending image; an invariant refusal of a valid graph is not acceptance.
+
+**Counted cursor-local κ linking (#1146, before S3b).** Use the same finite chain as the issue:
+`X_k = union(N_k, X_(k+1))`, `N_k{arg:L_k}`, `L_k{[*]:X_(k−1)}`, with the finite seed/end
+closing its backedges, at n = **4, 16, 64, 256, 1,024**. Count `apply`'s link phase separately from
+graft, including inspections, active-route lookups, cursor steps, fold/merge work and persistent
+records. The reported pre-fix link counts are **150 / 2,382 / 37,230 / 591,342 / 9,443,310**;
+graft counts are **36 / 132 / 516 / 2,052 / 8,196**. These are #1146's measurements, not new
+measurements by this docs change: the link step is quadratic while graft is linear.
+
+Acceptance requires O(n) traversal/local-link records and **O(n log n) total link work at most**,
+under production limits, with no limit caused solely by source depth. Derive the counted bound
+from the per-edge cursor kernels; do not accept the old roughly 16× link cost for a 4× size increase.
+The route-scan mutation and the full-root-path fold/parameter-merge mutation must each fail the
+counted test. Check selected κ reads, deep reads, fold steps and coverage before/after linking and
+BlockRead, with identity and aliased-argument controls and the path-multiset refusal/acceptance twins.
+Small-stack and failure-then-success probes must preserve these answers. This acceptance closes #1146;
+the shape graft fix has already landed.
 
 **Counted recursive families and failure twins.** Generate all eight families of §2.9 at n=10/100/1,000:
 seven construction families at S3a and `wrap (wrap … r)` at S3b, with same-module/imported helpers
