@@ -3242,3 +3242,48 @@ test "#1128: a choice decodes to a choice, never a union" {
     const back = b.sums.get(try roundTrip(&a, &b, c));
     try testing.expectEqual(Shape.Kind.choice, b.shapes.kind(back.res));
 }
+
+test "#1128: a folded class's path-multiset obligation crosses the block" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    a.account.allowance = std.math.maxInt(u32) - 1;
+    const env = a.env();
+    // `T (T _ π2 _) π1 _` over place 8 (`C 8 0 8`): the lists `π1` at depth 0
+    // and `π2` at depth 1 fold into one class, which owes `apart [π1] [π2]`.
+    const tree = try a.place(8);
+    const list = try a.place(0);
+    const s = [_]Step{ try a.places.ctorStep(gpa, &a.account, 0, 0), try a.places.ctorStep(gpa, &a.account, 0, 1), try a.places.ctorStep(gpa, &a.account, 0, 2) };
+    var lists: [2]NodeId = undefined;
+    for (&lists, 0..) |*l, i| {
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, @intCast(i), try a.places.rootPath(gpa, list), 0);
+        l.* = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    }
+    const empty = try a.shapes.nothing(gpa, &a.account, tree);
+    const node = struct {
+        fn of(t: *Tables, ss: [3]Step, l: NodeId, e: NodeId, sub: NodeId) !NodeId {
+            var m = try t.shapes.overPut(testing.allocator, &t.account, Ids.none_int, ss[0], sub);
+            m = try t.shapes.overPut(testing.allocator, &t.account, m, ss[1], l);
+            m = try t.shapes.overPut(testing.allocator, &t.account, m, ss[2], e);
+            return t.shapes.node(testing.allocator, &t.account, try t.place(8), .none, m);
+        }
+    }.of;
+    const inner = try node(&a, s, lists[1], empty, empty);
+    const outer = try node(&a, s, lists[0], empty, inner);
+    var k = (try a.conds.kappaSet(gpa, env.charge, .none, outer, Cond.yes)).ctx;
+    k = try a.conds.kappaSetAt(gpa, env.charge, k, &.{s[0]}, inner, Cond.yes);
+    const w = try a.conds.widenValue(gpa, env.charge, env.view(), outer, k);
+    try testing.expect(w.node != outer);
+    const c = try a.sums.add(env, .{ .params = &.{ .none, .none }, .res = w.node, .kappas = w.kappas });
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const before = try a.text(arena, c);
+
+    try testing.expect(std.mem.indexOf(u8, before, "apart [π1] [π2]") != null);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
+}
