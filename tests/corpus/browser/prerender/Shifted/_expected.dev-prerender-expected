@@ -1,0 +1,60 @@
+-- remove h1
+-- inject output "<button data-role=ad>Ad</button>"
+-- fresh
+-- load
+console.warn: The prerendered page is not the one this program makes: its element 1 is a <button>, where the program makes a <h1>. The program mounts it fresh.
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+      <output>"0"</output>
+      <button data-role="help">"?"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+      <output>"1"</output>
+      <button data-role="help">"?"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+      <output>"2"</output>
+      <button data-role="help">"?"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=dec]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <h1>"Counter"</h1>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+      <output>"1"</output>
+      <button data-role="help">"?"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

@@ -1,0 +1,6 @@
+remove h1
+inject output "<button data-role=ad>Ad</button>"
+fresh
+click [data-role=inc]
+click [data-role=inc]
+click [data-role=dec]

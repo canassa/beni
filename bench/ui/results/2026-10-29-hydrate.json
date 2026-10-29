@@ -1,18 +1,18 @@
 {
  "chrome": "Chrome/153.0.8010.36",
  "node": "v24.19.0",
- "beni": "beni 0.1.0-m1 cbe7457696493246a5d3b607edad0f91",
- "commit": "2c46f14adc6c404b4d42f12542e908c2916be1f4",
+ "beni": "beni 0.1.0-m1 8adbd68923e4c53af9bb92501017ea53",
+ "commit": "872d0cdf3574ea3c3e3591a2a22a8452167b9134",
  "dirty": true,
  "taskset": null,
- "started": "2026-10-29T15:52:17.977Z",
+ "started": "2026-10-29T16:33:25.155Z",
  "loads": 21,
  "bytes": {
   "counter": {
    "beni": {
     "js": {
-     "raw": 2458,
-     "gzip": 1260,
+     "raw": 2452,
+     "gzip": 1257,
      "brotli": 1104
     },
     "fresh": {
@@ -42,9 +42,9 @@
   "static": {
    "beni": {
     "js": {
-     "raw": 63271,
-     "gzip": 2169,
-     "brotli": 1465
+     "raw": 67060,
+     "gzip": 2225,
+     "brotli": 1485
     },
     "fresh": {
      "raw": 30459,
@@ -73,9 +73,9 @@
   "arms": {
    "beni": {
     "js": {
-     "raw": 13834,
-     "gzip": 2710,
-     "brotli": 2010
+     "raw": 14247,
+     "gzip": 2717,
+     "brotli": 2034
     },
     "fresh": {
      "raw": 8277,
@@ -106,885 +106,885 @@
   {
    "page": "counter",
    "subject": "beni",
-   "load": 25.81,
-   "script": 0.8300000429153442,
-   "navigation": 17.0450000166893
+   "load": 2.66,
+   "script": 0.7150000333786011,
+   "navigation": 16.639999985694885
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 25.81,
-   "script": 3.1299999952316284,
-   "navigation": 15.564999997615814
+   "load": 2.66,
+   "script": 3.324999988079071,
+   "navigation": 15.975000023841858
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 25.81,
-   "script": 3.0550000071525574,
-   "navigation": 15.194999992847443
+   "load": 2.66,
+   "script": 3.130000054836273,
+   "navigation": 15.865000009536743
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 25.81,
-   "script": 0.76500004529953,
-   "navigation": 11.950000047683716
+   "load": 2.66,
+   "script": 0.675000011920929,
+   "navigation": 11.485000014305115
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 25.81,
-   "script": 0.6500000357627869,
-   "navigation": 11.555000007152557
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 25.81,
-   "script": 2.9549999833106995,
-   "navigation": 15.424999952316284
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 25.81,
-   "script": 2.9699999690055847,
-   "navigation": 15.099999964237213
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 25.81,
+   "load": 2.66,
    "script": 0.6650000214576721,
-   "navigation": 12.030000030994415
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 25.81,
-   "script": 0.6850000023841858,
-   "navigation": 12.089999973773956
+   "navigation": 11.639999985694885
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 25.81,
-   "script": 3.509999990463257,
-   "navigation": 15.4549999833107
+   "load": 2.66,
+   "script": 3.040000021457672,
+   "navigation": 16.24500000476837
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 25.81,
-   "script": 3.0550000071525574,
-   "navigation": 18.009999990463257
+   "load": 2.66,
+   "script": 3.009999990463257,
+   "navigation": 15.620000004768372
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 25.81,
-   "script": 0.6549999713897705,
-   "navigation": 11.15499997138977
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 25.81,
-   "script": 0.6899999976158142,
-   "navigation": 11.050000011920929
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 25.81,
-   "script": 3.9950000047683716,
-   "navigation": 16.514999985694885
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 25.81,
-   "script": 3.0300000309944153,
-   "navigation": 14.665000021457672
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 25.81,
-   "script": 0.7149999737739563,
-   "navigation": 12.675000011920929
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 25.81,
-   "script": 0.800000011920929,
-   "navigation": 13.3299999833107
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 25.81,
-   "script": 3.574999988079071,
-   "navigation": 17.049999952316284
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 2.9449999928474426,
-   "navigation": 17.12999999523163
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.6650000214576721,
-   "navigation": 14.125
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.6800000071525574,
-   "navigation": 14.9200000166893
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.564999997615814,
-   "navigation": 15.110000014305115
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.4800000190734863,
-   "navigation": 18.240000009536743
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.8950000405311584,
-   "navigation": 13.715000033378601
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.7450000047683716,
-   "navigation": 13.925000011920929
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.8600000143051147,
-   "navigation": 18.660000026226044
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.3299999833106995,
-   "navigation": 19.37999999523163
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.7949999570846558,
-   "navigation": 13.509999990463257
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.7699999809265137,
-   "navigation": 15.77999997138977
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.459999978542328,
-   "navigation": 16.310000002384186
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.9049999713897705,
-   "navigation": 18.55000001192093
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.7200000286102295,
-   "navigation": 14.084999978542328
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 0.8299999833106995,
-   "navigation": 14.459999978542328
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 4.259999990463257,
-   "navigation": 19.6700000166893
-  },
-  {
-   "page": "counter",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 3.4049999713897705,
-   "navigation": 18.544999957084656
-  },
-  {
-   "page": "counter",
-   "subject": "beni",
-   "load": 24.14,
+   "load": 2.66,
    "script": 0.7250000238418579,
-   "navigation": 14.194999992847443
+   "navigation": 11.274999976158142
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.024999976158142,
-   "navigation": 13.844999969005585
+   "load": 2.66,
+   "script": 0.875,
+   "navigation": 12.299999952316284
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 3.774999976158142,
-   "navigation": 21.87999999523163
+   "load": 2.66,
+   "script": 2.975000023841858,
+   "navigation": 15.325000047683716
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 3.435000002384186,
-   "navigation": 17.8299999833107
+   "load": 2.66,
+   "script": 2.9300000071525574,
+   "navigation": 14.439999997615814
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.2200000286102295,
-   "navigation": 17.25
+   "load": 2.66,
+   "script": 0.6949999928474426,
+   "navigation": 13.284999966621399
   },
   {
    "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 0.7300000190734863,
-   "navigation": 14.575000047683716
+   "load": 2.66,
+   "script": 0.7150000333786011,
+   "navigation": 12.730000019073486
   },
   {
    "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 3.6699999570846558,
-   "navigation": 17.844999969005585
+   "load": 2.66,
+   "script": 3.5,
+   "navigation": 16.264999985694885
   },
   {
-   "page": "static",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 2.425000011920929,
-   "navigation": 18.365000009536743
-  },
-  {
-   "page": "static",
+   "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.685000002384186,
-   "navigation": 21.97000002861023
+   "load": 2.66,
+   "script": 3.7699999809265137,
+   "navigation": 15.894999980926514
   },
   {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 6.7299999594688416,
-   "navigation": 22.664999961853027
-  },
-  {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.9350000023841858,
-   "navigation": 24.680000007152557
+   "load": 2.66,
+   "script": 0.6500000357627869,
+   "navigation": 11.955000042915344
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 2.064999997615814,
-   "navigation": 16.00499999523163
+   "load": 2.66,
+   "script": 0.7849999666213989,
+   "navigation": 11.669999957084656
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.5299999713897705,
-   "navigation": 21.694999992847443
+   "load": 2.66,
+   "script": 3.310000002384186,
+   "navigation": 15.495000004768372
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 4.914999961853027,
-   "navigation": 19.719999969005585
+   "load": 2.66,
+   "script": 3.350000023841858,
+   "navigation": 14.960000038146973
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.7249999642372131,
-   "navigation": 16.5349999666214
+   "load": 2.66,
+   "script": 0.6800000071525574,
+   "navigation": 12.64000004529953
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 4.899999976158142,
-   "navigation": 19.30000001192093
+   "load": 2.66,
+   "script": 0.7749999761581421,
+   "navigation": 11.974999964237213
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.064999997615814,
-   "navigation": 20.25499999523163
+   "load": 2.66,
+   "script": 3.3450000286102295,
+   "navigation": 15.5
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.450000047683716,
-   "navigation": 19.485000014305115
+   "load": 2.66,
+   "script": 3.8550000190734863,
+   "navigation": 16.084999978542328
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.4549999833106995,
+   "load": 2.66,
+   "script": 0.6700000166893005,
+   "navigation": 11.550000011920929
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.6449999809265137,
+   "navigation": 11.5799999833107
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 2.939999997615814,
+   "navigation": 14.349999964237213
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 2.935000002384186,
+   "navigation": 14.5
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.7350000143051147,
+   "navigation": 12.225000023841858
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.6600000262260437,
+   "navigation": 11.660000026226044
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.134999990463257,
+   "navigation": 19.244999945163727
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.509999990463257,
+   "navigation": 15.22000002861023
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.7149999737739563,
+   "navigation": 12.069999992847443
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.6399999856948853,
+   "navigation": 11.509999990463257
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 2.89000004529953,
+   "navigation": 14.955000042915344
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.165000021457672,
+   "navigation": 14.75
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.6600000262260437,
+   "navigation": 11.025000035762787
+  },
+  {
+   "page": "counter",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 0.6549999713897705,
+   "navigation": 11.4549999833107
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.009999990463257,
+   "navigation": 14.155000030994415
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.439999997615814,
    "navigation": 15.069999992847443
   },
   {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.850000023841858,
-   "navigation": 17.785000026226044
+   "load": 2.66,
+   "script": 0.6800000071525574,
+   "navigation": 13.235000014305115
   },
   {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 5.5299999713897705,
-   "navigation": 20.339999973773956
-  },
-  {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 5.4200000166893005,
-   "navigation": 22.584999978542328
-  },
-  {
-   "page": "static",
+   "page": "counter",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.5699999928474426,
-   "navigation": 17.2150000333786
+   "load": 2.66,
+   "script": 0.6800000071525574,
+   "navigation": 12.210000038146973
+  },
+  {
+   "page": "counter",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 3.084999978542328,
+   "navigation": 14.519999980926514
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.7099999785423279,
-   "navigation": 16.375
+   "load": 2.66,
+   "script": 1.5049999952316284,
+   "navigation": 43.394999980926514
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 8.444999992847443,
-   "navigation": 25.35999995470047
+   "load": 2.66,
+   "script": 5.300000011920929,
+   "navigation": 20.00499999523163
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.8299999833106995,
-   "navigation": 49.48499995470047
+   "load": 2.66,
+   "script": 4.644999980926514,
+   "navigation": 17.605000019073486
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.9200000166893005,
-   "navigation": 17.62000000476837
+   "load": 2.66,
+   "script": 1.5999999642372131,
+   "navigation": 17.44999998807907
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.675000011920929,
-   "navigation": 16.2950000166893
+   "load": 2.66,
+   "script": 1.5600000023841858,
+   "navigation": 14.259999990463257
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 4.780000030994415,
-   "navigation": 18.780000030994415
+   "load": 2.66,
+   "script": 4.774999976158142,
+   "navigation": 18.844999969005585
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.230000019073486,
-   "navigation": 26.4549999833107
+   "load": 2.66,
+   "script": 5.200000047683716,
+   "navigation": 18.955000042915344
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.7350000143051147,
-   "navigation": 16.314999997615814
+   "load": 2.66,
+   "script": 1.6649999618530273,
+   "navigation": 16.32499998807907
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.840000033378601,
-   "navigation": 15.450000047683716
+   "load": 2.66,
+   "script": 1.7300000190734863,
+   "navigation": 15.050000011920929
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.280000030994415,
-   "navigation": 20.014999985694885
+   "load": 2.66,
+   "script": 5.649999976158142,
+   "navigation": 20.12000000476837
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.680000007152557,
-   "navigation": 22.6350000500679
+   "load": 2.66,
+   "script": 4.889999985694885,
+   "navigation": 17.975000023841858
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 2.1050000190734863,
-   "navigation": 19.39500004053116
+   "load": 2.66,
+   "script": 1.5849999785423279,
+   "navigation": 15.199999988079071
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.7450000047683716,
-   "navigation": 16.6599999666214
+   "load": 2.66,
+   "script": 1.5099999904632568,
+   "navigation": 14.769999980926514
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.019999980926514,
-   "navigation": 19.535000026226044
+   "load": 2.66,
+   "script": 4.865000009536743,
+   "navigation": 17.605000019073486
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.3299999833106995,
-   "navigation": 21.139999985694885
+   "load": 2.66,
+   "script": 5,
+   "navigation": 19.4200000166893
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.9549999833106995,
-   "navigation": 15.689999997615814
-  },
-  {
-   "page": "static",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 1.9749999642372131,
-   "navigation": 16.814999997615814
-  },
-  {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 5.139999985694885,
-   "navigation": 20.064999997615814
-  },
-  {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 4.969999969005585,
-   "navigation": 19.044999957084656
-  },
-  {
-   "page": "static",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 1.5699999928474426,
-   "navigation": 15.360000014305115
-  },
-  {
-   "page": "static",
-   "subject": "beni",
-   "load": 24.14,
-   "script": 1.574999988079071,
-   "navigation": 15.394999980926514
-  },
-  {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 5.134999990463257,
-   "navigation": 47.394999980926514
-  },
-  {
-   "page": "static",
-   "subject": "solid",
-   "load": 24.14,
-   "script": 5.025000035762787,
-   "navigation": 19.030000030994415
-  },
-  {
-   "page": "static",
-   "subject": "beni",
-   "load": 24.14,
+   "load": 2.66,
    "script": 1.475000023841858,
-   "navigation": 14.394999980926514
+   "navigation": 14.955000042915344
   },
   {
    "page": "static",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.6150000095367432,
-   "navigation": 15.870000004768372
+   "load": 2.66,
+   "script": 1.48499995470047,
+   "navigation": 13.589999973773956
   },
   {
    "page": "static",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.199999988079071,
-   "navigation": 18.87000000476837
+   "load": 2.66,
+   "script": 4.85999995470047,
+   "navigation": 18.930000007152557
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 4.974999964237213,
+   "navigation": 18.67500001192093
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.8700000047683716,
+   "navigation": 16.819999992847443
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.5,
+   "navigation": 16.560000002384186
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 5.2049999833106995,
+   "navigation": 45.485000014305115
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 6.115000009536743,
+   "navigation": 19.72000002861023
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.4749999642372131,
+   "navigation": 15.409999966621399
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.5600000023841858,
+   "navigation": 15.194999992847443
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 5.344999969005585,
+   "navigation": 18.8649999499321
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 4.850000023841858,
+   "navigation": 20.105000019073486
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.75,
+   "navigation": 15.939999997615814
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.850000023841858,
+   "navigation": 16.819999992847443
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 4.959999978542328,
+   "navigation": 18.05000001192093
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.66,
+   "script": 4.885000050067902,
+   "navigation": 17.695000052452087
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.5099999904632568,
+   "navigation": 14.65499997138977
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.66,
+   "script": 1.5999999642372131,
+   "navigation": 14.4549999833107
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 4.899999976158142,
+   "navigation": 18.92500001192093
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 4.935000002384186,
+   "navigation": 46.935000002384186
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.5649999976158142,
+   "navigation": 16.275000035762787
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.4950000047683716,
+   "navigation": 14.694999992847443
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 4.964999973773956,
+   "navigation": 18.544999957084656
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 4.919999957084656,
+   "navigation": 20.414999961853027
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.5899999737739563,
+   "navigation": 14.805000007152557
+  },
+  {
+   "page": "static",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.5399999618530273,
+   "navigation": 14.254999995231628
+  },
+  {
+   "page": "static",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.425000011920929,
+   "navigation": 18.17500001192093
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 2.024999976158142,
-   "navigation": 13.804999947547913
+   "load": 2.61,
+   "script": 1.725000023841858,
+   "navigation": 11.814999997615814
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.319999992847443,
-   "navigation": 17.289999961853027
+   "load": 2.61,
+   "script": 5.350000023841858,
+   "navigation": 17.455000042915344
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.509999990463257,
-   "navigation": 18.485000014305115
+   "load": 2.61,
+   "script": 5.085000038146973,
+   "navigation": 16.830000042915344
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.824999988079071,
-   "navigation": 12.855000019073486
+   "load": 2.61,
+   "script": 1.6899999976158142,
+   "navigation": 12.445000052452087
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.6349999904632568,
-   "navigation": 13.754999995231628
+   "load": 2.61,
+   "script": 1.7599999904632568,
+   "navigation": 12.9549999833107
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.894999980926514,
-   "navigation": 17.719999969005585
+   "load": 2.61,
+   "script": 5.800000011920929,
+   "navigation": 18.230000019073486
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.490000009536743,
-   "navigation": 17.264999985694885
+   "load": 2.61,
+   "script": 5.550000011920929,
+   "navigation": 17.9200000166893
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.6149999499320984,
-   "navigation": 12.494999945163727
+   "load": 2.61,
+   "script": 1.5899999737739563,
+   "navigation": 11.709999978542328
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 4.735000014305115,
-   "navigation": 16.05000001192093
+   "load": 2.61,
+   "script": 1.675000011920929,
+   "navigation": 14.194999992847443
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.400000035762787,
-   "navigation": 17.775000035762787
+   "load": 2.61,
+   "script": 5.449999988079071,
+   "navigation": 17.94999998807907
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 24.14,
-   "script": 5.334999978542328,
-   "navigation": 16.90499997138977
+   "load": 2.61,
+   "script": 5.410000026226044,
+   "navigation": 17.435000002384186
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
-   "script": 1.6699999570846558,
-   "navigation": 12.949999988079071
+   "load": 2.61,
+   "script": 1.7300000190734863,
+   "navigation": 12.605000019073486
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 24.14,
+   "load": 2.61,
+   "script": 1.7099999785423279,
+   "navigation": 13.134999990463257
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.415000021457672,
+   "navigation": 17.915000021457672
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.48499995470047,
+   "navigation": 17.10999995470047
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.6199999451637268,
+   "navigation": 12.824999988079071
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
    "script": 1.6449999809265137,
-   "navigation": 12.495000004768372
+   "navigation": 12.604999959468842
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.26500004529953,
-   "navigation": 17.34500002861023
+   "load": 2.61,
+   "script": 5.300000011920929,
+   "navigation": 16.615000009536743
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.5299999713897705,
-   "navigation": 18.314999997615814
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.6200000047683716,
-   "navigation": 12.189999997615814
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.6850000023841858,
-   "navigation": 12.995000004768372
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.540000021457672,
-   "navigation": 18.1700000166893
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.5,
+   "load": 2.61,
+   "script": 5.550000011920929,
    "navigation": 17.805000007152557
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 2.0200000405311584,
-   "navigation": 13.22000002861023
+   "load": 2.61,
+   "script": 1.6500000357627869,
+   "navigation": 13.569999992847443
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 1.7200000286102295,
-   "navigation": 13.665000021457672
+   "load": 2.61,
+   "script": 1.6299999952316284,
+   "navigation": 12.699999988079071
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.459999978542328,
-   "navigation": 17.5
+   "load": 2.61,
+   "script": 5.680000007152557,
+   "navigation": 18.42500001192093
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.625,
-   "navigation": 18.305000007152557
+   "load": 2.61,
+   "script": 6.455000042915344,
+   "navigation": 18.785000026226044
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 1.7049999833106995,
-   "navigation": 13.589999973773956
+   "load": 2.61,
+   "script": 1.6149999499320984,
+   "navigation": 12.354999959468842
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 1.5850000381469727,
-   "navigation": 13.155000030994415
+   "load": 2.61,
+   "script": 1.6449999809265137,
+   "navigation": 12.714999973773956
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.410000026226044,
+   "load": 2.61,
+   "script": 5.214999973773956,
+   "navigation": 17.485000014305115
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 8.594999969005585,
+   "navigation": 21.259999990463257
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.8100000023841858,
+   "navigation": 13.069999992847443
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.675000011920929,
+   "navigation": 12.660000026226044
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.550000011920929,
+   "navigation": 18.639999985694885
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.365000009536743,
+   "navigation": 18.50499999523163
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.7050000429153442,
+   "navigation": 14.064999997615814
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.6100000143051147,
+   "navigation": 13.014999985694885
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.180000007152557,
+   "navigation": 17.089999973773956
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.339999973773956,
+   "navigation": 17.394999980926514
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.6949999928474426,
+   "navigation": 13.930000007152557
+  },
+  {
+   "page": "arms",
+   "subject": "beni",
+   "load": 2.61,
+   "script": 1.6450000405311584,
+   "navigation": 13.245000004768372
+  },
+  {
+   "page": "arms",
+   "subject": "solid",
+   "load": 2.61,
+   "script": 5.3549999594688416,
    "navigation": 18.0799999833107
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.430000007152557,
-   "navigation": 18.12000000476837
+   "load": 2.61,
+   "script": 5.369999945163727,
+   "navigation": 17.744999945163727
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 1.7249999642372131,
-   "navigation": 12.8299999833107
+   "load": 2.61,
+   "script": 1.6949999928474426,
+   "navigation": 12.889999985694885
   },
   {
    "page": "arms",
    "subject": "beni",
-   "load": 22.77,
-   "script": 1.6600000262260437,
-   "navigation": 12.72000002861023
+   "load": 2.61,
+   "script": 1.7649999856948853,
+   "navigation": 13.709999978542328
   },
   {
    "page": "arms",
    "subject": "solid",
-   "load": 22.77,
-   "script": 5.4549999833106995,
-   "navigation": 17.269999980926514
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.475000023841858,
-   "navigation": 18.439999997615814
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.7350000143051147,
-   "navigation": 12.735000014305115
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.6950000524520874,
-   "navigation": 12.810000002384186
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.51500004529953,
-   "navigation": 18.205000042915344
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.485000014305115,
-   "navigation": 17.72000002861023
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.6649999618530273,
-   "navigation": 14.019999980926514
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.5849999785423279,
-   "navigation": 12.189999997615814
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.334999978542328,
-   "navigation": 17
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.165000021457672,
-   "navigation": 17.319999992847443
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.73499995470047,
-   "navigation": 14.214999973773956
-  },
-  {
-   "page": "arms",
-   "subject": "beni",
-   "load": 22.77,
-   "script": 1.89000004529953,
-   "navigation": 12.935000002384186
-  },
-  {
-   "page": "arms",
-   "subject": "solid",
-   "load": 22.77,
-   "script": 5.6049999594688416,
-   "navigation": 18.10499995946884
+   "load": 2.61,
+   "script": 5.569999992847443,
+   "navigation": 18.00499999523163
   }
  ],
- "finished": "2026-10-29T15:52:25.026Z"
+ "finished": "2026-10-29T16:33:31.752Z"
 }

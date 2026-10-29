@@ -1,0 +1,45 @@
+-- A page whose elements a host shifted, the count kept
+-- (docs/design/prerender.md §6.4, amended 2026-10-29, #1186): the `<h1>`,
+-- which no code refers to, taken out, and a button put in after `-`. The
+-- table is by index, so every element after the `<h1>` moves one place:
+-- a check of the tags code refers to alone would see a button where `+`
+-- was and a button where `-` was, and wire `Inc` to `-` and `Dec` to the
+-- host's button. Every build checks every tag, so release mounts fresh
+-- too, as development does, and both buttons do what they say.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    n : Int
+
+
+type Msg
+    = Inc
+    | Dec
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Dec →
+            { model | n = model.n - 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <h1>Counter</h1>
+        <button data-role="inc" onClick={Inc}>+</button>
+        <button data-role="dec" onClick={Dec}>-</button>
+        <output>{model.n}</output>
+        <button data-role="help">?</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { n = 0 }, update = update, view = view }) "root"

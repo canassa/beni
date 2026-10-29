@@ -464,9 +464,30 @@ before the arm and the one after it in document order. A comment of any other te
 program's and is passed over. The tags are compared first, over the table as far as it was
 merged, so the warning names the element a host inserted or replaced (`browser/prerender/
 Tampered`, `Retagged`); the count and the comments' places come after. One string of tags,
-space-separated, one per element of the table — the top element first — and empty in a release
-build for an element no code refers to, carries the count as well (`emit/prerender/`,
-`emit/release/prerender/`).
+space-separated, one per element of the table — the top element first — carries the count as
+well (`emit/prerender/`, `emit/release/prerender/`).
+
+*Amended 2026-10-29, in P2a (#1186, the manager's decision on the review of #1183): a release build
+checks every element's tag too.* The first bullet's *"An element no code refers to is not checked:
+a binding cannot attach to it"* was wrong. The table is by index, so taking out an element no code
+refers to, and putting another in further on, moves every element between them by one place while
+the count stays the same: a release build that compares only the referenced tags saw a button where
+`+` was and a button where `-` was, and wired `Inc` to `-` and `Dec` to the host's button — a silent
+wrong answer (`browser/prerender/Shifted`, red before this amendment). So **every build checks
+every element's tag in document order, the element count and the comments' places**; the second
+bullet's development-only check is now every build's. The cost is the tags of the elements no code
+refers to in each client, a few bytes after compression (§11, *As built — P2a*).
+
+**What the check does not catch**, a known limit of every hydration that finds elements by their
+place, and not a guarantee: a page whose tag sequence, count and comments are the program's. A host
+that swaps two elements of the same tag — two buttons — keeps the sequence, and the mount takes the
+page over with each listener on the element now at its place; a host that edits a static text, or
+an attribute the program never writes, keeps it too, and the page shows the edit (§3.2: only a
+binding's text is rewritten by the first pass). Solid checks less: its hydration finds each
+template's root by its `_hk` key and walks the rest by `firstChild` and `nextSibling`, and compares
+tags only in a development build, where a difference is a `console.warn` and the walk goes on
+(`references/dom-expressions/packages/runtime/src/client.js`, `getNextElement`, `getFirstChild`,
+`getNextSibling`); a production Solid page takes over a swapped or retagged element as it stands.
 
 ### 6.5 Input before the program runs
 
@@ -735,9 +756,9 @@ path; each piece's table is `E.slice` below its top element, and pieces are not 
 and the elements its factory refers to (`PieceData.arm_runs`, `refs`) for the program site.
 `Inline.unprerender` is gone. The lowering interface does not change. The corpus's checks are
 `tests/corpus/README.md`'s *Prerendered pages*, since P2a: every element is marked before load,
-the steps `fresh`, `inject` and `retag`, the normalisation, and goldens of a build's own; the P2a
-fixtures are `Tampered`, `Retagged`, `RetagUnseen` (an element no code refers to: a release build
-takes the page over, a development build mounts fresh), `ArmOpens`, `PieceArm`, `LoneElement` and
+the steps `fresh`, `inject`, `retag` and `remove`, the normalisation, and goldens of a build's own; the P2a
+fixtures are `Tampered`, `Retagged`, `RetagUnseen` (an element no code refers to: every build mounts
+fresh), `Shifted` (an element no code refers to taken out and one put in: every build mounts fresh, #1186), `ArmOpens`, `PieceArm`, `LoneElement` and
 `WrongPlace`, with `MovedComment` (a comment out of place) and `ExtraElement` (the count), and `emit/prerender/` and `emit/release/prerender/` pin the shape. A page that does
 not prerender ships what it did: no `emit/inline/` or `emit/release/inline/` golden moved, and
 `bench/size.mjs`'s `page` lines are the same bytes.
@@ -751,12 +772,12 @@ microtasks the mount queued; then a real click must change the page. Medians, in
 
 | page | beni | Solid 2 | beni's JS, brotli | Solid's JS, brotli |
 |---|--:|--:|--:|--:|
-| `counter` (a text hole, two buttons) | 0.730 | 3.460 | 1 104 B | 18 493 B |
-| `static` (research 29's static-heavy page, ~2 000 elements, 50 holes) | 1.745 | 5.280 | 1 465 B | 21 090 B |
-| `arms` (30 panels, every other body hidden) | 1.695 | 5.475 | 2 010 B | 19 743 B |
+| `counter` (a text hole, two buttons) | 0.680 | 3.135 | 1 104 B | 18 493 B |
+| `static` (research 29's static-heavy page, ~2 000 elements, 50 holes) | 1.560 | 4.960 | 1 485 B | 21 090 B |
+| `arms` (30 panels, every other body hidden) | 1.675 | 5.415 | 2 034 B | 19 743 B |
 
-From the navigation's start to the same point, beni's medians are 13.8, 16.4 and 12.9 ms, Solid's
-17.1, 20.3 and 17.8 ms. What hydration adds to beni's client, against the same program built
-without `--prerender`, is 583, 640 and 687 B brotli on the three pages (the runtime's `take` and
-the unit's arms and tags), against Solid's 1 439 B of hydration (research 27 §6.8). The run takes
+From the navigation's start to the same point, beni's medians are 12.0, 15.2 and 12.9 ms, Solid's
+15.3, 18.9 and 17.9 ms. What hydration adds to beni's client, against the same program built
+without `--prerender`, is 583, 660 and 711 B brotli on the three pages (the runtime's `take` and
+the unit's arms and every element's tag, #1186), against Solid's 1 439 B of hydration (research 27 §6.8). The run takes
 under a minute.

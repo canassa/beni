@@ -1,8 +1,9 @@
--- A release build's hydrating mount (docs/design/prerender.md §6.4): the
--- tags handed to `take` are those of the elements the page's code refers to
--- — the top element for its listener and the arm's `<p>` — and the `<h1>`'s
--- is left empty, unchecked; `take`, its merge and its checks are in the one
--- file, with no warning: the development build's prose is not shipped.
+-- A release build's hydrating mount (docs/design/prerender.md §6.4, amended
+-- 2026-10-29, #1186): the tags handed to `take` are every element's, the
+-- `<h1>` that no code refers to included, as in a development build — the
+-- table is by index, and an element no code refers to moves those code
+-- does; `take`, its merge and its checks are in the one file, with no
+-- warning: the development build's prose is not shipped.
 import Html exposing (Html)
 import Tea
 
