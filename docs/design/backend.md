@@ -6192,8 +6192,11 @@ such a name out, and a third is a duty:
   declares it**, directly or through `const` aliases (`c = counted; … λx → c x`,
   `countedAlias = counted` at the top level): `Opt` refuses it, since the printer's veto sees only
   the name written. `Opt` runs per module, so another module's `const` that holds a sibling's
-  export is a callee when it is named from outside (`emit/release/app/EtaReduceAlias` pins the
-  shape). That is harmless today: a sibling's export is an arrow of the declared arity
+  export is a callee when it is named from outside, and a function `Spec` moves into its one
+  caller in another module is planned there (`emit/release/app/EtaReduceAlias` pins both: the
+  entry's lambda prints as the alias, and `Counted`'s own `viaAlias`, called twice so that it
+  stays, keeps its lambda; `run/EtaReduceHostValue`'s `viaAlias`, called once, is moved and
+  reduced). That is harmless today: a sibling's export is an arrow of the declared arity
   (`boundary.md` §4, check 4) that names no `arguments` (check 3), and the runtime's functions
   have no beni name; a change to either check must revisit this (*amended 2026-10-29, the second
   review*);
