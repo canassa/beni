@@ -1,0 +1,1 @@
+#1139's review (ownership-v2.md §4.1): v1's verdicts; v2 reads an earlier run's DAG in growth, so no item's or demand's lane reaches its ceiling.

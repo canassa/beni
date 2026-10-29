@@ -2688,16 +2688,21 @@ read-off set mapping and κ relabelling (#1121). The treatment of module-wide me
 per-owner accounts and declaration-order independence is left to the owner in #1104. A run-wide
 or export operation cannot assign all costs to the first or last item's lane.
 
-*As built (#1139, the second part of #1098):* a literal's, a spread chain's and an append chain's item does
-its share on its own `transfer_settlement` lane: its fit, its stored projection, the merge of its κ, its
-freshness check before a spread, its `[*]` κ, and the positions node `collectRoot` makes where the split
-falls before it. `Cond.propagateItems` keeps each run entry's item, so a member's run record, its read, its
-projections and its cursor's links at every state are on that item's lane; the frontier sorts the distinct
-steps only, not one per cursor. A construction's demand query checks each operand on that operand's
-`direct_demand_query` lane when the base has one cell. A width of 1 000 is checked at the default
-allowance in all three shapes, in linear growth (`build_test.zig`). Still growth, not yet by item: the
-declaration's read-off, the walks of a positions DAG (`namedSteps`, `rank`, `dagKappa`, `cellsOf`), and a
-prepend's read of its base's reach. Those are the read-off continuations above, the series' third part.
+*As built (#1139, the second part of #1098):* an item of a literal, a spread chain, an append chain or
+the fronts before a spread puts one thing on its own `transfer_settlement` lane: the positions node that
+`collectRoot` makes where a split falls before it, a constant. Everything else an item does is as large
+as its value, and is growth chosen before the work (`Transfer`'s `sized`): its fit, its stored projection,
+its κ merge and `lower`, its cells and their insertion into the root's set, its condition read and
+aggregate in `propagate`, its `[*]` κ. So is a construction demand's sweep of every operand's reach against
+the base's cells, a product. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
+a lazy node, `proj`, `reach`, `namedSteps`, `rank`, `dagKappa`, `reachAgg` on a miss) is a growth task too,
+never the asking kernel's lane: an earlier run's DAG read again (`[ …xs, …b ]`) is as large as that run.
+From any other node the walk stays the kernel's, so a call's view and a demand's query keep their own. The
+item-lane shares the paragraph above names wait for these reads to be incremental and for read-off
+continuations to charge them by their producers. Measured (`build_test.zig`, a per-item bound at about 1.5
+times the measurement): 1 000 spreads and 1 000 fronts check at the default allowance, at 11 and 47 growth per
+item; a 1 000-item literal and append chain need a raised allowance, at 122 and 97 per item. No program the
+corpus or the review probes hold reaches a lane's ceiling (`WideItemValues`, `EarlierRunSpread`).
 
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence

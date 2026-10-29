@@ -1,0 +1,391 @@
+-- ownership: items as large as their values in a two-item literal
+-- (ownership-v2.md §4.1, #1139's review). An item's fit, its condition
+-- reads below the literal's position, its cells and its aggregate are as
+-- large as the item: growth chosen before the work, never the item's
+-- lane. Each declaration checks, with no lane past its ceiling.
+type alias R =
+    f0 : List Int
+    f1 : List Int
+    f2 : List Int
+    f3 : List Int
+    f4 : List Int
+    f5 : List Int
+    f6 : List Int
+    f7 : List Int
+    f8 : List Int
+    f9 : List Int
+    f10 : List Int
+    f11 : List Int
+    f12 : List Int
+    f13 : List Int
+    f14 : List Int
+    f15 : List Int
+    f16 : List Int
+    f17 : List Int
+    f18 : List Int
+    f19 : List Int
+    f20 : List Int
+    f21 : List Int
+    f22 : List Int
+    f23 : List Int
+    f24 : List Int
+    f25 : List Int
+    f26 : List Int
+    f27 : List Int
+    f28 : List Int
+    f29 : List Int
+    f30 : List Int
+    f31 : List Int
+    f32 : List Int
+    f33 : List Int
+    f34 : List Int
+    f35 : List Int
+    f36 : List Int
+    f37 : List Int
+    f38 : List Int
+    f39 : List Int
+    f40 : List Int
+    f41 : List Int
+    f42 : List Int
+    f43 : List Int
+    f44 : List Int
+    f45 : List Int
+    f46 : List Int
+    f47 : List Int
+    f48 : List Int
+    f49 : List Int
+    f50 : List Int
+    f51 : List Int
+    f52 : List Int
+    f53 : List Int
+    f54 : List Int
+    f55 : List Int
+    f56 : List Int
+    f57 : List Int
+    f58 : List Int
+    f59 : List Int
+    f60 : List Int
+    f61 : List Int
+    f62 : List Int
+    f63 : List Int
+    f64 : List Int
+    f65 : List Int
+    f66 : List Int
+    f67 : List Int
+    f68 : List Int
+    f69 : List Int
+    f70 : List Int
+    f71 : List Int
+    f72 : List Int
+    f73 : List Int
+    f74 : List Int
+    f75 : List Int
+    f76 : List Int
+    f77 : List Int
+    f78 : List Int
+    f79 : List Int
+
+
+type alias S =
+    s0 : List Int
+    s1 : List Int
+    s2 : List Int
+    s3 : List Int
+    s4 : List Int
+    s5 : List Int
+    s6 : List Int
+    s7 : List Int
+
+
+type alias N =
+    r0 : S
+    r1 : S
+    r2 : S
+    r3 : S
+    r4 : S
+    r5 : S
+    r6 : S
+    r7 : S
+    r8 : S
+    r9 : S
+
+
+pub pair : ⊤ → List (List (List Int))
+pair ⊤ =
+    b =
+        [ [ 0 ]
+        , [ 1 ]
+        , [ 2 ]
+        , [ 3 ]
+        , [ 4 ]
+        , [ 5 ]
+        , [ 6 ]
+        , [ 7 ]
+        , [ 8 ]
+        , [ 9 ]
+        , [ 10 ]
+        , [ 11 ]
+        , [ 12 ]
+        , [ 13 ]
+        , [ 14 ]
+        , [ 15 ]
+        , [ 16 ]
+        , [ 17 ]
+        , [ 18 ]
+        , [ 19 ]
+        , [ 20 ]
+        , [ 21 ]
+        , [ 22 ]
+        , [ 23 ]
+        , [ 24 ]
+        , [ 25 ]
+        , [ 26 ]
+        , [ 27 ]
+        , [ 28 ]
+        , [ 29 ]
+        , [ 30 ]
+        , [ 31 ]
+        , [ 32 ]
+        , [ 33 ]
+        , [ 34 ]
+        , [ 35 ]
+        , [ 36 ]
+        , [ 37 ]
+        , [ 38 ]
+        , [ 39 ]
+        , [ 40 ]
+        , [ 41 ]
+        , [ 42 ]
+        , [ 43 ]
+        , [ 44 ]
+        , [ 45 ]
+        , [ 46 ]
+        , [ 47 ]
+        , [ 48 ]
+        , [ 49 ]
+        , [ 50 ]
+        , [ 51 ]
+        , [ 52 ]
+        , [ 53 ]
+        , [ 54 ]
+        , [ 55 ]
+        , [ 56 ]
+        , [ 57 ]
+        , [ 58 ]
+        , [ 59 ]
+        , [ 60 ]
+        , [ 61 ]
+        , [ 62 ]
+        , [ 63 ]
+        , [ 64 ]
+        , [ 65 ]
+        , [ 66 ]
+        , [ 67 ]
+        , [ 68 ]
+        , [ 69 ]
+        , [ 70 ]
+        , [ 71 ]
+        , [ 72 ]
+        , [ 73 ]
+        , [ 74 ]
+        , [ 75 ]
+        , [ 76 ]
+        , [ 77 ]
+        , [ 78 ]
+        , [ 79 ]
+        , [ 80 ]
+        , [ 81 ]
+        , [ 82 ]
+        , [ 83 ]
+        , [ 84 ]
+        , [ 85 ]
+        , [ 86 ]
+        , [ 87 ]
+        , [ 88 ]
+        , [ 89 ]
+        , [ 90 ]
+        , [ 91 ]
+        , [ 92 ]
+        , [ 93 ]
+        , [ 94 ]
+        , [ 95 ]
+        , [ 96 ]
+        , [ 97 ]
+        , [ 98 ]
+        , [ 99 ]
+        ]
+    [ b, b ]
+
+
+pub records : List Int → List R
+records xs =
+    [ { f0 = xs
+      , f1 = xs
+      , f2 = xs
+      , f3 = xs
+      , f4 = xs
+      , f5 = xs
+      , f6 = xs
+      , f7 = xs
+      , f8 = xs
+      , f9 = xs
+      , f10 = xs
+      , f11 = xs
+      , f12 = xs
+      , f13 = xs
+      , f14 = xs
+      , f15 = xs
+      , f16 = xs
+      , f17 = xs
+      , f18 = xs
+      , f19 = xs
+      , f20 = xs
+      , f21 = xs
+      , f22 = xs
+      , f23 = xs
+      , f24 = xs
+      , f25 = xs
+      , f26 = xs
+      , f27 = xs
+      , f28 = xs
+      , f29 = xs
+      , f30 = xs
+      , f31 = xs
+      , f32 = xs
+      , f33 = xs
+      , f34 = xs
+      , f35 = xs
+      , f36 = xs
+      , f37 = xs
+      , f38 = xs
+      , f39 = xs
+      , f40 = xs
+      , f41 = xs
+      , f42 = xs
+      , f43 = xs
+      , f44 = xs
+      , f45 = xs
+      , f46 = xs
+      , f47 = xs
+      , f48 = xs
+      , f49 = xs
+      , f50 = xs
+      , f51 = xs
+      , f52 = xs
+      , f53 = xs
+      , f54 = xs
+      , f55 = xs
+      , f56 = xs
+      , f57 = xs
+      , f58 = xs
+      , f59 = xs
+      , f60 = xs
+      , f61 = xs
+      , f62 = xs
+      , f63 = xs
+      , f64 = xs
+      , f65 = xs
+      , f66 = xs
+      , f67 = xs
+      , f68 = xs
+      , f69 = xs
+      , f70 = xs
+      , f71 = xs
+      , f72 = xs
+      , f73 = xs
+      , f74 = xs
+      , f75 = xs
+      , f76 = xs
+      , f77 = xs
+      , f78 = xs
+      , f79 = xs
+      }
+    , { f0 = xs
+      , f1 = xs
+      , f2 = xs
+      , f3 = xs
+      , f4 = xs
+      , f5 = xs
+      , f6 = xs
+      , f7 = xs
+      , f8 = xs
+      , f9 = xs
+      , f10 = xs
+      , f11 = xs
+      , f12 = xs
+      , f13 = xs
+      , f14 = xs
+      , f15 = xs
+      , f16 = xs
+      , f17 = xs
+      , f18 = xs
+      , f19 = xs
+      , f20 = xs
+      , f21 = xs
+      , f22 = xs
+      , f23 = xs
+      , f24 = xs
+      , f25 = xs
+      , f26 = xs
+      , f27 = xs
+      , f28 = xs
+      , f29 = xs
+      , f30 = xs
+      , f31 = xs
+      , f32 = xs
+      , f33 = xs
+      , f34 = xs
+      , f35 = xs
+      , f36 = xs
+      , f37 = xs
+      , f38 = xs
+      , f39 = xs
+      , f40 = xs
+      , f41 = xs
+      , f42 = xs
+      , f43 = xs
+      , f44 = xs
+      , f45 = xs
+      , f46 = xs
+      , f47 = xs
+      , f48 = xs
+      , f49 = xs
+      , f50 = xs
+      , f51 = xs
+      , f52 = xs
+      , f53 = xs
+      , f54 = xs
+      , f55 = xs
+      , f56 = xs
+      , f57 = xs
+      , f58 = xs
+      , f59 = xs
+      , f60 = xs
+      , f61 = xs
+      , f62 = xs
+      , f63 = xs
+      , f64 = xs
+      , f65 = xs
+      , f66 = xs
+      , f67 = xs
+      , f68 = xs
+      , f69 = xs
+      , f70 = xs
+      , f71 = xs
+      , f72 = xs
+      , f73 = xs
+      , f74 = xs
+      , f75 = xs
+      , f76 = xs
+      , f77 = xs
+      , f78 = xs
+      , f79 = xs
+      }
+    ]
+
+
+pub nested : List Int → List N
+nested xs =
+    s = { s0 = xs, s1 = xs, s2 = xs, s3 = xs, s4 = xs, s5 = xs, s6 = xs, s7 = xs }
+    r = { r0 = s, r1 = s, r2 = s, r3 = s, r4 = s, r5 = s, r6 = s, r7 = s, r8 = s, r9 = s }
+    [ r, r ]

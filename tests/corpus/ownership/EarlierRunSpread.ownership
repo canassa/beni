@@ -1,0 +1,14 @@
+module EarlierRunSpread
+  9:11 construction xs: rejected later-use: xs is read again at 51:7
+  51:7 construction xs: rejected disjoint: another operand of the same operation reaches it
+  258:7 construction b: rejected disjoint: another operand of the same operation reaches it
+  465:12 construction xs: accepted param
+  672:8 ++ xs: accepted param
+  summary chain: π1 RAW, π1[*] A; res [*] fresh1 π1[*], π1{lost}r{lost}
+  summary twice: res [*] condition(fresh1) fresh1, fresh2{lost}r{shared}
+  summary tupled: π1 RAW; res .0 fresh2, .0[*] condition(fresh4) fresh1, .1 π1{lost}, .1[*] condition(fresh5) fresh1, condition(fresh3){shared}r{shared}
+  summary appended: π1 RAW; res [*] condition(fresh1) fresh1, π1{lost}r{shared}
+  demands 5: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 5: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause disjoint 2
+cause later-use 1
