@@ -1272,3 +1272,208 @@ test "#1146: a chain of knots as deep as the source is linked on a small stack" 
     th.join();
     _ = try result;
 }
+
+// ---- the review's random differential (#1149) ---------------------------------------
+
+/// How a new snapshot `b` differs from the root-path replay's `a`: 0 the
+/// same, 1 only a collapsed fold that saw more steps (the replay drops a
+/// step first taken after the backedge; the cursor walk keeps every step
+/// linked below), 2 anything else.
+fn linkDiff(c: *Cond.Table, a: Cond.Kappas, b: Cond.Kappas, depth: u32) u8 {
+    if (a == b) return 0;
+    if (depth > 40) return 2;
+    const pa = c.position(a);
+    const pb = c.position(b);
+    if (pa.here != pb.here or pa.fold != pb.fold) return 2;
+    if (pa.fold != 0) {
+        var na: u32 = 0;
+        var nb: u32 = 0;
+        var it = c.kappaLinks(a);
+        while (it.next()) |_| na += 1;
+        var it2 = c.kappaLinks(b);
+        while (it2.next()) |_| nb += 1;
+        return if (nb > na) 1 else 2;
+    }
+    var worst: u8 = 0;
+    var cnt_a: u32 = 0;
+    var la = c.kappaLinks(a);
+    while (la.next()) |e| {
+        cnt_a += 1;
+        worst = @max(worst, linkDiff(c, e.child, c.kappaChild(b, e.step), depth + 1));
+    }
+    var cnt_b: u32 = 0;
+    var lb = c.kappaLinks(b);
+    while (lb.next()) |_| cnt_b += 1;
+    return if (cnt_a != cnt_b) 2 else worst;
+}
+
+const RevRand = struct {
+    x: *KnotFixture,
+    r: std.Random,
+    knots: []NodeId,
+    cells: []CellId,
+    paths: []PathId,
+    flags: u32,
+
+    fn on(rv: *const RevRand, b: u5) bool {
+        return rv.flags & (@as(u32, 1) << b) != 0;
+    }
+
+    fn step(rv: *RevRand) Step {
+        return if (rv.r.boolean()) rv.x.arg else Place.Step.elem;
+    }
+
+    fn cond(rv: *RevRand) !CondId {
+        const gpa = testing.allocator;
+        return switch (rv.r.uintLessThan(u8, 4)) {
+            0 => Cond.yes,
+            1 => rv.x.conds.excl(gpa, rv.x.env().charge, rv.cells[rv.r.uintLessThan(usize, rv.cells.len)]),
+            2 => rv.x.conds.@"and"(gpa, rv.x.env().charge, try rv.x.conds.excl(gpa, rv.x.env().charge, rv.cells[0]), try rv.x.conds.excl(gpa, rv.x.env().charge, rv.cells[rv.r.uintLessThan(usize, rv.cells.len)])),
+            else => rv.x.conds.excl(gpa, rv.x.env().charge, rv.cells[1]),
+        };
+    }
+
+    fn kappa(rv: *RevRand, depth: u32) !Cond.Kappas {
+        const gpa = testing.allocator;
+        const ch = rv.x.env().charge;
+        const c = &rv.x.conds;
+        var k: Cond.Kappas = .none;
+        const roll = rv.r.uintLessThan(u8, 10);
+        if (roll == 0 and rv.on(0)) k = try c.kappaEmptyFold(gpa, ch, Cond.Table.fold_exact);
+        for (0..rv.r.uintLessThan(usize, 3)) |_| {
+            k = (try c.kappaSet(gpa, ch, k, rv.knots[rv.r.uintLessThan(usize, rv.knots.len)], try rv.cond())).ctx;
+        }
+        if (depth > 0) for (0..rv.r.uintLessThan(usize, 3)) |_| {
+            const s = rv.step();
+            const sub = try rv.kappa(depth - 1);
+            k = if (c.isFold(k)) (if (sub == .none) k else try c.kappaMerge(gpa, ch, k, sub)) else try c.kappaLink(gpa, ch, k, s, sub);
+            if (c.isFold(k)) k = try c.kappaFoldStep(gpa, ch, k, s);
+        };
+        if (roll == 1 and rv.on(1)) k = try c.kappaFold(gpa, ch, k);
+        return k;
+    }
+};
+
+fn linkRandom(seed_: u64, flags: u32) !u8 {
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    var prng = std.Random.DefaultPrng.init(seed_);
+    const r = prng.random();
+    const n = 2 + r.uintLessThan(usize, 8);
+    var knots: [10]NodeId = undefined;
+    for (knots[0..n]) |*k| k.* = try x.shapes.knot(gpa, &x.account);
+    var cells: [4]CellId = undefined;
+    for (&cells, 0..) |*c, i| c.* = try x.cells.site(gpa, &x.account, @intCast(500 + i), x.t_place, .record);
+    var paths: [6]PathId = undefined;
+    paths[0] = try x.places.rootPath(gpa, x.t_place);
+    for (1..6) |j| paths[j] = (try x.places.extend(gpa, .growth(&x.account), paths[j - 1], if (j % 2 == 1) x.arg else Place.Step.elem)).?;
+    var rv: RevRand = .{ .x = &x, .r = r, .knots = knots[0..n], .cells = &cells, .paths = &paths, .flags = flags };
+    const leaves = 3;
+    var lf: [leaves]NodeId = undefined;
+    for (&lf, 0..) |*l, i| {
+        var cs: SetId = .none;
+        for (0..r.uintLessThan(usize, 3)) |_| {
+            const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, r.uintLessThan(u32, 3), paths[r.uintLessThan(usize, 6)], 0);
+            cs = try x.cells.sets.insert(gpa, x.env().charge, cs, p.int(), 0);
+        }
+        l.* = try x.shapes.leaf(gpa, &x.account, x.t_place, try x.cells.sets.insert(gpa, x.env().charge, cs, cells[i].int(), 0));
+    }
+    const pick = struct {
+        fn of(rr: std.Random, ks: []NodeId, ls: []NodeId) NodeId {
+            return if (rr.uintLessThan(u8, 4) == 0) ls[rr.uintLessThan(usize, ls.len)] else ks[rr.uintLessThan(usize, ks.len)];
+        }
+    }.of;
+    for (knots[0..n]) |k| {
+        var cs: SetId = .none;
+        for (0..r.uintLessThan(usize, 3)) |_| {
+            const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, r.uintLessThan(u32, 3), paths[r.uintLessThan(usize, 6)], 0);
+            cs = try x.cells.sets.insert(gpa, x.env().charge, cs, p.int(), 0);
+        }
+        var kind = r.uintLessThan(u8, 6);
+        if (kind == 2 and !rv.on(2)) kind = 0;
+        if (kind == 3 and !rv.on(3)) kind = 0;
+        if (kind == 5 and !rv.on(4)) kind = 4;
+        switch (kind) {
+            0, 1 => {
+                var over: u32 = Ids.none_int;
+                for (0..1 + r.uintLessThan(usize, 2)) |_| over = try x.shapes.overPut(gpa, &x.account, over, rv.step(), pick(r, knots[0..n], &lf));
+                x.shapes.tie(k, .{ .kind = .node, .place = x.t_place, .cells = cs, .a = over, .b = 0, .reach = .none });
+            },
+            2 => {
+                const over = try x.shapes.overPut(gpa, &x.account, Ids.none_int, rv.step(), pick(r, knots[0..n], &lf));
+                const base = lf[r.uintLessThan(usize, leaves)];
+                x.shapes.tie(k, .{ .kind = .delta, .place = x.t_place, .cells = x.shapes.cells(base), .a = base.int(), .b = over, .reach = .none });
+            },
+            3 => x.shapes.tie(k, .{ .kind = .recast, .place = x.t_place, .cells = cs, .a = pick(r, knots[0..n], &lf).int(), .b = 0, .reach = .none }),
+            else => x.shapes.tie(k, .{ .kind = if (kind == 4) .@"union" else .positions, .place = x.t_place, .cells = cs, .a = pick(r, knots[0..n], &lf).int(), .b = pick(r, knots[0..n], &lf).int(), .reach = .none }),
+        }
+    }
+    const args = [_]Value{
+        .{ .node = lf[0], .kappa = try rv.kappa(3) },
+        .{ .node = lf[1], .kappa = try rv.kappa(3) },
+        .{ .node = lf[2], .kappa = try rv.kappa(3) },
+    };
+    const seed = try rv.kappa(3);
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+    const want = try linkByRootPaths(&g, seed, knots[0]);
+    const got = try g.linkArgs(seed, knots[0]);
+    return linkDiff(&x.conds, want, got, 0);
+}
+
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most" {
+    // Random graphs of up to 9 knots: nodes, deltas, recasts, unions and
+    // positions, back edges anywhere, parameters at six paths, seeds and
+    // arguments with exact and collapsed folds. Every snapshot is the
+    // replay's, or differs only in a collapsed fold's steps, which the
+    // cursor walk keeps for every step linked below it.
+    var steps_only: u32 = 0;
+    for ([_]u32{ 0xff, 0xe0 }) |flags| {
+        var q: u64 = 0;
+        while (q < 300) : (q += 1) switch (try linkRandom(q, flags)) {
+            0 => {},
+            1 => steps_only += 1,
+            else => return error.TestUnexpectedResult,
+        };
+    }
+    try testing.expect(steps_only < 60);
+}
+
+test "#1149 review: a merge after a backedge's fold is a step the collapsed fold saw" {
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    // N0 = T{ arg: N0, [*]: N1 }, π1 at ε (arg walked first: the backedge);
+    // N1 = union(leaf, leaf), π2 at ε.
+    const root = try x.places.rootPath(gpa, x.t_place);
+    const p1 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, root, 0);
+    const p2 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 1, root, 0);
+    const n0 = try x.shapes.knot(gpa, &x.account);
+    const l1 = try x.site(1, x.t_place);
+    const l2 = try x.site(2, x.t_place);
+    const set2 = try x.cells.sets.insert(gpa, x.env().charge, try x.cells.sets.unionWith(gpa, x.env().charge, x.shapes.cells(l1), x.shapes.cells(l2)), p2.int(), 0);
+    const n1 = try x.shapes.knot(gpa, &x.account);
+    x.shapes.tie(n1, .{ .kind = .@"union", .place = x.t_place, .cells = set2, .a = l1.int(), .b = l2.int(), .reach = .none });
+    var over = try x.one(x.arg, n0);
+    over = try x.shapes.overPut(gpa, &x.account, over, Place.Step.elem, n1);
+    x.shapes.tie(n0, .{ .kind = .node, .place = x.t_place, .cells = try x.cells.sets.insert(gpa, x.env().charge, .none, p1.int(), 0), .a = over, .b = 0, .reach = .none });
+    const ak = (try x.conds.kappaSet(gpa, x.env().charge, .none, l1, try x.conds.excl(gpa, x.env().charge, p1))).ctx;
+    const args = [_]Value{ .{ .node = l1, .kappa = ak }, .{ .node = l2, .kappa = ak } };
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+    const want = try linkByRootPaths(&g, .none, n0);
+    const got = try g.linkArgs(.none, n0);
+    // The same conditions and fold kind; the cursor walk's fold also saw `[*]`.
+    try testing.expect(want != got);
+    try testing.expectEqual(@as(u8, 1), linkDiff(&x.conds, want, got, 0));
+    try testing.expect(x.conds.isCollapsed(got));
+}
