@@ -404,6 +404,7 @@ pub fn build(b: *std.Build) void {
     for (0..unit_shards) |k| {
         const run = runTests(b, beni_tests);
         run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
+        run.setEnvironmentVariable("BENI_TEST_BUDGET_MS", "1000");
         run.setName(b.fmt("run beni tests shard {d}/{d}", .{ k, unit_shards }));
         test_step.dependOn(&run.step);
     }

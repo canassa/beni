@@ -2608,10 +2608,11 @@ test "map of a delta keeps its base when mapping the base grows the table" {
 }
 
 test "#1138: proj, map, join and leq walk values as deep as the source on explicit stacks" {
-    // On a thread with a small stack (256 KiB, a quarter of a wasm build's):
-    // a native frame per level would overflow it.
+    // On a thread with a small stack, 96 KiB for 1 000 levels, as 256 KiB
+    // was for 3 000, about the same ratio (over the 1 s budget, #1197): a native frame per level
+    // would overflow it.
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 256 << 10 }, struct {
+    const th = try std.Thread.spawn(.{ .stack_size = 96 << 10 }, struct {
         fn run(out: *anyerror!void) void {
             out.* = deepShapes();
         }
@@ -2621,16 +2622,19 @@ test "#1138: proj, map, join and leq walk values as deep as the source on explic
 }
 
 fn deepShapes() !void {
-    var f: Fixture = .{};
+    const gpa = testing.allocator;
+    // The fixture lives on the heap: the small stack is for the walks.
+    const f = try gpa.create(Fixture);
+    defer gpa.destroy(f);
+    f.* = .{};
     f.init();
     defer f.deinit();
     f.account.allowance = std.math.maxInt(u32) - 1;
-    const gpa = testing.allocator;
     const tree = try f.placeOf(0);
     const list = try f.placeOf(1);
     const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
     const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
-    const depth = 3_000;
+    const depth = 1_000;
     // A union DAG of `depth` levels at one place: `proj` reads through it.
     var u = try f.shapes.leaf(gpa, &f.account, tree, try f.param(0, tree));
     // Made directly: `union`'s absorption check walks the DAG, and a chain

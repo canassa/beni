@@ -110,3 +110,19 @@ test "a crashing test fails at once and names itself: a bad pointer, a stack ove
         try testing.expect(std.mem.indexOf(u8, r.stderr, named) != null);
     }
 }
+
+test "a test over its CPU budget fails, naming itself" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var env = std.process.Environ.Map.init(testing.allocator);
+    defer env.deinit();
+    try env.put("BENI_TEST_BUDGET_MS", "10");
+    const r = try world.spawnAndCaptureIn(arena, testing.io, &.{ runner.executable, "--budget-probe" }, .inherit, world.default_timeout_ms, &env);
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL: test over its CPU budget (") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "budget 10 ms): budget probe") != null);
+    // Without a budget the same work passes.
+    const ok = try world.spawnAndCapture(arena, testing.allocator, testing.io, &.{ runner.executable, "--budget-probe" }, .inherit, world.default_timeout_ms);
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
+}
