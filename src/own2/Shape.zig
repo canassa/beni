@@ -289,7 +289,11 @@ pub const Table = struct {
     /// (§4.1), so a refusal leaves no half-written entry.
     fn make(t: *Table, gpa: Allocator, account: *Account, n: Node) Error!NodeId {
         try account.reserve(.shape, 1);
-        const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), n.cells.int(), n.a, n.b });
+        // A recast's and a delta's cells follow from the node they wrap, which
+        // may be lazy and built later (#1098): keyed without them, so one stays
+        // one node before and after that read (#1158's review).
+        const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
+        const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });
         if (got.found_existing) return .from(got.value_ptr.*);
         got.value_ptr.* = @intCast(t.nodes.len);
         try t.nodes.append(gpa, n);
@@ -2708,4 +2712,22 @@ test "#1098: a collection's internal positions sets are lazy: collect builds non
     for (leaves[0..32]) |l| half = try f.cells.sets.unionWith(gpa, .growth(&f.account), half, f.shapes.cells(l));
     try testing.expectEqual(half, try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, left));
     try testing.expect(!f.shapes.isLazy(left));
+}
+
+test "#1158 review: a recast or a delta over a lazy node is one node before and after a read of it" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const a = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    const b = try f.shapes.leaf(gpa, &f.account, list, try f.site(2, list, .list));
+    const p = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ a, b });
+    try testing.expect(f.shapes.isLazy(p));
+    const r1 = try f.shapes.recast(gpa, &f.account, try f.placeOf(0), p);
+    const n = try f.shapes.node(gpa, &f.account, list, .none, try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, p));
+    const d1 = try f.shapes.delta(gpa, &f.account, p, try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, n));
+    _ = try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, p);
+    try testing.expectEqual(r1, try f.shapes.recast(gpa, &f.account, try f.placeOf(0), p));
+    try testing.expectEqual(d1, try f.shapes.delta(gpa, &f.account, p, try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, n)));
 }
