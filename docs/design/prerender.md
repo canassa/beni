@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slices P1, P2a, P2b and P3 built; P4 specified** (§8, #1207) (2026-10-29, #1165, #1178, #1206, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P2b*, *As built — P3*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1, P2a, P2b, P3 and P4 built** (2026-10-29, #1165, #1178, #1206, #1194, #1218, §11 *As built — P1*, *As built — P2a*, *As built — P2b*, *As built — P3*, *As built — P4*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -801,7 +801,7 @@ page carry every post. This section is a direction, not a contract: it is specif
 slice, after P3.
 
 *Specified 2026-10-29 (#1207, slice P4; the heading lost its "(later)" the same day).* §8.1–§8.11
-are the contract; the paragraph above is kept as the direction it was, and they keep it. Not built.
+are the contract; the paragraph above is kept as the direction it was, and they keep it. Built in P4 (#1218), as §11 *As built — P4* amends them.
 
 ### 8.1 The shape
 
@@ -1414,3 +1414,67 @@ average 4–6), medians, ms:
 The mount itself is not slower; from the navigation's start the two differ by 0–0.5 ms, the page's
 larger HTML and client. The harness loads each page with no input before the takeover, so `deliver`
 has nothing to hand on: what a delivery costs is a walk and a call per record.
+
+**As built — P4** (2026-10-29, #1218). §8 as written, with these amendments. The lowering interface
+is version 1.23 (`boundary.md` §9.4.6): the placement kind `prerender_data`, `Program.data`, and
+`programDataSchema` and `programDataBind`. In the compiler (`src/js/Lower.zig`, `dataCall`) the
+`Browser.prerenderData` call on `main`'s spine is compiled, in every tree, as its lambda's body, and
+the emitter cuts its callee from reachability (`cutPrerender`); the lambda is never made. The
+program there evaluates the schema and binds the lambda's parameter itself: the mount, right after
+`Inline.root`, calls `Inline.pageData(schema, root)`, which takes
+`:scope>script[data-beni-data]` out of the mount element and gives `[route, value]`, an
+application's `init` then handed `Inline.routeUrl(address, route)` and `arrived` called after its
+subscriptions listen, hydrating or not; the render function takes `(route, text)` and calls
+`Inline.decoded(schema, text)`, returning its `{ issues }` when the text does not decode. A page
+with no script, or whose text does not decode, throws inside the mount's guard in both modes, the
+issues named only in a development build. A `--no-prerender` data build is `Emit.Prerender.fresh`:
+the pages are written with their script and no view, and the client is the one a program that does
+not prerender gets. The lambda's parameter is a name or `_`: a parameter that takes the value apart
+is `program_shape`, a limit of the compiler; take it apart in `init`.
+
+The schema's checks are the emitter's (`Emit.checkDataSchema`), once the modules are lowered: a
+schema that is not statically known — a top-level constant naming one is followed — is
+`program_shape` at the schema; in the prerender tree, the schema's own expression (what a
+`Schema.converted` is handed) and every `via` and check of every plan the schema reaches are walked
+in their own modules, through lambdas and the bodies of the app's and the platforms' declarations
+they name, and a call the checker answers impure or suspending, `Debug`'s aside, is
+`prerender_impure` at the conversion. A statically known schema is made by makers that compute
+nothing else, so the schema argument needs no separate purity walk.
+
+The data program (`src/build/Command.zig`, `buildData`, `runData`) is a second `Session` over the
+same cache, built for `node` into `.<out>.data` in development mode with no source maps; its paths
+are each a source root of their own, so a site built with `--root` (which names the site's modules)
+does not lend it its root. Its diagnostics are rendered in the site's one render
+(`Session.foreign`, `Session.exportLate`), a diagnostic the site says already at the same place
+with the same text dropped. `Prerender.pages` (`platforms/node/Prerender.beni`, one `impure`
+`foreign`, `writeRecords`) writes `{"route", "data"}` per page and `{"end": n}`; an `Err` is one
+record `{"error": why}`, and a value its schema cannot encode ends the records at
+`{"route", "issues"}`, each issue a line `.path: message`; both exit 1 after a line on standard
+output. The build escapes each text as §8.6 says (`pageText`), refuses one with a control
+character or bytes that are not UTF-8, checks the routes, and hands the tree's runner a file of
+`{route, text}` lines. `prerender_data_ignored` is not given to a `--library` build or to a build
+whose `main` is `Prerender.pages`; a `Browser.prerenderData` off the spine leaves `main` not saying
+it, so that build warns as well as refusing.
+
+`programInit` now binds what the ownership pass hoists at an `init` lambda it evaluates as its
+body: a read of a field of a captured record — the page's value is one — was hoisted there and
+never bound (`ownership: a hoisted record read is lowered before its placement`). The emitter's
+early refusals before lowering leak in a `--release` build; the schema's checks run after lowering
+to avoid them, and the leak is #1237.
+
+The fixtures are §11's P4 row, with three changes: `DataEarly`'s case is `DataSandbox`'s early
+click (delivered after the takeover, lost on the `--no-prerender` page); `DataIgnored` is a
+`browser/prerender/` project whose build's warnings are its `_expected.diag`, which the kind now
+reads; `DataDebugRelease` is `tests/blackbox/build_test.zig`'s *a data program runs at its
+project's root, and may say Debug.log under --release*, with the working directory, and the
+determinism claim is *a data site's pages are byte-identical at every --jobs*. The harness's
+setup step `retext <selector> "<text>"` changes the script, and a `--no-prerender` build may have
+its own golden, `.dev-noprerender-expected` or `.release-noprerender-expected`
+(`tests/corpus/README.md`, *Prerendered pages*). The browser driver keeps a page's data block and
+does not run it.
+
+No page that does not prerender moved: no `emit/inline/` golden, and `bench/size.mjs --pages-only`
+prints the same bytes as origin/master's binary. What the data adds to a client, release, brotli
+11: `DataBlog`'s client is 2 621 B against 1 581 B for the same site whose `init` sets a constant
+`Page.Home` and says `Browser.prerender` — 1 040 B, the `Page` schema's parse worker and
+`compiledParse`, `Inline.pageData`, and the issue's path in development builds only.
