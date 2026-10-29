@@ -2998,13 +2998,32 @@ fn deepBlock() !void {
     try a.init();
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
+    const depth = 1_000;
+    const c = try deepClass(&a, depth);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    b.account.allowance = std.math.maxInt(u32) - 1;
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    // The bottom level reads what it read.
+    const s0 = try b.places.ctorStep(gpa, &b.account, 0, 0);
+    var at = back.res;
+    var cur = back.kappas;
+    for (0..depth - 1) |_| {
+        at = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at, s0)).?;
+        cur = b.conds.kappaChild(cur, s0);
+    }
+    try testing.expectEqual(Cond.yes, b.conds.kappaGet(cur, at).?);
+}
+
+/// A class whose `res` is `depth` levels down `#0`, each with its own list
+/// at `#1` and `yes` stored at its node: a snapshot position per level.
+fn deepClass(a: *Tables, depth: usize) !ClassId {
+    const gpa = testing.allocator;
     const tree = try a.place(8);
     const list = try a.place(0);
     const s0 = try a.places.ctorStep(gpa, &a.account, 0, 0);
     const s1 = try a.places.ctorStep(gpa, &a.account, 0, 1);
-    const depth = 700;
-    // `depth` levels down `#0`, each with its own list at `#1` and `yes`
-    // stored at its node: a snapshot position per level.
     var level = try a.shapes.leaf(gpa, &a.account, tree, .none);
     var km: Cond.Kappas = .none;
     for (0..depth) |i| {
@@ -3015,18 +3034,37 @@ fn deepBlock() !void {
         km = try a.conds.kappaLink(gpa, a.env().charge, .none, s0, km);
         km = (try a.conds.kappaSet(gpa, a.env().charge, km, level, Cond.yes)).ctx;
     }
-    const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = level, .kappas = km });
-    var b: Tables = .{};
-    try b.init();
-    defer b.deinit();
-    b.account.allowance = std.math.maxInt(u32) - 1;
-    const back = b.sums.get(try roundTrip(&a, &b, c));
-    // The bottom level reads what it read.
-    var at = back.res;
-    var cur = back.kappas;
-    for (0..depth - 1) |_| {
-        at = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at, s0)).?;
-        cur = b.conds.kappaChild(cur, s0);
+    return a.sums.add(a.env(), .{ .params = &.{.none}, .res = level, .kappas = km });
+}
+
+test "#1141: the codec's work on a snapshot grows with its depth, never with its square" {
+    const gpa = testing.allocator;
+    var write_cost: [3]u64 = undefined;
+    var read_cost: [3]u64 = undefined;
+    for ([_]usize{ 500, 1_000, 2_000 }, 0..) |depth, run| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        a.account.allowance = std.math.maxInt(u32) - 1;
+        const c = try deepClass(&a, depth);
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        const wrote = a.account.baseline;
+        try write(a.env(), &a.sums, &.{c}, .identity, &words);
+        write_cost[run] = a.account.baseline - wrote;
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        b.account.allowance = std.math.maxInt(u32) - 1;
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(gpa);
+        const before = b.account.total();
+        try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+        read_cost[run] = b.account.total() - before;
     }
-    try testing.expectEqual(Cond.yes, b.conds.kappaGet(cur, at).?);
+    // Twice the levels, about twice the work (n log n at most), never four.
+    for (1..3) |i| {
+        try testing.expect(write_cost[i] <= 3 * write_cost[i - 1]);
+        try testing.expect(read_cost[i] <= 3 * read_cost[i - 1]);
+    }
 }

@@ -697,17 +697,22 @@ const Writer = struct {
             defer walked.deinit(gpa);
             var walk: std.ArrayList(Cond.Kappas) = .empty;
             defer walk.deinit(gpa);
+            // The snapshot's maps, entries and links are part of §4.1's S,
+            // counted as met (#1141: a deep snapshot brings its own room).
+            w.meter.grow(1);
             try walk.append(gpa, kappas);
             while (walk.pop()) |c| {
                 try w.take(1);
                 if ((try walked.getOrPut(gpa, .{c.int()})).found_existing) continue;
                 var ht = conds.kappaHere(c);
                 while (ht.next()) |e| {
+                    w.meter.grow(1);
                     try w.take(1);
                     (try stored.getOrPut(gpa, .{ e.node.int(), c.int() })).value_ptr.* = 0;
                 }
                 var lt = conds.kappaLinks(c);
                 while (lt.next()) |e| {
+                    w.meter.grow(1);
                     try w.take(1);
                     try walk.append(gpa, e.child);
                 }
