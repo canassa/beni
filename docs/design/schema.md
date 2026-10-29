@@ -3742,3 +3742,19 @@ choices:
 - **A nested type's module `codec` must be of that type.** By the module rule, a module's one
   `codec` is the method of every type it declares. Inside a derived type, a type whose module's
   `codec` has another type is `no_derived_codec`, as the receiver's method check is at the root.
+
+### A.13 — `ParseFailed` says the same on every engine (2026-10-29)
+
+Issue #1166. A `parse` of text that is not JSON gave `ParseFailed` the message of the host's
+`SyntaxError`. ECMAScript does not specify that text, so V8, QuickJS and the browsers each printed
+another value for the same program. This amendment replaces the wording of §5's `ParseFailed` row
+("with the host's message") and of the test list in §16 that repeats it:
+- **The message is the fixed text `invalid JSON`.** The same text is used by the library path and by
+  the specialised path (§6), because both reach one `JSON.parse` site in `core/Schema`.
+- **No position is kept.** A position would have to come from beni's own scanner, not from the
+  engine's message, which is never parsed. The scanner would cost a second walk of the text on the
+  failure path only, but no caller has asked for it. *Reversal:* add a scanner in `core` that finds
+  the first offset where the text is not JSON and writes `invalid JSON at line L column C`; it
+  must read the text, not the engine's wording.
+- **The `catch` stays narrow (rule 9).** It tests `instanceof SyntaxError` and re-throws all else;
+  the caught error's message is dropped, not parsed.
