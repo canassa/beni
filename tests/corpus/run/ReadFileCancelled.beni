@@ -1,0 +1,22 @@
+-- Cancel a fiber while it reads a real file (`plans/runtime-in-beni.md`
+-- step 10): the canceller aborts the read, and the `AbortError` the host
+-- answers with reaches no one, since the handler knows it as the
+-- canceller's own. The program prints `cancelled` and exits 0; without
+-- that branch of the handler it would crash on the first run.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    reader = Task.spawn λ⊤ → Io.readFile "Main.beni"
+    Task.yieldNow ⊤
+    Task.cancel reader
+    Io.sleep 20
+    case Task.wait reader of
+        Task.Done _ →
+            Node.print "read"
+
+        Task.Cancelled →
+            Node.print "cancelled"
