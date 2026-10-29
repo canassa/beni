@@ -613,7 +613,12 @@ const Writer = struct {
             // #1128) is stored with it, a settled certificate: the reader has no
             // fold to derive it from.
             var stored: ?CondId = conds.kappaGet(cur, p.node);
-            if (conds.fold_cond.get(p.node)) |fc| stored = try conds.@"and"(gpa, w.env.charge, stored orelse Cond.yes, fc);
+            // Into what is stored; a built node or a delta with nothing stored
+            // reads `lost` already, and stays unstored (#1157's review).
+            if (conds.fold_cond.get(p.node)) |fc| {
+                const built = d.kind == .node or d.kind == .delta;
+                if (stored) |s| stored = try conds.@"and"(gpa, w.env.charge, s, fc) else if (!built) stored = fc;
+            }
             try w.ref(.cond, if (stored) |k| k.int() else none);
         }
         // The projections that lead to a stored κ beyond the node's parts

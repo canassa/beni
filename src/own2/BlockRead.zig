@@ -1754,6 +1754,12 @@ fn below_n(t: *Tables, km: Cond.Kappas, s: Step, depth: usize, n: NodeId, k: Con
 }
 
 fn roundTrip(a: *Tables, b: *Tables, c: ClassId) !ClassId {
+    return roundTripWith(a, b, c, true);
+}
+
+/// `roundTrip`; `same_text` false where the block shares what the original
+/// repeats (equal knots merged), so the printer refers where it repeated.
+fn roundTripWith(a: *Tables, b: *Tables, c: ClassId, same_text: bool) !ClassId {
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(testing.allocator);
     try write(a.env(), &a.sums, &.{c}, .identity, &words);
@@ -1765,6 +1771,13 @@ fn roundTrip(a: *Tables, b: *Tables, c: ClassId) !ClassId {
     defer again.deinit(testing.allocator);
     try write(b.env(), &b.sums, back.items, .identity, &again);
     try testing.expectEqualSlices(u32, words.items, again.items);
+    // And it reads what the original reads, its printed class (#1157's
+    // review: re-encoding alone cannot see a weakened read).
+    if (same_text) {
+        var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena_state.deinit();
+        try testing.expectEqualStrings(try a.text(arena_state.allocator(), c), try b.text(arena_state.allocator(), back.items[0]));
+    }
     return back.items[0];
 }
 
@@ -1822,7 +1835,7 @@ test "a block merges two equal knots only where they read the same κ" {
     var b: Tables = .{};
     try b.init();
     defer b.deinit();
-    const back = b.sums.get(try roundTrip(&a, &b, c));
+    const back = b.sums.get(try roundTripWith(&a, &b, c, false));
     // Every position a read reaches two steps down reads what it read.
     for ([_]Step{ s[0], s[2] }) |x| {
         for ([_][]const Step{ &.{x}, &.{ x, s[0] }, &.{ x, s[2] }, &.{ x, s[0], s[0] } }) |path| {
@@ -3328,4 +3341,53 @@ test "#1128: a #1125 repeat, one kids list at two depths, reads lost through the
     try b.init();
     defer b.deinit();
     try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
+}
+
+test "#1157 review: a widened class's lost stays lost through the block, a choice or union at the fold too" {
+    const gpa = testing.allocator;
+    for (0..3) |variant| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        a.account.allowance = std.math.maxInt(u32) - 1;
+        const env = a.env();
+        // `T (T _ k2 _) k _` over place 8, every built node `yes` where it
+        // stands; variant 1 puts a choice at the fold, 2 a union.
+        const tree = try a.place(8);
+        const list = try a.place(0);
+        const s = [_]Step{ try a.places.ctorStep(gpa, &a.account, 0, 0), try a.places.ctorStep(gpa, &a.account, 0, 1), try a.places.ctorStep(gpa, &a.account, 0, 2) };
+        var ks: [2]NodeId = undefined;
+        for (&ks, 0..) |*k, i| {
+            const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), list, .list);
+            k.* = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+        }
+        const empty = try a.shapes.nothing(gpa, &a.account, tree);
+        const node = struct {
+            fn of(t: *Tables, ss: [3]Step, l: NodeId, e: NodeId, sub: NodeId) !NodeId {
+                var m = try t.shapes.overPut(testing.allocator, &t.account, Ids.none_int, ss[0], sub);
+                m = try t.shapes.overPut(testing.allocator, &t.account, m, ss[1], l);
+                m = try t.shapes.overPut(testing.allocator, &t.account, m, ss[2], e);
+                return t.shapes.node(testing.allocator, &t.account, try t.place(8), .none, m);
+            }
+        }.of;
+        const inner = try node(&a, s, ks[1], empty, empty);
+        const other = try node(&a, s, ks[0], empty, empty);
+        const at0: NodeId = switch (variant) {
+            0 => inner,
+            1 => try a.shapes.choice(gpa, &a.account, &a.cells.sets, inner, other),
+            else => try a.shapes.@"union"(gpa, &a.account, &a.cells.sets, inner, other),
+        };
+        const outer = try node(&a, s, ks[0], empty, at0);
+        var kk = (try a.conds.kappaSet(gpa, env.charge, .none, outer, Cond.yes)).ctx;
+        for ([_]NodeId{ inner, other }) |n| kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[0]}, n, Cond.yes);
+        kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[1]}, ks[0], Cond.yes);
+        for (ks) |k| kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[1] }, k, Cond.yes);
+        const w = try a.conds.widenValue(gpa, env.charge, env.view(), outer, kk);
+        const c = try a.sums.add(env, .{ .params = &.{}, .res = w.node, .kappas = w.kappas });
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        // `roundTrip` compares the printed class before and after.
+        _ = try roundTrip(&a, &b, c);
+    }
 }
