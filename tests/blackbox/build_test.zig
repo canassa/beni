@@ -8414,15 +8414,8 @@ test "the checker v2's growth is linear in a recursive tower's height: a one-mem
 
 const WideRun = enum { literal, spreads, fronts, appends };
 
-/// A list of `n` items in one of four shapes: its growth in `g`. `raised`:
-/// the module's allowance raised, so the run is measured, not refused.
-fn wideRunGrowth(shape: WideRun, n: u32, raised: bool) !u64 {
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const a = testing.allocator;
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    if (raised) try src.appendSlice(a, "@ownership_summary_size(module, 262144)\n\n\n");
+/// A list of `n` items in one of four shapes, written into `src` as `g`.
+fn wideRunSource(a: std.mem.Allocator, src: *std.ArrayList(u8), shape: WideRun, n: u32) !void {
     switch (shape) {
         .literal => try src.appendSlice(a, "pub g : ⊤ → List (List Int)\ng ⊤ =\n    [ "),
         .spreads, .fronts => try src.appendSlice(a, "pub g : List (List Int) → List (List Int)\ng xs =\n    [ "),
@@ -8439,57 +8432,198 @@ fn wideRunGrowth(shape: WideRun, n: u32, raised: bool) !u64 {
         .appends => try src.appendSlice(a, "\n"),
         else => try src.appendSlice(a, " ]\n"),
     }
+}
+
+/// The run's work in `g` at the default allowance: the growth and the
+/// source continuation it spent (§4.1). The run is never refused.
+fn wideRunWork(shape: WideRun, n: u32) !struct { growth: u64, continuation: u64 } {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    try wideRunSource(testing.allocator, &src, shape, n);
     try w.write("Main.beni", src.items);
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g") == null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked g") == null);
-    return accountField(dump.stdout, "g", "growth");
+    return .{ .growth = try accountField(dump.stdout, "g", "growth"), .continuation = try accountField(dump.stdout, "g", "continuation") };
 }
 
-/// #1139: a wide run's items each take a constant share of a lane of their
-/// own (§4.1): the positions node made before them. What is as large as an
-/// item's value (its fit, its κ, its cells, a demand's sweep over the
-/// operands) is growth chosen before the work, so no lane reaches its
-/// ceiling, and the run's growth is bounded per item: `per_item` is about
-/// 1.5 times the measured growth per item at 1 000. Before, the run's root
-/// lane took every item's share, and a width of 1 000 was
-/// `ownership_accounting_invariant`. Read-off continuations will charge the
-/// run-wide reads by item (#1098), and these bounds then tighten.
-fn expectWideRunPerItem(shape: WideRun, raised: bool, per_item: u64) !void {
+/// #1139, #1188: a wide run's items each take a constant share of a lane of
+/// their own (§4.1): the positions node made before them. What is as large as
+/// an item's value is reserved in a growth context before the work, and it
+/// spends the declaration's source continuation, never the allowance: the
+/// run's growth is 0, and its work is bounded per item. `per_item` is about
+/// 1.5 times the work per item measured at 600.
+fn expectWideRunPerItem(shape: WideRun, per_item: u64) !void {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const small = try wideRunGrowth(shape, 100, raised);
-    const wide = try wideRunGrowth(shape, 1000, raised);
+    const small = try wideRunWork(shape, 100);
+    const wide = try wideRunWork(shape, 600);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expect(small <= per_item * 100);
-    try testing.expect(wide <= per_item * 1000);
+    try testing.expectEqual(@as(u64, 0), small.growth);
+    try testing.expectEqual(@as(u64, 0), wide.growth);
+    try testing.expect(small.continuation <= per_item * 100);
+    try testing.expect(wide.continuation <= per_item * 600);
 }
 
-test "the checker v2 checks 1 000 spreads of one list at the default allowance, in growth bounded per item" {
-    // Measured: 11 growth per item.
-    try expectWideRunPerItem(.spreads, false, 20);
+test "the checker v2 checks 600 spreads of one list in no growth and work bounded per item" {
+    // Measured: 11 records per item.
+    try expectWideRunPerItem(.spreads, 20);
 }
 
-test "the checker v2 checks 1 000 items before a spread at the default allowance, in growth bounded per item" {
-    // Measured: 47 growth per item.
-    try expectWideRunPerItem(.fronts, false, 80);
+test "the checker v2 checks 600 items before a spread in no growth and work bounded per item" {
+    // Measured: 46 records per item.
+    try expectWideRunPerItem(.fronts, 80);
 }
 
-test "the checker v2 checks a literal of 1 000 lists in growth bounded per item" {
-    // Measured: 122 growth per item, past the default allowance at 1 000
-    // until read-off continuations (#1098).
-    try expectWideRunPerItem(.literal, true, 200);
+test "the checker v2 checks a literal of 600 lists in no growth and work bounded per item" {
+    // #1188: a literal of 580 to 630 small lists was refused at the default
+    // allowance. Measured: 115 records per item.
+    try expectWideRunPerItem(.literal, 200);
 }
 
-test "the checker v2 checks an append chain of 1 000 lists in growth bounded per item" {
-    // Measured: 97 growth per item, past the default allowance at 1 000
-    // until read-off continuations (#1098).
-    try expectWideRunPerItem(.appends, true, 160);
+test "the checker v2 checks an append chain of 600 lists in no growth and work bounded per item" {
+    // Measured: 95 records per item.
+    try expectWideRunPerItem(.appends, 160);
+}
+
+/// `g` at the default allowance, as `dump --ownership-totals` reports it:
+/// no `limits` line means no declaration was refused.
+fn expectNoLimit(src: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-totals", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limits ") == null);
+}
+
+test "the checker v2 checks a literal of 1 500 lists at the default allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1188 (§4.1, *the source continuation*): a literal's length spends no
+    // allowance. 1 500 is the widest inside the 1 s test budget: v2's time per
+    // record grows with the width (#1191), and the dump runs v2 twice (#1193).
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    try wideRunSource(testing.allocator, &src, .literal, 1500);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectNoLimit(src.items);
+}
+
+test "the checker v2 checks an append chain of 1 000 lists at the default allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1188 (§4.1): an append chain's length spends no allowance. The parser
+    // admits a chain of at most about 2 000 terms (`nesting_too_deep`, the
+    // widest `++` chain `abuse_wide_test` pins), and 1 000 is the widest inside
+    // the 1 s test budget (#1191, #1193).
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    try wideRunSource(testing.allocator, &src, .appends, 1000);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectNoLimit(src.items);
+}
+
+/// `c` chosen from `arms` arms of `[ [ i ] ]` (and `[]`), for `g y k`.
+fn writeArms(a: std.mem.Allocator, src: *std.ArrayList(u8), arms: u32) !void {
+    try src.appendSlice(a, "    c =\n        case k of\n");
+    for (0..arms) |i| try src.print(a, "            {d} →\n                [ [ {d} ] ]\n\n", .{ i, i });
+    try src.appendSlice(a, "            _ →\n                []\n");
+}
+
+test "the checker v2 checks a 300-arm choice spread after an item at the default allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1188: a wide choice costs O(1) records per arm (§4.1, the join memo),
+    // so its width spends no allowance; at 300 arms it was refused.
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub g : List Int, Int → List (List Int)\ng y k =\n");
+    try writeArms(a, &src, 300);
+    try src.appendSlice(a, "    [ y, …c ]\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectNoLimit(src.items);
+}
+
+test "the checker v2 checks a 30-arm choice spread or appended at 14 roots at the default allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1187's review: the choice re-read at a fixed count of roots (14) is
+    // O(1) per source atom (§4.1); it was refused after #1187 moved the roots'
+    // work off their lanes. Measured: 222 164 of 269 312 continuation records.
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub g : List Int, Int → List (List (List Int))\ng y k =\n");
+    try writeArms(a, &src, 30);
+    const forms = [_][]const u8{ "[ y, …c ]", "[ …c, y ]", "c ++ [ y ]", "[ …c, …c ]" };
+    for (0..14) |i| try src.print(a, "    a{d} = {s}\n", .{ i, forms[i % forms.len] });
+    try src.appendSlice(a, "    [ a0");
+    for (1..14) |i| try src.print(a, ", a{d}", .{i});
+    try src.appendSlice(a, " ]\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY OUTPUT                 │
+    // └─────────────────────────────────────────┘
+    try expectNoLimit(src.items);
+}
+
+test "the checker v2 still refuses a genuine product past the source continuation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §4.1: a value whose type's positions are not the declaration's source,
+    // re-read at a count that grows, is uses × positions: past K·S_f it is
+    // growth, and past the allowance the loud `ownership_summary_size`.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
+    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
+    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
+    for (1..200) |i| try src.print(a, "\n    , r{d} : S", .{i});
+    try src.appendSlice(a, "\n    }\n\n\npub g : List Int → List R\ng xs =\n    s = { s0 = xs");
+    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
+    try src.appendSlice(a, " }\n    r = { r0 = s");
+    for (1..200) |i| try src.print(a, ", r{d} = s", .{i});
+    try src.appendSlice(a, " }\n    [ r");
+    for (1..16) |_| try src.appendSlice(a, ", r");
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g: ownership_summary_size") != null);
 }
 
 test "the checker v2's growth in a tower of joins of one value at two depths is at most quadratic" {
@@ -9089,16 +9223,25 @@ test "the checker v2 sweeps one holder of a value at many paths without passing 
 }
 
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 64 500 of 65 536, since #1201 sweeps the holders past
-/// the first in growth), after another (`g`) or before it:
-/// its dump in that order (#1104).
+/// cold growth about 62 700 of 65 536), after another (`g`) or before it:
+/// its dump in that order (#1104). Its growth is a genuine product, a
+/// 210-field record of records re-read at 15 positions: source-shaped work
+/// spends the source continuation, never the allowance (§4.1, #1188).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(a);
-    try h.appendSlice(a, "pub h : List Int → List Int\nh xs =\n");
-    for (1..1401) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
-    try h.appendSlice(a, "    x1400\n");
+    try h.appendSlice(a, "type alias S =\n    { s0 : List Int");
+    for (1..10) |i| try h.print(a, "\n    , s{d} : List Int", .{i});
+    try h.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
+    for (1..210) |i| try h.print(a, "\n    , r{d} : S", .{i});
+    try h.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
+    for (1..10) |i| try h.print(a, ", s{d} = xs", .{i});
+    try h.appendSlice(a, " }\n    r = { r0 = s");
+    for (1..210) |i| try h.print(a, ", r{d} = s", .{i});
+    try h.appendSlice(a, " }\n    [ r");
+    for (1..15) |_| try h.appendSlice(a, ", r");
+    try h.appendSlice(a, " ]\n");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
     try w.write("Main.beni", src);

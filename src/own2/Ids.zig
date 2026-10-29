@@ -304,6 +304,10 @@ pub const Account = struct {
     baseline: u64 = 0,
     /// S_f: the written and imported atoms, recorded by the owner's walk.
     source: u64 = 0,
+    /// The source continuation spent (§4.1, *The source continuation*):
+    /// records that would have been growth, taken from the declaration's
+    /// `continuation_per_atom`·S_f instead, and counted in B_f.
+    continuation: u64 = 0,
     growth_by: [Category.count]u32 = @splat(0),
     baseline_by: [Category.count]u64 = @splat(0),
     /// Set by the first refusal and never cleared: the exhaustion marker of
@@ -316,6 +320,16 @@ pub const Account = struct {
     lane: Lane = .{ .atom = 0, .role = .direct_data },
 
     pub const default_allowance: u32 = 65_536;
+    /// K (§4.1, *The source continuation*): the records each source atom
+    /// lends its declaration's work beyond the lanes. A huge, named bound,
+    /// an order of magnitude past every measurement and inside §4.1's
+    /// 10 304·S_f, never tuned.
+    pub const continuation_per_atom: u64 = 1024;
+
+    /// K·S_f, what the source continuation may lend in all.
+    pub fn continuationCap(a: *const Account) u64 {
+        return continuation_per_atom * a.source;
+    }
 
     pub fn deinit(a: *Account, gpa: Allocator) void {
         a.lanes.deinit(gpa);
@@ -368,6 +382,14 @@ pub const Account = struct {
     /// Reserve `n` growth records first: a product, a general task.
     pub fn reserveGrowth(a: *Account, category: Category, n: u32) AccountError!void {
         if (a.failed) |f| return f.err();
+        // The source continuation first, whole or not at all, decided at
+        // this reservation before its work: only what passes K·S_f is growth.
+        if (a.continuation + n <= a.continuationCap()) {
+            a.continuation += n;
+            a.baseline += n;
+            a.baseline_by[@backingInt(category)] += n;
+            return;
+        }
         const next = @as(u64, a.growth) + n;
         if (next > a.allowance) {
             a.failed = .{ .exhausted = category };
