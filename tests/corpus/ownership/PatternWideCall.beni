@@ -1,0 +1,1200 @@
+-- ownership: PatternWideFresh's and PatternWideShared's twins through
+-- calls (ownership-v2.md §4.1, §8 S3b, #1224): the wide value is returned
+-- by a declaration (`rows40`, `rows100`, `sharedRows1000`), or supplied to
+-- one (`headPush`). The pattern's rebuild stays growth, so each
+-- declaration checks with no lane past its ceiling. The 100-item returned
+-- twin waits for #1231, which takes that rebuild off the pattern's lane.
+headPush : List (List Int) → List Int
+headPush rows =
+    case rows of
+        [ x, …_ ] →
+            List.push x 9
+
+        [] →
+            []
+
+
+rows40 : ⊤ → List (List Int)
+rows40 ⊤ =
+    [ [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    ]
+
+
+rows100 : ⊤ → List (List Int)
+rows100 ⊤ =
+    [ [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    , [ 0 ]
+    ]
+
+
+sharedRows1000 : List Int → List (List Int)
+sharedRows1000 r =
+    [ r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    , r
+    ]
+
+
+pub returned40 : ⊤ → List Int
+returned40 ⊤ =
+    case rows40 ⊤ of
+        [ x, …_ ] →
+            List.push x 9
+
+        [] →
+            []
+
+
+returnedShared ⊤ =
+    case sharedRows1000 [ 0 ] of
+        [ x, …_ ] →
+            List.push x 9
+
+        [] →
+            []
+
+
+pub supplied40 : ⊤ → List Int
+supplied40 ⊤ = headPush (rows40 ⊤)
+
+
+pub supplied100 : ⊤ → List Int
+supplied100 ⊤ = headPush (rows100 ⊤)
+
+
+pub suppliedShared : ⊤ → List Int
+suppliedShared ⊤ = headPush (sharedRows1000 [ 0 ])

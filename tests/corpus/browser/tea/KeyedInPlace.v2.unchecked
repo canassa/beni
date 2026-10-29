@@ -1,4 +1,4 @@
 KeyedInPlace fresh: lines 51-52 (not built: local)
 KeyedInPlace update: lines 55-80 (not built: local)
 KeyedInPlace view: lines 83-104 (not built: local)
-KeyedInPlace main: lines 112-113 (not built: call)
+KeyedInPlace main: lines 112-113 (not built: lambda)

@@ -330,3 +330,6 @@ tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
 # `Demands.resolve` inspects the push's alternatives on its own lane, so v2
 # reports an accounting invariant; ownership-v2.md §4.1.
 tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
+# CK-313 (#1252): a doubling DAG result costs linkArgs a walk per path; the
+# call view by reference (S3b PR 2) unpins it; ownership-v2.md §8 S3b.
+tests/pending/run/EvidenceDagBuildDepth32.beni OwnershipV2Limit
