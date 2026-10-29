@@ -858,6 +858,73 @@ holder, so no cell without a holder is visited: O(Σ over the cell set of its an
 per demand. Holders found this way are charged as §2.7 says for holders beyond the direct one. `RoseKidsHeld`,
 `RoseAlias`, `MaybeTreeAlias` and `MutualAlias` (Appendix B) check a write under `⟲` while an on-cycle container
 or a level above is held, and a deep demand on an on-cycle container while a level below it is held.
+**The holder index (#1214).** Step 5 runs after the walk, so every holder, use and demand of the frame is known: the
+question is offline, and one in-order sweep answers every demand. It replaces the live index (`Live`), its
+chains and anchors, `holdersOf` and the per-demand loop, in `Holders.zig`.
+
+*Facts it rests on.*
+- **Activity is an interval.** A point's demands are resolved before the holders that start there register, and a
+  holder expires at its last use. So for a use u after p, holder h is live at p exactly when `start(h) < p`. An
+  ordinary entry (h, u) is *active* on `(start(h), point(u))`.
+- **Compatibility is a threshold.** For p < u they are compatible exactly when `rank₂(p) < rank₂(u)` (§2.5). That
+  is correct where §2.5's precondition holds. The `withDefault` pipeline reference point lies outside it, so the
+  sweep asserts that no entry's or demand's point is one, under runtime safety.
+- **The key is per (h, u).** `laterUse` depends only on (local, path, p), and `note`'s merge by (holder, path) is
+  a key-wise minimum. So a demand's answer is the minimum, over its notes, of the canonical key above. The cause is
+  not part of the key: it is worked out for the winner alone (`element` when approximate, else `held_operand`,
+  `later-use` or `alias` from this demand's base local and path).
+
+*The sweep.* Per demanded base cell c, the group of its entries is a mutable segment tree over the group's
+compressed rank₂, keyed by the full canonical key. Each node keeps **two minima**, the best exact entry and the
+best entry of any exactness. A demand reads the best exact entry when the base cell is exactly held, otherwise the
+best of any: `e.value` and `isMaterialised(c)` make it approximate. The events, in point order, are:
+- at a demand at p: read the minimum over `rank₂ > rank₂(p)`;
+- after a point's demands, insert the entries of holders that start there;
+- before a point's demands, remove the entries whose use is at that point.
+
+Per (h, u) the entry keeps the best exact covered path and the best covered path of any exactness. A use at q
+covers the holds on q's route and in the sub-DAG at q. The demand-dependent kinds:
+- **Pending operands**: active on `(start, end)`, key point `start(h)`, in a second tree read over the rank prefix
+  `rank₂ < rank₂(p)`. An active compatible one always beats every ordinary entry of the same exactness.
+- **`taken.split` holders**: a demand whose base is position P of split S excludes the entries of S at another
+  position, and only for candidates in the base's own `explicit` set (an element and a rest position have
+  different sets). Entries at the same position stay. Each tree node keeps the best entry and the best entry of a
+  split other than the best's (the top two distinct split tags). The excluded positions' reliance is a count per
+  (split, position).
+- **`under` and `under_kappa` candidates** produce no entry. Their reliance is a counter over the registered
+  holders on `(start, end]`, including the demands at `end` (a holder expires after them). `under_kappa` assigns
+  `lost`. The relied conjunction is taken over the sorted set of splits.
+- **`⊤` holders** are found by inversion. `mayHaveReached(h, c)` holds exactly when h's reach has a candidate x of c,
+  not `⊤`, with a conflict, that is when h holds x. So no holder fans out on `⊤`: a holder found through x that also
+  has `⊤` in its reach adds its `⊤`-hold entries. The predicate is "any own-split member", where today's `chain`
+  tests one member, chosen by registration order.
+- **A deep demand** reads the per-cell groups of its base's reach, each with its own `e.value`.
+- **A record demand** keys its group by the written field, or keeps the sweep until S5.
+
+*The build, driven by each holder's life.* Entries are made only where a demand can read them.
+1. **Pairs.** For each holder h, take the cheaper of two ways to find its pairs: walk the keyed and demanded cells of
+   reach(h) and binary-search each one's demands inside `(start(h), end(h)]`; or walk the demands inside that range
+   and test their candidates against reach(h). Refinement and anchor candidates match by key, (origin, canonical
+   path, split) and (origin, anchor, class), through a memoised keyed subset of each set node, never through member
+   lists. No holder is paired with a demand outside its life, and no static every-holder build exists.
+2. **Light or heavy.** For each pair (h, c), with `D_hc` demands on c in h's life and `U_hc` covering uses, the
+   cheaper of: insert the `U_hc` entries (light), or call the canonical per-holder oracle (`laterUse` in the
+   canonical order) at those `D_hc` demands and fold its answers into theirs (heavy).
+3. **The best hold, not the hold paths.** For node n and candidate d, the first hold of d in the canonical order,
+   exact and of any exactness: a greedy descent in step order into the first child whose reach (or memoised exact
+   hold below) contains d. A wide node keeps an inverted cell-to-first-child index, and views are forced lazily.
+   DFS preorder reaches each node first along its least path, so no path is ever listed.
+4. **Call uses** in `Liveness` are grouped by `use_node`, and acceptance is decided once per (group, remainder).
+
+*Why the answer is the sweep's.* A group's active entries above `rank₂(p)` are exactly the notes the canonical
+sweep makes at p: every live holder of a candidate of c, with every later compatible use covering one of its
+holds, at the first covered path. The kinds above keep their meanings exactly as listed. The tree's minimum is
+therefore the first note in the canonical order, which is the canonical sweep's answer. Keys are fixed when the
+entries are made; activity and rank₂ alone decide what counts, so nothing is asked again in any arm. Under runtime
+safety, a naive offline scan (every holder live at p, every use of each) runs beside it on frames of at most 8
+holders and compares the whole outcome; `-Downership-full-cross-check` compares every frame. That is the safety
+net, not the argument.
+
 *As built (#1236):* a cycle anchor's prefixes are found through `Place.PathNode.anchor_up`, the nearest node at
 or above a path node whose step stays on a cycle, set when the node is made. A holder's registration visits its
 anchors, never every step of its path. `Place.extend` looks for re-entry only along the cycle `here` and the
@@ -866,7 +933,14 @@ constant per step (`DeepPathThroughList`).
 
 **Verdicts** (R-0.3): `accepted` {`fresh`, `call`, `param`, `callback-param`, `once`, `entry`}; `pending detail`
 (§2.11); `refused cause` per R-6.3, exact/approximate/position by the pairs it rested on; among failing holders
-the one used first, ties to the earlier binding. The result of every writer, construction, append and update **is
+the first in one canonical total order (the owner's decision, 2026-10-29, #1214): an exact refusal before an
+approximate one; then the earliest use (a pending operand by its start); then the earlier binding; then the hold
+path, compared step by step from the root by step word, a prefix before its extensions; then the holder's source
+order (its index among the frame's holders); then the use's atom. The last two make the order total: the positions
+of one pattern are bound at one point, and one holder can be used twice at one point (`( r, r )`). Discovery order
+(a radix walk's or a stack's) never breaks a tie, so a message never names a witness by registration order. A
+refusal on several base cells is always approximate (the owner's decision, 2026-10-30, #1214): its verdict is
+certain either way, and only the wording would have needed the cells' join. The result of every writer, construction, append and update **is
 its base's object** (R-0.1, R-4.10.1): a `delta` or the base's node, so the next holder is the new version.
 
 **Record lowering boundary (S5).** A write authorization is tied to a settled demand, the receiver's
@@ -3477,7 +3551,34 @@ a product. So is a demand's sweep past one direct holder at one path (#1201), as
 row of the table below has it: the walk of a holder's value for its paths, a second holder, radix node,
 hold path or live refinement, and a deep demand's walk below its base. A value spread or stored at k sites
 has k holders, and one record of k fields that are one list holds it at k paths: k demands on it are
-k × k. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
+k × k. The holder index (§2.8, #1214) answers them instead. Step 5 costs
+O((Σ_h min(|reach h|, D_life(h)·w·c̄) + Σ_pairs min(U_hc, D_hc·P_hc) + M + D·c̄) · log M). Here D_life(h) is the
+number of demands in h's life, w the base width, c̄ the candidates per cell, P_hc the oracle's per-call cost, and M
+the entries the light pairs insert. For every ordinary family this is O((M + D) log M) with M source-sized:
+- k sites spreading or appending one value;
+- a record of k fields that are one list, compared whole;
+- pending operands;
+- taken positions;
+- two fixed alternatives;
+- nested refinements matched by key;
+- arm switches;
+- k distinct cells each demanded twice;
+- a record of lists edited in one arm and read whole in others (a heavy pair per field);
+- a doubling DAG (the best-hold query);
+- a helper reading part of a record after edits (call uses grouped);
+- opaque holders (inversion);
+- a wide record with every field edited (the inverted child index).
+
+Four families stay outside that bound. Each is refused loudly (`ownership_summary_size`), each has its issue, and
+all are gated before S9:
+- **deep demands on many distinct large values**: k·V. A persistent union along delta chains would make it
+  (k + V) log;
+- **many long-lived aliases of one value while many of its cells are demanded**: S^1.5 on source S;
+- **many live `rest` bindings at one canonical path**: k²;
+- **a record version chain** (S5) until its per-delta child index is designed.
+
+The exact classification of many distinct several-cell bases, which needed a join that is as hard as triangle
+detection, is gone: those refusals are approximate (§2.8). A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
 a lazy node, `proj`, `reach`, `namedSteps`, `rank`, `dagKappa`, `reachAgg` on a miss) is a growth task too,
 never the asking kernel's lane: an earlier run's DAG read again (`[ …xs, …b ]`) is as large as that run.
 From any other node the walk stays the kernel's, so a call's view and a demand's query keep their own. The
@@ -3943,7 +4044,8 @@ L0  Ids
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
-| `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 300 (S3b slice 1: a writer call's write path and `xreq`) |
+| `Demands.zig` | 6 | the six conditions, refinement/cycle-aware trie queries, causes, verdicts | `resolve` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions, Holders | ≤ 1 000 |
+| `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check | `Index`, `build`, `answer` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 900 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
