@@ -985,6 +985,27 @@ once. A backedge is an equation, not permission to increment a count on each sol
 position's two semantic incoming edges still compose by choice or coexistence as written. Publish
 only settled aggregates, retaining the expression and coverage needed for substitution.
 
+**As built for a call's folded read (#1159).** `Calls.preimage` is this primitive at the call
+boundary. Its source is the argument at the re-entered place's path, and its keys are canonical
+paths, so every depth a template path through `⟲` stands for meets at one key. Each source
+position is a state `(node, canonical path)`.
+
+- A node's parts and a `positions` node's sides add.
+- A `choice`'s arms take the maximum.
+- A `union` holds its cells at its position as a set, and its sides' structure below it adds.
+- A leaf's symbolic cells and refinements contribute their projections at every canonical path
+  below, found by a pair walk over the argument's path and the cell's own path.
+- A `⊤` cell, a recast, or a symbolic cell at another place contributes `⊤` below.
+
+The states settle by component (Tarjan, explicit stack). A cycle makes every occurrence it and its
+parts hold repeated, which is the least solution of these equations in {absent, one, repeated}. The
+result is kept in the condition table by `(argument node, prefix)` across reads and calls, so many
+template paths under one prefix walk the argument once. A widened image's own fold certificate does
+not yet stand for its cycle's multiset; that question is open (#1159). The conservative `lost` for an
+unopened node is gone. One consequence: an occurrence at another canonical path under the same
+prefix (`0·[*]·arg` beside `0·[*]·⟲·arg`) is outside the preimage. The caller's Disjoint across the
+callee's W paths compares it, and this read does not (§2.11 item 3).
+
 **Cost.** For n distinct source/expression records and edges in one bounded-place, bounded-width
 context, hash-consed persistent maps and memoised subtree-pair composition give **O(n log n) total**
 work, shared across all prefixes of the tower families below; space is O(n) fixed-word records.
