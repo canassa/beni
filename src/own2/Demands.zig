@@ -746,8 +746,8 @@ const Resolver = struct {
                     }
                 },
                 .recast => try stack.append(r.gpa, .{ .node = .from(k.a), .path = f.path, .cast = true, .blur = f.blur }),
-                .@"union", .positions => {
-                    const alt = f.alt or k.kind == .@"union";
+                .@"union", .choice, .positions => {
+                    const alt = f.alt or k.kind == .@"union" or k.kind == .choice;
                     try stack.appendSlice(r.gpa, &.{ .{ .node = .from(k.a), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur }, .{ .node = .from(k.b), .path = f.path, .alt = alt, .cast = f.cast, .blur = f.blur } });
                 },
             }

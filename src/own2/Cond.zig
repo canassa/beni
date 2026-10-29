@@ -154,6 +154,9 @@ pub const Table = struct {
     group_prov: Ids.FixedDict(1) = .{},
     group_steps: std.ArrayList([2]u32) = .empty,
     lost_memo: Ids.FixedDict(1) = .{},
+    /// A folded class's obligation from the path-multiset primitive, by
+    /// its image node (`widenValue`, §2.9, #1128).
+    fold_cond: stamped.Column(NodeId, CondId) = .{},
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
@@ -197,6 +200,7 @@ pub const Table = struct {
         t.group_prov.deinit(gpa);
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
+        t.fold_cond.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_merge.deinit(gpa);
     }
@@ -921,7 +925,7 @@ pub const Table = struct {
             try charge.reserve(gpa, .inspection, 1);
             const nk = v.shapes.kind(n);
             const d = v.shapes.get(n);
-            if (nk != .@"union" and nk != .positions) {
+            if (nk != .@"union" and nk != .choice and nk != .positions) {
                 try memo.put(gpa, n, try t.kappaOf(gpa, charge, v, ctx, n, at_summary));
                 if (nk == .recast) try approx.put(gpa, n, {});
             } else if (!f.expanded) {
@@ -981,7 +985,7 @@ pub const Table = struct {
                 if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
                 break :blk d;
             },
-            .@"union", .positions => {
+            .@"union", .choice, .positions => {
                 // A pure function of the read, memoised like `deep`.
                 const key: [3]u32 = .{ ctx.int(), n.int(), @intFromBool(at_summary) };
                 try charge.reserve(gpa, .memo, 1);
@@ -1331,7 +1335,7 @@ pub const Table = struct {
                 while (it.next()) |e| try out.append(gpa, e.node);
             },
             .recast => try out.append(gpa, .from(d.a)),
-            .@"union", .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
         }
     }
 
@@ -1381,6 +1385,205 @@ pub const Table = struct {
             (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = try t.agg(gpa, a);
         }
         return t.aggCond(gpa, charge, cellt, places, a);
+    }
+
+    // ---- the path-multiset primitive (§2.9, #1128) --------------------------------
+
+    /// Per destination class (a widened image node), the aggregate of the
+    /// source occurrences μ maps into it: a persistent map image → `aggs`
+    /// index, and how many classes it names (for merging small into large).
+    const ClassAggs = struct { map: u32 = Ids.none_int, len: u32 = 0 };
+
+    /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
+    /// folded class's obligation from §2.9's one path-multiset primitive:
+    /// the source occurrences μ maps into the class as a multiset — choice
+    /// (a `choice` node's arms, whole) takes the maximum, coexistence (a node's
+    /// parts, a union's or positions node's sides, the depths a fold identifies) the
+    /// sum — so a cell at two coexisting positions is a repeat (`lost`
+    /// through the fold) and distinct arrivals owe `apart`, while one value
+    /// in either arm of a choice stays one (`propagate` conjoins them at
+    /// the class, `fold_cond`). The widened node and its κ.
+    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!struct { node: NodeId, kappas: Kappas } {
+        var fold: Shape.Table.Fold = .{};
+        defer fold.deinit(gpa);
+        const w = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
+        if (w == x) return .{ .node = x, .kappas = kx };
+        const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
+        var it = t.mapEntries(per.map);
+        while (it.next()) |e| {
+            if (!fold.folded.contains(.from(e.key))) continue;
+            try charge.reserve(gpa, .inspection, 1);
+            try t.fold_cond.put(gpa, .from(e.key), try t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[e.value]));
+        }
+        return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null) };
+    }
+
+    /// A folded class's obligation from its aggregate: a repeat is
+    /// identified through the fold (`lost`, never `shared`: the levels it
+    /// merged were never compared), distinct arrivals `apart`.
+    fn foldCond(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: Agg) Error!CondId {
+        var plain = a;
+        plain.dups = .none;
+        plain.dups_approx = .none;
+        const k = try t.aggCond(gpa, charge, cellt, places, plain);
+        return if (a.dups != .none) t.@"and"(gpa, charge, k, lost) else k;
+    }
+
+    /// The aggregates of `x`'s source occurrences by destination class: a
+    /// post-order over the source on an explicit stack (a value is as deep
+    /// as the source), each node's own cells at its image with its parts'
+    /// aggregates, every node once (shared parts are re-read by reference,
+    /// so two routes count twice where they coexist and once where they are
+    /// a choice). A source on a cycle has no finite multiset by this walk:
+    /// every class it reaches reads all its cells repeated (sound, `lost`).
+    fn arrivalAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, fold: *const Shape.Table.Fold) Error!ClassAggs {
+        var memo: stamped.Column(NodeId, ClassAggs) = .{};
+        defer memo.deinit(gpa);
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var parts: std.ArrayList(NodeId) = .empty;
+        defer parts.deinit(gpa);
+        var cyclic = false;
+        try stack.append(gpa, .{ .node = x, .expanded = false });
+        while (stack.pop()) |f| {
+            if (memo.get(f.node) != null) continue;
+            parts.clearRetainingCapacity();
+            try sourceParts(gpa, v, fold, f.node, &parts);
+            // An opened choice's arms: the maximum, arm by arm (§2.3).
+            const arms = v.shapes.kind(f.node) == .choice and fold.opened.contains(f.node);
+            if (!f.expanded) {
+                if (open.contains(f.node)) {
+                    cyclic = true;
+                    continue;
+                }
+                try open.put(gpa, f.node, {});
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                for (parts.items) |p| if (memo.get(p) == null) try stack.append(gpa, .{ .node = p, .expanded = false });
+                continue;
+            }
+            open.remove(f.node);
+            if (cyclic) break;
+            var acc: ClassAggs = .{};
+            for (parts.items, 0..) |p, i| {
+                try charge.reserve(gpa, .memo, 1);
+                const pa = memo.get(p) orelse {
+                    cyclic = true;
+                    break;
+                };
+                acc = if (i == 0) pa else try t.classMerge(gpa, charge, v, acc, pa, !arms);
+            }
+            if (cyclic) break;
+            if (fold.image.get(f.node)) |img| {
+                const own = try t.ownAgg(gpa, charge, v, fold, f.node);
+                if (own.all_len > 0) acc = try t.classMerge(gpa, charge, v, acc, .{ .map = try t.mapPut(gpa, charge, Ids.none_int, img.int(), try t.agg(gpa, own)), .len = 1 }, true);
+            }
+            try memo.put(gpa, f.node, acc);
+        }
+        if (!cyclic) return memo.get(x).?;
+        // On a cycle: every source node's cells at its class, all repeated.
+        var all: stamped.Column(NodeId, SetId) = .{};
+        defer all.deinit(gpa);
+        var images: std.ArrayList(NodeId) = .empty;
+        defer images.deinit(gpa);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        var walk: std.ArrayList(NodeId) = .empty;
+        defer walk.deinit(gpa);
+        try walk.append(gpa, x);
+        while (walk.pop()) |n| {
+            if (seen.contains(n)) continue;
+            try seen.put(gpa, n, {});
+            try charge.reserve(gpa, .inspection, 1);
+            if (fold.image.get(n)) |img| {
+                const old = all.get(img) orelse blk: {
+                    try images.append(gpa, img);
+                    break :blk SetId.none;
+                };
+                try all.put(gpa, img, try v.cells.sets.unionWith(gpa, charge, old, v.shapes.cells(n)));
+            }
+            parts.clearRetainingCapacity();
+            try sourceParts(gpa, v, fold, n, &parts);
+            try walk.appendSlice(gpa, parts.items);
+        }
+        var out: ClassAggs = .{};
+        for (images.items) |img| {
+            const cells = all.get(img).?;
+            var a = try t.aggAll(gpa, charge, v.cells, v.places, .{}, cells, false);
+            a.dups = cells;
+            out.map = try t.mapPut(gpa, charge, out.map, img.int(), try t.agg(gpa, a));
+            out.len += 1;
+        }
+        return out;
+    }
+
+    /// The parts of source node `n` the widen walked: its explicit
+    /// children, an opened union's, choice's or positions node's sides. They
+    /// coexist, except an opened choice's arms, which the caller takes by the
+    /// maximum (§2.3: two source occurrences add, one execution has one arm).
+    fn sourceParts(gpa: Allocator, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        const d = v.shapes.get(n);
+        switch (d.kind) {
+            .@"union", .choice, .positions => if (fold.opened.contains(n)) try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            .node => {
+                var it = v.shapes.overEntries(d.a);
+                while (it.next()) |e| try out.append(gpa, e.node);
+            },
+            .delta => {
+                var it = v.shapes.overEntries(d.b);
+                while (it.next()) |e| try out.append(gpa, e.node);
+                if (v.shapes.kind(.from(d.a)) == .node) {
+                    var bt = v.shapes.overEntries(v.shapes.get(.from(d.a)).a);
+                    while (bt.next()) |e| if (v.shapes.overGet(d.b, e.step) == null) try out.append(gpa, e.node);
+                }
+            },
+            .leaf, .recast => {},
+        }
+    }
+
+    /// The cells source node `n` itself holds at its class, as a set: a
+    /// leaf's, a node's, a delta's, a union's or a positions node's kept
+    /// whole (its sides' set; what it repeats inside is `dagKappa`'s), a
+    /// recast's approximate. An opened one holds nothing of its own.
+    fn ownAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId) Error!Agg {
+        const d = v.shapes.get(n);
+        if ((d.kind == .@"union" or d.kind == .positions) and fold.opened.contains(n)) return .{};
+        if (d.kind != .recast) return t.aggAll(gpa, charge, v.cells, v.places, .{}, d.cells, false);
+        var a: Agg = .{};
+        var it = v.cells.sets.iterate(d.cells);
+        while (it.next()) |e| a = try t.aggAdd(gpa, charge, v.cells, v.places, a, .from(e.key), true, false);
+        return a;
+    }
+
+    /// Two arms of a choice: a cell in both is still one (the maximum), a
+    /// repeat in either stays a repeat.
+    fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
+        var a = try t.aggMerge(gpa, charge, cellt, places, big, small, false);
+        a.dups = try cellt.sets.unionWith(gpa, charge, a.dups, small.dups);
+        a.dups_approx = try cellt.sets.unionWith(gpa, charge, a.dups_approx, small.dups_approx);
+        a.lost_extra = a.lost_extra or small.lost_extra;
+        return a;
+    }
+
+    /// Two class maps as one, coexisting: each class the smaller names
+    /// merged into the larger's as a multiset.
+    fn classMerge(t: *Table, gpa: Allocator, charge: Charge, v: View, x: ClassAggs, y: ClassAggs, together: bool) Error!ClassAggs {
+        const big, const small = if (x.len >= y.len) .{ x, y } else .{ y, x };
+        var out = big;
+        var it = t.mapEntries(small.map);
+        while (it.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            const b = t.aggs.items[e.value];
+            const merged: Agg = if (t.mapGet(out.map, e.key)) |o| (if (together) try t.aggMerge(gpa, charge, v.cells, v.places, t.aggs.items[o], b, true) else try t.aggChoice(gpa, charge, v.cells, v.places, t.aggs.items[o], b)) else blk: {
+                out.len += 1;
+                break :blk b;
+            };
+            out.map = try t.mapPut(gpa, charge, out.map, e.key, try t.agg(gpa, merged));
+        }
+        return out;
     }
 
     /// §2.9's rule over the cells stored at one path, a multiset sorted once
@@ -1740,7 +1943,7 @@ pub const Table = struct {
     /// #1101), each once. A record per node.
     fn innersOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
         switch (v.shapes.kind(n)) {
-            .recast, .@"union", .positions => {},
+            .recast, .@"union", .choice, .positions => {},
             else => return,
         }
         // A finite rank: no recast anywhere below, so none at this path.
@@ -1765,7 +1968,7 @@ pub const Table = struct {
                     }
                     try stack.append(gpa, .from(d.a));
                 },
-                .@"union", .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
                 else => {},
             }
         }
@@ -1982,7 +2185,7 @@ pub const Table = struct {
             if (mode == .alternatives and f.len == 0) k = lost;
             // The repeats of a class `widen` opened a collection into are stored,
             // so the block carries them (§2.3, #1120).
-            if (v.shapes.foldDups(f.node) != null) k = try t.join(gpa, charge, k, lost);
+            if (t.fold_cond.get(f.node)) |fc| k = try t.@"and"(gpa, charge, k, fc);
             // A leaf's read is the stored ⊔ the derivation, so a κ no
             // stronger than the derivation stores nothing: what a reader
             // derives there is the same before and after the join.
@@ -2144,7 +2347,9 @@ pub const Table = struct {
                 continue;
             }
             if (nothingAt(v, x)) continue;
-            if (v.shapes.kind(x) != via) return false;
+            const xk = v.shapes.kind(x);
+            // Alternatives are joined as a `choice` or a `union` (§2.3).
+            if (xk != via and !(via == .@"union" and xk == .choice)) return false;
             const d = v.shapes.get(x);
             try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
         }
@@ -3858,21 +4063,19 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
         try testing.expectEqual(yes, r1);
         // Widened: the kids of every depth are one class, its snapshot
         // propagated from the unwidened one, as a read-off does.
-        const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, v.root);
+        const widened = try f.conds.widenValue(gpa, f.charge(), f.view(), v.root, v.k);
+        const w = widened.node;
         try testing.expect(w != v.root);
-        const wk = try f.propagate(.none, w, &.{v.root}, &.{v.k}, .alternatives, false);
+        const wk = widened.kappas;
         const kids = try f.projOf(w, arg);
         const read = try f.kappa(f.conds.kappaChild(wk, arg), kids, false);
-        // The class itself: `kids`, or a side of it (the root class may carry
-        // a side beside its image, so `w`'s projection can be a union).
-        const kd = f.shapes.get(kids);
-        const marked = f.shapes.foldDups(kids) != null or (f.shapes.kind(kids) == .@"union" and (f.shapes.foldDups(.from(kd.a)) != null or f.shapes.foldDups(.from(kd.b)) != null));
         // Never stronger than a member it covers.
         try testing.expect(try f.conds.leq(gpa, f.charge(), try f.conds.join(gpa, f.charge(), r1, r2), read));
-        // `k` at two depths is two positions of the class: a repeat, `lost`.
-        // Two lists alike are no repeat: the cross-member check is silent.
-        try testing.expectEqual(alias, marked);
-        if (alias) try testing.expectEqual(lost, read);
+        // `k` at two depths is two positions of the class: a repeat, `lost`
+        // (the path-multiset primitive, #1128). Two lists alike are no repeat.
+        // Two distinct lists owe nothing of the primitive (their read may be
+        // lost for other reasons, as before the primitive).
+        if (alias) try testing.expectEqual(lost, read) else if (f.conds.fold_cond.get(kids)) |fc| try testing.expect(!Table.fails(fc));
     }
 }
 
@@ -3903,12 +4106,12 @@ test "#1125 verification: a leaf-only folded class stores its repeat, so the sna
         k = (try f.conds.kappaSet(gpa, f.charge(), k, node, yes)).ctx;
     }
     // Widened and propagated, as a read-off does.
-    const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, root);
+    const widened = try f.conds.widenValue(gpa, f.charge(), f.view(), root, rk);
+    const w = widened.node;
     try testing.expect(w != root);
-    const wk = try f.propagate(.none, w, &.{root}, &.{rk}, .alternatives, false);
+    const wk = widened.kappas;
     const at = try f.projOf(w, t0);
     try testing.expectEqual(Shape.Kind.leaf, f.shapes.kind(at));
-    try testing.expect(f.shapes.foldDups(at) != null);
     // The read, and the stored κ alone (what a block writes and its reader
     // reads, with no `widen` evidence beside it): the same refusal.
     const read = try f.kappa(f.conds.kappaChild(wk, t0), at, false);

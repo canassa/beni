@@ -441,11 +441,13 @@ a `positions` node is.
 one execution holds one arm. Correlation is by arm only: the primitive takes each arm's whole aggregate
 and the maximum per key; it never identifies two `choice` nodes, so two independent branch joins of equal
 structure (`[ if c1 then a else b, if c2 then a else b ]`, the same `if` on every iteration, `[ f x, f x ]`),
-which intern as one node, are two occurrences of that node and add. A `choice` absorbs nothing but itself:
-`choice(x, x) = x`, and `unionHas` applies to unions only. This is safe because **no `choice` lies on a
-cycle**: a cycle is a widened knot or a graft's or decoder's copy of one, widen opens every union and
+which intern as one node, are two occurrences of that node and add. A `choice` absorbs only a member of its
+own choice DAG (`choice(x, x) = x`, `choice(x, choice(x, y)) = choice(x, y)`; the maximum allows it, and without
+it a tower of branch joins re-nests its projections at every level: K grew 14 864 / 94 264 records at
+10 / 20 levels instead of 7 071 / 21 117). It never absorbs into or from a `union` (`unionHas` per kind). **No
+`choice` lies on a cycle**: a cycle is a widened knot or a graft's or decoder's copy of one, widen opens every union and
 choice it meets at a re-entry and its image keeps no opened node, and graft, `map` and decode copy
-structure without adding a cycle. So projecting a `choice` terminates without absorption. Set readers
+structure without adding a cycle. So projecting a `choice` terminates; absorption is for its cost, not its termination. Set readers
 (`reach`, `leq`'s γ, `cellsAt`, `rank`, `deep`'s frontier) read a choice as a union. `leq` is kind-blind,
 so `union(a, b) ≤ choice(a, b)` both ways; the fixpoint's convergence is guarded by `kappaLeq`, whose
 derived reads use the kind through the primitive, so a stored `choice` never stands for a coexisting
@@ -457,6 +459,17 @@ node reached through both arms of an opened choice as repeated, so K and JoinFol
 `yes` beside it. This slice **replaces** it with the primitive: `fold_dups` and `occurs` go, and a folded
 class's repeats are the primitive's (sum over coexisting occurrences, maximum over a choice's arms).
 #1125's equal-cell kids counterexamples stay its red twins.
+
+*As built (#1128, first part):* `Shape.choice` and `Shape.joinChoice` (`memo_join` keyed by mode), made by
+`Transfer`'s branch join and `Summary.joinRes`'s choice mode; every rebuild keeps the kind; the block's
+version is 10. `Shape.widenFold` exposes μ (each source node's class image, the folded classes, the opened
+nodes), and `Cond.widenValue` evaluates the source's aggregates by destination class — post-order over
+the source, a node's own cells as a set at its image, parts summed, an opened choice's arms by the
+maximum — and stores each folded class's obligation (repeats `lost`, distinct arrivals `apart`) for
+`propagate` to conjoin at the class; read-off and `joinRes` widen through it, and `fold_dups` is gone. A
+source on a cycle (a graft's knot) is not yet solved by a worklist: every class it reaches reads all its
+cells repeated, which is sound. The arrival expression's transport to calls, the printer and the block
+are the next slices.
 
 **Cost.** Unchanged in order: per-key maximum costs what saturating addition costs, `joinChoice` is
 `join`, and the memos at most double. A fixed-place, bounded-width tower still costs O(n log n) in total
@@ -2228,7 +2241,7 @@ memo_join  : owner-local comparison tree (mode: union | choice, canonical member
 memo_map   : stamped column NodeId → NodeId within one immutable substitution context/version; different contexts never reuse that stamp
 ```
 
-`choice(l, r)` interns a `choice` record (`choice(x, x) = x`, no other absorption: no choice lies on a cycle, §2.3); `joinChoice(members)` is
+`choice(l, r)` interns a `choice` record (absorbing only a member of its own choice DAG, §2.3); `joinChoice(members)` is
 `join` with its outer DAG and every per-step child join built of `choice` (leaves still merge into one leaf: a cell
 in two arms is one, the maximum). Every switch on the kind handles `choice` with `union`'s set reading; the
 multiplicity reader (§2.9's primitive) is the only one that tells them apart.
@@ -3077,7 +3090,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 800 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 350 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 550 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 650 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |

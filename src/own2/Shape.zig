@@ -57,7 +57,7 @@ pub const Account = Ids.Account;
 
 pub const Error = Ids.ChargeError;
 
-pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions };
+pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions, choice };
 
 /// One node (§3.3). `a`, `b` by kind: `node`: the children map; `delta`:
 /// base + the override map; `recast`: inner; `union`, `positions`: left, right.
@@ -89,7 +89,7 @@ pub const Table = struct {
     overs: std.MultiArrayList(OverNode) = .empty,
     over_intern: Ids.FixedDict(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
-    memo_join: Ids.FixedDict(2) = .{},
+    memo_join: Ids.FixedDict(3) = .{},
     memo_leq: Ids.FixedDict(2) = .{},
     /// `leq`'s answers that rest on a coinductive assumption of the query
     /// in progress, and its depth.
@@ -103,9 +103,6 @@ pub const Table = struct {
     union_seen: stamped.Column(NodeId, void) = .{},
     /// `rank`'s memo: final ranks only (its in-progress marks are the call's).
     rank_memo: stamped.Column(NodeId, u32) = .{},
-    /// The repeats `widen` found in a class it opened a collection into: the
-    /// cells two of its positions hold (§2.3, #1120), by the class's node.
-    fold_dups: stamped.Column(NodeId, SetId) = .{},
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
@@ -116,7 +113,6 @@ pub const Table = struct {
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.rank_memo.deinit(gpa);
         t.named_memo.deinit(gpa);
-        t.fold_dups.deinit(gpa);
         t.named_pool.deinit(gpa);
         t.nodes.deinit(gpa);
         t.intern.deinit(gpa);
@@ -300,6 +296,17 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .@"union", .place = t.place(l), .cells = c, .a = x, .b = y, .reach = .none });
     }
 
+    /// The lazy join of exclusive alternatives (§2.3, #1128): a branch's or a
+    /// fixpoint's arms, one of which is the value. Interned apart from `union`;
+    /// it absorbs only a member of its own choice DAG (the maximum allows it).
+    pub fn choice(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        if (l == r) return l;
+        if (try t.dagHas(gpa, account, .choice, l, r)) return l;
+        if (try t.dagHas(gpa, account, .choice, r, l)) return r;
+        const c = try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
+        return t.make(gpa, account, .{ .kind = .choice, .place = t.place(l), .cells = c, .a = @min(l.int(), r.int()), .b = @max(l.int(), r.int()), .reach = .none });
+    }
+
     /// `collect(n₁…nₖ)` (§2.3): a built value's elements under `[*]` as a
     /// balanced `positions` DAG — never deduplicated or absorbed: the same
     /// node on both sides is two positions, which κ reads as `shared`. One
@@ -342,13 +349,19 @@ pub const Table = struct {
                     try t.memo_map.put(gpa, f.node, if (kept == .none) .none else if (kept == d.cells) f.node else try t.leaf(gpa, account, d.place, kept));
                 },
                 .node, .delta, .recast => try t.memo_map.put(gpa, f.node, f.node),
-                .@"union", .positions => if (!f.expanded) {
+                .@"union", .choice, .positions => if (!f.expanded) {
                     try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
                 } else {
                     const l = t.memo_map.get(.from(d.a)).?;
                     const r = t.memo_map.get(.from(d.b)).?;
-                    const as_union = d.kind == .@"union" or one;
-                    const out: NodeId = if (l == .none) r else if (r == .none) l else if (l == NodeId.from(d.a) and r == NodeId.from(d.b) and as_union == (d.kind == .@"union")) f.node else if (as_union) try t.@"union"(gpa, account, cellsets, l, r) else try t.positions(gpa, account, cellsets, l, r);
+                    // A choice stays a choice (§2.3); one of a positions node's
+                    // positions is the union of its sides' contents.
+                    const as: Kind = if (d.kind == .positions and one) .@"union" else d.kind;
+                    const out: NodeId = if (l == .none) r else if (r == .none) l else if (l == NodeId.from(d.a) and r == NodeId.from(d.b) and as == d.kind) f.node else switch (as) {
+                        .@"union" => try t.@"union"(gpa, account, cellsets, l, r),
+                        .choice => try t.choice(gpa, account, cellsets, l, r),
+                        else => try t.positions(gpa, account, cellsets, l, r),
+                    };
                     try t.memo_map.put(gpa, f.node, out);
                 },
             }
@@ -388,15 +401,22 @@ pub const Table = struct {
     /// nested unions only): a walk with a visited stamp, every union node
     /// once, one record reserved per node read. Never a silent `false`.
     fn unionHas(t: *Table, gpa: Allocator, account: *Account, u: NodeId, x: NodeId) Error!bool {
+        return t.dagHas(gpa, account, .@"union", u, x);
+    }
+
+    /// `unionHas` over the DAG of one kind, `union` or `choice`: a choice
+    /// absorbs a member its own arms hold, which the maximum allows
+    /// (`choice(x, choice(x, y))` is `choice(x, y)`, §2.3).
+    fn dagHas(t: *Table, gpa: Allocator, account: *Account, dag: Kind, u: NodeId, x: NodeId) Error!bool {
         if (u == x) return true;
-        if (t.kind(u) != .@"union") return false;
+        if (t.kind(u) != dag) return false;
         t.union_seen.clear();
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, u);
         while (stack.pop()) |n| {
             if (n == x) return true;
-            if (t.kind(n) != .@"union" or t.union_seen.contains(n)) continue;
+            if (t.kind(n) != dag or t.union_seen.contains(n)) continue;
             try t.union_seen.put(gpa, n, {});
             try account.reserve(.inspection, 1);
             const d = t.get(n);
@@ -488,7 +508,7 @@ pub const Table = struct {
         switch (d.kind) {
             .recast => if (t.recastPart(places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
-            .@"union", .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
+            .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
             else => {},
         }
     }
@@ -525,6 +545,7 @@ pub const Table = struct {
             .recast => try t.recast(gpa, account, child_place, if (t.recastPart(places, n, s)) |inner| got(t, inner.int(), s) else .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
+            .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
         };
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
     }
@@ -634,7 +655,7 @@ pub const Table = struct {
                     while (it.next()) |e| try r.kids.append(r.gpa, e.node);
                 },
                 .recast => try r.kids.append(r.gpa, .from(d.a)),
-                .@"union", .positions => try r.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
+                .@"union", .choice, .positions => try r.kids.appendSlice(r.gpa, &.{ .from(d.a), .from(d.b) }),
             }
         }
 
@@ -752,7 +773,7 @@ pub const Table = struct {
             // A union's sides and a delta's base first; nothing below them
             // names `x` (a side is made before its union).
             if (!f.expanded) switch (d.kind) {
-                .@"union", .positions => {
+                .@"union", .choice, .positions => {
                     try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
                     continue;
                 },
@@ -775,7 +796,7 @@ pub const Table = struct {
                     std.mem.sort(u32, buf.items, {}, std.sort.asc(u32));
                     if (d.kind == .delta) try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
                 },
-                .@"union", .positions => {
+                .@"union", .choice, .positions => {
                     try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
                     try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.b)).?);
                 },
@@ -806,12 +827,6 @@ pub const Table = struct {
         }
         buf.clearRetainingCapacity();
         try buf.appendSlice(gpa, merged.items);
-    }
-
-    /// The cells two positions of `n`'s folded class hold, when `widen` opened
-    /// a collection into it (§2.3): a summary read there is `lost`.
-    pub fn foldDups(t: *const Table, n: NodeId) ?SetId {
-        return t.fold_dups.get(n);
     }
 
     // ---- rank -------------------------------------------------------------------------------
@@ -873,7 +888,7 @@ pub const Table = struct {
                     for (kids.items[0 .. kids.items.len - 1]) |k| r = rankAbove(r, t.rank_memo.get(k) orelse rank_unbounded);
                     r = @max(r, t.rank_memo.get(kids.items[kids.items.len - 1]) orelse rank_unbounded);
                 },
-                .@"union", .positions => for (kids.items) |k| {
+                .@"union", .choice, .positions => for (kids.items) |k| {
                     r = @max(r, t.rank_memo.get(k) orelse rank_unbounded);
                 },
             }
@@ -901,7 +916,7 @@ pub const Table = struct {
                 }
                 if (d.kind == .delta) try out.append(gpa, .from(d.a));
             },
-            .@"union", .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
         }
     }
 
@@ -912,9 +927,21 @@ pub const Table = struct {
     /// into one leaf; what is left into a balanced union DAG. `members` is
     /// scratch and is reordered.
     pub fn join(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        return t.joinAs(gpa, account, places, cellt, members, .@"union");
+    }
+
+    /// `join` of exclusive alternatives (§2.3, #1128): a branch's or a
+    /// fixpoint's arms. The same grouping, its outer DAG and every per-step
+    /// child join made of `choice`; leaves still merge into one leaf (a cell
+    /// in two arms is one, the maximum).
+    pub fn joinChoice(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        return t.joinAs(gpa, account, places, cellt, members, .choice);
+    }
+
+    fn joinAs(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId, mode: Kind) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
-        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt };
+        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode };
         defer w.deinit();
         return w.run(members);
     }
@@ -934,13 +961,15 @@ pub const Table = struct {
         account: *Account,
         places: *Place.Table,
         cellt: *Cell.Table,
+        /// `union` or `choice`: what the outer DAG and the child joins are made of.
+        mode: Kind = .@"union",
         pool: std.ArrayList(NodeId) = .empty,
         reqs: std.ArrayList(Req) = .empty,
         parts: std.ArrayList(Part) = .empty,
         steps: std.ArrayList(StepChild) = .empty,
         stack: std.ArrayList(u32) = .empty,
 
-        const Req = struct { first: u32, len: u32, key: ?[2]u32 = null, result: NodeId = .none, parts_first: u32 = 0, parts_len: u32 = 0, expanded: bool = false };
+        const Req = struct { first: u32, len: u32, key: ?[3]u32 = null, result: NodeId = .none, parts_first: u32 = 0, parts_len: u32 = 0, expanded: bool = false };
         /// A group of the request: a node as it is, the leaves joined, or a
         /// delta group's base with its steps' child requests.
         const Part = struct { kind: enum { node, leaf, delta }, node: NodeId = .none, place: PlaceId = .none, cells: SetId = .none, steps_first: u32 = 0, steps_len: u32 = 0 };
@@ -988,11 +1017,11 @@ pub const Table = struct {
                     return;
                 }
                 try w.account.reserve(.memo, 1); // before the memo, a hit charged too
-                if (t.memo_join.get(.{ x, y })) |hit| {
+                if (t.memo_join.get(.{ @backingInt(w.mode), x, y })) |hit| {
                     w.reqs.items[id].result = .from(hit);
                     return;
                 }
-                w.reqs.items[id].key = .{ x, y };
+                w.reqs.items[id].key = .{ @backingInt(w.mode), x, y };
             }
             try w.account.reserve(.memo, 1);
             // Sort by (base, id): one pass groups and deduplicates.
@@ -1107,17 +1136,17 @@ pub const Table = struct {
                     try groups.append(w.gpa, try t.delta(w.gpa, w.account, p.node, over));
                 },
             };
-            const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items);
+            const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items, w.mode);
             w.reqs.items[id].result = out;
             if (r.key) |k| (try t.memo_join.getOrPut(w.gpa, k)).value_ptr.* = out.int();
         }
     };
-    fn balancedUnion(t: *Table, gpa: Allocator, account: *Account, cellt: *Cell.Table, groups: []NodeId) Error!NodeId {
+    fn balancedUnion(t: *Table, gpa: Allocator, account: *Account, cellt: *Cell.Table, groups: []NodeId, mode: Kind) Error!NodeId {
         if (groups.len == 1) return groups[0];
         const mid = groups.len / 2;
-        const l = try t.balancedUnion(gpa, account, cellt, groups[0..mid]);
-        const r = try t.balancedUnion(gpa, account, cellt, groups[mid..]);
-        return t.@"union"(gpa, account, &cellt.sets, l, r);
+        const l = try t.balancedUnion(gpa, account, cellt, groups[0..mid], mode);
+        const r = try t.balancedUnion(gpa, account, cellt, groups[mid..], mode);
+        return if (mode == .choice) t.choice(gpa, account, &cellt.sets, l, r) else t.@"union"(gpa, account, &cellt.sets, l, r);
     }
 
     // ---- map ---------------------------------------------------------------------------------
@@ -1154,7 +1183,7 @@ pub const Table = struct {
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
                         try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
                     },
-                    .@"union", .positions => {
+                    .@"union", .choice, .positions => {
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
                         try stack.appendSlice(gpa, &.{ .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
                     },
@@ -1186,7 +1215,7 @@ pub const Table = struct {
                     if (t.memo_map.get(n) != null) continue;
                     try t.memo_map.put(gpa, n, try t.recast(gpa, account, d.place, t.memo_map.get(.from(d.a)).?));
                 },
-                .@"union", .positions => {
+                .@"union", .choice, .positions => {
                     if (t.memo_map.get(n) != null) continue;
                     const c = fr.cells;
                     const l = t.memo_map.get(.from(d.a)).?;
@@ -1340,6 +1369,30 @@ pub const Table = struct {
         return w.run(n);
     }
 
+    /// What a widen made of its source (§2.9's path map μ, #1128): each
+    /// source node the walk reached → its class's image, the images of the
+    /// classes that identify two source positions or more, and the unions
+    /// and positions nodes opened on the cycle. Empty when nothing merged.
+    pub const Fold = struct {
+        image: stamped.Column(NodeId, NodeId) = .{},
+        folded: stamped.Column(NodeId, void) = .{},
+        opened: stamped.Column(NodeId, void) = .{},
+        merged: bool = false,
+
+        pub fn deinit(f: *Fold, gpa: Allocator) void {
+            f.image.deinit(gpa);
+            f.folded.deinit(gpa);
+            f.opened.deinit(gpa);
+        }
+    };
+
+    /// `widen`, its path map into `out`.
+    pub fn widenFold(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, out: *Fold) Error!NodeId {
+        var w: Widen = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .out = out };
+        defer w.deinit();
+        return w.run(n);
+    }
+
     const Widen = struct {
         t: *Table,
         gpa: Allocator,
@@ -1370,13 +1423,14 @@ pub const Table = struct {
         /// How many times the walk reached each node: a node reached twice
         /// stands at two positions of its class.
         occurs: stamped.Column(NodeId, u32) = .{},
-        /// The nodes at two positions or more (`markRepeats`).
-        multi: stamped.Column(NodeId, void) = .{},
-        repeated: std.ArrayList(NodeId) = .empty,
         pending: std.ArrayList([2]u32) = .empty,
         image: stamped.Column(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
         any_merge: bool = false,
+        /// The source nodes in the order first visited, and where `widenFold`
+        /// wants the path map.
+        seen_order: std.ArrayList(NodeId) = .empty,
+        out: ?*Fold = null,
 
         pub const Entry = struct { step: u32, child: u32, next: u32 };
         comptime {
@@ -1398,11 +1452,10 @@ pub const Table = struct {
             w.visited.deinit(w.gpa);
             w.opened.deinit(w.gpa);
             w.occurs.deinit(w.gpa);
-            w.multi.deinit(w.gpa);
-            w.repeated.deinit(w.gpa);
             w.pending.deinit(w.gpa);
             w.image.deinit(w.gpa);
             w.kids.deinit(w.gpa);
+            w.seen_order.deinit(w.gpa);
         }
 
         fn touch(w: *Widen, n: NodeId) Allocator.Error!void {
@@ -1500,7 +1553,7 @@ pub const Table = struct {
                         while (bt.next()) |e| if (w.t.overGet(d.b, e.step) == null) try w.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
                     }
                 },
-                .leaf, .recast, .@"union", .positions => {},
+                .leaf, .recast, .@"union", .choice, .positions => {},
             }
         }
 
@@ -1514,7 +1567,6 @@ pub const Table = struct {
                 try w.touch(f.node);
                 const seen_before = w.occurs.get(f.node) orelse 0;
                 try w.occurs.put(w.gpa, f.node, seen_before + 1);
-                if (seen_before == 1) try w.repeated.append(w.gpa, f.node);
                 try w.account.reserve(.edge, 1);
                 // `⟲` is its ancestor's class: the re-entered place's node.
                 const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
@@ -1526,10 +1578,11 @@ pub const Table = struct {
                 }
                 if (w.visited.contains(f.node)) continue;
                 try w.visited.put(w.gpa, f.node, {});
+                try w.seen_order.append(w.gpa, f.node);
                 // A union or a positions node on the cycle being folded: its sides
                 // are at its path, so they are members of its class (§2.3).
                 switch (w.t.kind(f.node)) {
-                    .@"union", .positions => if (reentry) {
+                    .@"union", .choice, .positions => if (reentry) {
                         try w.opened.put(w.gpa, f.node, {});
                         const d = w.t.get(f.node);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
@@ -1551,43 +1604,27 @@ pub const Table = struct {
                     try stack.append(w.gpa, .{ .node = child, .path = cp });
                 }
             }
-            // A node reached twice stands at two positions, and so does every
-            // node below it: one walk from the repeated nodes marks them (§2.3).
-            try w.markRepeats();
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
-            return w.emit(root);
+            const out = try w.emit(root);
+            if (w.out) |fo| try w.exportFold(fo);
+            return out;
         }
 
-        /// Mark `multi` every node the walk reached twice and everything below
-        /// it: its explicit children and an opened member's sides. A record
-        /// per node marked and per edge read.
-        fn markRepeats(w: *Widen) Error!void {
-            var stack: std.ArrayList(NodeId) = .empty;
-            defer stack.deinit(w.gpa);
-            for (w.repeated.items) |n| if (!w.multi.contains(n)) {
-                try w.multi.put(w.gpa, n, {});
-                try stack.append(w.gpa, n);
-            };
-            var below: std.ArrayList(NodeId) = .empty;
-            defer below.deinit(w.gpa);
-            while (stack.pop()) |n| {
+        /// The path map μ into `fo`: each visited source node's image; an
+        /// image folded when its class has two members or one reached twice.
+        fn exportFold(w: *Widen, fo: *Fold) Error!void {
+            fo.merged = true;
+            for (w.seen_order.items) |n| {
                 try w.account.reserve(.inspection, 1);
-                below.clearRetainingCapacity();
-                if (w.opened.contains(n)) {
-                    const d = w.t.get(n);
-                    try below.appendSlice(w.gpa, &.{ .from(d.a), .from(d.b) });
-                } else {
-                    try w.explicitEdges(n);
-                    var i: usize = 1;
-                    while (i < w.kids.items.len) : (i += 2) try below.append(w.gpa, w.kids.items[i]);
-                }
-                for (below.items) |c| if (!w.multi.contains(c)) {
-                    try w.account.reserve(.edge, 1);
-                    try w.multi.put(w.gpa, c, {});
-                    try stack.append(w.gpa, c);
-                };
+                const rep = w.find(n.int());
+                const img = w.image.get(.from(rep)) orelse continue;
+                try fo.image.put(w.gpa, n, img);
+                if (w.opened.contains(n)) try fo.opened.put(w.gpa, n, {});
+                if (fo.folded.contains(img)) continue;
+                const many = w.head.items[rep] != w.tail.items[rep] or (w.occurs.get(n) orelse 0) >= 2;
+                if (many) try fo.folded.put(w.gpa, img, {});
             }
         }
 
@@ -1622,29 +1659,18 @@ pub const Table = struct {
                 var leaf_cells: SetId = .none;
                 var has_leaf = false;
                 var explicit = false;
-                // The class's positions as a multiset (§2.3, #1120): a cell two
-                // occurrences hold, of one member or of two, is a repeat the
-                // folded summary position reads (`lost`). An opened member is
-                // its sides, which are members.
-                var held: SetId = .none;
-                var dups: SetId = .none;
                 extra.clearRetainingCapacity();
                 var m = w.head.items[rep];
                 while (m != none) : (m = w.next_member.items[m]) {
                     try w.account.reserve(.inspection, 1);
                     const d = w.t.get(.from(m));
                     c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, d.cells);
-                    if (!w.opened.contains(.from(m)) and d.cells != .none) {
-                        if (w.multi.contains(.from(m))) dups = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), dups, d.cells);
-                        dups = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), dups, try w.cellt.sets.intersection(w.gpa, .growth(w.account), held, d.cells));
-                        held = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), held, d.cells);
-                    }
                     switch (d.kind) {
                         .leaf => {
                             has_leaf = true;
                             leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, d.cells);
                         },
-                        .recast, .@"union", .positions => if (!w.opened.contains(.from(m))) try extra.append(w.gpa, .from(m)),
+                        .recast, .@"union", .choice, .positions => if (!w.opened.contains(.from(m))) try extra.append(w.gpa, .from(m)),
                         .delta => {
                             explicit = true;
                             const base: NodeId = .from(d.a);
@@ -1654,7 +1680,7 @@ pub const Table = struct {
                                     leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, w.t.cells(base));
                                 },
                                 .node => {},
-                                .recast, .@"union", .positions, .delta => try extra.append(w.gpa, base),
+                                .recast, .@"union", .choice, .positions, .delta => try extra.append(w.gpa, base),
                             }
                         },
                         .node => explicit = true,
@@ -1666,9 +1692,6 @@ pub const Table = struct {
                     try w.account.reserve(.inspection, 1);
                     children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.entries.items(.step)[e]), w.image.get(.from(w.find(w.entries.items(.child)[e]))).?);
                 }
-                // Every fold merges positions the unwidened reads never compared
-                // with each other (§2.9, #1125): its repeats are its own.
-                if (dups != .none) try w.t.fold_dups.put(w.gpa, id, dups);
                 const at = w.t.place(id);
                 var side: ?NodeId = if (has_leaf) try w.t.leaf(w.gpa, w.account, at, leaf_cells) else null;
                 for (extra.items) |x| side = if (side) |s| try w.t.@"union"(w.gpa, w.account, &w.cellt.sets, s, x) else x;
@@ -1690,7 +1713,6 @@ pub const Table = struct {
                     w.t.nodes.set(id.int(), w.t.nodes.get(u.int()));
                     w.t.nodes.set(u.int(), img);
                     w.t.nodes.items(.a)[id.int()] = u.int();
-                    if (w.t.fold_dups.get(id)) |r| try w.t.fold_dups.put(w.gpa, u, r);
                 }
             }
             return w.image.get(.from(w.find(root.int()))).?;
@@ -2537,4 +2559,39 @@ fn deepShapes() !void {
     const j = try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &two);
     try testing.expectEqual(Kind.delta, f.shapes.kind(j));
     try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, da, j));
+}
+
+test "#1128: a choice is its own kind: interned apart from a union, projected and rebuilt as a choice, never absorbed into one" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const a = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    const b = try f.shapes.leaf(gpa, &f.account, list, try f.site(2, list, .list));
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, a, b);
+    const c = try f.shapes.choice(gpa, &f.account, &f.cells.sets, a, b);
+    try testing.expect(u != c);
+    try testing.expectEqual(Kind.choice, f.shapes.kind(c));
+    try testing.expectEqual(f.shapes.cells(u), f.shapes.cells(c));
+    // `choice(x, x)` is `x`; a choice absorbs a member of its own DAG,
+    // never one a union holds.
+    try testing.expectEqual(a, try f.shapes.choice(gpa, &f.account, &f.cells.sets, a, a));
+    try testing.expectEqual(c, try f.shapes.choice(gpa, &f.account, &f.cells.sets, c, a));
+    try testing.expect(try f.shapes.choice(gpa, &f.account, &f.cells.sets, u, a) != u);
+    // `join` and `joinChoice` of one pair never share a memo entry, in
+    // either order (the mode is in `memo_join`'s key).
+    const n1 = try f.shapes.node(gpa, &f.account, list, try f.site(3, list, .list), try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, a));
+    const n2 = try f.shapes.node(gpa, &f.account, list, try f.site(4, list, .list), try f.shapes.overPut(gpa, &f.account, Table.over_none, Step.elem, b));
+    var two = [_]NodeId{ n1, n2 };
+    const jc = try f.shapes.joinChoice(gpa, &f.account, &f.places, &f.cells, &two);
+    two = .{ n1, n2 };
+    const ju = try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &two);
+    two = .{ n2, n1 };
+    try testing.expectEqual(jc, try f.shapes.joinChoice(gpa, &f.account, &f.places, &f.cells, &two));
+    try testing.expectEqual(Kind.choice, f.shapes.kind(jc));
+    try testing.expectEqual(Kind.@"union", f.shapes.kind(ju));
+    // A projection of a choice is a choice of the projections.
+    const p = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, jc, Step.elem)).?;
+    try testing.expectEqual(Kind.choice, f.shapes.kind(p));
 }

@@ -852,13 +852,15 @@ const Reader = struct {
                 break :blk id;
             },
             .recast => try shapes.recast(gpa, acct, at, try r.side()),
-            .@"union", .positions => blk: {
+            .@"union", .choice, .positions => blk: {
                 if (try r.get() != 2) return error.Malformed;
                 const a = try r.side();
                 const b = try r.side();
                 // Two sides at the union's own place, as `join` makes them.
                 if (shapes.place(a) != at or shapes.place(b) != at) return error.Malformed;
                 if (kind == .positions) break :blk try shapes.collect(gpa, acct, sets, &.{ a, b });
+                // A choice decodes to a choice, never a union (§3.6).
+                if (kind == .choice) break :blk try shapes.choice(gpa, acct, sets, a, b);
                 const made = try shapes.@"union"(gpa, acct, sets, a, b);
                 if (made == a or made == b) {
                     absorbed = try shapes.knot(gpa, acct);
@@ -1785,7 +1787,7 @@ test "a block keeps the κ a joined class stored at a position only `proj` reach
         maps[i] = m;
     }
     // The join stores `shared` on `proj(j, [*])`, a node no part of `j` names.
-    const j = try Summary.Table.joinRes(env, tops[0], maps[0], tops[1], maps[1]);
+    const j = try Summary.Table.joinRes(env, tops[0], maps[0], tops[1], maps[1], .choice);
     const c = try a.sums.add(env, .{ .params = &.{.none}, .res = j.node, .kappas = j.kappas });
     try testing.expectEqual(Cond.shared, try kappaAt(&a, j.kappas, j.node, &.{Step.elem}));
     var b: Tables = .{};
@@ -2936,7 +2938,7 @@ fn setAtNodeFrom(t: *Tables, out: *Cond.Kappas, n: NodeId, target: NodeId, k: Co
             }
         },
         .recast => try setAtNodeFrom(t, out, .from(d.a), target, k, path, route),
-        .@"union", .positions => {
+        .@"union", .choice, .positions => {
             try setAtNodeFrom(t, out, .from(d.a), target, k, path, route);
             try setAtNodeFrom(t, out, .from(d.b), target, k, path, route);
         },
@@ -3219,4 +3221,24 @@ test "#1122 review: a built node at two paths is published at both, through Summ
     const at1 = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, back.res, s1)).?;
     try testing.expectEqual(at0, at1);
     for ([_]Step{ s0, s1 }) |s| try testing.expectEqual(@as(u32, 1), b.cells.sets.count(b.shapes.cells((try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at0, s)).?)));
+}
+
+test "#1128: a choice decodes to a choice, never a union" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    const list = try a.place(0);
+    var arms: [2]NodeId = undefined;
+    for (&arms, 0..) |*arm, i| {
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, @intCast(i), try a.places.rootPath(gpa, list), 0);
+        arm.* = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    }
+    const c = try a.sums.add(env, .{ .params = &.{ .none, .none }, .res = try a.shapes.choice(gpa, &a.account, &a.cells.sets, arms[0], arms[1]) });
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    try testing.expectEqual(Shape.Kind.choice, b.shapes.kind(back.res));
 }

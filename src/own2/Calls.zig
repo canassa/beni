@@ -327,7 +327,7 @@ const Grafter = struct {
                     }
                 },
                 .recast => try kids.append(g.gpa(), .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }),
-                .@"union", .positions => try kids.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
+                .@"union", .choice, .positions => try kids.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
             }
             var k = kids.items.len;
             while (k > 0) {
@@ -419,7 +419,7 @@ const Grafter = struct {
                     while (kt.next()) |e| try stack.append(g.gpa(), .{ .node = e.node, .parent = me, .expanded = false });
                 },
                 .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .parent = me, .expanded = false }),
-                .@"union", .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .parent = me, .expanded = false }, .{ .node = .from(d.b), .parent = me, .expanded = false } }),
+                .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .parent = me, .expanded = false }, .{ .node = .from(d.b), .parent = me, .expanded = false } }),
             }
         }
         return g.s.memo.get(root).?;
@@ -486,7 +486,7 @@ const Grafter = struct {
                 rec.a = in.int();
                 rec.cells = try g.imageCells(d.cells, shapes.place(.from(d.a)));
             },
-            .@"union", .positions => {
+            .@"union", .choice, .positions => {
                 rec.a = g.s.memo.get(.from(d.a)).?.int();
                 rec.b = g.s.memo.get(.from(d.b)).?.int();
                 rec.cells = try g.imageCells(d.cells, d.place);
@@ -555,6 +555,11 @@ const Grafter = struct {
                 break :blk try shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
             },
             .positions => try shapes.collect(g.gpa(), g.account(), &g.env.cells.sets, &.{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? }),
+            // A choice's arms stay exclusive at the call (§2.3).
+            .choice => blk: {
+                var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
+                break :blk try shapes.joinChoice(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
+            },
         };
         try g.s.memo.put(g.gpa(), t, out);
     }
@@ -1211,7 +1216,7 @@ fn linkByRootPaths(g: *Grafter, kappa: Cond.Kappas, root: NodeId) !Cond.Kappas {
                 }
             },
             .recast => try kids.append(gpa, .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }),
-            .@"union", .positions => try kids.appendSlice(gpa, &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
+            .@"union", .choice, .positions => try kids.appendSlice(gpa, &.{ .{ .node = .from(d.a), .pid = f.pid, .step = null, .exit = false }, .{ .node = .from(d.b), .pid = f.pid, .step = null, .exit = false } }),
         }
         var k = kids.items.len;
         while (k > 0) {

@@ -1323,7 +1323,7 @@ test "Appendix C.4: foldlFrom's res, κ and feedback supply reach the table's ro
         while (it.next()) |e| for (try in.image(.from(e.key))) |x| try cells.append(gpa, try foldCell(&d, x, false));
         const then_node = try leafOf(&d, cells.items);
         const then_k = try f.conds.instantiate(gpa, env.charge, try env.kappa(prev.kappas, prev.node), interp);
-        const joined = try Summary.Table.joinRes(env, else_node, else_k, then_node, try withK(&f, then_node, then_k));
+        const joined = try Summary.Table.joinRes(env, else_node, else_k, then_node, try withK(&f, then_node, then_k), .choice);
         // The feedback supply (§2.11 item 5): what the callback is handed
         // back as its accumulator at the folded label ι_rec⋆. At ι_rec·ι_f it
         // is π₄'s image; at ι_rec·ι_rec⋆ the callee's own feedback, mapped and
