@@ -1,6 +1,7 @@
 -- The DOM capabilities' shape under `--release` once `Dom.js` is gone
 -- (plans/runtime-in-beni.md step 8): `Dom.Error`, `Box` and `Viewport` no
--- longer cross the boundary, so `NotFound` carries an integer tag; the
+-- longer cross the boundary, so `Result` carries integer tags and
+-- `NotFound id` is written as `id`; where `box` is live, as here, the
 -- records keep `x`, `y`, `width` and `height`, which `box` also reads as
 -- plain properties of the host rectangle (backend.md §9 item 4's closed
 -- list); the node lookup, the method calls and the four window reads are
