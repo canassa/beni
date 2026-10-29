@@ -1,0 +1,47 @@
+-- ownership: one value spread or appended to at many sites
+-- (ownership-v2.md §4.1, #1201). Each site's demand reads every holder of
+-- the value, so k sites are k × k: past a few holders the sweep is growth
+-- chosen before the work, never the demand's lane. Each declaration checks,
+-- with no lane past its ceiling.
+pub spread : List Int → List (List (List Int))
+spread ys =
+    v = [ [ 0 ] ]
+    a0 = [ …v, ys ]
+    a1 = [ …v, ys ]
+    a2 = [ …v, ys ]
+    a3 = [ …v, ys ]
+    a4 = [ …v, ys ]
+    a5 = [ …v, ys ]
+    a6 = [ …v, ys ]
+    a7 = [ …v, ys ]
+    a8 = [ …v, ys ]
+    a9 = [ …v, ys ]
+    a10 = [ …v, ys ]
+    a11 = [ …v, ys ]
+    a12 = [ …v, ys ]
+    a13 = [ …v, ys ]
+    a14 = [ …v, ys ]
+    a15 = [ …v, ys ]
+    [ a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15 ]
+
+
+pub appended : List Int → List (List (List Int))
+appended ys =
+    v = [ [ 0 ] ]
+    a0 = v ++ [ ys ]
+    a1 = v ++ [ ys ]
+    a2 = v ++ [ ys ]
+    a3 = v ++ [ ys ]
+    a4 = v ++ [ ys ]
+    a5 = v ++ [ ys ]
+    a6 = v ++ [ ys ]
+    a7 = v ++ [ ys ]
+    a8 = v ++ [ ys ]
+    a9 = v ++ [ ys ]
+    a10 = v ++ [ ys ]
+    a11 = v ++ [ ys ]
+    a12 = v ++ [ ys ]
+    a13 = v ++ [ ys ]
+    a14 = v ++ [ ys ]
+    a15 = v ++ [ ys ]
+    [ a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15 ]
