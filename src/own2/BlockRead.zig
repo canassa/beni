@@ -3141,3 +3141,36 @@ test "#1143: a cyclic result grafted writes the block its original writes" {
         try graftedSame(&t, a);
     }
 }
+
+test "#1122: a cell at two paths is published at both, through Summary and the block" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    // `( a, a )` over `List Int × List Int`: one leaf, two routes.
+    const pair = try a.place(9);
+    const list = try a.place(0);
+    const p1 = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, list), 0);
+    const leaf = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, p1.int(), 0));
+    const s0 = try Step.index(&a.account, 0);
+    const s1 = try Step.index(&a.account, 1);
+    var kids = try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, leaf);
+    kids = try a.shapes.overPut(gpa, &a.account, kids, s1, leaf);
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = try a.shapes.node(gpa, &a.account, pair, .none, kids) });
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const before = try a.text(arena, c);
+    try testing.expect(std.mem.indexOf(u8, before, ".0 π1") != null and std.mem.indexOf(u8, before, ".1 π1") != null);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
+    // Both routes hold the cell, read back.
+    for ([_]Step{ s0, s1 }) |s| {
+        const at = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, back.res, s)).?;
+        try testing.expectEqual(@as(u32, 1), b.cells.sets.count(b.shapes.cells(at)));
+    }
+}

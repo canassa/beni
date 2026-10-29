@@ -8650,6 +8650,43 @@ test "a one-element literal's [*] compares the objects its element holds at ever
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: π1 RA, π1[*] RA; res [*] {lost}, [*].0 π1, [*].1 π1[*]{excl π1[*]}, fresh1 fresh2\n") != null);
 }
 
+test "the checker v2's summary prints a cell at every path it is reached at, a shared value by reference" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1122 (§2.9, I-κ): sharing between explicit paths lives in their
+    // cells, so a class keeps every route to a cell. The printer kept each
+    // `(node, position)` once and left out `pair`'s `.1.0 π1` and `twice`'s
+    // `.1`; a built node met again is printed as a reference to its first
+    // route, so a DAG is never flattened.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub pair : List Int, List Int → List Int × (List Int × List Int)
+        \\pair a b =
+        \\    ( a, ( a, b ) )
+        \\
+        \\
+        \\pub twice : List Int, List Int → (List Int × List Int) × (List Int × List Int)
+        \\twice a b =
+        \\    p = ( a, b )
+        \\    ( p, p )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary pair: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π2\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: π1 RA, π2 RA; res .0.0 π1, .0.1 π2, .1 = .0\n") != null);
+}
+
 test "the checker v2 gives each demand of one call its own query lane" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

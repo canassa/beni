@@ -1176,6 +1176,8 @@ pub const Table = struct {
         slots: []const Slot = &.{},
         params: u32 = 0,
         seen: Ids.FixedDict(2) = .{},
+        /// The path each `seen` entry was first printed at (#1122).
+        firsts: std.ArrayList([]const u8) = .empty,
 
         const WErr = std.Io.Writer.Error;
 
@@ -1198,6 +1200,7 @@ pub const Table = struct {
             var groups: std.ArrayList([]const u8) = .empty;
             p.seen.deinit(p.env.gpa);
             p.seen = .{};
+            p.firsts = .empty;
             try p.resLines(k.res, "", false, p.ctx, &groups);
             Cond.sortText(groups.items);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
@@ -1341,7 +1344,22 @@ pub const Table = struct {
             while (stack.pop()) |a| {
                 const n = a.n;
                 if (a.line) {
-                    if ((try p.seen.getOrPut(env.gpa, .{ n.int(), a.cur.int() })).found_existing) continue;
+                    const got = try p.seen.getOrPut(env.gpa, .{ n.int(), a.cur.int() });
+                    if (got.found_existing) {
+                        // The same node at the same cursor by another route (#1122):
+                        // printed there too, never omitted. A leaf's line again;
+                        // a built node's a reference to its first route, so a
+                        // DAG is never flattened. Below its first route, a cycle.
+                        const first = p.firsts.items[got.value_ptr.*];
+                        if (routeBelow(a.prefix, first)) continue;
+                        if (env.shapes.kind(n) != .leaf) {
+                            try out.append(p.arena, try std.fmt.allocPrint(p.arena, "{s} = {s}", .{ a.prefix, first }));
+                            continue;
+                        }
+                    } else {
+                        got.value_ptr.* = @intCast(p.firsts.items.len);
+                        try p.firsts.append(p.arena, a.prefix);
+                    }
                     var texts: std.ArrayList([]const u8) = .empty;
                     try p.gather(n, &texts);
                     Cond.sortText(texts.items);
@@ -1565,6 +1583,15 @@ pub const Table = struct {
         }
 
         /// Step `s` out of place `from` (a constructor is named by its type).
+        /// Whether printed path `route` is `first` or a path below it: `first`
+        /// then a step (`.`, `#`, `[`, or a sign like `⟲`).
+        fn routeBelow(route: []const u8, first: []const u8) bool {
+            if (!std.mem.startsWith(u8, route, first)) return false;
+            if (route.len == first.len) return true;
+            const c = route[first.len];
+            return c == '.' or c == '#' or c == '[' or c >= 0x80;
+        }
+
         fn step(p: *Printer, w: *std.Io.Writer, from: PlaceId, s: Step) WErr!void {
             switch (s.kind) {
                 .field => try w.print(".{s}", .{p.names.field(p.names.ctx, s.payload)}),
