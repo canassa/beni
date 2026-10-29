@@ -573,10 +573,12 @@ const Resolver = struct {
     /// decides, by a binary search charged as growth (#1226), never a scan.
     fn escapedAt(r: *Resolver, c: CellId, p: u32) Error!?u32 {
         const run = r.esc.get(c) orelse return null;
-        // A run's size, never the demand's fixed lane (§4.1).
+        // One point is one test, which the caller's step already paid for;
+        // a longer run's search is as large as the run, so growth chosen
+        // before it, never the demand's fixed lane (§4.1).
         const task: ?Ids.Account.Kernel = if (run.len > 1) try r.env.account().enter(r.gpa, null) else null;
         defer if (task) |k| r.env.account().leave(k);
-        try r.env.charge.reserve(r.gpa, .inspection, std.math.log2_int_ceil(u32, run.len + 1) + 1);
+        if (task != null) try r.env.charge.reserve(r.gpa, .inspection, std.math.log2_int_ceil(u32, run.len + 1) + 1);
         const before = std.sort.partitionPoint(u32, r.esc_points.items[run.start..][0..run.len], p, struct {
             fn below(bound: u32, e: u32) bool {
                 return e < bound;
