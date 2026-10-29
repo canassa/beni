@@ -1269,6 +1269,7 @@ defaults, so that inside a project `beni build` and `beni serve` need no argumen
 | `"build"."out"` | what `--out` would say | `out` |
 | `"build"."base"` | the URL path `--out` is served under: what the page shell writes before the entry file (`{{entry}}`) and for `{{base}}`, and what `serve` takes off a request's path (*amended 2026-10-01*). It ends in `/` and holds no quote, `<`, `>` or whitespace, or it is `beni: beni.json's "build" "base" must be a URL path ending in '/', not '<value>'`, exit 2. It has no flag | `/` |
 | `"build"."origin"` | *added 2026-10-29* ([`prerender.md`](prerender.md) §7.3, slice P3): the address a prerendered site is served at, `http://` or `https://`, a host of ASCII letters, digits, `.` and `-`, and at most a port — no path; a prerendering build of a `Tea.application` needs it, and makes each route's `Url` with it (`prerender_needs_origin` otherwise). Any other value is `beni: beni.json's "build" "origin" must be an http or https origin with no path, as "https://example.com", not '<value>'`, exit 2, from a build that prerenders. It has no flag | none |
+| `"build"."data"` | *specified 2026-10-29, not built* ([`prerender.md`](prerender.md) §8.2, slice P4): the build-time data program of a prerendered site, an object with `"paths"`, a nonempty list of the data program's `<path>`s, and `"inputs"`, an optional list of files and directories `--watch` and `serve` watch for it (§8.8 there); it is built for `node` and run before the prerender. A site whose `main` says `Browser.prerenderData` needs it (`prerender_needs_data`); with any other `main` it is the warning `prerender_data_ignored`. It has no flag | none |
 | `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
 | `"exports"` | the entry file's named exports, a list of ECMAScript identifiers, each the answer of `run(main)`'s `exports(name)` (*added 2026-10-20*, `boundary.md` §5.2 and §9.12 (c)); read when the platform chain declares `"exports": "program"`, and the warning `exports_ignored` otherwise; a name that is not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, a diagnostic of the build (exit 1, reported during emit as `invalid_entry_file` is); a value that is not a list of strings is this row's exit-2 failure, like any key of the wrong type | none |
 
@@ -1318,6 +1319,10 @@ count, so the walk's order does not matter and nothing is kept between polls.) `
 `"build"` is read once, when the command starts — it decides what is watched — while its `"html"` is
 read by every build, so an edit to the page shell is picked up and an edit to the defaults needs a
 restart.
+
+*Specified 2026-10-29, not built* ([`prerender.md`](prerender.md) §8.8, slice P4): a project with
+a `"build"."data"` also watches its data program's `"paths"`, by the endings above, and every file
+under its `"inputs"`, whatever the ending.
 
 **What it prints.** Every build prints exactly what a one-shot build prints — diagnostics on stderr
 in the chosen `--diagnostics` form, one render per build — followed by **one status line on stdout**:

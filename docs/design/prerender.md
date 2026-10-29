@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slices P1, P2a and P3 built** (2026-10-29, #1165, #1178, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P3*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1, P2a and P3 built; P4 specified** (§8, #1207) (2026-10-29, #1165, #1178, #1194, §11 *As built — P1*, *As built — P2a*, *As built — P3*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -141,6 +141,11 @@ cannot heal is **structure**: which elements exist, because `E[n]` numbers them 
 | a branch chosen by such a value (`if Float.sin x > 0.5`) | the engine | a structural mismatch, found and handled at hydration (§6.4) |
 | the HTML changed after the build: a CDN that rewrites e-mail links, a browser extension that inserts elements, a hand edit | the host | found and handled at hydration (§6.4) |
 | a view that throws or does not end | the program | a throw fails the build, `prerender_failed`, with the route (§5.5); a view that never ends never ends in the browser either, and the build waits as any program does |
+
+*Amended 2026-10-29 (#1207, specified for P4).* With build-time data the input is the route and
+the value the page carries, decoded by the same code in both places from the same bytes (§8.1,
+§8.6); the data program that made those bytes is outside the claim, and may be impure (§8.3). A
+page whose bytes a host changed is §8.6's.
 
 ## 4. The string form
 
@@ -342,6 +347,9 @@ The pages are a function of the program, the shell, the base and the route list 
 Node runs the routes in the list's order in one thread, and the build writes them in that order
 after the client tree's files. The determinism test's corpus run at `--jobs=1` and `--jobs=8` covers
 the pages with no change, since they are files the build writes.
+
+*Amended 2026-10-29 (#1207, specified for P4):* with build-time data, the data program's records
+join the list, §8.9.
 
 ### 5.5 Failures
 
@@ -658,6 +666,9 @@ route can name a file the build writes for itself. A route that breaks one of th
 the list holds `/`, its page is the `index.html` the build writes; otherwise `index.html` is the
 shell with no view, which mounts fresh (§6.1) and serves a host's single-page fallback.
 
+*Amended 2026-10-29 (#1207, specified for P4):* a data site's routes are the data program's, checked
+by the same rules, and its `index.html` is the page of `/` or is not written (§8.5, §8.6).
+
 Non-ASCII routes (`/blog/café`) are a limit, lifted only with a Unicode case folding for rule 2:
 APFS and NTFS fold more than ASCII, so the check would miss a collision there.
 
@@ -689,7 +700,7 @@ and the record carries the title. A shell's `{{title}}` and `{{view}}` are repla
 a title that says `{{view}}` stays text; a page with no title — a `sandbox`'s, or the shell with
 no view — writes nothing there.
 
-## 8. Build-time data (later)
+## 8. Build-time data
 
 A blog's posts are files. `init` cannot read them: it is pure (§3.1), and `browser-inline` has no
 `readFile`. The data has to be read once at build time, by a program that may read files — one
@@ -710,6 +721,371 @@ data into the program as beni values, which would keep the guarantee with no sch
 page carry every post. This section is a direction, not a contract: it is specified before its
 slice, after P3.
 
+*Specified 2026-10-29 (#1207, slice P4; the heading lost its "(later)" the same day).* §8.1–§8.11
+are the contract; the paragraph above is kept as the direction it was, and they keep it. Not built.
+
+### 8.1 The shape
+
+A site with build-time data is **two programs over shared modules**, one project:
+
+- **the data program**, built for `node`, whose `main` is `Prerender.pages schema body` (§8.3): it
+  may read files, and gives a list of routes, each with its value;
+- **the site**, built for `browser-inline` as today, whose `main` is
+  `Browser.prerenderData schema λvalue → program` (§8.4): its `init` reads the value.
+
+The build builds and runs the data program first, under the `node` on `PATH`, and gets each route's
+value encoded by the data program's schema as JSON text. For each route it then writes a page that
+holds that text in a `<script type="application/json">` (§8.6), and renders the page in the
+prerender tree **from the value the site's schema decodes from the bytes the page holds**. The
+client decodes the same bytes, by the same code, before `init`. So the build's `init` and the
+browser's get the same value, whatever the schema does to it, and §3's claim becomes: for every
+route `r` with bytes `b`, the page holds `view (init r (decode b))`, and the browser computes
+`view (init r (decode b))` from the page.
+
+```text
+beni.json
+shell.html
+src/Main.beni        the site: browser-inline
+data/Main.beni       the data program: node
+shared/Blog.beni     the schema both programs compile
+posts/hello.txt      what the data program reads
+```
+
+The schema module is in both programs' paths, so both compile one declaration. The build does not
+check that they do: the tie between the two programs is the bytes, and the site's decode of every
+page's bytes at build time is the check (§8.5 item 5). Two schemas that differ, but whose bytes the
+site still decodes, give a page and a client that agree, because both read the decoded value.
+
+**Rejected: the data functions in the site's own modules**, compiled a second time for `node`, as
+elm-pages and Next.js put a page's data function beside its view. A build is one entry point and
+one platform (`boundary.md` §5.3); a module that holds both a browser view and a file read resolves
+under neither platform. Two programs over a shared module is what §5.3 already gives a client and
+a server, and needs no new compiler concept.
+
+### 8.2 Naming the data program: `"build"."data"`
+
+```json
+{
+  "build": {
+    "platform": "browser-inline",
+    "paths": ["src", "shared"],
+    "origin": "https://example.com",
+    "data": { "paths": ["data", "shared"], "inputs": ["posts"] }
+  },
+  "html": "shell.html"
+}
+```
+
+- **`"paths"`** — required, a nonempty list of strings: the data program's `<path>`s, relative to
+  the project root as `"build"."paths"` are, with module names derived the same way (`frontend.md`
+  §1). A path that cannot be read is the build's exit-2 failure for an unreadable path.
+- **`"inputs"`** — optional, a list of strings, files or directories relative to the project root:
+  what `serve` and `--watch` watch for the data program, besides its sources (§8.8). The build
+  reads nothing from them itself.
+- A value of another JSON type, or a `"data"` that is not an object, is `frontend.md` §10.1's
+  exit-2 failure, `beni: cannot read '<root>/beni.json': it is not a JSON object`. A key `"data"`
+  does not know is ignored, as every manifest ignores one. There is no flag.
+
+**The platform is `node`, always.** The build runs the data program under Node, and `node` is the
+platform with a file system (`boundary.md` §5.1). A data program on a platform layered on `node` is
+a later key, once one exists that needs it.
+
+**The data program is an ordinary `node` build**: one `main` in its paths, with `missing_main`,
+`duplicate_main` and `main_not_program` as for any build. A module in both lists is compiled twice,
+once per platform, and sees only that platform's modules (`boundary.md` §5.3): a shared module that
+imports `Tea` fails to resolve in the data build, which is the diagnostic wanted. Both builds use
+the project's one cache directory, which is safe because a module's cache key is the whole input of
+its check, what its imports resolve to included (`fast-compiler.md` §8).
+
+*Why a key:* the data program is a second pair of entry point and platform in one project, which
+`boundary.md` §5.3 says the manifest should carry (*"the manifest concept M4 introduces should carry
+the set"*). `"data"` is the first such pair a manifest names; it names one, for one purpose, and is
+not the general set.
+
+### 8.3 The data program: `Prerender.pages`
+
+`node` gets a module `Prerender`:
+
+```text
+Prerender.pages : Schema e d, (⊤ → Result String (List (String × d))) → Program
+```
+
+- **`body` runs in a fiber**, as `Io.run`'s does, so it may wait: `Io.readFile`, `Io.sleep`, a
+  `Task.spawn` per file. It **may be impure**: it runs once, in the build, and what it gives is the
+  pages' input. §3's guarantee is about what is computed from that input, by both the build and the
+  browser; the data program is computed by the build alone.
+- **`Ok pages`** — each pair is a route and its value, in the order the build writes the pages.
+- **`Err why`** — the build fails, `prerender_data_failed`, quoting `why`.
+- **Each value is encoded with `Schema.print schema value`.** An encode that fails — an `Int` past
+  2⁵³, a non-finite `Float`, a refinement (`schema.md` §5: *"Typed encode still validates
+  refinements"*) — is `prerender_data_failed`, naming the route, each issue's path and message.
+- **Where the records go.** The build runs `node <data tree>/_main.mjs <records file>`. After `body`
+  returns, `Prerender.pages` writes, in one write, one JSON line per page, `{"route": r, "data":
+  text}`, then `{"end": n}` with the count, to the file its first argument names, and the program
+  exits 0. With no argument it writes the same lines to standard output, so a data program built on
+  its own (`beni build --platform=node data shared`) and run by hand shows what it gives. The
+  records are not on standard output under the build because `Debug.log` writes there (§5.1).
+  `Prerender` is beni over `Js`, with one `impure` `foreign` that writes the records.
+- **A throw** in `body` is a defect: Node ends with a non-zero exit and the error on its standard
+  error, with no `end` record, and the build reports `prerender_data_failed` with what Node wrote,
+  less the machine's paths, as §5.5's amendment does. A run that exits 0 with no `end` record — a
+  `main` that is not `Prerender.pages` — is `prerender_data_failed`, saying that the data program's
+  `main` must be `Prerender.pages`. A line that is not one of these records is the same code.
+- **It runs with its working directory at the project root** (the directory of the app's
+  `beni.json`), so `Io.readFile "posts/hello.txt"` names a project file wherever `beni` was started.
+  It inherits the build's environment.
+- **It is built in development mode in every build, `--release` included.** It never ships, and
+  what it gives is the same in both modes (`schema.md` §10's differential tests pin a schema's print
+  in both), so `Debug` is allowed in it under `--release`: `debug_in_release` guards what a page
+  ships (`backend.md` §9). Its source maps are off. It is built into `.<out>.data` beside `--out`,
+  named and placed by §5.1's amended rule for the prerender tree (`.beni-data` inside an output
+  named `.` or `..`), and removed whether the build succeeds or not.
+
+**The data program gives the routes**, and the site lists none. A blog's routes are its posts, which
+are files: the site cannot list them (it is pure, and `browser-inline` has no file API), and the
+data program can. One list of pairs cannot hold a route without its value, or a value without its
+route. A page with no data of its own is a constructor of the data's type:
+
+```beni
+--! What the data program gives each page, and what the site's `init`
+--! receives: one schema, in a module both programs compile.
+
+pub schema Page tagged "page" of
+    Home as "home"
+        titles : List String
+    Article as "article"
+        slug : String
+        title : String
+        body : String
+```
+
+The data program, `data/Main.beni`:
+
+```text
+import Blog exposing (Page)
+import Io
+import Node exposing (Program)
+import Prerender
+
+
+slugs : List String
+slugs = [ "hello", "second" ]
+
+
+article : String → Result String (String × Page.Type)
+article slug =
+    case Io.readFile "posts/${slug}.txt" of
+        Ok body →
+            Ok ( "/blog/${slug}", Page.Article { slug = slug, title = slug, body = body } )
+
+        Err _ →
+            Err "cannot read posts/${slug}.txt"
+
+
+pages : ⊤ → Result String (List (String × Page.Type))
+pages _ =
+    articles = Result.combine (List.map slugs article)?
+    Ok [ ( "/", Page.Home { titles = slugs } ), …articles ]
+
+
+main : Program
+main = Prerender.pages (Page.schema ⊤) pages
+```
+
+(Checked and formatted against a stub of `Prerender.pages` with this signature, 2026-10-29. The list
+of slugs is written in beni because `Io` has no directory listing yet, §8.11.)
+
+### 8.4 The site: `Browser.prerenderData`
+
+`browser-inline`'s `Browser` gets:
+
+```text
+Browser.prerenderData : Schema e d, (d → Program) → Program
+```
+
+```text
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.document
+        { init = λ⊤ → ( { page = page, open = False }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+```
+
+(Checked and formatted against a stub of `Browser.prerenderData`, with a `view` that reads
+`model.page`, 2026-10-29; `beni build` of it already accepts a program constructor called inside a
+lambda.)
+
+- **Where it is written** is §7.2's spine, amended: `main`'s body, or the first argument of a
+  `Browser.mountAt` there, may be a call of `Browser.prerenderData` whose second argument is a
+  lambda written in place, whose body is in turn a program constructor's call or a `Browser.mountAt`
+  around one. Anywhere else, a named function in the lambda's place, a lambda whose body binds names
+  first, or `Browser.prerenderData` used as a value is `program_shape`, as for `Browser.prerender`;
+  so is `Browser.prerender` and `Browser.prerenderData` on one spine (*"prerendered twice"*).
+- **The lambda's parameter is read only by the record's `init`** — its body, or a function `init`
+  calls with it. A read anywhere else, by `view`, `update`, `subscriptions` or the element of a
+  `mountAt`, is `program_shape`, saying to put the value in the model in `init`. This is a limit of
+  the compiler (`browser-inline.md` §5, class 4), not a rule: the lowering compiles `view`,
+  `update` and `subscriptions` as functions of the model, whose writes it tracks by model path
+  (`write-sets.md`), and the value is not in the model until `init` puts it there. It costs a
+  program one field. What lifts the limit is a value the lowering treats as a constant of the page,
+  which would be an amendment here.
+- **The type is the checker's.** `d` is the schema's Type endpoint, and `init`'s use of the
+  parameter is checked as any expression is: an `init` that reads a field the schema does not have,
+  or reads it at another type, is a compile error of the site, and every page's value is decoded
+  with that schema, so no page can hand `init` a value of another shape.
+- **The schema** is any expression the checker types `Schema e d`. A statically known one runs
+  compiled (`schema.md` §6, *A statically known schema runs compiled*); one built when the page runs
+  runs through the library. Either way the two trees run the same code (§3.1 item 4).
+- **The decode must be pure**, as `init` must: the value `init` gets is computed from it. A `via`
+  conversion or a check of the schema that may be impure — or may suspend, since `init` is `sync` —
+  is `prerender_impure`, at that conversion, by the walk §3.1's amendment describes.
+- **`init` receives what §7.3 says** — `⊤`, or an application's route `Url` and key — with the
+  value in scope as the lambda's parameter. An application needs `"build"."origin"` as in §7.3.
+- **The write-set pass** evaluates `init` at compile time and bakes the string and integer values
+  of model paths into the unit's string (`write-sets.md` §9.1). The lambda's parameter is unknown
+  to it: a model path whose value reads the parameter is not baked, and is a hole with a binding,
+  which the client's first pass checks (§3.2). A path `init` sets to a literal is baked as today.
+- **On `browser-tea`** there is no `Browser.prerenderData`: that platform is retired (#966) and gets
+  correctness fixes only. A program that uses it builds on `browser-inline` alone; §7.2's promise
+  that one source builds on both is `Browser.prerender`'s.
+
+### 8.5 The build, in order
+
+1. **The site is checked**, as today. A `main` that says `Browser.prerenderData` needs
+   `"build"."data"`, or the build fails with `prerender_needs_data`, against the app's `beni.json` at
+   `1:1`, as `prerender_needs_origin` is. A `"data"` with a `main` that does not say it is the
+   warning `prerender_data_ignored`, at the same place, and the data program is neither built nor
+   run (CLAUDE.md rule 7: a key that does nothing protects no guarantee, and is not an error).
+2. **The data program is built**, a second build in the same process (§8.3). Its diagnostics are
+   rendered as any build's are, after the site's; an error stops the build, exit 1, and nothing is
+   written.
+3. **Node runs it** (§8.3), or the build fails with `prerender_needs_node` (§5.1). Its records are
+   read; any failure of §8.3 is `prerender_data_failed`, at the data program's `main`.
+4. **The routes are checked** by §7.4's rules, on the whole list, before anything renders: a route
+   the rules refuse is `invalid_route`, two routes that write one file `output_path_collision`, both
+   at the site's `main` as P3 reports them, the message saying the data program gave the route.
+5. **The prerender tree is built and run** as §5.1 says. Its runner, `_node.mjs`, is handed the data
+   records too, and calls, for each page in order, `render(route, text)`, where `text` is the bytes
+   the page will hold (§8.6), not the data program's. `render` decodes `text` with the site's
+   schema, by the function the client calls, and renders the route from the value, or gives the
+   issues: a decode that fails is `prerender_data_invalid`, at the `Browser.prerenderData` call,
+   naming the route, each issue's path and message, and the build fails.
+6. **The client tree and the pages** are written as §5.1 item 3 says, through `pending`. Both trees
+   are removed.
+
+Node runs twice: once per program, the data program's run ending before the tree's starts. The data
+program's build may be checked while the site's is, which is the implementation's choice: the output
+is the same either way (§8.9).
+
+### 8.6 The value in the page
+
+`{{view}}` (§5.3) is replaced with the script, then the unit:
+
+```text
+<script type="application/json" data-beni-data>{"page":"article","slug":"hello",…}</script><main data-beni="/blog/hello">…</main>
+```
+
+- **The text is the data program's JSON text with every `<` written `<`.** HTML parses the
+  inside of a `script` as script data: it ends at the first `</script` in any case, and a `<!--` or
+  `<script` inside changes where it ends; with no `<`, neither can occur. A character reference is
+  not decoded there, so `&` stays as it is. JSON text holds a `<` only inside a string, where
+  `<` is the same character, so `JSON.parse` of the page's text gives what the data program's
+  would. The parser changes two more things in a script: a NUL becomes U+FFFD, and a carriage
+  return, alone or before a line feed, becomes a line feed. `Schema.print` writes neither:
+  `JSON.stringify` escapes every control character in a string and writes no whitespace between
+  tokens. A record whose text holds a character below U+0020 is not one `Prerender.pages` wrote, and
+  is `prerender_data_failed`. So the `textContent` the client reads is the text the build wrote, byte
+  for byte, and the build decodes exactly those bytes (§8.5 item 5).
+- **`type="application/json"` is a data block**: the browser never runs it, and a content security
+  policy that forbids inline scripts does not block it (§6.5's script is another matter).
+- **In the client**, the mount of a `Browser.prerenderData` program first finds the first child of
+  the mount element that is a `script` with `data-beni-data`, reads its `textContent`, removes it,
+  and decodes the text with the schema; `Ok value` is the parameter, and the mount goes on as §6.1
+  says, `Inline.take` included. **`Err`, or no such script, stops the page as a defect** (the
+  development crash screen, `browser-inline.md` §6, naming the issues or the missing script): the
+  page is not one the build wrote — a host changed the text so it no longer decodes, or took it out
+  — and with no value there is nothing `init` can start from, so the fresh mount of §6.4 is not
+  open to it. This is how an application opened at a `file:` address stops (`boundary.md` §9.8.13
+  (d)). A host that changes the text so that it decodes to another value gives `init` that value: a
+  text the view then shows differently heals by the first pass (§3.2), and a structure that differs
+  is found and mounted fresh, from that value, by §6.4.
+- **After the takeover the page holds no script**, so it holds what a fresh mount makes, as §6.1
+  removes `data-beni`.
+- **`{{title}}` and `{{view}}` are replaced in one pass** (§7.5's amendment), so a value whose text
+  says `{{title}}` stays text.
+- **`index.html`** is the page of the route `/` when the data program gives it, and is **not
+  written** otherwise: a page of a data site with no value could not start (the bullet above), so
+  the shell with no view that §7.4 writes for a program whose list does not hold `/` would be a
+  page that stops. A host's fallback for an address no route has is one of the program's routes
+  (GitHub Pages serves `404.html`, which is the route `/404`).
+
+### 8.7 Size
+
+**Each page carries its own value and no other**: a site of 500 posts writes one post into each
+page, and its client tree, which every page loads, holds none of them (§7.2's amendment keeps the
+routes out of it too). The client tree gains the site schema's decode — the compiled parse worker,
+or the library's engine for a schema built at run time — and the mount's read of the script.
+**A page that does not prerender ships no new byte**: no `emit/inline/` or `emit/release/inline/`
+golden moves, and `bench/size.mjs`'s `page` lines are the same bytes. What the data adds to a
+client is measured in P4, release, brotli, and reported in its *As built* note.
+
+A page holds its value twice in effect: as the HTML its view makes of it, and as the JSON `init` is
+handed. That is the cost of taking over a page whose first model is computed from data, which every
+hydrating framework pays; a data program keeps it small by giving only what `init` needs.
+
+### 8.8 `beni serve` and `--watch`
+
+Every build prerenders (§5.2), so every build runs the data program. **What is watched**, besides
+§10.3's set (`frontend.md`): every file the data program's `"paths"` hold with §10.3's endings, and
+every file under each `"inputs"` entry, whatever its ending (a post is a `.md` or a `.txt`), a
+hidden entry skipped and `--out` and the two trees never watched. A change to any of them is a
+rebuild, which runs the data program again; a run that fails is a failed build, and `serve` keeps
+the last good one (§5.2). `"inputs"` is read when the command starts, as §10.3 reads `"build"`.
+
+A data program may read what no watch can see — the clock, a file outside its `"inputs"` — and its
+pages are then remade at the next change, not at that read's. A data program is run again by every
+build rather than reused, because nothing tells the build what it read. If that is slow for a large
+site, the step is §10 question 4's: render only the routes whose value or program changed, not skip
+the run.
+
+### 8.9 Determinism
+
+The pages are a function of the site, the shell, the base, the origin and the data program's records
+(CLAUDE.md rule 5). The data program runs once per build in one Node process, and the build writes
+the pages in the order of its list, after the client tree's files; nothing depends on `--jobs`, and
+the determinism test's corpus run covers a data site with no change (§5.4). What the data program
+reads is its own input, as any program's is: one that reads the clock gives other pages on another
+run, as a `node` program prints other lines. That is the program, not the build's thread timing.
+
+### 8.10 The corpus, and `--no-prerender`
+
+With the hidden, test-only `--no-prerender` (§5.2), a data site still builds and runs its data
+program, and writes each route's page with its script and no view (`{{view}}` is the script alone);
+the client mounts fresh from the value it decodes. So the corpus's two builds of a data fixture are
+compared as every `browser/prerender/` fixture's are (`tests/corpus/README.md`, *Prerendered
+pages*): one transcript for the page with no view and the prerendered one, each opened on the file
+that a host answers the script's address with.
+
+### 8.11 Out of scope
+
+- **Client-side navigation to another route's value.** A page holds its own route's value. An
+  application that pushes the address of another data route has no value for it, so its `update`
+  loads that page (`Navigation.load`) instead. The direction for a later slice: the build also writes
+  each route's text as a file below `_data/` (the compiler's region of the output, §7.4), and
+  `Browser.Navigation` gets a command that fetches one and decodes it with the program's schema
+  (#1211).
+- **A directory listing in `node`'s `Io`.** Until it exists, a data program lists its files in beni
+  or reads an index file. It is a capability `node` owes (CLAUDE.md rule 7), filed on its own
+  (#1210).
+- **HTML text from data**, such as Markdown rendered to HTML: `browser-inline` has no node that
+  inserts HTML text. A data program that parses Markdown gives a structure the view renders.
+- A data program on another platform than `node`; a data site on `browser-tea`; a value read by
+  `view` or `update` directly (§8.4's limit); head content other than the title (§7.5); mapping a
+  data program's stack to `.beni` positions (§5.5).
+
 ## 9. Diagnostics
 
 Appended to the code list when each slice lands, never inserted:
@@ -723,6 +1099,13 @@ Appended to the code list when each slice lands, never inserted:
 | `invalid_route` | a route breaks §7.4's rules; names it and the rule | P3 |
 | `invalid_html_shell` (existing) | also: a prerendering build's shell has no `{{view}}`, or two | P1 |
 | `output_path_collision` (existing) | also: two routes write one file | P3 |
+| `prerender_needs_data` | a program says `Browser.prerenderData` and `beni.json` has no `"build"."data"`; against `beni.json` at `1:1` (§8.5) | P4 |
+| `prerender_data_failed` | the data program's `body` gave `Err`, threw, gave a value its schema cannot encode, or ended without its records; at the data program's `main`, naming the route when there is one (§8.3) | P4 |
+| `prerender_data_invalid` | the site's schema cannot decode a route's text; at the `Browser.prerenderData` call, naming the route and the issues (§8.5) | P4 |
+| `prerender_data_ignored` (warning) | `beni.json` names a data program and `main` does not say `Browser.prerenderData` (§8.5) | P4 |
+| `program_shape` (existing) | also: `Browser.prerenderData` off the spine, not given a lambda written in place, or its parameter read outside `init` (§8.4) | P4 |
+| `prerender_impure` (existing) | also: a conversion or a check of the site's schema that may be impure (§8.4) | P4 |
+| `invalid_route`, `output_path_collision` (existing) | also: the routes the data program gives (§8.5) | P4 |
 
 A construct the string form cannot write yet — keyed rows, until §6.2's amendment — is
 `browser-inline.md` §5's class 1, *"A limit of the compiler: … does not prerender yet"*.
@@ -765,6 +1148,11 @@ decided and is not a question.
    costs one run of the prerender tree per rebuild, measured in P1; if it is slow for a large site, the step is
    to prerender only the routes whose pages changed, not to skip it.
 
+*2026-10-29 (#1207):* §8's contract adds no question. Each of its choices follows from what is
+decided: a build is one entry point and one platform (`boundary.md` §5.3), so the data is a second
+program; §3's guarantee, so the build renders from the bytes the page holds; TEA, so the value
+reaches the program through `init`.
+
 ## 11. The slices
 
 Each a pull request with its goldens, part of #1160, in this order. The brief proposed the same
@@ -777,7 +1165,7 @@ order with per-route pages in the first slice; they move to P3, because a page p
 | **P2a** — hydration | §6.1–§6.4: the hydrating mount, the merged table and the piece tables cut from it, the comment as anchor, the structure check and the fresh mount on a difference, `data-beni` removed | the `browser/prerender/` transcripts with the page taken over equal the fresh ones, but for the control attributes §6.1 accepts, which the prerender kind's transcript prints as properties (its normalisation, written in `tests/corpus/README.md`): no element of the page is replaced, which the harness checks by marking every element before the program loads; a page whose HTML was changed mounts fresh, with the warning in development; a client page that does not prerender ships no new byte (`bench/size.mjs`'s `page` lines unchanged); measured against Solid 2's `hydrate` of its own hydratable `renderToString` output on the same pages, in headless Chrome by report 29's method, extended with a page-load scenario (the time from the module's start to the handlers attached, and its bytes): beni's time is at most Solid's, per page, by the median, and its hydration bytes are reported beside Solid's 1 439 B (research 27 §6.8) — a loss is read in Solid's code and answered there (CLAUDE.md rule 8) | `browser/prerender/` adds `Tampered` (an element inserted in the page before load: fresh mount), `Retagged` (an element some code refers to replaced by one of another tag, the count unchanged: fresh mount in release too), `ArmOpens` (a hidden arm opened after the takeover, then closed), `PieceArm` (a hidden arm inside another module's piece), `LoneElement` (a page whose code refers to one element, behind a hidden arm), `WrongPlace` (`{{view}}` outside the mount element: the development fault); `emit/prerender/` pins the hydrating mount's shape in both modes |
 | **P2b** — input before the takeover | §6.5, its shape amended there first: the capture script, delivery by direct call with the control state written back | a click, typed text and a checked box made before the module runs reach `update` once each, in order, after the first pass; no default action runs twice; the script's bytes and the time to interactive are measured | `browser/prerender/EarlyInput` (click, `input`, `change` on a checkbox, a `select`), `EarlyNone` (a page whose program has no listener: no script written) |
 | **P3** — routes | §7: `Tea.application` and `Tea.document` on `browser-inline`, `Browser.Navigation`'s commands and the two subscriptions, `Browser.prerender` (and `browser-tea`'s identity), `"build"."origin"`, the route in `data-beni`, the address replaced and sent after the first render, route files and `invalid_route`, `{{title}}`, `beni serve`'s `.html` rule; the hidden flag goes | a site of three routes and a blog of two posts builds into five files a static server answers, each taken over by the program, and a link click navigates on the client with no page load | `browser/prerender/Blog/` (routes from a list of posts; a link click; back; a page opened with a query and a fragment), `Titles`; `build/bad/prerender/`: `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision` (`/a/` and `/a/index`), `RouteFolded` (`/About`, `/about`), `RouteImpure`; a `browser/tea/` page showing that the same source builds on `browser-tea`; a `serve` case in `tests/blackbox/` for `/about` → `about.html` |
-| **P4** — build-time data | §8, specified in this document first (rule 1) | — | — |
+| **P4** — build-time data | §8: `"build"."data"` (and its row in `frontend.md` §10.1); `node`'s `Prerender.pages` and its records; `Browser.prerenderData` on `browser-inline` — the spine and the parameter rule (§8.4), the client's read of the script before `init`, the tree's `render(route, text)`; the data program built and run before the tree, in development mode, at the project root; the script and its escaping (§8.6); `index.html` only for `/`; the four new codes and the existing ones' new cases (§9); `serve` and `--watch` watching the data program's paths and `"inputs"` (§8.8); `--no-prerender` for a data site (§8.10); the lowering interface's next version, recorded in `boundary.md` §9.4.6, if the placement needs one; `skills/beni/references/prerender.md` | a blog whose posts are files under `posts/` builds, through a data program that reads them, a page per post and one for `/`, each holding only its own value, and each taken over with no element replaced; its transcripts equal the `--no-prerender` build's; a post whose text holds `</script>`, `<!--` and `&amp;` shows them as text in the build and after the takeover; a site whose schema reads a field at another type than the data program's writes fails with `prerender_data_invalid` naming the route; an edit of a post under `serve` rebuilds and the page reloads with it; no `emit/inline/` golden and no `bench/size.mjs` `page` line moves; the determinism test builds a data site; what the data adds to a client is measured, release, brotli | `browser/prerender/` adds `DataBlog` (`data/`, `shared/`, `posts/`; a `Tea.document`), `DataEscapes` (`</script>`, `<!--`, `<script`, `&amp;`, U+2028, a character past U+FFFF, a backslash, a quote), `DataSandbox` (a `Tea.sandbox` with data), `DataApplication` (a `Tea.application`: the route's `Url` and the value), `DataBaked` (a model path `init` sets to a literal baked, one it sets from the value a hole), `DataTampered` (the script's text changed before load so that it does not decode: the page stops, in both modes), `DataIgnored` (a `"data"` and a `main` with `Browser.prerender`: the warning, as `_expected.diag`); `build/bad/prerender/`: `DataMissing` (`prerender_needs_data`), `DataErr` (`Err`), `DataThrows`, `DataUnencodable` (an `Int` past 2⁵³), `DataNotPages` (a data `main` that is `Node.print`), `DataMismatch` (`prerender_data_invalid`), `DataReadInView` and `DataOffSpine` (`program_shape`), `DataImpureConversion` (`prerender_impure` at a `via`), `DataRoute` (`invalid_route` from the data), `DataTypeMismatch` (an `init` that reads a field the schema does not have: the checker's error), `DataSharedImportsTea` (a shared module that imports `Tea`: the data build's `unknown_module`); `tests/blackbox/devloop_test.zig`: *serve reruns the data program when an input changes*; `tests/blackbox/build_test.zig`: the data program built and run from another working directory reads the project's files |
 
 The hang guard of 120 s applies to every case as to any other, and a prerendered fixture's Node run
 is part of its case.
