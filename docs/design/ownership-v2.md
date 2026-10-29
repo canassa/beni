@@ -394,47 +394,84 @@ Structurally interned per owning summary with deterministic comparison trees (th
 | `cyclic` | a `node` whose child names an ancestor | a widened recursive value (§2.12); no special kind, the knot is in the table |
 
 **`choice` and `union`** [O 2026-10-29, #1128]. The path-multiset primitive (§2.9) gives a branch's
-arms the maximum and coexisting parts the sum. The shape alone could not tell the two apart: `union`
+arms the maximum and coexisting occurrences the sum. The shape alone could not tell the two apart: `union`
 was made both by branch joins and by joins of one value's possible contents, and hash-consing made
-`union(x, y)` one node for both meanings. Under `[*]` a union's sides are the contents of many
-elements at once, so reading every union as exclusive accepts `kidsPush` and `onePush` (a kids list at
-two depths read `yes`). The distinction is therefore in the representation, where every consumer sees
-it: **`choice(left, right)`** is a node kind of its own, interned apart from `union`, made **only** by a
-join of exclusive alternatives. Everything else that joins stays `union`, read as coexisting.
+`union(x, y)` one node for both meanings. Reading every union as exclusive accepts `kidsPush` and
+`onePush` (a kids list at two depths read `yes`). The distinction is therefore in the representation,
+where every consumer sees it: **`choice(left, right)`** is a node kind of its own, interned apart from
+`union`, made **only** by a join of exclusive alternatives. Everything else that joins stays `union`.
 
 | Node kind | Fields | Meaning |
 |---|---|---|
 | `choice` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | the lazy join of **exclusive alternatives**: one execution has exactly one arm's value. `cellsAt` and `proj` as `union`'s (a set; `proj` of a choice is a choice, arm by arm), so every set reader is unchanged. Only the occurrence multiplicity differs (§2.9): an arm is taken whole, the maximum over arms |
+
+**One reading of `union`.** A `union` is a set of possible contents **at one position**: a cell repeated
+across its sides is one position, as the row above says. Its dedupe stays: `union(x, x) = x`, `unionHas`
+absorption, `join`'s deduplication and its merge of every leaf into one set leaf. This is sound under the
+multiset primitive because the primitive never counts a union's sides as occurrences: it counts
+**occurrences in the pre-fold source structure** — the source nodes the fold maps into a class, each
+reached by its own route — and a union contributes its cells at its own position as a set. A duplicate
+*across* a union's sides is one object possibly at one position; what that position owes for two
+possibilities is its κ's (a construction's `lower` intersection, an instantiated `apart`/`summaryExcl`),
+never a structural count. Where widen opens a union on the cycle, its sides are distinct source nodes at
+the class, and they add because they are two source occurrences, not because they are a union's sides
+(kidsPush's two kids lists are two nodes at two depths). A `choice` contributes its arms' aggregates by
+the maximum, whole arm by whole arm.
 
 Its producers, and nothing else:
 
 | Producer | Kind | Why |
 |---|---|---|
 | a branch join: `if`/`case` arms (`Transfer`'s branch join; `Shape.joinChoice`) | `choice` | one arm runs, so its value is one arm's value |
-| a fixpoint's alternatives (`Summary.joinRes` over rounds of one result) | `choice` | each round over-approximates the same one result |
-| a graft, map, projection, `without` or block decode of a `choice` | `choice` | the operation is applied arm by arm and keeps the arms exclusive |
-| a call's leaf of several cells joined over its arguments (`Calls.graftLeaf`) | `union` | the cells are the possible contents of one position; under `[*]` many elements hold them at once |
+| `Summary.joinRes` for a class join, the kind its caller's parameter names | `choice` for the rounds of one result (a fixpoint's alternatives) and for a function value that is one of several classes; `union` for any join that combines several invocations (a fold of many) | each round over-approximates the one result; several invocations coexist |
+| a graft, `map`, projection, `without(…, one = false)` or block decode of a `choice` | `choice` | applied arm by arm; every rebuild switch (`without`, `projOne`, `mapWalk`, the graft, `BlockRead`) rebuilds a `choice` as a `choice`, never as `union` or `positions` |
+| `without(…, one = true)` of a `positions` node | `union` | the value at ONE of the element positions, a pattern's element: its possible contents |
+| a call's leaf of several cells joined over its arguments (`Calls.graftLeaf`) | `union` | the possible contents of one position; under `[*]` many elements hold them at once |
 | a pattern's refined leaf joined with the explicit structure at that position (`Transfer`'s projections) | `union` | two descriptions of the same contents |
-| a recast's inners at one place (`Cond`), a worded row's result words (`Rows.addRes`), widen's class side (a class image beside its riding members) | `union` | not provably one branch's arms; a row's words may be exact alternatives, but nothing records it yet, so they stay coexisting |
-| `join` used on uses (`Summary.joinUse`) | `union` | marks, not values: multiplicity is never read |
+| a recast's inners at one place (`Cond`), a worded row's result words (`Rows.addRes`), widen's class side (a class image beside its riding members) | `union` | not provably one branch's arms; a row's words may be exact alternatives, but nothing records it, so they stay coexisting |
+| `join` on uses (`Summary.joinUse`) | `union` | marks, not values: multiplicity is never read |
+
+`Cond.propagate`'s mode agrees with the kind at every producer: `.alternatives` exactly where a `choice`
+is made (a branch join, a class join of alternatives, widen's read of one value's image), `.together` where
+a `positions` node is.
 
 **Soundness.** Every existing `union` producer is in the table. The rule is one-way: a node is a
 `choice` only where its producer is a join of exclusive alternatives; anything not provably so stays
-`union`, which the primitive reads as coexisting, the reading it has today. So the change can only
-replace a sum by a maximum where one execution holds one arm, which is §2.9's meaning of choice. A
-`choice` nested in a coexisting position still adds: `[ if c then x else y, x ]` is
-`positions(choice(x, y), x)`, x once in the choice and once beside it, a repeat. A `choice` never
-absorbs into a `union` or the reverse (`unionHas` is per kind), and `choice(x, x)` is `x`. Set
-readers (`reach`, `leq`'s γ, `cellsAt`, `rank`, `deep`'s frontier) read a choice as a union, so no
-existing read changes except through multiplicity. Widen opens a `choice` on the cycle as it opens a
-union (its arms are members of the class); the primitive then takes the maximum over the arms, whole.
+`union`, read as above, the reading it has today. So the change can only replace a sum by a maximum where
+one execution holds one arm. Correlation is by arm only: the primitive takes each arm's whole aggregate
+and the maximum per key; it never identifies two `choice` nodes, so two independent branch joins of equal
+structure (`[ if c1 then a else b, if c2 then a else b ]`, the same `if` on every iteration, `[ f x, f x ]`),
+which intern as one node, are two occurrences of that node and add. A `choice` absorbs nothing but itself:
+`choice(x, x) = x`, and `unionHas` applies to unions only. This is safe because **no `choice` lies on a
+cycle**: a cycle is a widened knot or a graft's or decoder's copy of one, widen opens every union and
+choice it meets at a re-entry and its image keeps no opened node, and graft, `map` and decode copy
+structure without adding a cycle. So projecting a `choice` terminates without absorption. Set readers
+(`reach`, `leq`'s γ, `cellsAt`, `rank`, `deep`'s frontier) read a choice as a union. `leq` is kind-blind,
+so `union(a, b) ≤ choice(a, b)` both ways; the fixpoint's convergence is guarded by `kappaLeq`, whose
+derived reads use the kind through the primitive, so a stored `choice` never stands for a coexisting
+`F(x)`. `memo_join` is keyed by `(mode, x, y)`, so `join` and `joinChoice` of one pair never share an
+entry.
+
+**What this slice replaces.** The #1125 check (`Widen`'s `occurs` count, `fold_dups`, `lost`) counts a
+node reached through both arms of an opened choice as repeated, so K and JoinFoldChoice could never read
+`yes` beside it. This slice **replaces** it with the primitive: `fold_dups` and `occurs` go, and a folded
+class's repeats are the primitive's (sum over coexisting occurrences, maximum over a choice's arms).
+#1125's equal-cell kids counterexamples stay its red twins.
+
+**Cost.** Unchanged in order: per-key maximum costs what saturating addition costs, `joinChoice` is
+`join`, and the memos at most double. A fixed-place, bounded-width tower still costs O(n log n) in total
+(§2.9's *Cost*).
 
 **Controls** (Appendix B): `kidsPush` and `onePush` keep their repeat (`lost`): `List.push`'s `[*]` is a
-graft's `union`, coexisting. `plainPush` stays `yes`. K, `r_k = if c then Rose [r_{k−1}] else r_{k−1}`,
-keeps its exclusive seed one and its selected kids read `yes` at every height. JoinFoldChoice,
-`if c then Rose [x] else Rose [x]`, reads x once. `Rose [r, r]` and a kids list at two coexisting depths
-stay repeated and refuse their dependent write. Each control runs with and without warming the same
-merge pair in the other mode.
+graft's `union` and the two kids lists are two source nodes. `plainPush` stays `yes`. K,
+`r_k = if c then Rose [r_{k−1}] else r_{k−1}`, keeps its exclusive seed one and its selected kids read `yes`
+at every height. JoinFoldChoice, `if c then Rose [x] else Rose [x]`, reads x once. `Rose [r, r]` and a kids
+list at two coexisting depths stay repeated and refuse their dependent write. `[ if c then x else y, x ]`
+over leaves is `positions(leaf{x, y}, leaf{x})` (`joinChoice` merges leaves), and the repeat comes from
+`dagKappa`'s intersection of the sides. Precision limit: a callee returning one of its parameters has a
+leaf `res`, which grafts as a coexisting `union`, so JoinFoldChoice through such a call reads `lost`
+(sound). Each control runs with and without warming the same merge pair in the other mode.
+
 Operations, memoised on their node arguments:
 
 - `proj(n, s)`; `cellsAt(n, q)` = `proj` along `q`. If several source paths map to one
@@ -886,12 +923,13 @@ Three concrete structures implement the operation (§3.4):
 - An **arrival expression** is an interned DAG with `source(position, interpretation)`,
   `choice(choice-id, arms)` and `together(children)` records. Source positions are represented by
   shared transitions, not enumerated root-to-node path strings. `choice` denotes mutually exclusive
-  arms: exactly a `choice` node's (§2.3), the one shape kind a branch or fixpoint join makes; a
-  `union`'s sides, a node's parts and a `positions` node's sides are `together`, as are separate
-  fields or depths mapped to the same class. Choice ids are the `choice` nodes themselves (interned,
-  so one branch join is one id wherever its value is linked). Two edges of `together(x,x)` remain two edges.
-  Choice ids and their enclosing expression retain correlation across depths: distribute μ over
-  the whole chosen arm, not separate choices invented independently at each destination depth.
+  arms: exactly a `choice` node's (§2.3), the one shape kind a branch or fixpoint join makes. A
+  node's parts, a `positions` node's sides and the source occurrences a fold maps to one class (separate
+  fields or depths) are `together`; a `union` contributes its cells at its position as a set (§2.3,
+  *One reading of `union`*). Two edges of `together(x,x)` remain two edges. Correlation is by arm:
+  μ is distributed over the whole chosen arm, its aggregate taken whole, the maximum per key — never
+  separate choices invented at each destination depth, and never two `choice` nodes identified by id
+  (equal independent branch joins intern as one node and are two occurrences).
 - Its **aggregate** is a persistent radix multiplicity map keyed by **(destination class, cell)**,
   computed over that pre-map expression. Each payload contains multiplicity, approximation and
   duplicate-witness provenance, plus shared roots for the apart obligations, `summaryExcl` and
@@ -2186,11 +2224,11 @@ intern     : owner-local comparison tree (kind, place, own cells, child-run id, 
 cell_memo  : NodeId → persistent cell-set root for union/positions, lazy internal reads; collect precomputes
              its requested root by per-item inserts. Cache completion cannot change structural identity
 memo_proj  : stamped column NodeId → bounded inline cache of (step, immutable input version, NodeId); misses use owner-local operation records
-memo_join  : owner-local comparison tree (canonical member-run id) → NodeId; memo_leq / memo_eq: (NodeId, NodeId, immutable version ids) → u8 (coinductive shape assumption only)
+memo_join  : owner-local comparison tree (mode: union | choice, canonical member-run id) → NodeId; memo_leq / memo_eq: (NodeId, NodeId, immutable version ids) → u8 (coinductive shape assumption only)
 memo_map   : stamped column NodeId → NodeId within one immutable substitution context/version; different contexts never reuse that stamp
 ```
 
-`choice(l, r)` interns a `choice` record (absorbing `x` into `choice(x, x)` only); `joinChoice(members)` is
+`choice(l, r)` interns a `choice` record (`choice(x, x) = x`, no other absorption: no choice lies on a cycle, §2.3); `joinChoice(members)` is
 `join` with its outer DAG and every per-step child join built of `choice` (leaves still merge into one leaf: a cell
 in two arms is one, the maximum). Every switch on the kind handles `choice` with `union`'s set reading; the
 multiplicity reader (§2.9's primitive) is the only one that tells them apart.
