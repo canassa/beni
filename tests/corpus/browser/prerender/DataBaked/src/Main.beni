@@ -1,0 +1,38 @@
+-- The write-set pass bakes what `init` sets to a literal into the unit's
+-- string, and the page's value is not known to it
+-- (docs/design/prerender.md §8.4): `label` is baked, `name`, set from the
+-- value, is a hole whose binding the first pass checks. Both show in every
+-- build, and a click rewrites the hole.
+import Browser
+import Html exposing (Html)
+import Page exposing (Page)
+import Tea
+
+
+type alias Model =
+    label : String
+    name : String
+
+
+type Msg
+    = Shout
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Shout →
+            { model | name = model.name ++ "!" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="label">{model.label}</p>
+        <button id="name" onClick={Shout}>{model.name}</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.sandbox { init = λ⊤ → { label = "fixed", name = page.name }, update = update, view = view }

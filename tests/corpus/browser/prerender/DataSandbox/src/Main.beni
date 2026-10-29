@@ -1,0 +1,38 @@
+-- A `Tea.sandbox` whose first model comes from build-time data
+-- (docs/design/prerender.md §8.4): `init` reads the value the page holds,
+-- so the prerendered page shows 41. A click made before the program loads
+-- reaches `update` after the takeover (§6.5): the prerendering builds show
+-- 43 after the step's click, and the `--no-prerender` builds, whose page
+-- has no unit to click, 42.
+import Browser
+import Html exposing (Html)
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <output id="count">{String.fromInt model.count}</output>
+        <button id="inc" onClick={Inc}>+</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Start.schema ⊤) λstart →
+    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }

@@ -1,0 +1,4 @@
+--! Where the counter starts: what the data program gives `/`.
+
+pub schema Start =
+    start : Int

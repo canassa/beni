@@ -1,0 +1,9 @@
+-- load
+<body>
+  <main>
+    <p id="text">"</script> <!-- <script> &amp; [ ] [😀] \\ \" end"</p>
+  </main>
+</body>
+-- title
+(title: "escapes")
+(the DOM did not change)

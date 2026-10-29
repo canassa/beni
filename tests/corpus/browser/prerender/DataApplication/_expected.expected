@@ -1,0 +1,14 @@
+-- url "/about?from=feed"
+-- load
+<body>
+  <main>
+    <h1>"about"</h1>
+    <p id="address">"http://127.0.0.1:8000/about?from=feed"</p>
+  </main>
+</body>
+-- title
+(title: "about")
+(the DOM did not change)
+-- location
+(location: /about?from=feed)
+(the DOM did not change)

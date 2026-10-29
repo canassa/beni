@@ -1,0 +1,15 @@
+-- early click #inc
+-- load
+<body>
+  <main>
+    <output id="count">"41"</output>
+    <button id="inc">"+"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <output id="count">"42"</output>
+    <button id="inc">"+"</button>
+  </main>
+</body>

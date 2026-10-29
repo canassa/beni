@@ -1,0 +1,8 @@
+{
+  "html": "shell.html",
+  "build": {
+    "paths": ["src", "shared"],
+    "origin": "http://127.0.0.1:8000",
+    "data": { "paths": ["data", "shared"] }
+  }
+}

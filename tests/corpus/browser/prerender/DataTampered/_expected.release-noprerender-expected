@@ -1,0 +1,4 @@
+-- retext script[data-beni-data] "{\"start\":\"forty-one\"}"
+-- throws load
+(threw: Error: bad data)
+<body></body>

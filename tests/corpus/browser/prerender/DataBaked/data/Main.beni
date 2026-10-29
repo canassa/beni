@@ -1,0 +1,8 @@
+-- The data program: one page, named `ada`.
+import Node exposing (Program)
+import Page exposing (Page)
+import Prerender
+
+
+main : Program
+main = Prerender.pages (Page.schema ⊤) λ⊤ → Ok [ ( "/", { name = "ada" } ) ]

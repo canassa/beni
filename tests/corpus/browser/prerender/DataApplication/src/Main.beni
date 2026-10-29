@@ -1,0 +1,59 @@
+-- A `Tea.application` of build-time data (docs/design/prerender.md §8.4,
+-- §8.6): `init` is handed both the `Url` of its page's route, which the
+-- page's script names, and the route's value. The page is opened at
+-- `/about?from=feed`: the first render is the route's, `/about` and
+-- `about`, and the address comes after it as an `onUrlChange` message,
+-- whose write pass shows its query — in the prerendered build, where the
+-- page is taken over, and in the `--no-prerender` one, where it is mounted
+-- fresh from the same script.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Page exposing (Page)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+
+
+type alias Model =
+    address : String
+    name : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink _ →
+            ( model, Cmd.none )
+
+        UrlChanged url →
+            ( { model | address = Url.toString url }, Cmd.none )
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = model.name
+    , body =
+        <main>
+            <h1>{model.name}</h1>
+            <p id="address">{model.address}</p>
+        </main>
+    }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.application
+        { init = λurl _ → ( { address = Url.toString url, name = page.name }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }

@@ -1,0 +1,64 @@
+-- The route an application's `init` is handed is the one its page's
+-- script names, never the address (docs/design/prerender.md §8.6): the
+-- page is opened at `/missing`, which no route has, and a static host
+-- answers it with `index.html`, the page of `/`. Every build — the
+-- `--no-prerender` one too, which mounts fresh — starts from `/` and
+-- `home`, and the address comes after the first render as an
+-- `onUrlChange` message.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Page exposing (Page)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+
+
+type alias Model =
+    address : String
+    first : String
+    name : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink _ →
+            ( model, Cmd.none )
+
+        UrlChanged url →
+            ( { model | address = Url.toString url }, Cmd.none )
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = model.name
+    , body =
+        <main>
+            <h1>{model.name}</h1>
+            <p id="address">{model.address}</p>
+            <p id="first">{model.first}</p>
+        </main>
+    }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.application
+        { init =
+            λurl _ →
+                ( { address = Url.toString url, first = Url.toString url, name = page.name }
+                , Cmd.none
+                )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }

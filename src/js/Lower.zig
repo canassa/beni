@@ -6449,6 +6449,16 @@ pub const Lowerer = struct {
         }
     }
 
+    /// `placeHoists` before `inst`, unless this lowering bound its rows
+    /// already: for a call compiled in place of the code it stands for
+    /// (`dataCall`), which no path of the walk may have placed.
+    fn placeHoistsOnce(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!void {
+        if (!try l.hoistsReady()) return;
+        const rows = l.hoist_at.get(@as(u64, inst.int()) << 1) orelse return;
+        for (rows.items) |ri| if (l.hoist_live[l.hoist_groups[ri]].gen == l.hoist_gen) return;
+        try l.placeHoists(out, inst, 0);
+    }
+
     /// `holder.f₁.….fₖ`, `k` the read's prefix: the BIR's own access chain
     /// from the read back to the holder, then the pattern's field.
     fn hoistValue(l: *Lowerer, r: Hoists.Read, p: u32) Allocator.Error!Node.Index {
@@ -14448,6 +14458,9 @@ pub const Lowerer = struct {
                 , .{}),
             }
         }
+        // The lambda is not made, its body compiled in its place: what the
+        // ownership pass hoists at the lambda is bound here (§31.14).
+        try l.placeHoistsOnce(out, data_args[1]);
         return try l.expr(out, body);
     }
 
@@ -14740,6 +14753,10 @@ pub const Lowerer = struct {
         defer l.leaveDecl(saved);
         // A function of `⊤` takes no JavaScript argument (`backend.md` §6, *A
         // parameter of type `()`*).
+        // A lambda evaluated as its body: what the ownership pass hoists at
+        // the lambda — a read of a record it captures, a page's value
+        // (`prerender.md` §8.4) — is bound first (§31.14).
+        if (body != null) try l.placeHoistsOnce(&stmts, init);
         const value = if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), args, p);
         // Bound to a name, which `--release` keeps though nothing reads it
         // when `init` may have an effect — a throw that stops the page, a
