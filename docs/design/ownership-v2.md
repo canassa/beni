@@ -1709,49 +1709,95 @@ neither runs inside the other: their label chains part at some instruction. A ca
 its caller does not, so neither a `sep` over two such labels nor a `within` from such a pre-fold pair
 follows from it (`Fix.diverge`; S4-verifier, §8).
 
-**Invocation-only folds (#1189).** A `within(l)` says that the calls `l` stands for answer distinct
-objects. Its justification is one pre-fold pair `(a, b)` of separate calls, so it covers only cells
-made inside one of those two calls. Such a cell's label is **under one of the pair's sides**: its chain
-extends `a`'s or `b`'s, where a folded side without a tail stands for every call at its instruction.
-Agreeing down to the depth where the pair parts is not enough. Another call there (`13·1` beside
-`13·10` and `13·11`) was never compared with either side, nor was another call inside one side's
-prefix (`13·5·12` beside `13·5·10`). The read-off fold drops the tail, and so loses which call a
-label came from. `result 13·1`, an allocation of the callee's own call 13 before both callback calls,
-folds into `13⋆` beside `(13·10)` and `(13·11)`. So each folded label with provenance carries an
-**invocation-only** bit, computed over the labels of the answer and allocation cells (`cb`,
-`result`, `esc`) that the fold merges into `l`. Taken splits folded there are certified by the
-traversal marks instead (§2.2), not by the bit.
+**`within`: emission and discharge (#1189, re-derived).** A `within(ℓ)` says that the invocations the
+folded label `ℓ` stands for answer distinct objects at its path. It has two halves. The read-off
+certifies that the folded label's members are separate invocations. The discharge checks the
+**route** by which the actual's answer reaches each cell, and never reads the cell's label.
 
-- **Set** when the fold records the pair, if every such label folded into `l` so far is under one
-  of its sides.
-- **Cleared** when the read-off folds into `l` an answer or allocation label that is not under a
-  side. Examples are the callee's own allocation, another call of the callback, a helper's own
-  allocation, and a label whose tail a fold dropped.
-- **ANDed** at a join: two classes that carry `within(l)` keep the bit only if both set it.
-- **Kept** by instantiation: `within(ι·l)` has the pair `(ι·a, ι·b)` and the bit of `l`. A later
-  conflict or clearing at `l` reaches the copy. An instantiation made before `l`'s provenance is
-  recorded waits for it: its readers are refused meanwhile and invalidated when the provenance
-  arrives, so the order in which S4 settles a callee and its callers changes no verdict.
+The rule rests on four assumptions the design already uses:
 
-A `within(l)` holds over a `result`, `cb` or taken cell in two cases:
+- **A0.** Each instruction runs at most once per activation, so a label chain is a path in the
+  activation tree.
+- **A1.** `fresh k` names only objects allocated during that activation.
+- **A2 (O9).** One traversal reads distinct indices, and nothing writes the container while it runs.
+- **A3.** A supply is `owned` only if it has no other live holder at the hand-off. A closure's
+  environment is a live holder of each of its captures at every invocation but one, so a supply
+  whose node reaches an `env` cell is `owned` only if the closure is affine: its once token, or
+  `calls ≤ 1` along every route that carries it. Without that, `twiceCall g = [ g ⊤, g ⊤ ]` under
+  `List.map xs (λe → twiceCall (λ_ → cb e))` hands one element out twice.
 
-- its label is under one of the pair's sides;
-- its label is `l` itself, and `l`'s bit is set.
+*Emission (read-off).* M is the set of pre-fold `cb` cells at P (one parameter j, one path q) that
+the fold maps to ℓ. When |M| ≥ 2, `within(ℓ)` is emitted at P only if all three hold:
 
-Otherwise the cell is one object at every call, `sep(c, c)`. A `result` label names an allocation
-site. Instantiation maps a callee class's `fresh k`, an allocation its activation made, to
-`result (ι·L)·k`. A callee that returns a value it did not allocate never yields a `result`:
-- a capture becomes `⊤` (`Calls.mapCell`);
-- a top-level value stays its `shared` cell;
-- a supply becomes the supplied cell (§2.11 item 6).
+- **W1, complete.** Every two distinct coexisting members have `sep(X, Y)` in the pre-fold κ(P).
+  The `within` replaces all of those atoms.
+- **W2, separate.** Every two distinct coexisting members diverge at some depth d, and every
+  folded component above d carries a `within` at P. `diverge` does not pass through a folded
+  component without one.
+- **W3, self.** Each member is unfolded, or folded and met once at P, or folded with its own
+  `within` at P, which the new one uses up.
 
-So a call that returns a captured or shared value never yields an exact `result` cell at its label;
-the bit relies on that. S4's read-off computes the bit at the uniform fold, from every answer and
-allocation label it folds into `l`, and publishes it with the pair. A block carries it with the
-pair; a missing bit decodes as cleared. C.3's `List.map` keeps it for that reason: the labels with
-answers that its read-off folds into `ι_m⋆` are mapHelp's `cb₂@(ι_m·ι_f⋆)` and `cb₂@(ι_m·ι_rec⋆)`,
-which are the pair itself. mapHelp allocates nothing at `ι_m`, and the builder's `result` is at its
-own call, never folded there.
+Otherwise the merged self pair is `sep(ℓ, ℓ)`, which is `lost`. When |M| = 1, the member's own
+`within` is renamed. The certificate (P, ℓ, M) is published with the atom, with each member's
+multiplicity at P, so W3 is checked from published facts.
+
+*Supplies at the fold.* `supply(·, k)` is joined: owned only if every member's is owned, taken
+only if every member's is taken. A merged split cell is `single` only if every part is `single`,
+with the same lineage and entry. Translating a supply through a call ANDs its owned bit with Dead
+at that call.
+
+*Instantiation.* At a call ι, `within(ℓ)` becomes `within(ι·ℓ)` with members ι·X. It is an ordinary
+κ atom: settled, versioned, joined and read like any other. There is no separate provenance store,
+and instantiating it is plain κ substitution.
+
+*Discharge (actual in hand).* For every class alternative, `res` is instantiated at q under ι·ℓ,
+and each cell is tagged with **every** route that reaches it:
+
+- **D1, minted.** `fresh k` becomes `result (ι·ℓ)·k`, and passes.
+- **D2, a call inside the invocation.** A captured or own function parameter's `cb`, a closure's
+  answer, or the forwarded own parameter. If that call's actual is in hand, the route passes when
+  the family's `gen` holds at the path. Otherwise the cell joins the consumer's own `within`.
+  That fallback is sound only as §2.12's base-plus-step certificate (Lemma 2's induction), and
+  never as a coinductive accept.
+- **D3, a taken and owned supply.** A graft of π_k where `supply(ℓ, k)` is taken and owned. It
+  passes under κ(c[*]), with `xreq`, when the grafted split cells are single splits of one lineage
+  and one entry. That is checked pairwise, and for each cell against itself. Splits of different
+  containers are compared pairwise with `Cond.sep`.
+- **D4, everything else fails.** That covers a non-taken or borrowed supply (a feedback included),
+  a projection or refinement of a supply, `env` and `shared` (exactly), and `⊤`, `esc` and `loan`
+  (approximately). One failing route fails the cell.
+
+*Proof sketch.*
+
+- **Lemma 1, divergence.** By A0, two chains that agree above d (each folded component an
+  antichain) and differ at d denote activations under distinct children, so they are incomparable.
+- **Lemma 2, antichain.** By induction on the height of the activation subtree, the occurrences
+  under ℓ are pairwise incomparable, distinct invocations:
+  - for distinct members, by W2 and Lemma 1;
+  - for one member with a `within`, by the callee's instance in a smaller subtree (mapHelp's step);
+  - one member without a `within` is impossible unless κ(P) is `lost` or `shared`.
+- **Theorem.**
+  - **D1 and D2:** the objects are born in disjoint subtrees.
+  - **D3:** the supply is owned at each hand-off, so each split reaches at most one invocation; one
+    traversal reads distinct indices; and κ(c[*]) makes distinct positions distinct objects.
+  - **Mixed D1 and D3:** a minted object is born after the traversal's entry, and nothing writes c
+    while it runs.
+
+*What S4's read-off and Calls compute.*
+
+1. **For each fold (P, ℓ):** M with its coexistence relation, the pre-fold `sep` atoms and each
+   member's `within`. That is |M|² pairs, charged to the summary account.
+2. **The supply join:** taken, owned (borrowed wins), and marks equal by entry; with A3's `env`
+   test at each hand-off (the closure's once token or `calls ≤ 1`) and Dead at each call a supply
+   is translated through.
+3. **The route-tagged instantiation of `res` at q:** minted; a nested call (family and path); a
+   graft (index, path, taken, owned); `env`, `shared`, `⊤`, `esc` or `loan`.
+4. **Instantiation as κ substitution** from the settled κ port.
+5. **A folded middle component (from D2 only)** keeps a reference to its certifying `within`.
+
+*Precision.* A taken element read after the callback call (`λl → (r = f l; … l …)`) makes the
+supply borrowed, so D3 refuses it (accepted loss, #1220). The same goes for a supply made fresh
+per call and grafted (`[ cb (mk ⊤), cb (mk ⊤) ]` with `λl → l`).
 
 
 
@@ -3258,7 +3304,7 @@ L0  Ids
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 200 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
-| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` provenance, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldPair, foldInto, joinWithin, prefixWithin}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
+| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
@@ -3528,7 +3574,10 @@ ids and section numbers do not change. The spike does not promise a strengthened
 
 **S4-verifier: as built and verdict (#1180).** *Feasible: §2.12's independent base/preservation
 verifier decides finite recursive obligation graphs with the existing summary/value algebra, keeps
-every guarantee, and its work is linear in the graph. The fold-element condition stays `lost`.*
+every guarantee, and its work is linear in the graph. `within` fits the algebra as built once it is
+re-derived (§2.12 *`within`: emission and discharge*): an ordinary κ atom emitted by W1–W3 with a
+published certificate, and discharged by route. That costs S4's read-off and Calls five computed
+facts (that section's list), and one precision loss (#1220). The fold-element condition stays `lost`.*
 `Fix.Prover` (§5) is the verifier. A goal is a Boolean claim `(claim, port, arg)`; the layer above's
 equations (test-written here, S4's walker and read-off later) expand it, once per settled generation,
 into its settled alternatives. A goal holds when every alternative holds, and an alternative when its
@@ -3548,21 +3597,23 @@ inside this invocation (`gen`). The evaluators read values with `Shape.cellsAt` 
 - `inv`: the owned paths hold fresh objects or the incoming one at the same path. Each stated `sep`
   atom is re-read at the outgoing cells. An atom over the incoming value is discharged only when the
   invariant states it; an atom it does not state fails approximately.
-- `within`, at a consumer: a fresh result, a generative answer or a certified split counts as one
-  object per call only when its label is under one side of the pre-fold pair, or is
-  the `within`'s label with its invocation-only bit set (§2.12 *Invocation-only folds*). A result
-  made outside those calls (`r = mk ⊤` before a map, a callee's own allocation folded beside them)
-  is one object at every call.
+- `within`, at a consumer, by route (§2.12, D1–D4): each cell comes with every route that reaches
+  it, and the cell's label is never read. A minted result passes. A nested call needs its family's
+  `gen` at the cell's path, or with no actual in hand owes the consumer's own `within`. A graft of a
+  taken and owned supply needs each split certified `single` and the splits pairwise of one
+  traversal. Everything else fails: `env` and `shared` exactly, the rest approximately.
 - `apartCalls`, at a consumer, and `writesCaptures` for a writer called through a function value (a
   top-level capture is refused exactly).
 
-`within` keeps its provenance. `foldPair` records a pre-fold pair only when the two calls are separate
-and the label is their fold (§2.2's first instruction, tail dropped). `prefixWithin` carries it through
-an instantiation as `(ι·a, ι·b)`. The provenance is versioned: each label's entry is a port that every
-`within` proof reads, so a conflicting second pair, or a clearing of the invocation-only bit (`foldInto`,
-and `joinWithin` at a join), invalidates every cached proof and every instantiated copy that used it, in
-either order of arrival. A second, different pair for one label is a conflict, and that label's
-`within` is refused from then on. `Marks` carry §2.2's certificate: the container, the entry, `single`
+`Prover.foldWithin` is the read-off's emission: `within(ℓ)` from the members M at P when W1–W3 hold,
+else `lost`, and the certificate (P, ℓ, M) with each member's multiplicity. W2's `diverge` takes the
+read-off's guard and does not pass through a folded component without its `within`. `prefixWithin` is
+plain κ substitution, so `within` is versioned and invalidated as every κ atom is, with no store of
+its own. `joinSupply`, `handOff` (A3: a supply reaching an `env` cell stays owned only under an
+affine closure) and `translate` (owned ANDed with Dead at the call) are the supply facts D3 reads.
+Rounds 1–3 kept a provenance store beside the atom instead: a pre-fold pair per label, an
+invocation-only bit and a conflict state. Each round guessed the route from the label and missed a
+neighbouring case, so the rule was re-derived. `Marks` carry §2.2's certificate: the container, the entry, `single`
 and κ at the split. They follow the crossing rules and answer `Cond.Traversal`. Their word codec reads
 an out-of-range id, or a `single` word that is neither of its two spellings, as unknown. The spellings
 are far apart, so a flipped bit is caught. A rewrite to the other valid spelling, or to a valid but
@@ -3580,11 +3631,11 @@ by its body or by a call it makes. That separates two invocations only when neit
 other. Two calls made by one activation are disjoint subtrees of the activation tree. A callback that
 re-enters its caller is not: the outer invocation may answer the inner invocation's object, and `gen`
 still holds of both. So `Fix.diverge` (two label chains that part at some instruction) is required of
-two callback labels before `gen` separates them, and of a pre-fold pair before `foldPair` records
-`within` (§2.12 *Recursive proofs*). mapHelp's pair `(ι_rec·ι_f⋆, ι_rec·ι_rec⋆)` diverges. A call and
+two callback labels before `gen` separates them, and of every two members before `foldWithin` emits
+`within` (W2). mapHelp's pair `(ι_rec·ι_f⋆, ι_rec·ι_rec⋆)` diverges. A call and
 a call made inside it do not diverge.
 
-**Witnesses** (`src/own2/Fix.zig`, 20 tests, each under 0.2 s). Every label in them is built by the
+**Witnesses** (`src/own2/Fix.zig`, 17 tests, each under 0.1 s). Every label in them is built by the
 fold and instantiation rules above, not named by hand.
 
 - **GrowFresh and GrowAlias:** GrowFresh is accepted; GrowAlias's base is refused exactly and its copy
@@ -3597,22 +3648,32 @@ fold and instantiation rules above, not named by hand.
     path-multiset obligation is `lost` and the write is refused. With distinct lists that obligation
     is `yes`; the whole read is still `lost`, but that loss comes from the widen's collapsed fold, as in
     Cond's #1125 test.
-- **`within` provenance:** a distinct pair folds; refused are a self pair, a pair that does not fold
-  into the named label, a conflicting second pair, an atom without provenance, and a result made
-  outside the invocations.
-- **Versioned provenance:** a proof, then a conflict, is refused, and the reverse order gives the same
-  verdict, through an instantiated copy too. A proof read while the provenance was absent is redone
-  when it arrives. A pair under a label that is not its fold proves nothing.
-- **Invocation-only:** the callee's own allocation folded beside its calls (`help cb = (arr = [];
-  [ cb arr, cb arr ])`) is refused, and so are its `13⋆·1` form, its `prefixWithin` copy, a callback
-  whose nested call answers a capture, and a join of a set bit with a cleared one. C.6's
-  `List.map xs (λ_ → [ 1 ])` and NestedTraversalShared stay accepted. A later clearing at List.map
-  reaches the caller's copy. Round 3 adds: the repro `help cb = (x = once cb; [ cb ⊤, cb ⊤, x, x ])`
-  is refused at `cb 13·1·5` (exactly) and at `result 13⋆·1`. Four attacks on the rule follow. A
-  nested call inside a side is accepted, and so is a cell under the other side. A helper's own
-  allocation beside the sides is refused and clears the bit. A second pair at another depth is a
-  conflict. With sides under different prefixes, a call inside one prefix but not under its side
-  is refused. An instantiation made before its callee's provenance waits for it, in either order.
+- **`within`'s emission (W1–W3):**
+  - `[ cb ⊤, cb ⊤, x ]` folds to one `within`, and its certificate names the three members.
+  - Two arms of one choice owe no `sep`.
+  - Refused (`lost`): hole 4 (`x = once cb; [ cb ⊤, cb ⊤, x, x ]`, pre-fold κ `shared`), two members
+    with no `sep` before the fold, a pair that does not fold into the named label, a re-entrant pair,
+    and chains that part only below a folded component without its `within`. The same chains under a
+    certified component are accepted.
+  - A folded member met twice is accepted with its own `within`, and the published certificate
+    keeps its multiplicity. Without that `within` it is refused, and so is FeedbackPrevTwice's
+    folded split met twice. One member renames its own `within`.
+  - The supply join: borrowed wins, and a supply is taken only if both are.
+- **`within`'s discharge (D1–D4):**
+  - Kept: C.6's push (D3), `λ_ → [ 1 ]` (D1) and `edit` (D2 beside D3), each leaving exactly
+    `excl xs`. A nested call with no actual in hand owes the consumer's own `within`.
+  - Refused:
+    - hole 1, `List.map xs (λ_ → r)` (`env`, exactly);
+    - holes 2 and 6, a supply that is not taken;
+    - hole 3, `f ⊤ = [ shared ]`, by `gen` at the cell's path;
+    - hole 5, `[ List.map xs f, List.map xs f ]`: two traversals, pairwise;
+    - hole 8, `List.map xs (λe → [ cb e, cb e ])`: the supply is not Dead at the first call;
+    - hole 9, `twiceCall (λ_ → cb e)`: the supply reaches `env e` under a closure called twice. An
+      affine closure is accepted.
+    - Also refused: a projection of a supply, a nested route on a cell that no call answers, and
+      one failing route beside a passing one (exactly).
+  - Hole 7, order dependence, is gone by construction: the certificate is a pure function of the
+    settled pre-fold class.
 - **`gen` by path:** `f ⊤ = [ shared ]` refuses two calls' elements, though their roots are fresh.
 - **C.6 and RefinementFeedbackTwice:**
   - C.6's held-once accumulator: the keeping arm is accepted, and the second store is refused exactly
@@ -3643,10 +3704,12 @@ fold and instantiation rules above, not named by hand.
   These tests found that publication could stop part way, and it is now all or none.
 
 **Mutation checks.** Each rule was removed in turn: base, feedback freshness, entry, `single`,
-provenance, the self pair, unstated atoms, captures, one label twice, each staleness check, consumer
-invalidation, the provenance read, the inside check, the invocation-only bit, the join's AND, the
-copies' conflict and clearing, `gen`'s path, the fold check, the conflict check, the codec's
-spellings and `writesCaptures`. Each removal fails a witness.
+the self pair, unstated atoms, captures, one label twice, each staleness check, consumer
+invalidation, `gen`'s path, the codec's spellings and `writesCaptures`. For `within`: W1's `sep` and
+its coexistence, W2's divergence and its guard, W3 for many members and for one, membership in the
+fold, the published multiplicity, the supply join's owned and taken, A3's `env` test, Dead at the
+call, D1, D2's `gen`, its `cb`-only check and its fallback, D3's owned, taken, self (`m.cond`),
+`single` and pairwise checks, and D4's exact and approximate arms. Each removal fails a witness.
 
 **Measured proof work.** A chain and a ring of n + 1 families with a demand on top, at
 n = 10 / 100 / 1,000: one expansion per goal (n + 2) and n + 1 (+ 1) dependency edges. The account's
@@ -3667,8 +3730,9 @@ still leave the caller-side self pair. A proof needs a new caller-side fact, suc
 certificate tying the current supply to the earlier lists of one traversal, and its own review.
 
 **Left to S3b/S4 (interface obligations, not gaps in the verdict).** S4's walker and read-off produce
-the alternatives, the marks (by `cross`), the provenance and its invocation-only bit (`foldPair`,
-`foldInto` for every label the uniform fold merges, `joinWithin`, `prefixWithin`), and the
+the alternatives, the marks (by `cross`), the five facts of §2.12's *What S4's read-off and Calls
+compute* (the members of each fold with their coexistence, multiplicity and `within`, W2's guard,
+the supply facts, the route-tagged `res`, and `prefixWithin` from the settled κ port), and the
 refutations for a step's escape, keep and capture effects (the verifier reads values only). Its
 `Resolve` names a callee family's port; the verifier keys the goal by the cell's path. Calls must not
 mint a fresh `result` cell for a value reached through a feedback, including through carried closures.
