@@ -1,0 +1,53 @@
+-- A message a command sends reaches its key through the program's
+-- dispatcher, which hands the key's handler its leaf's fields however deep
+-- the key (browser-inline.md §4, §10.3). `update` splits `Outer` again on
+-- `Add` and `Set`, so each handler takes the `Int` inside; the command's
+-- `Outer (Add 5)` must add 5. The dispatcher once handed such a handler the
+-- whole message, and the count became `1[object Object]`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Inner
+    = Add Int
+    | Set Int
+
+
+type Msg
+    = Outer Inner
+    | Go
+    | Zero
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Outer (Add n) →
+            ( model + n, Cmd.none )
+
+        Outer (Set n) →
+            ( n, Cmd.none )
+
+        Go →
+            ( model, Cmd.perform λsend → send (Outer (Add 5)) )
+
+        Zero →
+            ( model, Cmd.perform λsend → send (Outer (Set 0)) )
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 1, Cmd.none )
+        , update = update
+        , view =
+            λmodel →
+                <main>
+                    <button id="go" onClick={Go}>go</button>
+                    <button id="zero" onClick={Zero}>zero</button>
+                    <output>{String.fromInt model}</output>
+                </main>
+        , subscriptions = λ_ → Sub.none
+        }
