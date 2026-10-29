@@ -229,7 +229,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
             error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
             error.Failed => return 2,
         };
-        const tree = prerender(gpa, io, arena, &session, emit_options, options.path, stderr, options.diagnostics == .text, if (data) |*d| d else null, !build.no_prerender) catch |err| switch (err) {
+        const tree = prerender(gpa, io, arena, &session, emit_options, options.path, stderr, options.diagnostics == .text, if (data) |*d| d else null, !build.no_prerender, extra_late.items) catch |err| switch (err) {
             error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
             error.OutputPath => {
                 const failure = session.io_failure.?;
@@ -413,7 +413,7 @@ const Record = struct {
 /// checked, and the tree renders each page from its text. Under
 /// `--no-prerender` (`tree` false) no tree is built: the pages are the data
 /// program's, with no view (§8.10).
-fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client: Emit.Options, path: ?[]const u8, stderr: *Io.Writer, text: bool, data: ?*DataBuild, wanted: bool) (Emit.Error || error{NodeFailed})!Tree {
+fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client: Emit.Options, path: ?[]const u8, stderr: *Io.Writer, text: bool, data: ?*DataBuild, wanted: bool, extra: []const Session.LateItem) (Emit.Error || error{NodeFailed})!Tree {
     const dir = try prerenderDir(arena, client.out_dir);
     var tree = client;
     tree.out_dir = dir;
@@ -438,13 +438,14 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
     } else false;
     // Written, the tree goes when the run is over, whatever it gave.
     defer if (wanted and !refused) Io.Dir.cwd().deleteTree(io, dir) catch {};
-    // The site, the data program and the tree are one render (§8.5 item 2).
+    // The site, the data program and the tree are one render (§8.5 item 2),
+    // with the warnings the build adds of its own.
+    const late = try arena.alloc(Session.LateItem, built.diagnostics.len + extra.len);
+    for (built.diagnostics, late[0..built.diagnostics.len]) |item, *slot| {
+        slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
+    }
+    @memcpy(late[built.diagnostics.len..], extra);
     if (refused or (data != null and data.?.refused)) {
-        const late = try gpa.alloc(Session.LateItem, built.diagnostics.len);
-        defer gpa.free(late);
-        for (built.diagnostics, late) |item, *slot| {
-            slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
-        }
         if (data) |d| session.foreign = d.foreign;
         _ = session.renderLate(late, stderr) catch return .{ .refused = 2 };
         return .{ .refused = 1 };
@@ -457,8 +458,13 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
     if (data) |d| {
         switch (try runData(gpa, io, arena, d, node, stderr, text)) {
             .failed => |item| {
-                session.foreign = try d.session.exportLate(arena, &.{item});
-                _ = session.renderLate(&.{}, stderr) catch return .{ .refused = 2 };
+                // The data program's diagnostics so far, and the failure.
+                const failure = try d.session.exportLate(arena, &.{item});
+                session.foreign = .{
+                    .diagnostics = try std.mem.concat(arena, @TypeOf(failure.diagnostics[0]), &.{ d.foreign.diagnostics, failure.diagnostics[0..1] }),
+                    .sources = try std.mem.concat(arena, Session.LateSource, &.{ d.foreign.sources, failure.sources[0..1] }),
+                };
+                _ = session.renderLate(late, stderr) catch return .{ .refused = 2 };
                 return .{ .refused = 1 };
             },
             .needs_node => return .{ .ran = .needs_node },
@@ -494,6 +500,9 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
         };
         try argv.append(arena, file);
     }
+    // A records file a build killed mid-run left is not this run's: the
+    // runner appends to it.
+    Io.Dir.cwd().deleteFile(io, records) catch {};
     const ran = std.process.run(gpa, io, .{ .argv = argv.items }) catch |err| switch (err) {
         error.FileNotFound => return .{ .ran = .needs_node },
         else => {
@@ -581,8 +590,12 @@ const DataBuild = struct {
     /// Where its `main` is, which `prerender_data_failed` points at.
     main: ?struct { file: SourceStore.Index, token: u32 } = null,
 
+    /// The directory is beni's to remove: not a user's directory of that
+    /// name, which the build refuses to touch.
+    owned: bool = true,
+
     fn deinit(d: *DataBuild, io: Io) void {
-        Io.Dir.cwd().deleteTree(io, d.dir) catch {};
+        if (d.owned) Io.Dir.cwd().deleteTree(io, d.dir) catch {};
         d.session.deinit();
     }
 };
@@ -623,6 +636,17 @@ fn buildData(gpa: Allocator, io: Io, arena: Allocator, options_in: Session.Optio
     var d: DataBuild = .{ .session = session, .dir = try dataDir(arena, build.out) };
     errdefer d.deinit(io);
     d.main = null;
+    // The directory is removed whole once the build is over, so one that is
+    // there already must be a data tree a build left: it holds beni's
+    // record, as the prerender tree's does (§5.1). Anything else is the
+    // user's, and is neither written into nor removed.
+    if (Io.Dir.cwd().access(io, d.dir, .{})) |_| {
+        Io.Dir.cwd().access(io, try std.fs.path.join(arena, &.{ d.dir, OutputRecord.file_name }), .{}) catch {
+            stderr.print("beni: cannot build the data program: '{s}' is there, and it is not a data program's tree beni wrote\n", .{d.dir}) catch {};
+            d.owned = false;
+            return error.Failed;
+        };
+    } else |_| {}
     const summary = session.run(paths, Session.check_phases, stderr) catch |err| switch (err) {
         error.InputPath => {
             const failure = session.io_failure.?;
@@ -698,6 +722,8 @@ fn runData(gpa: Allocator, io: Io, arena: Allocator, d: *DataBuild, node: []cons
     };
     const records = try std.fs.path.join(arena, &.{ std.fs.path.dirname(entry).?, records_file });
     const root = d.session.options.manifest_root orelse ".";
+    // A records file a build killed mid-run left is not this run's.
+    Io.Dir.cwd().deleteFile(io, records) catch {};
     const ran = std.process.run(gpa, io, .{ .argv = &.{ node, entry, records }, .cwd = .{ .path = root } }) catch |err| switch (err) {
         error.FileNotFound => return .needs_node,
         else => {

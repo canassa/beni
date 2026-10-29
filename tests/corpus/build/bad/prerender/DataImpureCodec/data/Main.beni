@@ -1,0 +1,13 @@
+-- The data program: its derived schema writes the start as an `Int`.
+import Node exposing (Program)
+import Prerender
+import Schema
+import Start exposing (Start)
+
+
+start : Start
+start = { start = Start.make 41 }
+
+
+main : Program
+main = Prerender.pages (Schema.derived ⊤) λ⊤ → Ok [ ( "/", start ) ]

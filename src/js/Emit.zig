@@ -3207,22 +3207,30 @@ const Emitter = struct {
             .interner = &e.session.interner,
         };
         var refs: std.ArrayList(SchemaGraph.Ref) = .empty;
+        var convs: std.ArrayList(Bir.Inst.Index) = .empty;
         const file = e.graph().moduleFile(spine.module);
-        if (try e.staticSchema(&sg, spine.module, b, args[0], &refs, 0)) |at| {
+        if (try e.staticSchema(&sg, spine.module, b, args[0], &refs, &convs, 0)) |at| {
             return e.report(.program_shape, file, b.insts.items(.main_token)[at.int()],
                 \\A limit of the compiler: the schema a page's value is decoded with must be one the
                 \\compiler can see whole — a `schema` declaration's `Page.schema ⊤`, `Schema.derived ⊤`,
-                \\or those composed by `Schema.list`, `Schema.nullable` and `Schema.converted` — and this
-                \\is a schema made when the program runs. Its conversions are values inside it that no
-                \\walk of the program can read, so the build could not tell that decoding the value is
-                \\pure (`docs/design/prerender.md` §8.4; `docs/design/browser-inline.md` §5, class 4).
-                \\Declare it with `schema`.
+                \\or those composed by `Schema.list`, `Schema.nullable` and `Schema.converted`, written
+                \\here or in a constant of this module — and this is a schema made when the program
+                \\runs, or a value of another module the build does not follow. A schema's conversions
+                \\are values inside it that no walk of the program can read, so the build could not
+                \\tell that decoding the value is pure (`docs/design/prerender.md` §8.4;
+                \\`docs/design/browser-inline.md` §5, class 4). Declare it with `schema`, and name it
+                \\here.
             , .{});
         }
         if (e.options.prerender != .tree) return;
-        // The schema's own expression: its makers compute nothing else, so
-        // what may have an effect here is a `Schema.converted`'s conversion.
-        if (try e.impureIn(spine.module, args[0])) return e.reportImpureConversion(spine.module, b.insts.items(.main_token)[args[0].int()]);
+        // Each `Schema.converted`'s conversion the schema's expression hands it:
+        // its makers compute nothing else.
+        for (convs.items) |c| if (try e.impureIn(spine.module, c)) return e.reportImpureConversion(spine.module, b.insts.items(.main_token)[c.int()]);
+        // A `Schema.derived ⊤` is one of the derived codecs of `main`'s
+        // module (`schema.md` §12.10): each joins the walk, which follows
+        // what they reach, a nominal type's own `codec` among it.
+        const codecs = sg.planOf(spine.module).codecs;
+        for (0..codecs.len) |k| try refs.append(e.scratch, sg.codecTarget(spine.module, @intCast(k)));
         // Every definition the schema reaches, through references.
         var at: usize = 0;
         while (at < refs.items.len) : (at += 1) {
@@ -3238,6 +3246,27 @@ const Emitter = struct {
                             if (k.module == t.module and k.decl == t.decl) break true;
                         } else false;
                         if (!known) try refs.append(e.scratch, t);
+                    },
+                    .codec_ref => {
+                        const t = sg.codecTarget(r.module, SchemaGraph.lhs(plan, n));
+                        const known = for (refs.items) |k| {
+                            if (k.module == t.module and k.decl == t.decl) break true;
+                        } else false;
+                        if (!known) try refs.append(e.scratch, t);
+                    },
+                    // A type's own `codec` (§12.10): its body, a schema the
+                    // library's builders may make, and what it calls when
+                    // it decodes.
+                    .codec_value => {
+                        const target = plan.value_targets[SchemaGraph.lhs(plan, n)];
+                        const owner = e.graph().find(target.package, SchemaGraph.symbol(plan, target.module)) orelse continue;
+                        const name = SchemaGraph.symbol(plan, target.name);
+                        const ob = e.bir(owner);
+                        for (ob.decls) |d| {
+                            if (!d.kind.isValue() or ob.symbol(d.name) != name) continue;
+                            const body = d.body.unwrap() orelse continue;
+                            if (try e.impureIn(owner, body)) return e.reportImpureConversion(r.module, plan.nodes.items(.token)[@backingInt(n)]);
+                        }
                     },
                     .conversion => {
                         const index = SchemaGraph.rhs(plan, n);
@@ -3272,7 +3301,7 @@ const Emitter = struct {
     /// The instruction of `inst`'s subtree that makes the schema it is not
     /// statically known, or null when it is; each `schema` declaration it
     /// names appended to `refs` (`checkDataSchema`).
-    fn staticSchema(e: *Emitter, sg: *const SchemaGraph, m: Graph.Index, b: *const Bir, inst: Bir.Inst.Index, refs: *std.ArrayList(SchemaGraph.Ref), depth: u32) !?Bir.Inst.Index {
+    fn staticSchema(e: *Emitter, sg: *const SchemaGraph, m: Graph.Index, b: *const Bir, inst: Bir.Inst.Index, refs: *std.ArrayList(SchemaGraph.Ref), convs: *std.ArrayList(Bir.Inst.Index), depth: u32) !?Bir.Inst.Index {
         if (depth > 64) return inst;
         const d = b.instData(inst);
         switch (b.instTag(inst)) {
@@ -3280,7 +3309,7 @@ const Emitter = struct {
             .top => {
                 if (d.lhs >= b.decls.len or b.decls[d.lhs].params != 0) return inst;
                 const body = b.decls[d.lhs].body.unwrap() orelse return inst;
-                return e.staticSchema(sg, m, b, body, refs, depth + 1);
+                return e.staticSchema(sg, m, b, body, refs, convs, depth + 1);
             },
             // `Schema.string`, `Schema.int`, … — core's primitives.
             .ext_value => {
@@ -3313,15 +3342,18 @@ const Emitter = struct {
                         try refs.append(e.scratch, ref);
                         for (args) |a| {
                             if (b.instTag(a) == .unit) continue;
-                            if (try e.staticSchema(sg, m, b, a, refs, depth + 1)) |bad| return bad;
+                            if (try e.staticSchema(sg, m, b, a, refs, convs, depth + 1)) |bad| return bad;
                         }
                         return null;
                     },
                     .ext_value => {
                         const name = e.coreSchemaValue(callee, b) orelse return inst;
                         if (std.mem.eql(u8, name, "derived")) return null;
+                        // `converted`'s conversion runs when the value is
+                        // decoded: walked for its purity.
+                        if (std.mem.eql(u8, name, "converted") and args.len == 2) try convs.append(e.scratch, args[1]);
                         if ((std.mem.eql(u8, name, "list") or std.mem.eql(u8, name, "nullable") or std.mem.eql(u8, name, "converted")) and args.len >= 1)
-                            return e.staticSchema(sg, m, b, args[0], refs, depth + 1);
+                            return e.staticSchema(sg, m, b, args[0], refs, convs, depth + 1);
                         return inst;
                     },
                     else => return inst,
@@ -3366,7 +3398,11 @@ const Emitter = struct {
                     if (site.impure or site.own != .no) {
                         const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
                         const is_debug = b.instTag(item.inst) == .call and b.instTag(callee) == .ext_value and debug != null and b.instData(callee).lhs == debug.?.int();
-                        if (!is_debug) return true;
+                        // Core `Schema`'s makers build a schema, with `Js`,
+                        // and decode nothing: the functions they are handed
+                        // are walked as the call's arguments.
+                        const is_maker = b.instTag(item.inst) == .call and e.coreSchemaValue(callee, b) != null;
+                        if (!is_debug and !is_maker) return true;
                     }
                 },
                 .top => if (d.lhs < b.decls.len) {

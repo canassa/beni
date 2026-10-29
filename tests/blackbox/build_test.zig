@@ -1125,6 +1125,57 @@ test "a data program runs at its project's root, and may say Debug.log under --r
     try testing.expect(!w.exists("site/.out.data") and !w.exists("site/.out.prerender"));
 }
 
+test "a data build leaves a directory of the user's alone, and reads no records an old run left" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §8.3: the data program is built into `.<out>.data`,
+    // which the build removes; a directory of that name beni did not write
+    // is the user's, refused and kept, as the prerender tree's is (§5.1).
+    // And a records file a killed build left there is not the next run's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDataSite(&w, ".");
+    try w.write(".out.data/keep.txt", "precious");
+    const options: world.RunOptions = .{ .raw_diagnostics = true, .path = try w.nodePath() };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const kept = try w.runWith(&.{ "build", "--platform=browser-inline", "--out=out", "Main.beni", "Post.beni" }, options);
+    const still = try w.read(".out.data/keep.txt");
+    try w.tmp.dir.deleteTree(w.io, ".out.data");
+    // A tree beni wrote, the data program's built by hand there, whose
+    // `main` writes no record, beside a records file an old run left.
+    try w.write("data/Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main = Node.print "hello"
+        \\
+    );
+    const by_hand = try w.runWith(&.{ "build", "--platform=node", "--out=.out.data", "--no-source-maps", "data", "Post.beni" }, options);
+    try w.write(".out.data/_records.jsonl", "{\"route\":\"/\",\"data\":\"{\\\"body\\\":\\\"stale\\\"}\"}\n{\"end\":1}\n");
+    const stale = try w.runWith(&.{ "build", "--platform=browser-inline", "--diagnostics=json", "--out=out", "Main.beni", "Post.beni" }, options);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), kept.exit_code);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "is not a data program's tree beni wrote") != null);
+    try testing.expectEqualStrings("precious", still);
+    try testing.expectEqual(@as(u8, 0), by_hand.exit_code);
+    try testing.expectEqual(@as(u8, 1), stale.exit_code);
+    try testing.expect(std.mem.indexOf(u8, stale.stderr, "\"code\":\"prerender_data_failed\"") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+    try testing.expect(!w.exists(".out.data"));
+}
+
 test "a data site's pages are byte-identical at every --jobs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
