@@ -1968,6 +1968,8 @@ fiber spawned into a closed root scope is cancelled before it runs. `Time.sleep`
 `Dom.rendered` are the browser's first suspending primitives, each beni over `callback`.
 
 *Amended 2026-10-01: `Io.readFile`'s error is typed* (`CLAUDE.md` rule 9, `boundary.md` §4.1).
+*As built 2026-10-30:* the read's start, its rejection handler and `Io.run`'s `finish` are beni
+over `Js` (`plans/runtime-in-beni.md` step 10), and `Io.js` is gone.
 It is `Io.readFile : String -> Result FileError String`, and each failure Node documents for
 `fs.promises.readFile` is one constructor of
 
