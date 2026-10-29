@@ -597,6 +597,9 @@ fn buildData(gpa: Allocator, io: Io, arena: Allocator, options_in: Session.Optio
     options.platform = "node";
     options.cache_build_id = build.cache.build_id;
     options.manifest_root = app_root;
+    // Its paths are below the project root and each its own source root:
+    // the site's `--root`, which names the site's modules, is not theirs.
+    options.root = null;
     options.informational = true;
     options.explain = build.common.explain;
     options.defer_render = true;

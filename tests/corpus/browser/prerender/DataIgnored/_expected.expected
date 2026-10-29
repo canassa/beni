@@ -1,0 +1,52 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p>"Never: 0 times"</p>
+      <output>"0"</output>
+      <button data-role="dec" disabled="">"-"</button>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p>"Clicked: 1 times"</p>
+      <output>"1"</output>
+      <button data-role="dec">"-"</button>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p>"Clicked: 2 times"</p>
+      <output>"2"</output>
+      <button data-role="dec">"-"</button>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=dec]
+<body>
+  "\n    "
+  <div id="root">
+    <div data-role="app">
+      <p>"Clicked: 1 times"</p>
+      <output>"1"</output>
+      <button data-role="dec">"-"</button>
+      <button data-role="inc">"+"</button>
+    </div>
+  </div>
+  "\n  "
+</body>

@@ -1,0 +1,6 @@
+-- DATA PROGRAM IGNORED ------------------------------------------ beni.json:1:1
+
+This project names a data program in `"build"."data"`, and its `main` does not
+say `Browser.prerenderData`, so the build neither builds nor runs it. Make
+`main` a `Browser.prerenderData`, or take `"data"` out
+(`docs/design/prerender.md` §8.5).
