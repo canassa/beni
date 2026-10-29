@@ -90,11 +90,8 @@ pub const Demand = struct {
     token: u32,
     /// A writer call's callee instruction, for its name; `none` otherwise.
     callee_inst: u32 = none,
-    /// A writer call's write: its path below the base's value, for its text
-    /// (`.none` at the root).
+    /// A writer call's write path below the base, and its callee's `xreq` (§2.11).
     write_path: PathId = .none,
-    /// A writer call's callee's `xreq` instantiated on the arguments: what its
-    /// acceptance relies on beside its own splits (§2.11 step 7, R-4.6.6).
     relies: CondId = Cond.yes,
     /// The other operands of the operation, a run of `Frame.operands`.
     operands: Ids.Range = .empty,

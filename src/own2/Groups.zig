@@ -763,12 +763,13 @@ pub const Module = struct {
     fn handWritten(mod: *const Module, dt: *const Dispatch, root: Dispatch.TermIndex) Allocator.Error!bool {
         var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
         // Evidence is a DAG (`EvidenceDagBuildDepth32`): each term once.
-        var seen: std.AutoHashMapUnmanaged(Dispatch.TermIndex, void) = .empty;
+        var seen: stamped.Column(Dispatch.TermIndex, void) = .{};
         defer seen.deinit(mod.gpa);
         defer stack.deinit(mod.gpa);
         try stack.append(mod.gpa, root);
         while (stack.pop()) |ti| {
-            if ((try seen.getOrPut(mod.gpa, ti)).found_existing) continue;
+            if (seen.contains(ti)) continue;
+            try seen.put(mod.gpa, ti, {});
             switch (dt.term(ti)) {
                 .top, .ext, .param, .codec => return true,
                 else => try stack.appendSlice(mod.gpa, dt.argsOfTerm(ti)),
