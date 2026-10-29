@@ -161,8 +161,21 @@ pub const Table = struct {
     /// `n`'s cells, a lazy `positions` node's built from its sides' (each
     /// built first, on an explicit stack) and kept in its record: a record per
     /// node built, its unions charged as any.
+    /// A walk from a `positions`, `union` or `choice` node, a DAG as large as
+    /// the run or the joins that built it: a growth task chosen before it,
+    /// never the asking kernel's lane, until read-off continuations charge it
+    /// by its producers (§4.1, #1098). From any other node, the kernel's.
+    pub fn dagWalk(t: *const Table, gpa: Allocator, account: *Account, n: NodeId) Error!?Account.Kernel {
+        return switch (t.kind(n)) {
+            .positions, .@"union", .choice => try account.enter(gpa, null),
+            else => null,
+        };
+    }
+
     pub fn cellsOf(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
         if (!t.isLazy(n)) return t.cells(n);
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, n);
@@ -546,6 +559,8 @@ pub const Table = struct {
         // another owner to read.
         try account.reserve(.memo, 1);
         if (t.memo_proj.get(.{ n.int(), s.word() })) |hit| return if (hit == Ids.none_int) null else NodeId.from(hit);
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         // The sides a union, a positions node or a delta's base projects
         // through first, on an explicit stack (#1138: a union DAG is as deep
         // as the source); each request one memo record, as before.
@@ -659,6 +674,8 @@ pub const Table = struct {
     /// members' cells and its successors' sets. O(nodes · log C) once.
     pub fn reach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
         if (t.nodes.items(.reach)[n.int()] != .none) return t.nodes.items(.reach)[n.int()];
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets };
         defer r.deinit();
         try r.run(n);
@@ -829,6 +846,8 @@ pub const Table = struct {
     pub fn namedSteps(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![]const u32 {
         try account.reserve(.memo, 1);
         if (t.named_memo.get(n)) |r| return t.named_pool.items[r[0]..][0..r[1]];
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
@@ -915,6 +934,8 @@ pub const Table = struct {
     pub fn rank(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!u32 {
         try account.reserve(.memo, 1);
         if (t.rank_memo.get(n)) |r| return r;
+        const walk = try t.dagWalk(gpa, account, n);
+        defer if (walk) |k| account.leave(k);
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);

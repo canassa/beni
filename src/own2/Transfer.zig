@@ -198,6 +198,15 @@ pub const Frame = struct {
         return f.account().enter(f.gpa, .{ .atom = i, .role = .transfer_settlement });
     }
 
+    /// An item's work that is as large as its value (its fit, its κ merge
+    /// and reads, its projection, its cells): a growth task chosen before
+    /// it, never the item's lane, whose ceiling a large value would pass
+    /// (§4.1, #1139's review). Read-off continuations charge it by its
+    /// producers (#1098).
+    fn sized(f: *Frame) Error!Ids.Account.Kernel {
+        return f.account().enter(f.gpa, null);
+    }
+
     fn markUnbuilt(f: *Frame, i: u32) void {
         if (f.unbuilt == none) f.unbuilt = i;
     }
@@ -660,11 +669,11 @@ pub const Frame = struct {
             defer members.deinit(f.gpa);
             var ctxs: std.ArrayList(Cond.Kappas) = .empty;
             defer ctxs.deinit(f.gpa);
-            // §4.1: each item's part of a wide run is in its own atom's lane,
-            // its cells inserted into the root's set there (§2.3, #1098).
+            // Each item's fit, κ merge and cells, inserted into the root's set
+            // (§2.3, #1098), are as large as the item: growth (`sized`).
             var root_cells: SetId = .none;
             for (items) |item| {
-                const kernel = try f.lane(item);
+                const kernel = try f.sized();
                 defer f.account().leave(kernel);
                 const v = try f.fit(f.val(item).value, elem_place);
                 try members.append(f.gpa, v.node);
@@ -681,12 +690,12 @@ pub const Frame = struct {
             const task = try f.account().enter(f.gpa, null);
             defer f.account().leave(task);
             const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells, lanes);
-            elem_k = try f.env.conds.propagateItems(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null, lanes);
+            elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
             // Each element at the literal's `[*]`: its own κ there (§2.9: the
             // conditions of `vᵢ` at `p`, relative to `vᵢ`), what a read of a
-            // side of the positions node finds, on its item's lane.
-            for (members.items, ctxs.items, items) |m, c, item| {
-                const kernel = try f.lane(item);
+            // side of the positions node finds.
+            for (members.items, ctxs.items) |m, c| {
+                const kernel = try f.sized();
                 defer f.account().leave(kernel);
                 elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
             }
@@ -758,8 +767,8 @@ pub const Frame = struct {
         var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
         var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), elem_k, old, true);
         var held = (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, old));
-        for (stored, atoms) |s, atom| {
-            const kernel = try f.lane(atom);
+        for (stored) |s| {
+            const kernel = try f.sized();
             defer f.account().leave(kernel);
             const v = try f.fit(s, elem_place);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
@@ -817,8 +826,8 @@ pub const Frame = struct {
             var atoms: std.ArrayList(u32) = .empty;
             defer atoms.deinit(f.gpa);
             for (items[first + 1 ..]) |it| {
-                // Each item's part of the run on its own lane (§4.1, #1139).
-                const kernel = try f.lane(it[0]);
+                // Each item's projection is as large as it (§4.1, #1139).
+                const kernel = try f.sized();
                 defer f.account().leave(kernel);
                 try atoms.append(f.gpa, it[0]);
                 const v = f.val(it[0]).value;
@@ -862,7 +871,7 @@ pub const Frame = struct {
             break :blk try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
         };
         for (fronts) |it| {
-            const kernel = try f.lane(it[0]);
+            const kernel = try f.sized();
             defer f.account().leave(kernel);
             const v = try f.fit(f.val(it[0]).value, elem_place);
             try members.append(f.gpa, v.node);
@@ -925,7 +934,7 @@ pub const Frame = struct {
         var stored: std.ArrayList(Value) = .empty;
         defer stored.deinit(f.gpa);
         for (ops.items[1..]) |o| {
-            const kernel = try f.lane(o);
+            const kernel = try f.sized();
             defer f.account().leave(kernel);
             try stored.append(f.gpa, try f.projectAt(f.val(o).value, Step.elem, f.env.places.child(at, Step.elem) orelse at));
         }

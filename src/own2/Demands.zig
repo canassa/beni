@@ -888,21 +888,24 @@ const Resolver = struct {
         }
         // 4. Disjoint: no other operand reaches a cell of the base.
         var relied: CondId = Cond.yes;
-        for (r.frame.operands[dm.operands.start..][0..dm.operands.len]) |op| {
-            // With one base cell, each operand's check is its own: on its
-            // own lane (§4.1, #1139), so a wide run's query is per item.
-            const own: ?Ids.Account.Kernel = if (product == null) try r.env.account().enter(r.gpa, .{ .atom = op.inst, .role = .direct_demand_query }) else null;
-            defer if (own) |k| r.env.account().leave(k);
-            const rs = try r.reach(op.value.node);
-            var ot = cellt.sets.iterate(rs);
-            while (ot.next()) |x| {
-                for (cells.items) |e| {
-                    try r.env.charge.reserve(r.gpa, .inspection, 1);
-                    switch (r.conflict(.from(x.key), .from(e.key), deep)) {
-                        .no => {},
-                        .yes => return .{ .verdict = .refused, .cause = .disjoint, .exactness = if (x.value == 1 or e.value == 1) .approximate else .exact },
-                        .under => |s| relied = try r.env.conds.@"and"(r.gpa, r.env.charge, relied, r.splitCond(s)),
-                        .under_kappa => relied = Cond.lost,
+        {
+            // Every operand's reach against the base's cells: as large as the
+            // operands, a product, so growth chosen before it, never the
+            // demand's lane (§4.1, #1139).
+            const sweep: ?Ids.Account.Kernel = if (product == null) try r.env.account().enter(r.gpa, null) else null;
+            defer if (sweep) |k| r.env.account().leave(k);
+            for (r.frame.operands[dm.operands.start..][0..dm.operands.len]) |op| {
+                const rs = try r.reach(op.value.node);
+                var ot = cellt.sets.iterate(rs);
+                while (ot.next()) |x| {
+                    for (cells.items) |e| {
+                        try r.env.charge.reserve(r.gpa, .inspection, 1);
+                        switch (r.conflict(.from(x.key), .from(e.key), deep)) {
+                            .no => {},
+                            .yes => return .{ .verdict = .refused, .cause = .disjoint, .exactness = if (x.value == 1 or e.value == 1) .approximate else .exact },
+                            .under => |s| relied = try r.env.conds.@"and"(r.gpa, r.env.charge, relied, r.splitCond(s)),
+                            .under_kappa => relied = Cond.lost,
+                        }
                     }
                 }
             }
