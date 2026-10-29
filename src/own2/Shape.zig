@@ -348,6 +348,22 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = t.cells(in), .a = in.int(), .b = 0, .reach = .none });
     }
 
+    /// A stepped recast that keeps the whole inner (§2.13.9: no part of it
+    /// matches the step): it stands for some value inside the inner, so its
+    /// cells are what the inner reaches, approximately — never the inner's
+    /// own cells, which are the value around it (#1132's defect, through a
+    /// call's instantiated place).
+    fn recastWhole(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, at: PlaceId, inner: NodeId) Error!NodeId {
+        const in = if (t.kind(inner) == .recast) NodeId.from(t.nodes.items(.a)[inner.int()]) else inner;
+        var c: SetId = .none;
+        var it = cellsets.iterate(try t.reach(gpa, account, cellsets, in));
+        while (it.next()) |e| {
+            try account.reserve(.inspection, 1);
+            c = try cellsets.insert(gpa, .growth(account), c, e.key, 1);
+        }
+        return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = c, .a = in.int(), .b = 0, .reach = .none });
+    }
+
     /// The lazy join of two nodes at one place (a binary DAG).
     pub fn @"union"(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         if (l == r) return l;
@@ -636,7 +652,7 @@ pub const Table = struct {
             // A recast projects to a recast of its inner's own part where
             // `recastPart` finds one (§2.13.9, #1132's review); otherwise of
             // the whole inner, as far as anyone knows.
-            .recast => try t.recast(gpa, account, child_place, if (t.recastPart(places, n, s)) |inner| got(t, inner.int(), s) else .from(d.a)),
+            .recast => if (t.recastPart(places, n, s)) |inner| try t.recast(gpa, account, child_place, got(t, inner.int(), s)) else try t.recastWhole(gpa, account, &cellt.sets, child_place, .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),

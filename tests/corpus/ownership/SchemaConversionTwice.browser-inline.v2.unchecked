@@ -1,7 +1,7 @@
 SchemaConversionTwice dup: lines 31-32 (not built: local)
 SchemaConversionTwice both: lines 35-36 (not built: local)
 SchemaConversionTwice nest: lines 39-40 (not built: local)
-SchemaConversionTwice madeDup: lines 47-48 (not built: call)
+SchemaConversionTwice madeDup: lines 47-48 (not built: lambda)
 SchemaConversionTwice copyDup: lines 51-52 (not built: local)
 SchemaConversionTwice range: lines 55-56 (not built: call)
 SchemaConversionTwice oneRange: lines 59-60 (not built: call)

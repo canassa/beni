@@ -1,4 +1,3 @@
-Keep wrapped: lines 9-10 (not built: call)
 Keep recursive: lines 16-20 (not built: call)
 Keep relay: lines 23-24 (not built: call)
 Main readOnly: lines 7-8 (not built: local)

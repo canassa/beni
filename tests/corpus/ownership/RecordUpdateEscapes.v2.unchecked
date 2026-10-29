@@ -1,6 +1,6 @@
-RecordUpdateEscapes keep: lines 17-18 (not built: call)
+RecordUpdateEscapes keep: lines 17-18 (not built: lambda)
 RecordUpdateEscapes openEsc: lines 21-25 (not built: record_update)
-RecordUpdateEscapes plain: lines 28-31 (not built: call)
+RecordUpdateEscapes plain: lines 28-31 (not built: lambda)
 RecordUpdateEscapes viaCallee: lines 34-37 (not built: record_update)
 RecordUpdateEscapes inList: lines 40-49 (not built: record_update)
 RecordUpdateEscapes escHead: lines 52-61 (not built: record_update)

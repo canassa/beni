@@ -72,6 +72,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             .shared = mod.shared_of.items,
             .ctx = mod,
             .decl_of = Groups.Module.declOfCtx,
+            .ctor_of = Groups.Module.ctorIndexCtx,
         };
         // A worded declaration's class is its words (an asserted row):
         // its body is not checked here (§2.13.6's pins check it).

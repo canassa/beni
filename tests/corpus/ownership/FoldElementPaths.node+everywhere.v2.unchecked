@@ -1,4 +1,4 @@
 FoldElementPaths put: lines 5-15 (not built: call)
 FoldElementPaths main: lines 18-21 (not built: local)
 FoldElementPaths sharedKeys: lines 25-29 (not built: local)
-FoldElementPaths opaqueSharedKeys: lines 36-39 (not built: call)
+FoldElementPaths opaqueSharedKeys: lines 36-39 (not built: local)

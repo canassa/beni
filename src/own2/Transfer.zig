@@ -33,6 +33,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const stamped = @import("../stamped.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
@@ -995,10 +996,14 @@ pub const Frame = struct {
                     return e;
                 };
                 f.account().leave(graft);
-                f.xreq = try f.env.conds.@"and"(f.gpa, f.env.charge, f.xreq, applied.xreq);
+                // The callee's `xreq` is discharged on the call's first write, and
+                // reported there (§2.11 step 7); a call that writes nothing owes
+                // it as the frame's.
+                const first_demand = f.demands.items.len;
                 for (applied.escapes) |e| {
                     if (e.param >= arg_insts.len) continue;
-                    try f.escapes.append(f.gpa, .{ .node = (try f.along(argv.items[e.param], applied.steps[e.steps.start..][0..e.steps.len])).node, .point = i });
+                    const pos = (try f.positionsAt(argv.items[e.param], applied.steps[e.steps.start..][0..e.steps.len])) orelse continue;
+                    try f.escapes.append(f.gpa, .{ .node = pos.node, .point = i });
                 }
                 for (applied.escaped) |n| try f.escapes.append(f.gpa, .{ .node = n, .point = i });
                 const answer = applied.result;
@@ -1006,20 +1011,164 @@ pub const Frame = struct {
                 const writes = try f.gpa.dupe(Calls.Write, applied.writes);
                 defer f.gpa.free(writes);
                 const steps = try f.gpa.dupe(Step, applied.steps);
+                const touched = try f.gpa.dupe(Calls.Touch, applied.touched);
+                defer f.gpa.free(touched);
                 defer f.gpa.free(steps);
                 for (writes) |w| {
                     if (w.param >= arg_insts.len) continue;
-                    const base = try f.along(argv.items[w.param], steps[w.steps.start..][0..w.steps.len]);
+                    const base = (try f.positionsAt(argv.items[w.param], steps[w.steps.start..][0..w.steps.len])) orelse continue;
                     var others: std.ArrayList(u32) = .empty;
                     defer others.deinit(f.gpa);
                     for (arg_insts, 0..) |a, k| if (k != w.param) try others.append(f.gpa, a.int());
                     try f.demand(i, if (w.deep) .consumed else .writer, arg_insts[w.param].int(), base, others.items, callee_inst);
+                    // Disjoint against every other path of the argument the
+                    // callee touches (§2.11 item 3, R-5.1.5): a write at `.x`
+                    // while `.y` is read or answered is one object written
+                    // twice if the actual's `.x` and `.y` are one.
+                    {
+                        const dm = &f.demands.items[f.demands.items.len - 1];
+                        const wsteps = steps[w.steps.start..][0..w.steps.len];
+                        for (touched) |t| {
+                            if (t.param != w.param) continue;
+                            const tsteps = steps[t.steps.start..][0..t.steps.len];
+                            // The written path itself (its positions' distinctness
+                            // is the callee's `xreq`), above the write and only
+                            // reached, or below an exact
+                            // write (inside the written object): not held beside
+                            // it. Above it and answered or escaped: it holds the
+                            // written object. Below a `[*]` or `⟲` write: another
+                            // position the summary path stands for, beside it.
+                            if (prefixRelated(wsteps, tsteps)) {
+                                if (tsteps.len < wsteps.len and !t.held) continue;
+                                if (tsteps.len == wsteps.len) continue;
+                                if (tsteps.len > wsteps.len and exactPath(wsteps)) continue;
+                            }
+                            const pos = (try f.besides((try f.positionsAt(argv.items[w.param], tsteps)) orelse continue, base, &f.demands.items[f.demands.items.len - 1])) orelse continue;
+                            try f.operands.append(f.gpa, .{ .value = pos, .inst = arg_insts[w.param].int() });
+                            dm.operands.len += 1;
+                        }
+                    }
+                    // The write's path below the argument: the demand's text,
+                    // and the part of the argument's local it writes, which
+                    // a later read must reach to conflict (§2.8).
+                    const wsteps = steps[w.steps.start..][0..w.steps.len];
+                    if (wsteps.len != 0) {
+                        const dm = &f.demands.items[f.demands.items.len - 1];
+                        dm.write_path = try f.extendPath(try f.env.places.rootPath(f.gpa, try f.placeOf(arg_insts[w.param].int())), wsteps);
+                        if (dm.base_path != .none) dm.base_path = try f.extendPath(dm.base_path, wsteps);
+                    }
                 }
+                if (f.demands.items.len > first_demand) {
+                    const dm = &f.demands.items[first_demand];
+                    dm.relies = try f.env.conds.@"and"(f.gpa, f.env.charge, dm.relies, applied.xreq);
+                } else f.xreq = try f.env.conds.@"and"(f.gpa, f.env.charge, f.xreq, applied.xreq);
                 return answer;
             },
         }
     }
 
+    /// `at` extended by `steps`, as far as the place graph has them.
+    fn extendPath(f: *Frame, at: PathId, steps: []const Step) Error!PathId {
+        var p = at;
+        for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse break;
+        return p;
+    }
+
+    /// The argument `v` at a class's parameter path `steps`: every position
+    /// the path stands for, joined (alternatives at one path). A `⟲` step
+    /// stands for every re-entry of the recursive place below the value so
+    /// far, at any depth (§2.2's canonical paths): each node reached by one
+    /// step or more whose place is that one. A walk of the value, growth
+    /// chosen before it (§4.1). Null when no position is left.
+    fn positionsAt(f: *Frame, v: Value, steps: []const Step) Error!?Value {
+        var has_level = false;
+        for (steps) |s| has_level = has_level or s.kind == .level;
+        if (!has_level) return try f.along(v, steps);
+        const task = try f.account().enter(f.gpa, null);
+        defer f.account().leave(task);
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        var frontier: std.ArrayList(NodeId) = .empty;
+        defer frontier.deinit(f.gpa);
+        var next: std.ArrayList(NodeId) = .empty;
+        defer next.deinit(f.gpa);
+        try frontier.append(f.gpa, v.node);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(f.gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(f.gpa);
+        for (steps) |s| {
+            next.clearRetainingCapacity();
+            for (frontier.items) |x| {
+                if (s.kind != .level) {
+                    if (try shapes.proj(f.gpa, f.account(), places, f.env.cells, x, s)) |n| try next.append(f.gpa, n);
+                    continue;
+                }
+                const p = shapes.place(x);
+                seen.deinit(f.gpa);
+                seen = .{};
+                stack.clearRetainingCapacity();
+                try stack.append(f.gpa, x);
+                while (stack.pop()) |y| {
+                    for (places.steps(shapes.place(y)).steps) |c| {
+                        try f.env.charge.reserve(f.gpa, .inspection, 1);
+                        if (c.kind == .level) continue;
+                        const n = (try shapes.proj(f.gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
+                        if (seen.contains(n)) continue;
+                        try seen.put(f.gpa, n, {});
+                        if (shapes.place(n) == p) try next.append(f.gpa, n);
+                        try stack.append(f.gpa, n);
+                    }
+                }
+            }
+            std.mem.swap(std.ArrayList(NodeId), &frontier, &next);
+        }
+        if (frontier.items.len == 0) return null;
+        if (frontier.items.len == 1) return .{ .node = frontier.items[0] };
+        return .{ .node = try shapes.join(f.gpa, f.account(), places, f.env.cells, frontier.items) };
+    }
+
+    /// What `v` reaches beside the write `dm`'s base: the operand a write's
+    /// other path is (§2.11 item 3). Two paths of one parameter of this
+    /// frame are distinct objects here, as its own walk takes them: its class
+    /// marks both and its callers check them, so a cell of another of its
+    /// paths is dropped. The base's own cell at a path through `[*]` or `⟲`
+    /// stands for several positions, which the class's two paths folded into
+    /// one: the write relies on them being distinct, `excl c`, owed upward as
+    /// the fold's reliance (§8 S3b). Null when nothing is left.
+    fn besides(f: *Frame, v: Value, base: Value, dm: *Demands.Demand) Error!?Value {
+        const shapes = f.env.shapes;
+        const cells = f.env.cells;
+        const own = try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
+        var kept: SetId = .none;
+        var it = cells.sets.iterate(try shapes.reach(f.gpa, f.account(), &cells.sets, v.node));
+        while (it.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            if (cells.origin(cells.base(c)) == .param) {
+                if (!cells.sets.member(own, e.key)) continue;
+                if (cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
+                    dm.relies = try f.env.conds.@"and"(f.gpa, f.env.charge, dm.relies, try f.env.conds.excl(f.gpa, f.env.charge, c));
+                    continue;
+                }
+            }
+            kept = try cells.sets.insert(f.gpa, f.env.charge, kept, e.key, e.value);
+        }
+        if (kept == .none) return null;
+        return .{ .node = try shapes.leaf(f.gpa, f.account(), shapes.place(v.node), kept) };
+    }
+
+    /// Whether a path goes through `[*]` or `⟲`: it names several positions.
+    fn summaryPath(f: *Frame, p: PathId) Error!bool {
+        const places = f.env.places;
+        var at = p;
+        while (at != .none and places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const k = places.pathStep(at).kind;
+            if (k == .elem or k == .level) return true;
+        }
+        return false;
+    }
     fn along(f: *Frame, v: Value, steps: []const Step) Error!Value {
         var at = v;
         for (steps) |s| {
@@ -1250,3 +1399,17 @@ pub const Frame = struct {
         return f.val(body.int()).value;
     }
 };
+
+/// Whether one step path is a prefix of the other: the same object, or one
+/// inside the other.
+fn prefixRelated(a: []const Step, b: []const Step) bool {
+    const n = @min(a.len, b.len);
+    for (a[0..n], b[0..n]) |x, y| if (!std.meta.eql(x, y)) return false;
+    return true;
+}
+
+/// Whether a step path names one position: no `[*]` or `⟲` in it.
+fn exactPath(steps: []const Step) bool {
+    for (steps) |s| if (s.kind == .elem or s.kind == .level) return false;
+    return true;
+}
