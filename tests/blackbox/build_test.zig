@@ -8837,8 +8837,9 @@ test "the checker v2 still refuses a genuine product past the source continuatio
 /// `e` escapes of `xs` (`Js.ref xs`) and a chain of `w` pushes on it, in
 /// one branch (`together`, the escaped twin) or in the two arms of an
 /// `if` (the mutually exclusive one): the dump's account line of `f` and
-/// its total line. The allowance is raised, so the frame is measured.
-fn escapesWrites(e: u32, w_count: u32, together: bool) !struct { inspection: u64, total: []const u8 } {
+/// its total line: the growth its source continuation paid (§4.1). The
+/// allowance is raised, so the frame is measured.
+fn escapesWrites(e: u32, w_count: u32, together: bool) !struct { growth: u64, total: []const u8 } {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -8858,7 +8859,7 @@ fn escapesWrites(e: u32, w_count: u32, together: bool) !struct { inspection: u64
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f") == null);
     const at = std.mem.indexOf(u8, dump.stdout, "\ntotal ") orelse return error.NoTotal;
     const end = std.mem.indexOfScalarPos(u8, dump.stdout, at + 1, '\n') orelse dump.stdout.len;
-    return .{ .inspection = try accountField(dump.stdout, "f", "inspection"), .total = try std.testing.allocator.dupe(u8, dump.stdout[at + 1 .. end]) };
+    return .{ .growth = try accountField(dump.stdout, "f", "continuation"), .total = try std.testing.allocator.dupe(u8, dump.stdout[at + 1 .. end]) };
 }
 
 test "the checker v2's escape queries are charged and indexed, never an uncharged escapes × writes product" {
@@ -8869,7 +8870,8 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
     // whether it came before, compatibly, with no charge: e × w tests at
     // growth 0. The points of a cell are indexed by the second order, so a
     // query is one binary search, charged as growth. The mixed difference over
-    // independent escape and write counts is the product term; it stays
+    // independent escape and write counts of the growth the frame's
+    // continuation paid is the product term; it stays
     // within w · (log₂ e + 1) (measured: 132 at 4 and 48), where the
     // product would be e × w (1 936).
     const counts = [_]u32{ 4, 48 };
@@ -8887,7 +8889,7 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
         const want = try std.fmt.allocPrint(testing.allocator, "total {d}: accepted {d} ", .{ w_count, w_count });
         defer testing.allocator.free(want);
         try testing.expect(std.mem.startsWith(u8, r.total, want));
-        ins[i][j] = r.inspection;
+        ins[i][j] = r.growth;
     };
     const mixed = (ins[1][1] + ins[0][0]) -| (ins[1][0] + ins[0][1]);
     // Charged: each extra write's query costs more when it has more
