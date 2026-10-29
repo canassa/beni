@@ -2694,15 +2694,52 @@ members (#1054); exact same-base comparisons remain individually charged. `Cond.
 need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
-**Read-off and run-wide reads.** Each kernel that creates or requests a node/cell reserves its bounded
-read-off continuation on its own source lane, before the work, hit or miss (#1098). This is a continuation
-of that logical request, not credit donated by the first physical producer. Use a role with enough proved
-capacity (the 512-record role where the 32-record direct-data role is insufficient); count it inside
-B_f's existing lane inventory and check the ceiling. Parameter R/W/E/A marks use the use/demand/escape or
-result occurrence that causes them. Growth-context producers prepay their continuation in G_f, with no
-new allowance at read-off. The final scan consumes those continuations once; it cannot silently perform
-a second whole-class traversal per source item. A continuation that has no qualifying source or growth
-producer is an accounting defect to identify, not uncharged work.
+**Read-off and run-wide reads: the source continuation** (the manager's decision, 2026-10-29, #1188; it
+replaces the per-request read-off continuation this paragraph specified before). Each owning declaration's
+account holds a *source continuation* of K·S_f records. K is `continuation_per_atom` = **1 024**, a huge named
+bound, never tuned: an order of magnitude past every measurement below. S_f is the declaration's written
+instructions, known before its walk starts. A reservation in a growth context — one that names no lane: a
+general task, an item's value-sized work, a walk from a DAG node, the read-off — takes its records from the
+continuation when they fit, whole, in what remains of it. Otherwise it takes them from G_f. The choice is made
+at that reservation, before its work, from the owner's own counts. So it does not depend on thread timing,
+on declaration order or on another declaration: each owner has its own account, and its S_f is its own
+source. The records the continuation lends count in B_f under the category they were reserved for. They
+add at most 1 024·S_f to B_f, an order of magnitude inside the 10 304·S_f this section lets B_f reach. Only what passes K·S_f is growth, and
+past R_f that is the loud `ownership_summary_size`. Lanes and their ceilings are unchanged. The continuation
+never funds a lane: a lane past its ceiling is `ownership_accounting_invariant`, a defect, as before. The dump
+prints the continuation spent and its cap on each owner's `account` line. Parameter R/W/E/A marks use the
+use, demand, escape or result occurrence that causes them. The final scan reads each class once. It cannot
+silently perform a second whole-class traversal per source item.
+
+*Why source-shaped work stays inside K·S_f.* Each source atom's own transfer makes O(P) records, P the positions
+of its value's type at its place, plus a bounded number of insertions into persistent sets. A
+`Cell.Radix` insertion copies at most its path, at most 33 nodes for a 32-bit key. So a literal's n log n is
+capped at 33 records per item for its root set, whatever n is. The shapes below then cost O(1) records per
+source atom, for an element type of fixed size:
+- **A literal**: per item, its fit, κ merge, cells, one root-set insertion, the positions node before it, and
+  its share of `propagate`'s states. Those states are the element type's positions over the positions DAG's
+  2n nodes, each visited once per run (§2.9).
+- **A spread or append chain**: the same per item, and the base's projection, κ and cells once.
+- **A wide choice** (a `case` or `if` of many arms): each arm's value is its own instructions. The join
+  makes one `choice` node per arm and reads each once (the join memo, §2.3).
+- **Nested lists and records**: each level is an instruction. A level's reads walk the levels below it, but
+  the memos (`proj`, `reach`, `rank`, the κ trie) answer a level already read. The measured cost per atom
+  rises with depth and flattens: a nested list costs 18, 53, 79 and 89 records per atom at depth 10, 100,
+  1 000 and 4 000, the deepest the parser admits (`nesting_too_deep`). A nested record costs 37 per atom at
+  depth 100 and 77 at the deepest a type admits, 512 type levels (about 250 records).
+- **A value re-read at a fixed count c**: c times the value's size, which is at most c times its source.
+- **The corpus**: over its 1 158 owning declarations the maximum is 125 records per source atom, a record
+  of records re-read twice (`WideItemValues`).
+
+*What stays a genuine product, and so growth:*
+- a value re-read at a number of positions that grows with the source: k uses of an n-item value cost about
+  k·n;
+- a value whose type's positions are not the declaration's source (a wide record type declared elsewhere),
+  re-read: uses × positions;
+- the pair and context products of the table above: a demand's sweep of operands × base cells when both grow,
+  and κ contexts × positions.
+
+A 200-field record of 10-field records, re-read 16 times in one literal, reaches `ownership_summary_size`.
 
 A literal's run has one source incidence per written item. Its collect node, root cell-set inserts,
 member condition read and incremental apart/excl update belong to that item's lane. Internal collect
