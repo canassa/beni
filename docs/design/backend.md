@@ -6150,11 +6150,43 @@ evaluation, which is true of a name JavaScript never rebinds after its binding:
   caller; a sibling is not promised to be. Only the join knows which names are such imports (a
   specifier whose imported name is not its local one, `Emit.markHandWritten`), so the veto is the
   printer's: `Print.resolve` leaves an arrow whose recorded callee is one as the arrow it is.
-  `emit/release/core/JsCompare`'s `viaValue`, which forwards to the sibling's `lt` taken as a value,
-  stays a lambda;
-- a **local `const_decl`** of the enclosing function, in scope at the arrow. A `let_decl` (a `Js.Ref`, a
-  `case` result, a loop variable) is excluded: the arrow would read the name at its call, the lambda
-  read it at its evaluation.
+  Under `--release` a module's `import`s also bind every other beni module's emitted functions it
+  reads, under their own names; those pass, as the bullet's first words say (#1116's
+  `emit/release/tea/HttpSendTracked` shows a key's comparer as core `String`'s compare itself,
+  `c:jb`). `emit/release/core/JsCompare`'s `viaValue`, which forwards to the sibling's `lt` taken
+  as a value, stays a lambda; so do `emit/release/core/EtaReduce`'s `aliasOnce` and `aliasTwice`,
+  which forward to a local `const` that holds it (the next rule);
+- a **local `const_decl`** of the enclosing function **whose statement comes before the statement
+  that evaluates the arrow** — in the arrow's own list, or in an enclosing list of the same function
+  (*amended 2026-10-29, the review of #1127, F1*). JavaScript binds a `const` at its statement and
+  not at the top of its scope: `const g = (x) => h(x); const h = …` is valid, since `g` reads `h`
+  when called, after both exist, but `const g = h; const h = …` reads `h` before its initialisation
+  and throws `ReferenceError`. So `Opt` marks each local `const` once its statement is planned, and
+  an arrow planned before the mark keeps its lambda. A lambda made once and moved to its use (item
+  1) is planned where it was declared, so it keeps its lambda too when its callee is declared
+  between the two. A parameter is bound before the body and an inner `func_decl` is hoisted, so
+  neither needs the order. A `let_decl` (a `Js.Ref`, a `case` result, a loop variable) is excluded:
+  the arrow would read the name at its call, the lambda read it at its evaluation.
+
+**The name's value must be an emitted function too** (*amended 2026-10-29, the review of #1127,
+F2*). The tests above are on names, and a name that never changes may hold a host function: a
+`const` read from `Js.global` or `Js.get`, a parameter handed `Object.prototype.toString`, a `const`
+that aliases a sibling's export. A host function sees what the host passes — `Array.prototype.map`
+passes the index and the array, so `parseInt` read into `p` and handed to `map` in place of
+`λs → Js.apply p [ Js.from s ]` parses `"10"` with the radix `1` — and reads `this`. Two rules keep
+such a name out, and a third is a duty:
+
+- **a lambda whose call is a `Js.apply` is left as written.** The callee of a `Js.apply` is a
+  `Js.Value`, a host value by type. `Lower` marks the `call` node it writes for one
+  (`JsIr.Node.host`), `Spec` copies the mark with the node, and item 6 declines a body whose call
+  carries it. `Js.call`'s callee is a `member` and fails the shape on its own;
+- **a `const` whose value is a name an `import` binds is never a callee**, directly or through
+  `const` aliases (`c = counted; … λx → c x`, `countedAlias = counted` at the top level): `Opt`
+  refuses it, since the printer's veto sees only the name written;
+- what remains is a beni function type whose value a `Js.to` cast from a host function.
+  `boundary.md` §4.2 makes it the duty of the code that writes the `Js.to`: such a function ignores
+  the arguments past the type's arity and `this`, as an emitted function does. `run/EtaReduceHostValue`
+  runs the three probes of the review in both builds.
 
 An `ident` that `Opt` item 1 already plans to substitute is read through the plan first, and **the
 tests above run on the name the printer writes**: `const g = f; … λa b → g a b` reduces to `f` when
@@ -6172,22 +6204,36 @@ the ordering rule has nothing to order.
 **What it may not change.** Beni has no function identity — no `==` on functions, no `eq` derived for
 them — so the one observable difference, that `λa b → f a b` evaluated twice gave two objects and `f`
 gives one, is visible to no program. Privileged code that compares functions with `Js.same` (none
-does today) compares the function it was handed, which is now `f`. Arity needs no check: beni's
-calls are saturated (§6), so `f` takes exactly the n the arrow took, and JavaScript would pass the
-same n either way. The development build does not run `Opt`, so it prints the lambda as before, and
+does today) compares the function it was handed, which is now `f`. The host tells functions apart
+too: `addEventListener` registers one function once, `removeEventListener` matches by identity, and
+a `Set` or a `Map` keys by it, so code that added `λe → f e` twice registered two listeners and
+would now register one. None of core or the platforms does (the review of #1127 read every
+`addEventListener` and every `Set` of them; `Listen.beni`'s listener does not forward), and a
+program cannot: it has no `Js`. Arity is checked by nothing beyond the callee rules: a beni call is
+saturated (§6) and passes the n the arrow took; a host that holds the value may pass more, which an
+emitted callee ignores and a hand-written or host one may not — hence the printer's veto, the
+`Js.apply` rule and the `Js.to` duty above (*amended 2026-10-29*). The development build does not run `Opt`, so it prints the lambda as before, and
 `run/` fixtures prove both builds print the same (*Testing*).
 
 **What it does not do.** It does not reduce `λa → f a b₀` (a partial application written out), `λa b →
 f b a`, `λa → g (f a)`, a lambda whose callee is a constructor (`λa → Just a` is `x=>({$:1,a:x})` and
 has no callee), or a lambda whose body is a method call `λa → o.m a`, whose `this` the reduction would
-lose. Each stays as written; a measurement, not a guess, may add one later.
+lose. Nor does it reduce to a name bound twice in one declaration (a positional compiler-made
+name, whose one `NameIndex` would mean two bindings), to a callee whose item-1 substitution is not a
+name (a function made once and used here, which is written in place instead), or to one whose
+substitution is itself substituted (`compress` leaves none; `Opt` asserts it). Each stays as
+written; a measurement, not a guess, may add one later.
 
 **Fixtures.** `emit/release/core/EtaReduce` pins every shape above: reduced through evidence, through a
 top-level name, through a local `const`, through an item-1 substitution; kept for a reordered,
-repeated, extra or missing argument, for a `let` callee, for a tail-loop parameter and for a method
-callee. `run/EtaReduce` stores such a lambda in a record and a list, calls it through the stored value
-in both builds, and prints the same under each; `tea/KeyOrder`'s release golden shows the key as
-`{t:b,c:a,v:c}`. Sizes: the `tea/` pages against the compiler before this item (`zig-out/scratch/pages.mjs`),
+repeated, extra or missing argument, for a `let` callee, for a tail-loop parameter, for a method
+callee and for a local `const` that holds a sibling's function, read once or twice. `run/EtaReduce`
+stores such a lambda in a record and a list, calls it through the stored value in both builds, and
+prints the same under each; `run/EtaReduceForwardRef` binds a forwarding lambda before its callee,
+read twice, stored, and in a recursive pair; `run/EtaReduceHost` hands a host the callee itself;
+`run/EtaReduceHostValue` forwards to `parseInt` under `map`, to `Object.prototype.toString` as a
+method, to a top-level alias of a sibling and to a `Js.Ref`'s function. #1116's
+`emit/release/tea/HttpSendTracked` shows a key's comparer as the evidence itself. Sizes: the `tea/` pages against the compiler before this item (`zig-out/scratch/pages.mjs`),
 and the speed page of #1116's review, `speed/Keys1000`, 300 clicks under happy-dom, which must tie
 the base within its spread.
 
