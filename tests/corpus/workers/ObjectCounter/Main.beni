@@ -5,7 +5,10 @@
 -- runs its alarm (the `/__beni/alarm` hook), and after a defect is aborted:
 -- the next request starts a new instance whose `restore` reads the count
 -- the last `put` left. A client's post or ask through the Worker's
--- `forward` is refused: the platform's paths and headers are its own.
+-- `forward` is refused: the platform's paths and headers are its own. The
+-- id a ref reports resolves back to an object through `byId`, and a text
+-- that is no id is `Err InvalidId`, never a crash (`idFromString`'s
+-- `TypeError`, caught by name).
 import Duration
 import Schema exposing (Schema)
 import String
@@ -104,6 +107,22 @@ route ctx request =
         ( Just counters, [ "", "post", name ] ) →
             Object.post (Worker.byName counters name) 5
             Worker.text 200 "posted"
+
+        ( Just counters, [ "", "by-id", name ] ) →
+            case Worker.byId counters (Worker.refId (Worker.byName counters name)) of
+                Ok _ →
+                    Worker.text 200 "ok"
+
+                Err Worker.InvalidId →
+                    Worker.text 500 "the id a ref reports is no id?"
+
+        ( Just counters, [ "", "bad-id" ] ) →
+            case Worker.byId counters "not an id" of
+                Ok _ →
+                    Worker.text 500 "a ref from no id?"
+
+                Err Worker.InvalidId →
+                    Worker.text 400 "invalid id"
 
         ( Nothing, _ ) →
             Worker.text 500 "no COUNTERS binding"

@@ -1226,8 +1226,49 @@ replySchema inner =
 
 -- The ids of the replies a value holds, by a walk of its records and
 -- lists: for a message posted to `self`, which holds them until its own
--- `received` returns ((e.10)).
-foreign impure repliesIn : Js.Value → Js.Value
+-- `received` returns ((e.10)). A handle is `{ id, instance, schema }` whose
+-- `instance` is an object record (`ask`); the walk stops at a host object,
+-- which a beni value never holds, and at anything seen before.
+repliesIn : Js.Value → Js.Value
+repliesIn value =
+    ids = Js.array []
+    seen = Js.construct (Js.global "Set") []
+    walkReplies ids seen value
+    ids
+
+
+walkReplies : Js.Value, Js.Value, Js.Value → ⊤
+walkReplies ids seen v =
+    if Js.isNull v || not (Js.typeIs v "object") || Js.to (Js.call seen "has" [ v ]) then
+        ⊤
+    else
+        _ = Js.call seen "add" [ v ]
+        instance = Js.get v "instance"
+        if
+            Js.typeIs (Js.get v "id") "string"
+                && not (Js.isUndefined instance)
+                && not (Js.isUndefined (Js.get v "schema"))
+                && not (Js.isNull instance)
+                && Js.typeIs instance "object"
+                && isArray (Js.get instance "mailbox")
+        then
+            _ = Js.call ids "push" [ Js.get v "id" ]
+            ⊤
+        else if isArray v then
+            Js.each v λx → walkReplies ids seen x
+        else
+            proto = Js.call (Js.global "Object") "getPrototypeOf" [ v ]
+            if
+                not (Js.same proto (Js.get (Js.global "Object") "prototype"))
+                    && not (Js.isNull proto)
+            then
+                ⊤
+            else
+                Js.each (Js.call (Js.global "Object") "values" [ v ]) λx → walkReplies ids seen x
+
+
+isArray : Js.Value → Bool
+isArray v = Js.to (Js.call (Js.global "Array") "isArray" [ v ])
 
 
 -- ---- A defect ((f)) ---------------------------------------------------------
