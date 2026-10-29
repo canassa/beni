@@ -1,12 +1,14 @@
 -- Item 6 of the release optimiser (`backend.md` §9, *The name's value must
 -- be an emitted function too*): the rule that a `const` holding an import
 -- is never a callee is `Opt`'s, and `Opt` runs per module. `Counted`
--- refuses its own `countedAlias` (as `run/EtaReduceHostValue` runs);
--- named from here, the alias is an export of another beni module and
--- passes, so `viaOther`'s lambda is printed as the alias. Harmless today:
--- a sibling's export is an arrow of the declared arity that names no
--- `arguments` (`boundary.md` §4, checks 3 and 4). This golden shows the
--- shape, so that a change to either check shows here.
+-- refuses its own `countedAlias`: `viaAlias`, called twice so that `Spec`
+-- leaves it in its module, keeps its lambda. Named from here, the alias
+-- is an export of another beni module and passes: `viaOther`'s lambda is
+-- printed as the alias. A function `Spec` moves into its one caller is
+-- planned there too (`run/EtaReduceHostValue`'s `viaAlias`). Harmless
+-- today: a sibling's export is an arrow of the declared arity that names
+-- no `arguments` (`boundary.md` §4, checks 3 and 4). This golden shows
+-- both shapes, so that a change to either check shows here.
 import Counted
 import Node exposing (Program)
 
@@ -20,4 +22,11 @@ ints xs = String.join (List.map xs String.fromInt) " "
 
 
 main : Program
-main = Node.print (ints (viaOther [ 1, 2 ]) ++ " " ++ ints (Counted.viaAlias [ 1, 2 ]))
+main =
+    Node.print
+        (ints (viaOther [ 1, 2 ])
+            ++ " "
+            ++ ints (Counted.viaAlias [ 1, 2 ])
+            ++ " "
+            ++ ints (Counted.viaAlias [ 3 ])
+        )

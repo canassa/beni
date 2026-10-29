@@ -4,8 +4,9 @@
 -- `Js.apply` under `map`, which passes the index as its radix; the same
 -- read twice, so that item 1 keeps the binding; `Math.max` from the top
 -- level; a sibling's function behind a top-level alias and a local one,
--- refused in this module, which declares the aliases (named from another
--- module the alias is a callee: `emit/release/app/EtaReduceAlias`);
+-- refused in this module, which declares the aliases, while a function
+-- `Spec` moves into its one caller in `Main` is planned there, where the
+-- alias is a callee (`emit/release/app/EtaReduceAlias` pins both shapes);
 -- `Object.prototype.toString` in a parameter, stored as a
 -- method and called with a receiver; and a module `Js.Ref`'s function,
 -- read after a write.
