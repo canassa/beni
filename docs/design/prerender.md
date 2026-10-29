@@ -570,7 +570,9 @@ still builds there as a client-rendered one.
 *Amended 2026-10-29, as built in P3 (#1194; `boundary.md` §9.4.6, version 1.22).* "Where it is
 called" is `main`'s spine: `main`'s body, or the first argument, again and again, of a
 `Browser.mountAt` or a `Browser.prerender` there. A call anywhere else would say nothing the build
-acts on, and is `program_shape`; so is a second call on the spine. In the client tree the call is
+acts on, and is `program_shape`; so is a second call on the spine, and `Browser.prerender` used as
+a value rather than called (`staticSite = Browser.prerender`), which a page would otherwise run
+as written. In the client tree the call is
 compiled as its program and reachability follows neither `Browser.prerender` nor the list, so a
 client page ships neither, nor a declaration only the list names (a blog's posts, when the `view`
 does not show them). In the prerender tree the call runs as written: `Browser.prerender` is beni
@@ -665,6 +667,11 @@ each such route whatever the renders did, since a render of a route that is not 
 for that reason alone. Both diagnostics are at `main`. `output_path_collision` also covers a page
 whose file is, under the folding, a directory of another page or of a file the build writes —
 `/a` and `/a.html/`, or `/index.html/` beside the shell — which one file system could not hold.
+The check is one pass over each path's directories. A prerendering build needs an absolute base
+(`frontend.md` §10.1 allows a relative one): a page below the root names its entry from the base,
+and a route's `Url` has the base in its path, so `"./"` is refused with exit 2. `beni serve`
+answers a directory with no `index.html` with the page of its name, `/blog` with `blog.html` beside
+`blog/x.html`, as a static host does.
 
 ### 7.5 A title per page
 
@@ -675,8 +682,9 @@ platform's own shell keeps its `<title>beni</title>`; an app that wants a title 
 `<title>{{title}}</title>` in its shell. P3 builds it with `Tea.document`. Other head content (a description, an Open Graph image) is a later
 amendment, once a program can say it.
 
-*Amended 2026-10-29, as built in P3 (#1194).* "Escaped" is §4.1's rule for a text: `&`, `<` and a
-carriage return. The render function of a `document` or an `application` gives `[html, title]`,
+*Amended 2026-10-29, as built in P3 (#1194).* "Escaped" is §4.1's rule for a text — `&`, `<` and a
+carriage return — and `"` and `'` as well, since a shell may write `{{title}}` in a quoted
+attribute (`<meta property="og:title" content="{{title}}">`). The render function of a `document` or an `application` gives `[html, title]`,
 and the record carries the title. A shell's `{{title}}` and `{{view}}` are replaced in one pass, so
 a title that says `{{view}}` stays text; a page with no title — a `sandbox`'s, or the shell with
 no view — writes nothing there.
@@ -853,9 +861,9 @@ routed program could prerender; its emitted code did not change.
 
 The fixtures are `browser/prerender/Blog` (a page per post from the list, opened at
 `/blog/hello?ref=feed#comments`, a link click that navigates with no page load, `back`) and
-`Titles`; `browser/tea/PrerenderedBlog.beni`, `Blog`'s source byte for byte on `browser-tea`;
+`Titles`, `FileName` (opened at `/about.html?from=feed#team`, the address replaced by the route); `browser/tea/PrerenderedBlog.beni`, `Blog`'s source byte for byte on `browser-tea`;
 `build/bad/prerender/` `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision`,
-`RouteFolded`, `RouteImpure` and `NeedsOrigin` (the old `Application`, whose refusal P3 lifts);
+`RouteFolded`, `RouteImpure`, `PrerenderAsValue` and `NeedsOrigin` (the old `Application`, whose refusal P3 lifts);
 `tests/blackbox/devloop_test.zig`'s *serve prerenders every build, and answers /about with
 about.html*; and the determinism test of §5.4 now builds three routes. Every existing
 `browser/prerender/`, `build/bad/prerender/` and `emit/prerender/` fixture says `Browser.prerender`
