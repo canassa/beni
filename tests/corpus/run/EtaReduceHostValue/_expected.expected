@@ -1,0 +1,7 @@
+parsed 10 10 10
+parsedTwice 10 10 10 10 10 10
+maxed 1 2
+viaAlias 1001 1002
+viaLocalAlias 1001 1002 1001 1002
+receiver [object Undefined]
+viaRef 2 10

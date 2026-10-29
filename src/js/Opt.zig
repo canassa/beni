@@ -174,7 +174,12 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .assigned = try arena.alloc(bool, ir.names.len),
         .rebound = try arena.alloc(bool, ir.names.len),
         .let_bound = try arena.alloc(bool, ir.names.len),
+        .func_bound = try arena.alloc(bool, ir.names.len),
+        .initialised = try arena.alloc(bool, ir.names.len),
+        .value_of = try arena.alloc(Node.OptionalIndex, ir.names.len),
         .top_stable = try arena.alloc(bool, ir.names.len),
+        .top_value = try arena.alloc(Node.OptionalIndex, ir.names.len),
+        .imported = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .pinned = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
@@ -188,6 +193,8 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.pinned, 0);
     @memset(o.inlined, .none);
     @memset(o.top_stable, false);
+    @memset(o.top_value, .none);
+    @memset(o.imported, false);
     // Item 6's callee may be a name this file binds at the top level by a
     // `const` or a function, which nothing emitted assigns. A top-level
     // `let` (a `Js.Ref` of the module) is not one, and neither is a name
@@ -198,6 +205,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         switch (ir.tag(top)) {
             .const_decl, .func_decl, .gen_decl => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| {
                 if (i < o.top_stable.len) o.top_stable[i] = true;
+                if (ir.tag(top) == .const_decl and i < o.top_value.len) o.top_value[i] = @as(Index, @fromBackingInt(@intCast(d.rhs))).toOptional();
             },
             else => {},
         }
@@ -269,11 +277,35 @@ const Opt = struct {
     /// reduces to one, since the lambda read it when called and the name
     /// would be read where the lambda was made.
     let_bound: []bool,
+    /// Whether a `func_decl` or `gen_decl` in this declaration binds the
+    /// name: hoisted, so bound at every statement of its list, before or
+    /// after (item 6 needs no order for one).
+    func_bound: []bool,
+    /// Whether the `const_decl` that binds the name in this declaration has
+    /// been planned: the name is bound at every statement after it. Item
+    /// 6's local callee must be one (`backend.md` §9 item 6, amended
+    /// 2026-10-29): a `const` is bound at its statement, so an arrow
+    /// evaluated before it would read the name before its initialisation.
+    initialised: []bool,
+    /// The value of the one `const_decl` binding the name in this
+    /// declaration, or `none`: what item 6 follows to refuse a `const`
+    /// that holds an import (`eta`'s alias walk).
+    value_of: []Node.OptionalIndex,
     /// One slot per name, for the whole module: bound at the top level of
     /// this file by a `const` or a function, which nothing emitted assigns
     /// (`countStmt` asserts it). Item 6's callee may be one; a name this
     /// module's `import` binds is not one.
     top_stable: []bool,
+    /// The value of a top-level `const_decl` of this file, or `none`:
+    /// `value_of` for the module's own level.
+    top_value: []Node.OptionalIndex,
+    /// One slot per name, for the whole module: bound by a specifier of an
+    /// `import_stmt` — a sibling's export, the runtime's, or under
+    /// `--release` another beni module's emitted function. Item 6 never
+    /// reduces to a `const` that holds one: the printer's veto sees only
+    /// the name written, and a hand-written function may read what an
+    /// emitted one never does.
+    imported: []bool,
     dropped: []u32,
     /// One bit per node: a statement a call was moved into (`readsBefore`'s
     /// rule), never dropped for want of a read, though, unlike a `kept` one,
@@ -323,6 +355,9 @@ const Opt = struct {
         o.assigned[i] = false;
         o.rebound[i] = false;
         o.let_bound[i] = false;
+        o.func_bound[i] = false;
+        o.initialised[i] = false;
+        o.value_of[i] = .none;
     }
 
     fn use(o: *Opt, n: NameIndex) void {
@@ -370,12 +405,21 @@ const Opt = struct {
         switch (o.ir.tag(stmt)) {
             .import_stmt => {
                 const imp = o.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
-                for (o.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| o.declare(spec.local);
+                for (o.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                    o.declare(spec.local);
+                    if (spec.local.unwrap()) |i| if (i < o.imported.len) {
+                        o.imported[i] = true;
+                    };
+                }
             },
             .export_stmt => for (o.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| o.use(n),
             .const_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.value_of.len) {
+                    o.value_of[i] = @as(Index, @fromBackingInt(@intCast(d.rhs))).toOptional();
+                };
                 try o.countExpr(@fromBackingInt(@intCast(d.rhs)));
             },
             .let_decl => {
@@ -389,7 +433,11 @@ const Opt = struct {
             },
             .func_decl, .gen_decl => {
                 try o.binders.append(o.arena, stmt);
-                o.declare(@fromBackingInt(@intCast(d.lhs)));
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                o.declare(n);
+                if (n.unwrap()) |i| if (i < o.func_bound.len) {
+                    o.func_bound[i] = true;
+                };
                 try o.countFunc(@fromBackingInt(@intCast(d.rhs)));
             },
             .assign_stmt => {
@@ -546,7 +594,15 @@ const Opt = struct {
     fn planStmt(o: *Opt, stmt: Index) Allocator.Error!void {
         const d = o.ir.data(stmt);
         switch (o.ir.tag(stmt)) {
-            .const_decl => try o.planExpr(@fromBackingInt(@intCast(d.rhs))),
+            // Planned, the `const` is bound at every statement after it
+            // (`initialised`); an arrow in its own value, or in an earlier
+            // statement, is evaluated before it is.
+            .const_decl => {
+                try o.planExpr(@fromBackingInt(@intCast(d.rhs)));
+                if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |i| if (i < o.initialised.len and o.stamp[i] == o.current) {
+                    o.initialised[i] = true;
+                };
+            },
             .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try o.planExpr(v),
             .func_decl, .gen_decl => try o.planFunc(@fromBackingInt(@intCast(d.rhs))),
             .assign_stmt => {
@@ -642,6 +698,9 @@ const Opt = struct {
         if (body.len != 1 or o.ir.tag(body[0]) != .return_stmt) return;
         const call = @as(Node.OptionalIndex, @fromBackingInt(@intCast(o.ir.data(body[0]).lhs))).unwrap() orelse return;
         if (o.ir.tag(call) != .call) return;
+        // A `Js.apply`: the callee is a host value by type, which may read
+        // the arguments a host passes past the lambda's, or `this`.
+        if (o.ir.host(call)) return;
         const cd = o.ir.data(call);
         const callee: Index = @fromBackingInt(@intCast(cd.lhs));
         if (o.ir.tag(callee) != .ident) return;
@@ -680,8 +739,32 @@ const Opt = struct {
             // Bound once here: a parameter (no declaration), a local
             // `const` or an inner function (one declaration). Never a `let`,
             // and never a name bound twice, whose one `NameIndex` would
-            // then mean two bindings.
+            // then mean two bindings. A local `const` only once its
+            // statement is planned: bound at the arrow's evaluation, not
+            // merely in scope there (an inner function is hoisted).
             if (bound_here != 1 or o.readOf(i, "decls") > 1 or o.flagOf(i, "let_bound")) return;
+            if (o.readOf(i, "decls") == 1 and !o.flagOf(i, "func_bound") and !o.flagOf(i, "initialised")) return;
+        }
+        // The name's value: a `const` that holds a name an `import` binds,
+        // directly or through `const` aliases, holds a function this pass
+        // knows nothing of — a sibling's, which may read `arguments` or
+        // `this` — and the printer's veto sees only the name written. A
+        // `const` whose value is anything else, a parameter, a `let` and a
+        // function end the walk: what they hold is an emitted function, a
+        // `Js.Value` only a marked `Js.apply` calls, or a value a `Js.to`
+        // cast, whose writer answers for it (`boundary.md` §4.2).
+        var j = i;
+        var steps: u32 = 0;
+        while (steps < 64) : (steps += 1) {
+            const value = (if (o.readOf(j, "binds") != 0)
+                (if (o.readOf(j, "decls") == 1 and !o.flagOf(j, "let_bound")) o.value_of[j] else Node.OptionalIndex.none)
+            else if (o.top_stable[j]) o.top_value[j] else Node.OptionalIndex.none).unwrap() orelse break;
+            if (o.ir.tag(value) != .ident) break;
+            const held: NameIndex = @fromBackingInt(@intCast(o.ir.data(value).lhs));
+            const k = held.unwrap() orelse break;
+            if (k >= o.uses.len) break;
+            if (o.imported[k] or o.ir.name(held).module != .none) return;
+            j = k;
         }
         o.inlined[arrow.int()] = target.toOptional();
     }
