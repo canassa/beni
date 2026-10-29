@@ -160,8 +160,9 @@ pub const Table = struct {
     fold_cond_n: u32 = 0,
     /// `foldCondOf` by node.
     fold_of: stamped.Column(NodeId, CondId) = .{},
-    /// `placeBelow` by `(from, to)`.
-    place_below: Ids.FixedDict(2) = .{},
+    /// A client walk's results by `(node, key)` (`classesMemo`).
+    classes_memo: Ids.FixedDict(2) = .{},
+    classes_done: std.ArrayList(ClassAggs) = .empty,
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
@@ -206,7 +207,8 @@ pub const Table = struct {
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
         t.fold_cond.deinit(gpa);
-        t.place_below.deinit(gpa);
+        t.classes_memo.deinit(gpa);
+        t.classes_done.deinit(gpa);
         t.fold_of.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_merge.deinit(gpa);
@@ -1413,7 +1415,7 @@ pub const Table = struct {
     /// source occurrences μ maps into it: a persistent map image → `aggs`
     /// index, and how many classes it names (for merging small into large).
     /// `saturated`: a cyclic source, every class it reaches all repeated.
-    const ClassAggs = struct { map: u32 = Ids.none_int, len: u32 = 0, saturated: bool = false };
+    pub const ClassAggs = struct { map: u32 = Ids.none_int, len: u32 = 0, saturated: bool = false };
 
     /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
     /// folded class's obligation from §2.9's one path-multiset primitive:
@@ -1440,79 +1442,62 @@ pub const Table = struct {
         return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null) };
     }
 
-    /// The path-multiset obligation of the class at `post` when `x` is
-    /// folded (§2.9, *A call instantiates κ(res)*, #1128): a template path
-    /// that crosses `⟲` stands for every position of `x` the fold maps to
-    /// it, so its arrivals there are compared as a multiset across depths —
-    /// a repeat `lost`, distinct arrivals `apart`. `yes` where nothing folds.
-    /// `target` is the template path's place: a node the fold keeps whole (an
-    /// unopened union, choice or positions node, a leaf's symbolic cells, a
-    /// recast) hides positions below it from the multiset, so where one can
-    /// reach `target` the read is `lost` (#1157's review) until that walk opens it.
-    pub fn foldedRead(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, post: []const Step, target: Ids.PlaceId) Error!CondId {
-        var fold: Shape.Table.Fold = .{};
-        defer fold.deinit(gpa);
-        _ = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
-        if (try t.hidesBelow(gpa, charge, v, x, &fold, target)) return lost;
-        if (!fold.merged) return yes;
-        const at = fold.classAt(post) orelse return yes;
-        const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
-        if (!fold.folded.contains(at) and !per.saturated) return yes;
-        const a = t.mapGet(per.map, at.int()) orelse return yes;
-        return t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[a]);
+    // ---- the path-multiset primitive for a client's walk (#1159) ---------------------
+
+    /// One key holding each of `cells` once: a source node's own contents at
+    /// its position (a cell's approximation is its set value).
+    pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
+        if (cells == .none) return .{};
+        const a = try t.aggAll(gpa, charge, cellt, places, .{}, cells, false);
+        return .{ .map = try t.mapPut(gpa, charge, Ids.none_int, key, try t.agg(gpa, a)), .len = 1 };
     }
 
-    /// Whether a node of `x`'s source structure the fold keeps whole can hold
-    /// a position at `target` below it, out of the multiset's sight.
-    fn hidesBelow(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, fold: *const Shape.Table.Fold, target: Ids.PlaceId) Error!bool {
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, x);
-        while (stack.pop()) |n| {
-            if (seen.contains(n)) continue;
-            try seen.put(gpa, n, {});
+    /// Two contributions as one: coexisting (`together`, a multiset sum) or
+    /// a choice's arms (the maximum, whole arm by whole arm).
+    pub fn classesMerge(t: *Table, gpa: Allocator, charge: Charge, v: View, x: ClassAggs, y: ClassAggs, together: bool) Error!ClassAggs {
+        if (x.len == 0) return y;
+        if (y.len == 0) return x;
+        return t.classMerge(gpa, charge, v, x, y, together);
+    }
+
+    /// Every occurrence repeated: a source on a cycle reaches each key below
+    /// it at unboundedly many coexisting positions.
+    pub fn classesRepeated(t: *Table, gpa: Allocator, charge: Charge, x: ClassAggs) Error!ClassAggs {
+        var out: ClassAggs = .{ .saturated = true };
+        var it = t.mapEntries(x.map);
+        while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
-            const d = v.shapes.get(n);
-            const whole = switch (d.kind) {
-                .@"union", .choice, .positions => !fold.opened.contains(n),
-                .recast => true,
-                .leaf => blk: {
-                    var it = v.cells.sets.iterate(d.cells);
-                    break :blk while (it.next()) |e| {
-                        if (!isConcrete(v.cells.origin(.from(e.key)))) break true;
-                    } else false;
-                },
-                .node, .delta => false,
-            };
-            if (whole and try t.placeBelow(gpa, charge, v.places, d.place, target)) return true;
-            const before = stack.items.len;
-            try sourceParts(gpa, v, fold, n, &stack);
-            _ = before;
+            var a = t.aggs.items[e.value];
+            a.dups = a.all;
+            out.map = try t.mapPut(gpa, charge, out.map, e.key, try t.agg(gpa, a));
+            out.len += 1;
         }
-        return false;
+        return out;
     }
 
-    /// Whether place `to` lies one step or more below place `from`, by the
-    /// place graph (memoised; places are immutable).
-    fn placeBelow(t: *Table, gpa: Allocator, charge: Charge, places: *const Cell.Places, from: Ids.PlaceId, to: Ids.PlaceId) Error!bool {
+    /// The obligation of the occurrences at `key`: a repeat `lost` (through
+    /// a fold, never `shared`), distinct arrivals `apart`; `yes` where none.
+    pub fn classesRead(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: ClassAggs, key: u32) Error!CondId {
         try charge.reserve(gpa, .memo, 1);
-        if (t.place_below.get(.{ from.int(), to.int() })) |hit| return hit == 1;
-        var seen: stamped.Column(Ids.PlaceId, void) = .{};
-        defer seen.deinit(gpa);
-        var stack: std.ArrayList(Ids.PlaceId) = .empty;
-        defer stack.deinit(gpa);
-        for (places.steps(from).children) |c| try stack.append(gpa, c);
-        const found = while (stack.pop()) |p| {
-            if (p == to) break true;
-            if (seen.contains(p)) continue;
-            try seen.put(gpa, p, {});
-            try charge.reserve(gpa, .inspection, 1);
-            for (places.steps(p).children) |c| try stack.append(gpa, c);
-        } else false;
-        (try t.place_below.getOrPut(gpa, .{ from.int(), to.int() })).value_ptr.* = @intFromBool(found);
-        return found;
+        const a = t.mapGet(x.map, key) orelse return yes;
+        return t.foldCond(gpa, charge, cellt, places, t.aggs.items[a]);
+    }
+
+    /// A client walk's result by `(node, key)`, kept across reads and calls:
+    /// both are immutable, so an answer is never stale. Charged, hit or miss.
+    pub fn classesMemo(t: *Table, gpa: Allocator, charge: Charge, n: NodeId, key: u32) Error!?ClassAggs {
+        try charge.reserve(gpa, .memo, 1);
+        const i = t.classes_memo.get(.{ n.int(), key }) orelse return null;
+        return t.classes_done.items[i];
+    }
+
+    pub fn classesRemember(t: *Table, gpa: Allocator, charge: Charge, n: NodeId, key: u32, x: ClassAggs) Error!void {
+        try charge.reserve(gpa, .memo, 1);
+        try t.classes_done.ensureUnusedCapacity(gpa, 1);
+        const got = try t.classes_memo.getOrPut(gpa, .{ n.int(), key });
+        if (got.found_existing) return;
+        got.value_ptr.* = @intCast(t.classes_done.items.len);
+        t.classes_done.appendAssumeCapacity(x);
     }
 
     /// The fold obligations a read of `n` meets at its own position: its
