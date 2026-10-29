@@ -14,7 +14,7 @@
 --! A primitive here is written in beni over `Task.callback` and one `impure`
 --! function that starts the host's operation and returns what cancels it,
 --! so that cancelling a fiber cancels what it was waiting on. Since
---! 2026-10-30 that function is beni over `Js` too (`plans/runtime-in-beni.md`
+--! 2026-10-29 that function is beni over `Js` too (`plans/runtime-in-beni.md`
 --! step 10): the module has no sibling, and reaches `node:fs/promises`
 --! through `process.getBuiltinModule`.
 

@@ -25,7 +25,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
 | 8 | **`Dom.js`**: `focus`, `blur`, `box`, `scrollTo`, `scrollIntoView`, `viewport` | **landed 2026-10-29**, below: the sibling deleted |
 | 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **built 2026-10-29**, #1228, below: both siblings deleted |
-| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-30**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
+| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 
 ## Step 1 — slot and mount (2026-10-02)
@@ -993,7 +993,7 @@ line are byte for byte. A release build of an inline page never shipped `Tea.js`
 (`Minify` keeps only what a build imports), so an inline page's release bytes change only where
 a type left the wild set, as on those two; its development tree loses the sibling file.
 
-## Step 10 — `node`'s `Io.js` (2026-10-30)
+## Step 10 — `node`'s `Io.js` (2026-10-29)
 
 **What moved.** The two `foreign`s of `Io.beni`. `finish` reads the fiber's `Exit`: `Done program`
 writes the `Program`'s `out` to standard output when it is not empty and sets `process.exitCode`
