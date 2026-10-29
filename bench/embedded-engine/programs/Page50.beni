@@ -1,0 +1,51 @@
+-- Fifty routes of the timing page, rendered by one engine instance.
+-- plus a header and a list of 500 tags, about 6 000 elements in all,
+-- rendered to an HTML string by the node platform's ssr lowering.
+import Html exposing (Html)
+import List
+import Node
+import Ssr
+import String
+
+
+type alias Row =
+    id : Int
+    label : String
+    price : Float
+    selected : Bool
+
+
+rows : Int → List Row
+rows k = List.map (List.range k (k + 999)) λi →
+    pad = String.repeat "ab" (Int.mod i 7)
+    { id = i
+    , label = "item ${String.fromInt i} — ${pad} & <co>"
+    , price = toFloat (i * 37) / 7.0
+    , selected = Int.mod i 13 == 0
+    }
+
+
+view : List Row → Html msg
+view all =
+    <main>
+        <h1>Catalogue</h1>
+        <table>
+            <For each={all} keyed={.id}>
+                {λr i →
+                    <tr class={if r.selected then "row selected" else "row"}>
+                        <td>{String.fromInt r.id}</td>
+                        <td><a href="/item/${String.fromInt r.id}">{r.label}</a></td>
+                        <td>{String.fromFloat r.price}</td>
+                        <td><span>{String.fromInt i}</span></td>
+                    </tr>
+                }
+            </For>
+        </table>
+        <ul>
+            <For each={List.range 1 500}>{λn j → <li>tag-{String.fromInt n}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Node.Program
+main = Node.printLines (List.map (List.range 1 50) λk → Ssr.render (view (rows k)))
