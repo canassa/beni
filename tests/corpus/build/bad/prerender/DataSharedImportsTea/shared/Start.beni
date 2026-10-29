@@ -1,0 +1,13 @@
+--! A shared module that imports `Tea`, which the data program, built for
+--! `node`, does not have (docs/design/prerender.md §8.2): the data build's
+--! `unknown_module`, rendered with the site's diagnostics.
+
+import Tea
+
+
+pub schema Start =
+    start : Int
+
+
+pub type alias Site =
+    Tea.Program

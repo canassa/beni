@@ -1,0 +1,14 @@
+-- A value its schema cannot encode (docs/design/prerender.md §8.3): an
+-- `Int` past 2⁵³, which `Schema.print` refuses. `prerender_data_failed`,
+-- naming the route, the issue's path and its message.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+huge : Int
+huge = 9007199254740992 * 4
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ → Ok [ ( "/", { start = huge } ) ]

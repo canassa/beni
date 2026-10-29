@@ -1,0 +1,8 @@
+-- The data program: one page, `/`, whose counter starts at 41.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ → Ok [ ( "/", { start = 41 } ) ]

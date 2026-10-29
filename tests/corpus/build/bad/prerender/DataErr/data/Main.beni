@@ -1,0 +1,10 @@
+-- A data program whose body gives `Err` (docs/design/prerender.md §8.3):
+-- `prerender_data_failed` at its `main`, quoting the text, and no page is
+-- written.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ → Err "the counter file is missing"

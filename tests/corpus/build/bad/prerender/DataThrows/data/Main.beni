@@ -1,0 +1,15 @@
+-- A data program whose body throws (docs/design/prerender.md §8.3): a
+-- defect, so Node ends with the error and no `end` record, and the build
+-- reports `prerender_data_failed` with what Node wrote, less the machine's
+-- paths.
+import Node exposing (Program)
+import Prerender
+import Start exposing (Start)
+
+
+start : ⊤ → Int
+start ⊤ = Debug.todo "no start yet"
+
+
+main : Program
+main = Prerender.pages (Start.schema ⊤) λ⊤ → Ok [ ( "/", { start = start ⊤ } ) ]

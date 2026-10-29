@@ -724,7 +724,6 @@ pub fn run(
         try e.runWrites();
         try e.findLifts();
         try e.cutPrerender();
-        try e.checkDataSchema();
     };
     try e.eliminate(entry);
     try e.shareValidators();
@@ -752,6 +751,9 @@ pub fn run(
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
     try e.emitModules(entry);
+    // `prerender.md` §8.4: the schema of a page's value, statically known and
+    // pure.
+    try e.checkDataSchema();
     // A module the lowering refused (`not_implemented`) roots none of the
     // runtime the entry would import, so a release build cannot spell it.
     if (e.hasErrors()) return e.nothingWritten(gpa);
@@ -3218,6 +3220,9 @@ const Emitter = struct {
             , .{});
         }
         if (e.options.prerender != .tree) return;
+        // The schema's own expression: its makers compute nothing else, so
+        // what may have an effect here is a `Schema.converted`'s conversion.
+        if (try e.impureIn(spine.module, args[0])) return e.reportImpureConversion(spine.module, b.insts.items(.main_token)[args[0].int()]);
         // Every definition the schema reaches, through references.
         var at: usize = 0;
         while (at < refs.items.len) : (at += 1) {

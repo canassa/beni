@@ -1,0 +1,32 @@
+-- The page's value read by `view`, outside the record's `init`
+-- (docs/design/prerender.md §8.4): `program_shape`, saying to put the value
+-- in the model in `init`. A limit of the compiler: `view` is compiled as a
+-- function of the model.
+import Browser
+import Html exposing (Html)
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Start.schema ⊤) λstart →
+    Tea.sandbox
+        { init = λ⊤ → { count = 0 }
+        , update = update
+        , view = λmodel → <main><output>{String.fromInt (model.count + start.start)}</output></main>
+        }

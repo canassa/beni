@@ -1,0 +1,5 @@
+--! The data program's own `Start`, which writes `start` as a string: not
+--! the schema the site decodes with.
+
+pub schema Start =
+    start : String

@@ -1,0 +1,14 @@
+--! A schema whose decode reads the clock (docs/design/prerender.md §8.4):
+--! the build and the browser decode one page's text at two times, so
+--! `prerender_impure`, at the `via`.
+
+import Clock
+import Schema exposing (Conversion)
+
+
+stamped : Conversion Int Int
+stamped = Schema.conversion (λn → Ok (n + Clock.now ⊤)) λn → Ok n
+
+
+pub schema Start =
+    start : Int via stamped

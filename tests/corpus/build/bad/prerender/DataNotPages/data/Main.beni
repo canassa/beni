@@ -1,0 +1,8 @@
+-- A data program whose `main` is not `Prerender.pages`
+-- (docs/design/prerender.md §8.3): it exits 0 with no records, which is
+-- `prerender_data_failed`, saying what its `main` must be.
+import Node exposing (Program)
+
+
+main : Program
+main = Node.print "hello"

@@ -14427,6 +14427,8 @@ pub const Lowerer = struct {
                     if (first == null or at.int() < first.?.int()) first = at;
                     continue;
                 }
+                // Markup's values: its holes, attributes and handlers.
+                if (l.bir.instTag(at) == .markup) try l.bir.markupValues(l.scratch, @fromBackingInt(@intCast(l.bir.instData(at).lhs)), &stack);
                 try l.instChildren(at, &stack);
             }
             if (first) |at| {
@@ -14441,23 +14443,9 @@ pub const Lowerer = struct {
                 return refused;
             }
         }
-        if (l.in.markup.?.build.prerender == .tree) {
-            // The schema must be pure, as the route list must (§8.4, §3.1):
-            // it cannot choose another schema in the build than in the
-            // browser.
-            const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
-            @memset(verdicts, .unknown);
-            switch (try l.effectOf(data_args[0], verdicts)) {
-                .none, .debug => {},
-                .unread, .site => |at| try l.report(.prerender_impure, at,
-                    \\This program prerenders from each page's value, so the schema it decodes the value
-                    \\with must be pure, and this may have an effect: the build decodes each page's value
-                    \\with it, and the browser decodes the same text with it again, so the two must be
-                    \\the same schema (`docs/design/prerender.md` §8.4). Name a `schema` declaration's
-                    \\`schema`, as `Page.schema ⊤`.
-                , .{}),
-            }
-        }
+        // The schema is checked by the emitter (`Emit.checkDataSchema`):
+        // statically known, so made by makers that compute nothing else, and
+        // its conversions pure.
         // The lambda is not made, its body compiled in its place: what the
         // ownership pass hoists at the lambda is bound here (§31.14).
         try l.placeHoistsOnce(out, data_args[1]);
