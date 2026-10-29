@@ -1204,12 +1204,12 @@ const TestGraph = struct {
 };
 
 test "#1130: a call grafts and links a result as deep as the source, on explicit stacks" {
-    // On a thread with a small stack, 256 KiB for 6 000 levels: about 43
+    // On a thread with a small stack, 128 KiB for 3 000 levels: about 43
     // bytes a level, far below a native frame per level in any build, so a
     // recursive walk would overflow it. (It was 30 000 levels on 1 MiB, about
-    // the same ratio, over the 1 s budget, #1197.)
+    // the same ratio, over the 1 s budget, #1197; 6 000 on 256 KiB, CI's, #1209.)
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 256 << 10 }, struct {
+    const th = try std.Thread.spawn(.{ .stack_size = 128 << 10 }, struct {
         fn run(out: *anyerror!void) void {
             out.* = deepCall();
         }
@@ -1242,7 +1242,7 @@ fn deepCall() !void {
     // path steps, inside `path_steps`), deeper than a native frame per level allows.
     const p = try cells.symbolic(gpa, &account, &places, .param, 0, try places.rootPath(gpa, t_place), 0);
     var n = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
-    const depth = 6_000;
+    const depth = 3_000;
     for (0..depth) |i| {
         const l = try shapes.node(gpa, &account, list, try cells.sets.insert(gpa, env.charge, .none, (try cells.site(gpa, &account, @intCast(i + 1), list, .list)).int(), 0), try shapes.overPut(gpa, &account, Ids.none_int, Place.Step.elem, n));
         n = try shapes.node(gpa, &account, t_place, .none, try shapes.overPut(gpa, &account, Ids.none_int, arg, l));
@@ -1870,14 +1870,19 @@ fn linkRandom(seed_: u64, flags: u32) !u8 {
 // arguments with exact and collapsed folds. Every snapshot is the replay's,
 // or differs only in a collapsed fold's steps, which the cursor walk keeps
 // for every step linked below it. 600 graphs as before, 150 a test (one
-// test of all was over the 1 s budget, #1197); each quarter allows a quarter
-// of the 60 step-only differences the whole allowed (1 and 3 measured).
-test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 0–149" {
-    try testing.expect(try linkRandomSweep(0xff, 0, 150) < 15);
+// test of all was over the 1 s budget, #1197), the heavier kinds 100 a test
+// (#1209); each allows its share of the 60 step-only differences the whole
+// allowed (1 and 3 measured).
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 0–99" {
+    try testing.expect(try linkRandomSweep(0xff, 0, 100) < 10);
 }
 
-test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 150–299" {
-    try testing.expect(try linkRandomSweep(0xff, 150, 300) < 15);
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 100–199" {
+    try testing.expect(try linkRandomSweep(0xff, 100, 200) < 10);
+}
+
+test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: every kind, seeds 200–299" {
+    try testing.expect(try linkRandomSweep(0xff, 200, 300) < 10);
 }
 
 test "#1149 review: random cyclic results link to the root-path replay's snapshot, a collapsed fold seeing more steps at most: plain graphs, seeds 0–149" {
