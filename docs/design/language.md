@@ -3488,7 +3488,7 @@ beni source writes it**, as Elm's writes Elm, with Elm's spacing:
 |---|---|
 | `Bool` | `True`, `False` |
 | `Int` | `42`, `-3` |
-| `Float` | `1.5`, `1.0` (a whole number keeps its point, as `String.fromFloat` writes it; *amended 2026-10-29:* except a number JavaScript prints with an exponent, `1e+21`, which already reads as a float and gets no `.0` — so `String.toFloat (String.fromFloat x)` is `Just x`), `-0.0`, `NaN`, `Infinity`, `-Infinity` |
+| `Float` | `1.5`, `1.0` (a whole number keeps its point, as `String.fromFloat` writes it; *amended 2026-10-29:* except a number JavaScript prints with an exponent, `1e+21`, which already reads as a float and gets no `.0` — so `String.toFloat (String.fromFloat x)` is `Just x` for every finite `x` but `-0.0`), `-0.0`, `NaN`, `Infinity`, `-Infinity` |
 | `Char` | `'a'`, `'\''`, `'\n'` |
 | `String` | `"a b"`, with `\"`, `\\`, `\n`, `\r`, `\t`, `\${` and `\u{…}` for any other control character — §2's escapes, so the text is a literal that reads back as the value |
 | `()` | `()` |
