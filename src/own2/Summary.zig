@@ -1175,7 +1175,7 @@ pub const Table = struct {
         ctx: Kappas,
         slots: []const Slot = &.{},
         params: u32 = 0,
-        seen: Ids.FixedDict(2) = .{},
+        seen: Ids.FixedDict(3) = .{},
         /// The path each `seen` entry was first printed at (#1122).
         firsts: std.ArrayList([]const u8) = .empty,
 
@@ -1203,6 +1203,15 @@ pub const Table = struct {
             p.firsts = .empty;
             try p.resLines(k.res, "", false, p.ctx, &groups);
             Cond.sortText(groups.items);
+            // One line per (route, text): a route a union's two sides reach
+            // with one leaf prints it once, however the leaf was first met.
+            var kept: usize = 0;
+            for (groups.items) |g| {
+                if (kept > 0 and std.mem.eql(u8, groups.items[kept - 1], g)) continue;
+                groups.items[kept] = g;
+                kept += 1;
+            }
+            groups.shrinkRetainingCapacity(kept);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
             for (0..k.funs.len) |i| {
                 const f = p.t.fun(p.class_id, @intCast(i));
@@ -1344,7 +1353,7 @@ pub const Table = struct {
             while (stack.pop()) |a| {
                 const n = a.n;
                 if (a.line) {
-                    const got = try p.seen.getOrPut(env.gpa, .{ n.int(), a.cur.int() });
+                    const got = try p.seen.getOrPut(env.gpa, .{ n.int(), a.cur.int(), @intFromBool(a.at_summary) });
                     if (got.found_existing) {
                         // The same node at the same cursor by another route (#1122):
                         // printed there too, never omitted. A leaf's line again;
