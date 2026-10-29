@@ -1572,7 +1572,7 @@ test "a write-back is part of the class: the normal form tells it apart, a join 
     const whole = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellupdate, .stored }), .fn_params = &.{list}, .fn_result = list } }, .result = int });
     const second = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = ref, .words = bits(&.{.cellwrite}) }, .{ .place = fun, .words = bits(&.{ .cellmodify, .stored }), .fn_params = &.{list}, .fn_result = pair } }, .result = int });
     try testing.expect(!try f.sums.eq(env, whole, second));
-    const joined = try f.sums.join(env, whole, second);
+    const joined = try f.sums.join(env, whole, second, .choice);
     try testing.expectEqual(@as(u32, 2), f.sums.fun(joined, 0).backs.len);
     try testing.expect(try f.sums.leq(env, whole, joined));
     try testing.expect(try f.sums.leq(env, second, joined));

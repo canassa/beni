@@ -1401,7 +1401,8 @@ pub const Table = struct {
     /// Per destination class (a widened image node), the aggregate of the
     /// source occurrences μ maps into it: a persistent map image → `aggs`
     /// index, and how many classes it names (for merging small into large).
-    const ClassAggs = struct { map: u32 = Ids.none_int, len: u32 = 0 };
+    /// `saturated`: a cyclic source, every class it reaches all repeated.
+    const ClassAggs = struct { map: u32 = Ids.none_int, len: u32 = 0, saturated: bool = false };
 
     /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
     /// folded class's obligation from §2.9's one path-multiset primitive:
@@ -1420,7 +1421,7 @@ pub const Table = struct {
         const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
         var it = t.mapEntries(per.map);
         while (it.next()) |e| {
-            if (!fold.folded.contains(.from(e.key))) continue;
+            if (!fold.folded.contains(.from(e.key)) and !per.saturated) continue;
             try charge.reserve(gpa, .inspection, 1);
             try t.fold_cond.put(gpa, .from(e.key), try t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[e.value]));
             t.fold_cond_n += 1;
@@ -1439,8 +1440,8 @@ pub const Table = struct {
         _ = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
         if (!fold.merged) return yes;
         const at = fold.classAt(post) orelse return yes;
-        if (!fold.folded.contains(at)) return yes;
         const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
+        if (!fold.folded.contains(at) and !per.saturated) return yes;
         const a = t.mapGet(per.map, at.int()) orelse return yes;
         return t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[a]);
     }
@@ -1562,7 +1563,7 @@ pub const Table = struct {
             try sourceParts(gpa, v, fold, n, &parts);
             try walk.appendSlice(gpa, parts.items);
         }
-        var out: ClassAggs = .{};
+        var out: ClassAggs = .{ .saturated = true };
         for (images.items) |img| {
             const cells = all.get(img).?;
             var a = try t.aggAll(gpa, charge, v.cells, v.places, .{}, cells, false);
@@ -1598,12 +1599,12 @@ pub const Table = struct {
     }
 
     /// The cells source node `n` itself holds at its class, as a set: a
-    /// leaf's, a node's, a delta's, a union's or a positions node's kept
+    /// leaf's, a node's, a delta's, a union's, choice's or positions node's kept
     /// whole (its sides' set; what it repeats inside is `dagKappa`'s), a
     /// recast's approximate. An opened one holds nothing of its own.
     fn ownAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId) Error!Agg {
         const d = v.shapes.get(n);
-        if ((d.kind == .@"union" or d.kind == .positions) and fold.opened.contains(n)) return .{};
+        if ((d.kind == .@"union" or d.kind == .choice or d.kind == .positions) and fold.opened.contains(n)) return .{};
         if (d.kind != .recast) return t.aggAll(gpa, charge, v.cells, v.places, .{}, d.cells, false);
         var a: Agg = .{};
         var it = v.cells.sets.iterate(d.cells);

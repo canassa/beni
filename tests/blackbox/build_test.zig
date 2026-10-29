@@ -8341,7 +8341,7 @@ test "the checker v2's growth in a tower of joins of one value at two depths is 
         growth[run] = try accountField(dump.stdout, "tower", "growth");
     }
     // Twice the levels, at most 3.4 times the growth. The counts are
-    // deterministic: with both memos 6 713 / 20 324 / 66 562 (3.03×, 3.27×);
+    // deterministic: with both memos 7 071 / 21 117 / 68 275 (2.99×, 3.23×);
     // without the join memo 3.59×, 3.76×; without the merge memo 3.30×,
     // 3.55× and 86 428 at N = 40; the re-walk of union DAGs was about 6×.
     try testing.expect(growth[1] * 5 <= 17 * growth[0]);
