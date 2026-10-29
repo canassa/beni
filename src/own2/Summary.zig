@@ -518,7 +518,8 @@ pub const Table = struct {
     /// merged by `(label, k, node, taken)` with `owned` and-ed and κ joined,
     /// keeps and once paths merged), nested classes pointwise, bits or-ed.
     /// Sorted runs merge in one pass; every record visited is charged.
-    pub fn join(t: *Table, env: Env, a: ClassId, b: ClassId) Error!ClassId {
+    /// `mode` (§2.3): `choice` for one value's alternatives, `union` for coexisting invocations.
+    pub fn join(t: *Table, env: Env, a: ClassId, b: ClassId, mode: Shape.Kind) Error!ClassId {
         if (a == b) return a;
         const gpa = env.gpa;
         const ca = t.get(a);
@@ -528,8 +529,7 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        // A class join is a fixpoint's: alternatives of one result (§2.3).
-        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, .choice);
+        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -580,7 +580,7 @@ pub const Table = struct {
         const na = t.nestedOf(a);
         const nb = t.nestedOf(b);
         std.debug.assert(na.len == nb.len);
-        for (na, nb) |x, y| try nested.append(gpa, try t.join(env, x, y));
+        for (na, nb) |x, y| try nested.append(gpa, try t.join(env, x, y, mode));
         // Once paths: both sorted runs, re-sorted and deduplicated by `add`'s
         // sort (O((|a| + |b|) log) records).
         var once: std.ArrayList(PathId) = .empty;
@@ -1861,7 +1861,7 @@ test "join is functional: the result owns its κ, the members keep theirs, and l
     // The reviewer's probe: the join's res IS b's node (b ⊒ a in shape);
     // its κ is lost in the JOIN's map, b's map still says yes, and b is
     // strictly below the join.
-    const j = try f.sums.join(env, a, b);
+    const j = try f.sums.join(env, a, b, .choice);
     try testing.expectEqual(rb, f.sums.get(j).res);
     try testing.expectEqual(Cond.lost, try env.kappa(f.sums.get(j).kappas, rb));
     try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(b).kappas, rb));
@@ -1869,8 +1869,8 @@ test "join is functional: the result owns its κ, the members keep theirs, and l
     try testing.expect(!try f.sums.leq(env, j, b));
     try testing.expect(try f.sums.leq(env, a, j));
     try testing.expect(!try f.sums.leq(env, a, b));
-    try testing.expectEqual(j, try f.sums.join(env, j, j));
-    try testing.expect(try f.sums.eq(env, j, try f.sums.join(env, b, a)));
+    try testing.expectEqual(j, try f.sums.join(env, j, j, .choice));
+    try testing.expect(try f.sums.eq(env, j, try f.sums.join(env, b, a, .choice)));
 }
 
 test "join and leq: uses, funs by label, supplies merged in one pass, bits" {
@@ -1894,7 +1894,7 @@ test "join and leq: uses, funs by label, supplies merged in one pass, bits" {
     const sup_other: Supply = .{ .j = 1, .k = 0, .node = rb, .label = l7, .owned = true, .taken = false, .kappa = .none };
     const a = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{sup_a} }} });
     const b = try f.sums.add(env, .{ .params = &.{ub}, .res = rb, .xreq = try f.conds.flat(gpa, env.charge, e1), .funs = &.{ .{ .j = 1, .calls = .many, .need = true, .seen = false }, .{ .j = 2, .calls = .zero } }, .writes = true });
-    const j = try f.sums.join(env, a, b);
+    const j = try f.sums.join(env, a, b, .choice);
     const jc = f.sums.get(j);
     try testing.expectEqual(Marks{ .r = true, .a = true, .w = true }, try Table.marksAt(env, f.sums.paramUses(j)[0], &.{}));
     try testing.expectEqual(@as(u32, 2), f.cells.sets.count(f.shapes.cells(jc.res)));
@@ -1913,7 +1913,7 @@ test "join and leq: uses, funs by label, supplies merged in one pass, bits" {
     // One label's supply in both: owned and-ed, κ joined. Another label:
     // kept beside, never merged (§2.2).
     const c = try f.sums.add(env, .{ .params = &.{ua}, .res = ra, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{ sup_other, sup_b } }} });
-    const ac = try f.sums.join(env, a, c);
+    const ac = try f.sums.join(env, a, c, .choice);
     const fac = f.sums.fun(ac, 0);
     try testing.expectEqual(@as(u32, 2), fac.supplies.len);
     const s0 = f.sums.supply(fac, 0);
@@ -2017,7 +2017,7 @@ test "repeated-node simulation: one DAG node against two partners, and a join th
     const rc = try f.leaf(1, &.{ p3, p4, p5 });
     const c = try f.sums.add(env, .{ .params = &.{}, .res = rc, .kappas = try f.setK(.none, rc, Cond.yes) });
     const d = try f.sums.add(env, .{ .params = &.{}, .res = try f.leaf(1, &.{p3}), .kappas = try f.setK(.none, try f.leaf(1, &.{p3}), Cond.lost) });
-    const j = try f.sums.join(env, d, c);
+    const j = try f.sums.join(env, d, c, .choice);
     try testing.expectEqual(rc, f.sums.get(j).res);
     try testing.expectEqual(Cond.lost, try env.kappa(f.sums.get(j).kappas, rc));
     try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(c).kappas, rc));
@@ -2030,7 +2030,7 @@ test "repeated-node simulation: one DAG node against two partners, and a join th
     const kx_lost = try f.setK(.none, x, Cond.lost);
     const sa = try f.sums.add(env, .{ .params = &.{}, .res = rc, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = x, .label = .none, .owned = true, .taken = false, .kappa = kx_yes }} }} });
     const sb = try f.sums.add(env, .{ .params = &.{}, .res = rc, .funs = &.{.{ .j = 1, .calls = .once, .supplies = &.{.{ .j = 1, .k = 0, .node = x, .label = .none, .owned = true, .taken = false, .kappa = kx_lost }} }} });
-    const sj = try f.sums.join(env, sa, sb);
+    const sj = try f.sums.join(env, sa, sb, .choice);
     const sup = f.sums.supply(f.sums.fun(sj, 0), 0);
     try testing.expectEqual(Cond.lost, try env.kappa(sup.kappa, x));
     try testing.expectEqual(Cond.yes, try env.kappa(kx_yes, x));
@@ -2062,7 +2062,7 @@ test "fault injection: a join refused at any step leaves the class table whole" 
         const classes = f.sums.count();
         const uses = f.sums.uses.items.len;
         const supplies = f.sums.supplies.len;
-        if (f.sums.join(tight, a, b)) |j| {
+        if (f.sums.join(tight, a, b, .choice)) |j| {
             try testing.expectEqual(classes + 1, f.sums.count());
             try testing.expect(try f.sums.leq(env, a, j));
             break;
