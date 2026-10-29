@@ -1,0 +1,14 @@
+-- The module that declares the alias of a sibling's export: in its own
+-- `viaAlias` the lambda stays, since `Opt` walks the alias to the import.
+import Js
+
+
+foreign pure counted : Int → Int
+
+
+pub countedAlias : Int → Int
+countedAlias = counted
+
+
+pub viaAlias : List Int → List Int
+viaAlias xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
