@@ -8514,6 +8514,84 @@ test "the checker v2's growth over a tower of one-element literals with a new pa
     try expectNLogN(&.{ 10, 100, 300 }, &growth);
 }
 
+test "the checker v2 counts a branch's arms once at a fold, and coexisting occurrences twice" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1128 (§2.3's `choice`, §2.9's path-multiset primitive): a branch
+    // join is a `choice`, whose arms one execution takes one of, so at a
+    // fold the maximum over them counts; a node's parts and a positions
+    // node's sides coexist and add. JoinFoldChoice reads `x` once; before
+    // `choice`, its opened union counted `x` in both arms and read `lost`.
+    // `Rose [ r, r ]` and an element beside a choice holding it repeat; K's
+    // tower keeps every kids read `yes` at every height.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a,
+        \\type Rose =
+        \\    Rose (List Rose)
+        \\
+        \\
+        \\pub joinFold : Bool → Rose
+        \\joinFold c =
+        \\    x = Rose []
+        \\    k = if c then Rose [ x ] else Rose [ x ]
+        \\    Rose [ Rose [ k ] ]
+        \\
+        \\
+        \\pub twice : ⊤ → Rose
+        \\twice ⊤ =
+        \\    r0 = Rose []
+        \\    r1 = Rose [ r0, r0 ]
+        \\    r2 = Rose [ r1, r1 ]
+        \\    r2
+        \\
+        \\
+        \\pub besides : Bool, List Int, List Int → List (List Int)
+        \\besides c x y =
+        \\    [ if c then x else y, x ]
+        \\
+        \\
+        \\pub kTower : Bool → Rose
+        \\kTower c =
+        \\    r0 = Rose []
+        \\
+    );
+    for (1..21) |i| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ i, i - 1, i - 1 });
+    try src.appendSlice(a, "    r20\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const line = struct {
+        fn of(out: []const u8, name: []const u8) ![]const u8 {
+            var buf: [64]u8 = undefined;
+            const head = try std.fmt.bufPrint(&buf, "  summary {s}:", .{name});
+            const at = std.mem.indexOf(u8, out, head) orelse return error.NoSummary;
+            return out[at..std.mem.indexOfScalarPos(u8, out, at, '\n').?];
+        }
+    }.of;
+    const fails = struct {
+        fn in(l: []const u8) bool {
+            return std.mem.indexOf(u8, l, "{lost}") != null or std.mem.indexOf(u8, l, "{shared}") != null;
+        }
+    }.in;
+    try testing.expect(!fails(try line(dump.stdout, "joinFold")));
+    try testing.expect(fails(try line(dump.stdout, "twice")));
+    try testing.expect(std.mem.indexOf(u8, try line(dump.stdout, "besides"), "{shared}") != null);
+    try testing.expect(!fails(try line(dump.stdout, "kTower")));
+}
+
 test "a kids list at two depths of a widened tree reads as a repeat; distinct kids read yes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

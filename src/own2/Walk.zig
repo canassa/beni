@@ -308,8 +308,11 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         };
         var carry: Carry = .{ .ro = &ro };
         kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
-        res = try env.shapes.widen(gpa, env.account(), env.places, env.cells, mapped);
-        if (res != mapped) kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, res, &.{mapped}, &.{kappa}, .alternatives, false, null);
+        // Widened, its κ carried onto the image with each folded class's
+        // path-multiset obligation (§2.9, #1128).
+        const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
+        res = widened.node;
+        kappa = widened.kappas;
     }
     return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = class_xreq, .origin = .inferred });
 }

@@ -528,7 +528,8 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas);
+        // A class join is a fixpoint's: alternatives of one result (§2.3).
+        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, .choice);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -688,17 +689,18 @@ pub const Table = struct {
 
     pub const Joined = struct { node: NodeId, kappas: Kappas };
 
-    /// Two `res` shapes with their maps joined as alternatives, widened, κ
-    /// propagated into a NEW map (O15), the widened node's from the join's.
-    pub fn joinRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas) Error!Joined {
+    /// Two `res` shapes with their maps joined, widened, κ propagated into a
+    /// NEW map (O15), the widened node's from the join's. `mode` is the
+    /// caller's (§2.3): `choice` for exclusive alternatives (a fixpoint's
+    /// rounds of one result, a branch's arms), `union` for a join of several
+    /// invocations' results, which coexist.
+    pub fn joinRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas, mode: Shape.Kind) Error!Joined {
         if (a == b and ka == kb) return .{ .node = a, .kappas = ka };
         var members = [_]NodeId{ a, b };
-        const j = try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
+        const j = if (mode == .choice) try env.shapes.joinChoice(env.gpa, env.account(), env.places, env.cells, &members) else try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
         const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
-        const w = try env.shapes.widen(env.gpa, env.account(), env.places, env.cells, j);
-        if (w == j) return .{ .node = j, .kappas = mj };
-        const mw = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, w, &.{j}, &.{mj}, .alternatives, false, null);
-        return .{ .node = w, .kappas = mw };
+        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
+        return .{ .node = w.node, .kappas = w.kappas };
     }
 
     /// `a ⊑ b` pointwise (§2.10): a stronger class below a weaker one.
@@ -971,7 +973,7 @@ pub const Table = struct {
                             try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur });
                         },
                         .recast => try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur }),
-                        .@"union", .positions => {
+                        .@"union", .choice, .positions => {
                             try stack.append(n.env.gpa, .{ .kind = .node, .id = d.b, .at_summary = at_summary, .cur = cur });
                             try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur });
                         },
@@ -1389,7 +1391,7 @@ pub const Table = struct {
                 const d = env.shapes.get(n);
                 switch (d.kind) {
                     .leaf, .recast => {},
-                    .@"union", .positions => {
+                    .@"union", .choice, .positions => {
                         try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
                         try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
                     },
@@ -1422,7 +1424,7 @@ pub const Table = struct {
             try stack.append(p.env.gpa, root);
             while (stack.pop()) |n| {
                 const d = p.env.shapes.get(n);
-                if (d.kind == .@"union" or d.kind == .positions) {
+                if (d.kind == .@"union" or d.kind == .choice or d.kind == .positions) {
                     try stack.appendSlice(p.env.gpa, &.{ .from(d.b), .from(d.a) });
                     continue;
                 }

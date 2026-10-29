@@ -101,7 +101,7 @@ pub const magic: u32 = 0x324e574f;
 /// 7: a position's κ is what is stored there, never the read (#1069).
 /// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
 /// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
-pub const version: u32 = 9;
+pub const version: u32 = 10;
 
 pub const none: u32 = Ids.none_int;
 
@@ -600,7 +600,7 @@ const Writer = struct {
                 try w.steps(named.items);
             },
             .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur)),
-            .@"union", .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
+            .@"union", .choice, .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
         }
         // What is stored at the position, nothing else (§3.6): every reader
         // adds the derivation from the structure the reader rebuilds, and
@@ -656,7 +656,7 @@ const Writer = struct {
                 }
             },
             .recast => try out.append(gpa, .{ d.a, sb, none, 0, cur.int() }),
-            .@"union", .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
+            .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
         }
         if (!all or cur == .none) return;
         // A fold's links are the steps it saw: sparse below it too.
