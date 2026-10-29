@@ -176,33 +176,45 @@ const Pre = struct {
         }
     }
 
-    /// What `c`, held at `path`, stands for below it: nothing for a concrete
-    /// cell; for a symbolic cell, a refinement or `⊤`, `⊤` at every canonical
-    /// path below (`lost` there, as master reads it). A symbolic cell's own
-    /// projections would owe their `summaryExcl` and an `apart` instantiated
-    /// through `⟲` (§2.9 item 2), which the call does not build yet (#1199).
-    fn project(w: *Pre, c: CellId, path: PathId) Error!void {
+    /// What `c`, held at `path`, stands for below it: its projection at
+    /// every canonical path below (a pair walk over the argument's paths and
+    /// the cell's own, each pair once); `⊤` for a `⊤` cell or one whose own
+    /// place differs from the position's; nothing for a concrete cell.
+    fn project(w: *Pre, c: CellId, approx: bool, path: PathId) Error!void {
         const gpa = w.env.gpa;
         const charge = w.env.charge;
+        const cells = w.env.cells;
         const places = w.env.places;
-        switch (w.env.cells.origin(c)) {
+        const account = w.env.account();
+        var sym: ?CellId = null;
+        switch (cells.origin(c)) {
             .site, .result, .esc, .mark => return,
-            .top, .elem, .others, .level, .below, .loan, .param, .env, .shared, .cb, .msg => {},
+            .top => {},
+            .elem, .others, .level, .below, .loan => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
+            .param, .env, .shared, .cb, .msg => sym = c,
         }
-        const top = try w.env.cells.top(gpa, w.env.account());
-        var seen: stamped.Column(PathId, void) = .{};
+        if (sym) |s| if (!cells.origin(s).isSymbolic() or cells.origin(s) == .top or places.pathPlace(.from(cells.get(s).b)) != places.pathPlace(path)) {
+            sym = null;
+        };
+        const top = if (sym == null) try cells.top(gpa, account) else CellId.none;
+        var seen: Ids.FixedDict(2) = .{};
         defer seen.deinit(gpa);
-        var stack: std.ArrayList(PathId) = .empty;
+        var stack: std.ArrayList([2]PathId) = .empty;
         defer stack.deinit(gpa);
-        try stack.append(gpa, path);
+        try stack.append(gpa, .{ path, if (sym) |s| PathId.from(cells.get(s).b) else .none });
         while (stack.pop()) |at| {
-            for (places.steps(places.pathPlace(at)).steps) |s| {
+            for (places.steps(places.pathPlace(at[0])).steps) |s| {
                 try charge.reserve(gpa, .inspection, 1);
-                const ap = (try places.extend(gpa, charge, at, s)) orelse continue;
-                if (seen.contains(ap)) continue;
-                try seen.put(gpa, ap, {});
-                try w.add(ap, top, true);
-                try stack.append(gpa, ap);
+                const ap = (try places.extend(gpa, charge, at[0], s)) orelse continue;
+                const cp: PathId = if (sym != null) (try places.extend(gpa, charge, at[1], s)) orelse continue else .none;
+                const got = try seen.getOrPut(gpa, .{ ap.int(), cp.int() });
+                if (got.found_existing) continue;
+                got.value_ptr.* = 0;
+                if (sym) |x| {
+                    const d = cells.get(x);
+                    try w.add(ap, try cells.symbolic(gpa, account, places, d.origin, d.a, cp, d.c), approx);
+                } else try w.add(ap, top, true);
+                try stack.append(gpa, .{ ap, cp });
             }
         }
     }
@@ -239,10 +251,10 @@ const Pre = struct {
                     try charge.reserve(gpa, .inspection, 1);
                     const approx = e.value == 1 or d.kind == .recast;
                     if (!st.below) try w.add(st.path, .from(e.key), approx);
-                    if (d.kind == .leaf) try w.project(.from(e.key), st.path);
+                    if (d.kind == .leaf) try w.project(.from(e.key), approx, st.path);
                 }
                 // Below a recast, its inner read at another type: `⊤`.
-                if (d.kind == .recast) try w.project(try w.env.cells.top(gpa, w.env.account()), st.path);
+                if (d.kind == .recast) try w.project(try w.env.cells.top(gpa, w.env.account()), true, st.path);
             },
             .@"union" => {
                 if (!st.below) try w.addAll(st.path, try shapes.cellsOf(gpa, w.env.account(), &w.env.cells.sets, st.node), false);
@@ -942,9 +954,32 @@ const Grafter = struct {
     /// argument's at that path; anything else its mapped self.
     fn cellsOf(g: *Grafter, c: CellId, at: PlaceId) Error!SetId {
         const x = g.env.cells.get(c);
-        if (x.origin == .param) return g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
+        if (x.origin == .param) {
+            // Through `⟲` the path stands for every position of the argument
+            // the fold maps to it: their cells, from the full preimage, never
+            // a recast's own shallow cells (#1199).
+            if (try g.foldedCells(x.a, .from(x.b))) |s| return s;
+            return g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
+        }
         if (x.origin.isSymbolic() and x.origin != .top) return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
         return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c, at)).int(), 0);
+    }
+
+    /// The cells at every position of argument `i` that a template path `p`
+    /// through `⟲` stands for (the preimage's occurrences at `p`), null for a
+    /// path that does not cross `⟲`.
+    fn foldedCells(g: *Grafter, i: u32, p: PathId) Error!?SetId {
+        const places = g.env.places;
+        var lv: PathId = .none;
+        var at = p;
+        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) {
+            if (places.pathStep(at).kind == .level) lv = at;
+        }
+        if (lv == .none) return null;
+        const prefix = places.pathParent(lv);
+        if (i >= g.args.len or g.args[i].node == .none) return try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
+        const n = try g.argAt(i, prefix, places.pathPlace(prefix));
+        return g.env.conds.classesCells(try preimage(g.env, n, prefix), p.int());
     }
 
     fn placeOfCell(g: *Grafter, c: CellId) PlaceId {
@@ -2055,9 +2090,21 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
             // writing both paths is caught by the caller's Disjoint across its
             // W paths (§2.11 item 3), not by this read.
             3 => try testing.expectEqual(Cond.yes, got),
-            // The symbolic leaf: positions below it read `⊤`, as master reads
-            // them, until #1199 builds their `summaryExcl` and apart.
-            4 => try testing.expectEqual(Cond.lost, got),
+            // The symbolic leaf: its projections below it are occurrences too.
+            // They owe their `summaryExcl` and an `apart` with the leaf's own
+            // cell, which the caller instantiates through `⟲` (#1199).
+            4 => {
+                try testing.expect(!Cond.Table.fails(got));
+                var it = x.conds.atoms.iterate(try x.conds.flat(gpa, x.env().charge, got));
+                var apart = false;
+                var summary_excl = false;
+                while (it.next()) |a| {
+                    const atom_ = x.conds.get(.from(a.key));
+                    apart = apart or atom_.atom == .apart;
+                    summary_excl = summary_excl or (atom_.atom == .excl and x.places.isSummary(.from(x.cells.get(.from(atom_.a)).b)));
+                }
+                try testing.expect(apart and summary_excl);
+            },
             else => try testing.expectEqual(Cond.yes, got),
         }
     }
@@ -2286,15 +2333,17 @@ test "#1159: a cyclic source settles once, every occurrence below the cycle repe
     try testing.expectEqual(Cond.yes, try x.conds.classesRead(gpa, x.env().charge, &x.cells, &x.places, pre, top.int()));
 }
 
-test "#1196 review: a symbolic leaf below the prefix reads `lost` — Repro A and Repro B" {
-    // A callee relying on `excl π0·⟲·arg`. Repro A: the middle argument
-    // `T [ p, T k ]`, `p` the middle's own parameter (a `T`): a caller's
-    // `T [ T k′, T [ T k′ ] ]` for `p` holds `k′` at two depths, which the
-    // projections' apart could only see through `⟲`. Repro B: `T [ p, q ]`,
-    // two parameters. Both read `lost` here, so no caller can find `yes`.
+test "#1196 review, #1199: a symbolic leaf below the prefix — Repro A and Repro B refuse at the caller, distinct actuals accept" {
+    // A callee relying on `excl π0·⟲·arg`. The middle frame passes it
+    // `T [ p, T k ]` (Repro A) or `T [ p, q ]` (Repro B), `p` and `q` its own
+    // parameters (a `T` each). The middle's reliance is its `xreq`: the
+    // projections' `summaryExcl` and `apart` (#1199). A caller instantiates
+    // it through `⟲` by the preimage: Repro A's `p ↦ T [ T k′, T [ T k′ ] ]`
+    // holds `k′` at two depths; Repro B's `p` and `q` share one kids list.
+    // Distinct lists accept.
     const gpa = testing.allocator;
     const e = Place.Step.elem;
-    for (0..2) |repro| {
+    for (0..2) |repro| for ([_]bool{ true, false }) |shared_list| {
         var x: KnotFixture = .{};
         try x.init();
         defer x.deinit();
@@ -2302,7 +2351,73 @@ test "#1196 review: a symbolic leaf below the prefix reads `lost` — Repro A an
         const T = x.t_place;
         const p = try x.param(3);
         const second = if (repro == 0) try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 1, null)) else try x.param(4);
-        const arg = try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 2, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ p, second })));
-        try testing.expectEqual(Cond.lost, try foldProbe(&x, T, &.{ x.arg, e, x.arg }, arg));
+        const middle_arg = try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 2, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ p, second })));
+        const middle = try foldProbe(&x, T, &.{ x.arg, e, x.arg }, middle_arg);
+        try testing.expect(!Cond.Table.fails(middle));
+        // The caller: a class owing the middle's reliance, applied to actuals.
+        const c = try x.sums.add(x.env(), .{ .params = &.{ .none, .none, .none, .none, .none }, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, middle) });
+        const k = try listAt(&x, x.list, 20, null);
+        const k2 = if (shared_list) k else try listAt(&x, x.list, 21, null);
+        const actual_p, const actual_q = if (repro == 0) .{
+            try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 22, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ try ctorOf(&x, T, x.arg, k), try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 23, try ctorOf(&x, T, x.arg, k2))) }))),
+            try x.site(91, T),
+        } else .{
+            try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 22, try ctorOf(&x, T, x.arg, k))),
+            try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 23, try ctorOf(&x, T, x.arg, k2))),
+        };
+        var args: [5]Value = undefined;
+        for (&args, 0..) |*a, i| {
+            const node = if (i == 3) actual_p else if (i == 4) actual_q else try x.site(@intCast(95 + i), T);
+            var path: std.ArrayList(Step) = .empty;
+            defer path.deinit(gpa);
+            var ak: Cond.Kappas = .none;
+            try snapshotYes(&x, node, &path, &ak);
+            a.* = .{ .node = node, .kappa = ak };
+        }
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, c, &args, 0, &s);
+        try testing.expectEqual(shared_list, Cond.Table.fails(applied.xreq));
+    };
+}
+
+test "#1196 decision 1, #1199: a callee writing at `0·[*]·⟲·arg` while it answers `0·[*]·arg` rests on its sep, which the actual's preimage refutes" {
+    // Probe 3 accepted `excl π0·0·[*]·⟲·arg` over `R2 [ T k, T [ T k ] ]`: the
+    // first `k` is at `0·[*]·arg`, outside that path's preimage. A callee that
+    // writes the deeper lists and reads, escapes or returns the shallow ones
+    // relies on `sep(π0·0·[*]·⟲·arg, π0·0·[*]·arg)`. Instantiated, the deep
+    // side's cells come from the preimage (never a recast's), so the shared `k`
+    // refuses; distinct lists accept.
+    const gpa = testing.allocator;
+    const e = Place.Step.elem;
+    for ([_]bool{ true, false }) |shared_list| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
+        const T = x.t_place;
+        const R2 = try x.places.of(gpa, &x.account, src, 6);
+        const LT = try x.places.of(gpa, &x.account, src, 7);
+        const r0 = try x.places.ctorStep(gpa, &x.account, 3, 0);
+        var deep = try x.places.rootPath(gpa, R2);
+        for ([_]Step{ r0, e, x.arg, e, x.arg }) |s| deep = (try x.places.extend(gpa, .growth(&x.account), deep, s)).?;
+        var shallow = try x.places.rootPath(gpa, R2);
+        for ([_]Step{ r0, e, x.arg }) |s| shallow = (try x.places.extend(gpa, .growth(&x.account), shallow, s)).?;
+        try testing.expect(deep != shallow);
+        const sep = try x.conds.sepAtom(gpa, x.env().charge, try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, deep, 0), try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, shallow, 0));
+        const c = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.site(90, T), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, sep) });
+        const k = try listAt(&x, x.list, 1, null);
+        const k2 = if (shared_list) k else try listAt(&x, x.list, 4, null);
+        const t2 = try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 2, try ctorOf(&x, T, x.arg, k2)));
+        const arg = try ctorOf(&x, R2, r0, try listAt(&x, LT, 3, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ try ctorOf(&x, T, x.arg, k), t2 })));
+        var path: std.ArrayList(Step) = .empty;
+        defer path.deinit(gpa);
+        var ak: Cond.Kappas = .none;
+        try snapshotYes(&x, arg, &path, &ak);
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
+        try testing.expectEqual(shared_list, Cond.Table.fails(applied.xreq));
     }
 }
