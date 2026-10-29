@@ -8,12 +8,16 @@
 -- `arguments` (`boundary.md` §4, checks 3 and 4). This golden shows the
 -- shape, so that a change to either check shows here.
 import Counted
-import Js
+import Node exposing (Program)
 
 
-pub viaOther : List Int → List Int
-viaOther xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Counted.countedAlias x ])
+viaOther : List Int → List Int
+viaOther xs = List.map xs λx → Counted.countedAlias x
 
 
-pub viaOwn : List Int → List Int
-viaOwn xs = Counted.viaAlias xs
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) " "
+
+
+main : Program
+main = Node.print (ints (viaOther [ 1, 2 ]) ++ " " ++ ints (Counted.viaAlias [ 1, 2 ]))
