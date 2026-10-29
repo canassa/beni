@@ -1246,7 +1246,7 @@ that a host answers the script's address with.
   each route's text as a file below `_data/` (the compiler's region of the output, §7.4), and
   `Browser.Navigation` gets a command that fetches one and decodes it with the program's schema
   (#1211).
-- **A directory listing in `node's `Io`** is `Io.readDir` (#1210, `transparent-effects-proposal.md`
+- **A directory listing in `node`'s `Io`** is `Io.readDir` (#1210, `transparent-effects-proposal.md`
   §16.5): sorted names with their kinds, so a data program finds a blog's posts by listing `posts/`.
 - **HTML text from data**, such as Markdown rendered to HTML: `browser-inline` has no node that
   inserts HTML text. A data program that parses Markdown gives a structure the view renders.
