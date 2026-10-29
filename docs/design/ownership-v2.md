@@ -1679,6 +1679,10 @@ returning alternative). Merely traversing a cycle discharges nothing. Every outg
 alternative must satisfy the obligation. One final source validation walk per original body has its own bounded lane (§4.1); validation traversing inferred records retains pre-reserved growth continuations. The validation walk checks the certificate and `F(x) ⊑ x`; a residual
 unjustified cycle fails the demand approximately, not by accepting the initial empty facts. This proof graph and
 validation work are part of the same account; coinductive shape equality is not a separation certificate.
+Generativity, "every answer is allocated by its own invocation", separates two invocations only when
+neither runs inside the other: their label chains part at some instruction. A callback that re-enters
+its caller does not, so neither a `sep` over two such labels nor a `within` from such a pre-fold pair
+follows from it (`Fix.diverge`; S4-verifier, §8).
 
 
 
@@ -3134,7 +3138,7 @@ L0  Ids
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |
 | `Demands.zig` | 6 | the six conditions, live inverted holder index, refinement/cycle-aware trie queries, causes, verdicts | `resolve`, `holders` | Ids, Facts, Cell, Shape, Cond, Liveness, Regions | ≤ 1 200 |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
-| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation | `worklist(Instance)`, `propagate(Edges)` | Ids, Cell, Shape, Cond, Summary | ≤ 900 |
+| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` provenance, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldPair}`, `Expansion.{gen, inv, within, apartCalls}`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 000 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 100 |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
@@ -3386,7 +3390,7 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S2 | **Conditions and summaries** | `Cond` (per-value immutable κ snapshots (NodeId, position class) → CondId that travel with their value's shape root, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions, the `positions` kind and its κ rule, a multiset `apart` (§2.3, §2.9)), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 |
 | S2b | **Words, the spread fact, core in-process** | Frontend type/value ownership columns, placement/companion validation, Builder/List/Ref/Deferred words implemented by #1057–#1059; type `sender` metadata without an alias-use port column; `Bir.Spread` and verification (single-spread identity has no fact); package-qualified body-pin gate, taken readers/forwarders and codegen pins; Appendix C construction/instantiation tests with read-off supplied explicitly; minimal `Block`/`BlockRead`/`Refine` with observable κ positions and shared owners (§3.6), no disk directory; `@ownership_summary_size` grammar/formatting/BIR and skills. Log/Task/Js/Dict wording belongs to S8 (#1053); missing result selectors/write-back belong to S3a (#1052). Hook publication, type-kind errors, behavioural raise test and real-owner instrumentation are S3a (#1056); structural place re-interning is S6 (#1055). | gates under unchanged v1; column isolation and frontend/cache version bumps; every #1060 round-trip test compares observable κ, shared-owner and cyclic/build-order twins; the derivation tests do not claim walker inference; BIR raise fixture only | S2 | — |
 | S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed by node and root-relative step route, re-rooted at links (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Pre-work codec reservations (#1066) are repaired. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Before S3b, complete the common path-multiset primitive and its choice/symbolic controls, incremental reads (#1121), read-off/run-wide lanes (#1098), the repeated-path publication audit (#1122), and cursor-local κ linking with counted deep-knot acceptance (#1146). The equal-cell fold check (#1128 in #1125), fold-step transport (#1129 in #1133), and the first explicit-stack conversion (#1130 in #1135) are done; #1138's further stacks/basic cyclic graft knots landed in #1142, and #1143 is closed by merged #1144's Tarjan/record construction. Keep those regressions. Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures of one declaration at a time, with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice (once #1052's `copyof` words `List.copy`), Spreads, SelfSpreads, ViewAliases (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Inside fixtures S3b finishes, S3a already pins the single-declaration lines: Split's `bumpHead` and `readAfter` (the latter accepted, R-4.3.5), Nest's `pushInner` and `local`, PathCut's `writeRead`, ParamHole's `hole`, DeeperLevel's `inner`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — |
-| S4-verifier | **Recursive-proof verifier spike (before S3b)** | Decide feasibility of §2.12's independent base/preservation verifier on finite recursive obligation graphs. Use the existing summary/value algebra with explicit test equations, without waiting for the S3b call consumer or claiming walker inference. Retain captures, feedback, choice/coexistence and pre-fold within provenance; waiting proof cycles cannot establish their own assumptions. | The hardest Appendix B recursive-proof rows: every C.11 red twin (TwoTraversalsShared, FoldOverFoldShared, NestedTraversalShared/AcrossModules), FeedbackPrevTwice, FoldCallbackIdentity, RefinementFeedbackTwice, JoinedClosurePorts and CallFeedbackGeneration/GrowFresh/GrowAlias, with the named positive controls. Independently check base and step, reject circular self-proof, test late weakening and failure rollback, and count proof/dependency work. Deliver a feasibility result and executable verifier witnesses. If the existing guarantees cannot be met, stop and report the obstacle before S3b; keep fold-element lost unless a separately reviewed proof justifies its change. | S3a | — |
+| S4-verifier | **Recursive-proof verifier spike (before S3b)** | Decide feasibility of §2.12's independent base/preservation verifier on finite recursive obligation graphs. Use the existing summary/value algebra with explicit test equations, without waiting for the S3b call consumer or claiming walker inference. Retain captures, feedback, choice/coexistence and pre-fold within provenance; waiting proof cycles cannot establish their own assumptions. | The hardest Appendix B recursive-proof rows: every C.11 red twin (TwoTraversalsShared, FoldOverFoldShared, NestedTraversalShared/AcrossModules), FeedbackPrevTwice, FoldCallbackIdentity, RefinementFeedbackTwice, JoinedClosurePorts and CallFeedbackGeneration/GrowFresh/GrowAlias, with the named positive controls. Independently check base and step, reject circular self-proof, test late weakening and failure rollback, and count proof/dependency work. Deliver a feasibility result and executable verifier witnesses. If the existing guarantees cannot be met, stop and report the obstacle before S3b; keep fold-element lost unless a separately reviewed proof justifies its change. **As built (#1180): feasible, guarantees kept; fold-element `lost` kept** (*S4-verifier: as built and verdict*, below). | S3a | — |
 | S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), a call's view by reference (§4.1's *call view and direct obligation*: template plus actual-root references and a constant-width substitution, never a copy of the callee's class over the arguments, #1097), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off keeps each recorded pair of distinct pre-fold `sep` labels through direct calls of summarised declarations, for S4's `within`; calls of a function parameter, and with them Appendix C.2–C.5's walker derivation, are S4's. | Appendix B's recursive combination matrix (every S3b row), same-module and imported as soon as calls work; LevelLimit alias/disjoint and LevelPlacesKinds folded-W probes; a straight-line chain of pushes and `ValueCellsGuards.rebuilt` both have G_f flat at the per-instruction cost, and the wide graft never spends growth (#1097); Split, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (their calls of summarised declarations of the module; MarkerAcross's `incAll` a recursive group; moved from S3a, whose lines of one declaration they keep), RoseKidsHeld (Appendix B; defined by such a call); ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces* (LevelPlacesKinds' 64:5 stays refused: where `viaKid` folds `twoR`'s two `W` paths into one, the fold creates the reliance v1 records, `xreq excl π1#Rose.1`), AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. Count `wrap (wrap … r)` at 10/100/1,000 calls, same-module and imported, with existing argument aggregates reused; all eight tower families meet the total O(n log n) bound. FoldedBCall refuses the reused-k actual and accepts distinct allocation and whole-choice controls. Keep #1144's cyclic-record delta-override/base-projection regressions. Count #1146's X_k chain at 4/16/64/256/1,024: linkArgs has no per-node route scan, root-path merge or source-depth fold walk, and its total link work is O(n log n) at most. | S3a, S4-verifier | — |
 | S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1.  Replace S2 positional nested-class arrays with the keyed code/port/context graph; selected callback stored effects; exact run/worklist keys; constructor-supported cyclic class/environment codec and traversal marks before any import, with canonical cross-module twins. Read-off creates `within` from distinct pre-fold `sep` labels (§2.11 *Carried-class boundary (S4)*). | Appendix B's S4 combinations, independent base/preservation verification and failure-after-reservation cases; Appendix C.2–C.5 (`mapHelp`, `List.map`, `foldlFrom`, `List.foldl`/`foldr`) derived by the walker, not supplied by a test; Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — |
 | S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — |
@@ -3401,6 +3405,94 @@ The dependency order is S1→S2→S2b→S3a→**S4-verifier**→S3b→S4→S5→
 S0 remains parallel; S6 starts after S5 and runs alongside S7/S8. S4-verifier is the feasibility
 stop gate before call consumers; S4 still owns full callback inference and integration. Existing slice
 ids and section numbers do not change. The spike does not promise a strengthened fold-element rule.
+
+**S4-verifier: as built and verdict (#1180).** *Feasible: §2.12's independent base/preservation
+verifier decides finite recursive obligation graphs with the existing summary/value algebra, keeps
+every guarantee, and its work is linear in the graph. The fold-element condition stays `lost`.*
+`Fix.Prover` (§5) is the verifier. A goal is a Boolean claim `(claim, port, arg)`; the layer above's
+equations (test-written here, S4's walker and read-off later) expand it, once per settled generation,
+into its settled alternatives. A goal holds when every alternative holds, and an alternative when its
+local check passes and every goal it needs holds: there is no disjunction. An explicit-stack Tarjan
+finds the components, dependencies first. A recursive component's **base** (the alternatives that need
+no member) is read with no assumption at all; its **step** (the rest) under the explicit invariant
+assumption that the members hold. A component with no base is `waiting`, which fails the demand
+approximately. The induction is well founded because the evaluators admit an edge into a member only
+for a value made strictly earlier or strictly inside: the incoming value of a fold (`inv`) or an
+activation strictly inside this invocation (`gen`). The evaluators read values with `Shape.cellsAt` and
+`Cond.sep`:
+
+- `gen` (R-5.4.8): `site` and `result` pass; a callback's or a closure's answer needs its family's
+  `gen`; a feedback value, a supply, a capture or a top-level value fails.
+- `inv`: the owned paths hold fresh objects or the incoming one at the same path. Each stated `sep`
+  atom is re-read at the outgoing cells. An atom over the incoming value is discharged only when the
+  invariant states it; an atom it does not state fails approximately.
+- `within` and `apartCalls`, at a consumer.
+
+`Marks` carry §2.2's certificate: the container, the entry, `single` and κ at the split. They follow
+the crossing rules, answer `Cond.Traversal`, and use a validating word codec, so a corrupt mark reads
+as unknown and never as `single`. `Families` are persistent sets of `(code, port, allocation)`
+alternatives, so a join never pairs by index. `Uses` keep once tokens as two persistent sets: arms join
+by union, and a sequence adds the intersection as "many". Settled generations: every port has a version.
+An expansion records the versions it reads. Reverse reader and user edges carry their publication
+epoch. `bump` invalidates exactly the readers and their consumers; if a reservation fails part way, it
+invalidates every answer. A solve publishes all of its answers or none, and only when every read and
+every published answer it used is still current; otherwise it solves again.
+
+**Soundness finding (a tightening).** `gen` proves that each answer is allocated by its own invocation,
+by its body or by a call it makes. That separates two invocations only when neither runs inside the
+other. Two calls made by one activation are disjoint subtrees of the activation tree. A callback that
+re-enters its caller is not: the outer invocation may answer the inner invocation's object, and `gen`
+still holds of both. So `Fix.diverge` (two label chains that part at some instruction) is required of
+two callback labels before `gen` separates them, and of a pre-fold pair before `foldPair` records
+`within` (§2.12 *Recursive proofs*). mapHelp's pair `(ι_rec·ι_f⋆, ι_rec·ι_rec⋆)` diverges. A call and
+a call made inside it do not diverge.
+
+**Witnesses** (`src/own2/Fix.zig`, 13 tests, each under 0.2 s): GrowFresh accepted, GrowAlias's base
+refused exactly and its copy twin accepted, and a cycle with no base `waiting`. FoldCallbackIdentity:
+two fresh invocations are apart. Refused: one answer twice (exact), a capture (exact), a re-returned
+feedback value with or without a fresh other arm, a self-assuming cycle (`waiting`) and a re-entrant
+pair. `within` provenance: a distinct pair folds, a self pair stays `lost`, and an atom without
+provenance is refused. C.6's held-once accumulator: the keeping arm is accepted, and the second store
+is refused exactly although the base passes. RefinementFeedbackTwice's storage write is accepted, a
+returned capture is refused, and a missing base is `waiting`. FeedbackPrevTwice: the step's duplicate
+is refused exactly, and after refinement folding the element condition is `lost` with or without a
+certified mark. TwoTraversalsShared and FoldOverFoldShared: two entries read `lost`; one traversal's
+splits are apart under κ(xs[*]); both folds' storage writes are accepted. NestedTraversalShared:
+`single` is cleared through the folded callback label, the fresh-result green is accepted, and the
+direct map is accepted. Across a block (the AcrossModules form, minus a real module boundary): the
+marks round-trip, and a corrupt or lost mark is refused. RecursiveClassGrowth: the three settle
+together, the shared base is refused exactly, `[ 0 ]` is accepted, and no base is `waiting`. This holds
+under both table orders and both roots, with three expansions. JoinedClosurePorts: unequal and reordered
+tables join by identity, the shared-capture twin is refused, and once tokens are counted across alias,
+arms and sequence. CallFeedbackGeneration: a supply's change invalidates 3 of the 6 goals, the other
+instance is served from its memo, the refusal replaces the earlier acceptance, and the change back is
+accepted again. A version that changes during a solve, through a read or through a published answer it
+used, causes exactly one rerun. Failure rollback: each of the 30 refused allowances publishes nothing and
+serves nothing stale. These tests found that publication could stop part way, and it is now all or none.
+Thirteen mutations, each removing one rule (base, feedback freshness, entry, `single`, provenance, the
+self pair, unstated atoms, captures, one label twice, either staleness check, consumer invalidation),
+each fail a witness.
+
+**Measured proof work.** A chain and a ring of n + 1 families with a demand on top, at
+n = 10 / 100 / 1,000: one expansion per goal (n + 2) and n + 1 (+ 1) dependency edges. The account's
+growth for the whole proof, the algebra's records included, is 127 / 1,117 / 11,017 for the chain and
+135 / 1,125 / 11,025 for the ring: 11 records per goal. A change at the top invalidates 2 goals. A
+change at the base invalidates n goals of the chain and n + 2 of the ring. A re-proof expands exactly
+the invalidated goals.
+
+**The fold-element question (Appendix C.9 gap 3).** The narrowed rule cannot be stated in the existing
+algebra. Its invariant relates the current taken supply to every earlier list of one traversal. That is
+an atom over the incoming value and the supply, and the incoming value's `sep` atoms cannot express it:
+a folded self pair is `lost`. The verifier therefore refuses FeedbackPrevTwice's safe twin,
+`( x, List.push st prev )`, approximately. `lost` stays. A proof of the narrowed rule needs a new
+invariant form, such as a visited-prefix fact over a traversal certificate, and its own review.
+
+**Left to S3b/S4 (interface obligations, not gaps in the verdict).** S4's walker and read-off produce
+the alternatives, the marks (by `cross`), the provenance (`foldPair`), and the refutations for a step's
+escape, keep and capture effects (the verifier reads values only). Calls must not mint a fresh `result`
+cell for a value reached through a feedback, including through carried closures. `Summary.join`'s
+positional nested tables give way to keyed families. Block and BlockRead write and read the mark words
+(the S4 block extension), and S6 runs NestedTraversalAcrossModules across a real module boundary.
 
 The review history sets concrete acceptance obligations, not a duration estimate:
 
@@ -3454,7 +3546,7 @@ The historical *As built* notes stay intact; this table records what has moved s
 | The printer prints every route to a `(node, cursor)`: a leaf's line again, a built node's as `route = first route`; only a route below the first (a cycle) is folded. A cell at two paths round-trips through Summary and the block at both. | #1122 printer and block audit done; the caller-side half (RepeatedPathCall) needs calls, S3b. | One path-multiset primitive, §2.9/§3.6; RepeatedPathCall and FoldedBCall. |
 | Calls eagerly graft; joins can lose built-side certificates; equality and block closure have separate frontiers. | #1097, #1093, #1094, #1082 remain S3b obligations. | §2.11 reference views; §2.12 full equations; §3.6. |
 | Shared module memos have first-miss accounting. | #1104 is an open owner decision, not specified here. | Decision pointer only. |
-| Recursive Groups/Fix and stable code/port/context class-pair matching remain unbuilt. | #1016/#1017: S4-verifier first, then S3b and full S4 integration. | §2.11–§2.12 and Appendix B. |
+| The recursive-proof verifier is built (`Fix.Prover`, #1180: feasible). Recursive Groups/Fix worklist and stable code/port/context class-pair matching remain unbuilt. | #1016/#1017: S3b, then full S4 integration. | §2.11–§2.12 and Appendix B. |
 
 Root-relative re-rooting (#1113), singleton obligations (#1115), rank-qualified/per-pair memos and
 rank rollback (#1123), and recast-union inner transport (#1101 through #1114/#1115) remain regression
@@ -3467,7 +3559,7 @@ cross-depth counterexample has a finite occurrence/multiset obligation, and pers
 share the tower prefixes. However, this is a conditional direction, not a claim that the current code
 meets the plan: #1125's initial unsoundness required #1128's repair, the general arrival/call proof is
 still acceptance, and no implementation yet demonstrates the K/W/T total
-O(n log n) bound. S4-verifier answers the recursive-proof feasibility question **before S3b**.
+O(n log n) bound. S4-verifier answered the recursive-proof feasibility question **before S3b**: feasible (#1180).
 If its independent preservation checks or #1121's measured aggregates cannot meet these obligations,
 stop and report the architectural obstacle at that gate, before building more consumers. Do not
 lower the guarantee, raise an ordinary program's allowance or use a copy fallback. #1104 remains an
@@ -3521,9 +3613,11 @@ If adopted, parser/formatter/placement diagnostics, interface/cache versions and
 This staging choice does not reopen the decided final rows.
 
 The remaining proof question is whether the **narrowed** current-taken-element versus earlier-feedback
-rule in C.9 gap 3 can preserve I-κ. S4-verifier (§8), before S3b, decides feasibility against the
-hardest recursive-proof rows and every C.11 red twin. Full S4 integration must retain that independent
-result before proposing the precision change. Declaration-order independence of accounts (#1104)
+rule in C.9 gap 3 can preserve I-κ. S4-verifier (§8, #1180) found the verifier feasible against the
+hardest recursive-proof rows and every C.11 red twin. It also found that the narrowed rule cannot be
+stated in the existing algebra, so it is not proved and `lost` stays. A proposal needs a new invariant
+form and its own review, and full S4 integration must retain the verifier's refusals before it
+proposes the precision change. Declaration-order independence of accounts (#1104)
 is an open owner decision; this revision specifies no policy for it. It is not an implementation shortcut or assumed lemma.
 S3a–S9 must also discharge their stated adapter, accounting, import and performance obligations. A miss is
 a finding to report with a witness, not authority to merge labels, silently copy, or weaken a requirement.
@@ -4187,6 +4281,9 @@ accumulator, are excluded. The pinned index discipline suggests distinct positio
 must survive closure captures, joins, nested traversals and feedback substitution. It is not a proof.
 S4's independent verifier must prove this rule and retain `FeedbackPrevTwice` plus every C.11 red refusal
 before it can replace the current `lost`. The current accumulator storage writes remain accepted.
+S4-verifier (#1180) found that the existing algebra cannot state this rule's invariant: it is an atom
+over the incoming accumulator and the current supply, which the incoming value's `sep` atoms do not
+express. The verifier refuses the safe twin `( x, List.push st prev )` approximately (§8).
 
 ### C.10 Obligations used by the derivation
 

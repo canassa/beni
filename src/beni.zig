@@ -203,6 +203,7 @@ pub const own2 = struct {
     pub const Demands = @import("own2/Demands.zig");
     pub const Calls = @import("own2/Calls.zig");
     pub const Transfer = @import("own2/Transfer.zig");
+    pub const Fix = @import("own2/Fix.zig");
     pub const Walk = @import("own2/Walk.zig");
     pub const Groups = @import("own2/Groups.zig");
     pub const Message = @import("own2/Message.zig");
