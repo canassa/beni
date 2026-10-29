@@ -1007,6 +1007,11 @@ const Graph = struct {
                 for (0..2) |i| try out.append(gpa, .{ .step = Step.index(g.account, @intCast(i)) catch unreachable, .@"var" = 0 });
                 return .{ .kind = .tuple };
             },
+            // 12: a pair of 9s (#1122's shared built node).
+            12 => {
+                for (0..2) |i| try out.append(gpa, .{ .step = Step.index(g.account, @intCast(i)) catch unreachable, .@"var" = 9 });
+                return .{ .kind = .tuple };
+            },
             // 10 and 11: records of 8 and of 512 `List (List Int)` fields (ranks
             // 100…), for a width the writer must not pay twice (#1073).
             10, 11 => {
@@ -3173,4 +3178,45 @@ test "#1122: a cell at two paths is published at both, through Summary and the b
         const at = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, back.res, s)).?;
         try testing.expectEqual(@as(u32, 1), b.cells.sets.count(b.shapes.cells(at)));
     }
+}
+
+test "#1122 review: a built node at two paths is published at both, through Summary and the block" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    // `( p, p )`, `p = ( a, b )`: one built node, two routes, printed as a
+    // reference to its first route and read back as one node at both.
+    const outer = try a.place(12);
+    const pair = try a.place(9);
+    const list = try a.place(0);
+    const s0 = try Step.index(&a.account, 0);
+    const s1 = try Step.index(&a.account, 1);
+    var leaves: [2]NodeId = undefined;
+    for (&leaves, 0..) |*l, i| {
+        const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, @intCast(i), try a.places.rootPath(gpa, list), 0);
+        l.* = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    }
+    var inner = try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, leaves[0]);
+    inner = try a.shapes.overPut(gpa, &a.account, inner, s1, leaves[1]);
+    const p = try a.shapes.node(gpa, &a.account, pair, .none, inner);
+    var kids = try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, p);
+    kids = try a.shapes.overPut(gpa, &a.account, kids, s1, p);
+    const c = try a.sums.add(env, .{ .params = &.{ .none, .none }, .res = try a.shapes.node(gpa, &a.account, outer, .none, kids) });
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const before = try a.text(arena, c);
+    try testing.expect(std.mem.indexOf(u8, before, ".0.0 π1, .0.1 π2, .1 = .0") != null);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
+    // Both routes are one node holding both cells below.
+    const at0 = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, back.res, s0)).?;
+    const at1 = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, back.res, s1)).?;
+    try testing.expectEqual(at0, at1);
+    for ([_]Step{ s0, s1 }) |s| try testing.expectEqual(@as(u32, 1), b.cells.sets.count(b.shapes.cells((try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at0, s)).?)));
 }

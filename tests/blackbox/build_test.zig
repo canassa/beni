@@ -8672,6 +8672,17 @@ test "the checker v2's summary prints a cell at every path it is reached at, a s
         \\    p = ( a, b )
         \\    ( p, p )
         \\
+        \\
+        \\pub choose : List Int, List Int, Bool → List Int × (List Int × List Int)
+        \\choose a b c =
+        \\    ( a, if c then ( a, b ) else ( a, a ) )
+        \\
+        \\
+        \\pub both : List Int, List Int → (List Int × List Int) × List (List Int × List Int)
+        \\both a b =
+        \\    p = ( a, b )
+        \\    ( p, [ p, p ] )
+        \\
     );
 
     // ┌─────────────────────────────────────────┐
@@ -8685,6 +8696,11 @@ test "the checker v2's summary prints a cell at every path it is reached at, a s
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary pair: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π2\n") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: π1 RA, π2 RA; res .0.0 π1, .0.1 π2, .1 = .0\n") != null);
+    // A union's two sides holding one leaf print it once at a route,
+    // however the leaf was first met (#1151's review); a built node below
+    // `[*]` is no reference to one above it.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary choose: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π1, .1.1 π2\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary both: π1 RA, π2 RA; res .0.0 π1, .0.1 π2, .1 fresh1, .1[*] {shared}, .1[*].0 π1, .1[*].1 π2\n") != null);
 }
 
 test "the checker v2 gives each demand of one call its own query lane" {
