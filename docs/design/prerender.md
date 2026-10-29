@@ -830,3 +830,36 @@ From the navigation's start to the same point, beni's medians are 12.0, 15.2 and
 without `--prerender`, is 583, 660 and 711 B brotli on the three pages (the runtime's `take` and
 the unit's arms and every element's tag, #1186), against Solid's 1 439 B of hydration (research 27 §6.8). The run takes
 under a minute.
+
+**As built — P3** (2026-10-29, #1194). A program prerenders when `main` says `Browser.prerender`
+(§5.2's amendment): `Emit.prerenders` reads `main`'s spine from the checked BIR, so the build knows
+before it emits whether to build the prerender tree, and whether the program is a `Named.routed`
+constructor's. The lowering interface is version 1.22 (`boundary.md` §9.4.6): the placement kind
+`prerender`, `Named.routed`, `Build.address`. In the compiler (`src/js/Lower.zig`,
+`findPrerenders`, `prerenderCall`) a call on the spine is compiled as its program outside the
+prerender tree, and the emitter cuts its callee and its list from reachability (`cutPrerender`);
+in the tree it is called, its list checked pure by the walk `programPure` uses. The prerender
+tree's entry exports `render = main[0]` and `routes = main[1]`; Node's runner writes the route list
+as its first record, then one record per route, `{ route, html, title }`, and the build checks the
+routes, maps each to its file, checks collisions and writes every page through `pending`
+(`src/build/Command.zig`, `Emit.emitShell`). The render function writes the route in `data-beni`;
+for a `document` or an `application` it gives `[html, title]`, and an application's `init` is
+handed `Inline.routeUrl(address, route)`. The hydrating application's mount hands `init`
+`Inline.pageUrl(address)` and calls `Inline.arrived(url)` once its subscriptions listen (§7.3's
+amendment). `serve` answers `<path>.html` (`src/devloop/Serve.zig`), and prerenders every build as
+any build does. Core's `Url.percentDecode` is now `Js.pure` — it reads and changes nothing, and
+without it every `Url.Parser` segment parser made an `init` impure (`prerender_impure`), so no
+routed program could prerender; its emitted code did not change.
+
+The fixtures are `browser/prerender/Blog` (a page per post from the list, opened at
+`/blog/hello?ref=feed#comments`, a link click that navigates with no page load, `back`) and
+`Titles`; `browser/tea/PrerenderedBlog.beni`, `Blog`'s source byte for byte on `browser-tea`;
+`build/bad/prerender/` `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision`,
+`RouteFolded`, `RouteImpure` and `NeedsOrigin` (the old `Application`, whose refusal P3 lifts);
+`tests/blackbox/devloop_test.zig`'s *serve prerenders every build, and answers /about with
+about.html*; and the determinism test of §5.4 now builds three routes. Every existing
+`browser/prerender/`, `build/bad/prerender/` and `emit/prerender/` fixture says `Browser.prerender`
+in place of the flag. A page that does not prerender ships what it did: no `emit/inline/` golden
+moved, and `bench/size.mjs --pages-only` prints the same bytes. What prerendering adds to a client,
+release, brotli, against the same program built with `--no-prerender`: 577 B for `Counter`, and
+1 049 B for `Blog`, whose `pageUrl`, `routeUrl` and `arrived` are the routes' share.
