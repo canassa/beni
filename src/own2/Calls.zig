@@ -335,7 +335,7 @@ const Grafter = struct {
             const here: u32 = @intCast(w.builders.items.len - 1);
             try w.active.put(g.gpa(), t, here);
             try stack.append(g.gpa(), .{ .node = t, .pid = f.pid, .step = f.step, .exit = true });
-            var it = g.env.cells.sets.iterate(shapes.cells(t));
+            var it = g.env.cells.sets.iterate((try shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, t)));
             while (it.next()) |e| {
                 const cell: CellId = .from(e.key);
                 if (g.env.cells.origin(cell) != .param) continue;
@@ -515,18 +515,18 @@ const Grafter = struct {
                 while (kt.next()) |e| over = try shapes.overPut(g.gpa(), g.account(), over, e.step, g.s.memo.get(e.node).?);
                 rec.a = base.int();
                 rec.b = over;
-                rec.cells = try g.imageCells(d.cells, d.place);
+                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
             },
             .recast => {
                 var in = g.s.memo.get(.from(d.a)).?;
                 if (built(pending, in) and shapes.kind(in) == .recast) in = .from(shapes.get(in).a);
                 rec.a = in.int();
-                rec.cells = try g.imageCells(d.cells, shapes.place(.from(d.a)));
+                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, shapes.place(.from(d.a)));
             },
             .@"union", .choice, .positions => {
                 rec.a = g.s.memo.get(.from(d.a)).?.int();
                 rec.b = g.s.memo.get(.from(d.b)).?.int();
-                rec.cells = try g.imageCells(d.cells, d.place);
+                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
             },
             .leaf, .node => unreachable,
         }
@@ -546,7 +546,7 @@ const Grafter = struct {
             const cell: CellId = .from(e.key);
             if (g.env.cells.origin(cell) == .param) {
                 const x = g.env.cells.get(cell);
-                c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, g.env.shapes.cells(try g.argAt(x.a, .from(x.b), at)));
+                c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, try g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at)));
                 continue;
             }
             c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, (try g.mapCell(cell, at)).int(), e.value);
@@ -568,7 +568,7 @@ const Grafter = struct {
                     if (g.env.cells.origin(cell) == .param) {
                         const x = g.env.cells.get(cell);
                         const arg = try g.argAt(x.a, .from(x.b), d.place);
-                        c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, shapes.cells(arg));
+                        c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, (try shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, arg)));
                         continue;
                     }
                     const m = try g.mapCell(cell, d.place);
@@ -633,7 +633,7 @@ const Grafter = struct {
     /// argument's at that path; anything else its mapped self.
     fn cellsOf(g: *Grafter, c: CellId, at: PlaceId) Error!SetId {
         const x = g.env.cells.get(c);
-        if (x.origin == .param) return g.env.shapes.cells(try g.argAt(x.a, .from(x.b), at));
+        if (x.origin == .param) return g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
         if (x.origin.isSymbolic() and x.origin != .top) return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
         return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c, at)).int(), 0);
     }
@@ -712,7 +712,7 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
         var w = false;
         var e = false;
         var deep = false;
-        var it = env.cells.sets.iterate(env.shapes.cells(f.node));
+        var it = env.cells.sets.iterate((try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, f.node)));
         while (it.next()) |x| {
             const c: CellId = .from(x.key);
             if (env.cells.origin(c) != .mark) continue;

@@ -946,7 +946,7 @@ pub const Table = struct {
                 if (approx.contains(.from(d.a)) or approx.contains(.from(d.b))) try approx.put(gpa, n, {});
                 if (nk == .positions) {
                     summary = true;
-                    var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, v.shapes.cells(.from(d.a)), v.shapes.cells(.from(d.b))));
+                    var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.a)), try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.b))));
                     while (it.next()) |e| {
                         try charge.reserve(gpa, .inspection, 1);
                         try dups.append(gpa, .{ .cell = .from(e.key), .approx = approx.contains(n) or e.value == 1 });
@@ -956,7 +956,7 @@ pub const Table = struct {
             try done.put(gpa, n, {});
         }
         if (!summary) return memo.get(root).?;
-        return t.@"and"(gpa, charge, memo.get(root).?, try t.derivedCells(gpa, charge, v, v.shapes.cells(root), true, dups.items));
+        return t.@"and"(gpa, charge, memo.get(root).?, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, dups.items));
     }
 
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
@@ -973,7 +973,7 @@ pub const Table = struct {
         const stored = t.kappaGet(ctx, n);
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
-            .leaf => try t.derivedCells(gpa, charge, v, v.shapes.cells(n), at_summary, &.{}),
+            .leaf => try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), at_summary, &.{}),
             // A built node's κ is the walk's (O13): `lost` until set; in a
             // collapsed fold `lost` (§2.9). At a summary position its storage
             // arrivals that stand for many positions owe `excl` as a leaf's do
@@ -982,7 +982,7 @@ pub const Table = struct {
                 if (t.isCollapsed(ctx)) return lost;
                 const s = stored orelse return lost;
                 if (!at_summary or s == shared) return s;
-                return t.@"and"(gpa, charge, s, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
+                return t.@"and"(gpa, charge, s, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, &.{}));
             },
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
@@ -997,7 +997,7 @@ pub const Table = struct {
                     d = try t.join(gpa, charge, s, d);
                 };
                 // At a summary position its cells owe what a leaf's do (#1115).
-                if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, v.shapes.cells(n), true, &.{}));
+                if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, &.{}));
                 break :blk d;
             },
             .@"union", .choice, .positions => {
@@ -1326,7 +1326,7 @@ pub const Table = struct {
             const a = if (whole)
                 try t.aggAll(gpa, charge, v.cells, v.places, .{}, try v.shapes.reach(gpa, charge.account, &v.cells.sets, f.node), false)
             else
-                try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, v.shapes.cells(f.node), false);
+                try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, if (v.shapes.isLazy(f.node)) SetId.none else v.shapes.cells(f.node), false);
             (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = try t.agg(gpa, a);
             (try t.reach_epoch.getOrPut(gpa, .{f.node.int()})).value_ptr.* = v.shapes.ties;
         }
@@ -1640,7 +1640,7 @@ pub const Table = struct {
                     try images.append(gpa, img);
                     break :blk SetId.none;
                 };
-                try all.put(gpa, img, try v.cells.sets.unionWith(gpa, charge, old, v.shapes.cells(n)));
+                try all.put(gpa, img, try v.cells.sets.unionWith(gpa, charge, old, if (v.shapes.isLazy(n)) SetId.none else v.shapes.cells(n)));
             }
             parts.clearRetainingCapacity();
             try sourceParts(gpa, v, fold, n, &parts);
@@ -1688,9 +1688,10 @@ pub const Table = struct {
     fn ownAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId) Error!Agg {
         const d = v.shapes.get(n);
         if ((d.kind == .@"union" or d.kind == .choice or d.kind == .positions) and fold.opened.contains(n)) return .{};
-        if (d.kind != .recast) return t.aggAll(gpa, charge, v.cells, v.places, .{}, d.cells, false);
+        const own = try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n);
+        if (d.kind != .recast) return t.aggAll(gpa, charge, v.cells, v.places, .{}, own, false);
         var a: Agg = .{};
-        var it = v.cells.sets.iterate(d.cells);
+        var it = v.cells.sets.iterate(own);
         while (it.next()) |e| a = try t.aggAdd(gpa, charge, v.cells, v.places, a, .from(e.key), true, false);
         return a;
     }
@@ -1868,7 +1869,7 @@ pub const Table = struct {
                 if (t.kappaGet(fr.at, f.node)) |s| acc = try t.@"and"(gpa, charge, acc, s);
             } else {
                 acc = try t.@"and"(gpa, charge, acc, try t.kappaOf(gpa, charge, v, fr.at, f.node, f.summary));
-                acc = try t.@"and"(gpa, charge, acc, try t.shallow(gpa, charge, v.cells, v.shapes.cells(f.node)));
+                acc = try t.@"and"(gpa, charge, acc, try t.shallow(gpa, charge, v.cells, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, f.node))));
             }
             if (acc == shared) break;
             next.clearRetainingCapacity();
@@ -1931,7 +1932,7 @@ pub const Table = struct {
         var acc = split.rest;
         var new_arrivals: std.ArrayList(CellId) = .empty;
         defer new_arrivals.deinit(gpa);
-        var it = v.cells.sets.iterate(v.shapes.cells(stored));
+        var it = v.cells.sets.iterate((try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, stored)));
         while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
             const c: CellId = .from(e.key);
@@ -2258,7 +2259,7 @@ pub const Table = struct {
                     // those construction does not make apart (`arrivals`).
                     if (mode == .together and f.node == joined) {
                         var k1 = try t.kappaOf(gpa, charge, v, c0, m0, f.msummary);
-                        k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(m0)));
+                        k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m0))));
                         if (traversal == null) {
                             // Its reach's aggregate, extended from its parts' (#1121).
                             k1 = try t.@"and"(gpa, charge, k1, try t.aggCond(gpa, charge, v.cells, v.places, try t.reachAgg(gpa, charge, v, m0)));
@@ -2300,7 +2301,7 @@ pub const Table = struct {
                 const km = try t.kappaOf(gpa, charge, v, c, m, f.msummary);
                 k = if (mode == .alternatives) try t.join(gpa, charge, k, km) else try t.@"and"(gpa, charge, k, km);
                 if (mode == .together) {
-                    k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(m)));
+                    k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m))));
                     // At the position itself every object a member holds
                     // anywhere below counts (I-κ: one object at two
                     // positions, at whatever paths, is shared — the
@@ -2309,7 +2310,7 @@ pub const Table = struct {
                         together = try t.aggMerge(gpa, charge, v.cells, v.places, together, try t.reachAgg(gpa, charge, v, m), true);
                         continue;
                     }
-                    const set = if (f.node == joined) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else v.shapes.cells(m);
+                    const set = if (f.node == joined) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m));
                     var it = v.cells.sets.iterate(set);
                     while (it.next()) |e| {
                         try charge.reserve(gpa, .inspection, 1);
@@ -3521,7 +3522,7 @@ test "red twin CallbackFieldPositions: a plain-path κ never answers a summary-p
     const me = try f.conds.propagate(gpa, f.charge(), f.view(), m, elem, &.{ r1, r2 }, &.{ m, m }, .together, true, null);
     const ea = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, elem, fa)).?;
     try testing.expectEqual(Shape.Kind.positions, f.shapes.kind(ea));
-    try testing.expectEqual(f.shapes.cells(w), f.shapes.cells(ea));
+    try testing.expectEqual(try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, w), try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, ea));
     // Read at the summary position it is `apart{cb@ι₁·.a, cb@ι₂·.a}`, never
     // the plain path's `yes`: a write at `[*].a` relies on the atom. So is
     // the leaf itself, under the branch's map that stored `yes` for it.
@@ -3591,7 +3592,7 @@ test "red twin CallbackFieldPositionsBranch: a stored summary κ never weakens t
     const elem = try f.collect(&.{ r1, r2 });
     const me = try f.conds.propagate(gpa, f.charge(), f.view(), m, elem, &.{ r1, r2 }, &.{ m, m }, .together, true, null);
     const ea = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, elem, fa)).?;
-    try testing.expectEqual(f.shapes.cells(w), f.shapes.cells(ea));
+    try testing.expectEqual(try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, w), try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, ea));
     const ka = try f.kappa(me, ea, true);
     try testing.expectEqual(AtomKind.apart, t.get(ka).atom);
     try testing.expectEqual(ka, try f.kappa(m, w, true));
@@ -3722,6 +3723,8 @@ test "a positions DAG reads in linear time: depth 250, 500, 1000" {
             const a = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 100_000 * depth + k, list, .list)}));
             u = try f.collect(&.{ u, a });
         }
+        // The chain's lazy sets (#1098) built first: the read is what is counted.
+        _ = try f.shapes.cellsOf(gpa, &f.account, &f.cells.sets, u);
         const before = f.account.growth;
         try testing.expectEqual(yes, try f.kappa(.none, u, true));
         const cost = f.account.growth - before;

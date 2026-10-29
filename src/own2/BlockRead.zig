@@ -417,7 +417,7 @@ const Reader = struct {
 
     fn checkValue(r: *Reader, i: u32) Failure!void {
         const p = r.infos.items[i];
-        var it = r.env.cells.sets.iterate(r.env.shapes.cells(p.node));
+        var it = r.env.cells.sets.iterate(try r.env.shapes.cellsOf(r.env.gpa, r.env.account(), &r.env.cells.sets, p.node));
         while (it.next()) |e| {
             try r.env.charge.reserve(r.env.gpa, .inspection, 1);
             if (r.env.cells.origin(.from(e.key)) == .mark) return error.Malformed;
@@ -864,7 +864,7 @@ const Reader = struct {
                 const made = try shapes.@"union"(gpa, acct, sets, a, b);
                 if (made == a or made == b) {
                     absorbed = try shapes.knot(gpa, acct);
-                    shapes.tie(absorbed, .{ .kind = .@"union", .place = at, .cells = try sets.unionWith(gpa, r.env.charge, shapes.cells(a), shapes.cells(b)), .a = a.int(), .b = b.int(), .reach = .none });
+                    shapes.tie(absorbed, .{ .kind = .@"union", .place = at, .cells = try sets.unionWith(gpa, r.env.charge, try shapes.cellsOf(gpa, acct, sets, a), try shapes.cellsOf(gpa, acct, sets, b)), .a = a.int(), .b = b.int(), .reach = .none });
                 }
                 break :blk made;
             },

@@ -466,7 +466,7 @@ pub const Frame = struct {
         const places = f.env.places;
         if (v.node == .none or projected.node == .none) return projected;
         // Over several alternative cells: a product, growth (see `bindList`).
-        const task: ?Ids.Account.Kernel = if (several(cells, shapes.cells(v.node))) try f.account().enter(f.gpa, null) else null;
+        const task: ?Ids.Account.Kernel = if (several(cells, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)))) try f.account().enter(f.gpa, null) else null;
         defer if (task) |t| f.account().leave(t);
         const at = shapes.place(v.node);
         const child = places.child(at, s) orelse return projected;
@@ -483,7 +483,7 @@ pub const Frame = struct {
         const split_kappa = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), projected.kappa, projected.node, true);
         var refined: SetId = .none;
         var canon: SetId = .none;
-        var it = cells.sets.iterate(shapes.cells(v.node));
+        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         while (it.next()) |e| {
             const c: CellId = .from(e.key);
             const o = cells.origin(c);
@@ -496,7 +496,7 @@ pub const Frame = struct {
         }
         if (refined == .none) return projected;
         var drop: SetId = .none;
-        var ct = cells.sets.iterate(shapes.cells(projected.node));
+        var ct = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, projected.node)));
         while (ct.next()) |e| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             const u = (try cells.unrefined(f.gpa, f.account(), places, .from(e.key))) orelse continue;
@@ -534,7 +534,7 @@ pub const Frame = struct {
         // Several container cells are inferred alternatives: their per-cell
         // work is a product with the items, growth chosen before the work
         // (§4.1), never an item's baseline.
-        const product = several(f.env.cells, f.env.shapes.cells(v.node));
+        const product = several(f.env.cells, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         const task: ?Ids.Account.Kernel = if (product) try f.account().enter(f.gpa, null) else null;
         defer if (task) |t| f.account().leave(t);
         const shapes = f.env.shapes;
@@ -558,7 +558,7 @@ pub const Frame = struct {
         var containers: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
         defer containers.deinit(f.gpa);
         var projections: SetId = .none;
-        var it = cells.sets.iterate(shapes.cells(v.node));
+        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         while (it.next()) |e| {
             const c: CellId = .from(e.key);
             const o = cells.origin(c);
@@ -570,7 +570,7 @@ pub const Frame = struct {
         }
         var drop: SetId = .none;
         if (projections != .none) {
-            var ct = cells.sets.iterate(shapes.cells(contents));
+            var ct = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, contents)));
             while (ct.next()) |e| {
                 try f.env.charge.reserve(f.gpa, .inspection, 1);
                 const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, .from(e.key))) orelse continue;
@@ -582,14 +582,14 @@ pub const Frame = struct {
         // position bound to a variable records which it is, under one split
         // of the container whose κ is the contents' (`Demands.Taken`).
         var taken_split: Ids.SplitId = .none;
-        it = cells.sets.iterate(shapes.cells(v.node));
+        it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         while (it.next()) |e| {
             const o = cells.origin(.from(e.key));
             if (o != .site and o != .result and o != .esc) continue;
             taken_split = try cells.split(f.gpa, f.account(), .from(e.key), p, label, split_kappa);
             break;
         }
-        const explicit_cells = if (explicit_one == .none) SetId.none else shapes.cells(explicit_one);
+        const explicit_cells = if (explicit_one == .none) SetId.none else (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, explicit_one));
         const explicit_rest = try shapes.without(f.gpa, f.account(), &cells.sets, contents, drop, false);
         var position: u32 = 0;
         for (items) |item| {
@@ -613,8 +613,8 @@ pub const Frame = struct {
             if (spread) {
                 // The rest: the same storage (a view), its contents the others.
                 const kids = try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, node);
-                const rest = try shapes.node(f.gpa, f.account(), list_place, shapes.cells(v.node), kids);
-                var k = try f.kappaSet(v.kappa, rest, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
+                const rest = try shapes.node(f.gpa, f.account(), list_place, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)), kids);
+                var k = try f.kappaSet(v.kappa, rest, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node))), false));
                 k = try f.kappaSetElem(k, node, split_kappa);
                 const rest_pat = f.data(item.int()).lhs;
                 // A variable binds here (its holder is marked below); a nested
@@ -623,7 +623,7 @@ pub const Frame = struct {
                 // The rest holds every position but the taken ones.
                 if (taken_split != .none and rest_pat != none and f.tag(rest_pat) == .pat_var) {
                     const h = f.binding[f.data(rest_pat).lhs];
-                    if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = none - 1, .explicit = if (explicit_rest == .none) SetId.none else shapes.cells(explicit_rest) };
+                    if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = none - 1, .explicit = if (explicit_rest == .none) SetId.none else (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, explicit_rest)) };
                 }
                 continue;
             }
@@ -660,12 +660,15 @@ pub const Frame = struct {
             defer members.deinit(f.gpa);
             var ctxs: std.ArrayList(Cond.Kappas) = .empty;
             defer ctxs.deinit(f.gpa);
-            // §4.1: each item's part of a wide run is in its own atom's lane.
+            // §4.1: each item's part of a wide run is in its own atom's lane,
+            // its cells inserted into the root's set there (§2.3, #1098).
+            var root_cells: SetId = .none;
             for (items) |item| {
                 const kernel = try f.lane(item);
                 defer f.account().leave(kernel);
                 const v = try f.fit(f.val(item).value, elem_place);
                 try members.append(f.gpa, v.node);
+                root_cells = try cells.sets.unionWith(f.gpa, f.env.charge, root_cells, try shapes.cellsOf(f.gpa, f.account(), &cells.sets, v.node));
                 try ctxs.append(f.gpa, v.kappa);
                 elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             }
@@ -673,7 +676,7 @@ pub const Frame = struct {
             // the whole run, growth until its work is split by item (#1098).
             const task = try f.account().enter(f.gpa, null);
             defer f.account().leave(task);
-            const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
+            const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells);
             elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
             // Each element at the literal's `[*]`: its own κ there (§2.9: the
             // conditions of `vᵢ` at `p`, relative to `vᵢ`), what a read of a
@@ -744,12 +747,12 @@ pub const Frame = struct {
         // they are one position (§2.9).
         var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
         var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), elem_k, old, true);
-        var held = shapes.cells(old);
+        var held = (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, old));
         for (stored) |s| {
             const v = try f.fit(s, elem_place);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             k = try f.env.conds.lower(f.gpa, f.env.charge, f.env.view(), v.kappa, k, held, v.node, true, null);
-            held = try cells.sets.unionWith(f.gpa, f.env.charge, held, shapes.cells(v.node));
+            held = try cells.sets.unionWith(f.gpa, f.env.charge, held, (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
             try members.append(f.gpa, v.node);
         }
         const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
@@ -841,7 +844,7 @@ pub const Frame = struct {
                 fresh = false;
                 continue;
             }
-            var ct = cells.sets.iterate(shapes.cells(v.node));
+            var ct = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
             var any = false;
             while (ct.next()) |e| {
                 const o = cells.origin(.from(e.key));
@@ -854,7 +857,7 @@ pub const Frame = struct {
         const elems = try shapes.collect(f.gpa, f.account(), &cells.sets, members.items);
         var c = try f.set1(try cells.site(f.gpa, f.account(), root, at, .list));
         if (!fresh) {
-            var bt = cells.sets.iterate(shapes.cells(base.node));
+            var bt = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, base.node)));
             while (bt.next()) |e| c = try cells.sets.insert(f.gpa, f.env.charge, c, e.key, 1);
         }
         const node = try shapes.node(f.gpa, f.account(), at, c, try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, elems));
