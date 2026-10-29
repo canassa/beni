@@ -795,6 +795,19 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         try collect(arena, inline_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
     }
+    // `prerender/`: projects built for `browser-inline` with the hidden
+    // `--prerender` (`prerender.md` §11, slice P1) — `browser/prerender/`
+    // pages, whose `index.html` is a golden and whose steps run on the
+    // page the build wrote, and `build/bad/prerender/` refusals.
+    if (kind == .build_bad or kind == .browser) {
+        const prerender_dir = try std.fs.path.join(arena, &.{ kind_dir, "prerender" });
+        const start = fixtures.items.len;
+        try collect(arena, prerender_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-inline";
+            fixture.prerender = true;
+        }
+    }
     // `emit/release/tea/`: release applications built for `browser-tea`,
     // their golden `_main.mjs` whole — what a page of The Elm Architecture
     // ships once its program, `Tea` and the `browser` layer are one file
@@ -1385,6 +1398,10 @@ const Fixture = struct {
     /// `--ownership-everywhere`, so the ownership checker enforces on a
     /// platform that edits no list in place (`ownership-checker.md` §30.7).
     everywhere: bool = false,
+    /// Under `browser/prerender/` and `build/bad/prerender/`: built with
+    /// the hidden `--prerender` for `browser-inline` (`prerender.md` §11,
+    /// slice P1), with a `PATH` that finds the suite's `node`.
+    prerender: bool = false,
     /// A `workers/` fixture's second case: its `--release` build, run under
     /// Miniflare as the first case runs the development build. Two cases,
     /// each starting Miniflare once (`boundary.md` §9.12 (k)); the per-test
@@ -1426,7 +1443,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "prerender")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1933,6 +1950,9 @@ const Case = struct {
                 "--platform=node",
         });
         if (c.fixture.everywhere) try args.append(c.arena, "--ownership-everywhere");
+        if (c.fixture.prerender) try args.append(c.arena, "--prerender");
+        // A prerendering build runs the suite's `node` (`prerender.md` §5.1).
+        const path: ?[]const u8 = if (c.fixture.prerender) try w.nodePath() else null;
         // The command, its diagnostics and its platform: what every other
         // build of the fixture below shares.
         const head_len = args.items.len;
@@ -1967,7 +1987,7 @@ const Case = struct {
             }
         }
 
-        const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+        const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms, .path = path });
         if (built.exit_code != 1) {
             detail(
                 "{s}: a build/bad fixture must FAIL the build; it exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
@@ -1978,6 +1998,12 @@ const Case = struct {
         if (w.exists("out")) {
             detail("{s}: a refused build must write no out/ (boundary.md §4)\n", .{c.fixture.name});
             return error.RefusedBuildWroteOutput;
+        }
+        // Nor is the prerender tree left beside it (`prerender.md` §5.1
+        // item 4).
+        if (w.exists(".out.prerender")) {
+            detail("{s}: a refused prerendering build must remove its prerender tree\n", .{c.fixture.name});
+            return error.PrerenderTreeLeft;
         }
         if (!c.goldenExists("diag") and !c.bless) {
             detail("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
@@ -2017,7 +2043,7 @@ const Case = struct {
             try rel.appendSlice(c.arena, args.items[0..head_len]);
             try rel.appendSlice(c.arena, &.{ "--out=out", "--release", "--allow-debug" });
             try rel.appendSlice(c.arena, sources.items);
-            const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
+            const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms, .path = path });
             if (r.exit_code != 1 or !std.mem.eql(u8, r.stderr, built.stderr) or w.exists("out")) {
                 detail(
                     "{s}: under --release an enforcing build's refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
@@ -2771,8 +2797,130 @@ const Case = struct {
         try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &.{line}));
     }
 
+    /// A `browser/prerender/` project (`prerender.md` §11, slice P1;
+    /// `tests/corpus/README.md`): built four times for `browser-inline`,
+    /// development and release, each without and with the hidden
+    /// `--prerender`, each into a directory of its own. A prerendering
+    /// build's `index.html` is the golden `_expected/index.html`, the same
+    /// for both modes; every build's page opens on the `index.html` it
+    /// wrote and runs the steps against the one `.expected`, so the page
+    /// from the shell with no view and the prerendered page give one
+    /// transcript. The project carries its own shell, named by its
+    /// `beni.json`.
+    fn runPrerender(case: Case) !void {
+        var c = case;
+        var own = try World.init(testing.allocator, testing.io);
+        defer own.deinit();
+        c.w = &own;
+        const dir_path = try c.fixturePath();
+        try c.w.copyTree(dir_path, "_expected.");
+        const h = try browser.harness(testing.io);
+        var sources: std.ArrayList([]const u8) = .empty;
+        {
+            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                try sources.append(c.arena, try c.arena.dupe(u8, entry.name));
+            }
+        }
+        std.mem.sort([]const u8, sources.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+        const steps_path = try c.goldenPath("steps");
+        const steps = try Io.Dir.cwd().readFileAlloc(testing.io, steps_path, c.arena, .limited(world.max_stream_bytes));
+        const steps_name = std.fs.path.basename(steps_path);
+        try c.w.write(steps_name, steps);
+        const script: Script = .{ .name = steps_name, .bytes = steps };
+        const record_path = try c.goldenPath(run_hash.ext);
+        const recording = c.cfg.run_hashes == .record;
+        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
+        const page_golden = try std.fs.path.join(c.arena, &.{ dir_path, "_expected", "index.html" });
+
+        const Build = struct { pass: RunPass, out: []const u8, prerender: bool };
+        const builds = [_]Build{
+            .{ .pass = .dev, .out = "out", .prerender = false },
+            .{ .pass = .dev, .out = "out-pre", .prerender = true },
+            .{ .pass = .release, .out = "release", .prerender = false },
+            .{ .pass = .release, .out = "release-pre", .prerender = true },
+        };
+        var plans: [builds.len]PagePlan = undefined;
+        for (builds, &plans, 0..) |b, *plan, i| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(c.arena, &.{ "build", "--platform=browser-inline" });
+            if (b.prerender) try args.append(c.arena, "--prerender");
+            if (b.pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug", "--check-call-graph" });
+            try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{b.out}));
+            try args.appendSlice(c.arena, sources.items);
+            const built = try c.w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms, .path = try c.w.nodePath() });
+            if (built.exit_code != 0 or built.stderr.len != 0) {
+                detail("{s} [{s}]: a browser/prerender project must build silently; it exited {d}\n--- stderr ---\n{s}\n", .{ c.fixture.name, b.out, built.exit_code, built.stderr });
+                because("[{s}] build exit {d}: {s}", .{ b.out, built.exit_code, summarize(c.arena, built.stderr) });
+                return error.BuildFailed;
+            }
+            if (c.w.exists(try std.fmt.allocPrint(c.arena, ".{s}.prerender", .{b.out}))) {
+                detail("{s} [{s}]: the build left its prerender tree\n", .{ c.fixture.name, b.out });
+                return error.PrerenderTreeLeft;
+            }
+            if (b.prerender) {
+                const page = try c.w.tmp.dir.readFileAlloc(c.w.io, try std.fmt.allocPrint(c.arena, "{s}/index.html", .{b.out}), c.arena, .limited(world.max_stream_bytes));
+                // The development build blesses; the release build's page is
+                // the same file.
+                if (c.bless and b.pass == .dev) {
+                    try Io.Dir.cwd().createDirPath(testing.io, std.fs.path.dirname(page_golden).?);
+                    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = page_golden, .data = page });
+                    detail("blessed {s}\n", .{page_golden});
+                } else {
+                    const expected = Io.Dir.cwd().readFileAlloc(testing.io, page_golden, c.arena, .limited(world.max_stream_bytes)) catch |err| {
+                        detail("{s}: cannot read golden {s} ({t}); set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, page_golden, err });
+                        return error.MissingGolden;
+                    };
+                    if (!std.mem.eql(u8, expected, page)) {
+                        detail("{s} [{s}]: the page differs from {s}\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, b.out, page_golden, expected, page });
+                        because("[{s}] index.html differs", .{b.out});
+                        return error.GoldenMismatch;
+                    }
+                }
+            }
+            plan.* = try c.checkedPlan(.{
+                .pass = b.pass,
+                .golden = "expected",
+                .bless = c.bless and i == 0,
+                .out = b.out,
+                .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{b.out}),
+                .skip = false,
+            }, h, script, record);
+        }
+        var entries: std.ArrayList(browser.Entry) = .empty;
+        for (plans) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .html = true });
+        var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
+        if (entries.items.len != 0) {
+            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
+                detail("{s}: cannot run the pages ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+                return err;
+            };
+        }
+        var verified: [4]?[]const u8 = @splat(null);
+        var next: usize = 0;
+        for (plans, &verified) |p, *line| {
+            if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
+            if (p.skip) continue;
+            const page = shown.pages[next];
+            next += 1;
+            line.* = try c.pageVerdict(p, shown.run, page, h, script);
+        }
+        if (recording) {
+            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
+            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
+        }
+    }
+
     fn runPage(case: Case) !void {
         var c = case;
+        if (c.fixture.prerender) return c.runPrerender();
         var own: ?World = null;
         defer if (own) |*w| w.deinit();
         const platform = c.fixture.project and hasPlatformDir(try c.fixturePath());

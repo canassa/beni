@@ -218,7 +218,9 @@ pub const Pages = struct {
 /// driver's `--fiber-page`; `boundary.md` §9.8.5) — or, `fuzz` set, a run
 /// of the page fuzzer whose spec is the file at `path` (the driver's
 /// `--fuzz`; `writeFuzzSpec`).
-pub const Entry = struct { path: []const u8, fiber: bool = false, fuzz: bool = false };
+/// `html`: the page opens on the `index.html` beside the entry (the driver's
+/// `--html-page`), the page the build wrote.
+pub const Entry = struct { path: []const u8, fiber: bool = false, fuzz: bool = false, html: bool = false };
 
 /// The test hook's name in a development build of `browser-tea`
 /// (`Hosted.fibered`): a build that does not contain it has no listener
@@ -255,7 +257,7 @@ pub fn driveAll(
             else => return err,
         };
         try argv.append(arena, try std.fmt.allocPrint(arena, "--{s}={s}@{s}", .{
-            if (entry.fuzz) "fuzz" else if (entry.fiber) "fiber-page" else "page", entry.path, report.*,
+            if (entry.fuzz) "fuzz" else if (entry.fiber) "fiber-page" else if (entry.html) "html-page" else "page", entry.path, report.*,
         }));
     }
     const run = try world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .dir = w.tmp.dir }, timeout_ms * @as(i64, @intCast(entries.len)));

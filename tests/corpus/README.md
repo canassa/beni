@@ -26,6 +26,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `run/`, with `<name>.requests` | `build --platform=node`, then `node tests/serve/driver.mjs out/_main.mjs <name>.requests` | `<name>.expected` | a server program driven by the script: the transcript of its answers, then its streams and exit (*A server program*) |
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
+| `browser/prerender/<Dir>/` | `build --platform=browser-inline`, with and without the hidden `--prerender`, each in both modes, then each page opened on the `index.html` it wrote | `_expected/index.html`, `_expected.expected` | a prerendered page (`prerender.md`): the page the build writes, and one transcript for the page with no view and the prerendered one (*Prerendered pages*) |
 | `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug` with its own `_expected.release-run-hash`); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
@@ -890,6 +891,23 @@ message object that creeps in shows); `build/bad/inline/` projects for what
 the lowering refuses, each class of `browser-inline.md` §5; and
 `browser/inline/` pages, built for that platform alone, development and
 release.
+
+**Prerendered pages** (`docs/design/prerender.md`, slice P1) are under
+`prerender/` of two kinds, projects built for `browser-inline` with the
+hidden `--prerender` and a `PATH` that holds the suite's `node`, which runs
+the prerender tree. A `browser/prerender/` project carries its own shell
+(its `beni.json` names it in `"html"`), `{{view}}` inside the element its
+program mounts at, and is built four times: development and release, each
+without and with the flag. A prerendering build's `index.html` is the
+golden `_expected/index.html`, one for both modes. Every build's page is
+opened on the `index.html` it wrote — the driver's `--html-page`: its body
+and the body's attributes, parsed by parse5 under happy-dom, its scripts
+left out — and runs `_expected.steps` against the one `_expected.expected`,
+so the page from the shell with no view and the prerendered page give one
+transcript. No build may leave its prerender tree, `.<out>.prerender`.
+`build/bad/prerender/` projects are refused prerendering builds: an `init`
+or a `view` that is not pure, a render that throws, a shell without
+`{{view}}` or with two.
 
 Every enforcing `build/bad/` project is also checked for its release refusal
 — under `inline/`, on a project's own `platform/`

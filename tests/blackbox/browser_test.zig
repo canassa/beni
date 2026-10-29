@@ -672,3 +672,39 @@ test "a public library markup helper receives the markup-value diagnostic" {
     }}), r.diagnostics);
     try testing.expect(!w.exists("out"));
 }
+
+test "a prerendering build with no node on PATH is refused, and writes nothing" {
+    // `docs/design/prerender.md` §5.1: until the engine is in `beni`, the
+    // prerender tree runs under the `node` on `PATH`; the harness gives the
+    // compiler an empty environment, so there is none.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <p>{n}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
+        \\
+    );
+    const r = try w.run(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" });
+    try expectExit(1, r);
+    const diagnostic = @import("diagnostic");
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .prerender_needs_node,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 10, .col = 1 }, .end = .{ .line = 10, .col = 5 } },
+        .title = "PRERENDER NEEDS NODE",
+        .message = "This program prerenders, and the build runs its prerender tree with Node, but\nthere is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`\n(`docs/design/prerender.md` §5.1).",
+    }}), r.diagnostics);
+    try testing.expect(!w.exists("out"));
+    try testing.expect(!w.exists(".out.prerender"));
+}

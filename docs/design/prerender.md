@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified, not built.** The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slice P1 built** (2026-10-29, #1165, §11 *As built — P1*). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -89,6 +89,16 @@ by the causes §3.3 names, none of which is in the program.
    (`core/Debug.beni`), so under Node it writes to standard output, which is why the records do not
    use that stream (§5.1); the build passes what Node writes on to its own standard error. A release
    build refuses `Debug` anyway (`backend.md` §9).
+
+   *Amended 2026-10-29, as built in P1 (#1165).* The compiler reads the rung at each call of
+   `init`'s and `view`'s bodies (the checker's `impure` answer, `checker-v2.md` §26): a call of a
+   function of `Debug` is exempt, a call of a function of the program's own module is answered by
+   that function's body, walked once, and any other call the checker says may be impure is the
+   call `prerender_impure` names. A function of another module whose only effect is `Debug`'s is
+   therefore refused by its rung; and an `init` or a `view` that is not a lambda or a function of
+   the program's module — another module's function named in the record — is refused at the
+   field, since the build cannot read whether it is pure (write `λ⊤ → Other.init ⊤`). Both are
+   limits of the build, not rules (#1170).
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the
@@ -143,6 +153,16 @@ of the client tree, and **a program that does not prerender, and the client tree
 is byte for byte what the lowering writes today** — the existing `emit/inline/` and
 `emit/release/inline/` goldens do not move (§11, every slice).
 
+*Amended 2026-10-29, as built in P1 (#1165).* The lowering is told which tree it writes
+(`Build.prerender`, §4.4), and writes a render function only in the prerender tree, so no client
+tree holds one and reachability has nothing to leave out. In the prerender tree the program
+site's render function takes the mount's place: the call of the program constructor compiles to
+it, so `main` is the render function, and the entry exports it (§5.1); no
+`<Module>$<declaration>$$render` is named. A piece's `<Module>$<declaration>$$render$<n>` takes,
+before the piece's parameters — the values its factory is handed after its elements — the
+ordinal of the piece's first eager arm in the unit, so its comments number the unit's arms (§4.1,
+*An eager `when`*); the program site passes it and counts the piece's arms after it.
+
 The string is the unit's static string (`browser-inline.md` §8.2) with each hole's value in its
 place:
 
@@ -176,6 +196,12 @@ builder and hold wherever the string is parsed. It **writes the closing run of e
 of the unit**, which §8.2 leaves out only for *"a string parsed alone"*: in a page, the shell's own
 markup follows the unit, and the run must not depend on it.
 
+*Amended 2026-10-29, as built in P1 (#1165).* The string form writes **every end tag** but a void
+element's. §8.2 leaves an end tag out where the next sibling's start tag closes the element as the
+end tag would, and in the string form the next sibling may be an arm `init` hides, written as its
+comment, which closes nothing. An end tag written is closed by the parser exactly as one left out
+would be, so the tree is §8.2's either way, at a few bytes per page.
+
 The unit's top element gets one attribute, `data-beni` (its value, the route, from slice P3, §7.3).
 It is how the client finds the unit (§6.1): an attribute on the element survives the whitespace, the
 comments and the scripts a template or an extension puts around it, which a position such as
@@ -197,6 +223,14 @@ lowering may write a render function at its program site, and the emitter roots 
 at it; and the lowering learns the rung of `init`, `view` and the route list from the checker, as
 `programCommand` learns whether a body may suspend (§2 there). They are version 1.20, recorded in
 §9.4.6 when slice P1 lands.
+
+*Amended 2026-10-29, as built in P1 (#1165; `boundary.md` §9.4.6, version 1.20).* The two
+additions are three members: `Lowering.prerenders`, that the lowering writes render functions — a
+prerendering build of a chain whose lowering does not is refused; `Build.prerender`, which tree is
+lowered (`none`, `tree`, `client`), in place of the emitter rooting a tree at a render function
+(§4.1's amendment); and `programPure(part)`, which refuses an `init` or a `view` that may have an
+effect: the compiler, which alone can name the call, reports `prerender_impure` (§3.1's
+amendment), so the lowering learns the answer, not the rung. The route list's rung is P3's.
 
 ## 5. The build
 
@@ -222,6 +256,18 @@ for that program only:
    (`backend.md` §2). So rule 2's folding check, `_manifest.txt` and the removal of stale files all
    apply to pages unchanged, and a refused build writes nothing.
 4. The build removes the prerender tree.
+
+*Amended 2026-10-29, as built in P1 (#1165).* Item 1: the prerender tree's directory is beside
+`--out`, `.<out>.prerender` — never inside it, and named after it so that two builds of different
+outputs do not share one — rather than the cache directory, which a build need not have; the
+build removes it whether the build succeeds or not. Item 2: `_prerender.mjs` **exports** `routes`
+and `render` and runs nothing, so that it is the part of the tree an engine that runs ES modules
+runs as it is (and P5 changes no byte of it); beside it the build writes `_node.mjs`, Node's
+runner, the one file that uses Node's API, which renders each route in order and appends its
+record. What Node writes is passed on to the build's standard error when the diagnostics are
+text; under `--diagnostics=json` that stream is the array of diagnostics alone (`frontend.md`
+§1), and Node's output is dropped. Item 3: the build checks the tree first — `init`, `view`, the
+shell's `{{view}}` (§5.3) — so a program the build refuses never runs.
 
 **The engine is embedded in beni; Node is the step before it** (the owner, 2026-10-29, §10
 question 1). A beni build must not need a JavaScript runtime installed beside it, so the end state
@@ -292,6 +338,13 @@ list, when there is no record at all) and quotes what Node wrote to its standard
 file that is not the entry's records is the same code. Mapping the
 stack to `.beni` positions through the prerender tree's source maps (`backend.md` §11) is a later
 improvement and not a slice of this document.
+
+*Amended 2026-10-29, as built in P1 (#1165).* The diagnostic is at `main`'s name, and quotes what
+the render threw as Node prints it, less the parts that name the machine: the source line Node
+quotes above the error, the stack below it and Node's version line all hold the prerender tree's
+paths, which would make the message differ between two builds of one program. The whole text
+still reaches the build's standard error under text diagnostics (§5.1's amendment). In P1 the
+route list is the constant `["/"]`, which cannot throw, so a run with no record names `/`.
 
 ## 6. Hydration
 
@@ -623,3 +676,24 @@ order with per-route pages in the first slice; they move to P3, because a page p
 
 The hang guard of 120 s applies to every case as to any other, and a prerendered fixture's Node run
 is part of its case.
+
+**As built — P1** (2026-10-29, #1165). The hidden flag is `--prerender`, for `build` alone (a
+`--watch`, `serve` or `--library` build refuses it, until P3 makes it the program's word, §5.2),
+on a chain whose lowering prerenders (`Lowering.prerenders`, §4.4's amendment). The build
+(`src/build/Command.zig`) builds the prerender tree, runs it, and hands what it gave — the view,
+`needs_node`, or the failure — to the client tree's build (`src/js/Emit.zig`, `Prerender`), which
+writes the page or refuses the build, so a refused build writes nothing (§5.1 item 3). The string
+form is `Render` in `platforms/browser-inline/zig/inline.zig`, its escapes `Inline.escape`,
+`escapePre` and `escapeAttribute`, and the client of a prerendering build calls
+`Inline.unprerender` on the mount element before it mounts: the element with `data-beni` below it
+is taken out, and the mount is today's. The top element's `data-beni` has no value until P3
+(§4.2). A `view` whose top-level node is not one element of its own — another module's markup —
+does not prerender yet (`browser-inline.md` §5, class 1). `{{view}}` is replaced with nothing in
+every build that does not prerender, and `platforms/browser-inline/index.html` says
+`<body>{{view}}</body>` (§5.3). The browser driver opens a page on the `index.html` beside its
+entry with `--html-page` (`tests/browser/driver.mjs`); the corpus kind is `tests/corpus/README.md`'s
+*Prerendered pages*; the determinism claim of §5.4 is `tests/blackbox/build_test.zig`'s *a
+prerendered page is byte-identical at every --jobs*, and `prerender_needs_node` is
+`tests/blackbox/browser_test.zig`'s, an empty `PATH`. The emitted code of a build that does not
+prerender is unchanged: no `emit/inline/` or `emit/release/inline/` golden moved, and only the
+development source maps of `_platform/Inline.mjs`, which carry the module's text, did.

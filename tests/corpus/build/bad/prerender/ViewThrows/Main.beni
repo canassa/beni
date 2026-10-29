@@ -1,0 +1,39 @@
+-- A `view` that throws for `init`'s model fails the build
+-- (docs/design/prerender.md §5.5): `prerender_failed`, naming the route
+-- and what the render threw, and nothing is written. The prerender tree
+-- has no `catch`: the throw ends Node.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+label : Int → String
+label n = if n == 0 then Debug.todo "a label for no clicks" else "clicked"
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <p>{label model.count}</p>
+        <button onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }) "root"

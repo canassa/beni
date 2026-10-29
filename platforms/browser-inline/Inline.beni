@@ -371,6 +371,49 @@ allShown arms i =
         False
 
 
+-- ---- Prerendered pages (`prerender.md` §4.3, §11) ----------------------
+
+--| `(s)`: a text as an element's ordinary content holds it in HTML:
+--| `&`, `<` and a carriage return written as references, so the text the
+--| parser reads back is the text (`write-sets.md` §9.1). The prerender
+--| tree's alone: a page ships none of it.
+pub escape : V → V
+escape s = replace (replace (replace s "&" "&amp;") "<" "&lt;") "\r" "&#13;"
+
+
+--| `(s)`: `escape`, for the content of a `pre`, a `textarea` or a
+--| `listing`, whose parser drops a newline at its start: a text that begins
+--| with one gets one more in front.
+pub escapePre : V → V
+escapePre s =
+    leading : Bool
+    leading = Js.to (Js.call s "startsWith" [ Js.from "\n" ])
+    if leading then Js.call (Js.from "\n") "concat" [ escape s ] else escape s
+
+
+--| `(s)`: an attribute's value as a double-quoted value holds it:
+--| `escape`, and `"` written as `&quot;`.
+pub escapeAttribute : V → V
+escapeAttribute s = replace (escape s) "\"" "&quot;"
+
+
+replace : V, String, String → V
+replace s from to = Js.call s "replaceAll" [ Js.from from, Js.from to ]
+
+
+--| `(root)`: the prerendered unit below `root` — the element that has
+--| `data-beni` (`prerender.md` §4.2) — taken out of the page, so that the
+--| mount after it makes the page a page with no view makes (§11, slice
+--| P1). On a page the build did not prerender there is none, and nothing
+--| is taken out.
+pub unprerender : V → ⊤
+unprerender at =
+    unit = Js.call at "querySelector" [ Js.from "[data-beni]" ]
+    if not (Js.isNull unit) then
+        _ = Js.call unit "remove" []
+        ⊤
+
+
 -- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------
 
 -- Every binding entry made at this mount, in the order made: an entry's

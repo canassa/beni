@@ -1,0 +1,65 @@
+-- The controls' first render (docs/design/prerender.md §4.1): a text
+-- input's `value` is its `value` attribute, a checkbox `init` checks is
+-- `checked`, and the option whose value the `select`'s is, the first such
+-- one, is `selected`. The client mounts fresh, so the controls show the
+-- model's values as properties either way, and each event writes them
+-- back.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : String
+    agree : Bool
+    plan : String
+
+
+type Msg
+    = SetName String
+    | SetAgree Bool
+    | SetPlan String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SetName typed →
+            { model | name = typed }
+
+        SetAgree on →
+            { model | agree = on }
+
+        SetPlan chosen →
+            { model | plan = chosen }
+
+
+agreement : Bool → String
+agreement on = if on then "agrees" else "does not agree"
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="controls">
+        <input data-role="name" value={model.name} onInput={SetName} />
+        <input type="checkbox" data-role="agree" checked={model.agree} onCheck={SetAgree} />
+        <select data-role="plan" value={model.plan} onInput={SetPlan}>
+            <option value="free">Free</option>
+            <option value="pro">Pro</option>
+            <option value="pro">Pro again</option>
+            <option value="team">Team</option>
+        </select>
+        <output>{model.name} {agreement model.agree} to {model.plan}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { name = "Ada", agree = True, plan = "pro" }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

@@ -26,6 +26,9 @@ module Inline
   value busy : ⊤ → Bool  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
   value entry : V, V → V  -- impure
+  value escape : V → V  -- impure
+  value escapeAttribute : V → V  -- impure
+  value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
@@ -53,6 +56,7 @@ module Inline
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
   value text : V, V → ⊤  -- impure
+  value unprerender : V → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
   value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure

@@ -1,0 +1,3 @@
+click [data-role=shout]
+input [data-role=title] "a & b"
+input [data-role=notes] "typed"

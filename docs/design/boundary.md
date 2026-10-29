@@ -2437,6 +2437,17 @@ a `case`, the read set of choosing its arm alone — its scrutinee and the tag f
 taken under, not what the arms' values read (`write-sets.md` §3.6, amended 2026-10-24) — as a
 group number, or null when the pass has none. A lowering that targets 1.18 sees what it saw.
 
+**Version 1.20** (*added 2026-10-29*, additive, gated on nothing; `prerender.md` §4.4, slice P1,
+#1165): prerendered pages. `Lowering.prerenders` says the lowering writes a program's render
+function, and a prerendering build of a chain whose lowering does not is refused.
+`Build.prerender` says which tree of a prerendering build is being lowered: `none`, `tree` — the
+prerender tree, where the program hook returns, in the mount's place, the render function, which
+takes the route and gives the unit's HTML, and a piece hook also exports its root's render
+function — or `client`, the tree the browser loads. `programPure(part)` refuses an `init` or a
+`view` that may have an effect other than `Debug`'s: the compiler reports `prerender_impure` at
+the call that makes it so, and returns `Reported`. A lowering that targets 1.19 sees what it saw,
+and its chain does not prerender.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

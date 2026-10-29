@@ -935,6 +935,102 @@ test "names several emit workers invent for one type agree, and the build is byt
     try w.expectProgram("rel-8a/_main.mjs", .{ .stdout = "ynyn\n" });
 }
 
+test "a prerendered page is byte-identical at every --jobs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §5.4: the page is a function of the program, the shell
+    // and the base, so the tree a prerendering build writes, the page among
+    // it, does not move with the worker count. Two modules, so the other's
+    // view is a piece with a render function of its own, and arms the
+    // first model hides, so the page holds their comments.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("src/Panel.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : Int → Html msg
+        \\view n =
+        \\    <section>
+        \\        <output>{n}</output>
+        \\        {if n > 2 then <strong>many</strong> else <></>}
+        \\    </section>
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Html exposing (Html)
+        \\import Panel
+        \\import Tea
+        \\
+        \\
+        \\type alias Model =
+        \\    n : Int
+        \\    open : Bool
+        \\
+        \\
+        \\type Msg
+        \\    = Grow
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Grow →
+        \\            { model | n = model.n + 1, open = True }
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <button onClick={Grow}>{model.n} & more</button>
+        \\        {if model.open then <p>open</p> else <></>}
+        \\        {Panel.view model.n}
+        \\    </main>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → { n = 1, open = False }, update = update, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const Build = struct { out: []const u8, jobs: []const u8, release: bool };
+    const builds = [_]Build{
+        .{ .out = "dev-1a", .jobs = "--jobs=1", .release = false },
+        .{ .out = "dev-8a", .jobs = "--jobs=8", .release = false },
+        .{ .out = "dev-1b", .jobs = "--jobs=1", .release = false },
+        .{ .out = "dev-8b", .jobs = "--jobs=8", .release = false },
+        .{ .out = "rel-1a", .jobs = "--jobs=1", .release = true },
+        .{ .out = "rel-8a", .jobs = "--jobs=8", .release = true },
+        .{ .out = "rel-1b", .jobs = "--jobs=1", .release = true },
+        .{ .out = "rel-8b", .jobs = "--jobs=8", .release = true },
+    };
+    for (builds) |b| {
+        const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}", .{b.out});
+        const options: world.RunOptions = .{ .raw_diagnostics = true, .path = try w.nodePath() };
+        const r = if (b.release)
+            try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--release", "--no-cache", out, b.jobs, "src" }, options)
+        else
+            try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--no-cache", out, b.jobs, "src" }, options);
+        try expectBuilt(r);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (builds[1..4]) |b| try expectSameTree(&w, "dev-1a", b.out);
+    for (builds[5..8]) |b| try expectSameTree(&w, "rel-1a", b.out);
+    // The page is the first render, the same in both modes.
+    const page = "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><main data-beni><button>1 &amp; more</button><!--0--><section><output>1</output><!--1--></section></main></body>\n";
+    try testing.expectEqualStrings(page, try w.read("dev-1a/index.html"));
+    try testing.expectEqualStrings(page, try w.read("rel-1a/index.html"));
+}
+
 /// The SHA-256 of `bytes`, hex, in a per-call buffer.
 fn digest(bytes: []const u8) [64]u8 {
     var raw: [32]u8 = undefined;

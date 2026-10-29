@@ -1,0 +1,26 @@
+-- A prerendering build's shell must say `{{view}}` once
+-- (docs/design/prerender.md §5.3): this one says it twice, and the page
+-- would hold two copies of the view, one of which the program never takes
+-- over. `invalid_html_shell`, against the shell at 1:1.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+
+view : Int → Html Msg
+view n = <button data-role="app" onClick={Inc}>{n}</button>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"
