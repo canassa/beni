@@ -98,7 +98,8 @@ pub const Node = struct {
     /// — a host function by type, which may read `arguments` or `this`.
     /// §9 item 6 leaves a lambda whose call is one as written
     /// (`backend.md`, *The name's value must be an emitted function too*).
-    /// Printed the same; a copy of the node keeps it (`Spec`).
+    /// Printed the same; a copy of the node keeps it (`Spec`, and
+    /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
     host: bool = false,
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
