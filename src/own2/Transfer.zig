@@ -748,6 +748,11 @@ pub const Frame = struct {
     /// `atoms[i]` the instruction `stored[i]` comes from, `base_atom` the
     /// base's: each stored item's share on its own lane (§4.1, #1139).
     fn construct(f: *Frame, base: Value, stored: []const Value, base_atom: u32, atoms: []const u32) Error!Value {
+        // The base's projection, κ, cells and the put are as large as the
+        // base, and the stored items' as large as they: growth (§4.1, #1181).
+        // Only the positions nodes are on the items' lanes (`collectRoot`).
+        const run = try f.sized();
+        defer f.account().leave(run);
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const at = shapes.place(base.node);
@@ -768,8 +773,6 @@ pub const Frame = struct {
         var k = try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), elem_k, old, true);
         var held = (try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, old));
         for (stored) |s| {
-            const kernel = try f.sized();
-            defer f.account().leave(kernel);
             const v = try f.fit(s, elem_place);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
             k = try f.env.conds.lower(f.gpa, f.env.charge, f.env.view(), v.kappa, k, held, v.node, true, null);
@@ -821,7 +824,11 @@ pub const Frame = struct {
         if (first == items.len) return f.literal(root, insts.items);
         var stored: std.ArrayList(Value) = .empty;
         defer stored.deinit(f.gpa);
-        var built = try f.fit(f.val(items[first][0]).value, at);
+        var built = blk: {
+            const kernel = try f.sized();
+            defer f.account().leave(kernel);
+            break :blk try f.fit(f.val(items[first][0]).value, at);
+        };
         if (first + 1 < items.len) {
             var atoms: std.ArrayList(u32) = .empty;
             defer atoms.deinit(f.gpa);
@@ -850,6 +857,12 @@ pub const Frame = struct {
     /// base (a re-cons), elements the fronts' and the base's, κ lost —
     /// except when every front is a fresh object by construction.
     fn prepend(f: *Frame, root: u32, at: PlaceId, fronts: []const [2]u32, base: Value, base_atom: u32) Error!Value {
+        // The fronts' and the base's work (the base's reach and cells, each
+        // put in the root's set when a front is not fresh) is as large as
+        // they are: growth (§4.1, #1181). Only the positions nodes are on
+        // the items' lanes (`collectRoot`).
+        const run = try f.sized();
+        defer f.account().leave(run);
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const elem_place = f.env.places.child(at, Step.elem) orelse {
@@ -863,16 +876,8 @@ pub const Frame = struct {
         var members: std.ArrayList(NodeId) = .empty;
         defer members.deinit(f.gpa);
         var elem_k = f.env.conds.kappaChild(base.kappa, Step.elem);
-        // The base's reach reads every item it was built from: a run-wide
-        // read, growth until read-off continuations charge it by item (#1098).
-        const base_reach = blk: {
-            const task = try f.account().enter(f.gpa, null);
-            defer f.account().leave(task);
-            break :blk try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
-        };
+        const base_reach = try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
         for (fronts) |it| {
-            const kernel = try f.sized();
-            defer f.account().leave(kernel);
             const v = try f.fit(f.val(it[0]).value, elem_place);
             try members.append(f.gpa, v.node);
             elem_k = try f.env.conds.kappaMerge(f.gpa, f.env.charge, elem_k, v.kappa);
@@ -930,7 +935,11 @@ pub const Frame = struct {
         }
         for (ops.items) |o| try f.consume(o, root, .whole, .none);
         const at = try f.placeOf(root);
-        const base = try f.fit(f.val(ops.items[0]).value, at);
+        const base = blk: {
+            const kernel = try f.sized();
+            defer f.account().leave(kernel);
+            break :blk try f.fit(f.val(ops.items[0]).value, at);
+        };
         var stored: std.ArrayList(Value) = .empty;
         defer stored.deinit(f.gpa);
         for (ops.items[1..]) |o| {

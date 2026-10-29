@@ -2690,19 +2690,23 @@ or export operation cannot assign all costs to the first or last item's lane.
 
 *As built (#1139, the second part of #1098):* an item of a literal, a spread chain, an append chain or
 the fronts before a spread puts one thing on its own `transfer_settlement` lane: the positions node that
-`collectRoot` makes where a split falls before it, a constant. Everything else an item does is as large
-as its value, and is growth chosen before the work (`Transfer`'s `sized`): its fit, its stored projection,
+`collectRoot` makes where a split falls before it, a constant. The rest of an item's work is as large as
+its value, and is growth chosen before the work (`Transfer`'s `sized`): its fit, its stored projection,
 its κ merge and `lower`, its cells and their insertion into the root's set, its condition read and
-aggregate in `propagate`, its `[*]` κ. So is a construction demand's sweep of every operand's reach against
-the base's cells, a product. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
+aggregate in `propagate`, its `[*]` κ. So is the run's own work at its root, which is as large as its base
+and its items (#1181): the first item's fit in a spread or append chain, and all of `construct` and
+`prepend` (the base's projection, κ and cells, the put, a not-fresh base's cells put in the root's set) but
+the positions nodes. So is a construction demand's sweep of every operand's reach against the base's cells,
+a product. A walk from a `positions`, `union` or `choice` node (`Shape.dagWalk`: `cellsOf` of
 a lazy node, `proj`, `reach`, `namedSteps`, `rank`, `dagKappa`, `reachAgg` on a miss) is a growth task too,
 never the asking kernel's lane: an earlier run's DAG read again (`[ …xs, …b ]`) is as large as that run.
 From any other node the walk stays the kernel's, so a call's view and a demand's query keep their own. The
 item-lane shares the paragraph above names wait for these reads to be incremental and for read-off
 continuations to charge them by their producers. Measured (`build_test.zig`, a per-item bound at about 1.5
 times the measurement): 1 000 spreads and 1 000 fronts check at the default allowance, at 11 and 47 growth per
-item; a 1 000-item literal and append chain need a raised allowance, at 122 and 97 per item. No program the
-corpus or the review probes hold reaches a lane's ceiling (`WideItemValues`, `EarlierRunSpread`).
+item; a 1 000-item literal and append chain need a raised allowance, at 122 and 97 per item. The corpus
+pins the shapes that reached a lane's ceiling: `WideItemValues`, `EarlierRunSpread` and, a base chosen
+from 64 or 100 arms and spread or appended to, `WideChoiceSpread`.
 
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
