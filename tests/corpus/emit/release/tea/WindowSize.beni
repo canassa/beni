@@ -1,8 +1,9 @@
 -- `Browser.Events.size` and `visibility` under `--release` once
 -- `Browser/Events.js` is gone (plans/runtime-in-beni.md step 9): the two
 -- window reads and `document.visibilityState === "hidden"` are written in
--- place, `Size` keeps `width` and `height`, and `Visibility`'s tags are
--- integers.
+-- place, folded into the one `update` that reads them, and `Visibility`'s
+-- tags are integers. `Size` keeps `width` and `height` only where
+-- `Dom.box` is live, which this page is not.
 import Browser.Events as Events
 import Cmd exposing (Cmd)
 import Html exposing (Html)
