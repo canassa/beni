@@ -2108,11 +2108,15 @@ after that group's final validation/encoding, never between its fixpoint rounds.
 publication; validation and encoding inherit it, without a fresh allowance. Growable lists and explicit stacks only (R-7.12):
 a walk as deep as the source (κ path copying `kappaAt`, `kappaRelabel`, `kappaMerge`'s pairs, a call's `graft` and
 `linkArgs`; `Shape.proj` through unions and deltas, `map`, `join`, `leq`; the summary's normal form, its printer
-and `markAt`; the block reader's group build; `Cell.unrefined`; a message's path; a list pattern's nested items)
+and `markAt`, a cell's refinement chain and a label's callee chain; the block reader's group build;
+`Cell.unrefined`; a message's path and base text; a list pattern's nested items; an alias chain)
 keeps its frames on a heap stack, never one native frame per level (#1130, #1138). The tests run them deep on
 small threads (1 MiB, a wasm build's stack, or 256 KiB). A call's `graft` of a cyclic result (a widened knot)
 gives the part met again while it is grafted a knot, tied when the part is done, so the image is cyclic and the
-walk ends.
+walk ends. A part whose image reads its parts' records (a union, a positions node, a recast, a delta) over a
+knot still pending is itself a knot, built once what it reads is tied (#1143). One recursion stays native, bounded
+by the parser's nesting (`Parse.max_depth`, 4 096, on the checker's big stack): `Summary.Table.join` and `leq` over
+a class's nested classes, one level per nested lambda.
 
 ---
 
@@ -2554,7 +2558,7 @@ L0  Ids
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 800 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 1 940 |
-| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 580 |
+| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 600 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 100 |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows | ≤ 1 500 |

@@ -1451,7 +1451,39 @@ pub const Table = struct {
         /// `shared(M.v).q`, `cb3[*]` (`cb(π1.f)` for a slot), `msg#Got.0`,
         /// `⊤`, `elem(π1·ι)`, `others(…)`, `level(…)`, `below(…#i·ι)`,
         /// `loan(…)`, `site7`; a label other than the class's own after `@`.
-        fn cell(p: *Printer, w: *std.Io.Writer, c: CellId) WErr!void {
+        fn cell(p: *Printer, w: *std.Io.Writer, top: CellId) WErr!void {
+            // A refinement chain (`elem(elem(c·ι)·κ)`): the openings down to
+            // its base, the base, then the closings back up, on an explicit
+            // list (#1143: splits nest as deep as the source's patterns).
+            const env = p.env;
+            var chain: std.ArrayList(CellId) = .empty;
+            var at = top;
+            while (true) {
+                const o = env.cells.get(at).origin;
+                if (o != .elem and o != .others and o != .level and o != .below and o != .loan) break;
+                chain.append(p.arena, at) catch return error.WriteFailed;
+                try w.writeAll(switch (o) {
+                    .elem => "elem(",
+                    .others => "others(",
+                    .level => "level(",
+                    .below => "below(",
+                    else => "loan(",
+                });
+                at = .from(env.cells.get(at).a);
+            }
+            try p.cellBase(w, at);
+            var i = chain.items.len;
+            while (i > 0) {
+                i -= 1;
+                const d = env.cells.get(chain.items[i]);
+                if (d.origin == .below) try w.print("#{d}", .{d.c});
+                try w.writeAll("·");
+                try p.label(w, .from(d.b));
+                try w.writeAll(")");
+            }
+        }
+
+        fn cellBase(p: *Printer, w: *std.Io.Writer, c: CellId) WErr!void {
             const env = p.env;
             const d = env.cells.get(c);
             switch (d.origin) {
@@ -1494,20 +1526,7 @@ pub const Table = struct {
                     try p.path(w, .from(d.b));
                 },
                 .top => try w.writeAll("⊤"),
-                .elem, .others, .level, .below, .loan => {
-                    try w.writeAll(switch (d.origin) {
-                        .elem => "elem(",
-                        .others => "others(",
-                        .level => "level(",
-                        .below => "below(",
-                        else => "loan(",
-                    });
-                    try p.cell(w, .from(d.a));
-                    if (d.origin == .below) try w.print("#{d}", .{d.c});
-                    try w.writeAll("·");
-                    try p.label(w, .from(d.b));
-                    try w.writeAll(")");
-                },
+                .elem, .others, .level, .below, .loan => unreachable,
                 .mark => try w.writeAll(switch (env.cells.markOf(c)) {
                     .r => "R",
                     .a => "A",
@@ -1520,14 +1539,17 @@ pub const Table = struct {
         }
 
         /// A label: `ι<inst>`, `⋆` when folded, `·` then the callee's.
-        fn label(p: *Printer, w: *std.Io.Writer, l: LabelId) WErr!void {
-            if (l == .none) return w.writeAll("λ");
-            const d = p.env.cells.labelOf(l);
-            try w.print("ι{d}", .{d.inst});
-            if (d.folded) try w.writeAll("⋆");
-            if (d.callee_label != .none) {
+        fn label(p: *Printer, w: *std.Io.Writer, first: LabelId) WErr!void {
+            if (first == .none) return w.writeAll("λ");
+            // The callee chain as a loop (#1143: calls nest as deep as the source).
+            var l = first;
+            while (true) {
+                const d = p.env.cells.labelOf(l);
+                try w.print("ι{d}", .{d.inst});
+                if (d.folded) try w.writeAll("⋆");
+                if (d.callee_label == .none) break;
                 try w.writeAll("·");
-                try p.label(w, d.callee_label);
+                l = d.callee_label;
             }
         }
 
