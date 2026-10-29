@@ -39,7 +39,9 @@ fn watch(g: *Guard) void {
                 // Event waits may wake spuriously; keep the original deadline.
                 if (Io.Timestamp.now(io, .awake).nanoseconds < g.deadline.raw.nanoseconds) continue;
                 if (g.done.isSet()) return;
-                std.debug.print("FAIL: test timed out: {s}\n", .{g.name});
+                rawWrite("FAIL: test timed out: ");
+                rawWrite(g.name);
+                rawWrite("\n");
                 killChildren();
                 std.process.exit(1);
             },
@@ -81,4 +83,22 @@ fn killChildren() void {
         error.ProcessNotFound => {},
         else => std.debug.print("cannot kill test child group {d}: {t}\n", .{ pid, err }),
     };
+}
+
+/// `killChildren` without the lock, for a crash handler: the list may be
+/// mid-update, so this kills what it can read.
+pub fn killChildrenNow() void {
+    for (children.items) |pid| std.posix.kill(-pid, .KILL) catch {};
+}
+
+/// `s` to stderr with `write(2)` alone, so a timeout reports even while a
+/// crashed or printing thread holds stderr's lock.
+fn rawWrite(s: []const u8) void {
+    var rest = s;
+    while (rest.len > 0) {
+        const rc = std.posix.system.write(2, rest.ptr, rest.len);
+        const n: isize = if (@TypeOf(rc) == usize) @bitCast(rc) else rc;
+        if (n <= 0) return;
+        rest = rest[@intCast(n)..];
+    }
 }
