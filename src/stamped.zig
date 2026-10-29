@@ -14,6 +14,52 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+/// Every slot any column has made, in the process: the work a column does
+/// in proportion to the highest id it has seen rather than to its entries.
+/// A walk that makes a fresh column per call over a growing table makes
+/// calls × table slots (#1191); `--self-profile`'s `scratch_slots` counter
+/// reads it. A sum, so it does not depend on thread timing.
+pub var slots_made: std.atomic.Value(usize) = .init(0);
+
+/// Scratch for a walk that runs once per call over a table's whole id space:
+/// `take` an emptied `T` (a column, or a struct of them with `clear` and
+/// `deinit`), `give` it back. A re-entrant call takes another, so no call
+/// makes slots a previous call made already (#1191).
+pub fn Pool(comptime T: type) type {
+    return struct {
+        all: std.ArrayList(*T) = .empty,
+        free: std.ArrayList(*T) = .empty,
+
+        const Self = @This();
+
+        pub fn deinit(p: *Self, gpa: Allocator) void {
+            for (p.all.items) |t| {
+                t.deinit(gpa);
+                gpa.destroy(t);
+            }
+            p.all.deinit(gpa);
+            p.free.deinit(gpa);
+        }
+
+        pub fn take(p: *Self, gpa: Allocator) Allocator.Error!*T {
+            if (p.free.pop()) |t| {
+                t.clear();
+                return t;
+            }
+            try p.all.ensureUnusedCapacity(gpa, 1);
+            try p.free.ensureTotalCapacity(gpa, p.all.items.len + 1);
+            const t = try gpa.create(T);
+            t.* = .{};
+            p.all.appendAssumeCapacity(t);
+            return t;
+        }
+
+        pub fn give(p: *Self, t: *T) void {
+            p.free.appendAssumeCapacity(t);
+        }
+    };
+}
+
 pub fn Column(comptime K: type, comptime V: type) type {
     return struct {
         slots: std.ArrayList(Slot) = .empty,
@@ -77,7 +123,11 @@ pub fn Column(comptime K: type, comptime V: type) type {
 
         fn slotOf(c: *Self, gpa: Allocator, k: K) Allocator.Error!*Slot {
             const i = index(k);
-            if (i >= c.slots.items.len) try c.slots.appendNTimes(gpa, .{}, i + 1 - c.slots.items.len);
+            if (i >= c.slots.items.len) {
+                const n = i + 1 - c.slots.items.len;
+                try c.slots.appendNTimes(gpa, .{}, n);
+                _ = slots_made.fetchAdd(n, .monotonic);
+            }
             return &c.slots.items[i];
         }
 

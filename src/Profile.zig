@@ -208,6 +208,11 @@ pub const Counter = enum {
     /// witness that a cache hit installs the published derived contexts
     /// instead of recomputing them (checker-v2.md §14.3).
     derived_context_runs,
+    /// The slots every `stamped.Column` made during the check (#1191): a
+    /// column makes one per id up to the highest it has seen, so a walk that
+    /// makes a fresh column per call over a growing table shows here as calls
+    /// × table size, where its records count only the nodes it visits.
+    scratch_slots,
     /// The persistent cache (`fast-compiler.md` §8). Modules whose entry was
     /// loaded and installed, modules whose entry was absent or unusable, and
     /// modules whose own check actually ran — which is what a warm-rebuild
