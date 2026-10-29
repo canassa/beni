@@ -274,6 +274,12 @@ Not writes (they read their operands):
 
 ### 4.7 Recursive values
 
+Implementation contract: `ownership-v2.md` §2.9's single path-multiset primitive carries coexisting
+occurrences through every many-to-one path map, including a folded callee path over an unfolded actual.
+Its Appendix B FoldedBCall red/green pair and JoinFoldChoice/K controls exercise these requirements;
+§8 places the independent recursive-proof verifier spike before S3b. This pointer changes no verdict
+requirement or section number.
+
 - R-4.7.1 Accept writes to distinct lists at different levels of a recursive value: `ParamHole.hole`,
   `FoldLevels.pushRoot`, `RecordTree.deepest`, `PathCut.apart`, `LevelFresh.pushRoot`. Refuse: one list at two
   levels handed to a writer (`ParamHole.shared`, `disjoint`); a write while a deeper subtree holding the list is
