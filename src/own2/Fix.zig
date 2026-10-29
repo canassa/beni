@@ -1301,6 +1301,8 @@ const AltSpec = union(enum) {
     require: CondId,
     need: Goal,
     captures: SetId,
+    /// A goal the test means to be unknown (O10): refuted approximately.
+    unknown,
 };
 
 const Entry = struct { goal: Goal, alts: []const AltSpec, reads: []const u32 = &.{} };
@@ -1337,9 +1339,10 @@ const World = struct {
             // A family answers the same alternatives at every path a goal names.
             if (e.goal.claim == ex.goal.claim and e.goal.port == ex.goal.port and (ex.goal.claim == .gen or e.goal.arg == ex.goal.arg)) break e;
         } else {
-            // A goal the equations do not know: unknown, never empty (O10).
-            try ex.begin();
-            return ex.refute(.approximate);
+            // A goal the test equations do not define is a defect of the
+            // test, never a refutation: a refusal witness would pass for the
+            // wrong reason. A goal meant to be unknown says so (`.unknown`).
+            std.debug.panic("test world: undefined goal {s} port {d} arg {d}", .{ @tagName(ex.goal.claim), ex.goal.port, ex.goal.arg });
         };
         for (e.reads) |r| try ex.read(r);
         const traversal: ?Cond.Traversal = if (w.marks) f.marks.traversal() else null;
@@ -1353,6 +1356,10 @@ const World = struct {
                 try ex.require(&f.conds, k);
             },
             .captures => |s| try ex.writesCaptures(&f.cells, s),
+            .unknown => {
+                try ex.begin();
+                ex.refute(.approximate);
+            },
             .need => |g| {
                 try ex.begin();
                 try ex.need(g);
@@ -2390,7 +2397,15 @@ test "within's discharge by route (D1–D4): the holes refused, C.6's callers ke
     try expectAnswer(try f.prove(&w, demand(1)), .proved, .exact);
     try expectAnswer(try f.prove(&w, demand(3)), .refuted, .approximate);
     try expectAnswer((try f.prover.cached(gpa, f.charge(), try f.fam(2))).?, .refuted, .exact);
-    for ([_]u32{ 4, 5, 6, 7, 11, 12, 13, 14 }) |d| try expectAnswer(try f.prove(&w, demand(d)), .refuted, .approximate);
+    // One assertion per witness, each named by the rule that refuses it.
+    try expectAnswer(try f.prove(&w, demand(4)), .refuted, .approximate); // hole 5: D3 pairwise
+    try expectAnswer(try f.prove(&w, demand(5)), .refuted, .approximate); // hole 8: Dead
+    try expectAnswer(try f.prove(&w, demand(6)), .refuted, .approximate); // hole 9: A3
+    try expectAnswer(try f.prove(&w, demand(7)), .refuted, .approximate); // holes 2, 6: D3 taken
+    try expectAnswer(try f.prove(&w, demand(11)), .refuted, .approximate); // D4 refined
+    try expectAnswer(try f.prove(&w, demand(12)), .refuted, .approximate); // D2 a cb cell only
+    try expectAnswer(try f.prove(&w, demand(13)), .refuted, .approximate); // no route
+    try expectAnswer(try f.prove(&w, demand(14)), .refuted, .approximate); // D1 origin
     try expectAnswer(try f.prove(&w, demand(8)), .refuted, .exact);
     const owed = try f.prove(&w, demand(10));
     try expectAnswer(owed, .proved, .exact);
