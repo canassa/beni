@@ -388,14 +388,17 @@ Structurally interned per owning summary with deterministic comparison trees (th
 | `leaf` | `place`, `cells` | `cells` at `ε`; below, whatever the symbolic cells project to |
 | `node` | `place`, `cells`, `children: [step → NodeId]` dense over the place's steps (`none` = nothing) | a built value |
 | `delta` | `base: NodeId` (never a delta), `over: OverId` — a persistent sorted tree of `(step, NodeId)`, path-copied, O(log F) insert and lookup, structure shared along a chain of updates | the base written: at `ε` the base's cells, at `s` the override or the base's child; a chain of k updates costs O(k log F) |
-| `recast` | `place`, `inner: NodeId` | `inner` read at another type (§2.13.9): `inner`'s cells, approximate, at every path |
+| `recast` | `place`, `inner: NodeId` | `inner` read at another type (§2.13.9); projection selects the built inner's matching part when its step/place agrees, otherwise retains the whole inner, approximate |
 | `union` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | the lazy join of **alternatives** (control-flow and fixpoint joins): `cellsAt` the union, `proj` the union of projections, both memoised per `(union, step)`; a cell repeated across sides is one position |
 | `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened); root cell-set reference when requested by `collect` | coexisting element positions, preserving both edges even when they name one node; `proj` preserves the kind. `cellsAt` is a set; κ separately reads occurrence multiplicity (§2.9). `collect` accumulates the root set by per-item inserts; internal sets are lazy, never eagerly unioned at every tree level. |
 | `cyclic` | a `node` whose child names an ancestor | a widened recursive value (§2.12); no special kind, the knot is in the table |
 
 Operations, memoised on their node arguments:
 
-- `proj(n, s)`; `cellsAt(n, q)` = `proj` along `q`.
+- `proj(n, s)`; `cellsAt(n, q)` = `proj` along `q`. If several source paths map to one
+  folded/summary path, transport the value with the single **path-multiset primitive** of §2.9,
+  not just this set-valued projection. Its image retains every coexisting occurrence in the preimage.
+  Widen/fold, call instantiation, read-off, the printer and Block/BlockRead all use that primitive.
 - `reach(n)`: the **persistent** set of cells anywhere in `n` (an ordered tree with structure sharing, §3.2: union
   shares unchanged subtrees; a union pays for the source entries/set nodes it inspects, not only the cells it
   adds). `reach(delta) = reach(base) ∪ reach(overrides)`,
@@ -408,7 +411,11 @@ Operations, memoised on their node arguments:
   O(groups) outer nodes; inner work uses §4.1 accounting. A join can have product query work; a projection through a union costs O(groups) once per `(union, step)`.
 - `collect(n₁…nₖ)` (`Shape.collect`): a built value's elements under `[*]` → a balanced `positions` DAG, never
   deduplicated or absorbed, built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
-  `union`. `map` and `propagate` preserve the kind.
+  `union`. `map` and `propagate` preserve the kind. Accumulate the requested root cell set by
+  inserting each item's cells on its own lane, sharing persistent predecessors. Internal sets stay
+  lazy: a request pays for visited radix nodes and changed spines. Identical hash-consed subtrees are
+  skipped by identity, as in `Radix.unionWith`/`intersection`; they are not charged once per contained
+  entry. Do not eagerly union all internal ranges or scan unchanged entries again at every level.
 - `proj(positions(a, b), s) = positions(proj(a, s), proj(b, s))`: projection keeps the kind and so the
   multiplicity. **A side that is nothing is no position** [M 2026-10-27, #1120]: `positions(a, ∅)` is `a` when `∅` is an
   empty leaf, because no object can be there. Without this, projecting past `[ r, Rose [] ]`'s empty list made a new
@@ -434,28 +441,24 @@ Operations, memoised on their node arguments:
   member that was not opened, stays as it is; these are the sides of a `union` with the image. An opened member
   rides beside nothing, since its meaning is its sides', which are members. **Opening is sound:** a class denotes
   the union of its members, so adding the sides of a member keeps γ (widen stays extensive, O3), and the image's
-  multiplicity is not γ's. It is κ's, and κ for the widened value is propagated from the unwidened one (§2.9):
-  `propagate` folds at the knot and joins every member position it covers. Each such read sees the unwidened
-  `positions` node, so a cell both sides hold at one path reads its repeat (`shared`, or `lost` once approximate),
-  and the fold's join keeps that. **But a per-path join is not enough** [#1125's review]. Opening folds positions
-  from different paths into one class, and a cell held at two of them (`k` the kids of a depth-1 and of a depth-2
-  node) is two positions of the class that no single path of the unwidened value held. So **a folded positions
-  side reads as many**: every widen fold reads each class as the multiset of its positions, opened or not (a
-  Maybe tree `M k (Just (M k Nothing))` folds `k`'s two depths with nothing opened), and a cell two of them hold
-  is a repeat. Its positions are its members, each counted once per time the walk
-  reached it. A node reached twice, and every node below it, stands at two positions. An opened member counts as
-  its sides. The repeats are `Radix.intersection` of each member's cells with the cells of the members before it,
-  plus the cells of a repeated member, in one pass over the class. The class's node reads `lost` where it has a
-  repeat: `lost`, not `shared`, because the fold has merged positions and cannot say which occurrences are one
-  object, as for a folded label (§2.2). `propagate` stores that `lost` at the knot, a leaf's too (its redundancy test reads without the
-  repeats), and no read consults `widen`'s evidence beside the snapshot, so the snapshot alone carries it and a
-  block's reader reads what the writer read. So no read of the widened value is stronger than a read of the
-  unwidened one at any position the fold covers, and a repeat across the positions it merges is not lost. A
-  summary position under the knot still owes the read rule's `excl` over its arrivals. **Guard: a stored κ never
-  reaches a widened image at a summary position without this cross-member check.** **Cost:** an opened member's
-  sides are two more edges of the walk, and the repeated nodes are marked by one more walk, each node once. The
-  multiset is one union and one intersection per member, so the widen and its congruence closure stay
-  O((nodes + edges) log(nodes + edges)).
+  multiplicity is not γ's. It is κ's, computed by §2.9's path-multiset primitive over the
+  **pre-fold** structure. Every widen fold checks its classes, whether or not a union/positions
+  member was opened. Joining each member's separate read does not compare coexisting depths.
+  A node reached through two source routes contributes twice, including below those routes; an
+  opened choice keeps its alternatives and an opened collection keeps coexistence. The image's
+  snapshot stores the resulting obligations at the knot, including a leaf knot: no reader may need
+  transient widen evidence to recover them. A summary position also owes `excl` for symbolic arrivals.
+
+  **Built in #1125.** Widen opens union/positions sides on the cycle, marks repeated nodes and their
+  descendants, and intersects each class member's cells with prior members. It does this on every
+  fold, including a Maybe tree with no opened collection. `propagate` stores duplicate-bearing
+  classes' **`lost`** at the knot, including leaves, using a redundancy test without those repeats.
+  The snapshot alone retains that loss after publication. This repairs the equal-cell cross-depth
+  counterexample; it may conservatively lose choice precision. The planned primitive extends this
+  to choice-sensitive and symbolic/substituted arrivals; it must retain this as-built check until
+  it supplies the same soundness and the stronger positive controls. Opened sides add edges, not
+  enumerated paths. With shared radix union/intersection, the structural fold and its multiplicity
+  work have O((nodes + edges) log(nodes + edges)) total cost under §2.9's stated context bound.
   **What it gains and loses:** before, `Rose [ r_{k−1}, Rose [] ]` kept each level's whole tower beside the knot.
   Its summary grew as about n^2.4 (537 656 bytes at N = 30), with every entry `lost`. Opened, the block is linear
   (56 452 bytes at N = 1 000) and reads what the unwidened value reads (`yes` there, with no repeat). A kids list at two
@@ -489,8 +492,9 @@ Operations, memoised on their node arguments:
 - `expand(n, bound)` (safety builds): the enumerated `(path, cell)` set up to `bound` paths, for §7.5.
 
 **Memo safety and reserve-before-work.** A completed memo is a pure function of its complete immutable
-inputs in one table interpretation. Charge the requesting owner's logical request before lookup, hits
-included; physical sharing cannot make accounting depend on the first declaration to miss (#1104).
+inputs in one table interpretation. Reserve the request and any new work before performing them.
+Declaration-order independence of shared-memo accounts is an **open owner decision, #1104**;
+this document does not choose a charging policy or implementation for it.
 Publish only after the operations establishing the answer succeed. A rank DFS's open marks, a mapping's
 unfinished correspondence and cyclic builder backreferences are transaction-local. Failure leaves no
 completed answer depending on unfinished work; completed independent SCCs may remain. In particular
@@ -811,40 +815,89 @@ relative to the value's root, and the argument's snapshot is linked under the ar
 back to it): they are its sparse frontier, the routes by which `deep`, `kappaLeq` and a block find what is stored below it
 (#1129).
 
-**Recursive folds and their read.** Only `widen` identifies distinct recursive levels. Its shape
-quotient and snapshot quotient are one value operation, at read-off and at a fixpoint unknown. A snapshot
+**Recursive folds and their read.** `widen` identifies distinct recursive levels in the stored shape.
+Its shape quotient and snapshot quotient are one value operation, at read-off and at a fixpoint unknown.
+A folded template path may also identify explicit actual paths at a call without widening that actual;
+both boundaries use the path-multiset primitive below. A snapshot
 fold is the finite cursor representing the source positions identified by that quotient; it is not an
 invocation label fold (§2.2). Store its observed step set and lead those links back to the cursor. A
 selected projection through any further step keeps the fold cursor, but frontier enumeration uses only
 observed structural/snapshot steps, never all fields of its place.
 
-For each selected path/kind below a folded class, retain an **arrival expression** over the source
-positions it covers. Its leaves name immutable source positions and invocation/supply contexts. Its
-operators distinguish choice (alternatives) and coexistence (positions or different depths of one value).
-The expression is shared, not flattened per path. A fold's requirement is the conjunction of:
+**One path-multiset primitive.** Given an immutable source value interpretation and a path
+map μ from source occurrences to destination classes, compute the image as a **multiset, not a set**.
+A destination class is `(quotient/view map id, destination node/port, position-class bits, selected
+path and kind)`. The map id includes its source interpretation and immutable dependency context.
+Two concrete paths in μ⁻¹(class) remain two occurrences even if they reach the same NodeId, cursor
+and CellId; repeating a worklist request for one occurrence is not a new occurrence. This applies
+wherever paths meet: widen/fold, folded template paths over explicit call arguments, read-off,
+printing and Block/BlockRead. These are clients of one operation, not five local duplicate checks.
+The source is the structure **before** the paths meet; a deduplicated destination cell set cannot
+reconstruct its multiplicity. Map/correlation contexts are persistent and interned by their effective
+restriction at the requested subtree. Adding a parent or another class shares unchanged map fragments;
+it does not allocate a new global MapId that forces every old subtree to be evaluated again. A map
+memo at a shared child keys that fragment and the dependencies it actually reads. New preimage edges
+compose its cached aggregate at the parent, retaining their multiplicity.
 
-1. every covered position's own kind-specific read, under that position's snapshot;
-2. `summaryExcl` for each symbolic arrival standing for many objects;
-3. `apart` over the multiset of arrivals from **all coexisting covered positions**, including arrivals at
-   different depths. This is an additional obligation, not the alternatives join in (1).
+Three concrete structures implement the operation (§3.4):
 
-In (3), each pair possible together must be apart; exclusive alternatives do not create a duplicate just
-because both name x. Where correlation is unavailable, admitting the extra pair can only weaken the
-answer. One semantic source position revisited by the worklist is not a second member. Two routes to one
-node, including two depths reaching the same concrete allocation, are two members. Retain `site`,
-`result` and `esc` arrivals for duplicate detection here: two distinct allocations are apart, but two
-occurrences of the **same** allocation are not. `arrivals` filtering used by a singleton literal is not
-sound for this fold multiset. A repeated exact identity gives `shared`; folded/approximate identity gives
-`lost`, unless a separately justified `within`/traversal certificate discharges it (§2.2). A new self
-comparison never invents `within`.
+- An **arrival expression** is an interned DAG with `source(position, interpretation)`,
+  `choice(choice-id, arms)` and `together(children)` records. Source positions are represented by
+  shared transitions, not enumerated root-to-node path strings. `choice` denotes mutually exclusive
+  arms of one source branch/union; `together` denotes simultaneous positions, including separate
+  fields or depths mapped to the same class. Two edges of `together(x,x)` remain two edges.
+  Choice ids and their enclosing expression retain correlation across depths: distribute μ over
+  the whole chosen arm, not separate choices invented independently at each destination depth.
+- Its **aggregate** is a persistent radix multiplicity map keyed by **(destination class, cell)**,
+  computed over that pre-map expression. Each payload contains multiplicity, approximation and
+  duplicate-witness provenance, plus shared roots for the apart obligations, `summaryExcl` and
+  stored/derived reads. A parallel base/prefix/split index supports symbolic alias comparisons.
+  Evaluate a source once per `(ArrivalId, MapId, immutable context/dependency versions)`;
+  compose cached child aggregates on changed spines. The expression remains available for later
+  substitution: distinct symbolic keys may become the same caller cell and must then be combined.
+- **Multiplicity** is the finite domain `{absent, one, repeated}` per map key. Choice takes the
+  maximum per key (the same x once in either arm stays one); coexistence adds with saturation at
+  repeated (`one + one = repeated`). Payloads retain compatible-arm witnesses, so unrelated
+  choices are never assumed exclusive. Cross-cell apart comparisons are made within an arm and
+  across coexisting operands, not between exclusive alternatives. Any unresolved correlation
+  conservatively adds obligations; it cannot justify a stronger read. In particular the required
+  JoinFoldChoice and K controls below retain their correlation, not conservative `lost`.
 
-The occurrence abstract domain needs only absent, one, or potentially repeated, plus exact-witness and
-approximation information. Coexistence adds multiplicity; choice joins possible multiplicities. This is a
-finite semantic domain, not a cap on program length. Once repeated, further arrivals cannot restore one.
-Symbolic summary arrivals also retain their `excl` obligation; a single abstract cell is not proof that
-it denotes one concrete object. Set insertion alone is never the multiplicity operation. At a cycle,
-solve these occurrence facts by a finite SCC worklist, delivering each new fact once; do not unroll
-infinitely many paths or count a solver revisit as a concrete occurrence.
+The multiplicity map finds repeated identities. The shared expression and apart index additionally
+retain comparisons between **different symbolic** arrivals which substitution may alias. The condition
+for each image class conjoins (1) every source position's own kind-specific read under its snapshot,
+(2) `summaryExcl` for symbolic arrivals denoting many objects, and (3) apart over all compatible,
+coexisting preimage arrivals, across depths included. Per-path `deep` plus set deduplication proves
+only (1) and (2); it cannot replace (3). Retain `site`, `result` and `esc` here: distinct allocations
+are apart, but two occurrences of the same allocation are not. The singleton-literal filter is
+not valid for this primitive. An exact, unfolded duplicate witness yields `shared`; a duplicate
+identified through a fold yields `lost` (as #1125 stores), unless an independently justified
+`within`/traversal certificate discharges it. A new self-pair never invents `within`.
+
+At cycles, solve the finite occurrence facts by a dependency/SCC worklist; each new fact is delivered
+once. A backedge is an equation, not permission to increment a count on each solver visit. A source
+position's two semantic incoming edges still compose by choice or coexistence as written. Publish
+only settled aggregates, retaining the expression and coverage needed for substitution.
+
+**Cost.** For n distinct source/expression records and edges in one bounded-place, bounded-width
+context, hash-consed persistent maps and memoised subtree-pair composition give **O(n log n) total**
+work, shared across all prefixes of the tower families below; space is O(n) fixed-word records.
+Identical subtrees skip by identity (`Radix.unionWith`/`intersection`), at constant request cost,
+not a charge per old entry. Even `together(x,x)` can mark the shared subtree repeated lazily; it
+must not flatten x or deduplicate its two edges. Union-by-size/changed-spine work, not repeated
+full-root scans, establishes the bound. For symbolic keys, the insertion claim assumes distinct
+bases or comparisons discharged by the ordered identity/prefix index. Exceptional same-base,
+traversal and independent-context pair tasks are additional individually reserved work under §4.1;
+a general alias solver has no unconditional linear bound. They cannot be used to excuse quadratic
+work on the listed towers, whose keys/contexts satisfy that premise.
+
+**Choice controls.** `if c then Rose [x] else Rose [x]` has one x in either complete arm;
+JoinFoldChoice preserves `yes` for an exclusive x. In K, `r_k = if c_k then Rose [r_(k−1)]
+else r_(k−1)`, an exclusive seed r₀ occurs once in any execution, although many possible depths
+map to one class. Apply μ before forgetting each whole-arm choice: r₀ remains one and the selected
+kids read stays `yes`, with no growth of loss merely from height. `Rose [r,r]`, and a value with
+one kids list at two coexisting depths, must instead retain repetition and refuse the dependent
+write. Interning shared subexpressions does not change either answer.
 
 **Exact and collapsed folds.** An exact fold retains complete coverage: every built node/delta at every
 covered position has its construction certificate (`lost` included), and the multiset requirement above
@@ -877,6 +930,14 @@ mapping/export must preserve it. The new code does not implement §2.9's increme
 choice-sensitive coverage representation. There is no #1121 implementation branch in the reviewed
 local/remote refs or PR list. Those obligations remain before S3b; linear block bytes prove neither
 I-κ nor total linear work.
+
+**Update after rebase (master `5d02c7d81`).** The preceding *As built* note is retained as
+its historical review record. #1125 is now merged: opening and the every-fold multiset cross-member
+check store `lost` in the snapshot. #1133 preserves relabelled fold steps; #1135 closes #1130;
+#1142 closes #1138 with further explicit stacks and cyclic graft knots. #1145 counts snapshot maps,
+entries and links in codec size. #1132 preserves the built inner's matching part through a recast
+and keeps hidden holds at the cast's path (§2.13.9). Choice-sensitive symbolic aggregates and the
+call preimage rule remain planned; #1143/#1144's transitive pending-knot safety remains open.
 
 **A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
 construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
@@ -1016,10 +1077,14 @@ Where κ is set, always **at the selected path p**:
   only cells. Cyclic states require a key including the fold correspondence/obligations or stay off
   this memo. Rank is a proof of route independence, never an exclusivity proof.
 
-  `kappaMerge` merges immutable metadata, memoised by the unordered pair of content-interned cursors.
-  Merge is commutative and depends on no ambient shape interpretation. Publish the result only when
-  complete. If a fold representation gains arrival metadata, that metadata is part of cursor identity;
-  merging metadata does not itself discharge the coexisting-arrival obligation. The failed lazy merge
+  `kappaMerge` uses `(operator, unordered cursor pair, map/correlation context)` as its key;
+  `operator` is choice or coexistence. Cursor identity includes its immutable per-class arrival and
+  coverage roots. Composition is commutative for a fixed operator and context, not independent of
+  them: `choice(x,x)` is idempotent, `together(x,x)` repeats x. Choice-arm ids/correlation are part
+  of the context wherever not already carried by the cursors. A mode-free memo may cache only a
+  separately proved pure suboperation, never the completed arrival-bearing merge. Publish only
+  after composition and the path-multiset obligation succeed. JoinFoldChoice and K must remain
+  precise even after warming the same cursor pair in coexistence mode, and vice versa. The failed lazy merge
   (#1119 comment 6429169940) is not an alternative representation here: links to unevaluated merge ids
   destroyed content identity and the join memo stopped hitting. Eager persistent merge plus a per-pair
   memo preserves canonical identity and shares repeated merges. Neither memo makes a fresh scan of a
@@ -1034,14 +1099,16 @@ Where κ is set, always **at the selected path p**:
   sets in fixpoints, never another syntactic `and` layer per round.
 
   Use memoised operations over **persistent subtrees**, not only `(node,cursor)` completed answers:
-  a growing root has a new id every level. A cell-set radix subtree caches its summary; insertion
-  recomputes only the changed spine. An occurrence-expression node caches choice/coexistence composition
+  a growing root has a new id every level. Radix nodes themselves need no summary field:
+  a side table keyed by `(SetId, map id, immutable context/dependency versions, summary kind)`
+  caches apart/excl/condition summaries; insertion recomputes only the changed spine. An occurrence-expression node caches choice/coexistence composition
   and witness summaries; `positions` adds counts, alternatives retain choice semantics. Union reads
   compose the cached side reads under their own immutable interpretation, then the union's stored term
   and summary derivation. Unchanged side obligations and intersections are shared through exact input-
   pair tasks; a new parent never starts a fresh DFS over the entire old side DAG. Distinct cursors with
   the same unchanged submap can reuse pure submap work, but different stored terms or substitution
-  contexts cannot share a completed read. Carry each built side's certificate: reading it from an empty
+  contexts cannot share a completed read. Parameter substitution is a reference to the already
+  interpreted argument aggregate (§2.11), not a new interpretation of all its cells. Carry each built side's certificate: reading it from an empty
   output cursor invents `lost` at every join (#1093).
 
   Root reach/arrival groups are accumulated from the member aggregates. For a fixed-width extension,
@@ -1062,21 +1129,28 @@ Where κ is set, always **at the selected path p**:
   | Family, from a finite seed | New work per level and required multiplicity |
   |---|---|
   | `Rose [r]` | one link and one root aggregate extension; no descendant walk |
-  | `if c then Rose [r] else r` (K) | reuse propagation states, merge pairs and union side-read summaries; share the two depths' common subtries |
+  | `if c then Rose [r] else r` (K) | reuse mode-qualified merge pairs and side summaries; retain whole-arm correlation: the exclusive seed stays one, selected kids κ stays yes |
   | `Rose [r,Rose []]` (W) | insert the fresh sibling's bounded arrivals into the old reach aggregate; open sides on the widening cycle |
   | `T a_k [r]` | one new symbolic arrival into the old apart/excl summaries, not a fresh k-item group |
   | `Rose [r,r]` | two references plus a repeated-occurrence fact; never flatten the exponentially large concrete tree |
   | alternating mutually recursive constructors | a bounded number of SCC classes/steps per written level; carry the same aggregates around the SCC |
   | recursive trees with Maybe children | Nothing contributes no object; Just links its payload; recurse only through actual SCC re-entry. `Maybe (Maybe a)` stays distinct. |
 
-  Unrelated context products still use §4.1's general bound. These seven families must not hit the
+  Add the S3b call-built family `wrap r = Rose [r]`, `wrap (wrap … r)`: every parameter graft
+  reuses the argument's aggregate, and only the wrapper's new allocation and edge extend it.
+  Count same-module and imported helper forms, including helpers returning their argument unchanged.
+
+  Unrelated context products still use §4.1's general bound. These eight families must not hit the
   summary-growth allowance merely for their length. Counting the old quadratic as charged growth or
   raising the default is not a repair. Appendix B requires 10/100/1,000 levels, production limits,
   read/codec counts and red/green probes; a linear final block alone is insufficient.
 
 - A construction lowers the base's condition at `[*].p` by the stored value's condition at p and
   `apart{cellsAt(stored,p), cellsAt(base,[*].p)}`, compared by position as for a literal. A later spread of a variable loses the relevant condition.
-- A call instantiates κ(res): `excl πᵢ·q` asks the argument's condition **at q**; `sep` and `within`
+- A call instantiates κ(res): `excl πᵢ·q` applies the path-multiset primitive to **all concrete
+  argument paths mapping to q**, using the folded template's path map. Even an unfolded actual
+  needs the cross-preimage comparison when q crosses `⟲`; conjoining its per-path reads is
+  insufficient. The argument need not have been widened first. `sep` and `within`
   interpret cells under their label-specific supplies (§2.11); `keep`/`writes` use the actual class's facts.
 - A `delta` retains unaffected bindings and lowers the written paths by the new values. Storage
   permutations preserve conditions; a `recast` or unknown loses facts at paths whose interpretation is
@@ -1086,7 +1160,9 @@ Where κ is set, always **at the selected path p**:
 
 There are no deep `sep`/`apart` atoms. A genuinely deep demand enumerates its tracked paths and conjoins
 those paths' obligations through `Cond.deep` (S2): a walk of the value's explicit structure that meets a
-projected summary arrival as `excl` at that arrival's path. S3a's deep demands (send, `consumed`, focus) conjoin
+projected summary arrival as `excl` at that arrival's path. When the demand's path map is many-to-one,
+`deep` also consumes the primitive's preimage aggregate; a visited `(node,class,cursor)` set alone
+cannot stand in for that multiset. S3a's deep demands (send, `consumed`, focus) conjoin
 `deep` over their cell set. A deep demand does not strengthen every shallow atom into a deep one. All enumeration, union and substitution work uses §4.1. A chain of W single-arrival stores makes O(W)
 outer condition nodes plus O(W log C) persistent group insertion work, not a quadratic sequence of sorts.
 
@@ -1186,6 +1262,9 @@ self-atom `within(ι⋆)`** — *the calls `ι⋆` stands for return pairwise di
 whereas two occurrences of one folded label stored from one value stay `lost`; a refinement in `res` → its
 base's image, approximate, but a `taken` supply keeps its `elem(πᵢ·λ)` with its split's label; `fun(j)` from the recorded supplies and keep edges; `classes` from the closure nodes reached. A
 parameterless value: `res` with each cell its definition makes as `shared M.v·q` at its path (R-4.9.2).
+Read-off composes its relabelling and quotient with §2.9's path map, retaining the preimage expression
+until the aggregate is computed. A cell-numbering memo may share the cell but never discard its second
+route; read-off's shape, κ and published arrival certificate all use that one correspondence (#1122).
 
 **Room for #587.** A class names no declaration and lives in a class table a summary owns; a `closure` place has a
 class slot (§2.1). #587 attaches an inferred class to every function type and copies it through `Instantiate` as
@@ -1254,8 +1333,8 @@ that obligation at the mapped position; derive the destination read there too. G
 original origins, captures, loan regions and snapshot subtree. Two template uses under different supplies
 cannot share an interpretation memo; repeated uses under the same immutable inputs can. An identity map
 preserves every observable read. Callback-result labels are freshened only by invocation; captured cells
-are never freshened. Map cyclic nodes with a transaction-local explicit worklist, tie once and publish the
-correspondence only after success; nested substitutions cannot reset an outer call's memo.
+are never freshened. Cyclic grafts follow the tie-before-read protocol below; nested substitutions
+cannot reset an outer call's memo.
 
 **Views meeting cycles, links, and folds (S3b).** A call view contains the callee template reference,
 actual value roots (shape **and** κ), one invocation identity and a constant-width substitution link.
@@ -1266,8 +1345,17 @@ argument is a link, not an exactness upgrade. Several template paths grafting th
 all their routes. Two source κ bindings mapped to one destination are joined, never last-writer-wins.
 An argument with a built node but no certificate stays `lost` after an identity helper.
 
+**Parameter-substitution reuse.** On reaching a parameter, switch to the actual's existing immutable
+value/aggregate handle and its dependency versions. The outer invocation freshens only the template's
+allocations; it does not relabel or re-key the supplied argument's cells, κ or completed aggregate.
+A projected parameter selects a shared child aggregate. Cache the substitution edge in the caller
+context, then read the referenced actual under its own context. Thus `wrap (wrap … r)` adds O(1)
+view/expression records and O(log n) changed-spine work per call; a new invocation id must not cause
+another scan of the old argument. Distinct actual snapshots remain distinct, and two coexisting uses
+of the same handle still add multiplicity through the path-multiset primitive.
+
 Memo keys include template position, actual-root/substitution environment, invocation, effective cursor,
-position class and settled generation. A template's finite rank does not imply the instantiated view's
+position class and the **per-dependency version vector** defined as a settled generation in §2.12. A template's finite rank does not imply the instantiated view's
 finite rank: a parameter graft can introduce a recursive shape. Apply §2.9's clean-state proof to the
 effective view, or exclude it from that memo. A nested instantiation must not clear its parent's map or
 reuse a completed answer under another supply. If a class pair or view revisits a dependency, register a
@@ -1275,13 +1363,41 @@ backreference and wait; do not call a resolver recursively or return a proved em
 
 A shape fold and a call's write set must agree about what they identify. When two distinct W paths merge
 onto one summary path, create an exclusivity reliance at that **written kind/path**, and check it on the
-caller's settled argument; no reliance on unrelated siblings is introduced. This applies to W inherited
+caller's settled argument through §2.9's path-multiset primitive over the written path's full preimage;
+no reliance on unrelated siblings is introduced. This is required even for one already-folded W path
+in the template against an unfolded actual: `B [B k []] [B k []]` has k at `.0[*].0` and `.1[*].0`,
+which map to one recursive `.0` write. Both individual reads may be `yes`; their coexisting preimage
+is repeated and the recursive write must refuse (`FoldedBCall`, Appendix B). This applies to W inherited
 through wrappers, not just to the result's κ. `LevelPlacesKinds.twoR` has separate paths locally;
 `viaKid` folds them, so `demoRose` at 64:5 must refuse (#1016 comment 6419068454).
 `LevelLimit.inline xs xs` must also fail caller-side Disjoint even when the callee publishes no
 pairwise xreq; `two` must discharge its recorded requirement (#1016 comment 6421371253). A source
 inline twin must get the same verdict. Check other arguments, other touched paths of the same argument,
 captures and pending operands; matching only callee xreq misses the first case.
+
+**Cyclic graft: tie before any read.** Reserve a transaction-local image/knot id on first entering
+an effective `(template node, substitution context)` state. A backedge names that id; it is not a
+completed node or a `none`/empty leaf. Construction may name a pending child without inspecting it.
+Every operation that reads a node record must instead wait for it to be tied, including join's
+transitive delta override children and `proj(base,s)` through unchanged delta steps, union/positions
+sides and recasts. Checking only direct parts is insufficient (#1144 review 6484771597): aliased
+arguments can turn two deltas into one base group whose join then reads a pending override child.
+No reader, including an internal normaliser, κ derivation, rank query or codec, may observe an untied
+knot. A defensive invariant guard catches an attempted read before dereferencing; it is not the
+implementation of a valid input's semantics.
+
+Use explicit continuation frames and a waiter list keyed by pending knot id. A suspended operation
+registers each missing dependency once, retains its progress, and resumes from that point when tying
+the knot wakes it. Reserve each inspection, waiter edge and wake-up before work. Never rescan the
+whole deferred list until one more knot is ready: #1144's chain takes n−1 such quadratic passes.
+For n records/edges the scheduling overhead is O(n); join/projection/aggregate work keeps its own
+charged bound. Constructor-supported SCCs first allocate all handles, then tie child maps, then
+run record-reading normalisation; results and correspondence memos become visible only after this
+transaction succeeds. Failure discards pending handles and dependent provisional answers. A stalled
+read-dependency SCC is diagnosed as an invariant failure if its grammar is unsupported; do not claim
+that no value could have it merely because no current producer makes it. Valid producer/BlockRead
+shapes must pass the transitive-reader tests before S3b consumes cyclic results. #1142 supplies the
+basic graft knots; #1143/#1144 must complete this protocol, not weaken it to direct-side safety.
 
 At an ordinary call the retained views, selected direct obligations and fixed-width forwarding are
 source-laned (#1097). If reading/exporting the result forces more structure, it uses the same incremental
@@ -1386,6 +1502,21 @@ words cannot terminate a group that is still weakening κ. Recursive class pairs
 keys, not equal-length nested arrays. Final validation checks every equation and every pending demand
 against one settled generation, including the fold multiset. No acceptance is published from an earlier
 round whose alias/refinement facts were stronger.
+
+**Settled generation.** Each result, supply, capture, κ, W/keep/write-back or refs port has a
+stable dependency id and a monotonically advancing version, changed only when that port's semantic
+value changes. A request records the exact interned vector of `(dependency id, version)` it observed,
+including absence/lookups whose later population could change it. This vector, not a global round
+number, is its generation. Vectors are persistent shared dependency sets; forwarding an argument
+observes its immutable root/version handle, not a freshly flattened list of all its transitive ports.
+A generation is settled when those dependencies and their reachable
+SCCs are at the validated post-fixed point and all their pending deliveries have completed. An
+unaffected SCC keeps its versions across another SCC's rounds. Reverse dependency edges invalidate
+or wake only consumers of a changed port; dynamically discovered dependencies join the vector before
+publication. A memo can retain an old immutable answer but cannot serve it for a newer vector.
+Final validation observes one consistent vector across its equations and proof obligations; a change
+during validation reschedules the affected checks. No global epoch flush or whole-module memo reset
+is permitted as the fixpoint-round implementation.
 
 **Termination.** At a fixed inventory, each may-membership (including cell-slot contents), ordered slot-effect alternative, edge, code alternative and use bit is added at
 most once; each guarantee only weakens in its finite order. Conditions use a finite set of atoms over those
@@ -1863,8 +1994,10 @@ A cycle or exhausted resource cannot establish either claim. ∎
 
 **Invariant I-κ (exclusivity).** *If κ(v,q) holds at program point p (`yes`, or a conjunction whose atoms
 hold of the actual arrivals), objects of the written kind reached at q in distinct coexisting positions
-of its summary place are pairwise apart. A folded position includes every coexisting source occurrence
-identified across depths, with multiplicity before cell deduplication. This is a claim at q, not at every
+of its summary place are pairwise apart. For every many-to-one path map μ, q includes the multiset
+of all compatible coexisting occurrences in μ⁻¹(q), computed before cell deduplication by §2.9's
+primitive. This includes an unfolded actual read through a folded template path, not only a snapshot
+that widen already folded. Read-off, printing and Block/BlockRead preserve that same image. This is a claim at q, not at every
 descendant. Sharing between explicit paths remains represented at **both** paths by their cells and is
 tested when those paths are compared or held. Folding such paths moves their comparison into κ; it cannot
 erase it. A deep demand establishes the invariant at every tracked path it demands.*
@@ -1897,7 +2030,7 @@ enumerated (O12), and the lowering reads it before the store (R-1.12).
 | O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion; no partial summary or lowering channel | §4.4, R-3.7 |
 | O12 | *Hoisted reads are this frame's own:* every hoist is a `field`-kind use the index recorded (a field chain, a record pattern, a field capture of a closure created after the write), never a callee's or a whole use | §2.7, §3.7 |
 | O13 | *Constructions keep I-κ:* a literal's or construction's κ is `yes` only when the stored cells are pairwise apart per path and each stored value's condition at that path holds; a stored refinement of the base's own `[*]` is `shared` | §2.9 |
-| O14 | *Instantiation keeps I-κ:* κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply of one traversal (§2.2) under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
+| O14 | *Instantiation keeps I-κ:* the path-multiset primitive compares the full actual preimage of every folded template path; κ(res) instantiated is `yes` only when every atom holds of the actual arrivals (a `sep` over two labels holds if their instantiations under their supplies are apart; a `within` holds if each instantiated cell is distinct per call — a fresh `result` not reached through a feedback supply, or a `taken` supply of one traversal (§2.2) under its container's κ; folding is uniform per first instruction, so distinct labels have disjoint chains); a `delta`, a storage permutation and a `taken` write-back lower κ exactly as the stored value's condition says | §2.9, §2.10, §2.11, §2.13.15 |
 | O15 | *Join and widen only weaken guarantees:* retain every operand read under its own snapshot; a fold additionally checks the multiset of all coexisting source arrivals, across depths included. Being above each member read is necessary but not sufficient for I-κ after quotienting. Functional output snapshots preserve both explicit routes to a repeated cell; `Shape.join` alone certifies no κ. | §2.3, §2.9, §2.10 |
 
 The Lean oracle stays advisory (R-8.11).
@@ -1991,7 +2124,7 @@ Live parent links and their transition/query tasks use §4.1 accounting.
 Cond.Table (per walk)
   kind    : u8      yes | and | atom | shared | lost
   a, b    : u32     and: (CondId, CondId); atom: (atom kind: excl | sep | within | apart | keep | writes, operands)
-groups    : canonical persistent CellId sets (`apart` members); sorted runs only on charged export
+groups    : canonical persistent apart groups with the path-multiset roots below; sets never erase multiplicity; sorted runs only on charged export
 intern    : owner-local comparison tree (kind, a, b) → CondId
 kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a frame holds value → KappaId and
             a class one root for res and each supply; use shapes carry marks, not value κ. Each is an immutable
@@ -1999,8 +2132,10 @@ kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a
             NodeId → CondId (the conditions stored at this position), `links` a radix map step word → KappaId
             (the position one step below; a child's snapshot linked at a construction, never re-keyed), `fold`
             set on a position `widen` folded (exact only with complete certificate/occurrence coverage,
-            or collapsed by `kappaFold`, §2.9); arrival/coverage expression id and persistent multiset
-            summaries are immutable semantic inputs, part of cursor interning and comparisons;
+            or collapsed by `kappaFold`, §2.9); `arrivals` and `coverage` are radix maps keyed by
+            destination class (node/port plus position-class/path/kind inside this fold), not one
+            arrival id for every position below it. Entries name ArrivalId/AggregateId and coverage;
+            their roots are immutable inputs to cursor interning and comparisons;
             fold links are the steps it saw and lead to itself. A key (NodeId, path) has its path
             relative to the root of the snapshot that stores it; a reader holds a cursor (a KappaId) and moves it
             by `kappaChild` along the steps it takes, re-rooting at a link. S2 built one radix map
@@ -2022,9 +2157,16 @@ kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a
 flat      : memo CondId → sorted atom run (print, compare, block)
 memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version, traversal) → CondId
 memo_read : (node, cursor, class, immutable substitution/traversal context) → completed read
-aggregate : persistent cell/occurrence subtrees → apart/excl/witness summaries in that context;
-            repeated edges retained, choice/coexistence distinct, updates on changed spines only
-memo_merge: unordered immutable cursor pair → completed content-interned merge
+arrivals  : interned DAG columns { kind: source | choice | together, source position/interpretation,
+            choice id, child range }; shared edges, repeated together edges never deduplicated
+aggregate : AggregateId → persistent radix map (destination class, CellId) →
+            { multiplicity: absent | one | repeated, approximation, compatible witnesses,
+              apart root, summaryExcl root, stored/derived condition root }; base/prefix/split index
+eval_memo : (ArrivalId, MapId, immutable context/dependency vector) → AggregateId
+set_summary: side table (SetId, MapId, immutable context/dependency vector, summary kind) → summary id;
+            Radix stores no extra summary field. Shared subtrees skipped; changed spines recomputed
+memo_merge: (choice | together, unordered immutable cursor pair, map/correlation context) →
+            completed content-interned merge; no choice/coexistence result sharing
 memo_prop : §2.9's clean rank-qualified state → completed subtree; no ancestor-dependent fold result
 ```
 
@@ -2081,6 +2223,13 @@ reachable result/supply position, a decoded value must read the same κ as the e
 with the same aliases, multiplicity, effects and callback obligations. Test those reads directly; stable
 pretty-printing and write/read/write bytes alone cannot establish this property.
 
+**Printer and codec use the same path map.** The printer emits both explicit routes when they are
+shown separately, or an explicit shared reference plus the primitive's multiplicity/choice information
+when it prints a summary class. A `(node,cursor)` visited set cannot silently omit a second route.
+Printing never upgrades a repeated image to a single arrival. Block discovery and BlockRead use that
+same correspondence and per-class aggregate; structure traversal may deduplicate work, not semantic
+occurrences. Compare semantic reads before/after each boundary, not just printer text or bytes.
+
 **Positions and owners.** A value position is `(shape node, trie cursor, position class)`: the cursor is the
 snapshot position the reader has reached from its owner's root (§2.9), so two positions of one value at one
 node are two records. A use shape has mark cells and a separate non-value owner. A value owner names an
@@ -2101,7 +2250,10 @@ so the reader rebuilds the fold; a fold's steps are the steps its members take. 
 
 A fold position also carries the semantic occurrence/coverage information needed to reproduce its
 cross-depth read. The codec may encode the shared arrival expression, or a settled sufficient certificate
-whose meaning is identical under every permitted substitution; a producer-only `yes` that has forgotten
+whose meaning is identical under every permitted substitution. The per-class/cell map and choice
+provenance are reconstructed under §2.9's one primitive, combining newly equal keys with their
+original choice/coexistence operators (maximum for choice, addition for coexistence). A producer-only
+`yes` that has forgotten
 symbolic arrivals is insufficient. Substitution at an importer may make two arrivals equal. Choice and
 coexistence, duplicate witnesses, approximation and fold kind must survive. These are semantic records,
 not analysis memo ids. Adding them changes the block version. Store the observed step set even when all
@@ -2241,14 +2393,18 @@ are the caller's baseline. A decode past that bound is no block; one past the ro
 table is the caller's limit, never "no block". Only then does it build in the caller's tables, with the
 block's places in a namespace of their own.
 
+**Correction to the preserved S2b note's record list:** Block also holds **`owner` records**.
+Its list beginning “labels, paths, cells” omits them; the owner paragraph above describes them correctly.
+
 The S2b note above records that implementation stage. Subsequent code has the sparse trie frontier and
 as-stored encoding (#1069/#1113); the old leaf/empty propagation defects #1063/#1064 and recast-union
 inner loss #1101 are repaired. The remaining boundary is observable meaning, not another byte-format
 round trip: Block still has its own `successors` and includes a delta's base as a position (#1082);
 `Summary.eq` still misses frontier-only constraints (#1094); built-side certificates can be lost at a
-join (#1093). Those are code defects, not alternative semantics. Fold multiplicity (#1128), identity
-relabelled fold steps (#1129), and semantic class-pair keys for S4 must reach the codec before their
-classes cross a call/module boundary. Keep the historical note; use the contract before it to review new
+join (#1093). Those are code defects, not alternative semantics. #1125 now stores cross-member
+fold loss, #1133 transports fold steps (#1129), and #1145 includes snapshot maps/entries/links in
+codec size S. The planned path-multiset expression and semantic class-pair keys for S4 must likewise
+reach the codec before their classes cross a call/module boundary. Keep the historical note; use the contract before it to review new
 publication code.
 
 ### 3.7 Inputs, outputs, and where the pass runs
@@ -2276,21 +2432,22 @@ interface hash; a non-clean or unchecked module authorises no store (R-1.12).
 
 ### 3.8 Determinism
 
-Scheduling and resource totals use a fixed owner-local order: qualified declaration name and lexical frame/
+Semantic scheduling uses a fixed owner-local order: qualified declaration name and lexical frame/
 instruction/port order, never declaration enumeration or inter-module completion order. Canonical semantic
 input names/ports determine task ordering; mutable allocation ids do not choose which dependency runs first.
-Every resource-policy version pins this schedule, including watcher delivery order; source-declaration
-permutations are a limit/verdict determinism test (§7).
+The semantic schedule includes watcher delivery order; source-declaration permutations test semantic
+verdicts (§7). Declaration-order independence of **accounts**, including shared memo costs and limit
+outcomes, remains the open owner decision #1104; no accounting schedule is chosen here.
 Before inference, assign source/import semantic ranks by canonical package/module/qualified declaration
 name, then lexical instruction/port and structural type/field order. Interned spelling addresses, source
 *declaration* enumeration and session `TypeId`s never order ownership keys. Sort original name bytes/runs once
 (charged to written input); map physical checker ids to these ranks at the boundary. Imported structural
 records get the same ranks cached or fresh. During inference, new ids follow the pinned canonical task and
-watcher schedule; they are immutable, never globally re-ranked when a new id appears. Fixed-bit set structure
-and lane/operation keys therefore have the same insertion order and counts after declaration permutation.
+watcher schedule; they are immutable, never globally re-ranked when a new id appears.
+This determines semantic identity, not an answer to #1104's account policy.
 Serialization's final canonical renumbering rewrites references together and never feeds inference. Nothing
 printed is an id: source names, field names and normal-form text; equal-position diagnostic ties use source
-order (R-7.6). Test counts/verdicts just below, at and above the allowance under permutations and worker counts.
+order (R-7.6). Test semantic verdicts under permutations and worker counts.
 A module's result is a function of its BIR and imports' blocks, excluding physical enumeration (R-7.7).
 
 ### 3.9 Arenas and lifetimes
@@ -2361,11 +2518,11 @@ member condition read and incremental apart/excl update belong to that item's la
 nodes do not eagerly union their whole ranges; the root set is accumulated once and internal reads are
 lazy (§2.3). Reusing a previous aggregate is constant work plus its changed radix spine; sorting an
 accumulated k-item group at every enclosing level is forbidden. The same applies to union side reads,
-read-off set mapping and κ relabelling (#1121). Every distinct semantic request is reserved even if a
-module-wide memo already has its physical answer; owner ledger counts never depend on declaration order
-(#1104). A run-wide or export operation cannot assign all costs to the first or last item's lane.
+read-off set mapping and κ relabelling (#1121). The treatment of module-wide memo reuse in
+per-owner accounts and declaration-order independence is left to the owner in #1104. A run-wide
+or export operation cannot assign all costs to the first or last item's lane.
 
-For §2.9's seven fixed-place tower families the distinct written extensions, aggregate records and
+For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
 record work, and comparison-tree navigation/canonical export adds at most a logarithmic time factor.
 Their length spends no summary-growth allowance. General pair/context products remain growth, reserved
@@ -3020,58 +3177,52 @@ every later slice extends the same account. No intermediate implementation may p
 
 **Acceptance for recursive values.** Every row of Appendix B's recursive-value combination matrix
 belongs to the named slice's acceptance, in addition to the existing fixtures. S3a closes with all seven
-counted towers and fold/link read tests; S3b closes with direct/imported selected writes, LevelLimit and
-folded-W checks, semantic κ transport and one settled group generation; S4 closes with callback/supply,
-traversal, closure and independent proof twins. A linear summary or green unit suite does not replace
+construction towers and fold/link read tests. The S4-verifier spike below is a separate prerequisite
+to S3b. S3b closes with the eighth, call-built tower, direct/imported selected writes, LevelLimit,
+FoldedBCall and folded-W preimage checks, semantic κ transport and per-dependency settled generations;
+S4 closes with callback/supply, traversal, closure and independent proof twins. A linear summary or green unit suite does not replace
 these combination probes. No unresolved soundness/ordinary-length defect is deferred to S9.
 
-PR-sized slices in dependency order; acceptance names fixtures (`o/`, `p/` as in the requirements); estimates are
-reference implementer-days including implementation, integration and repeated adversarial review. One initial
-`@claude` pass is a starting point, not an estimate of the review needed to close a slice. Everything is behind the hidden
-`--ownership=v2` until §8.2. **#961 (ordered `Dict`)** is open and held by the v1 freeze; it lands *on v2* at S8:
+PR-sized slices in dependency order; acceptance names fixtures (`o/`, `p/` as in the requirements).
+There are no duration allocations. Earlier day figures in this PR and its historical diary are
+withdrawn; they are not planning inputs. Everything is behind the hidden `--ownership=v2` until §8.2.
+**#961 (ordered `Dict`)** is open and held by the v1 freeze; it lands *on v2* at S8:
 its runtime half is rebased, its ownership half rewritten as words.
 
-| # | Slice | Builds | Acceptance | Deps | ∥ | Days |
-|---|---|---|---|---|---|---|
-| S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints same, v2-only accepts, v2-only refuses and one-sided demands | — | S1, S2 | 7 |
-| S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked owner-original-atom/role/phase lane counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 | 12 |
-| S2 | **Conditions and summaries** | `Cond` (per-value immutable κ snapshots (NodeId, position class) → CondId that travel with their value's shape root, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions, the `positions` kind and its κ rule, a multiset `apart` (§2.3, §2.9)), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 | 12 |
-| S2b | **Words, the spread fact, core in-process** | Frontend type/value ownership columns, placement/companion validation, Builder/List/Ref/Deferred words implemented by #1057–#1059; type `sender` metadata without an alias-use port column; `Bir.Spread` and verification (single-spread identity has no fact); package-qualified body-pin gate, taken readers/forwarders and codegen pins; Appendix C construction/instantiation tests with read-off supplied explicitly; minimal `Block`/`BlockRead`/`Refine` with observable κ positions and shared owners (§3.6), no disk directory; `@ownership_summary_size` grammar/formatting/BIR and skills. Log/Task/Js/Dict wording belongs to S8 (#1053); missing result selectors/write-back belong to S3a (#1052). Hook publication, type-kind errors, behavioural raise test and real-owner instrumentation are S3a (#1056); structural place re-interning is S6 (#1055). | gates under unchanged v1; column isolation and frontend/cache version bumps; every #1060 round-trip test compares observable κ, shared-owner and cyclic/build-order twins; the derivation tests do not claim walker inference; BIR raise fixture only | S2 | — | 24 |
-| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed by node and root-relative step route, re-rooted at links (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Pre-work codec reservations (#1066) are repaired. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Before S3b, complete fold multiplicity (#1128), incremental reads (#1121), read-off/run-wide lanes (#1098), fold-step transport (#1129), source-depth explicit stacks (#1130), and the repeated-path publication audit (#1122). Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures of one declaration at a time, with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice (once #1052's `copyof` words `List.copy`), Spreads, SelfSpreads, ViewAliases (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Inside fixtures S3b finishes, S3a already pins the single-declaration lines: Split's `bumpHead` and `readAfter` (the latter accepted, R-4.3.5), Nest's `pushInner` and `local`, PathCut's `writeRead`, ParamHole's `hole`, DeeperLevel's `inner`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — | 26 |
-| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), a call's view by reference (§4.1's *call view and direct obligation*: template plus actual-root references and a constant-width substitution, never a copy of the callee's class over the arguments, #1097), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off keeps each recorded pair of distinct pre-fold `sep` labels through direct calls of summarised declarations, for S4's `within`; calls of a function parameter, and with them Appendix C.2–C.5's walker derivation, are S4's. | Appendix B's recursive combination matrix (every S3b row), same-module and imported as soon as calls work; LevelLimit alias/disjoint and LevelPlacesKinds folded-W probes; a straight-line chain of pushes and `ValueCellsGuards.rebuilt` both have G_f flat at the per-instruction cost, and the wide graft never spends growth (#1097); Split, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (their calls of summarised declarations of the module; MarkerAcross's `incAll` a recursive group; moved from S3a, whose lines of one declaration they keep), RoseKidsHeld (Appendix B; defined by such a call); ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces* (LevelPlacesKinds' 64:5 stays refused: where `viaKid` folds `twoR`'s two `W` paths into one, the fold creates the reliance v1 records, `xreq excl π1#Rose.1`), AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. | S3a | — | 24 |
-| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1.  Replace S2 positional nested-class arrays with the keyed code/port/context graph; selected callback stored effects; exact run/worklist keys; constructor-supported cyclic class/environment codec and traversal marks before any import, with canonical cross-module twins. Read-off creates `within` from distinct pre-fold `sep` labels (§2.11 *Carried-class boundary (S4)*). | Appendix B's S4 combinations, independent base/preservation verification and failure-after-reservation cases; Appendix C.2–C.5 (`mapHelp`, `List.map`, `foldlFrom`, `List.foldl`/`foldr`) derived by the walker, not supplied by a test; Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — | 34 |
-| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — | 12 |
-| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 | 16 |
-| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 | 14 |
-| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9); word `Dict.focus` with callback `stored` in its `dict`/Maybe form (§2.13.6, #1021). Implement selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7); no blanket ownership demand on .0. | DictFocus, DictValueWritten, DictTupleFocus*, DictUpdateStoredAnswer, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, S7, #961 | S6 | 18 |
-| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 | 12 |
-| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — | 18 |
-| S10 | **Switch-over and deletion** | §8.2 pre-migration criteria met; nominal Send/Send.to migration of platforms/callers, compare migrated v2 results to the frozen alias-form corpus results; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — | 5 |
+| # | Slice | Builds | Acceptance | Deps | ∥ |
+|---|---|---|---|---|---|
+| S0 | **The arbiter** | the list sanitiser beside the record one (§7.3), `test-records-in-place` and its list twin, `--records-in-place`, `--diff` in `bench/ownership-everywhere.mjs`, v1 behind `--ownership=v1\|v2` | the sanitiser runs `run/` and `browser/` clean under v1 on `node` and `browser-inline`; the diff prints same, v2-only accepts, v2-only refuses and one-sided demands | — | S1, S2 |
+| S1 | **L0–L4 foundations** | `Ids`, `Place`, `Cell` (trie, persistent sets, splits, `alias`), `Facts`, `Prepass`, `Shape` (`union`, `widen`, coinductive `leq`), `Regions`; `rules_test` (layering, sizes, fences, dense-id); the §7.5 cross-checks for these; **Accounting from the first allocation:** `Ids.Account`, fixed-size chunks, retained operation/dependency records, deterministic fixed-key dictionaries, failed-reservation path, explicit stacks; sets/holders never run uncharged loops; checked owner-original-atom/role/phase lane counters, internal-error overrun path, no spill to growth. | `zig build test` green; unit tests: `w5`'s DAG at 17 nodes, a cyclic type one place, `widen` on `go`'s shape, a chain of k deltas O(k log), `alias` on refinements returning a split | — | S0 |
+| S2 | **Conditions and summaries** | `Cond` (per-value immutable κ snapshots (NodeId, position class) → CondId that travel with their value's shape root, `deep`, position-level `apart`, cell use marks, derived multi-arrival/union conditions, the `positions` kind and its κ rule, a multiset `apart` (§2.3, §2.9)), `Summary` (classes table, functional join, pair simulation, local normalisation, print), `Liveness` (by path; one charged range query per prefix with fixed-key rank navigation and no path reread; per-written-demand query lanes; §2.5's `rank₂` threshold inside the range descent; fixed-word region ancestry for pairs; lazy callee use-node), `Rows.fromWords` for today's words, derived-method and constructor classes (all new type/value words are taught to `fromWords` in S2b, which S3a's `List.push` needs through `written`); Recursive class/environment schema, stable inference keys, idempotent κ sets and the same account through class normalisation. | unit tests; `Summary.print` reproduces v1's `summary` grammar; `ListOfParams`' condition O(n); the use index answers the four queries of §2.7 | S1 | S0 |
+| S2b | **Words, the spread fact, core in-process** | Frontend type/value ownership columns, placement/companion validation, Builder/List/Ref/Deferred words implemented by #1057–#1059; type `sender` metadata without an alias-use port column; `Bir.Spread` and verification (single-spread identity has no fact); package-qualified body-pin gate, taken readers/forwarders and codegen pins; Appendix C construction/instantiation tests with read-off supplied explicitly; minimal `Block`/`BlockRead`/`Refine` with observable κ positions and shared owners (§3.6), no disk directory; `@ownership_summary_size` grammar/formatting/BIR and skills. Log/Task/Js/Dict wording belongs to S8 (#1053); missing result selectors/write-back belong to S3a (#1052). Hook publication, type-kind errors, behavioural raise test and real-owner instrumentation are S3a (#1056); structural place re-interning is S6 (#1055). | gates under unchanged v1; column isolation and frontend/cache version bumps; every #1060 round-trip test compares observable κ, shared-owner and cyclic/build-order twins; the derivation tests do not claim walker inference; BIR raise fixture only | S2 | — |
+| S3a | **Lists in one declaration** | the `Place.Source` adapter from the checker's tables (§2.1: constructor templates over argument places, memoised on `(head, argument places)`; built at the `Enforce`/`Groups` boundary), `Transfer` (literals, spread chains, patterns, updates excluded, calls of worded rows only), `Demands`, `Walk` without groups, `Report`, `Message`, the facade and the ported `Enforce` hook under `--ownership=v2` (so core's worded classes reach a module through S2b's block); the `Decl → Rows.Signature` adapter beside Place.Source (annotation, ownSlots and solved types; list-of-functions only under `once`/`many`/`unused`, never an unworded/borrowed list); constructor-component eq/compare classes; the live holder index in `Demands`, with §2.8's cycle-anchor chains for every demand, shallow or deep (*Holders across a cycle*), and the holder half of the cross-path twin `[ (a, b), (b, a) ]` (§2.9); deep demands over `Cond.deep`; per-value κ roots in the frame (`value → KappaId`) keyed by node and root-relative step route, re-rooted at links (§2.9, §3.4); `Transfer` builds a literal's and a spread's `[*]` with `collect` (§2.3); the layering gate brought to §5: `rules_test.zig` lets the `Groups` source/signature adapters read the type modules (today only `Place` may) and raises `Groups`' size target from 900 to 1 100 lines; a declaration whose body uses a construct not yet built gets the pessimistic class behind the hidden flag, never a refusal, until S5  Complete #1052: `elementof`/`copyof`/`prepended` and stored-callback selectors through frontend/Rows/format/skills; exact selected write-back effects, executed by S4/S8. Fix #1054 before ordinary store-chain acceptance. Pre-work codec reservations (#1066) are repaired. Complete #1056: resolved type-kind diagnostics, minimal-block hook, cold/warm worded-core parity, behavioural OwnershipSummarySizeRaised, and source/use atoms unique per owner in release as well as safety builds. Before S3b, complete the common path-multiset primitive and its choice/symbolic controls, incremental reads (#1121), read-off/run-wide lanes (#1098), the repeated-path publication audit (#1122), and transitive pending-knot safety (#1143/#1144). The equal-cell fold check (#1128 in #1125), fold-step transport (#1129 in #1133), and the first explicit-stack conversion (#1130 in #1135) are done; #1138's further stacks/basic cyclic graft knots landed in #1142. Keep those regressions. Measure B_f/G_f/S_f/N_f and category highs on corpus and generator-deduplicated research apps; unsupported is never zero; report G_f ≥10% of default. | whole fixtures of one declaration at a time, with no callback, closure or record demand (records only as literal containers): LaterRead, StoredTwice (once #1052's `copyof` words `List.copy`), Spreads, SelfSpreads, ViewAliases (each calls only `push`, `set`, `copy`, `length`, checked by grep); `p/DeepTupleDag`; RoseAlias, MaybeTreeAlias, MutualAlias (Appendix B). Inside fixtures S3b finishes, S3a already pins the single-declaration lines: Split's `bumpHead` and `readAfter` (the latter accepted, R-4.3.5), Nest's `pushInner` and `local`, PathCut's `writeRead`, ParamHole's `hole`, DeeperLevel's `inner`. Fixtures with a callback, closure, builder or record line stay red until S4/S5 (Accumulator, Disjoint, Prepend, PrependFresh, Toplevel, Binders' `Maybe.andThen`, OneListTwoLevels' `concat`) | S2b | — |
+| S4-verifier | **Recursive-proof verifier spike (before S3b)** | Decide feasibility of §2.12's independent base/preservation verifier on finite recursive obligation graphs. Use the existing summary/value algebra with explicit test equations, without waiting for the S3b call consumer or claiming walker inference. Retain captures, feedback, choice/coexistence and pre-fold within provenance; waiting proof cycles cannot establish their own assumptions. | The hardest Appendix B recursive-proof rows: every C.11 red twin (TwoTraversalsShared, FoldOverFoldShared, NestedTraversalShared/AcrossModules), FeedbackPrevTwice, FoldCallbackIdentity, RefinementFeedbackTwice, JoinedClosurePorts and CallFeedbackGeneration/GrowFresh/GrowAlias, with the named positive controls. Independently check base and step, reject circular self-proof, test late weakening and failure rollback, and count proof/dependency work. Deliver a feasibility result and executable verifier witnesses. If the existing guarantees cannot be met, stop and report the obstacle before S3b; keep fold-element lost unless a separately reviewed proof justifies its change. | S3a | — |
+| S3b | **Declarations call each other** | `Calls` for summarised declarations (W/E/A, `res`, κ instantiation, `xreq`), a call's view by reference (§4.1's *call view and direct obligation*: template plus actual-root references and a constant-width substitution, never a copy of the callee's class over the arguments, #1097), Shape.map's correspondence hook transporting κ snapshots with graph relabelling and the substitution context in a κ root's key, relabelling nodes only (snapshot paths stay relative to the value's root, the argument's snapshot linked at the graft) and preserving the `positions` kind (§2.3, §2.9, §3.4), `Groups` with the worklist `Fix` **and `Fix.propagate`** (cells and bits along a group's edges), levels, initialization transfer, `eq`/`compare`'s `writes`; Build transfer equations once; charged dynamic dependencies reschedule only affected transfers, never a full frame replay. Separate initial/final source phases and direct-call lanes, singleton result-label instantiation, growth for cross-products; validation of inferred records pre-reserved. R-7.4 qualified-family scaling fixtures.  Observable-position κ propagation and simulation (#1063/#1064); context-scoped, explicit-stack Shape.map correspondence including grafts and projections; full effect preservation and exact join keys (§2.11). Read-off keeps each recorded pair of distinct pre-fold `sep` labels through direct calls of summarised declarations, for S4's `within`; calls of a function parameter, and with them Appendix C.2–C.5's walker derivation, are S4's. | Appendix B's recursive combination matrix (every S3b row), same-module and imported as soon as calls work; LevelLimit alias/disjoint and LevelPlacesKinds folded-W probes; a straight-line chain of pushes and `ValueCellsGuards.rebuilt` both have G_f flat at the per-instruction cost, and the wide graft never spends growth (#1097); Split, Nest, PathCut, ParamHole, DeeperLevel, MarkerAcross (their calls of summarised declarations of the module; MarkerAcross's `incAll` a recursive group; moved from S3a, whose lines of one declaration they keep), RoseKidsHeld (Appendix B; defined by such a call); ReturnsFresh, ReturnsArg, CallerSide, MutualTypes, MutualCycles, LevelLimit, LevelPlaces* (LevelPlacesKinds' 64:5 stays refused: where `viaKid` folds `twoR`'s two `W` paths into one, the fold creates the reliance v1 records, `xreq excl π1#Rose.1`), AliasWriter (Recursion's `List.close` waits for S4); `p/MutualListField`, `p/WriteOneLevel`, `p/AliasWriterCall`; the R-5.13.1 fixture; local ordering tests (core-dump #428 waits for S6). RecursiveFunctions, FoldLevels and Initialization* need S4/S7/S8 and stay red  KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa and joins under two shared-owner routes; validation after a new κ constraint arrives; no stale memo after failure. Count `wrap (wrap … r)` at 10/100/1,000 calls, same-module and imported, with existing argument aggregates reused; all eight tower families meet the total O(n log n) bound. FoldedBCall refuses the reused-k actual and accepts distinct allocation and whole-choice controls. Run the transitive pending-knot delta-override/base-projection and waiter-chain probes from #1144. | S3a, S4-verifier | — |
+| S4 | **Callbacks, closures, folds** | `callParam`, supply/need/keep edges, shared actual templates and label/supply views (`sep`/`within`/`need`), §7.6's callback cost scenarios, the sparse feedback fixpoint, function values and pending, once tokens across aliases/forwarding, local groups, `withDefault`, carried classes and the supply key's `port` (§3.5); split `single`/`entry` (§2.2 *Traversals*, §3.2, §3.6 *Traversal marks*); §2.10 closure-recursion rule, captures retain original identity, settled facts and independent proof certificates; all 13 carried-recursion definition sites in Appendix B, GrowFresh/GrowAlias, ClosureTower. Repeat baseline/growth instrumentation. Implement request/answer callback proof scheduling and test unresolved cycles. This slice owns the new recursion/identity/alias-token work, not only porting v1.  Replace S2 positional nested-class arrays with the keyed code/port/context graph; selected callback stored effects; exact run/worklist keys; constructor-supported cyclic class/environment codec and traversal marks before any import, with canonical cross-module twins. Read-off creates `within` from distinct pre-fold `sep` labels (§2.11 *Carried-class boundary (S4)*). | Appendix B's S4 combinations, independent base/preservation verification and failure-after-reservation cases; Appendix C.2–C.5 (`mapHelp`, `List.map`, `foldlFrom`, `List.foldl`/`foldr`) derived by the walker, not supplied by a test; Callbacks, Need*, CallbackKeeps, ConditionalCallbackKeep, FoldAccumulators, FoldKeepsInner*, Once, Clo*, ClosureCapture, CapturedParam, SlotInLambda, LambdaParamNeed, CarriedLambda, CarriedFold, LocalGroups, PolyRec*, MergeCallbackCycle, MaybeDefault, ResultDefault, UnknownCallee*, Accumulator's fold, Prepend's `map`, Disjoint's `capture`; `p/CyclicFold`, `p/NeedOuterOnly`, `p/EditAnsweredList`, `p/OnceOtherHolder`, `p/CalledTwicePusher`, `p/JoinedFunctionValue`, `p/PatternStoredBack`, `p/ExclusiveFreshHelper`, `p/UpdateReturnsHeld`, `p/AppliedLambdaRecursion` (R-7.12), RecursiveFunctions, Recursion, Binders, OneListTwoLevels, Accumulator, Disjoint, Prepend, PrependFresh | S3b | — |
+| S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — |
+| S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 |
+| S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 |
+| S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9); word `Dict.focus` with callback `stored` in its `dict`/Maybe form (§2.13.6, #1021). Implement selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7); no blanket ownership demand on .0. | DictFocus, DictValueWritten, DictTupleFocus*, DictUpdateStoredAnswer, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, S7, #961 | S6 |
+| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
+| S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — |
+| S10 | **Switch-over and deletion** | §8.2 pre-migration criteria met; nominal Send/Send.to migration of platforms/callers, compare migrated v2 results to the frozen alias-form corpus results; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — |
 
-The revised allocation is **234 reference implementer-days across 14 slices**, with a **211-day
-reference dependency path** (S1→S2→S2b→S3a→S3b→S4→S5→S7→S8→S8b→S9→S10).
-S0 remains parallel; S6 starts after S5 and runs alongside S7/S8. This is scope allocation, **not elapsed
-agent days or measured labour**. S0/S1/S2 account for 31 reference days, S2b for 24; S3a's 26 includes the
-already merged walker and its still-open recursive-value/accounting closure. The remaining slices total
-153 reference days; unfinished S3a work is additional to that remainder. Do not subtract 26 as though
-S3a were done. S3b's 24 includes call views/transport and group equations; S4's 34 includes callback
-identity, independent recursive proof checking, traversal joins and the combination matrix. S6's 16
-protects semantic codec/import parity; S9's 18 protects the whole-corpus and cost reconciliation.
+The dependency order is S1→S2→S2b→S3a→**S4-verifier**→S3b→S4→S5→S7→S8→S8b→S9→S10.
+S0 remains parallel; S6 starts after S5 and runs alongside S7/S8. S4-verifier is the feasibility
+stop gate before call consumers; S4 still owns full callback inference and integration. Existing slice
+ids and section numbers do not change. The spike does not promise a strengthened fold-element rule.
 
-The review history is evidence for this increase, not a fitted conversion from commits to days:
+The review history sets concrete acceptance obligations, not a duration estimate:
 
-| Completed or active work | Observed review/integration evidence | Consequence for the allocation |
+| Completed or active work | Observed review/integration evidence | Consequence |
 |---|---|---|
-| S1, #1027/#1030 | #1027 had three fix-first rounds (6403989938, 6404520556, 6404823080); #1030 needed soundness and widen-complexity repairs plus re-verification. | 10→12: transactional failure and finite-graph claims need adversarial probes even in foundations. |
-| S2, #1036/#1037 | #1036 repeatedly changed κ's ownership/key/read rule; immutable snapshots and position derivation were substantive redesign, not formatting. | 8→12: count cross-mechanism review as work. |
-| S2b, #1060 then #1077 | Five substantive codec review/verification rounds exposed projected/empty positions, shared owners, cycles and canonicalisation; the writer was rebuilt. | 18→24; do not budget S6 as just serialization. |
-| S3a, #1078/#1100/#1113/#1115/#1123/#1125 | #1078 required fixes for refinement/cycle holders and branch-value liveness; #1100 fixed wide-pattern lanes; #1113 needed exact/collapsed folds and linear fold decode; #1115 needed singleton root obligations; #1123 needed rank rollback; #1125 first exposed cross-depth I-κ and then added an equal-cell duplicate check; the general call/transport combinations remain to prove. | 12→26, including #1121/#1098 and the new transport/stack defects before call integration. |
+| S1, #1027/#1030 | Three fix-first rounds on #1027; soundness and widen-cost repairs on #1030. | Retain transactional-failure and finite-graph adversarial probes. |
+| S2, #1036/#1037 | Repeated changes to κ ownership, keys and derived reads. | Cross-mechanism review is required, not only isolated algebra tests. |
+| S2b, #1060/#1077 | Five substantive codec rounds exposed projected/empty positions, shared owners, cycles and canonicalisation. | S6 must establish semantic publication, not only byte round trips. |
+| S3a, #1078 through #1145 | Holder/liveness, lanes, fold coverage, singleton roots, rank rollback, cross-depth repeats, relabelled steps, deep stacks, graft knots and codec-size accounting all required repairs. | Preserve landed regressions and complete the common primitive and pending-reader protocol before call integration. |
 
-PR #1027 opened 2026-10-25 21:27 UTC; #1123 merged 2026-10-26 23:34 UTC, about 26 hours later.
-That interval includes overlapping work and gives no reliable active-agent-hours or human-day multiplier.
-The original one-review assumption is contradicted by the linked review rounds. Future slice close-out
-records active implementation/review time separately, checked versus unsupported roots, remaining code
-issues and counted-family results. A green gate with calls marked unbuilt is not S3b/S4 evidence.
+A green gate with calls marked unbuilt is not S3b/S4 evidence. Record checked versus unsupported roots,
+remaining code issues and counted-family results at close-out.
 
 The counted review witnesses distinguish final graph size from total inference work (reported values,
 not new measurements by this docs change):
@@ -3080,42 +3231,43 @@ not new measurements by this docs change):
 |---|---|---|---|
 | K, #1123 with both memos | 10 / 20 / 40 | 6,713 / 20,324 / 66,562 | Memos remove repeated propagation/merge work; reads are still superlinear (#1119 comment 6429169940). |
 | T with different a_k, #1115 verification | 10 / 30 / 100 | 2,676 / 14,180 / 125,357 | Rebuilding the arrival group is quadratic (#1121). |
-| W, #1125 reviewed head | 10 / 100 / 1,000 | 3,180 / 52,237 / 2,344,456 (raised allowance for the measurement) | The block is 1,008 / 6,048 / 56,452 bytes, but total reads remain quadratic; cross-depth soundness also fails (#1128). |
+| W, historical #1125 measurement before its final repair | 10 / 100 / 1,000 | 3,180 / 52,237 / 2,344,456 (raised allowance for the measurement) | The block is 1,008 / 6,048 / 56,452 bytes, but total reads remain quadratic. The reported equal-cell soundness defect was subsequently repaired by #1125; this measurement does not establish the new aggregate bound. |
 
 These do not meet the required tower bound. The raised allowance diagnoses the curve; it is not an
 accepted program requirement. Closing #1121 must replace these curves with counted production-limit
 acceptance for all families.
 
-**S3a exit gate and the next critical dependency.** Close #1121's O(n log n) reads, #1098's source lanes,
-#1128's cross-depth fold obligation, #1129's fold-step transport and #1122's publication audit before
-S3b consumes recursive classes; eliminate source-depth recursion (#1130) before declaring the boundary
-robust. #1125's equal-cell blocker repair must be verified with the general fold/call transport obligations. S3b then closes #1097, #1093,
-#1094 and #1082 before recursive calls rely on those operations. #1104's owner-local logical accounting
-must be fixed before S6, and its permutation tests also run over the new memos. These dependencies do
-not move the defects into the last parity slice.
+**S3a exit gate and the next critical dependency.** Close #1121's incremental reads, #1098's source
+lanes and #1122's publication audit, and implement the common path-multiset primitive with its
+choice/symbolic controls. #1125's every-fold cross-member check, #1133's fold-step transport and
+#1135's explicit stacks are landed, not remaining work under #1128/#1129/#1130. #1138 is also closed
+by #1142's further stacks and basic cyclic graft knots. **#1143/#1144 remains before S3b**: no
+reader may see an untied knot, including through a delta override or base projection; pending-reader
+scheduling must be charged and incremental. The S4-verifier feasibility slice then passes before
+S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as its call/transport consumers land.
+Declaration-order independence of accounts remains an open owner decision in #1104; no resolution
+or implementation dependency for that decision is prescribed here.
 
-**Code/design reconciliation (master `2ffd5000f`, #1125 `76151a50d` and repair `bfca7a3a7`).** The requirements and
-this account win in the following mismatches; these are code defects or explicitly unbuilt scope.
-Existing issues are retained rather than duplicated.
+**Code/design reconciliation (master `5d02c7d81`).** Existing issues are retained rather than duplicated.
+The historical *As built* notes stay intact; this table records what has moved since their baseline.
 
-| Code evidence | Defect and tracking | Specified contract |
+| Code evidence | Status and tracking | Specified contract |
 |---|---|---|
-| `Shape.Widen.run` on master keeps positional sides opaque; #1125 initially opens them while read-off propagates as alternatives. Its repair adds `occurs`/`multi` and class intersections, read as `lost` through `fold_dups`. | Original equal-cell cross-depth loss: filed #1128, with repair now under review. Full symbolic-arrival/substitution coverage and transport remain S3b obligations; a per-cell equality test is not the whole apart group. | §2.3 opening; §2.9 fold multiset; I-κ/O15. |
-| `Cond.derivedCells` rebuilds item arrays; `apart` sorts and rebuilds its group; `summaryExcl` scans every set; `dagKappa` has a fresh local side walk on each root miss; `Walk.ReadOff.relabel` iterates each node's whole cell set. | Quadratic prefix reads despite linear shape/memo counts; #1121 (K, W and T acceptance). | §2.9 incremental subtree aggregates; §4.1. |
-| `Shape.collect` calls `positions`, eagerly unioning internal range cell sets; `Walk.readOff` uses the generic account. | Run-wide work/read-off lacks per-item continuations/root-only collection set; #1098. | §2.3 collect; §4.1 read-off and lanes. |
-| `Cond.relabelAt` copies links only when `fold==0`, then rebuilds a fold with no observed steps. | Identity relabelling loses the sparse discovery frontier; filed #1129 and confirmed by a temporary hermetic probe: deep loses its shared result. | §2.9 frontier, §3.4, §3.6. |
-| `Cond.kappaAt`, `relabelAt`, merge dependencies and `Calls.Grafter.linkAt` recurse with source depth. | Reservation is not a stack-safety proof; filed #1130. | §2.3 explicit stacks, R-7.12. |
-| `Summary.Printer.resLines` deduplicates by (node,cursor); two explicit routes can share both. Block retains structural child edges, but a printer result does not establish their semantic publication. | Printer omits repeated paths; class/block and caller audit remains #1122, not a claimed reproduced block loss. | I-κ; §3.6; Appendix B RepeatedPathCall. |
-| `Calls.apply` eagerly grafts; `linkArgs` walks result paths and relabels κ. | Source call kernels spend growth and may multiply structure; #1097. | §2.11 reference views and §4.1. |
-| `Summary.joinRes` propagates into an empty snapshot; `dagKappa` reads uncertified built sides as lost. | Precision defect #1093. | §2.9 union reads carry side certificates. |
-| `Summary.eq` normalizes parts while `leq` uses `kappaLeq`; `Block.Writer.successors` has a separate closure and emits delta bases. | Semantic equality/frontier mismatch #1094; redundant/non-normative position closure #1082. | §2.12 equations; §3.6 observable positions. |
-| Module tables/memos are shared across `Groups.walkOne` owners, with physical first-miss charging. | Declaration-order-dependent accounts #1104. | §2.3 memo safety; §4.1 logical ownership. |
-| `Groups.checkModule` walks each declaration once; no Fix implementation exists. `Summary.join` joins equal-length nested arrays positionally. | Explicitly unbuilt S3b/S4, tracked by #1016/#1017; not a settled recursive solver. | §2.11–§2.12; Appendix B combinations. |
+| Widen opens union/positions on a cycle and checks each class's pre-fold multiplicity on every fold; propagation stores repeats as lost. | #1125 landed, repairing #1128's reported equal-cell case. Symbolic substitution and precise choice controls remain work for the common primitive. | §2.3; §2.9; I-κ. |
+| Whole-set apart/excl/union reads and read-off mapping still revisit growing prefixes. | #1121/#1098 incremental aggregates, per-item/read-off work and lazy internal collect sets remain. | §2.9's total tower bound; §4.1. |
+| Fold relabelling keeps its observed self-link steps. | #1133 landed, closes #1129. | §2.9, §3.4, §3.6. |
+| κ path copying/relabel/merge and call linking use explicit stacks; further shape/summary/reader walks and cyclic graft knots follow. | #1130 done in #1135; #1138 done in #1142. Keep deep/small-stack probes. | §2.3, §2.11, §3.9; R-7.12. |
+| A union join can inspect a pending knot through a delta override or base projection even after direct-side guards; repeated deferred passes can be quadratic. | #1143 open; #1144 review 6484771597 requires transitive reader safety and charged waiter scheduling before S3b. | §2.11 tie-before-read protocol. |
+| Recast projection keeps a built inner's matching part; hidden holds stay at the cast's path. | #1132 landed, including #1136 and CastProjections/CastHolds. | §2.13.9. |
+| Codec size includes each snapshot map, entry and link before its work. | #1145 landed, closes #1141; depth is not summary growth. | §4.1's S and codec lane. |
+| Printer deduplicates `(node,cursor)` although two explicit paths can share both. Block's child edges alone do not prove semantic transport. | #1122 printer/read-off/caller audit; no claim of a reproduced block loss. | One path-multiset primitive, §2.9/§3.6; RepeatedPathCall and FoldedBCall. |
+| Calls eagerly graft; joins can lose built-side certificates; equality and block closure have separate frontiers. | #1097, #1093, #1094, #1082 remain S3b obligations. | §2.11 reference views; §2.12 full equations; §3.6. |
+| Shared module memos have first-miss accounting. | #1104 is an open owner decision, not specified here. | Decision pointer only. |
+| Recursive Groups/Fix and stable code/port/context class-pair matching remain unbuilt. | #1016/#1017: S4-verifier first, then S3b and full S4 integration. | §2.11–§2.12 and Appendix B. |
 
-Root-relative keys/re-rooting (#1113), corrected singleton obligations (#1115), finite-rank/per-pair memos
-and rank rollback (#1123), and recast-union inner transport (#1101 through #1114/#1115) agree with the
-account. Retain their regression tests. #1124's unpaid flat-memo hit is fixed in #1125; it remains a
-code defect on the review baseline until that commit lands.
+Root-relative re-rooting (#1113), singleton obligations (#1115), rank-qualified/per-pair memos and
+rank rollback (#1123), and recast-union inner transport (#1101 through #1114/#1115) remain regression
+contracts. #1124's unpaid flat-memo hit was fixed in #1125.
 
 **Direction verdict.** Keep the shape/position architecture. The evidence argues against equating a
 finite quotient with an exclusivity proof, against eager per-call grafts, and against treating a charged
@@ -3124,10 +3276,11 @@ cross-depth counterexample has a finite occurrence/multiset obligation, and pers
 share the tower prefixes. However, this is a conditional direction, not a claim that the current code
 meets the plan: #1125's initial unsoundness required #1128's repair, the general arrival/call proof is
 still acceptance, and no implementation yet demonstrates the K/W/T total
-O(n log n) bound. If #1121's measured aggregates or S4's independent preservation checks cannot meet
-these obligations, stop and report the architectural obstacle before building more consumers. Do not
-lower the guarantee, raise an ordinary program's allowance or use a copy fallback. No new owner decision
-is needed to preserve the already decided soundness, precision and cost requirements.
+O(n log n) bound. S4-verifier answers the recursive-proof feasibility question **before S3b**.
+If its independent preservation checks or #1121's measured aggregates cannot meet these obligations,
+stop and report the architectural obstacle at that gate, before building more consumers. Do not
+lower the guarantee, raise an ordinary program's allowance or use a copy fallback. #1104 remains an
+open owner decision; it is not settled by these soundness/precision/cost requirements.
 
 ### 8.1 Risks and what de-risks each
 
@@ -3177,8 +3330,10 @@ If adopted, parser/formatter/placement diagnostics, interface/cache versions and
 This staging choice does not reopen the decided final rows.
 
 The remaining proof question is whether the **narrowed** current-taken-element versus earlier-feedback
-rule in C.9 gap 3 can preserve I-κ. S4 must obtain an independent proof/verifier result against every C.11
-red twin before proposing that precision change. It is not an implementation shortcut or assumed lemma.
+rule in C.9 gap 3 can preserve I-κ. S4-verifier (§8), before S3b, decides feasibility against the
+hardest recursive-proof rows and every C.11 red twin. Full S4 integration must retain that independent
+result before proposing the precision change. Declaration-order independence of accounts (#1104)
+is an open owner decision; this revision specifies no policy for it. It is not an implementation shortcut or assumed lemma.
 S3a–S9 must also discharge their stated adapter, accounting, import and performance obligations. A miss is
 a finding to report with a witness, not authority to merge labels, silently copy, or weaken a requirement.
 
@@ -3489,8 +3644,8 @@ No row is excused by an unbuilt declaration when its slice closes.
 | V×A | ViewCallArgument | Pass a view and its base as two touched arguments to a writer; refuse caller Disjoint. A reader before the write and a callee ignoring that subtree accept. Include view of an element below a recursive root. | R-4.3.5, R-5.1.5 | S3b |
 | V×G | ViewFeedback | A fold callback returns a view of its previous accumulator, with that view still held on the next write: refuse. Fresh accumulator/control accepts; solve feedback before deciding the loan/holder, not against round zero. | R-5.3.2, R-3.1 | S4 |
 | C×R | CycleSplitRefinement | Split level/below and elem/others across a mutual recursive boundary, write the taken path while a holder aliases through another refinement chain: refuse; a disjoint sibling and one traversal accept. Include nested splits whose canonical paths coincide. | R-4.7.1, R-4.7.4 | S3b, S4 |
-| C×L | CycleLinkRooting | Construct Node xs repeatedly and compare reads of xs alone and under each parent link; the cursor re-roots across recursive steps. Shared versus exclusive siblings keep different κ. Just/Maybe and mutual constructors give the same result. | R-4.7.3, R-4.6.4 | S3a, S3b |
-| C×J | CycleJoinRank | K tower joins the same value at different depths: counts O(n log n), side certificates preserved. A recast/cyclic graft is excluded from finite-rank memo unless effective rank is proved. Refused rank followed by a query from another owner cannot poison it. | R-7.2, R-7.12 | S3a, S3b |
+| C×L | CycleLinkRooting | Construct Node xs repeatedly and compare reads of xs alone and under each parent link; the cursor re-roots across recursive steps. Writing an element of linked xs = [r,r] refuses exclusive; xs = [r1,r2] with separately allocated children accepts. Shared versus exclusive siblings keep different κ. Just/Maybe and mutual constructors give the same result. | R-4.7.3, R-4.6.4 | S3a, S3b |
+| C×J | CycleJoinRank | K tower joins the same value at different depths: counts O(n log n), side certificates preserved. Starting from an exclusive seed, a recursive kids writer accepts at every tested height; starting with a kids list reused at two coexisting depths, the same write refuses exclusive. Choice alone must never make the seed repeated. A recast/cyclic graft is excluded from finite-rank memo unless effective rank is proved. Refused rank followed by a query from another owner cannot poison it. | R-4.7.5, R-7.2, R-7.12 | S3a, S3b |
 | C×F | CrossDepthKids | Use minimal, kidsPush, kidsSpread and onePush from #1125 comment 6430188411: folded kids κ must fail exclusivity (exact shared if the witness stays exact, otherwise approximate lost), including through singleton and spread construction. plainPush with separate kids allocations reads yes. Repeat at depths 1/2/6, and across mutual constructors. | R-4.7.5, R-3.1 | S3a, S3b |
 | C×A | RecursiveCallView | An identity/forwarding helper returns a recursive argument by reference. Writing a returned child while another argument/capture reaches it refuses; distinct children accept. A finite-rank template grafting a cyclic argument must not hit a route-independent memo incorrectly. | R-5.1.3, R-4.7.1 | S3b |
 | C×G | RecursiveSummaryGeneration | Mutual functions and local groups propagate a late-discovered alias or κ weakening through a result/supply/environment cycle. Final validation refuses the unsafe writer; a fresh invariant accepts. Reordering declarations, changing queue order and reusing a completed SCC give identical verdicts. | R-5.6.1, R-7.7 | S3b, S4 |
@@ -3498,25 +3653,50 @@ No row is excused by an unbuilt declaration when its slice closes.
 | R×J | SplitTraversalJoin | Join split cells from the same traversal versus two different entries, then run a writer. Same lineage/entry with single and container κ may accept; different entries or a recursive/many callback clear single and refuse. Include one branch containing the taken element twice. | R-4.6.2, R-5.4.2 | S4 |
 | R×F | RefinementFoldMultiplicity | Fold level/below refinements and a taken element stored at another depth: refuse the duplicate at the folded written path. Distinct one-traversal supplies retain their conditional proof. No newly merged self-pair may invent within. | R-4.6.9, R-4.7.5 | S3b, S4 |
 | R×A | SplitCallSupply | A wrapper receives the taken element and its container/remainder; demand checks use the initial argument and in-force refinement. Passing whole container plus the same element to a keeper refuses; only remainder plus a proven exclusive element accepts. Call substitution preserves lineage and entry. | R-4.5.3, R-5.2.1 | S3b, S4 |
-| R×G | RefinementFeedbackTwice | FeedbackPrevTwice and the two-traversal C.11 twins remain refused after refinement folding. An invariant may assume one traversal only when independently certified; the decided fold-element lost remains until verified. | R-5.3.2, R-3.1 | S4 |
+| R×G | RefinementFeedbackTwice | FeedbackPrevTwice and the two-traversal C.11 twins remain refused after refinement folding. Positive: one traversal of exclusive xs edits each taken list once and returns it at its original position, without a previous-item carry or second traversal; the inner write accepts under xs's κ. A fold starting at [] whose callback only pushes the current item and returns the same accumulator accepts its storage write (not an element-exclusivity claim). An invariant may assume one traversal only when independently certified; the decided fold-element lost remains until verified. | R-5.3.2, R-3.1 | S4 |
 | L×J | LinkedJoinCertificate | Join [x] with [x], [x] with [x,x], and two distinct built members under their own snapshots. First stays one alternative; duplicate twin refuses exclusive; independent fresh members keep yes. Store κ below a leaf, recast and empty projection and require semantic inclusion from both operands. | R-4.6.2, R-4.6.4 | S3b, S4 |
 | L×F | LinkedFoldCoverage | Merge an exact fold with an uncertified built child linked at one route only: collapse reads lost. Two exact folds preserve coverage but new coexisting members still owe the multiset check. Identity-map/decode keeps steps and full fold obligations. | R-3.1, R-5.7.4 | S3a, S3b |
-| L×A | RepeatedPathCall | pair a b = (a,(a,b)), then call a helper writing .1.0 while .0 is live: refuse; copied .1.0 accepts. Both routes survive class read-off, a reference call view and Block, even if printer deduplicates them (#1122). Also map two template nodes onto one argument and join their κ. | R-4.3.1, R-5.7.1 | S3b |
-| L×G | LinkedSupplyVersion | A callback supply is a linked singleton whose κ weakens after feedback; consumers must wake on the new immutable cursor. Duplicate-returning callback refuses; fresh per-invocation results accept. No cache hit from the earlier linked generation authorises the final write. | R-5.2.9, R-5.3.2 | S4 |
+| L×A | RepeatedPathCall | pair a b = (a,(a,b)), then call a helper writing .1.0 while .0 is live: refuse; copied .1.0 accepts. Both routes survive class read-off, a reference call view, printing and Block through the same multiset image (#1122); the printer may use an explicit shared reference but cannot silently omit a route. Also map two template nodes onto one argument and join their κ. | R-4.3.1, R-5.7.1 | S3b |
+| L×G | LinkedSupplyVersion | A callback supply is a linked singleton whose κ weakens after feedback; consumers must wake on the new immutable cursor. Duplicate-returning callback refuses; fresh per-invocation results accept. No cache hit from the earlier linked generation authorises the final write. | R-5.3.2, R-5.3.3 | S4 |
 | J×F | JoinFoldChoice | if c then Rose [x] else Rose [x] must not invent two simultaneous x occurrences. A value storing x at two coexisting depths must fail after the same widening. Carry shared alternatives through joins of exact/collapsed folds and a recast-union with distinct inner leaves. | R-4.2.1, R-4.7.5 | S3b |
 | J×A | JoinedCallContexts | Two calls of one template under different argument snapshots/supplies cannot share a κ memo; a join preserves each side certificate. A shared-returning actual refuses; fresh actual accepts. identity on a built argument with absent certificate stays lost. Include aliased arguments with no callee xreq. | R-5.1.1, R-5.1.5 | S3b, S4 |
 | J×G | JoinedClosurePorts | Join different code/ports and nested-class tables of unequal size, then call a writer from one arm: preserve every alternative/capture, refuse the shared twin. Equal-length differently ordered tables cannot pair by index. Add once-token aliases and mutually exclusive versus sequential calls. | R-5.4.2, R-5.5.5 | S4 |
-| F×A | FoldedWriteCall / FoldSymbolicCall | LevelPlacesKinds.demoRose at 64:5 refuses after viaKid merges W paths; LevelLimit.inline xs xs refuses via caller Disjoint even without xreq, and two discharges its recorded requirement. Also build a folded T with distinct list parameters a and b at different depths, instantiate both with xs, and run the recursive writer: refuse through the substituted apart obligation; separately copied list arguments accept. Distinct/copy twins accept; body-inline, wrapper and imported forms agree. | R-4.7.5, R-5.1.5 | S3b |
+| F×A | FoldedWriteCall / FoldSymbolicCall / FoldedBCall | LevelPlacesKinds.demoRose at 64:5 refuses after viaKid merges W paths; LevelLimit.inline xs xs refuses via caller Disjoint even without xreq, and two discharges its recorded requirement. Also build a folded T with distinct list parameters a and b at different depths, instantiate both with xs, and run the recursive writer: refuse through the substituted apart obligation; separately copied list arguments accept. FoldedBCall below additionally checks a folded template against an entirely unfolded actual whose least common ancestor is a constructor. Distinct/copy twins accept; body-inline, wrapper and imported forms agree. | R-4.7.5, R-4.6.6, R-5.1.5 | S3b |
 | F×G | FoldCallbackIdentity | Compare two results of different fresh callback invocations versus one result returned twice, a captured result, and a feedback result re-returned. Only the independently proved fresh/taken cases accept; preserve within provenance and reject a proof cycle that just assumes itself. Folded accumulator cross-depth alias refuses. | R-5.2.2, R-5.3.2 | S4 |
 | A×G | CallFeedbackGeneration | A recursive helper returns a closure that calls a supplied function; changing supplies or capture κ must invalidate exactly its dependent call views. Fresh GrowFresh accepts; GrowAlias and RecursiveClassGrowth refuse their shared probes. Independent base and preservation checks run on one settled generation. | R-5.4.8, R-5.6.3 | S4 |
 
-**Counted recursive families and failure twins.** Generate all seven families of §2.9 at n=10/100/1,000,
-including mutual and Maybe forms; n counts written levels/edges, not the exponentially large expansion
+**FoldedBCall (F×A, S3b).** Use `type B = B (List B) (List B)` and an `incAll` that recursively
+writes every `.0` list, with a folded W path at `π1#B.0`. Let `k = [B [] []]` and pass the explicit,
+unwidened actual `v = B [B k []] [B k []]`. The paths `.0[*].0` and `.1[*].0` both map to the
+written class. Their least common ancestor is a constructor, so no kids-literal-root comparison
+covers this pair. Each individual κ read can be yes, but the primitive's `(written class,k)` entry
+is repeated: refuse the recursive call `exclusive` (folded witness approximate). In-place execution
+would push k twice whereas value semantics push each copy once. The positive twin uses separate
+`k1 = [B [] []]` and `k2 = [B [] []]` allocations in those fields and accepts. Another positive
+control chooses between the two placements in mutually exclusive whole-value arms, with k occurring
+only once per arm; it also accepts. Compare inline, helper and imported forms, then read-off,
+printer and BlockRead images; no prior widening of the actual is permitted to mask the call defect.
+
+**Pending-knot probes (before S3b, #1143/#1144).** Exercise the review's legal block
+`T{arg:L}`, `L{[*]:U}`, `U=union(D1,D2)`, `D1=delta(param0,{arg:L})`,
+`D2=delta(param1,{arg:M})` with aliased actuals. Join must wait for the cyclic override child,
+not crash or drop its alternative; also test an unchanged step projected through a delta base and
+positions/recast readers. Identity graft, κ reads and block round trips agree after all knots tie.
+Count the deferred-union chain at 4/16/64/256/1,024 records: waiter/inspection scheduling is linear,
+not n−1 full-list passes. Failure followed by success cannot reuse a pending image. No test treats
+an invariant refusal of this legal graph as a successful implementation.
+
+**Counted recursive families and failure twins.** Generate all eight families of §2.9 at n=10/100/1,000:
+seven construction families at S3a and `wrap (wrap … r)` at S3b, with same-module/imported helpers
+and an identity-helper control, including mutual and Maybe forms; n counts written levels/edges, not the exponentially large expansion
 of Rose [r,r]. Run at the production summary limit: no ownership_limit merely for height. Check total
 B_f/G_f/N_f, per-category inspection/set/cond/shape counts, read-off and codec work, and published bytes.
 Normalise the counts against n log(n+2); use a deterministic bound derived from the per-level kernels,
 not a permissive quadratic ratio. K/W/T must satisfy the bound together; W's linear block alone is not
-acceptance. Include a different parameter a_k at every T level, plus repeated-parameter controls. Disable
+acceptance. Check K's exclusive seed remains one with yes at the selected kids path, and
+JoinFoldChoice stays accepted even after warming the same merge pair in together mode. Include a
+different parameter a_k at every T level (the distinct-base insertion premise), plus repeated-parameter
+controls; count exceptional same-base comparison tasks separately, never hide them in set insertion. Disable
 each memo/aggregate shortcut in turn and require its counted witness to fail. Source-depth native-stack
 probes (#1130) and reservation-failure-then-success probes run alongside the semantic tests. A genuine
 context-product twin still fails loudly under the named resource without publishing a class.
