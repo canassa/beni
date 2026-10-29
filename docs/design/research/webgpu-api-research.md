@@ -51,9 +51,11 @@ A draw is described as data. Callers retain a mesh rather than regenerate it
 in `view`; the kernel caches mesh buffers and shader programs by identity.
 `entityWith` isolates depth, blending, stencil and other render settings.
 The `[glsl| … |]` literal is compiler support: typing shader interfaces is not
-an ordinary Elm library trick. This is the inspiration for beni's optional
-typed mesh/layout and entity layer, not a reason to require GLSL or new beni
-syntax in the first implementation.
+an ordinary Elm library trick. The useful lessons for beni are typed inputs,
+explicit reusable GPU resources and clear operation boundaries. The owner
+removed the proposed additional rendering abstraction on 2026-10-30; this
+comparison remains prior-art evidence, not a recommendation to copy Elm’s
+mesh/entity model.
 
 Elm's texture loader returns `Task Error Texture`, with `LoadError` and
 `SizeError width height`; filtering/wrapping options are typed, including
@@ -242,13 +244,11 @@ or for ordinary modules to import `Js`. UI views remain pure; resource creation
 and rendering execute as effects, and TEA users send typed outcomes from commands.
 This follows [boundary.md](../boundary.md) §4/§9 and its precise-error rule.
 
-The complete layer mirrors WebGPU with typed descriptors and safe lifetimes.
-On top, an optional Elm-inspired layer provides reusable typed meshes,
-layouts, entities and a managed canvas. It lowers to the same checked engine;
-compute and expert rendering use the foundation directly. Do not add a second
-WebGPU implementation or a separate shader language to make the first triangle
-convenient. Static WGSL checking and shader-derived beni interfaces are useful
-later work, not prerequisites for full host API coverage.
+The API mirrors WebGPU with typed descriptors and safe lifetimes. Graphics
+and compute use those operations directly. Elm WebGL informs the ergonomics
+of typed inputs and reusable resources; an additional mesh/entity/view API is
+not proposed. Static WGSL checking and shader-derived beni interfaces remain
+separate possible work, not prerequisites for full host API coverage.
 
 The decision to adopt the proposed API remains the owner's. Measurements are
 owed during implementation: scope overhead, per-frame allocation, native vs
