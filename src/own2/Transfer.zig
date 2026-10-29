@@ -1043,7 +1043,8 @@ pub const Frame = struct {
                                 if (tsteps.len == wsteps.len) continue;
                                 if (tsteps.len > wsteps.len and exactPath(wsteps)) continue;
                             }
-                            const pos = (try f.besides((try f.positionsAt(argv.items[w.param], tsteps)) orelse continue, base, &f.demands.items[f.demands.items.len - 1])) orelse continue;
+                            const folded = try f.readThroughLeaf(argv.items[w.param], wsteps) and try f.readThroughLeaf(argv.items[w.param], tsteps);
+                            const pos = (try f.besides((try f.positionsAt(argv.items[w.param], tsteps)) orelse continue, base, &f.demands.items[f.demands.items.len - 1], folded)) orelse continue;
                             try f.operands.append(f.gpa, .{ .value = pos, .inst = arg_insts[w.param].int() });
                             dm.operands.len += 1;
                         }
@@ -1072,6 +1073,23 @@ pub const Frame = struct {
         var p = at;
         for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse break;
         return p;
+    }
+
+    /// Whether `v` at `steps` is read through a leaf: every position there is
+    /// a symbolic cell's projection, not a cell a built value holds. Two class
+    /// paths that fold onto one such cell stand for distinct positions of one
+    /// projected value; one built value holding a cell at two places does not
+    /// (§2.11 item 3 (c)).
+    fn readThroughLeaf(f: *Frame, v: Value, steps: []const Step) Error!bool {
+        const shapes = f.env.shapes;
+        var at = v.node;
+        for (steps) |s| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            if (shapes.kind(at) == .leaf) return true;
+            if (s.kind == .level) return false;
+            at = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, at, s)) orelse return false;
+        }
+        return false;
     }
 
     /// The argument `v` at a class's parameter path `steps`: every position
@@ -1133,10 +1151,11 @@ pub const Frame = struct {
     /// frame are distinct objects here, as its own walk takes them: its class
     /// marks both and its callers check them, so a cell of another of its
     /// paths is dropped. The base's own cell at a path through `[*]` or `⟲`
-    /// stands for several positions, which the class's two paths folded into
+    /// stands for several positions: when both paths are read through a leaf
+    /// (`readThroughLeaf`), the class's two paths folded them into
     /// one: the write relies on them being distinct, `excl c`, owed upward as
     /// the fold's reliance (§8 S3b). Null when nothing is left.
-    fn besides(f: *Frame, v: Value, base: Value, dm: *Demands.Demand) Error!?Value {
+    fn besides(f: *Frame, v: Value, base: Value, dm: *Demands.Demand, folded: bool) Error!?Value {
         const shapes = f.env.shapes;
         const cells = f.env.cells;
         const own = try shapes.reach(f.gpa, f.account(), &cells.sets, base.node);
@@ -1147,7 +1166,7 @@ pub const Frame = struct {
             const c: CellId = .from(e.key);
             if (cells.origin(cells.base(c)) == .param) {
                 if (!cells.sets.member(own, e.key)) continue;
-                if (cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
+                if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
                     dm.relies = try f.env.conds.@"and"(f.gpa, f.env.charge, dm.relies, try f.env.conds.excl(f.gpa, f.env.charge, c));
                     continue;
                 }

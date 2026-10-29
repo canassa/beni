@@ -1,0 +1,35 @@
+-- ownership: §2.11 item 3 (c) needs evidence that two folded paths stand
+-- for distinct positions (#1016, #1261's review). `viaFirst` builds a record
+-- whose `.x` and `.y` are two calls' answers of one head of `ys`: the record
+-- holds one cell twice, not two projections of a summary path, so the push
+-- of `.x` beside `.y` is a conflict, refused, as v1 refuses it. `twoDepths`
+-- (in CallOtherPaths) folds two projections of its subtree, and owes `excl`.
+type alias P =
+    x : List Int
+    y : List Int
+
+
+twoPaths : P → List Int × List Int
+twoPaths p = ( List.push p.x 1, p.y )
+
+
+first : List (List Int) → List Int
+first ys =
+    case ys of
+        [ a, …_ ] →
+            a
+
+        _ →
+            []
+
+
+viaFirst : List (List Int) → List Int × List Int
+viaFirst ys = twoPaths { x = first ys, y = first ys }
+
+
+pub single : List Int → List Int × List Int
+single xs = viaFirst [ xs ]
+
+
+pub run2 : ⊤ → List Int × List Int
+run2 ⊤ = viaFirst [ [ 1 ], [ 2 ] ]

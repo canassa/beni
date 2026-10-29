@@ -8459,6 +8459,40 @@ fn accountField(dump: []const u8, owner: []const u8, field: []const u8) !u64 {
     return error.NoAccount;
 }
 
+test "the checker v2's cold run applies no class the warm run stopped at a limit" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1261's review: `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )`.
+    // The warm run stops `w12` at its limit, so `w13` and `main` are not
+    // built at their calls. The dump's cold run walked the callees again
+    // with no limit and applied `w12`'s class: `w13`'s and `main`'s cold
+    // accounts spent the whole allowance. They are walked as the warm run
+    // walks them.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "w1 x = ( x, x )\n");
+    for (2..14) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "\n\npub main : List Int → Int\nmain xs =\n    t = w13 xs\n    List.length xs\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w12: ownership_summary_size") != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "w13", "growth"));
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "main", "growth"));
+}
+
 test "the checker v2 charges an instruction's records to its source lanes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

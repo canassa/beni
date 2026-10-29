@@ -1461,10 +1461,17 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      objects in that frame, as its own walk takes them. Its class marks both, and its callers check
      them under this item, so such a cell is not beside the write. The base's own cell is the
      exception. At an exact path it is one object written and held, a conflict: `writeRead
-     { … x = xs, y = xs }` is refused. At a path through `[*]` or `⟲` it stands for several positions,
-     which the class's two paths folded into one, so the write relies on them being distinct. It owes
-     `excl c` upward, the fold's reliance (§8 S3b): `two l` with `l` a subtree of the caller's `t` is
-     accepted with `excl π1⟲#Node.1`, and its caller refuses a shared actual.
+     { … x = xs, y = xs }` is refused. At a path through `[*]` or `⟲` it may stand for several
+     positions, and then the write owes their distinctness, `excl c`, upward (the fold's reliance,
+     §8 S3b), but **only with evidence that the two paths are distinct positions**: both are read
+     through a leaf, so each is a projection of one symbolic value, and the class's two paths fold
+     there (`Transfer.readThroughLeaf`). `two l`, with `l` a subtree of the caller's `t`, is accepted
+     with `excl π1⟲#Node.1`, and its caller refuses a shared actual. A built value holding the one cell
+     at both paths is no such evidence: `viaFirst ys = twoPaths { x = first ys, y = first ys }` holds
+     one head of `ys` twice, and its two calls may answer the same object. That is a conflict,
+     refused (`CallOtherPathsCopies`); an `excl ys[*]` there would only say that distinct positions
+     hold distinct objects. The cost is a precision loss where a built value holds two distinct
+     projections (#1272).
 4. **E**: `cellsAt(aᵢ, q)` escape deeply. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th

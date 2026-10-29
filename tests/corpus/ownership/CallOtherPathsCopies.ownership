@@ -1,0 +1,13 @@
+module CallOtherPathsCopies
+  13:16 List.push p.x: accepted param
+  27:15 call CallOtherPathsCopies.twoPaths <record>.x: rejected call: another operand may be it, through the call at 27:44 (CallOtherPathsCopies.twoPaths writes π1.x) (approx)
+  31:13 call CallOtherPathsCopies.viaFirst <literal>[*]: accepted param (CallOtherPathsCopies.viaFirst writes π1[*])
+  35:10 call CallOtherPathsCopies.viaFirst <literal>[*]: accepted fresh (CallOtherPathsCopies.viaFirst writes π1[*])
+  summary twoPaths: π1.x RAW[storage], π1.x[*] A, π1.y RA; res .0 condition(fresh2) π1.x, .0[*] ~condition(fresh3) ~π1.x[*], .1 ~condition(fresh4) π1.y, condition(fresh1){sep π1.x π1.y, sep π1.x[*] π1.y}
+  summary first: π1 R, π1[*] RA; res fresh1 π1[*]{excl π1}
+  summary viaFirst: π1 R, π1[*] RAw[storage], π1[*][*] A; res .0 condition(fresh5) ~condition(fresh1) ~fresh1 ~π1[*]{excl π1}, .0[*] ~condition(fresh2) ~fresh2 ~π1[*][*], .1 ~condition(fresh3) ~fresh3 ~π1[*]{excl π1}, condition(fresh4){lost}
+  summary single: π1 RAw[storage], π1[*] A; res .0 condition(fresh5) ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~fresh2 ~π1[*], .1 ~condition(fresh3) ~fresh3 ~π1, condition(fresh4){lost}
+  summary run2: res .0 condition(fresh6) ~condition(fresh2) ~fresh1 ~fresh2, .0[*] ~condition(fresh3) ~fresh3, .1 ~condition(fresh4) ~fresh1 ~fresh4, condition(fresh5){lost}
+  demands 4: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 4: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1
