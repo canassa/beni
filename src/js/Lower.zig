@@ -1731,6 +1731,14 @@ pub const Lowerer = struct {
         return l.add(.call, p, callee.int(), @backingInt(record));
     }
 
+    /// `call` for a `Js.apply`: the callee is a `Js.Value`, a host function
+    /// by type, and the node says so (`JsIr.Node.host`).
+    pub fn hostCall(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
+        const node = try l.call(callee, args, p);
+        l.b.markHost(node);
+        return node;
+    }
+
     pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
         if (field == l.well.tag) if (try l.tagOfChoice(target, n, p)) |chosen| return chosen;
@@ -11139,7 +11147,7 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
-            W.apply => l.call(v[0], rest, p),
+            W.apply => l.hostCall(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`

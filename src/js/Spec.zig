@@ -1033,7 +1033,15 @@ const Mod = struct {
         m.changed();
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
+        m.ir.nodes.items(.host)[node.int()] = false;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
+    }
+
+    /// Mark `node`, a `call`, as one lowered from a `Js.apply`
+    /// (`JsIr.Node.host`): what a copy of such a call keeps.
+    fn setHost(m: *Mod, node: Index) void {
+        std.debug.assert(m.ir.tag(node) == .call);
+        m.ir.nodes.items(.host)[node.int()] = true;
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -1074,6 +1082,7 @@ const Mod = struct {
             else => .wild,
         };
         m.setNode(node, tag, d.lhs, d.rhs);
+        if (m.ir.host(from)) m.setHost(node);
         if (key == .wild) return;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| {
             m.node_keys.items[at].key = key;
@@ -10318,12 +10327,14 @@ const Spec = struct {
         fn node(c: *Copy, from: Index, tag: Node.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
             const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
             const to = try c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
-            // An allocation copied as itself is still one of its type.
+            // An allocation copied as itself is still one of its type, and
+            // a host call copied as itself is still one.
             if (tag == c.src.ir.tag(from)) switch (tag) {
                 .object, .array, .arrow => {
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
                 },
+                .call => if (c.src.ir.host(from)) c.dst.setHost(to),
                 else => {},
             };
             return to;

@@ -1254,6 +1254,11 @@ const Printer = struct {
         const set = p.hand_written orelse return false;
         const rename = p.rename orelse return false;
         const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(ident).lhs));
+        // Only a qualified name is in the first namespace, where the set's
+        // ordinals live: `ordinal` of a local gives its slot in the
+        // function's own namespace, which means nothing here. A local — a
+        // parameter, a `const` of the body — is never an import's binding.
+        if (p.ir.name(n).module == .none) return false;
         const ordinal = rename.ordinal(n) orelse return false;
         return ordinal < set.bit_length and set.isSet(ordinal);
     }
