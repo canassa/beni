@@ -3038,6 +3038,18 @@ forces a layout, which is slow and right. Research 17 §4.7's `suspends` capabil
 otherwise until the next flush's after-render phase begins; its fiber goes on at the scheduler's
 next drain, before paint.
 
+*As built 2026-10-29 (`plans/runtime-in-beni.md` step 8).* The six capabilities are beni over `Js`
+and `Dom.js` is gone: the node is `Js.call (Js.global "document") "getElementById"
+[ Js.from id ]`, `Js.isNull` on it is `NotFound id`, the node's method is called through `Js.call`,
+and `viewport` reads the four window properties with `Js.global`. None of these calls documents a
+failure, so none is caught (`CLAUDE.md` rule 9). `Error`, `Box` and `Viewport` no longer cross the
+boundary, so a release build gives `Result` integer tags and writes `NotFound id` as `id`, a type
+of one constructor with one field being its field (`backend.md` §9). The two records keep their
+field names where `box` is live: it reads the host rectangle's `x`, `y`, `width` and `height` with
+`Js.get`, and a field name the build also writes as a plain property is never renamed
+(`backend.md` §9 item 4's closed list); a page that never measures a node renames them, since no
+JavaScript reads these records. `emit/release/tea/DomCapabilities` pins both.
+
 **`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
 so no render sees a half-handled message.
@@ -6866,7 +6878,8 @@ entry file exports, one per `Worker.Object.define`, each a subclass of `DurableO
 `cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
 and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
 globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
-reaches `document`; check 3 is lexical and that is the edge it makes visible.
+reached `document` until its move to beni (2026-10-29, §9.8.6: `Js.global` now); check 3 is
+lexical and that is the edge it makes visible.
 
 **(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
 compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
