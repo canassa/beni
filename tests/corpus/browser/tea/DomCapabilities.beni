@@ -1,0 +1,108 @@
+-- The six DOM capabilities of boundary.md §9.8.6, beni over `Js` since
+-- plans/runtime-in-beni.md step 8: each is run on a node the page has,
+-- and the five that take an id on one it does not, which is
+-- `Err (NotFound id)`, never a crash. Both builds print the same.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Capability
+    = Focus
+    | Blur
+    | Box
+    | ScrollTo
+    | ScrollIntoView
+    | Viewport
+    | Missing
+
+
+type Msg
+    = Try Capability
+
+
+run : Capability, Cmd.Send Msg → ⊤
+run capability _ =
+    case capability of
+        Focus →
+            report "focus" (Dom.focus "field")
+
+        Blur →
+            report "blur" (Dom.blur "field")
+
+        Box →
+            case Dom.box "field" of
+                Ok box →
+                    seen "box" box
+
+                Err (Dom.NotFound id) →
+                    seen "box: not found" id
+
+        ScrollTo →
+            report "scrollTo" (Dom.scrollTo "pane" 0 10)
+
+        ScrollIntoView →
+            report "scrollIntoView" (Dom.scrollIntoView "field")
+
+        Viewport →
+            seen "viewport" (Dom.viewport ⊤)
+
+        Missing →
+            report "focus" (Dom.focus "nowhere")
+            report "blur" (Dom.blur "nowhere")
+            case Dom.box "nowhere" of
+                Ok box →
+                    seen "box" box
+
+                Err (Dom.NotFound id) →
+                    seen "box: not found" id
+            report "scrollTo" (Dom.scrollTo "nowhere" 0 10)
+            report "scrollIntoView" (Dom.scrollIntoView "nowhere")
+
+
+report : String, Result Dom.Error ⊤ → ⊤
+report name result =
+    case result of
+        Ok ⊤ →
+            Debug.log "${name}: ok" ⊤
+
+        Err (Dom.NotFound id) →
+            seen "${name}: not found" id
+
+
+-- Log a value and return nothing: `Debug.log` returns its subject.
+seen : String, a → ⊤
+seen label value =
+    _ = Debug.log label value
+    ⊤
+
+
+update : Msg, ⊤ → ⊤ × Cmd Msg
+update (Try capability) model = ( model, Cmd.perform (run capability _) )
+
+
+view : ⊤ → Html Msg
+view _ =
+    <main>
+        <button id="focus" onClick={Try Focus}>focus</button>
+        <button id="blur" onClick={Try Blur}>blur</button>
+        <button id="box" onClick={Try Box}>box</button>
+        <button id="scroll" onClick={Try ScrollTo}>scroll</button>
+        <button id="into" onClick={Try ScrollIntoView}>into view</button>
+        <button id="viewport" onClick={Try Viewport}>viewport</button>
+        <button id="missing" onClick={Try Missing}>missing</button>
+        <input id="field" />
+        <div id="pane" />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( ⊤, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
