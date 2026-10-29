@@ -1,0 +1,37 @@
+-- A page whose script a host changed so that it no longer decodes
+-- (docs/design/prerender.md §8.6): with no value there is nothing `init`
+-- can start from, so the page stops as a defect when it loads — in both
+-- modes, and in the `--no-prerender` build too, whose page holds the
+-- script and no view. A development build says why on its crash screen.
+import Browser
+import Html exposing (Html)
+import Start exposing (Start)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <output id="count">{String.fromInt model.count}</output>
+        <button id="inc" onClick={Inc}>+</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Start.schema ⊤) λstart →
+    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }

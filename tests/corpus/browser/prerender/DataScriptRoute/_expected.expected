@@ -1,0 +1,12 @@
+-- url "/missing"
+-- load
+<body>
+  <main>
+    <h1>"home"</h1>
+    <p id="address">"http://127.0.0.1:8000/missing"</p>
+    <p id="first">"http://127.0.0.1:8000/"</p>
+  </main>
+</body>
+-- location
+(location: /missing)
+(the DOM did not change)

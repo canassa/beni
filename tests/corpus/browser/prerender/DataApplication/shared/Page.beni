@@ -1,0 +1,4 @@
+--! What each route's page shows.
+
+pub schema Page =
+    name : String

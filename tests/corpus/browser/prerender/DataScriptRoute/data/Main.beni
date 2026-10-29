@@ -1,0 +1,9 @@
+-- The data program: two routes, each with its name.
+import Node exposing (Program)
+import Page exposing (Page)
+import Prerender
+
+
+main : Program
+main = Prerender.pages (Page.schema ⊤) λ⊤ →
+    Ok [ ( "/", { name = "home" } ), ( "/about", { name = "about" } ) ]

@@ -1,0 +1,35 @@
+-- A value with text past ASCII, in a shell that declares no `charset`
+-- (docs/design/prerender.md §8.6): the page's script holds it as `\u`
+-- escapes, ASCII, which every encoding a page can be decoded with reads
+-- alike, so the browser's `init` is handed the value the build's was.
+import Browser
+import Html exposing (Html)
+import Page exposing (Page)
+import Tea
+
+
+type alias Model =
+    name : String
+
+
+type Msg
+    = Shout
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Shout →
+            { model | name = model.name ++ "!" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="name" onClick={Shout}>{model.name}</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.sandbox { init = λ⊤ → { name = page.name }, update = update, view = view }

@@ -1,0 +1,4 @@
+--! A page's one text.
+
+pub schema Note =
+    text : String

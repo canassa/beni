@@ -1,0 +1,2 @@
+retext script[data-beni-data] "{\"start\":\"forty-one\"}"
+throws load

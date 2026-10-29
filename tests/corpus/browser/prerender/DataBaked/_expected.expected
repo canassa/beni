@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <p id="label">"fixed"</p>
+    <button id="name">"ada"</button>
+  </main>
+</body>
+-- click #name
+<body>
+  <main>
+    <p id="label">"fixed"</p>
+    <button id="name">"ada!"</button>
+  </main>
+</body>

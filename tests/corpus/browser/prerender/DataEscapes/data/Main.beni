@@ -1,0 +1,13 @@
+-- The data program: one page whose text holds everything that could end or
+-- change a `<script>` or a JSON string (docs/design/prerender.md §8.6).
+import Node exposing (Program)
+import Note exposing (Note)
+import Prerender
+
+
+tricky : String
+tricky = "</script> <!-- <script> &amp; [\u{2028}] [\u{1F600}] \\ \" end"
+
+
+main : Program
+main = Prerender.pages (Note.schema ⊤) λ⊤ → Ok [ ( "/", { text = tricky } ) ]

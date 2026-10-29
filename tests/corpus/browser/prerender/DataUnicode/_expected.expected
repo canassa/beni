@@ -1,0 +1,12 @@
+-- load
+<body>
+  <main>
+    <button id="name">"café ☕ 😀 Ωμέγα"</button>
+  </main>
+</body>
+-- click #name
+<body>
+  <main>
+    <button id="name">"café ☕ 😀 Ωμέγα!"</button>
+  </main>
+</body>

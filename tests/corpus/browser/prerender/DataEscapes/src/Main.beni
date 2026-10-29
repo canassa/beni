@@ -1,0 +1,37 @@
+-- A page's value whose text holds `</script>`, `<!--`, `<script`, `&amp;`,
+-- U+2028, a character past U+FFFF, a backslash and a quote
+-- (docs/design/prerender.md §8.6): the page's script holds it with every
+-- `<` and every character past U+007E escaped, so nothing ends the script
+-- early, and the program shows the text as it was, in every build.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Note exposing (Note)
+import Sub
+import Tea
+
+
+type alias Model =
+    text : String
+
+
+type Msg
+    = Noop
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+view : Model → Tea.Document Msg
+view model = { title = "escapes", body = <main><p id="text">{model.text}</p></main> }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Note.schema ⊤) λnote →
+    Tea.document
+        { init = λ⊤ → ( { text = note.text }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
