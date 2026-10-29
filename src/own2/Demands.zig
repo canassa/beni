@@ -725,7 +725,12 @@ const Resolver = struct {
         const Frame_ = struct { node: NodeId, path: PathId, alt: bool = false, cast: bool = false, blur: bool = false };
         var stack: std.ArrayList(Frame_) = .empty;
         defer stack.deinit(r.gpa);
-        var seen: stamped.Column(NodeId, void) = .{};
+        // A node once per route state, its path and flags with it: a shared
+        // nested holder (`t = { a = w, b = w }`) holds at every path it is
+        // reached at, so a second route is walked, not dropped (§2.8 *Dead*,
+        // #1223). Paths are canonical in the folded place graph, so the
+        // states are finite and a cycle ends.
+        var seen: Ids.FixedDict(3) = .{};
         defer seen.deinit(r.gpa);
         try stack.append(r.gpa, .{ .node = n, .path = root });
         const shapes = r.env.shapes;
@@ -756,8 +761,9 @@ const Resolver = struct {
                 try out.append(r.gpa, .{ .path = at, .d = d, .approx = v == 1 or f.blur, .several = f.alt or several(r.env.cells, cells) });
             };
             const k = shapes.get(f.node);
-            if (seen.contains(f.node)) continue;
-            try seen.put(r.gpa, f.node, {});
+            const flags: u32 = @as(u32, @intFromBool(f.alt)) | @as(u32, @intFromBool(f.cast)) << 1 | @as(u32, @intFromBool(f.blur)) << 2;
+            try r.env.charge.reserve(r.gpa, .memo, 1);
+            if ((try seen.getOrPut(r.gpa, .{ f.node.int(), f.path.int(), flags })).found_existing) continue;
             switch (k.kind) {
                 .leaf => {},
                 .node, .delta => {

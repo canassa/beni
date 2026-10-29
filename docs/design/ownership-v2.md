@@ -3513,6 +3513,13 @@ cyclic graft knots; #1143 is closed by merged #1144's Tarjan walk and cyclic rec
 slice passes before S3b proceeds. S3b closes #1097, #1093, #1094 and #1082 as its call/transport
 consumers land. Declaration-order independence of accounts remains an open owner decision in #1104;
 no resolution or implementation dependency for that decision is prescribed here.
+Before S3b, holder-path discovery must preserve every distinct observable route through shared shapes,
+including repeated nodes at unequal depths (#1223, Astra's review). Its memo key must include the semantic
+path/read context, or it must share a suffix answer and instantiate it at each relevant route. Cycle
+termination must not discard a second acyclic route. Pin both field-order twins and the same-module/imported
+call twins before consuming these proofs for call W paths or S5 field hoists. *As built (#1223):*
+`Demands.holdPaths` keys its walk by node, path and route flags; `SharedHolderRoutes` pins the equal-depth,
+unequal-depth and field-order twins. The call twins wait for S3b, which builds calls of ordinary functions.
 
 **Code/design reconciliation (master `c709bf771`).** Existing issues are retained rather than duplicated.
 The historical *As built* notes stay intact; this table records what has moved since their baseline.
