@@ -47,7 +47,7 @@ const layers = [_]Entry{
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2300 },
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2350 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1600 },

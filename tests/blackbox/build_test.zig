@@ -8411,6 +8411,66 @@ fn expectNLogN(n: []const u32, g: []const u64) !void {
     }
 }
 
+test "the checker v2's read-off numbers an apart group's fresh cells the same in either declaration order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1150's review: read-off images a group extended from its
+    // predecessor's image, and imaging numbers sites `fresh k` on first
+    // sight. The cells it images first are numbered in the group's own set
+    // order, never in the order a module's earlier declaration first built
+    // that group, so swapping two declarations prints the same summaries.
+    const first =
+        \\pub g : ⊤ → List (List Int)
+        \\g ⊤ =
+        \\    xs = [ [ 1 ], [ 2 ] ]
+        \\    ys = [ [ 3 ], [ 4 ] ]
+        \\    case ( xs, ys ) of
+        \\        ( [ a, b ], [ c, d ] ) →
+        \\            [ d, b, c, a ]
+        \\
+        \\        _ →
+        \\            []
+        \\
+    ;
+    const other =
+        \\pub h : ⊤ → List (List Int)
+        \\h ⊤ =
+        \\    zs = [ [ 5 ], [ 6 ] ]
+        \\    case zs of
+        \\        [ p, q ] →
+        \\            [ q, p ]
+        \\
+        \\        _ →
+        \\            []
+        \\
+    ;
+    var lines: [2][2][]const u8 = @splat(@splat(""));
+    defer for (lines) |run| for (run) |l| testing.allocator.free(l);
+    for (0..2) |run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const src = try std.mem.concat(w.arena.allocator(), u8, if (run == 0) &.{ first, "\n\n", other } else &.{ other, "\n\n", first });
+        try w.write("Main.beni", src);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        for ([_][]const u8{ "  summary g:", "  summary h:" }, 0..) |prefix, i| {
+            const at = std.mem.indexOf(u8, dump.stdout, prefix) orelse return error.NoLine;
+            const end = std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n') orelse dump.stdout.len;
+            lines[run][i] = try testing.allocator.dupe(u8, dump.stdout[at..end]);
+        }
+    }
+    for (0..2) |i| try testing.expectEqualStrings(lines[0][i], lines[1][i]);
+}
+
 test "the checker v2's growth over a tower of one-element literals with a new parameter per level is n log n" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
