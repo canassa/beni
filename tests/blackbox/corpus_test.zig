@@ -803,6 +803,14 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             }
         }
     }
+    // `build/bad-release/inline/`: applications for `browser-inline` that a
+    // release build refuses after the write-set pass has run.
+    if (kind == .build_bad_release) {
+        const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
+        const start = fixtures.items.len;
+        try collect(arena, inline_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
+    }
     if (kind == .build_bad or kind == .check_bad or kind == .browser) {
         const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
         const start = fixtures.items.len;

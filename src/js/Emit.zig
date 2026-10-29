@@ -673,6 +673,9 @@ pub fn run(
     };
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
     defer {
+        // The write-set pass is freed by `buildDirect`; a refusal before it
+        // leaves the pass alive.
+        if (e.writes) |w| w.deinit();
         for (e.owned.items) |text| gpa.free(text);
         e.owned.deinit(gpa);
         for (e.piece_arenas.items) |arena| arena.deinit();
