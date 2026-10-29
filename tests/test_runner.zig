@@ -171,6 +171,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     log_err_count = 0;
     const test_fn = builtin.test_functions[index];
     timing.current_test = test_fn.name;
+    crash_name.store(&builtin.test_functions[index].name, .release);
     const started: Started = .now();
     var guard: HangGuard = .{};
     // Corpus kinds and the playground's parts are suites: they guard each
@@ -194,6 +195,7 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     const cpu_us = started.cpuUs();
     if (timing.enabled()) started.record(test_fn.name, status);
     timing.current_test = "";
+    crash_name.store(null, .release);
     return .{ .status = status, .leaks = leaks, .cpu_us = cpu_us };
 }
 
@@ -368,6 +370,12 @@ fn hangGuardProbe(mode: []const u8) void {
 /// a thread, `overflow` recurses on a 64 KiB thread until its stack is gone,
 /// `locked` crashes while another thread holds stderr's lock, as a test that
 /// is printing does. Each must fail at once, naming the test.
+const probe_names = [_][]const u8{ "crash probe segv", "crash probe overflow", "crash probe locked" };
+
+/// The test running now, for `onCrash`: a pointer to its name, stored and
+/// loaded whole, so a crash never reads a name half written.
+var crash_name: std.atomic.Value(?*const []const u8) = .init(null);
+
 fn crashProbe(mode: []const u8) void {
     const Probe = struct {
         fn segv() void {
@@ -387,9 +395,10 @@ fn crashProbe(mode: []const u8) void {
             while (true) Io.sleep(runner_io, .fromSeconds(1), .awake) catch {};
         }
     };
-    timing.current_test = if (std.mem.eql(u8, mode, "segv")) "crash probe segv" else if (std.mem.eql(u8, mode, "overflow")) "crash probe overflow" else if (std.mem.eql(u8, mode, "locked")) "crash probe locked" else @panic("unknown crash probe");
+    const which: usize = if (std.mem.eql(u8, mode, "segv")) 0 else if (std.mem.eql(u8, mode, "overflow")) 1 else if (std.mem.eql(u8, mode, "locked")) 2 else @panic("unknown crash probe");
+    crash_name.store(&probe_names[which], .release);
     var guard: HangGuard = .{};
-    guard.start(timing.current_test) catch @panic("cannot start probe guard");
+    guard.start(probe_names[which]) catch @panic("cannot start probe guard");
     if (std.mem.eql(u8, mode, "locked")) {
         _ = std.Thread.spawn(.{}, Probe.holdStderr, .{}) catch @panic("cannot start probe thread");
         Io.sleep(runner_io, .fromMilliseconds(50), .awake) catch {};
@@ -409,7 +418,7 @@ fn crashProbe(mode: []const u8) void {
 /// stack trace under stderr's lock: a test thread holding that lock, or the
 /// hang guard waiting on it, left every thread asleep and the guard silent.
 /// This one takes no lock and allocates nothing: it writes one line with
-/// `write(2)`, kills the test's child process groups and exits. It runs on
+/// `write(2)`, kills the test's child process groups and `_exit`s. It runs on
 /// the per-thread alternate signal stack std sets up, so an overflowed
 /// stack can still report. For a stack trace, run the one test under a
 /// debugger.
@@ -434,10 +443,10 @@ fn onCrash(sig: std.posix.SIG, _: *const std.posix.siginfo_t, _: ?*anyopaque) ca
     rawWrite("FAIL: test crashed (");
     rawWrite(what);
     rawWrite("): ");
-    rawWrite(if (timing.current_test.len > 0) timing.current_test else "(between tests)");
+    rawWrite(if (crash_name.load(.acquire)) |name| name.* else "(between tests)");
     rawWrite("\n");
     HangGuard.killChildrenNow();
-    std.process.exit(1);
+    HangGuard.hardExit(1);
 }
 
 /// `s` to stderr with `write(2)` alone: no lock, no buffer.
