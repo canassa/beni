@@ -2927,7 +2927,17 @@ const Case = struct {
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{b.out}));
             try args.appendSlice(c.arena, sources.items);
             const built = try c.w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms, .path = try c.w.nodePath() });
-            if (built.exit_code != 0 or built.stderr.len != 0) {
+            // A project whose build warns has its warnings in `_expected.diag`,
+            // the same for every build (`tests/corpus/README.md`,
+            // *Prerendered pages*): a data program `main` does not use.
+            if (built.exit_code == 0 and c.goldenExists("diag")) {
+                if (c.bless and i == 0) try c.expectGolden("diag", built.stderr);
+                const want = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("diag"), c.arena, .limited(world.max_stream_bytes));
+                if (!std.mem.eql(u8, want, built.stderr)) {
+                    detail("{s} [{s}]: the build's warnings differ from its _expected.diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, b.out, built.stderr });
+                    return error.GoldenMismatch;
+                }
+            } else if (built.exit_code != 0 or built.stderr.len != 0) {
                 detail("{s} [{s}]: a browser/prerender project must build silently; it exited {d}\n--- stderr ---\n{s}\n", .{ c.fixture.name, b.out, built.exit_code, built.stderr });
                 because("[{s}] build exit {d}: {s}", .{ b.out, built.exit_code, summarize(c.arena, built.stderr) });
                 return error.BuildFailed;

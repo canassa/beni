@@ -1040,6 +1040,118 @@ test "a prerendered page is byte-identical at every --jobs" {
     }
 }
 
+/// A data site under `dir` (`prerender.md` §8), its site `Main.beni` and
+/// `Post.beni` at the project root, its data program in `data/`: one that reads
+/// `posts/hello.txt`, says `Debug.log`, and gives two routes; a site that
+/// shows each page's text.
+fn writeDataSite(w: *World, dir: []const u8) !void {
+    const a = w.arena.allocator();
+    try w.write(try std.fs.path.join(a, &.{ dir, "beni.json" }),
+        \\{ "html": "shell.html", "build": { "data": { "paths": ["data", "Post.beni"], "inputs": ["posts"] } } }
+        \\
+    );
+    try w.write(try std.fs.path.join(a, &.{ dir, "shell.html" }), "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write(try std.fs.path.join(a, &.{ dir, "posts/hello.txt" }), "Hello");
+    try w.write(try std.fs.path.join(a, &.{ dir, "Post.beni" }),
+        \\pub schema Post =
+        \\    body : String
+        \\
+    );
+    try w.write(try std.fs.path.join(a, &.{ dir, "data/Main.beni" }),
+        \\import Io
+        \\import Node exposing (Program)
+        \\import Post exposing (Post)
+        \\import Prerender
+        \\
+        \\
+        \\main : Program
+        \\main = Prerender.pages (Post.schema ⊤) λ⊤ →
+        \\    case Io.readFile "posts/hello.txt" of
+        \\        Ok body →
+        \\            Ok [ ( "/", Debug.log "post" { body = body } ), ( "/about", { body = "About" } ) ]
+        \\
+        \\        Err _ →
+        \\            Err "no post"
+        \\
+    );
+    try w.write(try std.fs.path.join(a, &.{ dir, "Main.beni" }),
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Post exposing (Post)
+        \\import Tea
+        \\
+        \\
+        \\view : String → Html String
+        \\view text = <p>{text}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Browser.prerenderData (Post.schema ⊤) λpost →
+        \\    Tea.sandbox { init = λ⊤ → post.body, update = λm _ → m, view = view }
+        \\
+    );
+}
+
+test "a data program runs at its project's root, and may say Debug.log under --release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §8.3: the data program runs with its working directory
+    // at the project root, wherever `beni` was started, so `Io.readFile
+    // "posts/hello.txt"` names the project's file; and it is built in
+    // development mode in every build, so a `Debug.log` in it does not
+    // refuse a `--release` build, which `--allow-debug` is not given.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDataSite(&w, "site");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=browser-inline", "--release", "--root=site", "--out=site/out", "site/Main.beni", "site/Post.beni" }, .{ .raw_diagnostics = true, .path = try w.nodePath() });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    // What the data program logged is passed on to the build's standard
+    // error (§5.1), and nothing else is said.
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "post:") != null);
+    try testing.expectEqualStrings(
+        "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><script type=\"application/json\" data-beni-data=\"/\">{\"body\":\"Hello\"}</script><p data-beni=\"/\">Hello</p></body>\n",
+        try w.read("site/out/index.html"),
+    );
+    try testing.expect(w.exists("site/out/about.html"));
+    try testing.expect(!w.exists("site/.out.data") and !w.exists("site/.out.prerender"));
+}
+
+test "a data site's pages are byte-identical at every --jobs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §8.9: the pages are a function of the site, the shell,
+    // the base and the data program's records; nothing depends on `--jobs`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDataSite(&w, ".");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const outs = [_][]const u8{ "out-1a", "out-8a", "out-1b", "out-8b" };
+    for (outs, 0..) |out, i| {
+        const jobs = if (i % 2 == 0) "--jobs=1" else "--jobs=8";
+        const flag = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}", .{out});
+        const r = try w.runWith(&.{ "build", "--platform=browser-inline", "--no-cache", flag, jobs, "Main.beni", "Post.beni" }, .{ .raw_diagnostics = true, .path = try w.nodePath() });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (outs[1..]) |out| try expectSameTree(&w, "out-1a", out);
+}
+
 /// The SHA-256 of `bytes`, hex, in a per-call buffer.
 fn digest(bytes: []const u8) [64]u8 {
     var raw: [32]u8 = undefined;

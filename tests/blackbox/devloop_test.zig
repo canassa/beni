@@ -439,6 +439,88 @@ test "serve prerenders every build, and answers /about with about.html" {
     try testing.expect(!w.exists(".out.prerender"));
 }
 
+test "serve reruns the data program when an input changes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `prerender.md` §8.8: every build of a data site runs its data
+    // program, and `serve` watches its `"inputs"`, whatever a file's ending,
+    // so an edit of a post rebuilds the page with it. §8.6: a data site
+    // writes no `index.html` but the page of `/`, so `/` is a 404 here.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json",
+        \\{ "html": "shell.html", "build": { "data": { "paths": ["data", "shared"], "inputs": ["posts"] } } }
+        \\
+    );
+    try w.write("shell.html", "<!doctype html><script type=\"module\" src=\"{{entry}}\"></script><body>{{view}}</body>\n");
+    try w.write("shared/Post.beni",
+        \\pub schema Post =
+        \\    body : String
+        \\
+    );
+    try w.write("data/Main.beni",
+        \\import Io
+        \\import Node exposing (Program)
+        \\import Post exposing (Post)
+        \\import Prerender
+        \\
+        \\
+        \\main : Program
+        \\main = Prerender.pages (Post.schema ⊤) λ⊤ →
+        \\    case Io.readFile "posts/hello.md" of
+        \\        Ok body →
+        \\            Ok [ ( "/hello", { body = body } ) ]
+        \\
+        \\        Err _ →
+        \\            Err "no post"
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Post exposing (Post)
+        \\import Tea
+        \\
+        \\
+        \\view : String → Html String
+        \\view text = <p>{text}</p>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Browser.prerenderData (Post.schema ⊤) λpost →
+        \\    Tea.sandbox { init = λ⊤ → post.body, update = λm _ → m, view = view }
+        \\
+    );
+    try w.write("posts/hello.md", "first");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var live = try Live.startWith(&w, &.{ "serve", "--port=0", "--poll-interval=10", "--no-reload", "--platform=browser-inline", "src", "shared" }, try w.nodePath());
+    defer live.deinit();
+    try live.waitFor("beni: built in ", 1);
+    const port = try live.port();
+    const before = try get(&w, port, "/hello");
+    const root = try get(&w, port, "/");
+    try w.write("posts/hello.md", "second");
+    try live.waitFor("beni: built in ", 2);
+    const after = try get(&w, port, "/hello");
+    const term = try live.stop();
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(std.process.Child.Term{ .exited = 0 }, term);
+    const page = "<!doctype html><script type=\"module\" src=\"/_main.mjs\"></script><body><script type=\"application/json\" data-beni-data=\"/hello\">{{\"body\":\"{s}\"}}</script><p data-beni=\"/hello\">{s}</p></body>\n";
+    const arena = w.arena.allocator();
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "first", "first" }), before.body);
+    try testing.expectEqual(@as(u16, 404), root.status);
+    try testing.expectEqualStrings(try std.fmt.allocPrint(arena, page, .{ "second", "second" }), after.body);
+    try testing.expect(!w.exists(".out.prerender"));
+    try testing.expect(!w.exists(".out.data"));
+}
+
 /// A `beni` that keeps running: both pipes are read as the scenario waits,
 /// with a deadline, and it is killed on every exit path.
 const Live = struct {

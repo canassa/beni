@@ -23,6 +23,7 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const BuildCommand = @import("../build/Command.zig");
 const platform = @import("../platform.zig");
+const Manifest = @import("../js/Manifest.zig");
 
 /// Called after every build with whether it succeeded: how `serve` learns
 /// that the output directory moved (`frontend.md` §10.4).
@@ -144,6 +145,9 @@ const Watched = struct {
     arena: std.heap.ArenaAllocator,
     /// Recursive roots.
     trees: []const []const u8,
+    /// A data program's `"inputs"` (`prerender.md` §8.8): every file below
+    /// each, whatever its ending.
+    inputs: []const []const u8 = &.{},
     /// The project root, read one level deep.
     root: []const u8,
     /// `--out`, normalised: never descended into.
@@ -162,8 +166,17 @@ const Watched = struct {
                 if (layer.embedded == null) trees.append(arena, layer.root) catch {};
             }
         } else |_| {}
-        w.trees = trees.items;
         w.root = normalized(arena, build.common.root orelse ".");
+        // A data program's paths, and its `"inputs"`, below the project root
+        // (`prerender.md` §8.8), read once when the command starts.
+        var inputs: std.ArrayList([]const u8) = .empty;
+        if (Manifest.read(arena, io, w.root) catch null) |m| if (m.build.data) |data| {
+            const here = std.mem.eql(u8, w.root, ".");
+            for (data.paths) |p| trees.append(arena, normalized(arena, if (here) p else std.fs.path.join(arena, &.{ w.root, p }) catch p)) catch {};
+            for (data.inputs) |p| inputs.append(arena, normalized(arena, if (here) p else std.fs.path.join(arena, &.{ w.root, p }) catch p)) catch {};
+        };
+        w.trees = trees.items;
+        w.inputs = inputs.items;
         w.out = normalized(arena, build.out);
         return w;
     }
@@ -174,8 +187,9 @@ const Watched = struct {
 
     fn digest(w: *Watched) u64 {
         var acc: Accumulator = .{};
-        for (w.trees) |tree| w.walk(&acc, tree, true);
-        w.walk(&acc, w.root, false);
+        for (w.trees) |tree| w.walk(&acc, tree, true, false);
+        for (w.inputs) |input| w.walk(&acc, input, true, true);
+        w.walk(&acc, w.root, false, false);
         return acc.sum +% acc.count *% 0x9e3779b97f4a7c15;
     }
 
@@ -184,11 +198,11 @@ const Watched = struct {
     /// Add `path` — a file, or a directory read `recursive`ly or one level
     /// deep — to `acc`. Anything that cannot be read counts as absent: a
     /// file being replaced mid-poll is seen at the next one.
-    fn walk(w: *Watched, acc: *Accumulator, path: []const u8, recursive: bool) void {
+    fn walk(w: *Watched, acc: *Accumulator, path: []const u8, recursive: bool, any: bool) void {
         if (w.isOut(path)) return;
         const stat = Io.Dir.cwd().statFile(w.io, path, .{}) catch return;
         switch (stat.kind) {
-            .file => if (watchedName(path)) add(acc, path, stat),
+            .file => if (any or watchedName(path)) add(acc, path, stat),
             .directory => {
                 var dir = Io.Dir.cwd().openDir(w.io, path, .{ .iterate = true }) catch return;
                 defer dir.close(w.io);
@@ -205,10 +219,10 @@ const Watched = struct {
                             // `buffer` is reused below this frame: copy.
                             var copy: [std.fs.max_path_bytes]u8 = undefined;
                             @memcpy(copy[0..child.len], child);
-                            w.walk(acc, copy[0..child.len], true);
+                            w.walk(acc, copy[0..child.len], true, any);
                         },
                         .file, .sym_link => {
-                            if (!watchedName(child) or w.isOut(child)) continue;
+                            if ((!any and !watchedName(child)) or w.isOut(child)) continue;
                             const s = dir.statFile(w.io, entry.name, .{}) catch continue;
                             if (s.kind == .file) add(acc, child, s);
                         },
