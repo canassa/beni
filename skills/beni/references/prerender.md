@@ -169,9 +169,24 @@ is `invalid_html_shell`. `{{title}}` is the page's title, escaped for a text or 
 `application`'s `view`: write `<title>{{title}}</title>`. A build that does not prerender writes
 both as nothing.
 
+## Input before the program runs
+
+The page shows its view before its JavaScript runs, so a user can click, type or check a box
+early. When the program listens to an event on an element of its view, the build writes a small
+inline script before the view. The script records each such event. After the takeover, the
+program gets each event in order, once, as a message to `update`. The control's value, `checked`
+and selected option are the ones the user left. The browser does not run a default action again.
+
+- A page whose program listens to no event gets no script.
+- When the page differs from the program (below), the recorded events are dropped.
+- A content security policy that refuses inline scripts stops the script. Then the early input is
+  lost, and nothing else changes.
+- A link click or a form submit before the takeover loads a page, as on any page whose script has
+  not run.
+
 ## The page differs from the program
 
 When the HTML is not what the program makes (a browser extension or a CDN changed it), the program
 mounts fresh in the same task. A development build writes a warning first.
 
-Sources: `docs/design/prerender.md` §3, §5, §6, §7, §9; `docs/design/frontend.md` §10.1, §10.4.
+Sources: `docs/design/prerender.md` §3, §5, §6, §6.5, §7, §9; `docs/design/frontend.md` §10.1, §10.4.

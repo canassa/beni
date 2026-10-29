@@ -772,6 +772,131 @@ warn why =
         )
 
 
+-- ---- Input before the takeover (`prerender.md` §6.5) -------------------
+
+-- The records the page's capture script made that `deliver` is to hand on,
+-- each `[event, value, checked, selectedIndex]`; null when there are none.
+early : Js.Ref V
+early = Js.ref Js.null
+
+
+-- Each listener wired while there are records, by its element: a `Map` of
+-- element to `[kind, f, kind, f, …]`; null otherwise.
+heard : Js.Ref V
+heard = Js.ref Js.null
+
+
+--| `(top)`: the records of the page's capture script, which it stops — the
+--| global `$beni` it defined, called once and cleared. The records kept are
+--| those whose target is inside `top`, the unit's top element the mount
+--| took: on a fresh mount, none. While some are kept, `listen` notes each
+--| listener wired, for `deliver`.
+pub caught : V → ⊤
+caught top =
+    capture = Js.global "$beni"
+    if not (Js.isUndefined capture) then
+        Js.set (Js.global "window") "$beni" Js.undefined
+        kept =
+            Js.call (Js.apply capture []) "filter"
+                [ Js.from λrecord →
+                    inside : Bool
+                    inside = Js.to (Js.call top "contains" [ Js.get (Js.at record 0) "target" ])
+                    inside
+                ]
+        if Js.to (Js.get kept "length") > 0 then
+            Js.write early kept
+            Js.write heard (Js.construct (Js.global "Map") [])
+
+
+--| `(node, kind, f)`: listener `f` of event `kind` added to `node`, and,
+--| while `caught` kept records, noted under `node` for `deliver`.
+pub listen : V, V, V → ⊤
+listen node kind f =
+    _ = Js.call node "addEventListener" [ kind, f ]
+    map = Js.read heard
+    if not (Js.isNull map) then
+        noted = Js.call map "get" [ node ]
+        if Js.isUndefined noted then
+            _ = Js.call map "set" [ node, Js.array [ kind, f ] ]
+            ⊤
+        else
+            _ = Js.call noted "push" [ kind, f ]
+            ⊤
+
+
+--| `on`, in the client of a prerendering build: wired through `listen`.
+pub onTaken : V, V, V, V → ⊤
+onTaken node f kind read =
+    listen
+        node
+        (if Js.isUndefined kind then Js.from "click" else kind)
+        (Js.from λevent → send f event read)
+
+
+--| `onArm`, in the client of a prerendering build: wired through `listen`.
+pub onArmTaken : V, V, V, V, V → ⊤
+onArmTaken node f kind arms read =
+    listen node kind (Js.from λevent → if armsShown arms then send f event read)
+
+
+--| The records `caught` kept, handed on in order, and then dropped with
+--| the listeners noted: for each, the control state it recorded written
+--| back to its target, then each listener of its event's type called with
+--| the event, on the target and, while the event bubbles and no listener
+--| stopped it, on each ancestor. The event is not dispatched again, so no
+--| default action runs twice. The last statement of the hydrating mount,
+--| inside its dispatch: each message is queued, in order.
+pub deliver : ⊤ → ⊤
+deliver ⊤ =
+    records = Js.read early
+    if not (Js.isNull records) then
+        map = Js.read heard
+        Js.write early Js.null
+        Js.write heard Js.null
+        Js.each records λrecord →
+            event = Js.at record 0
+            target = Js.get event "target"
+            restore target "value" (Js.at record 1)
+            restore target "checked" (Js.at record 2)
+            restore target "selectedIndex" (Js.at record 3)
+            hand map event target
+
+
+-- The property `name` of `el` set to `v`, when `v` is one and `el` does not
+-- show it.
+restore : V, String, V → ⊤
+restore el name v =
+    if not (Js.isUndefined v) && not (Js.same (Js.get el name) v) then
+        Js.set el name v
+
+
+-- Each listener noted under `node` for `event`'s type called with it, then
+-- the same on `node`'s parent while the event bubbles and none stopped it.
+hand : V, V, V → ⊤
+hand map event node =
+    if not (Js.isNull node) then
+        noted = Js.call map "get" [ node ]
+        if not (Js.isUndefined noted) then
+            callNoted noted event 0
+        bubbles : Bool
+        bubbles = Js.to (Js.get event "bubbles")
+        halted : Bool
+        halted = Js.to (Js.get event "cancelBubble")
+        if bubbles && not halted then
+            hand map event (Js.get node "parentNode")
+
+
+-- The listeners of `noted`, `[kind, f, …]`, from pair `i`, whose kind is
+-- `event`'s type, called with it in the order they were added.
+callNoted : V, V, Int → ⊤
+callNoted noted event i =
+    if i < Js.to (Js.get noted "length") then
+        if Js.same (Js.at noted i) (Js.get event "type") then
+            _ = Js.apply (Js.at noted (i + 1)) [ event ]
+            ⊤
+        callNoted noted event (i + 2)
+
+
 -- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------
 
 -- Every binding entry made at this mount, in the order made: an entry's

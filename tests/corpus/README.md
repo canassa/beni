@@ -907,7 +907,7 @@ it wrote that a static host answers the script's address with — its first
 `url` setup step, `/` without one: a path's `.html`, a directory's
 `index.html`, else the root `index.html` (`prerender.md` §7.4) — the driver's
 `--html-page`: its body and the body's attributes, parsed by parse5 under
-happy-dom, its scripts left out — and runs `_expected.steps` against the one
+happy-dom, its module and `src` scripts left out and its inline scripts run — and runs `_expected.steps` against the one
 `_expected.expected`, so the page from the shell with no view and the
 prerendered page give one transcript. No build may leave its prerender tree,
 `.<out>.prerender`. `build/bad/prerender/` projects are refused
@@ -945,6 +945,16 @@ breaks §7.4's rules or two that write one file, an application with no
   a development build that warns before it mounts fresh, or whose mount
   faults (`WrongPlace`). The other builds keep the
   one `.expected`.
+
+*Since slice P2b* a prerendered page whose program listens holds a capture
+script (`prerender.md` §6.5), which the driver runs where the page holds it,
+`document.currentScript` the element, as the parser runs it. **Input before
+the takeover** is the setup step `early <step>`, where the step is a `click`,
+`input`, `set` or `event`: it acts on the page after its inline scripts ran
+and before the program loads, as a user does, and on a page with no
+prerendered unit it does nothing. So a fixture's prerendering builds, which
+deliver it, have goldens of their own (`EarlyInput`), and a page mounted
+fresh drops it (`EarlyFresh`).
 
 `emit/prerender/` and `emit/release/prerender/` are built the same way, for
 `browser-inline`, each `main` saying `Browser.prerender`, as `emit/inline/` and

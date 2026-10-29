@@ -5,5 +5,5 @@
     <title>Controls</title>
     <script type="module" src="/_main.mjs"></script>
   </head>
-  <body><div id="root"><section data-role=controls data-beni="/"><input data-role=name value="Ada"><input type=checkbox data-role=agree checked><select data-role=plan><option value=free>Free</option><option value=pro selected>Pro</option><option value=pro>Pro again</option><option value=team>Team</option></select><output>Ada agrees to pro</output></section></div></body>
+  <body><div id="root"><script>(()=>{let d=document,r=[],k=["change","input"],f=e=>{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{for(let n of k)d.removeEventListener(n,f,!0);return r};d.currentScript.remove()})()</script><section data-role=controls data-beni="/"><input data-role=name value="Ada"><input type=checkbox data-role=agree checked><select data-role=plan><option value=free>Free</option><option value=pro selected>Pro</option><option value=pro>Pro again</option><option value=team>Team</option></select><output>Ada agrees to pro</output></section></div></body>
 </html>

@@ -105,6 +105,15 @@ pub const lowering: m.Lowering = .{
         // `(root, html, arms, tags)`: the hydrating mount's table, the
         // prerendered page taken over or mounted fresh (`prerender.md` §6).
         .{ .name = "take", .arity = 4 },
+        // Input before the takeover (`prerender.md` §6.5): `(top)` the
+        // capture script's records taken, `(node, kind, f)` a listener
+        // added and noted, `on` and `onArm` through it, and `(⊤)` the
+        // records handed to the listeners noted.
+        .{ .name = "caught", .arity = 1 },
+        .{ .name = "listen", .arity = 3 },
+        .{ .name = "onTaken", .arity = 4 },
+        .{ .name = "onArmTaken", .arity = 5 },
+        .{ .name = "deliver", .arity = 1 },
         // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
         // a document's title written (§10).
         .{ .name = "address", .arity = 1 },
@@ -265,6 +274,10 @@ const PieceData = struct {
     /// The hydrating mount's (`prerender.md` §6.2): the root's eager arms,
     /// by index in its table, its top element 0.
     arm_runs: []const ArmRun = &.{},
+    /// The event kinds the root listens to, each once, sorted: what the
+    /// capture script of the program's page listens to (`prerender.md`
+    /// §6.5, amended 2026-10-29).
+    kinds: []const []const u8 = &.{},
 };
 
 /// A constructor the root's events send, its fields, and the buckets of the
@@ -379,7 +392,9 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         try localArm(pg, hblk, x, fields);
         try js.constant(body, x.name, try js.arrow(fields, hblk));
     }
-    // Each event wired to its handler.
+    // Each event wired to its handler; in the client of a prerendering
+    // build through `listen` (`prerender.md` §6.5, amended 2026-10-29).
+    pg.taking = cx.build.prerender == .client;
     for (pg.events.items, names, local_of) |ev, name, local| {
         const facts = tree.eventFacts(ev.item.event);
         const dom = tree.string(facts.dom_name);
@@ -429,7 +444,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
         try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), if (read) |rd| &.{ listener, try js.name(evn), rd } else &.{ listener, try js.name(evn) }));
-        try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind orelse "click"), try js.arrow(&.{evn}, dom_blk) }));
+        try js.expression(body, try pg.addListener(node, kind orelse "click", try js.arrow(&.{evn}, dom_blk)));
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
     for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(m.Program.BucketRef, c.items) };
@@ -491,6 +506,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         .render = render_name,
         .arms = arms,
         .arm_runs = try a.dupe(ArmRun, layout.arms.items),
+        .kinds = try copyKinds(a, try pg.eventKinds()),
     };
     req.facts.* = .{ .written = true, .data = data };
 }
@@ -681,6 +697,21 @@ const Run = struct {
     elements: union(enum) { children: struct { parent: ?u32, from: u32 }, places },
 };
 
+fn addKind(a: std.mem.Allocator, kinds: *std.ArrayList([]const u8), k: []const u8) m.Error!void {
+    for (kinds.items) |x| if (std.mem.eql(u8, x, k)) return;
+    try kinds.append(a, k);
+}
+
+fn kindLess(_: void, x: []const u8, y: []const u8) bool {
+    return std.mem.lessThan(u8, x, y);
+}
+
+fn copyKinds(a: std.mem.Allocator, kinds: []const []const u8) m.Error![]const []const u8 {
+    const out = try a.alloc([]const u8, kinds.len);
+    for (out, kinds) |*o, k| o.* = try a.dupe(u8, k);
+    return out;
+}
+
 fn runOf(runs: []const Run, piece_index: u32) ?Run {
     for (runs) |r| if (piece_index >= r.start and piece_index < r.start + r.len) return r;
     return null;
@@ -812,6 +843,11 @@ const Page = struct {
     /// the mount compares the page's address with once `onUrlChange`
     /// listens (`prerender.md` §7.3).
     route_url: ?m.Name = null,
+    /// The client of a prerendering build, whose page may hold input made
+    /// before the takeover (`prerender.md` §6.5, amended 2026-10-29): each
+    /// listener is wired through the runtime's `listen`, which notes it for
+    /// the delivery.
+    taking: bool = false,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
     /// Per key, the buckets of the stateful controls its events are on.
@@ -836,6 +872,38 @@ const Page = struct {
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
+    }
+
+    /// The event kinds the unit listens to — its own events' and its
+    /// pieces' — each once, sorted by byte (`prerender.md` §6.5, amended
+    /// 2026-10-29).
+    fn eventKinds(pg: *Page) m.Error![]const []const u8 {
+        var kinds: std.ArrayList([]const u8) = .empty;
+        for (pg.events.items) |ev| try addKind(pg.a(), &kinds, pg.tree.string(pg.tree.eventFacts(ev.item.event).dom_name));
+        for (pg.pieces.items) |u| for (u.data.kinds) |k| try addKind(pg.a(), &kinds, k);
+        std.mem.sort([]const u8, kinds.items, {}, kindLess);
+        return kinds.items;
+    }
+
+    /// The capture script of a prerendered page (`prerender.md` §6.5,
+    /// amended 2026-10-29): it records each event of `kinds` on the unit
+    /// before the takeover, for the mount's `caught`. Empty when the unit
+    /// listens to nothing.
+    fn captureScript(pg: *Page) m.Error![]const u8 {
+        const kinds = try pg.eventKinds();
+        if (kinds.len == 0) return "";
+        var list: std.ArrayList(u8) = .empty;
+        for (kinds, 0..) |k, i| {
+            if (i != 0) try list.append(pg.a(), ',');
+            // A kind is a DOM event name the vocabulary declares: letters,
+            // digits, `-` and `:`, nothing a JSON string escapes, and
+            // nothing that ends a script.
+            for (k) |c| std.debug.assert(std.ascii.isAlphanumeric(c) or c == '-' or c == ':' or c == '_');
+            try list.print(pg.a(), "\"{s}\"", .{k});
+        }
+        return std.fmt.allocPrint(pg.a(),
+            \\<script>(()=>{{let d=document,r=[],k=[{s}],f=e=>{{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])}};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{{for(let n of k)d.removeEventListener(n,f,!0);return r}};d.currentScript.remove()}})()</script>
+        , .{list.items});
     }
 
     /// A hole's facts, refused when the write-set pass did not reach the
@@ -1356,6 +1424,15 @@ const Page = struct {
             var html: std.ArrayList(u8) = .empty;
             try serialise(pg.a(), &html, pg.top_nodes, null, true);
             try pg.take(at, html.items);
+            // A unit that listens takes the input its page's capture script
+            // recorded before any listener is added (`prerender.md` §6.5,
+            // amended 2026-10-29).
+            if ((try pg.eventKinds()).len != 0) {
+                pg.taking = true;
+                try js.expression(body, try js.call(try js.name(try cx.runtime("caught")), &.{
+                    try js.index(try js.name(pg.elements.?), try js.number("0")),
+                }));
+            }
         } else if (pg.top_nodes.len == 1) {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
@@ -1593,10 +1670,7 @@ const Page = struct {
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
             try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), if (pl.read) |rd| &.{ try js.name(listener), try js.name(ev), rd } else &.{ try js.name(listener), try js.name(ev) }));
-            try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{
-                try js.string(pl.kind orelse "click"),
-                try js.arrow(&.{ev}, dom),
-            }));
+            try js.expression(body, try pg.addListener(node, pl.kind orelse "click", try js.arrow(&.{ev}, dom)));
         }
 
         // Each piece's root factory (§8.4, amended 2026-10-22), in placement
@@ -1718,6 +1792,9 @@ const Page = struct {
         if (element_ and cx.programCommand(null) == .runs) {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
         }
+        // The input made before the takeover, handed to its listeners last
+        // (`prerender.md` §6.5, amended 2026-10-29).
+        if (pg.taking) try js.expression(body, try js.call(try js.name(try cx.runtime("deliver")), &.{}));
         return js.arrow(&.{id}, body);
     }
 
@@ -2047,15 +2124,25 @@ const Page = struct {
         const js = pg.cx.js;
         const arms = try pg.armElements(ctx);
         if (arms.len == 0) {
-            const on = try js.name(try pg.cx.runtime("on"));
+            const on = try js.name(try pg.cx.runtime(if (pg.taking) "onTaken" else "on"));
             if (read) |rd| return js.call(on, &.{ node, f, if (kind) |k| try js.string(k) else try js.literal(.undefined), rd });
             if (kind) |k| return js.call(on, &.{ node, f, try js.string(k) });
             return js.call(on, &.{ node, f });
         }
-        const on_arm = try js.name(try pg.cx.runtime("onArm"));
+        const on_arm = try js.name(try pg.cx.runtime(if (pg.taking) "onArmTaken" else "onArm"));
         const which = if (arms.len == 1) arms[0] else try js.array(arms);
         if (read) |rd| return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which, rd });
         return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which });
+    }
+
+    /// A listener written in place: `node.addEventListener(kind, f)`, or in
+    /// the client of a prerendering build the runtime's `listen(node, kind,
+    /// f)`, which notes it for the delivery of input made before the
+    /// takeover (`prerender.md` §6.5, amended 2026-10-29).
+    fn addListener(pg: *Page, node: m.Expr, kind: []const u8, f: m.Expr) m.Error!m.Expr {
+        const js = pg.cx.js;
+        if (pg.taking) return js.call(try js.name(try pg.cx.runtime("listen")), &.{ node, try js.string(kind), f });
+        return js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind), f });
     }
 
     /// The element of each eager arm around context `ctx`, outermost first:
@@ -3079,6 +3166,9 @@ const Render = struct {
     fn unit(r: *Render, blk: m.Block, title: ?m.Name) m.Error!void {
         const js_ = r.js();
         try js_.let(blk, r.out, try js_.string(""));
+        // The program's page begins with its capture script, when its unit
+        // listens (`prerender.md` §6.5, amended 2026-10-29).
+        if (r.route != null) try r.text(try r.pg.captureScript());
         try r.enter(blk, 0);
         try r.nodes(blk, r.pg.top_nodes, 0);
         try r.flush(blk);

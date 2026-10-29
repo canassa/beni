@@ -5,5 +5,5 @@
     <title>Hidden arm</title>
     <script type="module" src="/_main.mjs"></script>
   </head>
-  <body><div id="root"><main data-role=app data-beni="/"><button data-role=toggle>Menu</button><!--0--><p data-role=closed>Closed</p></main></div></body>
+  <body><div id="root"><script>(()=>{let d=document,r=[],k=["click"],f=e=>{let t=e.target;t.closest?.("[data-beni]")&&r.push([e,t.value,t.checked,t.selectedIndex])};for(let n of k)d.addEventListener(n,f,!0);window.$beni=()=>{for(let n of k)d.removeEventListener(n,f,!0);return r};d.currentScript.remove()})()</script><main data-role=app data-beni="/"><button data-role=toggle>Menu</button><!--0--><p data-role=closed>Closed</p></main></div></body>
 </html>

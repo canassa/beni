@@ -1,0 +1,30 @@
+-- A prerendered page whose program listens to nothing
+-- (docs/design/prerender.md §6.5, amended 2026-10-29): the build writes no
+-- capture script into it, and its client has no code to deliver input made
+-- before the takeover. A click before the program runs does nothing.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    title : String
+
+
+view : Model → Html ⊥
+view model =
+    <article data-role="post">
+        <h1>{model.title}</h1>
+        <button data-role="noop">Nothing</button>
+    </article>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { title = "Hello" }, update = λ_ model → model, view = view }
+            )
+            "root"
+        )
+        [ "/" ]

@@ -53,12 +53,15 @@ module Inline
   value address : ⊤ → Url  -- impure
   value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
+  value caught : V → ⊤  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
+  value deliver : ⊤ → ⊤  -- impure
   value entry : V, V → V  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
+  value listen : V, V, V → ⊤  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
   value loadAllPlanned : V, V, V → ⊤  -- impure
@@ -74,6 +77,8 @@ module Inline
   value navigationKey : ⊤ → NavigationKey
   value on : V, V, V, V → ⊤  -- impure
   value onArm : V, V, V, V, V → ⊤  -- impure
+  value onArmTaken : V, V, V, V, V → ⊤  -- impure
+  value onTaken : V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure

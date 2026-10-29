@@ -1,0 +1,28 @@
+-- inject [data-role=inc] "<i>ad</i>"
+-- fresh
+-- early click [data-role=inc]
+-- early input [data-role=name] "Bo"
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <button data-role="inc">"+"</button>
+      <input data-role="name" .value="Ada">
+      <output data-role="count">"0 Ada"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- click [data-role=inc]
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <button data-role="inc">"+"</button>
+      <input data-role="name" .value="Ada">
+      <output data-role="count">"1 Ada"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
