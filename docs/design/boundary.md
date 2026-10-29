@@ -7344,7 +7344,29 @@ inside a handler queues it behind the events already waiting ((e.10)).
   hold is documented**: the lifecycle page says "Each operation prevents eviction until it
   completes or for up to 15 minutes from when it starts", so one timer holds the object for at
   most 15 minutes from when it was armed, and a fiber parked longer is #864 (re-arm the hold, or
-  accept the limit). Local workerd hibernates an idle object too: the review of #860 ran the
+  accept the limit). ***Measured 2026-10-29 at the edge (#864; the owner's answer to
+  `cf-workers-q14` was to re-arm every 14 minutes and measure):*** the hold does not last 15
+  minutes, nor 2. A plain-JavaScript probe Worker (`beni-probe-864`, deployed to the account's
+  `workers.dev` and deleted after; compatibility date 2026-05-18) with three Durable Object
+  classes and no socket: one with no timer, one with the platform's hold — one
+  `setTimeout(…, 2147483647)` armed in a request — and one with a 14-minute timer whose firing
+  arms the next and writes the time to storage. After 16 minutes with no request all three were
+  new instances, and the renewing one had written nothing: it was gone before its first renewal.
+  The long timer then kept its object for 60 s (the same instance, its count continued) and not
+  for 120 s (a new one), and a 14-minute timer did not keep its object for 8 minutes; the object
+  with no timer was new after 13 s, and the renewing object armed a second time had written no
+  renewal 14 minutes later either. So a pending timer keeps an object from hibernating (the
+  10 s) but not from the eviction of an idle object: the lifecycle page says "after 70-140
+  seconds of inactivity (no incoming requests or events)", and a timer's callback is not an
+  incoming event. Thus at the edge the guarantee above — a parked fiber is never stranded —
+  holds for a spawned fiber for at least 60 s and less than 120 s after the object's last event,
+  and a renewal every 14 minutes never runs. A fiber that waits inside its handler keeps that
+  handler's request open, an operation the page lets keep the object for up to 15 minutes; the
+  probe did not measure it. Whether a timer that fires — a renewal every 30 s, say — resets the
+  idle clock was not measured, since the deployed code had no short period; by the page's words
+  it does not, and an alarm, which is an incoming event, would. The next form is the owner's
+  decision (`cf-workers-q15`, #864).
+  Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
   this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
@@ -7547,7 +7569,9 @@ pub type AskError
   returns — the kernel reports an end, never a start, so the first fiber a handler spawns is seen
   there — and at each end through `onSchedulerCount`. `ObjectIsolation` reads it through the
   `--test-hooks` path `/__beni/hold` (`held` or `free`). That the timer prevents hibernation is
-  #593's probe, still owed, so #550 stays open until it settles.
+  #593's probe, still owed, so #550 stays open until it settles. *2026-10-29: at the edge it
+  prevents hibernation but not the idle eviction, 60 s kept and 120 s not ((e.5), measured,
+  #864).*
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
