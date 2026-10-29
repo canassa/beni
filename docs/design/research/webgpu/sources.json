@@ -1,0 +1,122 @@
+{
+  "retrieved": "2026-10-29",
+  "gpuweb_revision": "a1a1e79f35f93ad6db255dc170621ae7e411eba0",
+  "elm_webgl_version": "1.1.3",
+  "elm_webgl_revision": "a9a483b8d29205b1544e736607d72fe931f58958",
+  "cts_revision": "d116bcccd1833369fa3715a6df503c0dd9b0d7fa",
+  "sources": [
+    {
+      "file": "webgpu.bs",
+      "url": "https://raw.githubusercontent.com/gpuweb/gpuweb/a1a1e79f35f93ad6db255dc170621ae7e411eba0/spec/index.bs",
+      "sha256": "c1b7a06b87885f236e23ceda2e38b62ebc1a9c4b13b6af9f3e777ab4e489eb4e",
+      "bytes": 849283
+    },
+    {
+      "file": "wgsl.bs",
+      "url": "https://raw.githubusercontent.com/gpuweb/gpuweb/a1a1e79f35f93ad6db255dc170621ae7e411eba0/wgsl/index.bs",
+      "sha256": "5cedb4a91dfcca8feaa1fe713c7b9c00d6b5545454acc3eb557db75723f19ae5",
+      "bytes": 928905
+    },
+    {
+      "file": "gpuweb-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/gpuweb/gpuweb/a1a1e79f35f93ad6db255dc170621ae7e411eba0/LICENSE.md",
+      "sha256": "472e2c73a56b38a4facd79baf6898a5e27feca0070d8144041a6dd2a1a2cfc59",
+      "bytes": 3852
+    },
+    {
+      "file": "WebGL.elm",
+      "url": "https://raw.githubusercontent.com/elm-explorations/webgl/a9a483b8d29205b1544e736607d72fe931f58958/src/WebGL.elm",
+      "sha256": "0411b73c64774fb1b07f60187fa7a7c6b78f5c98e12df53dcdcc1ddfc666197e",
+      "bytes": 10665
+    },
+    {
+      "file": "Texture.elm",
+      "url": "https://raw.githubusercontent.com/elm-explorations/webgl/a9a483b8d29205b1544e736607d72fe931f58958/src/WebGL/Texture.elm",
+      "sha256": "105773f3d2928854bcc38a2b163fc9f593ae01b8a4ccc6005cad23463d1ef0c8",
+      "bytes": 7549
+    },
+    {
+      "file": "Elm-WebGL.js",
+      "url": "https://raw.githubusercontent.com/elm-explorations/webgl/a9a483b8d29205b1544e736607d72fe931f58958/src/Elm/Kernel/WebGL.js",
+      "sha256": "c0b6fe56c0037e19b8c842ea266bfeee7f4f652baf7c0aac3419f3f35d72f1eb",
+      "bytes": 27204
+    },
+    {
+      "file": "Elm-Texture.js",
+      "url": "https://raw.githubusercontent.com/elm-explorations/webgl/a9a483b8d29205b1544e736607d72fe931f58958/src/Elm/Kernel/Texture.js",
+      "sha256": "0547e689dc0801ec75f05476b41ab0da73fc3ea78595def9a41601afe3d58a97",
+      "bytes": 2222
+    },
+    {
+      "file": "elm.json",
+      "url": "https://raw.githubusercontent.com/elm-explorations/webgl/a9a483b8d29205b1544e736607d72fe931f58958/elm.json",
+      "sha256": "44a2f2cbd3e41dee88d7ad3a95076155a8df71b620b3a84031c1137d248fa62e",
+      "bytes": 565
+    },
+    {
+      "file": "copies.bs",
+      "url": "https://raw.githubusercontent.com/gpuweb/gpuweb/a1a1e79f35f93ad6db255dc170621ae7e411eba0/spec/sections/copies.bs",
+      "sha256": "ff03e128d21f18ecbb30b9fea9e3fbd61718c73cc6636ace718907a4cebcf1d8",
+      "bytes": 27111
+    },
+    {
+      "file": "webgpu-published.html",
+      "url": "https://www.w3.org/TR/2026/CRD-webgpu-20260915/",
+      "sha256": "7c67681430753937fd878fcbab9c2f0e93d757bdc24de6f3789ea0ff6c6f2438",
+      "bytes": 4521455
+    },
+    {
+      "file": "wgsl-published.html",
+      "url": "https://www.w3.org/TR/2026/CRD-WGSL-20261026/",
+      "sha256": "fb2dba9e6c07884a60aa78424b561c5ed9c6997810edd1da37d6a08ae68623b4",
+      "bytes": 3105592
+    },
+    {
+      "file": "html-canvas.html",
+      "url": "https://html.spec.whatwg.org/multipage/canvas.html",
+      "sha256": "3e799d8c8b2db95e9e8a6642a4b2795e02832dad2d751d2a47af889b670eb36c",
+      "bytes": 774196
+    },
+    {
+      "file": "webidl.html",
+      "url": "https://webidl.spec.whatwg.org/",
+      "sha256": "100586425cbed182c4cac1b7dc7166eeaaadd62c81f35b6991537812c92b7ca6",
+      "bytes": 2554113
+    },
+    {
+      "file": "webcodecs.html",
+      "url": "https://www.w3.org/TR/webcodecs/",
+      "sha256": "2960ce936587ad0a7bab5ed6978eccdd6bab0db13e91efe138458be1032e26a4",
+      "bytes": 1755297
+    },
+    {
+      "file": "cts-error-scope.ts",
+      "url": "https://raw.githubusercontent.com/gpuweb/cts/d116bcccd1833369fa3715a6df503c0dd9b0d7fa/src/webgpu/api/validation/error_scope.spec.ts",
+      "sha256": "74e5e6056f0786d6ae00e1784846042c75a1e559846b0d709abccb866b9e6e74",
+      "bytes": 5759
+    },
+    {
+      "file": "cts-capability.ts",
+      "url": "https://raw.githubusercontent.com/gpuweb/cts/d116bcccd1833369fa3715a6df503c0dd9b0d7fa/src/webgpu/capability_info.ts",
+      "sha256": "f560f7c3ecf7f9259b141a3e666de0565a2d41d1f0d52aff3a3a1e84c295ef87",
+      "bytes": 42498
+    },
+    {
+      "file": "cts-readme.md",
+      "url": "https://raw.githubusercontent.com/gpuweb/cts/d116bcccd1833369fa3715a6df503c0dd9b0d7fa/README.md",
+      "sha256": "b6f31887bb13814fdf0093b5058d95f69b3d8c190eaf3b710108a8a7ec764dac",
+      "bytes": 1188
+    },
+    {
+      "file": "privacy-and-security.bs",
+      "url": "https://raw.githubusercontent.com/gpuweb/gpuweb/a1a1e79f35f93ad6db255dc170621ae7e411eba0/spec/sections/privacy-and-security.bs",
+      "sha256": "9e1bcc0389d21fea6015ed72377fe94f012f4aa07cff32c0d1bc0bde03cc4b2c",
+      "bytes": 18393
+    }
+  ],
+  "derived": {
+    "webgpu_idl_sha256": "0363abdc3a92af36355342aa3f89414c40051bcc11f2d52e9e7addcb97ea6c11",
+    "extraction": "script[type=idl] blocks from index.bs with copies.bs included in document order; privacy-and-security.bs contains no IDL",
+    "published_idl_comparison": "Declaration/member/enum-value sets match the dated published WebGPU draft; feature enum order differs. Prose equivalence is not asserted."
+  }
+}
