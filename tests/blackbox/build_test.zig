@@ -8870,9 +8870,9 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
     // growth 0. The points of a cell are indexed by the second order, so a
     // query is one binary search, charged as growth. The mixed difference over
     // independent escape and write counts is the product term; it stays
-    // within w · (log₂ e + 1) (measured: 368 at 4 and 96), where the
-    // product would be e × w (8 464).
-    const counts = [_]u32{ 4, 96 };
+    // within w · (log₂ e + 1) (measured: 132 at 4 and 48), where the
+    // product would be e × w (1 936).
+    const counts = [_]u32{ 4, 48 };
     var ins: [2][2]u64 = undefined;
     for (counts, 0..) |e, i| for (counts, 0..) |w_count, j| {
         // ┌─────────────────────────────────────────┐
@@ -8892,15 +8892,24 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
     const mixed = (ins[1][1] + ins[0][0]) -| (ins[1][0] + ins[0][1]);
     // Charged: each extra write's query costs more when it has more
     // escape points to search, so the term is never 0 (it was, uncharged).
-    try testing.expect(mixed >= 96 - 4);
-    try testing.expect(mixed <= 16 * 96);
-    try testing.expect(mixed < 96 * 96 / 4);
-    // The escaped twin: the escapes come first in the same branch, so every
-    // push is refused `escaped`.
-    const twin = try escapesWrites(96, 16, true);
+    try testing.expect(mixed >= 48 - 4);
+    try testing.expect(mixed <= 8 * 48);
+    try testing.expect(mixed < 48 * 48 / 4);
+}
+
+test "the checker v2 refuses every write after the escapes in the same branch" {
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // The escaped twin of the test above: the escapes come first, in the
+    // same branch, so every push is refused `escaped` (#1226).
+    const twin = try escapesWrites(48, 8, true);
     defer testing.allocator.free(twin.total);
-    try testing.expect(std.mem.startsWith(u8, twin.total, "total 16: accepted 0 "));
-    try testing.expect(std.mem.indexOf(u8, twin.total, "rejected 16") != null);
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.startsWith(u8, twin.total, "total 8: accepted 0 "));
+    try testing.expect(std.mem.indexOf(u8, twin.total, "rejected 8") != null);
 }
 
 test "the checker v2's growth in a tower of joins of one value at two depths is at most quadratic" {

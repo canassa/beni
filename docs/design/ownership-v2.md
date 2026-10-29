@@ -2886,8 +2886,9 @@ points are sorted by cell and point, and each point carries its run prefix's poi
 (§2.5's second order). For e < p, compatible ⇔ rank₂(e) < rank₂(p), so a write asks one binary search of
 its cell's run, charged as growth of the run's size (never the demand's fixed lane), and the sort is
 charged once. Before, every write tested every escape point of its cell, uncharged: e × w tests at growth
-0 (10⁶ at 1 000 × 1 000). Measured, the mixed difference of a frame's inspections over 4 and 96 escapes and
-writes (`build_test.zig`) is 368, w · (log₂ e + 1), where the product is 8 464.
+0 (10⁶ at 1 000 × 1 000). Measured, the mixed difference of a frame's inspections over 4 and 48 escapes and
+writes (`build_test.zig`) is 132, w · (log₂ e + 1), where the product is 1 936. A run of one point is one test, which the
+ancestor step that asks it already pays for on its own lane.
 
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
