@@ -1,0 +1,156 @@
+-- url "/blog/42"
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Blog 42"</h1>
+    <p></p>
+  </main>
+</body>
+-- title
+(title: "Blog 42")
+(the DOM did not change)
+-- click #home
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Home"</h1>
+    <p></p>
+  </main>
+</body>
+-- title
+(title: "Home")
+(the DOM did not change)
+-- location
+(location: /)
+(the DOM did not change)
+-- click #blog
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Blog 7"</h1>
+    <p></p>
+  </main>
+</body>
+-- title
+(title: "Blog 7")
+(the DOM did not change)
+-- location
+(location: /blog/7)
+(the DOM did not change)
+-- click #lost
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Not found"</h1>
+    <p></p>
+  </main>
+</body>
+-- title
+(title: "Not found")
+(the DOM did not change)
+-- location
+(location: /nowhere)
+(the DOM did not change)
+-- click #away
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Not found"</h1>
+    <p>"external https://example.org/x"</p>
+  </main>
+</body>
+-- back
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Blog 7"</h1>
+    <p>"external https://example.org/x"</p>
+  </main>
+</body>
+-- title
+(title: "Blog 7")
+(the DOM did not change)
+-- location
+(location: /blog/7)
+(the DOM did not change)
+-- click #back
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Home"</h1>
+    <p>"external https://example.org/x"</p>
+  </main>
+</body>
+-- title
+(title: "Home")
+(the DOM did not change)
+-- location
+(location: /)
+(the DOM did not change)
+-- forward
+<body>
+  <main>
+    <nav>
+      <a id="home" href="/">"home"</a>
+      <a id="blog" href="/blog/7">"blog"</a>
+      <a id="lost" href="/nowhere">"lost"</a>
+      <a id="away" href="https://example.org/x">"away"</a>
+    </nav>
+    <button id="back">"back"</button>
+    <h1>"Blog 7"</h1>
+    <p>"external https://example.org/x"</p>
+  </main>
+</body>
+-- title
+(title: "Blog 7")
+(the DOM did not change)
+-- location
+(location: /blog/7)
+(the DOM did not change)

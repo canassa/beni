@@ -1,0 +1,97 @@
+-- `Browser.Navigation`'s commands on `browser-inline` (browser-inline.md
+-- §10.4; boundary.md §9.8.17): `pushUrl`, `replaceUrl`, `back`, `forward`
+-- and `load`, each a `Cmd.perform` that runs after the dispatch's write
+-- pass and takes the values `update` computed and a message for a refusal.
+-- A change that is made sends nothing of its own — `onUrlChange`, here a
+-- subscription of a `Tea.element`, hears it — and one that is refused sends
+-- its refusal, typed (CLAUDE.md rule 9): a push to another origin, a
+-- replace that does not resolve, a `javascript:` load. `back` with `0`
+-- does nothing and sends nothing; `forward` after the driver's `back`
+-- comes back through `onUrlChange`. `browser/tea/InlineNavigateCommands.beni`
+-- is this file, byte for byte, built for `browser-tea`, with the same
+-- transcript but where an empty text is shown as `""` there.
+import Browser.Navigation as Navigation exposing (Key)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Push String
+    | Replace String
+    | Back Int
+    | Forward Int
+    | Load String
+    | Refused Navigation.Error
+    | Changed Url
+
+
+type alias Model =
+    key : Key
+    last : String
+    changes : Int
+
+
+shown : Navigation.Error → String
+shown error =
+    case error of
+        Navigation.BadUrl url →
+            "BadUrl ${url}"
+
+        Navigation.CrossOrigin url →
+            "CrossOrigin ${url}"
+
+        Navigation.Throttled →
+            "Throttled"
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Push url →
+            ( model, Navigation.pushUrl model.key url Refused )
+
+        Replace url →
+            ( model, Navigation.replaceUrl model.key url Refused )
+
+        Back n →
+            ( model, Navigation.back model.key n Refused )
+
+        Forward n →
+            ( model, Navigation.forward model.key n Refused )
+
+        Load url →
+            ( model, Navigation.load url Refused )
+
+        Refused error →
+            ( { model | last = "refused: ${shown error}" }, Cmd.none )
+
+        Changed url →
+            ( { model | last = "changed to ${url.path}", changes = model.changes + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="push" onClick={Push "/a"}>push</button>
+        <button id="away" onClick={Push "https://example.com/x"}>away</button>
+        <button id="replace" onClick={Replace "/r"}>replace</button>
+        <button id="bad" onClick={Replace "http://["}>bad</button>
+        <button id="none" onClick={Back 0}>none</button>
+        <button id="forward" onClick={Forward 1}>forward</button>
+        <button id="script" onClick={Load "javascript:alert(1)"}>script</button>
+        <p>{model.last}</p>
+        <output>{String.fromInt model.changes}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { key = Navigation.key ⊤, last = "", changes = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Navigation.onUrlChange Changed
+        }

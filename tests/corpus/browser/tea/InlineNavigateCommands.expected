@@ -1,0 +1,138 @@
+-- load
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>""</p>
+    <output>"0"</output>
+  </main>
+</body>
+-- click #push
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"changed to /a"</p>
+    <output>"1"</output>
+  </main>
+</body>
+-- location
+(location: /a)
+(the DOM did not change)
+-- click #away
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"refused: CrossOrigin https://example.com/x"</p>
+    <output>"1"</output>
+  </main>
+</body>
+-- location
+(location: /a)
+(the DOM did not change)
+-- click #replace
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"changed to /r"</p>
+    <output>"2"</output>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #bad
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"refused: BadUrl http://["</p>
+    <output>"2"</output>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #none
+(the DOM did not change)
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #script
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"refused: BadUrl javascript:alert(1)"</p>
+    <output>"2"</output>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"changed to /_page.html"</p>
+    <output>"3"</output>
+  </main>
+</body>
+-- location
+(location: /_page.html)
+(the DOM did not change)
+-- click #forward
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="forward">"forward"</button>
+    <button id="script">"script"</button>
+    <p>"changed to /r"</p>
+    <output>"4"</output>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)

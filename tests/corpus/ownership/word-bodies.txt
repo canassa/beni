@@ -71,6 +71,8 @@ platforms/browser-tea/Tea.beni               Tea.document             1f37469ef9
 platforms/browser-tea/Tea.beni               Tea.application          e6200815da17feee44ee77949affb7e41153e018774051e8de9d9ef354b57311
 platforms/browser-inline/Tea.js              Tea.sandbox              f67bbcd3142c8c9c05dc3b387f906062e1ddb0833e3fd37d6a34c95a7cc7af36
 platforms/browser-inline/Tea.js              Tea.element              d373999e62ba6b9a338d87d9af28f9e161f57ffd5a7d13e7126a6f66607596d0
+platforms/browser-inline/Tea.beni            Tea.document             592e29441537eab629dc45d2a107d82295dfc4eaf264bb836484de0c639d7293
+platforms/browser-inline/Tea.beni            Tea.application          4cd473372280c8571ec6cad16cf378da2ced9ceb5756437141f44a3d26c413b0
 tests/platforms/page/Page.js                 Page.sandbox             c72696a375ce50996c18cb35783240a89cec50b82254864acd5a2c4832a9df9e
 tests/platforms/page/runtime.js              Page.renderAttributes    b9978143277b8790644dc173f2eb7f1d3cb38da590ecf7fa790a86321ab30b1a
 tests/platforms/page/runtime.js              Page.create              4bfd151d7726aa70d50f176fc43e97f00cd3c775c0a32133e5ad84082ee0b9e6

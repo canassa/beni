@@ -3189,7 +3189,7 @@ const Emitter = struct {
                         const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
                         const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
                         for (subs.decls, set, starts) |dcl, *s, *st| {
-                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst) };
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message };
                             const info = try w.funInfo(dcl.start);
                             st.* = .{
                                 .kind = switch (info.kind) {
@@ -3201,6 +3201,7 @@ const Emitter = struct {
                                 .decl = info.d,
                                 .inst = info.inst,
                                 .bound = try a.dupe(u32, info.bound),
+                                .message = if (dcl.message) e.directCtor(w, dcl.ctor) else null,
                             };
                             // A lambda of another module: the piece it is
                             // lifted as, and its captures' values here.
@@ -3692,7 +3693,13 @@ const Emitter = struct {
     /// subscriptions.
     fn subscribed(prog: *const Writes.Program, k: u32) bool {
         if (prog.subscriptions.class != .set) return false;
-        for (prog.subscriptions.decls) |dcl| if (dcl.key_index == k) return true;
+        for (prog.subscriptions.decls) |dcl| {
+            if (dcl.key_index == k) return true;
+            // A value that reaches its key as a message (`browser-inline.md`
+            // §10.3) may reach any key below its constructor.
+            const steps = prog.keys[k].steps;
+            if (dcl.message and steps.len != 0 and steps[0].ctor == dcl.ctor) return true;
+        }
         return false;
     }
 

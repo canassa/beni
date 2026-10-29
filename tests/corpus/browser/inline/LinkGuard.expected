@@ -1,0 +1,151 @@
+-- load
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p></p>
+  </main>
+</body>
+-- click #relative
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"Internal /blog/42"</p>
+  </main>
+</body>
+-- click #fragment
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"Internal /_page.html"</p>
+  </main>
+</body>
+-- click #host
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"External http://example.com/x"</p>
+  </main>
+</body>
+-- click #mail
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"External mailto:a@example.com"</p>
+  </main>
+</body>
+-- click #blank
+(the host follows the link to "/b")
+(the DOM did not change)
+-- click #self
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"Internal /s"</p>
+  </main>
+</body>
+-- click #download
+(the host follows the link to "/d")
+(the DOM did not change)
+-- location
+(location: /_page.html)
+(the DOM did not change)
+-- click #inner
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="nohref">"no href"</a>
+    <p>"Internal /n"</p>
+  </main>
+</body>
+-- click #nohref
+(the DOM did not change)
+-- click #relative ctrl
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative meta
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative shift
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative alt
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative button:1
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)

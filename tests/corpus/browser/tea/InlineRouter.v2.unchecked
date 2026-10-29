@@ -1,0 +1,6 @@
+InlineRouter route: lines 32-36 (not built: call)
+InlineRouter toRoute: lines 40-41 (not built: call)
+InlineRouter init: lines 57-58 (not built: call)
+InlineRouter update: lines 61-77 (not built: call)
+InlineRouter view: lines 93-106 (not built: markup)
+InlineRouter main: lines 111-119 (not built: top)

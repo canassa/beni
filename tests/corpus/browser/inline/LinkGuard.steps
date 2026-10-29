@@ -1,0 +1,15 @@
+click #relative
+click #fragment
+click #host
+click #mail
+click #blank
+click #self
+click #download
+location
+click #inner
+click #nohref
+click #relative ctrl
+click #relative meta
+click #relative shift
+click #relative alt
+click #relative button:1

@@ -9,7 +9,7 @@ the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or w
 | `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
-| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
+| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
 
@@ -283,10 +283,10 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 
 ## `browser-inline`
 
-The same `Tea.sandbox` and `Tea.element` as `browser-tea`, so one source builds on both. The
-program is compiled, not run: each constructor is recognised where it is called, and the page ships
-only what it reaches. Lists are edited in place here, so the ownership checker's errors apply
-(`lists.md`, *Ownership*). For view helpers, see `markup.md`, *Helpers on `browser-inline`*.
+The same `Tea` programs as `browser-tea`, `document` and `application` included, so one source
+builds on both. The program is compiled, not run: each constructor is recognised where it is called,
+and the page ships only what it reaches. Lists are edited in place here, so the ownership checker's
+errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`.
 
 ## `html`
 
