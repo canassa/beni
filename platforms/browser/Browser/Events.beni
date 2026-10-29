@@ -43,10 +43,13 @@ type FrameKey
 
 
 --| The window's inner size, now.
-pub foreign impure size : ⊤ → Size
+pub size : ⊤ → Size
+size ⊤ = { width = Js.to (Js.global "innerWidth"), height = Js.to (Js.global "innerHeight") }
 
 
-foreign impure hidden : ⊤ → Bool
+-- `document.visibilityState === "hidden"`.
+hidden : ⊤ → Bool
+hidden ⊤ = Js.same (Js.get (Js.global "document") "visibilityState") (Js.from "hidden")
 
 
 --| Whether the page can be seen, now.
