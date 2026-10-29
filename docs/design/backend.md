@@ -6206,10 +6206,11 @@ such a name out, and a third is a duty:
   caller in another module is planned there (`emit/release/app/EtaReduceAlias` pins both: the
   entry's lambda prints as the alias, and `Counted`'s own `viaAlias`, called twice so that it
   stays, keeps its lambda; `run/EtaReduceHostValue`'s `viaAlias`, called once, is moved and
-  reduced). That is harmless today: a sibling's export is an arrow of the declared arity
-  (`boundary.md` §4, check 4) that names no `arguments` (check 3), and the runtime's functions
-  have no beni name; a change to either check must revisit this (*amended 2026-10-29, the second
-  review*);
+  reduced). That is harmless today: a sibling's export takes the declared arity (`boundary.md`
+  §4, check 4) and names no `arguments` (check 3); no shipped sibling uses check 4's two
+  `function` forms, which can read `this`, and a sibling that does must revisit this; the
+  runtime's functions have no beni name; a change to either check must revisit it too
+  (*amended 2026-10-29, the second review, and its third*);
 - what remains is a beni function type whose value a `Js.to` cast from a host function.
   `boundary.md` §4.2 makes it the duty of the code that writes the `Js.to`: such a function ignores
   the arguments past the type's arity and `this`, as an emitted function does. `run/EtaReduceHostValue`
