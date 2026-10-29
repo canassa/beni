@@ -125,13 +125,23 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 var buf: std.Io.Writer.Allocating = .init(arena);
                 mod.account = &dr.account;
                 const sum_names: Summary.Names = .{ .ctx = &sn, .field = SummaryNames.field, .ctor = SummaryNames.ctor, .decl = SummaryNames.decl };
+                // The print reads the class on the declaration's account, so it
+                // can pass the allowance the walk stayed under: a summary that
+                // is not printed says why, never goes missing (#1182).
+                var not_printed: ?[]const u8 = null;
                 mod.sums.print(mod.env(), arena, &buf.writer, dr.class, name, sum_names) catch |err| switch (err) {
                     error.OutOfMemory => return error.OutOfMemory,
-                    else => {},
+                    else => not_printed = if (dr.account.failed) |f| switch (f) {
+                        .exhausted => "ownership_summary_size",
+                        .limit => |l| try std.fmt.allocPrint(arena, "{t}", .{l}),
+                        .invariant => |l| try std.fmt.allocPrint(arena, "ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ l.role, l.atom, l.phase }),
+                    } else @errorName(err),
                 };
                 mod.account = &mod.base_account;
                 const text = buf.written();
-                if (dr.unbuilt != Ids.none_int) {
+                if (not_printed) |why| {
+                    try others.append(arena, try std.fmt.allocPrint(arena, "summary {s}: not printed: {s}", .{ name, why }));
+                } else if (dr.unbuilt != Ids.none_int) {
                     try others.append(arena, try std.fmt.allocPrint(arena, "summary {s}: not built: {t} (pessimistic)", .{ name, mi.bir.instTag(@fromBackingInt(dr.unbuilt)) }));
                 } else if (text.len != 0) try others.append(arena, text);
             }
