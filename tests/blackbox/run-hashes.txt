@@ -133,7 +133,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 08c575428d9e8b2d3c453245bf69db3b56463b1489b40cc8bfe7ecbfc9c54f53
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 730dd60acf6378579be84067833c8639cf5cca972696b78d550c68d410daca76
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 3f97365deea933367f1c7c881d63c07caf49ecf096757c39cc56754e12c774ac
@@ -145,12 +145,12 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 76bd02aa4473b86c846515ead4fc065ad99b4dcf0783d38d5fc0c33e4033a3b0
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 bf02f030b3c9014cb70be900d9c235549e4c16ff0295604ca48ed2d030f06f29
 ordering_test.test.nullary methods and record defaults print the same reversed #0 f99bac19c8930988990d032f3c2421a5966ed6d03c968bad7073310b1415a110
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 bb2d87ff33205e22df4b12725bb66a80d1095478669fd00cd309f7affdf7012e
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 5b06ed97dfed74dea55c268b8a062f533701fb7067485e5c0a6102470d6b9495
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 d7e7c67295566de82319a7bc16495ee28c1299d32f70011ed4ce16ea111864a9
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 4b179a05e55b8433e9d508a5502ecf19f9f5aeeea6fa77474cd7f9c40192c898
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 f30a13a9725598ddaa013e9e6f243abfd66c7b1e2b0802bf1267288da0cd9aba
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 57aa49243b5b48cc7782d4b0ad28429425f25d5012b6d823cb9735fe144329d4
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 ad3353441b99259f382e7fafa051aa7a8ad2497a5eeb2c0eec84b0316a04dabd
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 32fe0a741cf6fb598c1e76b5d190778ec823874ac267a3e1ace5347efad460bb
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 ce4f3caa7414ab42d5d420ebd4583975469fce57ee04e1d2fe280bf9aa0425de
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 d9b4286d3c2b973c9a8d0403a6e182f8626c816b12e09e2cf3b72b0915e5e819
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 f1791e98e97d183ed806b9da3322cccc0a46abc4c41d4b03c0014a91d0d912c4
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 84302932da36c77cc4fa91427cf5dc056e000d1c607c47ab3292c66e2153d639
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 b7e9efe11951e8221e51572cafdb228a4cee4524043456176f45bd66685577cc
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 ddfa8c5b0d20e492c490715709683f4a437a06f05fad257e01c976f43e08d9d2
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 fe9fda60b221addfd8405bdaf0319efbc455b22c908d7dbee289e651affe2d2f
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 671f5a8a4ec2565c34a3fff75d7251b8a1ec3f557c70ebde6cfa615aa2757a1e
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
