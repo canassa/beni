@@ -289,6 +289,11 @@ const Grafter = struct {
         // A cyclic `res` (a widened class's knot, #1138): a part met again
         // while it is being grafted gets a knot as its image, which the part
         // ties when it is done, so the walk ends and the image is cyclic too.
+        // A knot is PENDING until it is tied: it has no place and no cells
+        // yet. A node only names its parts, so it may be built over one; a
+        // union, a positions node, a recast and a delta read their parts'
+        // records, so one over a pending part is deferred, a knot of its own,
+        // built once the parts it reads are tied (#1143).
         const shapes = g.env.shapes;
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
@@ -297,23 +302,35 @@ const Grafter = struct {
         defer open.deinit(g.gpa());
         var knots: stamped.Column(NodeId, NodeId) = .{};
         defer knots.deinit(g.gpa());
+        var pending: stamped.Column(NodeId, void) = .{};
+        defer pending.deinit(g.gpa());
+        var deferred: std.ArrayList(NodeId) = .empty;
+        defer deferred.deinit(g.gpa());
         try stack.append(g.gpa(), .{ .node = root, .expanded = false });
         while (stack.pop()) |f| {
             if (f.expanded) {
                 open.remove(f.node);
-                if (knots.get(f.node)) |k| {
-                    // The knot's record is the part's image, built as any.
-                    try g.graftOne(f.node);
-                    const built = g.s.memo.get(f.node).?;
-                    shapes.tie(k, shapes.nodes.get(built.int()));
-                    try g.s.memo.put(g.gpa(), f.node, k);
-                } else if (g.s.memo.get(f.node) == null) try g.graftOne(f.node);
+                if (g.s.memo.get(f.node) != null and knots.get(f.node) == null) continue;
+                if (g.readsPending(f.node, &pending)) {
+                    const k = knots.get(f.node) orelse blk: {
+                        const k = try shapes.knot(g.gpa(), g.account());
+                        try knots.put(g.gpa(), f.node, k);
+                        try pending.put(g.gpa(), k, {});
+                        try g.s.memo.put(g.gpa(), f.node, k);
+                        break :blk k;
+                    };
+                    _ = k;
+                    try deferred.append(g.gpa(), f.node);
+                    continue;
+                }
+                try g.graftTied(f.node, &knots, &pending);
                 continue;
             }
             if (g.s.memo.get(f.node) != null) continue;
             if (open.contains(f.node)) {
                 const k = try shapes.knot(g.gpa(), g.account());
                 try knots.put(g.gpa(), f.node, k);
+                try pending.put(g.gpa(), k, {});
                 try g.s.memo.put(g.gpa(), f.node, k);
                 continue;
             }
@@ -331,7 +348,57 @@ const Grafter = struct {
                 .@"union", .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
             }
         }
+        // The deferred parts, each once what it reads is tied. A pass that
+        // ties none is a cycle of reading parts with no node between them,
+        // which no value has: the walk's own defect, never a program's.
+        while (deferred.items.len > 0) {
+            var kept: usize = 0;
+            for (deferred.items) |x| {
+                if (g.readsPending(x, &pending)) {
+                    deferred.items[kept] = x;
+                    kept += 1;
+                    continue;
+                }
+                try g.graftTied(x, &knots, &pending);
+            }
+            if (kept == deferred.items.len) {
+                const a = g.account();
+                if (a.failed == null) a.failed = .{ .invariant = a.lane };
+                return error.AccountingInvariant;
+            }
+            deferred.shrinkRetainingCapacity(kept);
+        }
         return g.s.memo.get(root).?;
+    }
+
+    /// Whether `t`'s image would read the record of a pending knot: a
+    /// union's or a positions node's sides, a recast's inner, a delta's base.
+    fn readsPending(g: *Grafter, t: NodeId, pending: *const stamped.Column(NodeId, void)) bool {
+        const d = g.env.shapes.get(t);
+        const reads: [2]u32 = switch (d.kind) {
+            .@"union", .positions => .{ d.a, d.b },
+            .recast, .delta => .{ d.a, Ids.none_int },
+            .leaf, .node => return false,
+        };
+        for (reads) |x| {
+            if (x == Ids.none_int) continue;
+            const img = g.s.memo.get(.from(x)) orelse continue;
+            if (pending.contains(img)) return true;
+        }
+        return false;
+    }
+
+    /// `t` grafted, and tied when a knot stands for it.
+    fn graftTied(g: *Grafter, t: NodeId, knots: *stamped.Column(NodeId, NodeId), pending: *stamped.Column(NodeId, void)) Error!void {
+        const shapes = g.env.shapes;
+        try g.graftOne(t);
+        if (knots.get(t)) |k| {
+            // The knot's record is the part's image, built as any.
+            const built = g.s.memo.get(t).?;
+            shapes.tie(k, shapes.nodes.get(built.int()));
+            try g.s.memo.put(g.gpa(), t, k);
+            pending.remove(k);
+        }
     }
 
     /// Node `t` grafted, its parts' images in `memo` already.
@@ -688,4 +755,55 @@ test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image,
     const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
     const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
     try testing.expect(back == r or (shapes.kind(back) == .@"union" and (shapes.get(back).a == r.int() or shapes.get(back).b == r.int())));
+}
+
+test "#1143: a back edge onto a union's side is grafted once the knot is tied" {
+    const gpa = testing.allocator;
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var cells: Cell.Table = .{};
+    defer cells.deinit(gpa);
+    var shapes: Shape.Table = .{};
+    defer shapes.deinit(gpa);
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    var conds = try Cond.Table.init(gpa, .growth(&account));
+    defer conds.deinit(gpa);
+    var sums: Summary.Table = .{};
+    defer sums.deinit(gpa);
+    var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
+    const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
+    const t_place = try places.of(gpa, &account, src, 0);
+    const list = try places.of(gpa, &account, src, 1);
+    const arg = try places.ctorStep(gpa, &account, 0, 0);
+    const env: Env = .{ .gpa = gpa, .charge = .growth(&account), .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds };
+    // `T` whose list's `[*]` is `union(T, the parameter's leaf)`: the back
+    // edge lands on the union's side itself.
+    const p = try cells.symbolic(gpa, &account, &places, .param, 0, try places.rootPath(gpa, t_place), 0);
+    const pl = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    const t = try shapes.knot(gpa, &account);
+    const l = try shapes.knot(gpa, &account);
+    const u = try shapes.knot(gpa, &account);
+    shapes.tie(u, .{ .kind = .@"union", .place = t_place, .cells = shapes.cells(pl), .a = t.int(), .b = pl.int(), .reach = .none });
+    const site = try cells.site(gpa, &account, 1, list, .list);
+    shapes.tie(l, .{ .kind = .node, .place = list, .cells = try cells.sets.insert(gpa, env.charge, .none, site.int(), 0), .a = try shapes.overPut(gpa, &account, Ids.none_int, Place.Step.elem, u), .b = 0, .reach = .none });
+    shapes.tie(t, .{ .kind = .node, .place = t_place, .cells = .none, .a = try shapes.overPut(gpa, &account, Ids.none_int, arg, l), .b = 0, .reach = .none });
+    const c = try sums.add(env, .{ .params = &.{.none}, .res = t, .kappas = .none });
+    const asite = try cells.site(gpa, &account, 2, t_place, .record);
+    const a = try shapes.leaf(gpa, &account, t_place, try cells.sets.insert(gpa, env.charge, .none, asite.int(), 0));
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const applied = try apply(env, &sums, c, &.{.{ .node = a, .kappa = .none }}, 0, &s);
+    // The image: `T`, its list's `[*]` a union whose one side is the image
+    // and the other the argument (the parameter's leaf grafted).
+    const r = applied.result.node;
+    try testing.expectEqual(Shape.Kind.node, shapes.kind(r));
+    const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
+    const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
+    try testing.expectEqual(Shape.Kind.@"union", shapes.kind(back));
+    try testing.expectEqual(t_place, shapes.place(back));
+    const d = shapes.get(back);
+    try testing.expect(d.a == r.int() or d.b == r.int());
+    // Its cells are the argument's: what the tied sides hold.
+    try testing.expect(cells.sets.member(shapes.cells(back), asite.int()));
 }

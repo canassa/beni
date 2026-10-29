@@ -755,7 +755,7 @@ pub const Module = struct {
             for (words) |s| if (s[0] == k) {
                 w = s[1];
             };
-            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in, owner, decl, k) });
+            try params.append(gpa, .{ .place = at, .words = w, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = try paramIsTypeVariable(mod.in, owner, decl, k) });
         }
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
@@ -882,7 +882,7 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
                 result = f.result.toOptional();
                 for (store.vars(f.params)) |p| {
                     const at = try mod.adapter.placeOfVar(p.toOptional());
-                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = paramIsTypeVariable(mod.in, mod.in.module, d, params.items.len) });
+                    try params.append(mod.gpa, .{ .place = at, .fn_params = if (mod.places.kind(at) == .closure) &.{} else null, .type_variable = try paramIsTypeVariable(mod.in, mod.in.module, d, params.items.len) });
                 }
             },
             else => {},
@@ -902,43 +902,59 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
 /// as a bare type variable (`borrowed a`), aliases expanded (`Id a` with
 /// `type alias Id a = a`): its value may hold any structure, and the callee
 /// may read any of it, so its words apply at every depth (§2.13.6, #1105).
-fn paramIsTypeVariable(in: *const Input, owner: u32, d: Bir.Decl, k: usize) bool {
+fn paramIsTypeVariable(in: *const Input, owner: u32, d: Bir.Decl, k: usize) Allocator.Error!bool {
     const bir = in.birs[owner];
     const ann = d.annotation.unwrap() orelse return false;
     if (bir.instTag(ann) != .type_fn) return false;
     const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Bir.Inst.Index);
-    return k < ps.len and expandsToVariable(in, owner, ps[k], null);
+    return k < ps.len and try expandsToVariable(in, owner, ps[k]);
 }
 
 /// A type written in module `module` whose type variables are bound by
 /// `env` (an alias's arguments; null in an annotation, where every variable
 /// is free).
-const AliasEnv = struct { module: u32, args: []const Bir.Inst.Index, outer: ?*const AliasEnv };
+const AliasEnv = struct { module: u32, args: []const Bir.Inst.Index, outer: u32 };
 
 /// Whether the type `t` of `module` expands to a free type variable.
 /// Alias cycles are refused by the checker (`recursive_alias`), so the
 /// expansion ends.
-fn expandsToVariable(in: *const Input, module: u32, t: Bir.Inst.Index, env: ?*const AliasEnv) bool {
-    const bir = in.birs[module];
-    switch (bir.instTag(t)) {
-        .type_var => {
-            const e = env orelse return true;
-            const p = Bir.TypeVarInfo.unpack(bir.instData(t).rhs).param;
-            if (p >= e.args.len) return false;
-            return expandsToVariable(in, e.module, e.args[p], e.outer);
-        },
-        .type_app => {
-            const args = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).rhs)), Bir.Inst.Index);
-            const alias = aliasOf(in, module, @fromBackingInt(bir.instData(t).lhs)) orelse return false;
-            const inner: AliasEnv = .{ .module = module, .args = args, .outer = env };
-            return expandsToVariable(in, alias[0], alias[1], &inner);
-        },
-        .type_top, .ext_type => {
-            const alias = aliasOf(in, module, t) orelse return false;
-            const inner: AliasEnv = .{ .module = module, .args = &.{}, .outer = env };
-            return expandsToVariable(in, alias[0], alias[1], &inner);
-        },
-        else => return false,
+fn expandsToVariable(in: *const Input, start_module: u32, start: Bir.Inst.Index) Allocator.Error!bool {
+    // A loop, the environments a list (#1143: aliases chain as long as the
+    // source has them). `outer` indexes `envs`; `none` is no environment.
+    var envs: std.ArrayList(AliasEnv) = .empty;
+    defer envs.deinit(in.gpa);
+    var module = start_module;
+    var t = start;
+    var env: u32 = none;
+    while (true) {
+        const bir = in.birs[module];
+        switch (bir.instTag(t)) {
+            .type_var => {
+                if (env == none) return true;
+                const e = envs.items[env];
+                const p = Bir.TypeVarInfo.unpack(bir.instData(t).rhs).param;
+                if (p >= e.args.len) return false;
+                module = e.module;
+                t = e.args[p];
+                env = e.outer;
+            },
+            .type_app => {
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).rhs)), Bir.Inst.Index);
+                const alias = aliasOf(in, module, @fromBackingInt(bir.instData(t).lhs)) orelse return false;
+                try envs.append(in.gpa, .{ .module = module, .args = args, .outer = env });
+                env = @intCast(envs.items.len - 1);
+                module = alias[0];
+                t = alias[1];
+            },
+            .type_top, .ext_type => {
+                const alias = aliasOf(in, module, t) orelse return false;
+                try envs.append(in.gpa, .{ .module = module, .args = &.{}, .outer = env });
+                env = @intCast(envs.items.len - 1);
+                module = alias[0];
+                t = alias[1];
+            },
+            else => return false,
+        }
     }
 }
 

@@ -83,12 +83,33 @@ pub fn refName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
 
 /// The base as written (R-7.15's `base`): a local and its field path, or
 /// what made it.
-fn baseText(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
+fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
+    // A chain of `.field` and `.0` reads: down to its base, then its
+    // suffixes back up, as a loop (#1143: expressions nest as deep as the
+    // source).
+    var chain: std.ArrayList(u32) = .empty;
+    defer chain.deinit(a);
+    var at = top;
+    while (tag(f, at) == .field_access or tag(f, at) == .tuple_index) : (at = data(f, at).lhs) try chain.append(a, at);
+    var text = try baseOne(f, a, at);
+    var k = chain.items.len;
+    while (k > 0) {
+        k -= 1;
+        const i = chain.items[k];
+        const d = data(f, i);
+        text = if (tag(f, i) == .field_access)
+            try std.fmt.allocPrint(a, "{s}.{s}", .{ text, f.names.interner.slice(birOf(f).symbol(@fromBackingInt(d.rhs))) })
+        else
+            try std.fmt.allocPrint(a, "{s}.{d}", .{ text, d.rhs });
+    }
+    return text;
+}
+
+fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
     const d = data(f, i);
     return switch (tag(f, i)) {
         .local => localName(f, d.lhs),
-        .field_access => try std.fmt.allocPrint(a, "{s}.{s}", .{ try baseText(f, a, d.lhs), f.names.interner.slice(birOf(f).symbol(@fromBackingInt(d.rhs))) }),
-        .tuple_index => try std.fmt.allocPrint(a, "{s}.{d}", .{ try baseText(f, a, d.lhs), d.rhs }),
+        .field_access, .tuple_index => unreachable,
         .list => "<literal>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
