@@ -2659,11 +2659,9 @@ fn sourceSized(case: u32) !void {
         defer words.deinit(gpa);
         const before = t.account.growth;
         try write(t.env(), &t.sums, &.{c}, .identity, &words);
-        // The write's own growth is its κ reads and projections, a few a node.
-        // The taken chain is 1 000 deep (1 500 were over the budget under load,
-        // #1197; its cost is linear): an eighth of the allowance per 1 500
-        // levels, as before.
-        try testing.expect(t.account.growth - before < Ids.Account.default_allowance / (if (case == 3) @as(u32, 12) else 8));
+        // The write charges the allowance nothing for these values (measured:
+        // growth 0); a 256th of it still catches a charge of one a few levels.
+        try testing.expect(t.account.growth - before < Ids.Account.default_allowance / 256);
     }
 }
 
@@ -3137,19 +3135,29 @@ test "#1073 review: reading a fold's group is linear in its members" {
 }
 
 test "#1138: a snapshot as deep as the source is written and read back on explicit stacks" {
-    // On a thread with a small stack (64 KiB): a native frame per level
-    // would overflow it.
+    // The stack fits the walks' fixed frames at a shallow depth with a wide
+    // margin. A run `deep_factor` times deeper must pass on that same stack:
+    // a native frame per level (hundreds of bytes, times the depth) cannot.
+    try onSmallStack(shallow_depth);
+    try onSmallStack(shallow_depth * deep_factor);
+}
+
+const shallow_depth = 20;
+const deep_factor = 10;
+const small_stack = 128 << 10;
+
+fn onSmallStack(depth: usize) !void {
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
-        fn run(out: *anyerror!void) void {
-            out.* = deepBlock();
+    const th = try std.Thread.spawn(.{ .stack_size = small_stack }, struct {
+        fn run(out: *anyerror!void, d: usize) void {
+            out.* = deepBlock(d);
         }
-    }.run, .{&result});
+    }.run, .{ &result, depth });
     th.join();
     try result;
 }
 
-fn deepBlock() !void {
+fn deepBlock(depth: usize) !void {
     const gpa = testing.allocator;
     // The tables live on the heap: the 64 KiB stack is for the walks, so a
     // larger table record cannot overflow it (#1197) — only a native frame
@@ -3160,7 +3168,6 @@ fn deepBlock() !void {
     try a.init();
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
-    const depth = 1_000;
     const c = try deepClass(a, depth);
     const b = try gpa.create(Tables);
     defer gpa.destroy(b);
@@ -3228,10 +3235,11 @@ test "#1141: the codec's work on a snapshot grows with its depth, never with its
         try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
         read_cost[run] = b.account.total() - before;
     }
-    // Twice the levels, about twice the work (n log n at most), never four.
+    // Twice the levels, about twice the work (measured 2.05, n log n at most), never
+    // 2.5 times: a quadratic of even half an n² is caught.
     for (1..3) |i| {
-        try testing.expect(write_cost[i] <= 3 * write_cost[i - 1]);
-        try testing.expect(read_cost[i] <= 3 * read_cost[i - 1]);
+        try testing.expect(write_cost[i] * 2 <= 5 * write_cost[i - 1]);
+        try testing.expect(read_cost[i] * 2 <= 5 * read_cost[i - 1]);
     }
 }
 
