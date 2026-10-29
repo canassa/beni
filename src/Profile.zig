@@ -165,6 +165,10 @@ pub const Phase = enum {
     /// the checked module's file; the serial dump sums reads for its run.
     ownership_module,
     ownership_blocks,
+    /// The checker v2's walk of one module (`ownership-v2.md` §8): in the
+    /// check, on the module's worker, and in `dump --stage=ownership` only for a
+    /// module the check did not walk (#1193).
+    ownership2_module,
 };
 
 pub const Counter = enum {

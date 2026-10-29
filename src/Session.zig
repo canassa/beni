@@ -86,6 +86,7 @@ const Manifest = @import("js/Manifest.zig");
 const artifact_bytes = @import("frontend/artifact_bytes.zig");
 const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
+const Own2Report = @import("own2/Report.zig");
 
 const Session = @This();
 
@@ -195,6 +196,10 @@ enforce_ownership: bool = false,
 ownership_blocks: []?[]u8 = &.{},
 /// Runtime-safety comparison of the worker reports with the serial dump.
 ownership_sites: []?[]const [6]u64 = &.{},
+/// Under `dump --stage=ownership --ownership=v2` (`Options.ownership_v2_dump`):
+/// each module's report from the check's own run of the checker v2, which the
+/// dump prints, so v2 runs once (#1193).
+ownership2_reports: []?*Own2Report.Kept = &.{},
 
 pub const DiagnosticsFormat = enum { text, json };
 
@@ -205,6 +210,9 @@ pub fn freeOwnershipBlocks(session: *Session) void {
     for (session.ownership_sites) |slot| if (slot) |sites| session.gpa.free(sites);
     session.gpa.free(session.ownership_sites);
     session.ownership_sites = &.{};
+    for (session.ownership2_reports) |slot| if (slot) |k| k.deinit(session.gpa);
+    session.gpa.free(session.ownership2_reports);
+    session.ownership2_reports = &.{};
 }
 
 pub const Options = struct {
@@ -385,6 +393,11 @@ pub const Options = struct {
     /// `--ownership=v2` (`Cli.Common.ownership`, `ownership-v2.md` §8): the
     /// checker v2 runs in place of v1. Hidden and test-only.
     ownership_v2: bool = false,
+    /// `dump --stage=ownership --ownership=v2`: the check's run of the
+    /// checker v2 formats what the dump prints and keeps each module's report
+    /// (`ownership2_reports`), so the dump does not run it again (#1193).
+    /// `summaries` false for `--ownership-totals`.
+    ownership_v2_dump: ?struct { summaries: bool } = null,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and
@@ -2548,6 +2561,10 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     session.freeOwnershipBlocks();
     session.ownership_blocks = try session.gpa.alloc(?[]u8, session.graph.count());
     @memset(session.ownership_blocks, null);
+    if (session.options.ownership_v2 and session.options.ownership_v2_dump != null) {
+        session.ownership2_reports = try session.gpa.alloc(?*Own2Report.Kept, session.graph.count());
+        @memset(session.ownership2_reports, null);
+    }
     if (std.debug.runtime_safety and session.options.keep_type_stores and session.options.pack_out == null) {
         session.ownership_sites = try session.gpa.alloc(?[]const [6]u64, session.graph.count());
         @memset(session.ownership_sites, null);
