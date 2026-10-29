@@ -2103,9 +2103,9 @@ hasLogContext ⊤ = Js.read slotted && not (Js.isUndefined (currentLogContext �
 
 
 --| Run `work`, which cannot wait, with the default log context, the
---| program's, and put the calling fiber's back when `work` returns. When
---| `work` throws and leaves finalisers, the teardown runs them first, with
---| `work`'s context, and then puts the calling fiber's back.
+--| program's. Put the calling fiber's back at once when `work` returns or
+--| throws. When `work` throws and leaves finalisers, the teardown runs
+--| them first, with `work`'s context, then puts the fiber's back again.
 pub withoutLogContext : sync (⊤ → a) → a
 withoutLogContext work =
     -- The record that holds the context, found as `slotRecord` finds it:

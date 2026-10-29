@@ -4822,13 +4822,19 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
   *(Amended 2026-10-24, #859: the caller can go on before the teardown. A throw out of an event
   handler does not reach the code that fired the event: the DOM reports it, and the call returns.
-  A body that calls `Dom.focus` or `Dom.blur` thus goes on after the handler's `update` throws,
-  and the old slots go back at once in every case. When `update` leaves finalisers, one more entry
-  goes on top of them, which sets the slots that `update` had at the throw. At the teardown, that
-  entry runs first, then `update`'s finalisers with `update`'s context, then the restore of the
-  old slots, then the caller's finalisers. The rest of the body has the body's context. Not
-  covered: such a body's `bracket` that it closes after the throw takes `update`'s leftover off
-  the list, not its own release, which then runs again at the teardown (#921). Cost, measured on
+  A body that calls `Dom.focus` or `Dom.blur` thus goes on after the handler's `update` throws.
+  For a caller that has a log context, the old slots go back at once, also when `update` leaves
+  finalisers. Then one more entry goes on top of them, which sets the slots that `update` had at
+  the throw. When the body closes nothing after the throw, the teardown runs that entry first,
+  then `update`'s finalisers with `update`'s context, then the restore of the old slots, then the
+  caller's finalisers. The rest of the body has the body's context. Not covered: a scope that the
+  body closes after the throw, such as a `bracket` or the end of a body's kept context, takes the
+  entry on top off the list, not its own entry. So at the teardown `update`'s finalisers run with
+  the slots of that time, and the body's own release runs again (#921). A body in a fiber that
+  ends after the throw drops `update`'s finalisers, and they never run (#1154). Not covered: a
+  body with no log context of its own. `send` calls `withoutLogContext` only when
+  `Task.hasLogContext` is true, so `update`'s `annotate` writes the body's slots, and after the
+  throw the rest of the body has `update`'s context (#1153). Cost, measured on
   634 builds: in release only the 8 pages that set a slot change, by +29 raw bytes (−49 to +11
   brotli); development +89 raw.)*
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
