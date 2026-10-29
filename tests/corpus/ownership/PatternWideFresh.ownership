@@ -1,0 +1,9 @@
+module PatternWideFresh
+  53:13 List.push x: accepted fresh
+  105:13 List.push x: accepted fresh
+  215:13 List.push x: accepted fresh
+  summary fresh40: res fresh1
+  summary fresh42: res fresh1
+  summary fresh100: res fresh1
+  demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
