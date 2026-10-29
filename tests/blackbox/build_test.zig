@@ -8332,7 +8332,9 @@ test "the checker v2 charges an instruction's records to its source lanes" {
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
         growth[run] = try accountField(dump.stdout, "chain", "growth");
         const baseline = try accountField(dump.stdout, "chain", "baseline");
-        try testing.expect(growth[run] <= 40 * n);
+        // Since #1201 a demand's walk of its holder's value is growth too,
+        // about 4 records a statement.
+        try testing.expect(growth[run] <= 48 * n);
         // The graft's growth (#1097) is now about a third of the baseline.
         try testing.expect(baseline >= 2 * growth[run]);
     }
@@ -9048,16 +9050,54 @@ test "the checker v2's dump does not depend on where a declaration sits in its m
     }
 }
 
+test "the checker v2 sweeps one holder of a value at many paths without passing a lane's ceiling" {
+    // #1212's review (#1201): one holder holding the demanded cell at k
+    // paths (a record whose k fields are one list) gave the demand's lane a
+    // `laterUse` per path, and from k = 48 the lane passed its ceiling. The
+    // lane keeps one path (§4.1's *direct demand query*); the rest is growth.
+    // Its verdict is v1's: rejected, a holder read later. (Which path the
+    // line names differs from v1's: #1222.)
+    for ([_]u32{ 48, 1000 }) |k| {
+        // ┌─────────────────────────────────────────┐
+        // │ PREPARE                                 │
+        // └─────────────────────────────────────────┘
+        const a = testing.allocator;
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias Big =\n    { f0 : List (List Int)");
+        for (1..k) |i| try src.print(a, "\n    , f{d} : List (List Int)", .{i});
+        try src.appendSlice(a, "\n    }\n\n\npub g : List Int → Big × List (List Int)\ng ys =\n    v = [ [ 0 ] ]\n    big = { f0 = v");
+        for (1..k) |i| try src.print(a, ", f{d} = v", .{i});
+        try src.appendSlice(a, " }\n    x = [ …v, ys ]\n    ( big, x )\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-totals", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limits ") == null);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "total 1: accepted 0") != null);
+    }
+}
+
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 63 900 of 65 536), after another (`g`) or before it:
+/// cold growth about 64 500 of 65 536, since #1201 sweeps the holders past
+/// the first in growth), after another (`g`) or before it:
 /// its dump in that order (#1104).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(a);
     try h.appendSlice(a, "pub h : List Int → List Int\nh xs =\n");
-    for (1..1451) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
-    try h.appendSlice(a, "    x1450\n");
+    for (1..1401) |i| try h.print(a, "    x{d} = List.push xs {d}\n\n", .{ i, i });
+    try h.appendSlice(a, "    x1400\n");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
     try w.write("Main.beni", src);

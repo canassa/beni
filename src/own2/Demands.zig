@@ -421,6 +421,10 @@ const Resolver = struct {
     esc_points: std.ArrayList(u32) = .empty,
     visited: stamped.Column(SetId, void) = .{},
     seen_holder: stamped.Column(CellId, void) = .{},
+    /// The query's growth task once its sweep passed the one direct holder
+    /// at one path its lane has (§4.1's *direct demand query*, #1201): left
+    /// when the query ends.
+    spill: ?Ids.Account.Kernel = null,
     steps: std.ArrayList(Step) = .empty,
     /// Per holder: whether it is registered.
     on: []bool = &.{},
@@ -535,6 +539,10 @@ const Resolver = struct {
     }
 
     fn escapedBelow(r: *Resolver, c: CellId, p: u32) Error!?u32 {
+        // Every cell below the base: as many as the value has, a walk in
+        // growth, never the demand's lane (#1201).
+        const walk = try r.env.account().enter(r.gpa, null);
+        defer r.env.account().leave(walk);
         var stack: std.ArrayList(CellId) = .empty;
         defer stack.deinit(r.gpa);
         try stack.append(r.gpa, c);
@@ -646,6 +654,9 @@ const Resolver = struct {
         const own: Ids.SplitId = if (cells.origin(self).isRefinement()) cells.findSplit(cells.parent(self), .from(cells.get(self).b)) else .none;
         try r.env.charge.reserve(r.gpa, .inspection, 1);
         var g = r.live.group_heads.get(r.live.pathKey(sym, path)) orelse return;
+        // Past the first member the live refinements here are a sweep: growth
+        // (`spillNow`, #1201).
+        var members: u32 = 0;
         while (g != none) : (g = r.live.groups.items[g].next) {
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             const group = r.live.groups.items[g];
@@ -657,19 +668,24 @@ const Resolver = struct {
                 link = a.next;
                 const d = r.live.leafCell(a.leaf);
                 if (one and d == self) continue;
+                if (members == 1) try r.spillNow();
+                members += 1;
                 try out.append(r.gpa, d);
                 if (one) break;
             }
         }
     }
 
+    /// From here on the query's sweep is growth, chosen before the next
+    /// holder's, radix node's or hold path's share: its lane has one direct
+    /// holder at one path (§4.1's *direct demand query*); enumerating more is
+    /// not that kernel (#1201).
+    fn spillNow(r: *Resolver) Error!void {
+        if (r.spill == null) r.spill = try r.env.account().enter(r.gpa, null);
+    }
+
     /// The registered holders whose `reach` holds `d`: climb from `d`'s
     /// live leaves through live parents to the roots, every node once.
-    /// The holders a demand's query sweeps on its own lane: one direct holder
-    /// (§4.1's *direct demand query*); enumerating more is not that kernel
-    /// (#1201).
-    const lane_holders: u32 = 1;
-
     fn holdersOf(r: *Resolver, d: CellId, out: *std.ArrayList(u32)) Error!void {
         r.visited.clear();
         var stack: std.ArrayList(SetId) = .empty;
@@ -680,8 +696,11 @@ const Resolver = struct {
             if (r.live.count.items[leaf.int()] == 0) continue;
             try stack.append(r.gpa, leaf);
         }
+        var nodes: u32 = 0;
         while (stack.pop()) |n| {
             if (r.visited.contains(n)) continue;
+            if (nodes == 1) try r.spillNow();
+            nodes += 1;
             try r.visited.put(r.gpa, n, {});
             try r.env.charge.reserve(r.gpa, .inspection, 1);
             var h = r.live.rhead.items[n.int()];
@@ -931,11 +950,14 @@ const Resolver = struct {
         defer holds.deinit(r.gpa);
         // A value spread or stored at k sites has k holders, and a demand on
         // it reads them all: k demands are k × k, a product. The demand's lane
-        // sweeps one direct holder (§4.1's *direct demand query*); before the
-        // next one's share the sweep becomes growth, for the rest of it (#1201).
+        // sweeps one direct holder at one path (§4.1's *direct demand
+        // query*); before the next holder's, radix node's or path's share the
+        // sweep becomes growth, for the rest of the query (`spillNow`, #1201).
         var swept: u32 = 0;
-        var sweep: ?Ids.Account.Kernel = null;
-        defer if (sweep) |k| r.env.account().leave(k);
+        defer if (r.spill) |k| {
+            r.env.account().leave(k);
+            r.spill = null;
+        };
         for (cells.items, 0..) |e, ci| {
             const c: CellId = .from(e.key);
             cands.clearRetainingCapacity();
@@ -949,7 +971,7 @@ const Resolver = struct {
                 hs.clearRetainingCapacity();
                 try r.holdersOf(d, &hs);
                 for (hs.items) |hi| {
-                    if (sweep == null and swept == lane_holders) sweep = try r.env.account().enter(r.gpa, null);
+                    if (swept == 1) try r.spillNow();
                     swept += 1;
                     const h = r.frame.holders[hi];
                     // A holder of `⊤` counts only for what could have flowed into it
@@ -977,8 +999,14 @@ const Resolver = struct {
                         continue;
                     }
                     holds.clearRetainingCapacity();
-                    try r.holdPaths(h.value.node, h.root, d, c, &holds);
-                    for (holds.items) |hold| {
+                    {
+                        // The walk of the holder's value is as large as it.
+                        const walk = try r.env.account().enter(r.gpa, null);
+                        defer r.env.account().leave(walk);
+                        try r.holdPaths(h.value.node, h.root, d, c, &holds);
+                    }
+                    for (holds.items, 0..) |hold, hk| {
+                        if (hk == 1) try r.spillNow();
                         const u = (try r.laterUse(h.who, hold.path, dm.point)) orelse continue;
                         // Held only at a summary position, or by a cell that
                         // itself stands for several objects (a level of a
