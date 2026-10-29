@@ -434,28 +434,45 @@ pub const Table = struct {
         return markAt(env, use, place, steps, marks, m.deep);
     }
 
-    fn markAt(env: Env, n: NodeId, place: PlaceId, steps: []const Step, marks: SetId, deep: bool) Error!NodeId {
+    fn markAt(env: Env, root: NodeId, root_place: PlaceId, steps: []const Step, marks: SetId, deep: bool) Error!NodeId {
         const gpa = env.gpa;
-        try env.charge.reserve(gpa, .shape, 1);
-        const here: SetId = if (n == .none) .none else env.shapes.cells(n);
-        if (n != .none and env.shapes.kind(n) == .leaf and here != .none) {
-            return env.shapes.leaf(gpa, env.account(), place, try env.cells.sets.unionWith(gpa, env.charge, here, marks));
+        // Down the path, then back up rebuilding each level, on explicit
+        // lists (#1138: a path is as long as the source is deep). The
+        // records as the recursion reserved them, one shape per level.
+        const Level = struct { n: NodeId, place: PlaceId, here: SetId };
+        var way: std.ArrayList(Level) = .empty;
+        defer way.deinit(gpa);
+        var n = root;
+        var place = root_place;
+        var i: usize = 0;
+        var out: NodeId = while (true) : (i += 1) {
+            try env.charge.reserve(gpa, .shape, 1);
+            const here: SetId = if (n == .none) .none else env.shapes.cells(n);
+            if (n != .none and env.shapes.kind(n) == .leaf and here != .none) {
+                break try env.shapes.leaf(gpa, env.account(), place, try env.cells.sets.unionWith(gpa, env.charge, here, marks));
+            }
+            if (i == steps.len) {
+                const c = try env.cells.sets.unionWith(gpa, env.charge, here, marks);
+                if (deep) break try env.shapes.leaf(gpa, env.account(), place, c);
+                if (n == .none or env.shapes.kind(n) == .leaf) break try env.shapes.node(gpa, env.account(), place, c, Ids.none_int);
+                break try env.shapes.withCells(gpa, env.account(), env.places, env.cells, n, c);
+            }
+            try way.append(gpa, .{ .n = n, .place = place, .here = here });
+            const s = steps[i];
+            const child_place = env.places.child(place, s) orelse unreachable;
+            var child: NodeId = .none;
+            if (n != .none and env.shapes.kind(n) == .node) {
+                if (env.shapes.overGet(env.shapes.get(n).a, s)) |c| child = c;
+            }
+            n = child;
+            place = child_place;
+        };
+        while (way.pop()) |lv| {
+            i -= 1;
+            const children: u32 = if (lv.n != .none and env.shapes.kind(lv.n) == .node) env.shapes.get(lv.n).a else Ids.none_int;
+            out = try env.shapes.node(gpa, env.account(), lv.place, lv.here, try env.shapes.overPut(gpa, env.account(), children, steps[i], out));
         }
-        if (steps.len == 0) {
-            const c = try env.cells.sets.unionWith(gpa, env.charge, here, marks);
-            if (deep) return env.shapes.leaf(gpa, env.account(), place, c);
-            if (n == .none or env.shapes.kind(n) == .leaf) return env.shapes.node(gpa, env.account(), place, c, Ids.none_int);
-            return env.shapes.withCells(gpa, env.account(), env.places, env.cells, n, c);
-        }
-        const s = steps[0];
-        const child_place = env.places.child(place, s) orelse unreachable;
-        var child: NodeId = .none;
-        if (n != .none and env.shapes.kind(n) == .node) {
-            if (env.shapes.overGet(env.shapes.get(n).a, s)) |c| child = c;
-        }
-        const new_child = try markAt(env, child, child_place, steps[1..], marks, deep);
-        const children: u32 = if (n != .none and env.shapes.kind(n) == .node) env.shapes.get(n).a else Ids.none_int;
-        return env.shapes.node(gpa, env.account(), place, here, try env.shapes.overPut(gpa, env.account(), children, s, new_child));
+        return out;
     }
 
     /// The marks at `steps` of a use shape: the node's own, plus `deep`
@@ -902,46 +919,65 @@ pub const Table = struct {
             for (keyed.items) |k| try spell(n, f, k.i);
         }
 
-        fn node(n: *Normalizer, id: NodeId, at_summary: bool, cur: Kappas) Error!void {
-            try n.env.charge.reserve(n.env.gpa, .inspection, 1);
-            if (n.ordinal.get(.{ id.int(), cur.int() })) |o| {
-                try n.tag(.node_ref);
-                try n.put(o);
-                return;
-            }
-            (try n.ordinal.getOrPut(n.env.gpa, .{ id.int(), cur.int() })).value_ptr.* = n.next;
-            n.next += 1;
-            const d = n.env.shapes.get(id);
-            try n.tag(.node_new);
-            try n.put(@backingInt(d.kind));
-            try n.put(d.place.int());
-            try n.cellSet(d.cells);
-            try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
-            switch (d.kind) {
-                .leaf => {},
-                .node => try n.overs(d.a, at_summary, cur),
-                .delta => {
-                    try n.node(.from(d.a), at_summary, cur);
-                    try n.overs(d.b, at_summary, cur);
+        fn node(n: *Normalizer, root: NodeId, root_summary: bool, root_cur: Kappas) Error!void {
+            // Spelled in the recursion's order on an explicit stack (#1138: a
+            // value is as deep as the source): a node's words, then its parts;
+            // an `Over` its count, then each step and the node below it.
+            const Act = struct { kind: enum { node, overs, step }, id: u32, at_summary: bool, cur: Kappas };
+            var stack: std.ArrayList(Act) = .empty;
+            defer stack.deinit(n.env.gpa);
+            var entries: std.ArrayList(Shape.Table.OverIterator.Entry) = .empty;
+            defer entries.deinit(n.env.gpa);
+            try stack.append(n.env.gpa, .{ .kind = .node, .id = root.int(), .at_summary = root_summary, .cur = root_cur });
+            while (stack.pop()) |a| switch (a.kind) {
+                .step => try n.step(Step.fromWord(a.id)),
+                .overs => {
+                    entries.clearRetainingCapacity();
+                    var it = n.env.shapes.overEntries(a.id);
+                    while (it.next()) |e| try entries.append(n.env.gpa, e);
+                    try n.put(@intCast(entries.items.len));
+                    var k = entries.items.len;
+                    while (k > 0) {
+                        k -= 1;
+                        const e = entries.items[k];
+                        try stack.append(n.env.gpa, .{ .kind = .node, .id = e.node.int(), .at_summary = a.at_summary or e.step.kind == .elem or e.step.kind == .level, .cur = n.env.conds.kappaChild(a.cur, e.step) });
+                        try stack.append(n.env.gpa, .{ .kind = .step, .id = e.step.word(), .at_summary = false, .cur = .none });
+                    }
                 },
-                .recast => try n.node(.from(d.a), at_summary, cur),
-                .@"union", .positions => {
-                    try n.node(.from(d.a), at_summary, cur);
-                    try n.node(.from(d.b), at_summary, cur);
+                .node => {
+                    const id: NodeId = .from(a.id);
+                    const at_summary = a.at_summary;
+                    const cur = a.cur;
+                    try n.env.charge.reserve(n.env.gpa, .inspection, 1);
+                    if (n.ordinal.get(.{ id.int(), cur.int() })) |o| {
+                        try n.tag(.node_ref);
+                        try n.put(o);
+                        continue;
+                    }
+                    (try n.ordinal.getOrPut(n.env.gpa, .{ id.int(), cur.int() })).value_ptr.* = n.next;
+                    n.next += 1;
+                    const d = n.env.shapes.get(id);
+                    try n.tag(.node_new);
+                    try n.put(@backingInt(d.kind));
+                    try n.put(d.place.int());
+                    try n.cellSet(d.cells);
+                    try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
+                    // The parts, pushed in reverse.
+                    switch (d.kind) {
+                        .leaf => {},
+                        .node => try stack.append(n.env.gpa, .{ .kind = .overs, .id = d.a, .at_summary = at_summary, .cur = cur }),
+                        .delta => {
+                            try stack.append(n.env.gpa, .{ .kind = .overs, .id = d.b, .at_summary = at_summary, .cur = cur });
+                            try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur });
+                        },
+                        .recast => try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur }),
+                        .@"union", .positions => {
+                            try stack.append(n.env.gpa, .{ .kind = .node, .id = d.b, .at_summary = at_summary, .cur = cur });
+                            try stack.append(n.env.gpa, .{ .kind = .node, .id = d.a, .at_summary = at_summary, .cur = cur });
+                        },
+                    }
                 },
-            }
-        }
-
-        fn overs(n: *Normalizer, root: u32, at_summary: bool, cur: Kappas) Error!void {
-            var n_entries: u32 = 0;
-            var it = n.env.shapes.overEntries(root);
-            while (it.next()) |_| n_entries += 1;
-            try n.put(n_entries);
-            it = n.env.shapes.overEntries(root);
-            while (it.next()) |e| {
-                try n.step(e.step);
-                try n.node(e.node, at_summary or e.step.kind == .elem or e.step.kind == .level, n.env.conds.kappaChild(cur, e.step));
-            }
+            };
         }
 
         fn step(n: *Normalizer, s: Step) Error!void {
@@ -1227,7 +1263,20 @@ pub const Table = struct {
         }
 
         /// `π{i}{path} {bits}` for every used path of a use shape.
-        fn useLines(p: *Printer, u: NodeId, i: u32, prefix: []const u8, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        fn useLines(p: *Printer, root: NodeId, i: u32, root_prefix: []const u8, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+            const env = p.env;
+            // Depth-first on an explicit stack, children in order (#1138: a
+            // use shape is as deep as the source).
+            const Item = struct { u: NodeId, prefix: []const u8 };
+            var stack: std.ArrayList(Item) = .empty;
+            defer stack.deinit(env.gpa);
+            var below: std.ArrayList(Item) = .empty;
+            defer below.deinit(env.gpa);
+            try stack.append(env.gpa, .{ .u = root, .prefix = root_prefix });
+            while (stack.pop()) |item| try p.useLine(item.u, i, item.prefix, out, &below, &stack);
+        }
+
+        fn useLine(p: *Printer, u: NodeId, i: u32, prefix: []const u8, out: *std.ArrayList([]const u8), below: anytype, stack: anytype) (Error || WErr)!void {
             const env = p.env;
             const d = env.shapes.get(u);
             var buf: std.Io.Writer.Allocating = .init(p.arena);
@@ -1260,71 +1309,98 @@ pub const Table = struct {
                 try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
             }
             if (d.kind != .node) return;
+            below.clearRetainingCapacity();
             var kids = env.shapes.overEntries(d.a);
             while (kids.next()) |e| {
                 var sb: std.Io.Writer.Allocating = .init(p.arena);
                 try sb.writer.writeAll(prefix);
                 try p.step(&sb.writer, d.place, e.step);
-                try p.useLines(e.node, i, sb.toOwnedSlice() catch return error.OutOfMemory, out);
+                try below.append(env.gpa, .{ .u = e.node, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory });
+            }
+            var k = below.items.len;
+            while (k > 0) {
+                k -= 1;
+                try stack.append(env.gpa, below.items[k]);
             }
         }
 
         /// `res`'s groups: one text per path of the explicit structure,
         /// `<path> <provenances> {κ}`, a node once; a union's sides gathered
         /// into one group, a recast's cells approximate.
-        fn resLines(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
+        fn resLines(p: *Printer, root: NodeId, root_prefix: []const u8, root_summary: bool, root_cur: Kappas, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
             const env = p.env;
-            if ((try p.seen.getOrPut(env.gpa, .{ n.int(), cur.int() })).found_existing) return;
-            var texts: std.ArrayList([]const u8) = .empty;
-            try p.gather(n, &texts);
-            Cond.sortText(texts.items);
-            var buf: std.Io.Writer.Allocating = .init(p.arena);
-            const w = &buf.writer;
-            if (prefix.len > 0) try w.print("{s} ", .{prefix});
-            try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
-            const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), cur, n, at_summary);
-            try p.cond(w, k);
-            if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-            try p.descend(n, prefix, at_summary, cur, out);
-        }
-
-        /// The children of the explicit structure under `n`: a node's or a
-        /// delta's projections (so a delta's unchanged fields print), a
-        /// union's sides' in turn; a leaf's or a recast's are implied by its
-        /// cells and never enumerated.
-        fn descend(p: *Printer, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, out: *std.ArrayList([]const u8)) (Error || WErr)!void {
-            const env = p.env;
-            const d = env.shapes.get(n);
-            switch (d.kind) {
-                .leaf, .recast => return,
-                .@"union", .positions => {
-                    try p.descend(.from(d.a), prefix, at_summary, cur, out);
-                    try p.descend(.from(d.b), prefix, at_summary, cur, out);
-                },
-                .node, .delta => {
-                    const steps = env.places.steps(d.place);
-                    for (steps.steps) |s| {
-                        const c = (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, n, s)) orelse continue;
-                        if (env.shapes.kind(c) == .leaf and env.shapes.cells(c) == .none) continue;
-                        var sb: std.Io.Writer.Allocating = .init(p.arena);
-                        try sb.writer.writeAll(prefix);
-                        try p.step(&sb.writer, d.place, s);
-                        try p.resLines(c, sb.toOwnedSlice() catch return error.OutOfMemory, at_summary or s.kind == .elem or s.kind == .level, env.conds.kappaChild(cur, s), out);
-                    }
-                },
+            // In the recursion's order on an explicit stack (#1138: a value is
+            // as deep as the source): a node's line, then the lines below it,
+            // a union's sides in turn, a node's steps in order.
+            const Act = struct { line: bool, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas };
+            var stack: std.ArrayList(Act) = .empty;
+            defer stack.deinit(env.gpa);
+            var below: std.ArrayList(Act) = .empty;
+            defer below.deinit(env.gpa);
+            try stack.append(env.gpa, .{ .line = true, .n = root, .prefix = root_prefix, .at_summary = root_summary, .cur = root_cur });
+            while (stack.pop()) |a| {
+                const n = a.n;
+                if (a.line) {
+                    if ((try p.seen.getOrPut(env.gpa, .{ n.int(), a.cur.int() })).found_existing) continue;
+                    var texts: std.ArrayList([]const u8) = .empty;
+                    try p.gather(n, &texts);
+                    Cond.sortText(texts.items);
+                    var buf: std.Io.Writer.Allocating = .init(p.arena);
+                    const w = &buf.writer;
+                    if (a.prefix.len > 0) try w.print("{s} ", .{a.prefix});
+                    try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
+                    const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
+                    try p.cond(w, k);
+                    if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
+                    try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                    continue;
+                }
+                // The children of the explicit structure under `n`: a node's
+                // or a delta's projections (so a delta's unchanged fields
+                // print), a union's sides' in turn; a leaf's or a recast's
+                // are implied by its cells and never enumerated.
+                const d = env.shapes.get(n);
+                switch (d.kind) {
+                    .leaf, .recast => {},
+                    .@"union", .positions => {
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                    },
+                    .node, .delta => {
+                        below.clearRetainingCapacity();
+                        const steps = env.places.steps(d.place);
+                        for (steps.steps) |s| {
+                            const c = (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, n, s)) orelse continue;
+                            if (env.shapes.kind(c) == .leaf and env.shapes.cells(c) == .none) continue;
+                            var sb: std.Io.Writer.Allocating = .init(p.arena);
+                            try sb.writer.writeAll(a.prefix);
+                            try p.step(&sb.writer, d.place, s);
+                            try below.append(env.gpa, .{ .line = true, .n = c, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory, .at_summary = a.at_summary or s.kind == .elem or s.kind == .level, .cur = env.conds.kappaChild(a.cur, s) });
+                        }
+                        var i = below.items.len;
+                        while (i > 0) {
+                            i -= 1;
+                            try stack.append(env.gpa, below.items[i]);
+                        }
+                    },
+                }
             }
         }
 
         /// The provenance texts of `n`'s cells at its own path: through a
         /// union's sides, `~` before an approximate pair or under a recast.
-        fn gather(p: *Printer, n: NodeId, texts: *std.ArrayList([]const u8)) (Error || WErr)!void {
-            const d = p.env.shapes.get(n);
-            if (d.kind == .@"union" or d.kind == .positions) {
-                try p.gather(.from(d.a), texts);
-                try p.gather(.from(d.b), texts);
-                return;
+        fn gather(p: *Printer, root: NodeId, texts: *std.ArrayList([]const u8)) (Error || WErr)!void {
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(p.env.gpa);
+            try stack.append(p.env.gpa, root);
+            while (stack.pop()) |n| {
+                const d = p.env.shapes.get(n);
+                if (d.kind == .@"union" or d.kind == .positions) {
+                    try stack.appendSlice(p.env.gpa, &.{ .from(d.b), .from(d.a) });
+                    continue;
+                }
+                try p.gatherCells(d.cells, d.kind == .recast, texts);
             }
-            try p.gatherCells(d.cells, d.kind == .recast, texts);
         }
 
         fn gatherCells(p: *Printer, s: SetId, all_approx: bool, texts: *std.ArrayList([]const u8)) (Error || WErr)!void {
@@ -1525,6 +1601,11 @@ const TestGraph = struct {
                 return .{ .kind = .list, .head = 200 };
             },
             4 => return .{ .kind = .closure, .head = 400 },
+            // 5 a list of itself: a recursive place, for depth (#1138).
+            5 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 5 });
+                return .{ .kind = .list, .head = 200 };
+            },
             else => unreachable,
         }
     }
@@ -1933,4 +2014,47 @@ test "fault injection: a join refused at any step leaves the class table whole" 
         }
     }
     try testing.expect(allowance < 4000);
+}
+
+test "#1138: a summary as deep as the source is spelled, printed and marked on explicit stacks" {
+    // On a thread with a small stack (256 KiB): a native frame per level
+    // would overflow it.
+    var result: anyerror!void = {};
+    const th = try std.Thread.spawn(.{ .stack_size = 256 << 10 }, struct {
+        fn run(out: *anyerror!void) void {
+            out.* = deepSummary();
+        }
+    }.run, .{&result});
+    th.join();
+    try result;
+}
+
+fn deepSummary() !void {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    f.account.allowance = std.math.maxInt(u32) - 1;
+    const gpa = testing.allocator;
+    const env = f.env();
+    const lst = try f.placeOf(5);
+    const depth = 1_000;
+    // `res`: lists of lists, `depth` levels, each its own site.
+    var n = try f.shapes.leaf(gpa, &f.account, lst, .none);
+    for (0..depth) |i| {
+        const s = try f.cells.site(gpa, &f.account, @intCast(i + 1), lst, .list);
+        n = try f.shapes.node(gpa, &f.account, lst, try f.set(&.{s}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Step.elem, n));
+    }
+    // A use `depth` steps down.
+    const steps = try gpa.alloc(Step, depth);
+    defer gpa.free(steps);
+    @memset(steps, Step.elem);
+    const use = try Table.markUse(env, .none, lst, steps, .{ .r = true }, &.{});
+    const c = try f.sums.add(env, .{ .params = &.{use}, .res = n });
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(gpa);
+    try f.sums.normalize(env, c, &words);
+    try testing.expect(words.items.len > depth);
+    var buf: std.Io.Writer.Allocating = .init(f.arena.allocator());
+    try f.sums.print(env, f.arena.allocator(), &buf.writer, c, "deep", test_names);
+    try testing.expect(std.mem.count(u8, buf.written(), "[*]") > depth);
 }

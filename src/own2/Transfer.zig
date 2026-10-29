@@ -378,9 +378,12 @@ pub const Frame = struct {
     // ---- patterns ------------------------------------------------------------
 
     /// Bind pattern `p` to `v`, matched at `point` (§2.13.3).
+    const BindItem = struct { pat: u32, value: Value };
+
     fn bind(f: *Frame, p: u32, v: Value, point: u32) Error!void {
-        const Item = struct { pat: u32, value: Value };
-        var stack: std.ArrayList(Item) = .empty;
+        // One explicit stack for the whole pattern, a list pattern's nested
+        // items included (#1138: a pattern nests as deep as the source).
+        var stack: std.ArrayList(BindItem) = .empty;
         defer stack.deinit(f.gpa);
         try stack.append(f.gpa, .{ .pat = p, .value = v });
         while (stack.pop()) |it| {
@@ -426,7 +429,7 @@ pub const Frame = struct {
                         try stack.append(f.gpa, .{ .pat = a.int(), .value = try f.below(it.pat, it.value, step, value) });
                     }
                 },
-                .pat_list => try f.bindList(it.pat, it.value, point),
+                .pat_list => try f.bindList(it.pat, it.value, point, &stack),
                 .pat_spread => {},
                 else => f.markUnbuilt(it.pat),
             }
@@ -507,7 +510,7 @@ pub const Frame = struct {
     /// `[ a, b, …rest ]` (§2.13.3): per container cell, the positions taken
     /// at this split are `elem` refinements, the rest `others`; a concrete
     /// container's contents are its explicit elements, on both sides.
-    fn bindList(f: *Frame, p: u32, v: Value, point: u32) Error!void {
+    fn bindList(f: *Frame, p: u32, v: Value, point: u32, deferred: *std.ArrayList(BindItem)) Error!void {
         const items = f.bir.extraSlice(Bir.inlineRange(f.data(p)), Inst.Index);
         if (items.len == 0) return;
         // Several container cells are inferred alternatives: their per-cell
@@ -596,7 +599,9 @@ pub const Frame = struct {
                 var k = try f.kappaSet(v.kappa, rest, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), v.kappa, try shapes.leaf(f.gpa, f.account(), list_place, shapes.cells(v.node)), false));
                 k = try f.kappaSetElem(k, node, split_kappa);
                 const rest_pat = f.data(item.int()).lhs;
-                try f.bind(rest_pat, .{ .node = rest, .kappa = k }, point);
+                // A variable binds here (its holder is marked below); a nested
+                // pattern goes on `bind`'s stack.
+                if (rest_pat != none and f.tag(rest_pat) == .pat_var) try f.bind(rest_pat, .{ .node = rest, .kappa = k }, point) else try deferred.append(f.gpa, .{ .pat = rest_pat, .value = .{ .node = rest, .kappa = k } });
                 // The rest holds every position but the taken ones.
                 if (taken_split != .none and rest_pat != none and f.tag(rest_pat) == .pat_var) {
                     const h = f.binding[f.data(rest_pat).lhs];
@@ -604,7 +609,7 @@ pub const Frame = struct {
                 }
                 continue;
             }
-            try f.bind(item.int(), .{ .node = node, .kappa = contents_kappa }, point);
+            if (f.tag(item.int()) == .pat_var) try f.bind(item.int(), .{ .node = node, .kappa = contents_kappa }, point) else try deferred.append(f.gpa, .{ .pat = item.int(), .value = .{ .node = node, .kappa = contents_kappa } });
             if (taken_split != .none and f.tag(item.int()) == .pat_var) {
                 const h = f.binding[f.data(item.int()).lhs];
                 if (h != none) f.holders.items[h].taken = .{ .split = taken_split, .pos = position, .explicit = explicit_cells };

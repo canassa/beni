@@ -100,12 +100,24 @@ fn baseText(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
 
 /// A path under a local's root, in source terms: `.field`, `.0`, `[*]`,
 /// `#Ctor.i`, `⟨Type⟩` for the levels below a recursive value, `◆`.
-fn pathText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void {
-    if (p == .none) return;
+fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Allocator.Error || std.Io.Writer.Error)!void {
+    // The way up, then printed down: a path is as long as the source is
+    // deep, so an explicit list, never a native frame per step (#1138).
+    const places = f.places;
+    var way: std.ArrayList(Ids.PathId) = .empty;
+    defer way.deinit(a);
+    var at = root;
+    while (at != .none and places.pathParent(at) != .none) : (at = places.pathParent(at)) try way.append(a, at);
+    var i = way.items.len;
+    while (i > 0) {
+        i -= 1;
+        try stepText(f, w, way.items[i]);
+    }
+}
+
+fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void {
     const places = f.places;
     const parent = places.pathParent(p);
-    if (parent == .none) return;
-    try pathText(f, w, parent);
     const s = places.pathStep(p);
     switch (s.kind) {
         .field => try w.print(".{s}", .{f.names.field(f.names.ctx, s.payload)}),
@@ -144,7 +156,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
                 // names the holder: it holds every level (v1's text).
                 var hp = o.holder_path;
                 if (hp != .none and f.places.pathParent(hp) != .none and f.places.pathStep(hp).kind == .level) hp = f.places.pathParent(hp);
-                if (o.cause != .later_use) pathText(f, w, hp) catch return error.OutOfMemory;
+                if (o.cause != .later_use) pathText(f, a, w, hp) catch return error.OutOfMemory;
                 break :blk if (o.cause == .later_use)
                     w.print(" is read again at {d}:{d}", .{ up.line, up.col })
                 else
