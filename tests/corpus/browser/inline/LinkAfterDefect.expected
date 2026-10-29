@@ -1,0 +1,40 @@
+-- url "/"
+-- load
+<body>
+  <main>
+    <a id="about" href="/about">"about"</a>
+    <a id="away" href="https://example.org/">"away"</a>
+    <button id="boom">"boom"</button>
+    <p>"/"</p>
+  </main>
+</body>
+-- click #about
+(click's default prevented)
+<body>
+  <main>
+    <a id="about" href="/about">"about"</a>
+    <a id="away" href="https://example.org/">"away"</a>
+    <button id="boom">"boom"</button>
+    <p>"requested"</p>
+  </main>
+</body>
+-- throws click #boom
+(threw: RangeError: Maximum call stack size exceeded)
+<body>
+  <main>
+    <a id="about" href="/about">"about"</a>
+    <a id="away" href="https://example.org/">"away"</a>
+    <button id="boom">"boom"</button>
+    <p>"requested"</p>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nRangeError: Maximum call stack size exceeded"</div>
+</body>
+-- click #about
+(the host follows the link to "/about")
+(the DOM did not change)
+-- location
+(location: /)
+(the DOM did not change)
+-- click #away
+(the host follows the link to "https://example.org/")
+(the DOM did not change)

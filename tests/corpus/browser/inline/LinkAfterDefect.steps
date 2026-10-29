@@ -1,0 +1,6 @@
+url "/"
+click #about
+throws click #boom
+click #about
+location
+click #away

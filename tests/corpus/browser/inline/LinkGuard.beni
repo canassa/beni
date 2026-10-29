@@ -7,8 +7,9 @@
 -- other. A click inside a `<span>` in a link is the link's. Every other
 -- click is left to the host, which the driver shows as `(the host follows
 -- the link …)`: `_blank`, `download`, each modifier and the middle button.
--- `update` splits the request on its constructor, so the compiled
--- subscription sends it through the dispatcher as the message.
+-- A constant script URL is written as an empty `href`, so following it
+-- runs nothing. `update` splits the request on its constructor, so the
+-- compiled subscription sends it through the dispatcher as the message.
 import Browser
 import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
@@ -43,6 +44,7 @@ view last =
         <a id="download" href="/d" download="">download</a>
         <a id="nested" href="/n"><span id="inner">inner</span></a>
         <a id="nohref">no href</a>
+        <a id="script" href="  JaVa script:alert(1)">script</a>
         <p>{last}</p>
     </main>
 

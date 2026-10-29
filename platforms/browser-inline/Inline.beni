@@ -6,7 +6,6 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
-import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
 import Js
 import Url exposing (Url)
@@ -205,7 +204,7 @@ commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
 --| (`boundary.md` §9.8.13 (d)).
 pub address : ⊤ → Url
 address ⊤ =
-    case Navigation.currentUrl ⊤ of
+    case Url.fromString (Js.to (Js.get (Js.global "location") "href")) of
         Just url →
             url
 
@@ -218,10 +217,18 @@ address ⊤ =
                 )
 
 
+--| What changes the page's address: `Browser.Navigation.Key`, one per
+--| page. It is declared here, where the runtime hands it to an
+--| application's `init`, so that `Browser.Navigation` may import this
+--| module and ask whether the page has stopped.
+pub opaque type NavigationKey
+    = Page
+
+
 --| `(⊤)`: the page's navigation key, which an application's `init` is
 --| handed.
-pub navigationKey : ⊤ → Navigation.Key
-navigationKey ⊤ = Navigation.key ⊤
+pub navigationKey : ⊤ → NavigationKey
+navigationKey ⊤ = Page
 
 
 --| `(title)`: a document's title, written when it differs from the page's.

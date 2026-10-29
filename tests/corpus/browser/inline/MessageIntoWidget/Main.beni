@@ -1,0 +1,48 @@
+-- A subscription whose tagger is the constructor a widget's messages are
+-- mapped with (`PadMsg`) sends the widget's own messages, which `update`
+-- splits again (browser-inline.md §10.3): its value reaches its key
+-- through the dispatcher as the message. A widget's keys may otherwise be
+-- handled inside the widget, where the dispatcher cannot call them; those
+-- a message subscription may reach are kept at the program site. The
+-- start sends `Add 10` when the page mounts; the widget's own button
+-- adds 1.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Pad
+import Sub
+import Tea
+
+
+type alias Model =
+    pad : Int
+
+
+type Msg
+    = PadMsg Pad.Msg
+
+
+type Feed
+    = Feed
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        PadMsg sub →
+            ( { model | pad = Pad.update sub model.pad }, Cmd.none )
+
+
+feed : (Pad.Msg → ⊤) → (⊤ → ⊤)
+feed send =
+    send (Pad.Add 10)
+    λ⊤ → ⊤
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { pad = 0 }, Cmd.none )
+        , update = update
+        , view = λmodel → <div>{Html.map (Pad.view model.pad) PadMsg}</div>
+        , subscriptions = λ_ → Sub.on Feed feed PadMsg
+        }

@@ -13,3 +13,4 @@ click #relative meta
 click #relative shift
 click #relative alt
 click #relative button:1
+click #script
