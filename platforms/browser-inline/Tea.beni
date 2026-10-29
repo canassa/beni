@@ -100,7 +100,7 @@ application app = unreachable app
 -- What a constructor gives if a call reached it: none does, since the
 -- `inline` lowering compiles each call as the program's mount
 -- (`Lowering.constructs`) and refuses one used as a value. All four are
--- beni rather than `foreign` (`sandbox` and `element` since 2026-10-30,
+-- beni rather than `foreign` (`sandbox` and `element` since 2026-10-29,
 -- `plans/runtime-in-beni.md` step 9), so the platform has no sibling and
 -- a development build copies none (`browser-inline.md` §10.5).
 unreachable : a → Program
