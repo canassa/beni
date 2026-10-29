@@ -26,6 +26,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
+const Calls = @import("Calls.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
 const Block = @import("Block.zig");
@@ -3029,4 +3030,76 @@ fn deepBlock() !void {
         cur = b.conds.kappaChild(cur, s0);
     }
     try testing.expectEqual(Cond.yes, b.conds.kappaGet(cur, at).?);
+}
+
+/// A cyclic `res` of sites only, grafted (its sites map to themselves),
+/// writes the block the original writes (#1143's review).
+fn graftedSame(t: *Tables, res: NodeId) !void {
+    const gpa = testing.allocator;
+    const c0 = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = res });
+    var s: Calls.Scratch = .{};
+    defer s.deinit(gpa);
+    const arg = try t.shapes.leaf(gpa, &t.account, try t.place(8), .none);
+    const applied = try Calls.apply(t.env(), &t.sums, c0, &.{.{ .node = arg, .kappa = .none }}, 0, &s);
+    try testing.expect(applied.result.node != res);
+    const c1 = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = applied.result.node });
+    var wa: std.ArrayList(u32) = .empty;
+    defer wa.deinit(gpa);
+    var wb: std.ArrayList(u32) = .empty;
+    defer wb.deinit(gpa);
+    try write(t.env(), &t.sums, &.{c0}, .identity, &wa);
+    try write(t.env(), &t.sums, &.{c1}, .identity, &wb);
+    try testing.expectEqualSlices(u32, wa.items, wb.items);
+}
+
+fn knotSite(t: *Tables, i: u32) !NodeId {
+    const gpa = testing.allocator;
+    const tree = try t.place(8);
+    const site = try t.cells.site(gpa, &t.account, i, tree, .record);
+    return t.shapes.leaf(gpa, &t.account, tree, try t.cells.sets.insert(gpa, t.env().charge, .none, site.int(), 0));
+}
+
+fn knotSides(t: *Tables, k: NodeId, kind: Shape.Kind, a: NodeId, b: NodeId) !void {
+    t.shapes.tie(k, .{ .kind = kind, .place = try t.place(8), .cells = try t.cells.sets.unionWith(testing.allocator, t.env().charge, t.shapes.cells(a), t.shapes.cells(b)), .a = a.int(), .b = b.int(), .reach = .none });
+}
+
+fn knotNode(t: *Tables, k: NodeId, child: NodeId, second: ?NodeId) !void {
+    const gpa = testing.allocator;
+    var m = try t.shapes.overPut(gpa, &t.account, Ids.none_int, try t.places.ctorStep(gpa, &t.account, 0, 0), child);
+    if (second) |x| m = try t.shapes.overPut(gpa, &t.account, m, try t.places.ctorStep(gpa, &t.account, 0, 2), x);
+    t.shapes.tie(k, .{ .kind = .node, .place = try t.place(8), .cells = .none, .a = m, .b = 0, .reach = .none });
+}
+
+test "#1143: a cyclic result grafted writes the block its original writes" {
+    const gpa = testing.allocator;
+    // A back edge on a union's side; two knots waiting on each other
+    // through union sides; a positions side.
+    for (0..3) |case| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        t.account.allowance = std.math.maxInt(u32) - 1;
+        const a = try t.shapes.knot(gpa, &t.account);
+        const b = try t.shapes.knot(gpa, &t.account);
+        switch (case) {
+            0 => {
+                try knotSides(&t, b, .@"union", a, try knotSite(&t, 1));
+                try knotNode(&t, a, b, a);
+            },
+            1 => {
+                const na = try t.shapes.knot(gpa, &t.account);
+                const nb = try t.shapes.knot(gpa, &t.account);
+                try knotNode(&t, na, b, null);
+                try knotNode(&t, nb, a, b);
+                try knotSides(&t, a, .@"union", na, try knotSite(&t, 1));
+                try knotSides(&t, b, .@"union", nb, a);
+            },
+            2 => {
+                try knotSides(&t, b, .positions, a, try knotSite(&t, 1));
+                try knotNode(&t, a, b, null);
+            },
+            else => unreachable,
+        }
+        try graftedSame(&t, a);
+    }
 }

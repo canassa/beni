@@ -2094,8 +2094,11 @@ and `markAt`, a cell's refinement chain and a label's callee chain; the block re
 keeps its frames on a heap stack, never one native frame per level (#1130, #1138). The tests run them deep on
 small threads (1 MiB, a wasm build's stack, or 256 KiB). A call's `graft` of a cyclic result (a widened knot)
 gives the part met again while it is grafted a knot, tied when the part is done, so the image is cyclic and the
-walk ends. A part whose image reads its parts' records (a union, a positions node, a recast, a delta) over a
-knot still pending is itself a knot, built once what it reads is tied (#1143). One recursion stays native, bounded
+walk ends. A knot is never read while pending (#1143): `join`, `put` and `collect` read their members as deep
+as they go, so a part on a cycle of the result (its strongly connected component, found by Tarjan's lowlinks
+on the same walk) is built as `map` builds a cyclic image, a record of its own kind that names its parts'
+images and reads only those already built, with the image of its own `ε` cells. Off a cycle nothing pending
+is reachable, and each image is built with the constructors as before. One recursion stays native, bounded
 by the parser's nesting (`Parse.max_depth`, 4 096, on the checker's big stack): `Summary.Table.join` and `leq` over
 a class's nested classes, one level per nested lambda.
 
