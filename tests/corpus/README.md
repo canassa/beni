@@ -956,6 +956,26 @@ prerendered unit it does nothing. So a fixture's prerendering builds, which
 deliver it, have goldens of their own (`EarlyInput`), and a page mounted
 fresh drops it (`EarlyFresh`).
 
+*Since slice P4* a project may be a **data site** (`prerender.md` §8): its
+`beni.json` names its site's paths in `"build"."paths"` and its data
+program's in `"build"."data"` (`DataBlog`: `src/`, `data/`, `shared/`,
+`posts/`), and a project with no `.beni` file at its root is built from
+those. Every build runs the data program — the `--no-prerender` ones too,
+which write each page with its script and no view — and none may leave its
+tree, `.<out>.data`. The driver keeps a page's
+`<script type="application/json">` and does not run it, and does not mark
+it, since the mount takes it out. Three more checks:
+
+- **A script a host changed.** The setup step `retext <selector> "<text>"`
+  replaces an element's text before the program loads, on any page, with or
+  without a unit (`DataTampered`).
+- **A `--no-prerender` build whose page differs on purpose** has its own
+  golden, `_expected.dev-noprerender-expected` or
+  `_expected.release-noprerender-expected`.
+- **A build that warns.** A project with an `_expected.diag` builds with
+  exactly those warnings, the same in every build, in place of building
+  silently (`DataIgnored`).
+
 `emit/prerender/` and `emit/release/prerender/` are built the same way, for
 `browser-inline`, each `main` saying `Browser.prerender`, as `emit/inline/` and
 `emit/release/inline/` applications: their goldens pin the hydrating mount.

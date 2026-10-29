@@ -2472,6 +2472,21 @@ marks a constructor whose `init` is handed its route's `Url`, so a prerendering 
 `"build"."origin"` (`prerender_needs_origin`); `Build.address` is that origin with the base after
 it, its last `/` left out. A lowering that targets 1.21 sees what it saw.
 
+**Version 1.23** (*added 2026-10-29*, additive, gated on nothing; `prerender.md` §8, slice P4,
+#1218): build-time data. `Placement.Places.prerender_data`, a placement whose first argument is a
+schema and whose second is a lambda of one parameter written in place, whose body is a program
+call or a `first` placement around one (`Browser.prerenderData`): on `main`'s spine, the build
+prerenders that program at each route the project's data program gives. Anywhere else, a second
+`prerender` or `prerender_data` call on the spine, anything but such a lambda, and a read of the
+lambda's parameter outside the record's `init` are `program_shape`. In every tree the call is
+compiled as the lambda's body, and the callee is cut from reachability; the schema stays. The
+program there is `Program.data`: its lowering evaluates the schema with `programDataSchema`, reads
+the page's value with it — in the mount from the page's script, in the render function, which then
+takes the route and the page's text, from that text — and binds the lambda's parameter with
+`programDataBind` before `init` is evaluated. The emitter refuses a schema that is not statically
+known (`program_shape`) and, in the prerender tree, one whose conversions may be impure
+(`prerender_impure`). A lowering that targets 1.22 sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

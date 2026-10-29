@@ -193,4 +193,100 @@ and selected option are the ones the user left. The browser does not run a defau
 When the HTML is not what the program makes (a browser extension or a CDN changed it), the program
 mounts fresh in the same task. A development build writes a warning first.
 
-Sources: `docs/design/prerender.md` §3, §5, §6, §6.5, §7, §9; `docs/design/frontend.md` §10.1, §10.4.
+## Build-time data
+
+A site whose pages show files (blog posts) is two programs over a shared schema module. A data
+program, built for `node`, reads the files once when the site is built. It gives each route and
+its value. The site, built for `browser-inline`, makes each page from its value.
+
+```text
+beni.json
+shell.html
+src/Main.beni        the site
+data/Main.beni       the data program
+shared/Blog.beni     the schema that both programs compile
+posts/hello.txt      what the data program reads
+```
+
+```json
+{
+  "build": {
+    "platform": "browser-inline",
+    "paths": ["src", "shared"],
+    "data": { "paths": ["data", "shared"], "inputs": ["posts"] }
+  },
+  "html": "shell.html"
+}
+```
+
+`shared/Blog.beni`:
+
+```text
+pub schema Page tagged "page" of
+    Home as "home"
+        titles : List String
+    Article as "article"
+        slug : String
+        body : String
+```
+
+The data program, `data/Main.beni`. Its `main` is `Prerender.pages schema body`. `body` runs once
+in a fiber, so it may read files and wait. It runs with its working directory at the project root.
+
+```text
+import Blog exposing (Page)
+import Io
+import Node exposing (Program)
+import Prerender
+
+
+main : Program
+main = Prerender.pages (Page.schema ⊤) λ⊤ →
+    case Io.readFile "posts/hello.txt" of
+        Ok body →
+            Ok [ ( "/", Page.Home { titles = [ "hello" ] } ), ( "/blog/hello", Page.Article { slug = "hello", body = body } ) ]
+
+        Err _ →
+            Err "cannot read posts/hello.txt"
+```
+
+The site's `main` is `Browser.prerenderData schema λvalue → program`:
+
+```text
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.document
+        { init = λ⊤ → ( { page = page }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
+```
+
+- The routes are the data program's. The site lists none. The route rules above apply
+  (`invalid_route`). `index.html` is the page of `/`, or is not written.
+- Each page holds its own value, encoded by the schema, in a `<script type="application/json">`.
+  The build renders the page from the value it decodes from that text, and the page decodes the
+  same text before `init`. A page carries only its own value.
+- Only `init` may read the value: put it in the model. A read in `view`, `update` or
+  `subscriptions` is `program_shape`. The lambda's parameter is a name or `_`.
+- The schema must be a `schema` declaration's `X.schema ⊤`, `Schema.derived ⊤`, a primitive, or
+  those composed by `Schema.list`, `Schema.nullable` or `Schema.converted`. A schema that the
+  library's builders make is `program_shape`. A conversion that may be impure is
+  `prerender_impure`.
+- An `Err` from `body`, a throw, a value that the schema cannot encode, or a data `main` that is not
+  `Prerender.pages`, is `prerender_data_failed`. A text that the site's schema cannot decode is
+  `prerender_data_invalid`.
+- A site that says `Browser.prerenderData` and has no `"build"."data"` is `prerender_needs_data`.
+  A `"data"` with any other `main` is the warning `prerender_data_ignored`.
+- `Debug.log` is allowed in the data program, also with `--release`: the data program is always a
+  development build, and it does not ship.
+- `build --watch` and `serve` run the data program again when a file under its `"paths"` or its
+  `"inputs"` changes.
+- A page whose script was changed so that it does not decode, or was taken out, stops when it
+  loads.
+- Built alone (`beni build --platform=node --out=data-out data shared`) and run with no argument,
+  the data program writes its records to standard output.
+
+Sources: `docs/design/prerender.md` §3, §5, §6, §6.5, §7, §8, §9; `docs/design/frontend.md` §10.1,
+§10.3, §10.4.
