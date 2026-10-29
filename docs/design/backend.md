@@ -6142,12 +6142,16 @@ evaluation, which is true of a name JavaScript never rebinds after its binding:
 - a **top-level `const` or function of the file, or another beni module's export** (a declaration
   `Reach` kept), which no emitted statement assigns — a `const` cannot be, and module state is a
   `let` — and `Opt` asserts it. **Never a function the build imports from a hand-written file** — a
-  `foreign`'s sibling export, the platform's runtime (*amended 2026-10-27, the review of #1127*): a
+  `foreign`'s sibling export, the platform's runtime (*amended 2026-10-27, the review of #1127;
+  amended 2026-10-29, its second review: another beni module's export passes and the veto is the
+  printer's, which `77ee6b72a` built on 2026-10-28, a day before this text said so*): a
   hand-written function may read `arguments` or `this` where emitted code never does, and a host
   that holds the value may call it with more arguments than the lambda took — `then`, `replaceAll`,
   a listener — which the lambda dropped and `f` would receive. An emitted function has no rest or
-  default parameter and reads neither `arguments` nor `this`, so it is the same function to every
-  caller; a sibling is not promised to be. Only the join knows which names are such imports (a
+  default parameter and reads no `arguments`; it reads `this` only when `Js.method` made it, and
+  such a function is a `Js.Value`, which only a `Js.apply` calls (the rule below). So an emitted
+  callee is the same function to every caller; a sibling is not promised to be. Only the join
+  knows which names are such imports (a
   specifier whose imported name is not its local one, `Emit.markHandWritten`), so the veto is the
   printer's: `Print.resolve` leaves an arrow whose recorded callee is one as the arrow it is.
   Under `--release` a module's `import`s also bind every other beni module's emitted functions it
@@ -6157,8 +6161,10 @@ evaluation, which is true of a name JavaScript never rebinds after its binding:
   as a value, stays a lambda; so do `emit/release/core/EtaReduce`'s `aliasOnce` and `aliasTwice`,
   which forward to a local `const` that holds it (the next rule);
 - a **local `const_decl`** of the enclosing function **whose statement comes before the statement
-  that evaluates the arrow** — in the arrow's own list, or in an enclosing list of the same function
-  (*amended 2026-10-29, the review of #1127, F1*). JavaScript binds a `const` at its statement and
+  that evaluates the arrow** — in the arrow's own list, in an enclosing list of the same function,
+  or in a list of an enclosing function, whose `const` is bound before the inner function that
+  holds the arrow is made (*amended 2026-10-29, the review of #1127, F1, and its second review*).
+  JavaScript binds a `const` at its statement and
   not at the top of its scope: `const g = (x) => h(x); const h = …` is valid, since `g` reads `h`
   when called, after both exist, but `const g = h; const h = …` reads `h` before its initialisation
   and throws `ReferenceError`. So `Opt` marks each local `const` once its statement is planned, and
@@ -6178,15 +6184,24 @@ such a name out, and a third is a duty:
 
 - **a lambda whose call is a `Js.apply` is left as written.** The callee of a `Js.apply` is a
   `Js.Value`, a host value by type. `Lower` marks the `call` node it writes for one
-  (`JsIr.Node.host`), `Spec` copies the mark with the node, and item 6 declines a body whose call
-  carries it. `Js.call`'s callee is a `member` and fails the shape on its own;
-- **a `const` whose value is a name an `import` binds is never a callee**, directly or through
-  `const` aliases (`c = counted; … λx → c x`, `countedAlias = counted` at the top level): `Opt`
-  refuses it, since the printer's veto sees only the name written;
+  (`JsIr.Node.host`), `Spec` and `Suspend` copy the mark with the node (`run/EtaReduceHostSuspend`
+  runs such a lambda in the rest of a tail-call loop that `Suspend`'s loop mode copies after a
+  park; *amended 2026-10-29, the second review*), and item 6 declines a body whose call carries
+  it. `Js.call`'s callee is a `member` and fails the shape on its own;
+- **a `const` whose value is a name an `import` binds is never a callee in the module that
+  declares it**, directly or through `const` aliases (`c = counted; … λx → c x`,
+  `countedAlias = counted` at the top level): `Opt` refuses it, since the printer's veto sees only
+  the name written. `Opt` runs per module, so another module's `const` that holds a sibling's
+  export is a callee when it is named from outside (`emit/release/core/EtaReduceAlias` pins the
+  shape). That is harmless today: a sibling's export is an arrow of the declared arity
+  (`boundary.md` §4, check 4) that names no `arguments` (check 3), and the runtime's functions
+  have no beni name; a change to either check must revisit this (*amended 2026-10-29, the second
+  review*);
 - what remains is a beni function type whose value a `Js.to` cast from a host function.
   `boundary.md` §4.2 makes it the duty of the code that writes the `Js.to`: such a function ignores
   the arguments past the type's arity and `this`, as an emitted function does. `run/EtaReduceHostValue`
-  runs the three probes of the review in both builds.
+  runs the three probes of the review in both builds, and `run/EtaReduceHostSuspend` the second
+  review's: the same lambdas after a park in a tail-call loop.
 
 An `ident` that `Opt` item 1 already plans to substitute is read through the plan first, and **the
 tests above run on the name the printer writes**: `const g = f; … λa b → g a b` reduces to `f` when
