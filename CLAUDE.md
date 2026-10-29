@@ -439,8 +439,10 @@ nothing records on demand — there is no `test-run-hashes` and no
 emitter, the runtime, `core/`, a golden or an expected output, or a Node
 upgrade, the affected programs run once, and the gates print a line saying
 how many did. CI keeps the directory in `actions/cache`, saved from master
-and restored into every run; a pull request writes only in its own scope
-(`tests/blackbox/run_hash.zig`).
+and restored into every run under a key that hashes the test harness too;
+a pull request writes only in its own scope (`tests/blackbox/run_hash.zig`).
+A branch that changes the harness runs with a `BENI_RUN_HASH_DIR` of its
+own, because one directory serves every worktree.
 
 **Programs in a page** are `tests/corpus/browser/`: a program built for the
 `tests/platforms/page` test platform (or a platform of its own), loaded into

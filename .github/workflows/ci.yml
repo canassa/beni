@@ -119,14 +119,17 @@ jobs:
       # Restoring takes master's entries into a pull request, never the
       # other way: a pull request saves in its own scope, which master
       # never restores, so CI's verdict on master depends on no pull
-      # request's cache and on no developer's.
+      # request's cache and on no developer's. The key hashes the harness
+      # that decides "passed" (the owner, 2026-10-28): a digest does not
+      # cover it, so a run with a changed harness restores no entry an
+      # older one wrote.
       - name: restore the run-hash cache
         id: run-hash-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/beni-run-hashes
-          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
-          restore-keys: run-hashes-${{ runner.os }}-${{ runner.arch }}-
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
+          restore-keys: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-
 
       # A digest is never removed, and each master run saves the restored
       # cache plus its own additions. When a master run restores more than
@@ -179,7 +182,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/beni-run-hashes
-          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/blackbox/**', 'tests/browser/**', 'tests/serve/**', 'tests/workers/**', 'tests/test_runner.zig', 'build.zig') }}-${{ github.sha }}
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build
