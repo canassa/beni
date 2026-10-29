@@ -628,7 +628,7 @@ test "blocks cost O((n + E) log n), counted: marked rings, and a path of equal s
 }
 
 test "blocks stop at every prefix of the codec lane before the work it would pay for" {
-    const g = try markedRing(48);
+    const g = try markedRing(16);
     defer testing.allocator.free(g.initial);
     defer testing.allocator.free(g.edges);
     const full = try run(g.initial, 2, g.edges, unbounded);

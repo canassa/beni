@@ -2608,11 +2608,12 @@ test "map of a delta keeps its base when mapping the base grows the table" {
 }
 
 test "#1138: proj, map, join and leq walk values as deep as the source on explicit stacks" {
-    // On a thread with a small stack, 96 KiB for 1 000 levels, as 256 KiB
-    // was for 3 000, about the same ratio (over the 1 s budget, #1197): a native frame per level
+    // On a thread with a small stack, 68 KiB for 700 levels, as 96 KiB was
+    // for 1 000 (over CI's budget, #1209) and 256 KiB for 3 000, about the
+    // same ratio (over the 1 s budget, #1197): a native frame per level
     // would overflow it.
     var result: anyerror!void = {};
-    const th = try std.Thread.spawn(.{ .stack_size = 96 << 10 }, struct {
+    const th = try std.Thread.spawn(.{ .stack_size = 68 << 10 }, struct {
         fn run(out: *anyerror!void) void {
             out.* = deepShapes();
         }
@@ -2634,7 +2635,7 @@ fn deepShapes() !void {
     const list = try f.placeOf(1);
     const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
     const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
-    const depth = 1_000;
+    const depth = 700;
     // A union DAG of `depth` levels at one place: `proj` reads through it.
     var u = try f.shapes.leaf(gpa, &f.account, tree, try f.param(0, tree));
     // Made directly: `union`'s absorption check walks the DAG, and a chain

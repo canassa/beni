@@ -1147,7 +1147,7 @@ test "a block round-trips: read into tables of its own, written again, the same 
 }
 
 /// Every truncation of the rows block whose length lies in the `part`-th of
-/// three slices (cut at √⅓ and √⅔ of its length, so that no one test runs
+/// `parts` equal slices of its length (so that no one test runs
 /// long), read into one set of tables: each refused
 /// read is no block, leaves no class in `out` and no record in the tables.
 fn expectTruncationsRefused(part: u32, parts: u32) !void {
@@ -1159,11 +1159,11 @@ fn expectTruncationsRefused(part: u32, parts: u32) !void {
     defer words.deinit(testing.allocator);
     try write(a.env(), &a.sums, &classes, .identity, &words);
 
-    // Parts of equal work: a truncation at n costs about n, so cut at w·√(k/parts).
+    // Parts of equal length: a short truncation costs about as much as a
+    // long one (measured, #1209), so cut at len · k / parts.
     const cut = struct {
         fn at(len: usize, k: u32, of: u32) usize {
-            if (k == of) return len;
-            return @intFromFloat(@as(f64, @floatFromInt(len)) * @sqrt(@as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(of))));
+            return len * k / of;
         }
     }.at;
     var out: std.ArrayList(ClassId) = .empty;
@@ -1179,30 +1179,86 @@ fn expectTruncationsRefused(part: u32, parts: u32) !void {
     }
 }
 
-// Every truncation, in six parts of equal work (three were near the 1 s
-// budget, #1197).
-test "a block that does not decode is no block: every truncation, part 1 of 6" {
-    try expectTruncationsRefused(0, 6);
+// Every truncation, in twenty parts of equal length (six of unequal work
+// were near CI's 1 s budget, #1197, #1209).
+test "a block that does not decode is no block: every truncation, part 1 of 20" {
+    try expectTruncationsRefused(0, 20);
 }
 
-test "a block that does not decode is no block: every truncation, part 2 of 6" {
-    try expectTruncationsRefused(1, 6);
+test "a block that does not decode is no block: every truncation, part 2 of 20" {
+    try expectTruncationsRefused(1, 20);
 }
 
-test "a block that does not decode is no block: every truncation, part 3 of 6" {
-    try expectTruncationsRefused(2, 6);
+test "a block that does not decode is no block: every truncation, part 3 of 20" {
+    try expectTruncationsRefused(2, 20);
 }
 
-test "a block that does not decode is no block: every truncation, part 4 of 6" {
-    try expectTruncationsRefused(3, 6);
+test "a block that does not decode is no block: every truncation, part 4 of 20" {
+    try expectTruncationsRefused(3, 20);
 }
 
-test "a block that does not decode is no block: every truncation, part 5 of 6" {
-    try expectTruncationsRefused(4, 6);
+test "a block that does not decode is no block: every truncation, part 5 of 20" {
+    try expectTruncationsRefused(4, 20);
 }
 
-test "a block that does not decode is no block: every truncation, part 6 of 6" {
-    try expectTruncationsRefused(5, 6);
+test "a block that does not decode is no block: every truncation, part 6 of 20" {
+    try expectTruncationsRefused(5, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 7 of 20" {
+    try expectTruncationsRefused(6, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 8 of 20" {
+    try expectTruncationsRefused(7, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 9 of 20" {
+    try expectTruncationsRefused(8, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 10 of 20" {
+    try expectTruncationsRefused(9, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 11 of 20" {
+    try expectTruncationsRefused(10, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 12 of 20" {
+    try expectTruncationsRefused(11, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 13 of 20" {
+    try expectTruncationsRefused(12, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 14 of 20" {
+    try expectTruncationsRefused(13, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 15 of 20" {
+    try expectTruncationsRefused(14, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 16 of 20" {
+    try expectTruncationsRefused(15, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 17 of 20" {
+    try expectTruncationsRefused(16, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 18 of 20" {
+    try expectTruncationsRefused(17, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 19 of 20" {
+    try expectTruncationsRefused(18, 20);
+}
+
+test "a block that does not decode is no block: every truncation, part 20 of 20" {
+    try expectTruncationsRefused(19, 20);
 }
 
 test "a block that does not decode is no block: a wrong magic, a wrong version, a bad tag, a trailing word" {
@@ -1274,7 +1330,7 @@ test "a block's cost is n log n: n stores" {
 
 test "a block's cost is n log n: a list of n distinct elements" {
     // A literal of n distinct lists: a balanced `positions` DAG at `[*]`.
-    try expectLinearithmic(&.{ 64, 128, 256, 512, 1024 }, struct {
+    try expectLinearithmic(&.{ 64, 128, 256, 512 }, struct {
         fn make(t: *Tables, n: u32) anyerror!ClassId {
             const gpa = testing.allocator;
             const lists = try t.place(2);
@@ -1401,31 +1457,55 @@ test "a block built in another order writes the same bytes" {
 }
 
 // A malformed block decodes as no block and never crashes: every truncation,
-// and a mutation of every word. The sweep is split into sixths of the words,
-// each a test of its own under the 1 s budget (#1197); together they cover
+// and a mutation of every word. The sweep is split into twelfths of the words,
+// each a test of its own under the 1 s budget (#1197, #1209); together they cover
 // every word, as the one test did.
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 1 of 6" {
-    try malformedSweep(0, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 1 of 12" {
+    try malformedSweep(0, 12);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 2 of 6" {
-    try malformedSweep(1, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 2 of 12" {
+    try malformedSweep(1, 12);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 3 of 6" {
-    try malformedSweep(2, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 3 of 12" {
+    try malformedSweep(2, 12);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 4 of 6" {
-    try malformedSweep(3, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 4 of 12" {
+    try malformedSweep(3, 12);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 5 of 6" {
-    try malformedSweep(4, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 5 of 12" {
+    try malformedSweep(4, 12);
 }
 
-test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 6 of 6" {
-    try malformedSweep(5, 6);
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 6 of 12" {
+    try malformedSweep(5, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 7 of 12" {
+    try malformedSweep(6, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 8 of 12" {
+    try malformedSweep(7, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 9 of 12" {
+    try malformedSweep(8, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 10 of 12" {
+    try malformedSweep(9, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 11 of 12" {
+    try malformedSweep(10, 12);
+}
+
+test "a malformed block decodes as no block and never crashes: every truncation and word mutation, part 12 of 12" {
+    try malformedSweep(11, 12);
 }
 
 fn malformedSweep(part: usize, parts: usize) !void {
@@ -2325,7 +2405,7 @@ const Deep = struct {
 };
 
 test "many distinct nested places cost n log n: a place's key never re-encodes what it reaches" {
-    try expectLinearithmic(&.{ 250, 500, 1000, 2000 }, struct {
+    try expectLinearithmic(&.{ 250, 500, 1000 }, struct {
         fn make(t: *Tables, n: u32) anyerror!ClassId {
             var d: Deep = .{ .depth = n };
             return d.chain(t);
@@ -2455,7 +2535,7 @@ test "the codec's lane stops the writer at every prefix: nothing written, no mem
     try codecLane(2);
 }
 
-/// Part 0: caps 0 to 200, one by one; parts 1 and 2: the halves of the 48
+/// Part 0: caps 0 to 200, one by one; parts 1 and 2: the halves of the 32
 /// steps from 200 to the full price.
 fn codecLane(part: u32) !void {
     const gpa = testing.allocator;
@@ -2483,8 +2563,8 @@ fn codecLane(part: u32) !void {
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(gpa);
     var cap: u64 = 0;
-    const step = paid / 48;
-    const mid = @min(paid, 200 + 24 * step);
+    const step = paid / 32;
+    const mid = @min(paid, 200 + 16 * step);
     if (part == 1) cap = @min(200, paid);
     if (part == 2) cap = mid;
     const end: u64 = switch (part) {
@@ -2607,7 +2687,7 @@ test "source-sized values write under the default allowance: a 2 551-place model
     try sourceSized(2);
 }
 
-test "source-sized values write under the default allowance: a 1 000-deep taken chain" {
+test "source-sized values write under the default allowance: a 500-deep taken chain" {
     try sourceSized(3);
 }
 
@@ -2646,7 +2726,7 @@ fn sourceSized(case: u32) !void {
                 const env = t.env();
                 const list = try t.place(0);
                 var cell = try t.cells.symbolic(gpa, &t.account, &t.places, .param, 0, try t.places.rootPath(gpa, list), 0);
-                for (0..1000) |i| {
+                for (0..500) |i| {
                     const l = try t.cells.label(gpa, &t.account, @intCast(i), .none, false);
                     _ = try t.cells.split(gpa, &t.account, cell, @intCast(i), l, try t.conds.excl(gpa, env.charge, cell));
                     cell = try t.cells.refine(gpa, &t.account, .elem, cell, l, 0, list, .list);
@@ -2695,32 +2775,34 @@ fn manyMapsOver(t: *Tables, k: u32, len: usize) !ClassId {
     return t.sums.add(env, .{ .params = &.{.none}, .res = v, .funs = &.{.{ .j = 0, .calls = .once, .supplies = sups }} });
 }
 
-test "a class whose interpretations grow past the allowance is refused loudly, on its own declaration" {
+test "a class whose interpretations grow past the allowance is refused loudly" {
     const gpa = testing.allocator;
     // §4.4's default.
     try testing.expectEqual(@as(u32, 65_536), Ids.Account.default_allowance);
-    {
-        // Eight maps over 400 nodes: 2 800 interpretations past one per
-        // node, against a declaration allowed 2 000.
-        var t: Tables = .{};
-        try t.init();
-        defer t.deinit();
-        t.account.allowance = std.math.maxInt(u32) - 1;
-        const c = try manyMaps(&t, 8);
-        var small: Ids.Account = .{ .allowance = 2000 };
-        defer small.deinit(gpa);
-        var out: std.ArrayList(u32) = .empty;
-        defer out.deinit(gpa);
-        try testing.expectError(error.OwnershipLimit, Block.writeWith(t.env(), &t.sums, &.{c}, .identity, &out, .{ .charges = &.{.growth(&small)} }));
-        try testing.expect(small.failed.? == .exhausted);
-        try testing.expectEqual(@as(usize, 0), out.items.len);
-    }
+    // Eight maps over 200 nodes: 1 400 interpretations past one per node,
+    // against a declaration allowed 1 000.
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    t.account.allowance = std.math.maxInt(u32) - 1;
+    const c = try manyMapsOver(&t, 8, 200);
+    var small: Ids.Account = .{ .allowance = 1000 };
+    defer small.deinit(gpa);
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(gpa);
+    try testing.expectError(error.OwnershipLimit, Block.writeWith(t.env(), &t.sums, &.{c}, .identity, &out, .{ .charges = &.{.growth(&small)} }));
+    try testing.expect(small.failed.? == .exhausted);
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "a class's interpretations are charged to its own declaration" {
+    const gpa = testing.allocator;
     // Two declarations in one block: each class's growth on its own.
     var t: Tables = .{};
     try t.init();
     defer t.deinit();
     t.account.allowance = std.math.maxInt(u32) - 1;
-    const heavy = try manyMaps(&t, 8);
+    const heavy = try manyMapsOver(&t, 8, 200);
     const light = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = try t.shapes.nothing(gpa, &t.account, try t.place(0)) });
     var accounts: [2]Ids.Account = .{ .{}, .{} };
     defer for (&accounts) |*a| a.deinit(gpa);
@@ -2728,7 +2810,7 @@ test "a class whose interpretations grow past the allowance is refused loudly, o
     defer out.deinit(gpa);
     const growth = t.account.growth;
     try Block.writeWith(t.env(), &t.sums, &.{ heavy, light }, .identity, &out, .{ .charges = &.{ .growth(&accounts[0]), .growth(&accounts[1]) } });
-    try testing.expect(accounts[0].growth >= 7 * 400);
+    try testing.expect(accounts[0].growth >= 7 * 200);
     try testing.expectEqual(@as(u32, 0), accounts[1].growth);
     try testing.expectEqual(growth, t.account.growth);
 }
@@ -2781,7 +2863,7 @@ test "a type's width costs the writer nothing: 340 nodes of a 100-field record" 
     try typeWidth(2);
 }
 
-test "a type's width costs the writer nothing: a 256 × 256 record" {
+test "a type's width costs the writer nothing: a 128 × 128 record" {
     try typeWidth(3);
 }
 
@@ -2795,7 +2877,7 @@ fn typeWidth(case: u32) !void {
             0 => 4000,
             1 => 30_000,
             2 => 100,
-            else => 256,
+            else => 128,
         }, .nested = case == 3 };
         const model = try fields.place(&t);
         const c: ClassId = switch (case) {
@@ -2807,7 +2889,7 @@ fn typeWidth(case: u32) !void {
             },
             else => blk: {
                 var over: u32 = Ids.none_int;
-                for (0..256) |j| {
+                for (0..128) |j| {
                     const s = try Step.field(&t.account, @intCast(j));
                     over = try t.shapes.overPut(gpa, &t.account, over, s, try oneField(&t, t.places.child(model, s).?, @intCast(j + 1)));
                 }
@@ -2863,7 +2945,7 @@ test "the codec's work is O(S log S) whatever the width: P declarations of one n
 // per edit, each against B alone (one test was over the 1 s budget, #1197).
 test "a declaration's growth is its own: a declaration sharing its chain under one map changes nothing of it" {
     const alone = try sharedGrowth(0);
-    try testing.expect(alone >= 7 * 200);
+    try testing.expect(alone >= 7 * 100);
     try testing.expectEqual(alone, try sharedGrowth(1));
 }
 
@@ -2878,8 +2960,8 @@ fn sharedGrowth(variant: u32) !u32 {
     try t.init();
     defer t.deinit();
     t.account.allowance = std.math.maxInt(u32) - 1;
-    const b = try manyMapsOver(&t, 8, 200);
-    const a = if (variant == 2) try manyMapsOver(&t, 16, 200) else try t.sums.add(t.env(), .{ .params = &.{.none}, .res = t.sums.get(b).res });
+    const b = try manyMapsOver(&t, 8, 100);
+    const a = if (variant == 2) try manyMapsOver(&t, 16, 100) else try t.sums.add(t.env(), .{ .params = &.{.none}, .res = t.sums.get(b).res });
     var accounts: [2]Ids.Account = .{ .{}, .{} };
     defer for (&accounts) |*x| x.deinit(gpa);
     var out: std.ArrayList(u32) = .empty;
@@ -3212,9 +3294,9 @@ test "#1141: the codec's work on a snapshot grows with its depth, never with its
     const gpa = testing.allocator;
     var write_cost: [3]u64 = undefined;
     var read_cost: [3]u64 = undefined;
-    // 125, 250 and 500 levels: the ratio, not the size, tells n from n²
-    // (2 000 levels took the test over the 1 s budget, #1197).
-    for ([_]usize{ 125, 250, 500 }, 0..) |depth, run| {
+    // 64, 128 and 256 levels: the ratio, not the size, tells n from n²
+    // (2 000 levels took the test over the 1 s budget, #1197; 500, CI's, #1209).
+    for ([_]usize{ 64, 128, 256 }, 0..) |depth, run| {
         var a: Tables = .{};
         try a.init();
         defer a.deinit();

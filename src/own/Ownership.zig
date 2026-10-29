@@ -3120,10 +3120,15 @@ test "a summary past a limit says which and what it measured" {
     defer gpa.free(uses);
     for (uses, 0..) |*u, i| u.* = .{ .param = 0, .path = @intCast(i), .bits = bit_r };
     try std.testing.expectEqual(Over{ .limit = .entries, .at = entry_cap + 1 }, overLimit(.{ .params = 1, .uses = uses }).?);
-    const atoms = try gpa.alloc(XAtom, condition_cap + 1);
-    defer gpa.free(atoms);
-    @memset(atoms, .{ .kind = .excl, .a = .{ .kind = .param } });
-    const one = [_]ResEntry{.{ .path = eps, .prov = .{ .kind = .param }, .sc = .{ .atoms = atoms } }};
+    // One `apart` atom whose group holds condition_cap + 1 cells weighs
+    // that much (`XAtom.weight`): a million `excl` atoms, one by one, took
+    // the test past CI's budget (#1209).
+    const group = try gpa.alloc(Prov, condition_cap + 1);
+    defer gpa.free(group);
+    @memset(group, .{ .kind = .param });
+    const groups = [_][]const Prov{group};
+    const atoms = [_]XAtom{.{ .kind = .apart, .groups = &groups }};
+    const one = [_]ResEntry{.{ .path = eps, .prov = .{ .kind = .param }, .sc = .{ .atoms = &atoms } }};
     try std.testing.expectEqual(Over{ .limit = .conditions, .at = condition_cap + 1 }, overLimit(.{ .params = 1, .res = &one }).?);
 }
 
