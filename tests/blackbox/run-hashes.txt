@@ -39,8 +39,8 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 06add9ce22502fa63b40f567ce142e8211097666ce3e8f3e56aae0e27684e4bf
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 10dd656abb5b1a1eee4acb1463eaabdf4bb058199a92893c2eef23b24e13a952
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 992e5092eb29113fc8860fe5411633e8ce79c02371e9b6af8449589dba52a853
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ab66fa8d0a82c2517a68e5595e41e0168fb9c7d40802dd3f5678ab2131e125fd
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 30c6c61c5c3a41c1a556da2e3f55185328052d16d9fbafd9408b312e530034e3
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 f92b4ca867fe8ccae30d52ca59736317b4c8f36aa40f01ce826a33cc056da43f
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 e3076f318a1e33717a08e458dc096ac5b7405c5d8c8b9c65940423229a2d4978
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dccd75722fdcfd94e1ee3c64ddcd74498245760fa1a7a3aee4f1f5ef05b7403d
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -64,7 +64,7 @@ build_test.test.a platform that declares exports gets an entry file that exports
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #1 3ba1fe19ce10eb75bf1245700c570da39147951bfcd5dc77667060fd8a65262c
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #2 c0a4c377b0770e255b520ef57b83968cbc7866c69e7b781adbfcd89b968cefe1
 build_test.test.a program computes something and prints the right answer #0 e8567c4615453a4ee166a7858b41b281335202a6f9ee5dcf9e2f1555ff505f17
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 18210950aad55c162d9c152c615a5f052b1b046f22f3489e4278db5cce960592
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 d640683cce69c5a41b04832579017f6bee137f12fb43bd5d06155acb6f696d04
 build_test.test.a project that lists exports for a platform without the key gets a warning and a build #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 b7350c41206ccdd903daa449a4dc8f1fed403e6d4a468542c737f0df96cc0529
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
