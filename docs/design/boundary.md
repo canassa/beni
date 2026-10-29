@@ -3232,6 +3232,11 @@ operation and returns its canceller (P2 §16.5); one that never parks is `impure
 
 `getJson`/`postJson` send and accept `application/json` and answer the body's text once it parses
 as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`schema.md`).
+
+*As built 2026-10-30 (`plans/runtime-in-beni.md` step 9).* `Browser.Events.size` and the
+`hidden` that `visibility` reads are beni over `Js` — `Js.global "innerWidth"`/`"innerHeight"`,
+and `document.visibilityState === "hidden"` through `Js.same` — and `Browser/Events.js` is gone;
+nothing is caught, since neither read can fail.
 **Still owed** from R45 §5: `Http.send` with a request record and a streaming body, `Time.here`,
 `Browser.nextFrame` and `onAnimationFrame`/`onKeyDown`/`onWindow`, `Random`, `Storage`, `Nav` and
 `Tea.application`, `Ws`, and core's `Queue` (W52 settles its handle rule, below).
