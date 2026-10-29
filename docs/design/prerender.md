@@ -1439,7 +1439,14 @@ schema that is not statically known — a top-level constant naming one is follo
 in their own modules, through lambdas and the bodies of the app's and the platforms' declarations
 they name, and a call the checker answers impure or suspending, `Debug`'s aside, is
 `prerender_impure` at the conversion. A statically known schema is made by makers that compute
-nothing else, so the schema argument needs no separate purity walk.
+nothing else, so of the schema argument only what a `Schema.converted` is handed is walked. A
+`Schema.derived ⊤` is one of the derived codecs of `main`'s module, and each of them joins the walk,
+which follows `codec_ref` nodes and, at a `codec_value`, the body of the type's own `codec`. The
+calls of core `Schema`'s makers are exempt: they build a schema with `Js`, which the checker
+answers impure, and decode nothing; the functions they are handed are walked as their arguments.
+`.<out>.data` is guarded as the prerender tree is: one there that holds no record beni wrote is the
+user's, refused with exit 2 and not removed. Each run of Node first removes a records file an
+earlier run left.
 
 The data program (`src/build/Command.zig`, `buildData`, `runData`) is a second `Session` over the
 same cache, built for `node` into `.<out>.data` in development mode with no source maps; its paths

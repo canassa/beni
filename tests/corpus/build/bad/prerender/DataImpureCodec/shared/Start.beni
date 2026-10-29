@@ -1,0 +1,34 @@
+--! A derived schema whose type's own `codec` reads the clock when it
+--! decodes (docs/design/prerender.md §8.4): `Schema.derived ⊤` reaches it,
+--! so `prerender_impure`, where the derivation uses it.
+
+import Clock
+import Schema exposing (Codec)
+
+
+pub opaque type Stamp
+    = Stamp Int
+
+
+pub codec : ⊤ → Codec Stamp
+codec _ = Schema.erased (Schema.converted Schema.int (Schema.conversion toStamp fromStamp))
+
+
+toStamp : Int → Result (List Schema.Issue) Stamp
+toStamp n = Ok (Stamp (n + Clock.now ⊤))
+
+
+fromStamp : Stamp → Result (List Schema.Issue) Int
+fromStamp (Stamp n) = Ok n
+
+
+pub count : Stamp → Int
+count (Stamp n) = n
+
+
+pub make : Int → Stamp
+make n = Stamp n
+
+
+pub type alias Start =
+    start : Stamp
