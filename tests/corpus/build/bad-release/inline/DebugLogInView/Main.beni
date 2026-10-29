@@ -1,0 +1,36 @@
+-- build/bad-release on `browser-inline`: a `--release` build that reaches
+-- `Debug.log` is refused (`backend.md` §9) after the write-set pass has
+-- run, and the refusal must free what the pass allocated.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = Debug.log "count" (model.count + 1) }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view })
+        "root"
