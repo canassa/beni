@@ -286,17 +286,38 @@ const Grafter = struct {
         // Post-order on an explicit stack (#1130): `res`'s depth is the
         // source's, never native-stack depth. A node's parts are grafted
         // before it, each once (`memo`).
+        // A cyclic `res` (a widened class's knot, #1138): a part met again
+        // while it is being grafted gets a knot as its image, which the part
+        // ties when it is done, so the walk ends and the image is cyclic too.
         const shapes = g.env.shapes;
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(g.gpa());
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(g.gpa());
+        var knots: stamped.Column(NodeId, NodeId) = .{};
+        defer knots.deinit(g.gpa());
         try stack.append(g.gpa(), .{ .node = root, .expanded = false });
         while (stack.pop()) |f| {
-            if (g.s.memo.get(f.node) != null) continue;
             if (f.expanded) {
-                try g.graftOne(f.node);
+                open.remove(f.node);
+                if (knots.get(f.node)) |k| {
+                    // The knot's record is the part's image, built as any.
+                    try g.graftOne(f.node);
+                    const built = g.s.memo.get(f.node).?;
+                    shapes.tie(k, shapes.nodes.get(built.int()));
+                    try g.s.memo.put(g.gpa(), f.node, k);
+                } else if (g.s.memo.get(f.node) == null) try g.graftOne(f.node);
                 continue;
             }
+            if (g.s.memo.get(f.node) != null) continue;
+            if (open.contains(f.node)) {
+                const k = try shapes.knot(g.gpa(), g.account());
+                try knots.put(g.gpa(), f.node, k);
+                try g.s.memo.put(g.gpa(), f.node, k);
+                continue;
+            }
+            try open.put(g.gpa(), f.node, {});
             try stack.append(g.gpa(), .{ .node = f.node, .expanded = true });
             const d = shapes.get(f.node);
             switch (d.kind) {
@@ -622,4 +643,49 @@ fn deepCall() !void {
     }
     try testing.expectEqual(a, at.node);
     try testing.expectEqual(Cond.yes, conds.kappaGet(at.kappa, a).?);
+}
+
+test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image, and ends" {
+    const gpa = testing.allocator;
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var cells: Cell.Table = .{};
+    defer cells.deinit(gpa);
+    var shapes: Shape.Table = .{};
+    defer shapes.deinit(gpa);
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    var conds = try Cond.Table.init(gpa, .growth(&account));
+    defer conds.deinit(gpa);
+    var sums: Summary.Table = .{};
+    defer sums.deinit(gpa);
+    var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
+    const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
+    const t_place = try places.of(gpa, &account, src, 0);
+    const list = try places.of(gpa, &account, src, 1);
+    const arg = try places.ctorStep(gpa, &account, 0, 0);
+    const env: Env = .{ .gpa = gpa, .charge = .growth(&account), .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds };
+    // `res` is a knot: `T` whose list's `[*]` is the `T` itself, the list a
+    // union with the parameter's leaf.
+    const p = try cells.symbolic(gpa, &account, &places, .param, 0, try places.rootPath(gpa, list), 0);
+    const pl = try shapes.leaf(gpa, &account, list, try cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
+    const t = try shapes.knot(gpa, &account);
+    const l = try shapes.knot(gpa, &account);
+    const site = try cells.site(gpa, &account, 1, list, .list);
+    shapes.tie(l, .{ .kind = .node, .place = list, .cells = try cells.sets.insert(gpa, env.charge, .none, site.int(), 0), .a = try shapes.overPut(gpa, &account, Ids.none_int, Place.Step.elem, t), .b = 0, .reach = .none });
+    const u = try shapes.@"union"(gpa, &account, &cells.sets, l, pl);
+    shapes.tie(t, .{ .kind = .node, .place = t_place, .cells = .none, .a = try shapes.overPut(gpa, &account, Ids.none_int, arg, u), .b = 0, .reach = .none });
+    const c = try sums.add(env, .{ .params = &.{.none}, .res = t, .kappas = .none });
+    // The argument: a list of its own.
+    const arg_site = try cells.site(gpa, &account, 2, list, .list);
+    const a = try shapes.leaf(gpa, &account, list, try cells.sets.insert(gpa, env.charge, .none, arg_site.int(), 0));
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const applied = try apply(env, &sums, c, &.{.{ .node = a, .kappa = .none }}, 0, &s);
+    // The image is cyclic: down `#T.0` and `[*]` is the image again.
+    const r = applied.result.node;
+    try testing.expectEqual(Shape.Kind.node, shapes.kind(r));
+    const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
+    const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
+    try testing.expect(back == r or (shapes.kind(back) == .@"union" and (shapes.get(back).a == r.int() or shapes.get(back).b == r.int())));
 }

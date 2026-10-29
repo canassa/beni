@@ -567,20 +567,30 @@ pub const Table = struct {
     /// projection is its parent's, refined). Null when the base is
     /// concrete, whose contents are explicit children.
     pub fn unrefined(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, c: CellId) Error!?CellId {
-        const x = t.get(c);
-        if (!x.origin.isRefinement()) return if (x.origin.isSymbolic() and x.origin != .top) c else null;
-        const inner = (try t.unrefined(gpa, account, places, x.parent)) orelse return null;
-        const y = t.get(inner);
-        const step: ?Place.Step = switch (x.origin) {
-            .elem, .others => Place.Step.elem,
-            .below => Place.Step.fromWord(x.c),
-            .level => null,
-            .loan => return inner,
-            else => unreachable,
-        };
-        const s = step orelse return inner;
-        const path = (try places.extend(gpa, .growth(account), .from(y.b), s)) orelse return null;
-        return try t.symbolic(gpa, account, places, y.origin, y.a, path, y.c);
+        // Up the refinement chain to its base, then each refinement's step
+        // back down, on an explicit list (#1138: splits nest as deep as the
+        // source's patterns).
+        var chain: std.ArrayList(CellId) = .empty;
+        defer chain.deinit(gpa);
+        var at = c;
+        while (t.get(at).origin.isRefinement()) : (at = t.get(at).parent) try chain.append(gpa, at);
+        const root = t.get(at);
+        var inner: CellId = if (root.origin.isSymbolic() and root.origin != .top) at else return null;
+        while (chain.pop()) |r| {
+            const x = t.get(r);
+            const y = t.get(inner);
+            const step: ?Place.Step = switch (x.origin) {
+                .elem, .others => Place.Step.elem,
+                .below => Place.Step.fromWord(x.c),
+                .level => null,
+                .loan => continue,
+                else => unreachable,
+            };
+            const s = step orelse continue;
+            const path = (try places.extend(gpa, .growth(account), .from(y.b), s)) orelse return null;
+            inner = try t.symbolic(gpa, account, places, y.origin, y.a, path, y.c);
+        }
+        return inner;
     }
 };
 

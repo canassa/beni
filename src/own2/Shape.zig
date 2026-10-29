@@ -455,21 +455,61 @@ pub const Table = struct {
         // another owner to read.
         try account.reserve(.memo, 1);
         if (t.memo_proj.get(.{ n.int(), s.word() })) |hit| return if (hit == Ids.none_int) null else NodeId.from(hit);
+        // The sides a union, a positions node or a delta's base projects
+        // through first, on an explicit stack (#1138: a union DAG is as deep
+        // as the source); each request one memo record, as before.
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = true });
+        try t.projBelow(gpa, account, &stack, n, s);
+        while (stack.pop()) |f| {
+            if (!f.expanded) {
+                try account.reserve(.memo, 1);
+                if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                try t.projBelow(gpa, account, &stack, f.node, s);
+                continue;
+            }
+            if (t.memo_proj.get(.{ f.node.int(), s.word() }) != null) continue;
+            try t.projOne(gpa, account, places, cellt, f.node, s);
+        }
+        const hit = t.memo_proj.get(.{ n.int(), s.word() }).?;
+        return if (hit == Ids.none_int) null else NodeId.from(hit);
+    }
+
+    /// The nodes `n`'s projection at `s` reads the projections of.
+    fn projBelow(t: *Table, gpa: Allocator, account: *Account, stack: anytype, n: NodeId, s: Step) Error!void {
+        _ = account;
+        const d = t.get(n);
+        switch (d.kind) {
+            .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
+            .@"union", .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
+            else => {},
+        }
+    }
+
+    /// `n`'s projection at `s`, what it reads projected already.
+    fn projOne(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
         const child_place = places.child(d.place, s) orelse {
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = Ids.none_int;
-            return null;
+            return;
         };
+        const got = struct {
+            fn of(tt: *Table, x: u32, st: Step) NodeId {
+                return .from(tt.memo_proj.get(.{ x, st.word() }).?);
+            }
+        }.of;
         const out: NodeId = switch (d.kind) {
             .leaf => try t.projectLeaf(gpa, account, places, cellt, d.cells, child_place, s),
             .node => t.overGet(d.a, s) orelse try t.nothing(gpa, account, child_place),
-            .delta => t.overGet(d.b, s) orelse (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?,
+            .delta => t.overGet(d.b, s) orelse got(t, d.a, s),
             .recast => try t.recast(gpa, account, child_place, .from(d.a)),
-            .@"union" => try t.@"union"(gpa, account, &cellt.sets, (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?, (try t.proj(gpa, account, places, cellt, .from(d.b), s)).?),
-            .positions => try t.positions(gpa, account, &cellt.sets, (try t.proj(gpa, account, places, cellt, .from(d.a), s)).?, (try t.proj(gpa, account, places, cellt, .from(d.b), s)).?),
+            .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
+            .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
         };
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
-        return out;
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`
@@ -857,106 +897,204 @@ pub const Table = struct {
     pub fn join(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
-        if (members.len == 2) {
-            const x = @min(members[0].int(), members[1].int());
-            const y = @max(members[0].int(), members[1].int());
-            if (x == y) return members[0];
-            try account.reserve(.memo, 1); // before the memo, a hit charged too
-            if (t.memo_join.get(.{ x, y })) |hit| return .from(hit);
-            const out = try t.joinUncached(gpa, account, places, cellt, members);
-            (try t.memo_join.getOrPut(gpa, .{ x, y })).value_ptr.* = out.int();
-            return out;
-        }
-        return t.joinUncached(gpa, account, places, cellt, members);
+        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt };
+        defer w.deinit();
+        return w.run(members);
     }
 
     fn baseOf(t: *const Table, n: NodeId) NodeId {
         return if (t.kind(n) == .delta) .from(t.nodes.items(.a)[n.int()]) else n;
     }
 
-    fn joinUncached(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
-        try account.reserve(.memo, 1);
-        // Sort by (base, id): one pass groups and deduplicates.
-        std.mem.sort(NodeId, members, t, struct {
-            fn lessThan(tt: *Table, a: NodeId, b: NodeId) bool {
-                const ba = tt.baseOf(a).int();
-                const bb = tt.baseOf(b).int();
-                return if (ba != bb) ba < bb else a.int() < b.int();
+    /// `join` on an explicit stack (#1138: deltas nest as deep as the
+    /// source). A request is a run of members; a group of deltas over one
+    /// base asks, per override step, for the join of the values there, a
+    /// request of its own, and is finished once they are. The records each
+    /// request reserves are the recursion's, in its order per request.
+    const JoinWalk = struct {
+        t: *Table,
+        gpa: Allocator,
+        account: *Account,
+        places: *Place.Table,
+        cellt: *Cell.Table,
+        pool: std.ArrayList(NodeId) = .empty,
+        reqs: std.ArrayList(Req) = .empty,
+        parts: std.ArrayList(Part) = .empty,
+        steps: std.ArrayList(StepChild) = .empty,
+        stack: std.ArrayList(u32) = .empty,
+
+        const Req = struct { first: u32, len: u32, key: ?[2]u32 = null, result: NodeId = .none, parts_first: u32 = 0, parts_len: u32 = 0, expanded: bool = false };
+        /// A group of the request: a node as it is, the leaves joined, or a
+        /// delta group's base with its steps' child requests.
+        const Part = struct { kind: enum { node, leaf, delta }, node: NodeId = .none, place: PlaceId = .none, cells: SetId = .none, steps_first: u32 = 0, steps_len: u32 = 0 };
+        const StepChild = struct { step: u32, child: u32 };
+
+        fn deinit(w: *JoinWalk) void {
+            w.pool.deinit(w.gpa);
+            w.reqs.deinit(w.gpa);
+            w.parts.deinit(w.gpa);
+            w.steps.deinit(w.gpa);
+            w.stack.deinit(w.gpa);
+        }
+
+        fn request(w: *JoinWalk, members: []const NodeId) Error!u32 {
+            const first: u32 = @intCast(w.pool.items.len);
+            try w.pool.appendSlice(w.gpa, members);
+            const id: u32 = @intCast(w.reqs.items.len);
+            try w.reqs.append(w.gpa, .{ .first = first, .len = @intCast(members.len) });
+            try w.stack.append(w.gpa, id);
+            return id;
+        }
+
+        fn run(w: *JoinWalk, members: []NodeId) Error!NodeId {
+            _ = try w.request(members);
+            while (w.stack.pop()) |id| {
+                if (w.reqs.items[id].expanded) try w.finish(id) else try w.expand(id);
             }
-        }.lessThan);
-        var groups: std.ArrayList(NodeId) = .empty;
-        defer groups.deinit(gpa);
-        var leaf_cells: SetId = .none;
-        var leaf_place: PlaceId = .none;
-        var i: usize = 0;
-        while (i < members.len) {
-            var j = i + 1;
-            while (j < members.len and t.baseOf(members[j]) == t.baseOf(members[i])) j += 1;
-            const run = members[i..j];
-            i = j;
-            // One group: deduplicate, then join the deltas over one base.
-            var distinct: usize = 1;
-            for (run[1..]) |m| if (m != run[distinct - 1]) {
-                run[distinct] = m;
-                distinct += 1;
-            };
-            if (distinct == 1) {
-                if (t.kind(run[0]) == .leaf) {
-                    leaf_cells = try cellt.sets.unionWith(gpa, .growth(account), leaf_cells, t.cells(run[0]));
-                    leaf_place = t.place(run[0]);
-                } else {
-                    try groups.append(gpa, run[0]);
+            return w.reqs.items[0].result;
+        }
+
+        /// The memo and the grouping; the delta groups' child requests.
+        fn expand(w: *JoinWalk, id: u32) Error!void {
+            const t = w.t;
+            const r = w.reqs.items[id];
+            if (r.len == 1) {
+                w.reqs.items[id].result = w.pool.items[r.first];
+                return;
+            }
+            if (r.len == 2) {
+                const m = w.pool.items[r.first..][0..2];
+                const x = @min(m[0].int(), m[1].int());
+                const y = @max(m[0].int(), m[1].int());
+                if (x == y) {
+                    w.reqs.items[id].result = m[0];
+                    return;
                 }
-                continue;
+                try w.account.reserve(.memo, 1); // before the memo, a hit charged too
+                if (t.memo_join.get(.{ x, y })) |hit| {
+                    w.reqs.items[id].result = .from(hit);
+                    return;
+                }
+                w.reqs.items[id].key = .{ x, y };
             }
-            try groups.append(gpa, try t.joinDeltas(gpa, account, places, cellt, run[0..distinct]));
+            try w.account.reserve(.memo, 1);
+            // Sort by (base, id): one pass groups and deduplicates.
+            const members = w.pool.items[r.first..][0..r.len];
+            std.mem.sort(NodeId, members, t, struct {
+                fn lessThan(tt: *Table, a: NodeId, b: NodeId) bool {
+                    const ba = tt.baseOf(a).int();
+                    const bb = tt.baseOf(b).int();
+                    return if (ba != bb) ba < bb else a.int() < b.int();
+                }
+            }.lessThan);
+            const parts_first: u32 = @intCast(w.parts.items.len);
+            var leaf_cells: SetId = .none;
+            var leaf_place: PlaceId = .none;
+            var children: std.ArrayList(u32) = .empty;
+            defer children.deinit(w.gpa);
+            var i: usize = 0;
+            while (i < r.len) {
+                const run_now = w.pool.items[r.first..][0..r.len];
+                var j = i + 1;
+                while (j < run_now.len and t.baseOf(run_now[j]) == t.baseOf(run_now[i])) j += 1;
+                const grp = run_now[i..j];
+                i = j;
+                // One group: deduplicate, then join the deltas over one base.
+                var distinct: usize = 1;
+                for (grp[1..]) |m| if (m != grp[distinct - 1]) {
+                    grp[distinct] = m;
+                    distinct += 1;
+                };
+                if (distinct == 1) {
+                    if (t.kind(grp[0]) == .leaf) {
+                        leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, t.cells(grp[0]));
+                        leaf_place = t.place(grp[0]);
+                    } else {
+                        try w.parts.append(w.gpa, .{ .kind = .node, .node = grp[0] });
+                    }
+                    continue;
+                }
+                // Copy the group out: requests below append to the pool.
+                const copy = try w.gpa.dupe(NodeId, grp[0..distinct]);
+                defer w.gpa.free(copy);
+                try w.deltaGroup(copy, &children);
+            }
+            if (leaf_place != .none) try w.parts.append(w.gpa, .{ .kind = .leaf, .place = leaf_place, .cells = leaf_cells });
+            w.reqs.items[id].parts_first = parts_first;
+            w.reqs.items[id].parts_len = @intCast(w.parts.items.len - parts_first);
+            w.reqs.items[id].expanded = true;
+            // Finish after the children: pushed under them.
+            try w.stack.append(w.gpa, id);
+            // The children were pushed as they were made; move them above.
+            for (children.items) |c| try w.stack.append(w.gpa, c);
         }
-        if (leaf_place != .none) try groups.append(gpa, try t.leaf(gpa, account, leaf_place, leaf_cells));
-        return t.balancedUnion(gpa, account, cellt, groups.items);
-    }
 
-    /// Deltas over one base (a bare node among them is the base itself):
-    /// the union of their override steps, each joined over the members
-    /// present and the base's child where a member has no override.
-    fn joinDeltas(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, run: []const NodeId) Error!NodeId {
-        const base = t.baseOf(run[0]);
-        // Every override of every member as `(step, node)`, sorted by step:
-        // O(Σ|Oᵢ| log Σ|Oᵢ|), one record each, then one pass over the runs.
-        const Pair = struct { step: u32, node: NodeId };
-        var all: std.ArrayList(Pair) = .empty;
-        defer all.deinit(gpa);
-        for (run) |m| {
-            if (t.kind(m) != .delta) continue;
-            var it = t.overEntries(t.nodes.items(.b)[m.int()]);
-            while (it.next()) |e| {
-                try account.reserve(.memo, 1);
-                try all.append(gpa, .{ .step = e.step.word(), .node = e.node });
+        /// Deltas over one base (a bare node among them is the base itself):
+        /// the union of their override steps, each a request for the join of
+        /// the members present and the base's child where a member has no
+        /// override.
+        fn deltaGroup(w: *JoinWalk, group: []const NodeId, children: *std.ArrayList(u32)) Error!void {
+            const t = w.t;
+            const base = t.baseOf(group[0]);
+            const Pair = struct { step: u32, node: NodeId };
+            var all: std.ArrayList(Pair) = .empty;
+            defer all.deinit(w.gpa);
+            for (group) |m| {
+                if (t.kind(m) != .delta) continue;
+                var it = t.overEntries(t.nodes.items(.b)[m.int()]);
+                while (it.next()) |e| {
+                    try w.account.reserve(.memo, 1);
+                    try all.append(w.gpa, .{ .step = e.step.word(), .node = e.node });
+                }
             }
+            std.mem.sort(Pair, all.items, {}, struct {
+                fn lessThan(_: void, a: Pair, b: Pair) bool {
+                    return a.step < b.step;
+                }
+            }.lessThan);
+            const steps_first: u32 = @intCast(w.steps.items.len);
+            var values: std.ArrayList(NodeId) = .empty;
+            defer values.deinit(w.gpa);
+            var i: usize = 0;
+            while (i < all.items.len) {
+                var j = i;
+                values.clearRetainingCapacity();
+                while (j < all.items.len and all.items[j].step == all.items[i].step) : (j += 1) try values.append(w.gpa, all.items[j].node);
+                const s = Step.fromWord(all.items[i].step);
+                // A member with no override at this step keeps the base's child.
+                if (j - i < group.len) {
+                    if (try t.proj(w.gpa, w.account, w.places, w.cellt, base, s)) |b| try values.append(w.gpa, b);
+                }
+                i = j;
+                const before = w.stack.items.len;
+                const child = try w.request(values.items);
+                w.stack.shrinkRetainingCapacity(before);
+                try children.append(w.gpa, child);
+                try w.steps.append(w.gpa, .{ .step = s.word(), .child = child });
+            }
+            try w.parts.append(w.gpa, .{ .kind = .delta, .node = base, .steps_first = steps_first, .steps_len = @intCast(w.steps.items.len - steps_first) });
         }
-        std.mem.sort(Pair, all.items, {}, struct {
-            fn lessThan(_: void, a: Pair, b: Pair) bool {
-                return a.step < b.step;
-            }
-        }.lessThan);
-        var over: u32 = over_none;
-        var values: std.ArrayList(NodeId) = .empty;
-        defer values.deinit(gpa);
-        var i: usize = 0;
-        while (i < all.items.len) {
-            var j = i;
-            values.clearRetainingCapacity();
-            while (j < all.items.len and all.items[j].step == all.items[i].step) : (j += 1) try values.append(gpa, all.items[j].node);
-            const s = Step.fromWord(all.items[i].step);
-            // A member with no override at this step keeps the base's child.
-            if (j - i < run.len) {
-                if (try t.proj(gpa, account, places, cellt, base, s)) |b| try values.append(gpa, b);
-            }
-            i = j;
-            over = try t.overPut(gpa, account, over, s, try t.join(gpa, account, places, cellt, values.items));
-        }
-        return t.delta(gpa, account, base, over);
-    }
 
+        /// The groups built from their children's answers, then the union.
+        fn finish(w: *JoinWalk, id: u32) Error!void {
+            const t = w.t;
+            const r = w.reqs.items[id];
+            var groups: std.ArrayList(NodeId) = .empty;
+            defer groups.deinit(w.gpa);
+            for (w.parts.items[r.parts_first..][0..r.parts_len]) |p| switch (p.kind) {
+                .node => try groups.append(w.gpa, p.node),
+                .leaf => try groups.append(w.gpa, try t.leaf(w.gpa, w.account, p.place, p.cells)),
+                .delta => {
+                    var over: u32 = over_none;
+                    for (w.steps.items[p.steps_first..][0..p.steps_len]) |sc| over = try t.overPut(w.gpa, w.account, over, Step.fromWord(sc.step), w.reqs.items[sc.child].result);
+                    try groups.append(w.gpa, try t.delta(w.gpa, w.account, p.node, over));
+                },
+            };
+            const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items);
+            w.reqs.items[id].result = out;
+            if (r.key) |k| (try t.memo_join.getOrPut(w.gpa, k)).value_ptr.* = out.int();
+        }
+    };
     fn balancedUnion(t: *Table, gpa: Allocator, account: *Account, cellt: *Cell.Table, groups: []NodeId) Error!NodeId {
         if (groups.len == 1) return groups[0];
         const mid = groups.len / 2;
@@ -975,51 +1113,87 @@ pub const Table = struct {
         return t.mapWalk(gpa, account, n, ctx, f);
     }
 
-    fn mapWalk(t: *Table, gpa: Allocator, account: *Account, n: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
-        if (t.memo_map.get(n)) |m| return m;
-        const d = t.get(n);
-        const c = try f(ctx, d.cells);
-        switch (d.kind) {
-            .leaf => {
-                const out = try t.leaf(gpa, account, d.place, c);
-                try t.memo_map.put(gpa, n, out);
-                return out;
-            },
-            .recast => {
-                const out = try t.recast(gpa, account, d.place, try t.mapWalk(gpa, account, .from(d.a), ctx, f));
-                try t.memo_map.put(gpa, n, out);
-                return out;
-            },
-            .@"union", .positions => {
-                const l = try t.mapWalk(gpa, account, .from(d.a), ctx, f);
-                const r = try t.mapWalk(gpa, account, .from(d.b), ctx, f);
-                try account.reserve(.shape, 1);
-                const out: NodeId = .from(t.count());
-                try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
-                try t.memo_map.put(gpa, n, out);
-                return out;
-            },
-            .node, .delta => {
-                // Pre-allocate so a cyclic child finds its image (the knot).
-                try account.reserve(.shape, 1);
-                const out: NodeId = .from(t.count());
-                try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
-                try t.memo_map.put(gpa, n, out);
-                var mapped: u32 = over_none;
-                var it = t.overEntries(if (d.kind == .node) d.a else d.b);
-                while (it.next()) |e| mapped = try t.overPut(gpa, account, mapped, e.step, try t.mapWalk(gpa, account, e.node, ctx, f));
-                if (d.kind == .node) {
-                    t.nodes.items(.a)[out.int()] = mapped;
-                } else {
-                    // The base first: mapping it may grow the table, and a
-                    // column read before the call would be the old one.
-                    const base = try t.mapWalk(gpa, account, .from(d.a), ctx, f);
-                    t.nodes.items(.a)[out.int()] = base.int();
-                    t.nodes.items(.b)[out.int()] = mapped;
+    fn mapWalk(t: *Table, gpa: Allocator, account: *Account, root: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
+        // On an explicit stack (#1138: a value is as deep as the source). A
+        // node or a delta takes its image before its children, so a cyclic
+        // child finds it (the knot); a recast, a union or a positions node
+        // after its parts.
+        // `f` runs on entry, as the recursion ran it, and parts in the
+        // recursion's order, so what `f` interns is interned as before.
+        const Frame = struct { node: NodeId, expanded: bool, cells: SetId = .none };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var kids: std.ArrayList(NodeId) = .empty;
+        defer kids.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .expanded = false });
+        while (stack.pop()) |fr| {
+            const n = fr.node;
+            const d = t.get(n);
+            if (!fr.expanded) {
+                if (t.memo_map.get(n) != null) continue;
+                switch (d.kind) {
+                    .leaf => try t.memo_map.put(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
+                    .recast => {
+                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
+                        try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
+                    },
+                    .@"union", .positions => {
+                        try stack.append(gpa, .{ .node = n, .expanded = true, .cells = try f(ctx, d.cells) });
+                        try stack.appendSlice(gpa, &.{ .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
+                    },
+                    .node, .delta => {
+                        // Pre-allocate so a cyclic child finds its image (the knot).
+                        const c = try f(ctx, d.cells);
+                        try account.reserve(.shape, 1);
+                        const out: NodeId = .from(t.count());
+                        try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
+                        try t.memo_map.put(gpa, n, out);
+                        try stack.append(gpa, .{ .node = n, .expanded = true });
+                        // The children in order, then a delta's base: pushed in reverse.
+                        if (d.kind == .delta) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
+                        kids.clearRetainingCapacity();
+                        var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                        while (it.next()) |e| try kids.append(gpa, e.node);
+                        var k = kids.items.len;
+                        while (k > 0) {
+                            k -= 1;
+                            try stack.append(gpa, .{ .node = kids.items[k], .expanded = false });
+                        }
+                    },
                 }
-                return out;
-            },
+                continue;
+            }
+            switch (d.kind) {
+                .leaf => unreachable,
+                .recast => {
+                    if (t.memo_map.get(n) != null) continue;
+                    try t.memo_map.put(gpa, n, try t.recast(gpa, account, d.place, t.memo_map.get(.from(d.a)).?));
+                },
+                .@"union", .positions => {
+                    if (t.memo_map.get(n) != null) continue;
+                    const c = fr.cells;
+                    const l = t.memo_map.get(.from(d.a)).?;
+                    const r = t.memo_map.get(.from(d.b)).?;
+                    try account.reserve(.shape, 1);
+                    const out: NodeId = .from(t.count());
+                    try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
+                    try t.memo_map.put(gpa, n, out);
+                },
+                .node, .delta => {
+                    const out = t.memo_map.get(n).?;
+                    var mapped: u32 = over_none;
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| mapped = try t.overPut(gpa, account, mapped, e.step, t.memo_map.get(e.node).?);
+                    if (d.kind == .node) {
+                        t.nodes.items(.a)[out.int()] = mapped;
+                    } else {
+                        t.nodes.items(.a)[out.int()] = t.memo_map.get(.from(d.a)).?.int();
+                        t.nodes.items(.b)[out.int()] = mapped;
+                    }
+                },
+            }
         }
+        return t.memo_map.get(root).?;
     }
 
     // ---- order --------------------------------------------------------------------------------
@@ -1044,8 +1218,63 @@ pub const Table = struct {
             };
             t.leq_provisional.clearRetainingCapacity();
         };
-        // Reserved BEFORE the memo is touched, a hit charged like a miss (§2.3
-        // *Memo safety*, §4.1).
+        // The pairs on an explicit stack (#1138: a value is as deep as the
+        // source): a frame resumes at its next step once the pair below it
+        // answered. Each pair as the recursion took it, its records too.
+        const Frame = struct { n: NodeId, m: NodeId, step: u32, ok: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var answer: ?bool = try t.leqEnter(gpa, account, cellt, &stack, n, m);
+        while (stack.items.len > 0) {
+            const top = &stack.items[stack.items.len - 1];
+            if (answer) |a| {
+                // The pair below answered.
+                answer = null;
+                if (!a) top.ok = false;
+            }
+            var below: ?[2]NodeId = null;
+            if (top.ok) {
+                const steps = places.steps(t.place(top.n)).steps;
+                while (top.step < steps.len) {
+                    const s = steps[top.step];
+                    top.step += 1;
+                    const pn = (try t.proj(gpa, account, places, cellt, top.n, s)) orelse continue;
+                    const pm = (try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
+                        top.ok = false;
+                        break;
+                    };
+                    if (pn == pm) continue;
+                    if (t.cells(pn) == .none and t.kind(pn) == .leaf) continue; // nothing is below anything
+                    below = .{ pn, pm };
+                    break;
+                }
+            }
+            if (below) |b| {
+                answer = try t.leqEnter(gpa, account, cellt, &stack, b[0], b[1]);
+                continue;
+            }
+            // Done: the pair's provisional answer, then its parent resumes.
+            const f = stack.pop().?;
+            (try t.memo_leq.getOrPut(gpa, .{ f.n.int(), f.m.int() })).value_ptr.* = if (f.ok) leq_assumed else leq_false;
+            answer = f.ok;
+        }
+        const ok = answer.?;
+        if (outermost) {
+            // Settle every provisional answer of this query.
+            for (t.leq_provisional.items) |pair| {
+                const slot = (try t.memo_leq.getOrPut(gpa, pair)).value_ptr;
+                if (slot.* == leq_assumed) slot.* = if (ok) leq_true else leq_unknown;
+            }
+            t.leq_provisional.clearRetainingCapacity();
+        }
+        return ok;
+    }
+
+    /// One pair entered: its memo's answer, or a new frame assuming it holds
+    /// (null: walk it). The record is reserved BEFORE the memo is touched, a
+    /// hit charged like a miss (§2.3 *Memo safety*, §4.1).
+    fn leqEnter(t: *Table, gpa: Allocator, account: *Account, cellt: *Cell.Table, stack: anytype, n: NodeId, m: NodeId) Error!?bool {
+        if (n == m) return true;
         try account.reserve(.memo, 1);
         const got = try t.memo_leq.getOrPut(gpa, .{ n.int(), m.int() });
         if (got.found_existing and got.value_ptr.* != leq_unknown) return got.value_ptr.* != leq_false;
@@ -1056,33 +1285,9 @@ pub const Table = struct {
         // assumption only ever makes an answer more true).
         got.value_ptr.* = leq_assumed;
         try t.leq_provisional.append(gpa, .{ n.int(), m.int() });
-        var ok = try cellt.sets.subset(gpa, .growth(account), t.cells(n), t.cells(m));
-        if (ok) {
-            const steps = places.steps(t.place(n));
-            for (steps.steps) |s| {
-                const pn = (try t.proj(gpa, account, places, cellt, n, s)) orelse continue;
-                const pm = (try t.proj(gpa, account, places, cellt, m, s)) orelse {
-                    ok = false;
-                    break;
-                };
-                if (pn == pm) continue;
-                if (t.cells(pn) == .none and t.kind(pn) == .leaf) continue; // nothing is below anything
-                if (!try t.leq(gpa, account, places, cellt, pn, pm)) {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        (try t.memo_leq.getOrPut(gpa, .{ n.int(), m.int() })).value_ptr.* = if (ok) leq_assumed else leq_false;
-        if (outermost) {
-            // Settle every provisional answer of this query.
-            for (t.leq_provisional.items) |pair| {
-                const slot = (try t.memo_leq.getOrPut(gpa, pair)).value_ptr;
-                if (slot.* == leq_assumed) slot.* = if (ok) leq_true else leq_unknown;
-            }
-            t.leq_provisional.clearRetainingCapacity();
-        }
-        return ok;
+        const ok = try cellt.sets.subset(gpa, .growth(account), t.cells(n), t.cells(m));
+        try stack.append(gpa, .{ .n = n, .m = m, .step = 0, .ok = ok });
+        return null;
     }
 
     const leq_false: u32 = 0;
@@ -2239,4 +2444,80 @@ test "map of a delta keeps its base when mapping the base grows the table" {
     try testing.expectEqual(Kind.delta, f.shapes.kind(mapped));
     const mapped_base: NodeId = .from(f.shapes.get(mapped).a);
     try testing.expectEqual(Kind.node, f.shapes.kind(mapped_base));
+}
+
+test "#1138: proj, map, join and leq walk values as deep as the source on explicit stacks" {
+    // On a thread with a small stack (256 KiB, a quarter of a wasm build's):
+    // a native frame per level would overflow it.
+    var result: anyerror!void = {};
+    const th = try std.Thread.spawn(.{ .stack_size = 256 << 10 }, struct {
+        fn run(out: *anyerror!void) void {
+            out.* = deepShapes();
+        }
+    }.run, .{&result});
+    th.join();
+    try result;
+}
+
+fn deepShapes() !void {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    f.account.allowance = std.math.maxInt(u32) - 1;
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const depth = 3_000;
+    // A union DAG of `depth` levels at one place: `proj` reads through it.
+    var u = try f.shapes.leaf(gpa, &f.account, tree, try f.param(0, tree));
+    // Made directly: `union`'s absorption check walks the DAG, and a chain
+    // of them would be quadratic to build.
+    for (0..depth / 4) |i| {
+        const side = try f.shapes.node(gpa, &f.account, tree, try f.site(@intCast(i + 1), tree, .record), try f.one(s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(@intCast(depth + i + 1), list, .list))));
+        u = try f.shapes.make(gpa, &f.account, .{ .kind = .@"union", .place = tree, .cells = try f.cells.sets.unionWith(gpa, .growth(&f.account), f.shapes.cells(u), f.shapes.cells(side)), .a = u.int(), .b = side.int(), .reach = .none });
+    }
+    try testing.expect(f.cells.sets.count(f.shapes.cells(try f.proj(u, s1))) >= depth / 4);
+    // Two chains `depth` deep along `#0`, the second one more cell at each
+    // level: `map` copies one, `leq` compares them, both ways.
+    var a = try f.shapes.leaf(gpa, &f.account, tree, .none);
+    var b = a;
+    for (0..depth) |i| {
+        const c = try f.site(@intCast(3 * depth + i), tree, .record);
+        a = try f.shapes.node(gpa, &f.account, tree, c, try f.one(s0, a));
+        b = try f.shapes.node(gpa, &f.account, tree, try f.cells.sets.unionWith(gpa, .growth(&f.account), c, try f.site(@intCast(4 * depth + i), tree, .record)), try f.one(s0, b));
+    }
+    const Id = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    const m = try f.shapes.map(gpa, &f.account, a, {}, Id.same);
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, a, m));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, a, b));
+    try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, b, a));
+    // Two delta chains over one chain of bases, overrides differing at the
+    // bottom: `join` joins the deltas at every level.
+    var da = a;
+    var db = a;
+    var base = a;
+    var bases: std.ArrayList(NodeId) = .empty;
+    defer bases.deinit(gpa);
+    for (0..depth) |_| {
+        try bases.append(gpa, base);
+        base = f.shapes.overGet(f.shapes.get(base).a, s0) orelse break;
+    }
+    da = try f.shapes.leaf(gpa, &f.account, tree, try f.param(1, tree));
+    db = try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree));
+    var k = bases.items.len;
+    while (k > 0) {
+        k -= 1;
+        da = try f.shapes.delta(gpa, &f.account, bases.items[k], try f.one(s0, da));
+        db = try f.shapes.delta(gpa, &f.account, bases.items[k], try f.one(s0, db));
+    }
+    var two = [_]NodeId{ da, db };
+    const j = try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &two);
+    try testing.expectEqual(Kind.delta, f.shapes.kind(j));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, da, j));
 }

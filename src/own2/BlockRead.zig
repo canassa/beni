@@ -501,70 +501,98 @@ const Reader = struct {
         /// constructor absorbed into a side read as that side (its stored κ
         /// over its sides' joined into the side's, exact there; §2.12), and
         /// its links, each child group built first.
-        fn build(b: *GroupBuild, g: u32) Failure!Cond.Kappas {
+        fn build(b: *GroupBuild, root: u32) Failure!Cond.Kappas {
             const r = b.r;
             const gpa = r.env.gpa;
             const conds = r.env.conds;
             const ch = r.env.charge;
-            // No member has a snapshot position: nothing is there.
-            if (g == none) return .none;
-            try ch.reserve(gpa, .memo, 1);
-            if (b.built.get(.{g})) |hit| return .from(hit);
-            if ((try b.open.getOrPut(gpa, .{g})).found_existing) return error.Malformed;
-            const members = b.runs.items[g].items;
-            var fold: u32 = 0;
-            for (members) |i| fold = @max(fold, r.infos.items[i].cursor);
-            var pos: Cond.Kappas = if (fold >= 2) try conds.kappaEmptyFold(gpa, ch, if (fold == 3) Cond.Table.fold_collapsed else Cond.Table.fold_exact) else .none;
-            for (members) |i| {
-                const p = r.infos.items[i];
-                if (p.absorbed == .none and p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.node, p.kappa)).ctx;
-            }
-            for (members) |i| {
-                const p = r.infos.items[i];
-                if (p.absorbed == .none) continue;
-                if (p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.absorbed, p.kappa)).ctx;
-                const k = try conds.kappaOf(gpa, ch, r.env.view(), pos, p.absorbed, p.at_summary);
-                pos = (try conds.kappaSet(gpa, ch, pos, p.node, k)).ctx;
-            }
-            // A fold's links are the steps its members take.
-            if (fold >= 2) for (members) |i| {
-                const p = r.infos.items[i];
-                for (r.edges.items[p.first..][0..p.len]) |e| if (e.stepped) {
-                    try ch.reserve(gpa, .inspection, 1);
-                    pos = try conds.kappaFoldStep(gpa, ch, pos, e.step);
-                };
-            };
-            if (fold < 2) {
-                // The children by step, in step order.
-                var kids: std.ArrayList([2]u32) = .empty;
-                defer kids.deinit(gpa);
+            // Post-order on an explicit stack (#1138: a snapshot is as deep as
+            // the source): a group's own position first, its child groups
+            // built, then linked in step order.
+            const Frame = struct { g: u32, pos: Cond.Kappas = .none, kids_first: u32 = 0, kids_len: u32 = 0, expanded: bool = false };
+            var stack: std.ArrayList(Frame) = .empty;
+            defer stack.deinit(gpa);
+            var links: std.ArrayList([2]u32) = .empty;
+            defer links.deinit(gpa);
+            try stack.append(gpa, .{ .g = root });
+            while (stack.pop()) |f| {
+                const g = f.g;
+                // No member has a snapshot position: nothing is there.
+                if (g == none) continue;
+                if (f.expanded) {
+                    var pos = f.pos;
+                    for (links.items[f.kids_first..][0..f.kids_len]) |l| {
+                        const child: Cond.Kappas = if (l[1] == none) .none else .from(b.built.get(.{l[1]}).?);
+                        pos = try conds.kappaLink(gpa, ch, pos, Step.fromWord(l[0]), child);
+                    }
+                    (try b.built.getOrPut(gpa, .{g})).value_ptr.* = pos.int();
+                    continue;
+                }
+                try ch.reserve(gpa, .memo, 1);
+                if (b.built.get(.{g}) != null) continue;
+                if ((try b.open.getOrPut(gpa, .{g})).found_existing) return error.Malformed;
+                const members = b.runs.items[g].items;
+                var fold: u32 = 0;
+                for (members) |i| fold = @max(fold, r.infos.items[i].cursor);
+                var pos: Cond.Kappas = if (fold >= 2) try conds.kappaEmptyFold(gpa, ch, if (fold == 3) Cond.Table.fold_collapsed else Cond.Table.fold_exact) else .none;
                 for (members) |i| {
+                    const p = r.infos.items[i];
+                    if (p.absorbed == .none and p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.node, p.kappa)).ctx;
+                }
+                for (members) |i| {
+                    const p = r.infos.items[i];
+                    if (p.absorbed == .none) continue;
+                    if (p.kappa != .none) pos = (try conds.kappaSet(gpa, ch, pos, p.absorbed, p.kappa)).ctx;
+                    const k = try conds.kappaOf(gpa, ch, r.env.view(), pos, p.absorbed, p.at_summary);
+                    pos = (try conds.kappaSet(gpa, ch, pos, p.node, k)).ctx;
+                }
+                // A fold's links are the steps its members take.
+                if (fold >= 2) for (members) |i| {
                     const p = r.infos.items[i];
                     for (r.edges.items[p.first..][0..p.len]) |e| if (e.stepped) {
                         try ch.reserve(gpa, .inspection, 1);
-                        try kids.append(gpa, .{ e.step.word(), r.pos_of.items[e.to] });
+                        pos = try conds.kappaFoldStep(gpa, ch, pos, e.step);
                     };
-                }
-                try ch.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(kids.items.len), std.math.maxInt(u32))));
-                std.mem.sort([2]u32, kids.items, {}, struct {
-                    fn less(_: void, x: [2]u32, y: [2]u32) bool {
-                        return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+                };
+                const kids_first: u32 = @intCast(links.items.len);
+                if (fold < 2) {
+                    // The children by step, in step order.
+                    var kids: std.ArrayList([2]u32) = .empty;
+                    defer kids.deinit(gpa);
+                    for (b.runs.items[g].items) |i| {
+                        const p = r.infos.items[i];
+                        for (r.edges.items[p.first..][0..p.len]) |e| if (e.stepped) {
+                            try ch.reserve(gpa, .inspection, 1);
+                            try kids.append(gpa, .{ e.step.word(), r.pos_of.items[e.to] });
+                        };
                     }
-                }.less);
-                var seeds: std.ArrayList(u32) = .empty;
-                defer seeds.deinit(gpa);
-                var at: usize = 0;
-                while (at < kids.items.len) {
-                    var end = at;
-                    seeds.clearRetainingCapacity();
-                    while (end < kids.items.len and kids.items[end][0] == kids.items[at][0]) : (end += 1) try seeds.append(gpa, kids.items[end][1]);
-                    const child = try b.build(try b.group(seeds.items));
-                    pos = try conds.kappaLink(gpa, ch, pos, Step.fromWord(kids.items[at][0]), child);
-                    at = end;
+                    try ch.reserve(gpa, .inspection, @intCast(@min(Block.sortCost(kids.items.len), std.math.maxInt(u32))));
+                    std.mem.sort([2]u32, kids.items, {}, struct {
+                        fn less(_: void, x: [2]u32, y: [2]u32) bool {
+                            return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+                        }
+                    }.less);
+                    var seeds: std.ArrayList(u32) = .empty;
+                    defer seeds.deinit(gpa);
+                    var at: usize = 0;
+                    while (at < kids.items.len) {
+                        var end = at;
+                        seeds.clearRetainingCapacity();
+                        while (end < kids.items.len and kids.items[end][0] == kids.items[at][0]) : (end += 1) try seeds.append(gpa, kids.items[end][1]);
+                        try links.append(gpa, .{ kids.items[at][0], try b.group(seeds.items) });
+                        at = end;
+                    }
+                }
+                const kids_len: u32 = @intCast(links.items.len - kids_first);
+                try stack.append(gpa, .{ .g = g, .pos = pos, .kids_first = kids_first, .kids_len = kids_len, .expanded = true });
+                var k = kids_len;
+                while (k > 0) {
+                    k -= 1;
+                    try stack.append(gpa, .{ .g = links.items[kids_first + k][1] });
                 }
             }
-            (try b.built.getOrPut(gpa, .{g})).value_ptr.* = pos.int();
-            return pos;
+            if (root == none) return .none;
+            return .from(b.built.get(.{root}).?);
         }
     };
 
@@ -2949,4 +2977,56 @@ test "#1073 review: reading a fold's group is linear in its members" {
     // About twice the members, about twice the reader's work, never four.
     try testing.expect(read_cost[1] <= 3 * read_cost[0]);
     try testing.expect(read_cost[2] <= 3 * read_cost[1]);
+}
+
+test "#1138: a snapshot as deep as the source is written and read back on explicit stacks" {
+    // On a thread with a small stack (64 KiB): a native frame per level
+    // would overflow it.
+    var result: anyerror!void = {};
+    const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
+        fn run(out: *anyerror!void) void {
+            out.* = deepBlock();
+        }
+    }.run, .{&result});
+    th.join();
+    try result;
+}
+
+fn deepBlock() !void {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    a.account.allowance = std.math.maxInt(u32) - 1;
+    const tree = try a.place(8);
+    const list = try a.place(0);
+    const s0 = try a.places.ctorStep(gpa, &a.account, 0, 0);
+    const s1 = try a.places.ctorStep(gpa, &a.account, 0, 1);
+    const depth = 700;
+    // `depth` levels down `#0`, each with its own list at `#1` and `yes`
+    // stored at its node: a snapshot position per level.
+    var level = try a.shapes.leaf(gpa, &a.account, tree, .none);
+    var km: Cond.Kappas = .none;
+    for (0..depth) |i| {
+        const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), list, .list);
+        var children = try a.shapes.overPut(gpa, &a.account, Ids.none_int, s0, level);
+        children = try a.shapes.overPut(gpa, &a.account, children, s1, try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, a.env().charge, .none, site.int(), 0)));
+        level = try a.shapes.node(gpa, &a.account, tree, .none, children);
+        km = try a.conds.kappaLink(gpa, a.env().charge, .none, s0, km);
+        km = (try a.conds.kappaSet(gpa, a.env().charge, km, level, Cond.yes)).ctx;
+    }
+    const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = level, .kappas = km });
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    b.account.allowance = std.math.maxInt(u32) - 1;
+    const back = b.sums.get(try roundTrip(&a, &b, c));
+    // The bottom level reads what it read.
+    var at = back.res;
+    var cur = back.kappas;
+    for (0..depth - 1) |_| {
+        at = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at, s0)).?;
+        cur = b.conds.kappaChild(cur, s0);
+    }
+    try testing.expectEqual(Cond.yes, b.conds.kappaGet(cur, at).?);
 }
