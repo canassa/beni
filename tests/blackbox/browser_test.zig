@@ -676,7 +676,17 @@ test "a public library markup helper receives the markup-value diagnostic" {
 test "a prerendering build with no node on PATH is refused, and writes nothing" {
     // `docs/design/prerender.md` §5.1: until the engine is in `beni`, the
     // prerender tree runs under the `node` on `PATH`; the harness gives the
-    // compiler an empty environment, so there is none.
+    // compiler an empty environment, so there is none. Zig's own search
+    // would fall back to `/usr/local/bin:/bin:/usr/bin` (`Io.Threaded`'s
+    // `default_PATH`), where a runner may have one.
+    try expectNeedsNode(false);
+}
+
+test "a prerendering build whose PATH holds no node is refused, and writes nothing" {
+    try expectNeedsNode(true);
+}
+
+fn expectNeedsNode(empty_dir_on_path: bool) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("beni.json", "{ \"html\": \"shell.html\" }\n");
@@ -694,7 +704,13 @@ test "a prerendering build with no node on PATH is refused, and writes nothing" 
         \\main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
         \\
     );
-    const r = try w.run(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" });
+    var path: ?[]const u8 = null;
+    defer if (path) |p| testing.allocator.free(p);
+    if (empty_dir_on_path) {
+        try w.createDir("bin");
+        path = try w.projectSubPath(testing.allocator, "bin");
+    }
+    const r = try w.runWith(&.{ "build", "--prerender", "--platform=browser-inline", "--out=out", "Main.beni" }, .{ .path = path });
     try expectExit(1, r);
     const diagnostic = @import("diagnostic");
     try testing.expectEqualStrings("", r.stdout);

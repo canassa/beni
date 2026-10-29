@@ -407,6 +407,9 @@ pub const Options = struct {
     /// most wants to read. 64 Ki events is 2 MiB per thread, paid only when
     /// `--self-profile` is on.
     profile_events_per_thread: usize = 64 * 1024,
+    /// The `PATH` of the process, which a prerendering build searches for
+    /// `node` and nothing else (`prerender.md` §5.1). Null: there is none.
+    path: ?[]const u8 = null,
 };
 
 /// The pattern-usefulness budget of checker.md §6.6, re-exported so the
