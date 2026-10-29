@@ -1,0 +1,136 @@
+-- Core's string functions over Unicode: case mapping of every code point
+-- that changes, trim and words over every space, split, replace, compare,
+-- sort stability, Debug.toString's escaping and the JSON codec.
+import Char
+import Dict
+import Json
+import List
+import Node exposing (Program)
+import String
+
+
+huge : Int
+huge = 9007199254740993
+
+
+hex : Int → String
+hex n = String.fromInt n
+
+
+-- Every scalar value up to U+2FFFF whose string upper or lower case differs.
+cases : List String
+cases = List.filterMap (List.range 0 0x2FFFF) λcp →
+    if 0xD800 ≤ cp && cp ≤ 0xDFFF then
+        Nothing
+    else
+        s = String.fromChar (Char.fromCode cp)
+        u = String.toUpper s
+        l = String.toLower s
+        cu = String.fromChar (Char.toUpper (Char.fromCode cp))
+        cl = String.fromChar (Char.toLower (Char.fromCode cp))
+        if u == s && l == s && cu == s && cl == s then
+            Nothing
+        else
+            Just "${hex cp} ${u} ${l} ${cu} ${cl} ${String.fromInt (String.length u)}"
+
+
+-- Every code point below U+10000 that trim removes.
+spaces : List String
+spaces = List.filterMap (List.range 0 0xFFFF) λcp →
+    if 0xD800 ≤ cp && cp ≤ 0xDFFF then
+        Nothing
+    else
+        s = "a${String.fromChar (Char.fromCode cp)}b"
+        t = String.trim (String.fromChar (Char.fromCode cp))
+        w = List.length (String.words s)
+        if String.isEmpty t || w ≠ 1 then
+            Just "${hex cp} trim=${String.fromInt (String.length t)} words=${String.fromInt w}"
+        else
+            Nothing
+
+
+samples : List String
+samples =
+    [ "straße"
+    , "ǅungla"
+    , "İstanbul"
+    , "ΣΑΣ"
+    , "ﬁﬂ"
+    , "ŉ"
+    , "ΐ"
+    , "a\u{1F600}b"
+    , "e\u{0301}x"
+    , "\u{10428}\u{10400}"
+    , "Ω"
+    , "K"
+    , "Å"
+    , "ꞵ"
+    , "ᲀ"
+    , "ǈ"
+    , "\u{0345}"
+    , "ß ẞ"
+    , "Ⅻ"
+    , "ⓐ"
+    , "𐐷"
+    , "\u{1E921}"
+    ]
+
+
+type alias Row =
+    key : Int
+    tag : String
+
+
+rows : List Row
+rows = List.map (List.range 0 300) λi → { key = Int.mod (i * 7) 5, tag = String.fromInt i }
+
+
+main : Program
+main =
+    Node.printLines
+        (List.concat
+            [ cases
+            , spaces
+            , List.map samples λs →
+                String.join
+                    [ String.toUpper s
+                    , String.toLower s
+                    , String.reverse s
+                    , String.fromInt (String.length s)
+                    , String.join (String.split s "") ","
+                    , String.replace s "a" "<&>"
+                    , Debug.toString s
+                    ]
+                    " | "
+            , [ String.join (List.sort samples) "," ]
+            , [ String.join (List.map (List.sortBy rows .key) .tag) "," ]
+            , [ String.join (List.map (List.sortWith rows λa b → compare a.key b.key) .tag) "," ]
+            , [ Debug.toString (String.split "a,b,,c," ",") ]
+            , [ Debug.toString (String.indexes "aaaa" "aa") ]
+            , [ String.replace "a.b.c" "." "$&" ]
+            , [ String.replace "a$b" "$" "$$" ]
+            , [ Debug.toString (String.toInt "-0")
+              , Debug.toString (String.toInt "+12")
+              , Debug.toString (String.toInt "١٢")
+              ]
+            , [ Debug.toString
+                  { s = "\u{0000}\t\n\"\\\u{2028}\u{FFFF}\u{1F600}", f = 0.1, n = negate 0.0 }
+              ]
+            , [ Result.withDefault
+                  (Json.encode
+                      { s = "\u{0000}\u{001F}\"\\</script>\u{2028}\u{1F600}"
+                      , big = 1.0e21
+                      , small = 5.0e-324
+                      , n = huge
+                      , xs = [ 0.1, 2.5, negate 0.0 ]
+                      }
+                  )
+                  "?"
+              ]
+            , [ Debug.toString
+                  (Dict.toList
+                      (Dict.fromList (List.map (List.range 0 50) λi → ( Int.mod (i * 31) 17, i )))
+                  )
+              ]
+            ]
+        )

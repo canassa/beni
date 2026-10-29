@@ -1,0 +1,125 @@
+-- Number printing through core: String.fromFloat, String.fromInt,
+-- String.toFloat, Int past 2^53, Int32 wrapping work, and the Math functions
+-- the standard leaves to the engine (printed last, in their own block).
+import Float
+import Int32 exposing (Int32)
+import List
+import Node exposing (Program)
+import String
+
+
+specials : List Float
+specials =
+    [ 0.0
+    , 0.0 * negate 1.0
+    , 0.0 / 0.0
+    , 1.0 / 0.0
+    , negate 1.0 / 0.0
+    , 1.0e21
+    , 9.99999999999999e20
+    , 1.0e-7
+    , 1.0e-6
+    , 1.5e-7
+    , 123456789012345680000.0
+    , 5.0e-324
+    , 2.2250738585072014e-308
+    , 1.7976931348623157e308
+    , 0.1 + 0.2
+    , 1.0 / 3.0
+    , 2.0 / 3.0
+    , 100.0 / 3.0
+    , 4.35
+    , 0.000001234
+    , 1.0e300 * 10.0
+    , 9007199254740993.0
+    , 4.940656458412465e-324
+    , 1.0e23
+    , 8.41e21
+    , 5.0e-7
+    ]
+
+
+-- A deterministic walk over many magnitudes: x * 1.0000037 + k / 7,
+-- scaled across exponents from 1e-320 to 1e300.
+walk : Int → Float
+walk i =
+    f = toFloat i
+    base = f / 7.0 + f * 0.0000037
+    base * (10.0 ^ toFloat (Int.mod (i * 37) 640 - 320))
+
+
+ints : List Int
+ints =
+    [ 9007199254740992
+    , 9007199254740993
+    , 9007199254740995
+    , 2 ^ 60
+    , 2 ^ 70
+    , 123456789 * 987654321
+    , negate (2 ^ 53) - 3
+    , 2 ^ 31
+    , 2 ^ 32 + 1
+    , 10 ^ 21
+    , 10 ^ 22
+    ]
+
+
+lcg : Int32, Int → List String
+lcg seed n =
+    if n == 0 then
+        []
+    else
+        next = Int32.add (Int32.mul seed (Int32.fromInt 1664525)) (Int32.fromInt 1013904223)
+        mixed = Int32.xor next (Int32.shiftRightZero next 16)
+        rot = Int32.rotateLeft mixed 7
+        [ String.fromInt (Int32.toInt rot), …lcg next (n - 1) ]
+
+
+parses : List String
+parses =
+    [ "1"
+    , "-0"
+    , "+1.5"
+    , "1e400"
+    , ".5"
+    , "5."
+    , "1e-400"
+    , "0x10"
+    , "1_000"
+    , " 1"
+    , "1.7976931348623159e308"
+    , "2.4703282292062328e-324"
+    ]
+
+
+main : Program
+main =
+    Node.printLines
+        (List.concat
+            [ List.map specials String.fromFloat
+            , List.map (List.range 1 20000) λi → String.fromFloat (walk i)
+            , List.map (List.range 1 3000) λi → String.fromFloat (toFloat i / 1000.0)
+            , List.map ints String.fromInt
+            , List.map ints λi → String.fromFloat (toFloat i)
+            , lcg (Int32.fromInt 1) 2000
+            , List.map parses λs →
+                case String.toFloat s of
+                    Just f →
+                        String.fromFloat f
+                    Nothing →
+                        "Nothing"
+            , [ "-- engine-dependent below --" ]
+            , List.map (List.range 1 500) λi →
+                x = toFloat i * 0.731
+                String.join
+                    [ String.fromFloat (sin x)
+                    , String.fromFloat (cos x)
+                    , String.fromFloat (tan x)
+                    , String.fromFloat (sqrt x)
+                    , String.fromFloat (atan x)
+                    , String.fromFloat (Float.log x 10.0)
+                    , String.fromFloat (x ^ 1.37)
+                    ]
+                    " "
+            ]
+        )
