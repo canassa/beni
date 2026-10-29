@@ -8787,6 +8787,43 @@ test "the checker v2 never reaches a lane's ceiling on a 1 000-field record upda
     try expectWideKernel(3);
 }
 
+test "the checker v2's growth over a tower of Js.from literals is n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1140: `r_k = Js.from [ r_{k-1}, Js.from zs ]`, a structured literal
+    // under a cast. A recast has no finite rank, so its literal's reach
+    // aggregate was rebuilt from the whole reach at every level (1 983 /
+    // 31 491 / 1 237 392 at N = 10 / 100 / 1 000); only a cycle reads a whole
+    // reach now.
+    var growth: [3]u64 = undefined;
+    for ([_]u32{ 10, 100, 300 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 4194304)\n\n\nimport Js\n\n\npub tower : List Int → Js.Value\ntower zs =\n    r0 = Js.from zs\n");
+        for (1..n + 1) |i| try src.print(a, "    r{d} = Js.from [ r{d}, Js.from zs ]\n", .{ i, i - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked tower") == null);
+        growth[run] = try accountField(dump.stdout, "tower", "growth");
+    }
+    // 2 208 / 25 928 / 83 020: 62, 39 and 35 records per n·log₂(n + 2).
+    try expectNLogN(&.{ 10, 100, 300 }, &growth);
+}
+
 test "the checker v2's growth over a tower of Js.array values is n log n, and a wide one stays in its lanes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
