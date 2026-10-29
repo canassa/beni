@@ -14,7 +14,9 @@ engine, and dropped it. Recommended QuickJS-ng. Filed #1164 (`String.fromFloat` 
 V8 in a million printed doubles or in the case mapping of every code point. What differs is what
 the standard leaves open or does not cover, and that is where §5.1's "by construction" breaks:
 `Url.fromString` is pure and calls the WHATWG `URL`, which no embeddable engine has; and an
-engine's `Math.pow` is its libm's, so the same engine prints `10.0 ^ k` differently linked with
-musl than with glibc, which would make a page depend on the build machine. Linking C also makes
-the native Linux `beni` dynamic. The sanitizer was the deciding test between the two QuickJS
-lines: Bellard's traps on its first eval under the UBSan Zig gives ReleaseSafe C code.
+engine's `Math.pow` and `sin` are whatever the Zig link resolves the C names to (compiler-rt or
+the target's libc, per engine and even per optimisation mode, as the reviewer showed with `nm`
+after I had blamed "the libm"), so the same engine prints `10.0 ^ k` differently linked with musl
+than with glibc. Linking C also makes the native Linux `beni` dynamic. Between the two QuickJS
+lines the difference is small: Bellard's is faster and traps under ReleaseSafe's UBSan on one
+missing cast that QuickJS-ng has; QuickJS-ng wins on shipping clean and on cadence.

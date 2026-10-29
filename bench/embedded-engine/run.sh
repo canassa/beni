@@ -56,9 +56,9 @@ programs() {
 
 three() { # <entry> [host flags] : writes <entry>.{node,qjs,ng}.out, prints a verdict
   local f=$1; shift
-  node "$f" > "$f.node.out" 2> "$f.node.err"; local n=$?
-  "$H/qhost-qjs" "$@" "$f" > "$f.qjs.out" 2> "$f.qjs.err"; local q=$?
-  "$H/qhost-ng" "$@" "$f" > "$f.ng.out" 2> "$f.ng.err"; local g=$?
+  timeout 60 node "$f" > "$f.node.out" 2> "$f.node.err"; local n=$?
+  timeout 60 "$H/qhost-qjs" "$@" "$f" > "$f.qjs.out" 2> "$f.qjs.err"; local q=$?
+  timeout 60 "$H/qhost-ng" "$@" "$f" > "$f.ng.out" 2> "$f.ng.err"; local g=$?
   local qv=same gv=same
   { cmp -s "$f.node.out" "$f.qjs.out" && [ $n = $q ]; } || qv=DIFF
   { cmp -s "$f.node.out" "$f.ng.out" && [ $n = $g ]; } || gv=DIFF
