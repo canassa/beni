@@ -20,8 +20,8 @@ HTML: the client makes it from its template when it opens, as a client-rendered 
 
 What it buys: a page that shows its content before any JavaScript runs, which a crawler reads, and
 which a host serves with no server code. What it does not do: render per request, stream, or
-fetch data on a server. Those need a server, and `node`'s `ssr` lowering is that platform's
-(`boundary.md` §9.10).
+fetch data on a server. Those need a server: `node` serves HTTP (`boundary.md` §9.10) and has the
+`ssr` lowering (§9.1's table there).
 
 The words used below:
 
@@ -31,7 +31,14 @@ The words used below:
   under Node to get the pages (§5);
 - **a route** — a path below the base that the build writes a page for (§7);
 - **a unit** — as in `browser-inline.md` §8.2: the program's `view`, with the pieces of other
-  modules written into its one string (§8.4 there), whose elements the mount numbers `E[n]`.
+  modules written into its one string (§8.4 there), whose elements the mount numbers `E[n]`. Each
+  piece's root also has a table of its own, read from the page with `Inline.part` below its
+  placement element (`Inline.roots`), and an element some code refers to alone is reached by a
+  `firstChild`/`childNodes[i]` path instead of a table (§8.2 there, amended 2026-10-17). §6.2 covers
+  all three.
+
+The citations of `references/dom-expressions` and `references/solid` need those submodules checked
+out (`references/README.md`).
 
 ## 2. Where it lives: a build of `browser-inline`, not a new platform
 
@@ -78,9 +85,10 @@ by the causes §3.3 names, none of which is in the program.
    impure `foreign` (`language.md` §5.4, the `sync` row; `checker-v2.md` §26). **A prerendered
    program's `init`, `view` and route list must be pure**, by the checker's inferred rung, or the
    build refuses it (`prerender_impure`, §9), naming the call that makes it impure. The one exempt
-   call is `Debug.log` (and `Debug.logAs`), whose value is its argument: its line goes to the
-   build's standard error and then to the browser's console. A release build refuses `Debug`
-   anyway (`backend.md` §9).
+   call is `Debug.log` (and `Debug.logAs`), whose value is its argument. It is `console.log`
+   (`core/Debug.beni`), so under Node it writes to standard output, which is why the records do not
+   use that stream (§5.1); the build passes what Node writes on to its own standard error. A release
+   build refuses `Debug` anyway (`backend.md` §9).
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the
@@ -91,7 +99,10 @@ by the causes §3.3 names, none of which is in the program.
 4. **The same code computes it.** The prerender tree and the client tree are two emits of one
    checked program, by one lowering, in the build's mode (§5.1). Both run on an ECMAScript engine:
    numbers print by the standard's `Number::toString`, which is exact and the same on every engine,
-   and sorting is stable by the standard.
+   and sorting is stable by the standard. One part is not computed by emitted code: the values the
+   write-set pass bakes from `init` into the unit's string at compile time, in Zig (`write-sets.md`
+   §9.1, *O8 widened*: a model path whose `init` value is a string or an integer of at most 2⁵³).
+   The string form writes the same baked bytes, so the two agree; baking is exact by §9.1's rules.
 
 ### 3.2 Why a text or a property that differs does no harm
 
@@ -99,7 +110,9 @@ The first pass of the client runs every binding function once (`Inline.first`), 
 compares before it writes (`text`, `prop`, `browser-inline.md` §8.2). So a text or a property that
 the page shows differently from the model is **written by the first pass, not trusted**: the page
 heals. This is where beni differs from Solid, which claims text by position and never compares it
-(`references/dom-expressions/packages/runtime/src/client.js`, `claimInitial`). What a first pass
+(`references/dom-expressions/packages/runtime/src/client.js`, `claimInitial`). This covers the
+holes that have a binding only. A baked value (§3.1 item 4) has no binding, so a host that edits a
+baked text keeps its edit, as it would on a fresh page whose string it edited. What a first pass
 cannot heal is **structure**: which elements exist, because `E[n]` numbers them by document order
 (§6.2). Structure is what §3.3 and §6.4 guard.
 
@@ -198,9 +211,12 @@ for that program only:
    directory when there is one). The prerender tree is rooted at the render function and the route
    list, emitted in the build's mode (development or `--release`), and written **without** the
    manifest's `"host": "page"` promise (`boundary.md` §5.2), since it does not run in a page.
-2. The build runs `node` on the prerender tree's entry, `_prerender.mjs`. The entry evaluates the
-   route list and, for each route in order, the render function, and writes one record per route
-   to its standard output: the route and its HTML, as JSON lines.
+2. The build runs `node` on the prerender tree's entry, `_prerender.mjs`, and gives it the path of
+   a records file in the prerender tree's directory. The entry evaluates the route list and, for
+   each route in order, the render function, and appends one record per route to that file: the
+   route and its HTML, as JSON lines. The records are not on standard output, which a
+   `Debug.log` writes to (§3.1); the build passes Node's standard output and standard error on to
+   its own standard error.
 3. **Node computes; beni writes.** The build reads the records, checks each route (§7.4), writes
    each page into the shell (§5.3), and puts every page through `pending` like every other output
    (`backend.md` §2). So rule 2's folding check, `_manifest.txt` and the removal of stale files all
@@ -252,9 +268,11 @@ the pages with no change, since they are files the build writes.
 
 ### 5.5 Failures
 
-A throw in a render, or in the route list, fails the build: `prerender_failed`, naming the route and
-the JavaScript error's message. Node's exit with no record for a route, or with output that is not
-the entry's records, is the same code, with what Node wrote to its standard error. Mapping the
+A throw in a render, or in the route list, fails the build: `prerender_failed`. **The entry has no
+`catch`** (CLAUDE.md rule 9): a throw ends Node with a non-zero exit and the error on its standard
+error. The build names the route as the first route of the list with no record (or the route
+list, when there is no record at all) and quotes what Node wrote to its standard error. A records
+file that is not the entry's records is the same code. Mapping the
 stack to `.beni` positions through the prerender tree's source maps (`backend.md` §11) is a later
 improvement and not a slice of this document.
 
@@ -272,6 +290,12 @@ element with `data-beni`:
   subscriptions start and `init`'s command runs.
 - **not found** — a page the build did not prerender, such as `index.html` when the route list does
   not hold `/` (§7.4): it mounts fresh, as today.
+
+After the takeover the mount removes `data-beni` from the top element, so the page holds what a
+fresh mount makes, but for one difference it keeps: a control's `value`, `checked` and `selected`
+are attributes of the page as well as properties (§4.1), where a fresh mount writes only the
+property. A form's reset and a `[value]` selector see `init`'s values on a hydrated page and the
+empty defaults on a fresh one; the program cannot tell, and the difference is accepted.
 
 The client knows that it hydrates because the build prerenders, not by a test on every page: a
 program that does not prerender is compiled with today's mount, and **no write path tests for
@@ -297,7 +321,18 @@ by merging two sources in document order:
   once, into a node that is never put in the page, only when the page holds at least one hidden arm.
 
 An arm's elements are a contiguous run of `E`, and the lowering knows each arm's run, so the merge
-is a walk of numbers, not of two trees. The arm's element made from the string is held by its `when`
+is a walk of numbers, not of two trees.
+
+**Every table comes from the merge, and no path is used.** The fresh mount finds elements three
+ways (§1): the program's table, each piece root's own table (`Inline.part` of its placement
+element, through `Inline.roots`), and a `firstChild`/`childNodes[i]` path for an element some code
+refers to alone. On a hydrated page, a piece's table read from the page lacks the elements of the
+piece's hidden arms, and a path through a hidden arm lands on its comment. So the hydrating mount
+reads none of them from the page: it builds the merged table once, takes each piece root's table
+as the slice of it below that root (its elements are a contiguous run too, since the piece's
+string is written in place in the unit's string, §8.4 there), and reaches a lone element by its
+number in the merged table. This is code the hydrating mount writes, and the fresh mount keeps its
+paths unchanged. The arm's element made from the string is held by its `when`
 while hidden, as a fresh mount's `when` holds the element it took out of the page; **the comment is
 the `when`'s anchor**, in the place of the empty text node the fresh mount makes (`Inline.when`),
 since an empty text node cannot be written in HTML. So the arm opens by `replaceWith`, as today, and
@@ -313,7 +348,9 @@ of its parent or `querySelectorAll("*")`. Solid writes `<!--$-->` and `<!--/-->`
 inserted expression for a reason beni does not have: an inserted expression there is a run of
 nodes, and the markers bound it (`getNextMarker`). A beni text hole is the whole text of its element
 (`text`, §8.2 there; a text hole beside an element is refused, §8.7), so **no text needs a marker**,
-and only a hidden arm writes one, a few bytes.
+and only a hidden arm writes one, a few bytes. That refusal is a limit of the compiler (class 4,
+§5 there), to be lifted; the slice that lifts it also gives the string form a marker around such a
+hole, as Solid's `<!--$-->` and `<!--/-->`, and amends this section.
 
 ### 6.4 When the page is not what the program would make
 
@@ -322,9 +359,12 @@ engine-dependent branch. The hydrating mount checks the structure it depends on 
 anything:
 
 - **in every build**, that the number of elements it merged is the number the lowering expects for
-  the arms the comments say are hidden: one integer comparison;
-- **in a development build**, also each element's tag name against the lowering's list, which a
-  release build does not ship (`browser-inline.md` §6, *The mount fault is development's*).
+  the arms the comments say are hidden, and that each element some binding or listener refers to
+  has the tag the lowering compiled it for — one string of those tags, which the lowering writes
+  and P2a measures in bytes. An element no code refers to is not checked: a binding cannot attach to
+  it;
+- **in a development build**, also every other element's tag, which a release build does not ship
+  (`browser-inline.md` §6, *The mount fault is development's*).
 
 On a difference, the mount **removes the prerendered unit and mounts fresh**, in the same task, so
 the browser paints no frame between the two; a development build first writes a `console.warn` that
@@ -335,18 +375,34 @@ a defect, is right is the owner's decision (§10, question 3).
 
 ### 6.5 Input before the program runs
 
-The entry is a module script, which runs after the page is parsed, so a user can click or type in a
-prerendered page before the program has taken it over. Solid's answer is taken by default (CLAUDE.md
-rule 8): an inline script in the page captures `click` and `input` events at the document, with the
-element, until the program has taken over, and the hydrating mount delivers them after the first
-pass, in order, each to the listener its element has then
+The entry is a module script, which runs after the page is parsed, so a user can click, type or
+check a box in a prerendered page before the program has taken it over. Solid captures such events
+with an inline script and replays them after hydration
 (`references/dom-expressions/packages/runtime/src/server.js`, `generateHydrationScript`;
-`client.js`, `runHydrationEvents`). An `input` event is delivered with the value the control held
-when it was captured, which the first pass would otherwise overwrite with `init`'s. The script is
-written by the build into each prerendered page, beside the unit, only when the program has a
-listener of a captured kind. Under a content security policy that forbids inline scripts it does
-not run, and input before the program runs is lost, as it is with no script; nothing else changes.
-Its bytes and its effect on the time to interactive are measured with the rest of P2 (§11).
+`client.js`, `runHydrationEvents`). Its replay finds the handler by walking Solid's delegated
+containers, and **beni has no delegation**: `Inline.on` and `onArm` add a listener to each
+element and keep no table of them. So Solid's capture is taken and its delivery is not:
+
+- **What is captured.** An inline script, written by the build into each prerendered page beside
+  the unit, listens at the document, in the capture phase, for each event kind the program has a
+  listener of — `click`, `input`, `change` (`Html.onCheck` and `onChange` listen to it) and
+  `submit` among them — and records the target and, for a control, its `value`, `checked` and
+  `selectedIndex` at that moment. It stops when the program has taken over.
+- **What is delivered.** After the first pass, the hydrating mount hands each record, in order, to
+  the listener the lowering wired on that element for that kind, called directly with an object
+  that gives the recorded target: the event is **not** dispatched again, so no default action runs a
+  second time and no untrusted event is made. Before the call it writes the recorded control state
+  back, which the first pass overwrote with `init`'s, so an extractor (`via`) reads what the user
+  left. The mount keeps the element-to-listener table for this one pass only, and only on a page
+  whose script recorded something.
+- **A `submit` before the takeover** follows the form's default, a page load, as it does on any
+  page before its script runs; a form whose `onSubmit` prevents the default is the program's only
+  after the takeover.
+
+Under a content security policy that forbids inline scripts the script does not run and input
+before the takeover is lost; nothing else changes. This is P2b's (§11): its shape is fixed in an
+amendment here before it is built, measured in bytes and in time to interactive.
+
 
 ## 7. Routes
 
@@ -400,9 +456,20 @@ the address the page was opened at is not the route. What `init` gets is:
 
 and the address the page was opened at, when its `Url` differs from that one, reaches the program as
 `onUrlChange`'s message once the first render has run — an ordinary message, whose write pass
-patches the page. A page opened at `/blog/my-blog.html` first has its address replaced by the
-route's (`history.replaceState`), so `.html` and `index.html` never reach the program as a different
-path. That is a departure from `browser-tea`'s `application`, whose `init` sees the address with
+patches the page. The address is replaced (`history.replaceState`) only where its path is the
+route's file name rather than the route — the route's path with `.html` after it, or a route ending
+in `/` with `index.html` after it — keeping its query and fragment, so a `.html` suffix never
+reaches the program as a different path. A page a host's fallback served for another address
+(`/blog/missing` answered with `/`'s page) keeps its address, and the program gets it as
+`onUrlChange`'s message, where its parser can answer it with a page of its own.
+
+**A page with no prerendered view** — `index.html` when the list does not hold `/` (§7.4), and so
+whatever a host's fallback answers with it — mounts fresh (§6.1), and its `init` gets the `Url` of
+`location`, as `browser-tea`'s does: there is no prerendered page for it to agree with, so §3's
+guarantee has nothing to hold.
+
+A prerendering build of an `application` with no `"build"."origin"` is `prerender_needs_origin`
+(§9), against the app's `beni.json` at `1:1`, as `invalid_entry_export` is. That is a departure from `browser-tea`'s `application`, whose `init` sees the address with
 its query; a program that reads the query reads it in `onUrlChange`. It is the owner's (§10,
 question 2).
 
@@ -478,6 +545,7 @@ Appended to the code list when each slice lands, never inserted:
 | `prerender_impure` | `init`, `view` or the route list of a prerendered program may be impure; at the call that makes it so | P1 |
 | `prerender_failed` | a render or the route list threw, or Node gave no record for a route; names the route and the error | P1 |
 | `prerender_needs_node` | a prerendered program, and no `node` on `PATH` (or the playground) | P1 |
+| `prerender_needs_origin` | a prerendered `application` and no `"build"."origin"` (§7.3) | P3 |
 | `invalid_route` | a route breaks §7.4's rules; names it and the rule | P3 |
 | `invalid_html_shell` (existing) | also: a prerendering build's shell has no `{{view}}`, or two | P1 |
 | `output_path_collision` (existing) | also: two routes write one file | P3 |
@@ -493,8 +561,10 @@ decided and is not a question.
 1. **May a build of a prerendered program run Node?** I recommend it. A build has never run
    JavaScript, and this adds a dependency to the build, for prerendered programs only. The other way
    is to evaluate `init` and `view` in Zig, at compile time. It needs no Node and no process, and
-   the write-set pass already folds some values `init` gives (`write-sets.md` §9.1, which bakes a
-   model path's string or integer into the template). But it is a second evaluator of beni, which
+   a compile-time evaluator already ships output: the write-set pass bakes a model path's `init`
+   value into the template (`write-sets.md` §9.1). But that evaluator is narrow on purpose — a
+   string, or an integer of at most 2⁵³, read from a literal; §9.1 names float printing as the
+   reason it goes no further — and prerendering needs all of `init` and `view`: a second evaluator of beni, which
    must agree with the emitted JavaScript bit for bit — float printing, `Int` past 2⁵³, string
    operations, every core function — and the guarantee of §3 is exactly that the two computations
    agree. Running the emitted code makes that agreement true by construction, and the prerender tree
@@ -530,8 +600,9 @@ order with per-route pages in the first slice; they move to P3, because a page p
 
 | Slice | What lands | Done when | Fixtures |
 |---|---|---|---|
-| **P1** — the string form, one page, replaced on load | §4: the render functions of the program site and the pieces, the escaping in `Inline.beni`, interface 1.20; §5: the prerender tree, Node, the records, `{{view}}`, `prerender_*` codes; the client of a prerendering build **removes** the prerendered unit and mounts fresh (no hydration yet); switched on by a hidden test-only flag | every `browser/inline/` fixture, built with the flag, writes an `index.html` whose view is the first render, and its transcript is unchanged; the existing `emit/inline/` and `emit/release/inline/` goldens do not move by a byte; the determinism test covers the pages | a new corpus kind, `browser/prerender/`: a project's pages are goldens (`_expected/<route>.html`), and its `.steps` run twice against one `.expected` — from the shell, and from the prerendered page; fixtures: `Counter` (holes, mixed text, `disabled`), `HiddenArm` (the popup: the arm absent, `<!--0-->` in its place), `Escapes` (`&`, `<`, `\r`, a leading newline in `textarea`, NUL), `Controls` (`value`, `checked`, a `select`'s option), `Pieces` (another module's view); `build/bad/prerender/`: `ImpureView`, `ImpureInit`, `ViewThrows`, `NoViewInShell`, `TwoViewsInShell`; `tests/blackbox/` for `prerender_needs_node` (an empty `PATH`) |
-| **P2** — hydration | §6: the hydrating mount, the merged table, the comment as anchor, the structure check and the fresh mount on a difference, the capture of early input | the same `browser/prerender/` transcripts with the page taken over: no element of the page is replaced, which the harness checks by marking every element before the program loads; a page whose HTML was changed mounts fresh, with the warning in development; a client page that does not prerender ships no new byte (`bench/size.mjs`'s `page` lines unchanged); measured against Solid 2's `hydrate` of its own hydratable `renderToString` output on the same pages, in headless Chrome by report 29's method, extended with a page-load scenario (the time from the module's start to the handlers attached, and its bytes): beni's time is at most Solid's, per page, by the median, and its hydration bytes are reported beside Solid's 1 439 B (research 27 §6.8) — a loss is read in Solid's code and answered there (CLAUDE.md rule 8) | `browser/prerender/` adds `Tampered` (an element inserted in the page before load: fresh mount), `ArmOpens` (a hidden arm opened after the takeover, then closed), `EarlyInput` (a click and typed text before the module runs), `WrongPlace` (`{{view}}` outside the mount element: the development fault); `emit/prerender/` pins the hydrating mount's shape in both modes |
+| **P1** — the string form, one page, replaced on load | §4: the render functions of the program site and the pieces, the escaping in `Inline.beni`, interface 1.20; §5: the prerender tree, Node, the records, `{{view}}`, `prerender_*` codes; the client of a prerendering build **removes** the prerendered unit and mounts fresh (no hydration yet); switched on by a hidden test-only flag; the browser driver learns to load the page the build wrote, where today it loads a blank page and makes the mount element with an `element` step (`tests/browser/driver.mjs`) | each `browser/prerender/` project, which carries its own shell with `{{view}}` inside its mount element, writes an `index.html` whose view is the first render, and its transcript after the load and after each step is the one the same program gives from its shell with no view; the existing `emit/inline/` and `emit/release/inline/` goldens do not move by a byte; the determinism test covers the pages | a new corpus kind, `browser/prerender/`: a project's pages are goldens (`_expected/<route>.html`), and its `.steps` run twice against one `.expected` — from the shell, and from the prerendered page; fixtures: `Counter` (holes, mixed text, `disabled`), `HiddenArm` (the popup: the arm absent, `<!--0-->` in its place), `Escapes` (`&`, `<`, `\r`, a leading newline in `textarea`, NUL), `Controls` (`value`, `checked`, a `select`'s option), `Pieces` (another module's view); `build/bad/prerender/`: `ImpureView`, `ImpureInit`, `ViewThrows`, `NoViewInShell`, `TwoViewsInShell`; `tests/blackbox/` for `prerender_needs_node` (an empty `PATH`) |
+| **P2a** — hydration | §6.1–§6.4: the hydrating mount, the merged table and the piece tables cut from it, the comment as anchor, the structure check and the fresh mount on a difference, `data-beni` removed | the `browser/prerender/` transcripts with the page taken over equal the fresh ones, but for the control attributes §6.1 accepts, which the prerender kind's transcript prints as properties (its normalisation, written in `tests/corpus/README.md`): no element of the page is replaced, which the harness checks by marking every element before the program loads; a page whose HTML was changed mounts fresh, with the warning in development; a client page that does not prerender ships no new byte (`bench/size.mjs`'s `page` lines unchanged); measured against Solid 2's `hydrate` of its own hydratable `renderToString` output on the same pages, in headless Chrome by report 29's method, extended with a page-load scenario (the time from the module's start to the handlers attached, and its bytes): beni's time is at most Solid's, per page, by the median, and its hydration bytes are reported beside Solid's 1 439 B (research 27 §6.8) — a loss is read in Solid's code and answered there (CLAUDE.md rule 8) | `browser/prerender/` adds `Tampered` (an element inserted in the page before load: fresh mount), `Retagged` (an element some code refers to replaced by one of another tag, the count unchanged: fresh mount in release too), `ArmOpens` (a hidden arm opened after the takeover, then closed), `PieceArm` (a hidden arm inside another module's piece), `LoneElement` (a page whose code refers to one element, behind a hidden arm), `WrongPlace` (`{{view}}` outside the mount element: the development fault); `emit/prerender/` pins the hydrating mount's shape in both modes |
+| **P2b** — input before the takeover | §6.5, its shape amended there first: the capture script, delivery by direct call with the control state written back | a click, typed text and a checked box made before the module runs reach `update` once each, in order, after the first pass; no default action runs twice; the script's bytes and the time to interactive are measured | `browser/prerender/EarlyInput` (click, `input`, `change` on a checkbox, a `select`), `EarlyNone` (a page whose program has no listener: no script written) |
 | **P3** — routes | §7: `Tea.application` and `Tea.document` on `browser-inline`, `Browser.Navigation`'s commands and the two subscriptions, `Browser.prerender` (and `browser-tea`'s identity), `"build"."origin"`, the route in `data-beni`, the address replaced and sent after the first render, route files and `invalid_route`, `{{title}}`, `beni serve`'s `.html` rule; the hidden flag goes | a site of three routes and a blog of two posts builds into five files a static server answers, each taken over by the program, and a link click navigates on the client with no page load | `browser/prerender/Blog/` (routes from a list of posts; a link click; back; a page opened with a query and a fragment), `Titles`; `build/bad/prerender/`: `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision` (`/a/` and `/a/index`), `RouteFolded` (`/About`, `/about`), `RouteImpure`; a `browser/tea/` page showing that the same source builds on `browser-tea`; a `serve` case in `tests/blackbox/` for `/about` → `about.html` |
 | **P4** — build-time data | §8, specified in this document first (rule 1) | — | — |
 
