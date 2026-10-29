@@ -28,7 +28,7 @@ The words used below:
 - **the string form** — what the `inline` lowering writes for a view so that it gives the page's
   HTML as a string (§4);
 - **the prerender tree** — a second emit of the program, with the string form, that the build runs
-  under Node to get the pages (§5);
+  in a JavaScript engine to get the pages — the `node` on `PATH`, then one embedded in `beni` (§5);
 - **a route** — a path below the base that the build writes a page for (§7);
 - **a unit** — as in `browser-inline.md` §8.2: the program's `view`, with the pieces of other
   modules written into its one string (§8.4 there), whose elements the mount numbers `E[n]`. Each
@@ -223,11 +223,28 @@ for that program only:
    apply to pages unchanged, and a refused build writes nothing.
 4. The build removes the prerender tree.
 
-**Node is a dependency of the build only for a program that prerenders.** It is the `node` on
-`PATH`. With none there, the build fails with `prerender_needs_node` (§9), saying what to install.
-The flake pins Node 24 (CLAUDE.md, *Details about the project*); the entry uses nothing a Node
-that runs ES modules lacks. The playground, which is `wasm32-wasi` and cannot start a process
-(`playground.md`), refuses a prerendered program with the same code.
+**The engine is embedded in beni; Node is the step before it** (the owner, 2026-10-29, §10
+question 1). A beni build must not need a JavaScript runtime installed beside it, so the end state
+runs the prerender tree in a small JavaScript engine compiled into the `beni` binary — QuickJS, or
+an engine of its class, built from C by `build.zig` — in place of item 2's `node`. Items 1, 3 and 4
+do not change, and the records are the same. The engine runs the emitted code, so the agreement §3
+rests on stays true by construction, as under Node. What it owes:
+
+- **Its output equals a browser's wherever a page can see it**: number to string, string
+  operations, Unicode, regular expressions. Every core function a render can reach has a fixture
+  whose page the engine and headless Chrome (`zig build test-browser`) must write identically.
+- **It is deterministic** (CLAUDE.md rule 5): one engine instance per build, the routes in the
+  list's order, and no clock, randomness or host object beyond what the prerender entry declares.
+- **Its cost is measured**: the slice that adds it states the binary's growth and the time per
+  route against Node's. The `wasm32-wasi` playground (`playground.md`) leaves the engine out and
+  refuses a prerendered program with `prerender_unsupported`.
+
+**Until P5 lands, the tree runs under the `node` on `PATH`**, as item 2 says, so hydration and
+routes are not blocked on the engine. With none there, the build fails with `prerender_needs_node`
+(§9), saying what to install. The flake pins Node 24 (CLAUDE.md, *Details about the project*); the
+entry uses nothing an engine that runs ES modules lacks, Node or the embedded one, so P5 changes no
+emitted byte. The playground, which cannot start a process, refuses a prerendered program with
+`prerender_needs_node` until P5 gives it its own code.
 
 ### 5.2 When a program prerenders
 
@@ -549,6 +566,7 @@ Appended to the code list when each slice lands, never inserted:
 | `invalid_route` | a route breaks §7.4's rules; names it and the rule | P3 |
 | `invalid_html_shell` (existing) | also: a prerendering build's shell has no `{{view}}`, or two | P1 |
 | `output_path_collision` (existing) | also: two routes write one file | P3 |
+| `prerender_unsupported` | a prerendered program built by a beni that carries no engine (the playground); `prerender_needs_node` is withdrawn in the same slice | P5 |
 
 A construct the string form cannot write yet — keyed rows, until §6.2's amendment — is
 `browser-inline.md` §5's class 1, *"A limit of the compiler: … does not prerender yet"*.
@@ -558,18 +576,14 @@ A construct the string form cannot write yet — keyed rows, until §6.2's amend
 Each with its recommendation. Everything else in this document follows from what is already
 decided and is not a question.
 
-1. **May a build of a prerendered program run Node?** I recommend it. A build has never run
-   JavaScript, and this adds a dependency to the build, for prerendered programs only. The other way
-   is to evaluate `init` and `view` in Zig, at compile time. It needs no Node and no process, and
-   a compile-time evaluator already ships output: the write-set pass bakes a model path's `init`
-   value into the template (`write-sets.md` §9.1). But that evaluator is narrow on purpose — a
-   string, or an integer of at most 2⁵³, read from a literal; §9.1 names float printing as the
-   reason it goes no further — and prerendering needs all of `init` and `view`: a second evaluator of beni, which
-   must agree with the emitted JavaScript bit for bit — float printing, `Int` past 2⁵³, string
-   operations, every core function — and the guarantee of §3 is exactly that the two computations
-   agree. Running the emitted code makes that agreement true by construction, and the prerender tree
-   is emitted code beni already tests by running it. I recommend Node now, and the Zig evaluator as
-   a later speed step, if prerendering a large site under `--watch` is measured to be slow.
+1. ~~**May a build of a prerendered program run Node?**~~ **Decided** (the owner, 2026-10-29): the
+   end state embeds a JavaScript engine in `beni` (§5.1, slice P5), so a build never needs a
+   runtime installed beside it; P1–P3 use the `node` on `PATH` until P5 lands. An evaluator of
+   `init` and `view` in Zig is not taken: it would be a second evaluator of beni that must agree
+   with the emitted JavaScript bit for bit — float printing, `Int` past 2⁵³, string operations,
+   every `foreign` of core — while the guarantee of §3 is exactly that the two computations agree.
+   An engine runs the emitted code, so that agreement stays true by construction. The write-set
+   pass's evaluator (`write-sets.md` §9.1) stays narrow on purpose and does not grow into one.
 2. **What does `init` receive on a prerendered page?** I recommend §7.3: the route as the page
    carries it, with the origin from `"build"."origin"` and no query or fragment, and the real
    address afterwards as an `onUrlChange` message. The alternative is Elm's: `init` gets the address
@@ -589,7 +603,7 @@ decided and is not a question.
    program as written. If you want it to stop instead, it is the same check with a different answer.
 4. **Should `beni serve` prerender on every rebuild?** I recommend yes (§5.2): development then takes
    the page over as production does, and a hydration fault is found where the developer works. It
-   costs one Node process per rebuild, measured in P1; if it is slow for a large site, the step is
+   costs one run of the prerender tree per rebuild, measured in P1; if it is slow for a large site, the step is
    to prerender only the routes whose pages changed, not to skip it.
 
 ## 11. The slices
@@ -605,6 +619,7 @@ order with per-route pages in the first slice; they move to P3, because a page p
 | **P2b** — input before the takeover | §6.5, its shape amended there first: the capture script, delivery by direct call with the control state written back | a click, typed text and a checked box made before the module runs reach `update` once each, in order, after the first pass; no default action runs twice; the script's bytes and the time to interactive are measured | `browser/prerender/EarlyInput` (click, `input`, `change` on a checkbox, a `select`), `EarlyNone` (a page whose program has no listener: no script written) |
 | **P3** — routes | §7: `Tea.application` and `Tea.document` on `browser-inline`, `Browser.Navigation`'s commands and the two subscriptions, `Browser.prerender` (and `browser-tea`'s identity), `"build"."origin"`, the route in `data-beni`, the address replaced and sent after the first render, route files and `invalid_route`, `{{title}}`, `beni serve`'s `.html` rule; the hidden flag goes | a site of three routes and a blog of two posts builds into five files a static server answers, each taken over by the program, and a link click navigates on the client with no page load | `browser/prerender/Blog/` (routes from a list of posts; a link click; back; a page opened with a query and a fragment), `Titles`; `build/bad/prerender/`: `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision` (`/a/` and `/a/index`), `RouteFolded` (`/About`, `/about`), `RouteImpure`; a `browser/tea/` page showing that the same source builds on `browser-tea`; a `serve` case in `tests/blackbox/` for `/about` → `about.html` |
 | **P4** — build-time data | §8, specified in this document first (rule 1) | — | — |
+| **P5** — the embedded engine | §5.1: the engine compiled into `beni`, the prerender tree run in it in place of `node`, `prerender_needs_node` withdrawn, `prerender_unsupported` for the playground; its build, version pin and licence recorded in `references/README.md`'s manner | every `browser/prerender/` page is byte-identical to what P1–P4 wrote under Node, with no `node` on `PATH`; the determinism test covers it; the binary's growth and the time per route are stated | the existing `browser/prerender/` corpus run with an empty `PATH`; `Numbers` (floats, `Int` past 2⁵³, `Int32`), `Strings` (Unicode case, code points, `String` functions of core), each page also written by headless Chrome in `test-browser` and compared |
 
 The hang guard of 120 s applies to every case as to any other, and a prerendered fixture's Node run
 is part of its case.
