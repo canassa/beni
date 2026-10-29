@@ -820,6 +820,51 @@ pub const Radix = struct {
         return false;
     }
 
+    /// The pairs of `b` that `a` does not hold as strongly (absent, or
+    /// approximate in `a` and exact in `b`), appended to `out`: one descent
+    /// over both trees, a subtree they share (one id) skipped whole, every
+    /// node pair inspected one record. What a union of `b` into `a` adds.
+    pub fn news(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId, out: *std.ArrayList(Iterator.Entry)) Error!void {
+        if (b == .none or a == b) return;
+        try inspect(gpa, charge);
+        if (a == .none) return r.appendAll(gpa, charge, b, out, null);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (nb.mask == 0) {
+            const v: u1 = @intCast(nb.left.int());
+            if (r.get(a, nb.prefix)) |old| if (old <= v) return;
+            return out.append(gpa, .{ .key = nb.prefix, .value = v });
+        }
+        if (na.mask == 0) {
+            const skip: Iterator.Entry = .{ .key = na.prefix, .value = @intCast(na.left.int()) };
+            return r.appendAll(gpa, charge, b, out, skip);
+        }
+        if (na.mask == nb.mask and na.prefix == nb.prefix) {
+            try r.news(gpa, charge, na.left, nb.left, out);
+            return r.news(gpa, charge, na.right, nb.right, out);
+        }
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) return r.news(gpa, charge, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b, out);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+            if (zeroBit(na.prefix, nb.mask)) {
+                try r.news(gpa, charge, a, nb.left, out);
+                return r.appendAll(gpa, charge, nb.right, out, null);
+            }
+            try r.appendAll(gpa, charge, nb.left, out, null);
+            return r.news(gpa, charge, a, nb.right, out);
+        }
+        return r.appendAll(gpa, charge, b, out, null);
+    }
+
+    /// Every pair of `b` but one `a` holds as strongly (`skip`), a record each.
+    fn appendAll(r: *const Radix, gpa: Allocator, charge: Charge, b: SetId, out: *std.ArrayList(Iterator.Entry), skip: ?Iterator.Entry) Error!void {
+        var it = r.iterate(b);
+        while (it.next()) |e| {
+            try inspect(gpa, charge);
+            if (skip) |s| if (s.key == e.key and s.value <= e.value) continue;
+            try out.append(gpa, e);
+        }
+    }
+
     /// The keys of `root` in ascending order, one per `next` — a leaf
     /// walk on an explicit stack of at most 33 entries. Iterating a whole
     /// set is the caller's charged task (§4.1).

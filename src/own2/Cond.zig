@@ -147,6 +147,13 @@ pub const Table = struct {
     /// met → the snapshot its walk puts at its position. Written only once
     /// a call has finished.
     memo_prop: Ids.FixedDict(3) = .{},
+    /// The incremental apart reads (#1121): the aggregates, each node's reach's,
+    /// each group's predecessor and added cell, each cell set node's `anyLost`.
+    aggs: std.ArrayList(Agg) = .empty,
+    reach_agg: Ids.FixedDict(1) = .{},
+    group_prov: Ids.FixedDict(1) = .{},
+    group_steps: std.ArrayList([2]u32) = .empty,
+    lost_memo: Ids.FixedDict(1) = .{},
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
@@ -184,6 +191,11 @@ pub const Table = struct {
         t.memo_sep.deinit(gpa);
         t.prop_runs.deinit(gpa);
         t.memo_prop.deinit(gpa);
+        t.aggs.deinit(gpa);
+        t.reach_agg.deinit(gpa);
+        t.group_prov.deinit(gpa);
+        t.group_steps.deinit(gpa);
+        t.lost_memo.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_merge.deinit(gpa);
     }
@@ -314,21 +326,42 @@ pub const Table = struct {
         return t.flat_memo.get(c).?;
     }
 
-    /// The canonical condition of an atom set: the left-nested `and` chain
-    /// in ascending atom id, one id per set (memoised), so a fixpoint's
-    /// `join` is idempotent (§2.12). O(|S| log) once per set.
+    /// The canonical condition of an atom set: the `and` tree of its
+    /// persistent set's own trie (a branch the `and` of its two sides'),
+    /// one id per set (memoised per trie node), so a fixpoint's `join` is
+    /// idempotent (§2.12) and a set one insertion larger builds only its
+    /// new spine (§2.9, #1121): O(log |S|), never a chain of all its atoms.
     pub fn ofSet(t: *Table, gpa: Allocator, charge: Charge, s: SetId) Error!CondId {
         if (s == .none) return yes;
         if (t.of_set.get(.{s.int()})) |hit| return .from(hit);
-        var acc: CondId = yes;
-        var it = t.atoms.iterate(s);
-        while (it.next()) |e| {
+        var stack: std.ArrayList(SetId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, s);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.of_set.get(.{x.int()}) != null) {
+                _ = stack.pop();
+                continue;
+            }
             try charge.reserve(gpa, .inspection, 1);
-            acc = try t.@"and"(gpa, charge, acc, .from(e.key));
+            const acc: CondId = if (t.atoms.branches(x)) |kids| blk: {
+                const l = t.of_set.get(.{kids[0].int()});
+                const r = t.of_set.get(.{kids[1].int()});
+                if (l == null or r == null) {
+                    if (l == null) try stack.append(gpa, kids[0]);
+                    if (r == null) try stack.append(gpa, kids[1]);
+                    continue;
+                }
+                break :blk try t.@"and"(gpa, charge, .from(l.?), .from(r.?));
+            } else blk: {
+                var it = t.atoms.iterate(x);
+                break :blk .from(it.next().?.key);
+            };
+            (try t.of_set.getOrPut(gpa, .{x.int()})).value_ptr.* = acc.int();
+            if (!t.flat_memo.contains(acc)) try t.flat_memo.put(gpa, acc, x);
+            _ = stack.pop();
         }
-        (try t.of_set.getOrPut(gpa, .{s.int()})).value_ptr.* = acc.int();
-        try t.flat_memo.put(gpa, acc, s);
-        return acc;
+        return .from(t.of_set.get(.{s.int()}).?);
     }
 
     /// The lattice join (§2.10): `shared` wins, then `lost`, else the
@@ -1034,6 +1067,293 @@ pub const Table = struct {
         return out;
     }
 
+    // ---- incremental apart reads (§2.9, #1121) ------------------------------------
+
+    /// `apart` over a cell multiset as a persistent aggregate: a one-cell
+    /// extension is one insertion into its predecessor, never a sort of the
+    /// old cells again. `all` every distinct cell met (values joined as a
+    /// set joins them); `dups` the cells met twice, `dups_approx` those one
+    /// of whose occurrences was approximate; `lost_extra` a member's own
+    /// approximation (an occurrence `all`'s join forgets); `group` the
+    /// arrivals; `whole`/`elems` the parents §2.9's taken-element rule
+    /// compares; `bases` base → the group's cells over it; `pairs` the
+    /// same-base pairs' conditions; `hit` the taken-element rule met.
+    pub const Agg = struct {
+        all: SetId = .none,
+        all_len: u32 = 0,
+        dups: SetId = .none,
+        dups_approx: SetId = .none,
+        lost_extra: bool = false,
+        group: SetId = .none,
+        group_len: u32 = 0,
+        whole: SetId = .none,
+        elems: SetId = .none,
+        bases: u32 = Ids.none_int,
+        pairs: CondId = yes,
+        hit: bool = false,
+    };
+
+    fn agg(t: *Table, gpa: Allocator, a: Agg) Error!u32 {
+        try t.aggs.append(gpa, a);
+        return @intCast(t.aggs.items.len - 1);
+    }
+
+    /// `a` with one occurrence of `c` more. `multiset`: a cell met again is
+    /// a repeat (two members holding it); otherwise the occurrences join as
+    /// a set's do (`a` is one member's reach).
+    fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
+        var a = a0;
+        try charge.reserve(gpa, .inspection, 1);
+        const sets = &cellt.sets;
+        if (sets.get(a.all, c.int())) |old| {
+            if (multiset) {
+                a.dups = try sets.insert(gpa, charge, a.dups, c.int(), 0);
+                if (approx or old == 1) a.dups_approx = try sets.insert(gpa, charge, a.dups_approx, c.int(), 0);
+            }
+            a.all = try sets.insert(gpa, charge, a.all, c.int(), @intFromBool(approx));
+            return a;
+        }
+        a.all = try sets.insert(gpa, charge, a.all, c.int(), @intFromBool(approx));
+        a.all_len += 1;
+        const o = cellt.origin(c);
+        std.debug.assert(o != .mark);
+        if (isConcrete(o) or o == .top) return a;
+        const before = a.group;
+        a.group = try sets.insert(gpa, charge, a.group, c.int(), 0);
+        a.group_len += 1;
+        try charge.reserve(gpa, .memo, 1);
+        const prov = try t.group_prov.getOrPut(gpa, .{a.group.int()});
+        if (!prov.found_existing) {
+            prov.value_ptr.* = @intCast(t.group_steps.items.len);
+            try t.group_steps.append(gpa, .{ before.int(), c.int() });
+        }
+        // The taken-element rule: a taken element stored beside its
+        // container's `c[*]` (`apart`'s `whole`).
+        const p = cellt.parent(c);
+        const d = cellt.get(c);
+        if (o.isSymbolic() and places.pathParent(.from(d.b)) != .none and places.pathStep(.from(d.b)).kind == .elem) {
+            a.whole = try sets.insert(gpa, charge, a.whole, p.int(), 0);
+            if (sets.member(a.elems, p.int())) a.hit = true;
+        }
+        if (o == .elem) {
+            a.elems = try sets.insert(gpa, charge, a.elems, p.int(), 0);
+            if (sets.member(a.whole, p.int())) a.hit = true;
+        }
+        // The pairs over one base `alias` does not tell apart (`sameBasePairs`):
+        // one pair per split's run, every pair across runs.
+        const b = cellt.base(c);
+        const same: SetId = if (t.mapGet(a.bases, b.int())) |s| .from(s) else .none;
+        const split = splitKey(cellt, c);
+        var run: ?CellId = null;
+        var run_len: u32 = 0;
+        var it = sets.iterate(same);
+        while (it.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            const y: CellId = .from(e.key);
+            if (split[0] != Ids.none_int and std.mem.eql(u32, &split, &splitKey(cellt, y))) {
+                run_len += 1;
+                run = y;
+                continue;
+            }
+            if (cellt.alias(places, c, y) == .no) continue;
+            a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.sep(gpa, charge, cellt, places, c, y, false, null));
+        }
+        if (run_len == 1) if (run) |y| if (cellt.alias(places, c, y) != .no) {
+            a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.sep(gpa, charge, cellt, places, c, y, false, null));
+        };
+        a.bases = try t.mapPut(gpa, charge, a.bases, b.int(), (try sets.insert(gpa, charge, same, c.int(), 0)).int());
+        return a;
+    }
+
+    fn splitKey(cellt: *const Cell.Table, x: CellId) [2]u32 {
+        const o = cellt.origin(x);
+        if (o != .elem and o != .others) return .{ Ids.none_int, x.int() };
+        const d = cellt.get(x);
+        return .{ d.parent.int(), d.b };
+    }
+
+    /// Every cell of `from` added to `a` (`multiset` as `aggAdd`).
+    fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
+        var a = a0;
+        var it = cellt.sets.iterate(from);
+        while (it.next()) |e| a = try t.aggAdd(gpa, charge, cellt, places, a, .from(e.key), e.value == 1, multiset);
+        return a;
+    }
+
+    /// Two aggregates as one: the smaller's cells added to the larger's.
+    fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
+        const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
+        // What the smaller side adds, its subtrees the larger shares
+        // skipped whole (a DAG's two sides share most of their reach).
+        var added: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
+        defer added.deinit(gpa);
+        try cellt.sets.news(gpa, charge, big.all, small.all, &added);
+        var a = big;
+        for (added.items) |e| a = try t.aggAdd(gpa, charge, cellt, places, a, .from(e.key), e.value == 1, false);
+        if (multiset) {
+            // Both sides' cells are repeats, one approximate where either
+            // occurrence is; a member's own approximation, which `all`'s join
+            // forgets; the smaller side's own repeats.
+            const both = try cellt.sets.intersection(gpa, charge, big.all, small.all);
+            var it = cellt.sets.iterate(both);
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                a.dups = try cellt.sets.insert(gpa, charge, a.dups, e.key, 0);
+                if (e.value == 1) a.dups_approx = try cellt.sets.insert(gpa, charge, a.dups_approx, e.key, 0);
+            }
+            a.lost_extra = a.lost_extra or small.lost_extra or try t.anyLost(gpa, charge, cellt, small.all) or try t.anyLost(gpa, charge, cellt, big.all);
+            a.dups = try cellt.sets.unionWith(gpa, charge, a.dups, small.dups);
+            a.dups_approx = try cellt.sets.unionWith(gpa, charge, a.dups_approx, small.dups_approx);
+        }
+        return a;
+    }
+
+    /// §2.9's apart condition of an aggregate: `apart`'s over its cells.
+    pub fn aggCond(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: Agg) Error!CondId {
+        var acc: CondId = yes;
+        var dt = cellt.sets.iterate(a.dups);
+        while (dt.next()) |e| {
+            acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, .from(e.key), .from(e.key), cellt.sets.member(a.dups_approx, e.key), null));
+            if (acc == shared) return shared;
+        }
+        if (a.lost_extra or try t.anyLost(gpa, charge, cellt, a.all)) acc = try t.@"and"(gpa, charge, acc, lost);
+        if (a.group_len >= 2) {
+            if (a.hit) return shared;
+            acc = try t.@"and"(gpa, charge, acc, try t.apartAtom(gpa, charge, a.group));
+            acc = try t.@"and"(gpa, charge, acc, a.pairs);
+        }
+        return acc;
+    }
+
+    /// Whether a cell set holds an approximate pair or `⊤`, memoised per
+    /// node of the persistent set, so a new root reads its changed spine.
+    fn anyLost(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, s: SetId) Error!bool {
+        if (s == .none) return false;
+        try charge.reserve(gpa, .memo, 1);
+        if (t.lost_memo.get(.{s.int()})) |v| return v == 1;
+        var stack: std.ArrayList(SetId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, s);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.lost_memo.get(.{x.int()}) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            try charge.reserve(gpa, .inspection, 1);
+            const v: bool = if (cellt.sets.branches(x)) |kids| blk: {
+                const l = t.lost_memo.get(.{kids[0].int()});
+                const r = t.lost_memo.get(.{kids[1].int()});
+                if (l == null or r == null) {
+                    if (l == null) try stack.append(gpa, kids[0]);
+                    if (r == null) try stack.append(gpa, kids[1]);
+                    continue;
+                }
+                break :blk l.? == 1 or r.? == 1;
+            } else blk: {
+                var it = cellt.sets.iterate(x);
+                const e = it.next().?;
+                break :blk e.value == 1 or cellt.origin(.from(e.key)) == .top;
+            };
+            (try t.lost_memo.getOrPut(gpa, .{x.int()})).value_ptr.* = @intFromBool(v);
+            _ = stack.pop();
+        }
+        return t.lost_memo.get(.{s.int()}).? == 1;
+    }
+
+    /// The aggregate of `n`'s reach (every cell of its explicit structure,
+    /// as a set), memoised per node: a node of finite rank merges its
+    /// parts' aggregates, the larger extended by the smaller's cells and its
+    /// own (so a tower's level adds its own cells, O(log) each); a node on
+    /// or above a cycle, from its reach set.
+    pub fn reachAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!Agg {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.reach_agg.get(.{n.int()})) |hit| return t.aggs.items[hit];
+        if (!try memoRank(gpa, charge, v, n)) {
+            const set = try v.shapes.reach(gpa, charge.account, &v.cells.sets, n);
+            const a = try t.aggAll(gpa, charge, v.cells, v.places, .{}, set, false);
+            (try t.reach_agg.getOrPut(gpa, .{n.int()})).value_ptr.* = try t.agg(gpa, a);
+            return a;
+        }
+        // Post-order over the parts on an explicit stack (a value is as
+        // deep as the source); finite rank: no cycle.
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var parts: std.ArrayList(NodeId) = .empty;
+        defer parts.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            if (t.reach_agg.get(.{f.node.int()}) != null) continue;
+            parts.clearRetainingCapacity();
+            try partsOf(gpa, v, f.node, &parts);
+            if (!f.expanded) {
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                for (parts.items) |p| if (t.reach_agg.get(.{p.int()}) == null) try stack.append(gpa, .{ .node = p, .expanded = false });
+                continue;
+            }
+            // The largest part's aggregate, the others' and the node's own
+            // cells added to it.
+            var best: ?Agg = null;
+            for (parts.items) |p| {
+                try charge.reserve(gpa, .memo, 1);
+                const pa = t.aggs.items[t.reach_agg.get(.{p.int()}).?];
+                best = if (best) |b| try t.aggMerge(gpa, charge, v.cells, v.places, b, pa, false) else pa;
+            }
+            const a = try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, v.shapes.cells(f.node), false);
+            (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = try t.agg(gpa, a);
+        }
+        return t.aggs.items[t.reach_agg.get(.{n.int()}).?];
+    }
+
+    /// The parts of `n` whose cells its reach holds.
+    fn partsOf(gpa: Allocator, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        const d = v.shapes.get(n);
+        switch (d.kind) {
+            .leaf => {},
+            .node, .delta => {
+                if (d.kind == .delta) try out.append(gpa, .from(d.a));
+                var it = v.shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                while (it.next()) |e| try out.append(gpa, e.node);
+            },
+            .recast => try out.append(gpa, .from(d.a)),
+            .@"union", .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+        }
+    }
+
+    /// The apart condition of `group`'s cells' images (`image` maps one), a
+    /// multiset: each group is extended from its predecessor's image
+    /// (`group_prov`), `memo` holding the images built under this `image`.
+    pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
+        var chain: std.ArrayList([2]u32) = .empty;
+        defer chain.deinit(gpa);
+        var at = group;
+        var start: Agg = .{};
+        while (at != .none) {
+            try charge.reserve(gpa, .memo, 1);
+            if (memo.get(.{at.int()})) |hit| {
+                start = t.aggs.items[hit];
+                break;
+            }
+            const step = t.group_prov.get(.{at.int()}) orelse {
+                // A set no aggregate built: its cells from nothing.
+                var it = cellt.sets.iterate(at);
+                while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
+                (try memo.getOrPut(gpa, .{at.int()})).value_ptr.* = try t.agg(gpa, start);
+                break;
+            };
+            const s = t.group_steps.items[step];
+            try chain.append(gpa, .{ at.int(), s[1] });
+            at = .from(s[0]);
+        }
+        var a = start;
+        while (chain.pop()) |x| {
+            a = try t.aggAdd(gpa, charge, cellt, places, a, try image(ctx, .from(x[1])), false, true);
+            (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = try t.agg(gpa, a);
+        }
+        return t.aggCond(gpa, charge, cellt, places, a);
+    }
+
     /// §2.9's rule over the cells stored at one path, a multiset sorted once
     /// (an item a record): a duplicate decides at once, `⊤`/approximate is
     /// `lost`, the arrivals form ONE `apart` group, pairs over one base are
@@ -1569,13 +1889,18 @@ pub const Table = struct {
                     if (mode == .together and f.node == joined) {
                         var k1 = try t.kappaOf(gpa, charge, v, c0, m0, f.msummary);
                         k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, v.shapes.cells(m0)));
-                        items.clearRetainingCapacity();
-                        var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
-                        while (it.next()) |e| {
-                            try charge.reserve(gpa, .inspection, 1);
-                            try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+                        if (traversal == null) {
+                            // Its reach's aggregate, extended from its parts' (#1121).
+                            k1 = try t.@"and"(gpa, charge, k1, try t.aggCond(gpa, charge, v.cells, v.places, try t.reachAgg(gpa, charge, v, m0)));
+                        } else {
+                            items.clearRetainingCapacity();
+                            var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
+                            while (it.next()) |e| {
+                                try charge.reserve(gpa, .inspection, 1);
+                                try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+                            }
+                            k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
                         }
-                        k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
                         try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k1 });
                     }
                     continue;
@@ -1595,6 +1920,10 @@ pub const Table = struct {
             }
             var k: CondId = yes;
             items.clearRetainingCapacity();
+            // At the joined node, the members' reaches as one multiset of
+            // aggregates, each extended from its parts' (#1121).
+            const by_agg = mode == .together and f.node == joined and traversal == null;
+            var together: Agg = .{};
             for (0..f.len) |i| {
                 const m = runs.items[f.first + i];
                 const c = run_ctxs.items[f.first + i];
@@ -1606,6 +1935,10 @@ pub const Table = struct {
                     // anywhere below counts (I-κ: one object at two
                     // positions, at whatever paths, is shared — the
                     // `[ (a, b), (b, a) ]` twin); below it, the path's own.
+                    if (by_agg) {
+                        together = try t.aggMerge(gpa, charge, v.cells, v.places, together, try t.reachAgg(gpa, charge, v, m), true);
+                        continue;
+                    }
                     const set = if (f.node == joined) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else v.shapes.cells(m);
                     var it = v.cells.sets.iterate(set);
                     while (it.next()) |e| {
@@ -1614,7 +1947,9 @@ pub const Table = struct {
                     }
                 }
             }
-            if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
+            if (by_agg) {
+                k = try t.@"and"(gpa, charge, k, try t.aggCond(gpa, charge, v.cells, v.places, together));
+            } else if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
             if (mode == .alternatives and f.len == 0) k = lost;
             // The repeats of a class `widen` opened a collection into are stored,
             // so the block carries them (§2.3, #1120).
@@ -4032,4 +4367,86 @@ test "#1115 review: a one-element literal's [*] still compares everything its el
     const k3 = try f.kappa(out3, r, true);
     try testing.expectEqual(Kind.atom, f.conds.kind(k3));
     try testing.expectEqual(AtomKind.excl, f.conds.get(k3).atom);
+}
+
+/// The two conditions are one: equal, or the same atom set.
+fn expectSameCond(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) !void {
+    if (a == b) return;
+    try testing.expect(!Table.fails(a) and !Table.fails(b));
+    try testing.expectEqual(try t.flat(gpa, charge, a), try t.flat(gpa, charge, b));
+}
+
+test "#1121: an incremental apart aggregate decides what apart over the same multiset decides" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    var t = &f.conds;
+    const list = try f.placeOf(1);
+    const s7 = try f.cells.site(gpa, &f.account, 7, list, .list);
+    const s8 = try f.cells.site(gpa, &f.account, 8, list, .list);
+    const p1 = try f.param(1, 1, &.{});
+    const p2 = try f.param(2, 1, &.{});
+    const p3 = try f.param(3, 1, &.{});
+    const top = try f.cells.top(gpa, &f.account);
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    _ = try f.cells.split(gpa, &f.account, p1, 40, l1, shared);
+    const e1 = try f.cells.refine(gpa, &f.account, .elem, p1, l1, 0, .none, .none);
+    const o1 = try f.cells.refine(gpa, &f.account, .others, p1, l1, 0, .none, .list);
+    const xs = try f.param(4, 1, &.{});
+    _ = try f.cells.split(gpa, &f.account, xs, 41, l1, try t.excl(gpa, f.charge(), xs));
+    const ex = try f.cells.refine(gpa, &f.account, .elem, xs, l1, 0, .none, .none);
+    const ox = try f.cells.refine(gpa, &f.account, .others, xs, l1, 0, .none, .list);
+    const I = Item;
+    const cases = [_][]const I{
+        &.{ .{ .cell = p1, .approx = false }, .{ .cell = p1, .approx = false } },
+        &.{ .{ .cell = s7, .approx = false }, .{ .cell = s7, .approx = false }, .{ .cell = p1, .approx = false } },
+        &.{ .{ .cell = s7, .approx = false }, .{ .cell = s8, .approx = false } },
+        &.{ .{ .cell = s7, .approx = false }, .{ .cell = p1, .approx = false }, .{ .cell = p2, .approx = false } },
+        &.{ .{ .cell = p1, .approx = false }, .{ .cell = p2, .approx = false }, .{ .cell = p3, .approx = false } },
+        &.{ .{ .cell = top, .approx = false }, .{ .cell = s7, .approx = false } },
+        &.{ .{ .cell = p1, .approx = true }, .{ .cell = p2, .approx = false } },
+        &.{ .{ .cell = p1, .approx = true }, .{ .cell = p2, .approx = false }, .{ .cell = p2, .approx = false } },
+        &.{ .{ .cell = p2, .approx = false }, .{ .cell = p2, .approx = false }, .{ .cell = p2, .approx = true } },
+        &.{ .{ .cell = e1, .approx = false }, .{ .cell = o1, .approx = false } },
+        &.{ .{ .cell = ex, .approx = false }, .{ .cell = ox, .approx = false }, .{ .cell = p2, .approx = false } },
+        &.{ .{ .cell = ex, .approx = false }, .{ .cell = ox, .approx = false }, .{ .cell = e1, .approx = false }, .{ .cell = o1, .approx = false } },
+    };
+    for (cases) |items| {
+        const scratch = try gpa.dupe(I, items);
+        defer gpa.free(scratch);
+        const want = try t.apart(gpa, f.charge(), &f.cells, &f.places, scratch, null);
+        // One occurrence at a time, and as two members merged (each split
+        // point), in both orders.
+        var one: Table.Agg = .{};
+        for (items) |x| one = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, one, x.cell, x.approx, true);
+        try expectSameCond(t, gpa, f.charge(), want, try t.aggCond(gpa, f.charge(), &f.cells, &f.places, one));
+        for (1..items.len) |cut| {
+            var left: Table.Agg = .{};
+            var right: Table.Agg = .{};
+            for (items[0..cut]) |x| left = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, left, x.cell, x.approx, true);
+            for (items[cut..]) |x| right = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, right, x.cell, x.approx, true);
+            try expectSameCond(t, gpa, f.charge(), want, try t.aggCond(gpa, f.charge(), &f.cells, &f.places, try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, left, right, true)));
+            try expectSameCond(t, gpa, f.charge(), want, try t.aggCond(gpa, f.charge(), &f.cells, &f.places, try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, right, left, true)));
+        }
+    }
+    // A group's image, extended from its predecessors' images, is apart's
+    // over the images: here two cells meeting at one image are a repeat.
+    var g: Table.Agg = .{};
+    for ([_]CellId{ p1, p2, p3 }) |c| g = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, g, c, false, false);
+    const Img = struct {
+        to: CellId,
+        from: CellId,
+        fn of(s: *const @This(), c: CellId) Error!CellId {
+            return if (c == s.from) s.to else c;
+        }
+    };
+    var memo: Ids.FixedDict(1) = .{};
+    defer memo.deinit(gpa);
+    const img: Img = .{ .from = p3, .to = p1 };
+    try testing.expectEqual(shared, try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo, &img, Img.of));
+    var memo2: Ids.FixedDict(1) = .{};
+    defer memo2.deinit(gpa);
+    const ident: Img = .{ .from = p3, .to = p3 };
+    try expectSameCond(t, gpa, f.charge(), try f.apart(&.{ p1, p2, p3 }), try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo2, &ident, Img.of));
 }
