@@ -1,6 +1,6 @@
 # Prerendered pages — a static site build of `browser-inline`
 
-*2026-10-29, #1160. **Specified; slices P1, P2a, P2b, P3 and P4 built** (2026-10-29, #1165, #1178, #1206, #1194, #1218, §11 *As built — P1*, *As built — P2a*, *As built — P2b*, *As built — P3*, *As built — P4*). The contract for a build of a `browser-inline`
+*2026-10-29, #1160. **Specified; slices P1, P2a, P2b, P3 and P4 built** (2026-10-29, #1165, #1178, #1206, #1194, #1218, §11 *As built — P1*, *As built — P2a*, *As built — P2b*, *As built — P3*, *As built — P4*); slice P4b specified, not built (#1211, §8.12). The contract for a build of a `browser-inline`
 program that writes one HTML page per route, each the program's first render, which the same
 program then takes over in the browser. It holds what is decided, what is open with a
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
@@ -1254,6 +1254,368 @@ that a host answers the script's address with.
   `view` or `update` directly (§8.4's limit); head content other than the title (§7.5); mapping a
   data program's stack to `.beni` positions (§5.5).
 
+*Amended 2026-10-29 (#1211):* the first bullet's direction is specified in §8.12, slice P4b.
+
+### 8.12 Navigation to another route's value
+
+*Specified 2026-10-29 (#1211, slice P4b), not built.* A page of a data site holds its own route's
+value only (§8.6). An application that pushes the address of another route has no value for it,
+so until this section its `update` loaded that page (§8.11). Here the build also writes each
+route's text as a file, and `Browser.Navigation` gets a command that fetches one and decodes it.
+
+#### 8.12.1 The files
+
+**A data site whose client reaches `Navigation.fetchData` writes one file per route below
+`_data/`**, beside its pages. The file of a route is the route's page file (§7.4) with `.html`
+replaced by `.json`:
+
+| Route | Page | Data file |
+|---|---|---|
+| `/` | `index.html` | `_data/index.json` |
+| `/about` | `about.html` | `_data/about.json` |
+| `/blog/hello` | `blog/hello.html` | `_data/blog/hello.json` |
+| `/blog/` | `blog/index.html` | `_data/blog/index.json` |
+
+- **The bytes are the page's text**: the data program's JSON text escaped as §8.6 says, every `<`
+  as `<` and every character past U+007E as a `\uXXXX` escape, with no newline after it. So
+  the file and the page's script hold the same bytes, and they are ASCII: the file needs no
+  charset, whatever the host's `Content-Type` says, and `Response.text()`'s UTF-8 decode is exact
+  on it. The escapes a script needs cost a file nothing it does not already pay, since the build
+  writes the one text for both.
+- **`_data/` is the compiler's region.** A route's first segment cannot begin with `_` (§7.4), so no
+  page lands below `_data/`, and no module can either (`backend.md` §2, rule 1, which lists
+  `_data/` from this slice). A platform's declared entry is a file `_<name>.mjs`, never the
+  directory.
+- **Collisions.** Two routes whose pages differ can still have data files that collide: `/a` writes
+  `_data/a.json`, and `/a.json/x` needs a directory `_data/a.json/`. The route check of §7.4's
+  amendment covers the data files with the pages: one pass over each data file's directories, under
+  the same ASCII folding, and a collision is `output_path_collision` at `main`, naming both routes
+  and saying the data program gave them. The files go through `pending` like every output
+  (`backend.md` §2): the folding check, `_manifest.txt` and the removal of stale files apply to them
+  unchanged, and a refused build writes none.
+- **Only when the client reaches the command.** The build knows from reachability (`backend.md` §9)
+  whether the client tree calls `Navigation.fetchData`; a data site whose client does not writes no
+  `_data/` file, so §8's sites keep their output, file for file. A site that reaches it writes every
+  route's file, in the order of the data program's list, after the pages.
+- **`--no-prerender`** (§8.10) writes the same files: its pages carry the same script, and its
+  client fetches the same way, so the corpus's two builds of a fixture that navigates are compared
+  as §8.10 compares them.
+
+#### 8.12.2 The command
+
+`browser-inline`'s `Browser.Navigation` gets:
+
+```text
+type DataError
+    = NotARoute
+    | NotFound
+    | BadStatus Int
+    | NetworkError
+    | BadData (List Schema.Issue)
+
+fetchData : Schema e d, Url, sync (Result DataError d → msg) → Cmd msg
+```
+
+`Navigation.fetchData schema url got` is a `Cmd.perform` whose body does not wait (§4 there): it
+starts the request and returns, and the answer is sent later through the `send` the body was
+handed, which enters the dispatch guard as a listener's event does (`Inline.commands`,
+`Inline.send`). `got` is `sync`, as `pushUrl`'s tagger is (`browser-inline.md` §10.1). There is no
+direct form: the answer arrives after the body has returned, and `browser-inline` has no task
+kernel to wait in.
+
+**The request.** `url` is an address of the page's site:
+
+1. Its protocol, host and port must be the page's (`location`), and its path must begin with the
+   project's base (`"build"."base"`, `frontend.md` §10.1). The route is the path after the base,
+   with a `/` in front. The query and the fragment are not read.
+2. The route must keep §7.4's rules: segments of ASCII letters, digits, `-`, `.`, `_` and `~`, none
+   empty but the last, none `.` or `..`, and a first segment that does not begin with `_`. So a path
+   no build could have written a file for asks the host nothing.
+3. Otherwise the answer is **`NotARoute`**, sent with no request made.
+4. The request is a `GET` of the route's data file (§8.12.1) below the base on the page's origin, with
+   `Accept: application/json`, the host's default credentials and cache. The base reaches the
+   runtime as a value the mount stores (§8.12.6), not from `location`, which a host's fallback or a
+   file name can make another path.
+
+**The answer** is one of these, told apart in this order. Each failure the Fetch standard documents
+has its constructor, and anything else stops the page (CLAUDE.md rule 9):
+
+| What happened | The answer |
+|---|---|
+| a later `fetchData` superseded this one (below) | nothing is sent |
+| `fetch` rejected with a `TypeError`, the Fetch standard's network error (offline, DNS, a refused connection, a redirect to another origin that CORS refuses) | `NetworkError` |
+| the status is 404 or 410 | `NotFound` |
+| the status is 2xx and the `Content-Type`'s essence is `text/html` | `NotFound`: the build never writes HTML below `_data/`, so this is a host's single-page fallback answering for a file it does not have |
+| any other status that is not 2xx | `BadStatus status` |
+| reading the body rejected with a `TypeError` (the connection cut off) | `NetworkError` |
+| the text does not parse with `schema` (`Schema.parse`: not JSON, or not this schema's) | `BadData issues` |
+| it parses | `Ok value` |
+| `fetch` or the body's read rejected with anything else | a defect: the error is thrown inside the dispatch guard (`Inline.send`), so the page stops as for any defect, with the development crash screen (`browser-inline.md` §6) |
+
+There is no `catch` in this: each promise is given a rejection handler that tests the error's class
+and hands anything it does not name to the guard to throw, as `browser`'s `Http` does for a fiber
+(`platforms/browser/Http.beni`, `rejected`). An answer is sent once, at most. Once the page has
+stopped (a defect, or `stop`) the guard sends nothing, as for any listener.
+
+**A later `fetchData` supersedes an earlier one.** Each call aborts the request of the previous
+call still in flight on the page (its own `AbortController`), and the earlier call's answer is never
+sent: a rejection is read as the abort's consequence when the call's own signal is aborted, whatever
+its class, as `Http`'s `rejected` reads its signal first. So a program that navigates from A to B
+to C before A's file arrives gets C's answer only, and never shows A's value under C's address.
+It is Solid Router's rule for a navigation: *"Keep track of last target, so that last call to
+transition wins"*, a transition whose target is no longer the last one changing nothing
+(`solidjs/solid-router` at `d0379e73`, `src/routing.ts`, `createRouterContext`, lines 483–509). Its
+cost is that a program cannot hold two `fetchData` requests at once,
+to fetch a route ahead of a click; that is §8.12.7's.
+
+**No cache.** The command keeps no value between calls: a second `fetchData` of a route is a second
+request, which the browser's HTTP cache answers when the host's headers let it. A program that
+wants to keep values keeps them in its model, a `Dict` of routes to values, as any TEA program keeps
+what it has loaded.
+
+**On another site.** A build whose client reaches `fetchData` and is not a data site — no
+`Browser.prerenderData`, a `Browser.prerender` site among them — writes no `_data/` file, and
+every call answers `NotFound` with no request made. That is the warning
+**`fetch_data_unwritten`** (§9), at the first call, against the program's file: it protects no
+guarantee, since every answer is typed, so it is not an error (CLAUDE.md rule 7).
+
+#### 8.12.3 With `onUrlChange` and `pushUrl`
+
+The command composes with §7.2's routing as any command does; nothing in it knows about the
+address. A link click is `onUrlRequest`'s message, which pushes the address; the push is
+`onUrlChange`'s message, which asks for the route's value; the value is a third message:
+
+```text
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Page exposing (Page)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | GotPage (Result Navigation.DataError Page.Type)
+    | Refused Navigation.Error
+
+
+type alias Model =
+    key : Navigation.Key
+    path : String
+    page : Page.Type
+    loading : Bool
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) →
+            ( model, Navigation.pushUrl model.key (Url.toString url) Refused )
+
+        ClickedLink (Browser.External href) →
+            ( model, Navigation.load href Refused )
+
+        UrlChanged url →
+            if url.path == model.path then
+                ( model, Cmd.none )
+            else
+                ( { model | path = url.path, loading = True }
+                , Navigation.fetchData (Page.schema ⊤) url GotPage
+                )
+
+        GotPage (Ok page) →
+            ( { model | page = page, loading = False }, Cmd.none )
+
+        GotPage (Err _) →
+            ( model, Navigation.load model.path Refused )
+
+        Refused _ →
+            ( model, Cmd.none )
+
+
+view : Model → Tea.Document Msg
+view model =
+    { title = model.page.title
+    , body =
+        <main>
+            <h1>{model.page.title}</h1>
+            <p>{model.page.body}</p>
+        </main>
+    }
+
+
+main : Tea.Program
+main = Browser.prerenderData (Page.schema ⊤) λpage →
+    Tea.application
+        { init =
+            λurl key → ( { key = key, path = url.path, page = page, loading = False }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }
+```
+
+(Checked, formatted and built with `--platform=browser-inline` against a stub of `fetchData` with
+this signature, 2026-10-29, `Page` being `pub schema Page = title : String, body : String` in a
+shared module and the data program giving two routes.)
+
+- **The same path asks for nothing.** A page opened at `/about?from=feed` gets `/about` in `init` and
+  the address as `onUrlChange`'s message after the first render (§7.3); its path is the model's, so
+  `update` fetches nothing. A fragment link on the page is the same.
+- **While the file loads**, the page shows what the model says, and the address is already the new
+  one: `pushUrl` changes it when its command runs. The example keeps the old page and sets
+  `loading`, which the view may show; a program may as well show a page of its own for a loading
+  route. Nothing is implicit: there is no transition and no suspense in TEA, and the model is the
+  one place the program's state is.
+- **On `Err`, the example loads the address as a page** (`Navigation.load`), which is what elm-pages
+  does on any failure to load `content.dat` (§8.12.5). A missing route then gets the host's own
+  answer, a network failure the browser's, and a client older than the deploy (§8.12.4) the new
+  deploy's page. A program may answer each error otherwise; each is a constructor.
+- **Back and forward** are `onUrlChange`'s messages too, so they fetch the same way; the browser's
+  HTTP cache usually answers them.
+- **`Browser.prerenderData`'s value is still read by `init` alone** (§8.4): the command hands its
+  value to `update`, through a message, as any command does, so §8.4's limit is not touched.
+- `GotPage` has one field: a message that wraps the answer beside another field
+  (`GotPage String (Result …)`), split by `update` on the answer, is a limit of the `inline`
+  lowering today (`browser-inline.md` §8.4, D-e, *ArmWideWrapper*), and the superseding rule makes
+  the route beside the answer unnecessary.
+
+#### 8.12.4 The guarantee
+
+**The claim.** Let a build write, for a route `r`, the text `t` into `r`'s page and into `r`'s data
+file. Opened from that build's output, `r`'s page binds `Browser.prerenderData`'s parameter to the
+value the site's schema `s₀` parses from `t` (§8.6). A program of that build that calls
+`Navigation.fetchData s u got`, where `u` is an address of `r` (§8.12.2, items 1–2), and is not
+superseded, sends `got (Ok v)` with `v` what `s` parses from `t`, or `got (Err e)` with `e` naming
+why it could not. **When `s` is `s₀`, `v` is the value `r`'s own page hands `init`**: the same
+compiled parse worker (`schema.md` §6, *A statically known schema runs compiled*: a compiled schema
+runs its workers wherever it goes, so `Schema.parse` in `Browser.Navigation` runs the worker
+`Inline.pageData` runs) applied to the same bytes, and pure, since §8.4 refuses a site schema whose
+conversions may have an effect. `s` is `s₀` when it is made the same way: the same declaration's
+`X.schema ⊤`, the same `Schema.derived ⊤` at the same type, or the same composition of
+`schema.md` §6's makers over them; a top-level constant both calls name is the plainest way to
+write it.
+
+With another schema the command still answers, typed: `v` is that schema's parse of `t`, and its
+failures are `BadData`. The build does not refuse it. A program may read a route's value with a
+narrower schema (a title for a preview), and no guarantee is lost by letting it, since the claim
+above is about `s₀` only (CLAUDE.md rule 7).
+
+**What the claim does not cover.**
+
+- **Another build's file.** A page loaded from one deploy may fetch a file of the next: the host
+  was deployed in between, a CDN or the browser's cache holds an old file, or the old one is gone.
+  The bytes are then another build's. The answer is still typed — the new value, `BadData` when
+  the schema changed, `NotFound` when the route went — but it is not what this build's page of
+  `r` holds. The build puts no build id in the path. A path with one would have to come from the
+  client, so the client would change with every edit of every post and no browser could keep it
+  cached across one. What an id would detect is mostly answered already: a file whose schema
+  changed is `BadData` and a route that went is `NotFound`, and the example loads the page on
+  both. What is left is a newer value that the old schema still parses, which is the site's
+  current content shown by the open page, not another route's. elm-pages has no id either, and
+  loads the page on any error, its source saying that a version hash may come later (§8.12.5).
+- **A host that changes the file**, as §8.6 says of a page's text: a text that decodes to another
+  value is that value, and one that does not is `BadData`.
+- **The view.** The command answers with a value. What the page then shows is what `update` makes of
+  it. The example's view after navigation is the view `r`'s page would make from `init`, because
+  its `update` puts the value where `init` does; the corpus checks that for its fixtures
+  (§8.12.8), and the type system does not.
+
+#### 8.12.5 What other systems do, and what the slice measures
+
+- **elm-pages v3** (`dillonkearns/elm-pages` at `de9e0dfc`, 2026-05-22) writes each route's data
+  as `dist/<route>/content.dat`, beside its `index.html` (`generator/src/render-worker.js`,
+  `outputString`, lines 66–98). The file is elm/bytes binary: a 4-byte length, a JSON object of the
+  page's frozen views, then the route's encoded `ResponseSketch`. The page embeds the same
+  `ResponseSketch` bytes as base64 in a `<script type="application/octet-stream">`, with an empty
+  frozen-views prefix (lines 99–113, 145), so the page's copy is not byte for byte the file's. On a
+  navigation the client fetches `/<path>/content.dat` (`src/Pages/Internal/Platform.elm`, lines
+  1625–1642) and pushes the address once the data is in (`UrlChanged` finds it in `pendingData`,
+  lines 311–320). On any error it loads the address as a page, and its comment there says a
+  version hash may be compared later (lines 640–657). For a link marked `elm-pages:prefetch` it
+  adds a `<link rel="prefetch">` of the link's `content.dat` when the pointer rests on it or a
+  touch starts (`generator/static-code/elm-pages.js`, `prefetchIfNeeded` and `setup`, lines
+  70–125).
+- **SolidStart** (`solidjs/solid-start` at `ecc390b4`, 2026-10-24): its prerender writes HTML. A
+  server function's client calls `${baseURL}_server` over HTTP
+  (`packages/start/src/fns/client.ts`, `cloneServerReference`, lines 120–145), which a static host
+  cannot answer, so a prerendered SolidStart site has no file a navigation can load a route's data
+  from. Solid Router (`solidjs/solid-router` at `d0379e73`) runs a navigation in a transition, the
+last one winning (§8.12.2), keeps
+  a `query`'s answer for 5 s after a preload and 3 min after its last reader
+  (`src/data/query.ts`, lines 15–16), and preloads a link's route on hover by default
+  (`src/data/events.ts`).
+- **beni** keeps the page's bytes and the file's equal by writing one text for both. It writes text
+  JSON, not a binary encoding, because the page's value is already JSON text that the schema reads.
+  It pushes the address before the value arrives, as TEA's `onUrlChange` gives it.
+
+The slice measures, release, brotli 11, and reports in its *As built* note:
+
+1. **What the command adds to a client**: the `DataBlog`-like site of §8.12.8 with a link that
+   navigates, against the same site whose `update` loads the page instead. The site's schema's
+   worker is already in a data site's client (§8.7), so this is the request, the route check and
+   the answers.
+2. **The files**: each data file's size beside the page's script text (equal, raw), and the whole
+   `_data/` tree's, raw and brotli.
+3. **Against elm-pages** (rule 8 names Solid for UI speed; elm-pages is the one system here that
+   writes per-route data files for a static host): the same two-route site, its pages and data
+   files, raw and brotli; the bytes a navigation fetches; and the JavaScript each page loads.
+4. **Against Solid 2**: the same site as a Solid 2 single-page app with Solid Router, whose route
+   fetches the same JSON file with `query` and `createAsync`, in headless Chrome by report 29's
+   method: the time from a link click to the new page's text in the DOM, with the file answered
+   from the local server, medians, per operation, and each client's JavaScript. beni's time is at
+   most Solid's by the median; a loss is read in Solid's code and answered there (CLAUDE.md rule 8).
+
+#### 8.12.6 The build and the runtime
+
+- **The base reaches the client from the build.** The lowering interface gets `Build.base`, the
+  project's base (`"/"`, `"/app/"`), in its next version, 1.24, additive, recorded in `boundary.md`
+  §9.4.6 when the slice lands. The mount of a data site passes it to `Inline.pageData`, which keeps
+  it in the runtime for `fetchData`; a client that never calls `pageData` has no base, which is
+  §8.12.2's *On another site*.
+- **The route check and the mapping are beni over `Js`** in `Browser.Navigation`, beside the other
+  commands; the parse is core `Schema`'s, as `pageData`'s is. The command uses no `foreign`.
+- **`beni serve`** answers a data file as any file: `.json` is `application/json` with
+  `cache-control: no-store`, so a rebuilt file is the one the next navigation reads. A file that
+  is not there has an extension, and the command sends `Accept: application/json`, so the
+  single-page fallback does not answer it: it is `404`, `NotFound` (`frontend.md` §10.4). A
+  rebuild under `serve` reloads the page (§5.2), so the client and the files it fetches are one
+  build's; a request made while the build writes may read the earlier file or the new one, as a
+  module may.
+- **The base.** A prerendering build needs an absolute base (§7.4's amendment), so the file's
+  address is the base, `_data/` and the file, on the page's origin; `serve` takes the base off a
+  request's path (`frontend.md` §10.4), so a site built for `/app/` navigates under `serve` as it
+  will when deployed there.
+- **Determinism.** The files are a function of the data program's records, written in the list's
+  order after the pages; the determinism test's corpus run covers them (§8.9).
+- **`browser-tea`** gets no `fetchData`, as it gets no `Browser.prerenderData` (§8.4).
+
+#### 8.12.7 Out of scope
+
+- **Two requests at once**, and so a fetch ahead of a click (a link's route fetched on hover, as
+  elm-pages and Solid Router do): the superseding rule allows one. A keyed form, whose requests of
+  different keys run side by side, comes with keyed commands on `browser-inline`.
+- **A cache in the command**, beyond the browser's HTTP cache and what a program keeps in its model.
+- **A build id**, and a check that the file is this build's (§8.12.4).
+- **A route's title and head content without its page**: the file holds the value, and the title is
+  the program's `view` of it (§7.5).
+- **A data file read by another program**, or by anything but this command: its form is the page's
+  text, and no other contract is promised for it.
+
+#### 8.12.8 The corpus
+
+The browser driver learns one step: `respond <n> file` answers the `n`-th request with the file the
+build wrote at the request's path below the base, its `Content-Type` by its extension as `serve`'s
+table gives it, or `404` with an empty body when there is none, so the bytes a fixture navigates to
+are the build's own (`tests/corpus/README.md`, *Prerendered pages*). The kind's goldens gain the
+data files, `_expected/_data/<file>.json`. The fixtures are §11's P4b row.
+
 ## 9. Diagnostics
 
 Appended to the code list when each slice lands, never inserted:
@@ -1274,6 +1636,8 @@ Appended to the code list when each slice lands, never inserted:
 | `program_shape` (existing) | also: `Browser.prerenderData` off the spine, not given a lambda written in place, given a schema built at run time, or its parameter read outside `init` (§8.4) | P4 |
 | `prerender_impure` (existing) | also: a conversion or a check of the site's schema that may be impure (§8.4) | P4 |
 | `invalid_route`, `output_path_collision` (existing) | also: the routes the data program gives (§8.5) | P4 |
+| `output_path_collision` (existing) | also: two routes whose data files collide under the folding, a file and a directory included (§8.12.1) | P4b |
+| `fetch_data_unwritten` (warning) | the client reaches `Navigation.fetchData` and the build is not a data site, so it writes no `_data/` file and every call answers `NotFound`; at the first call (§8.12.2) | P4b |
 
 A construct the string form cannot write yet — keyed rows, until §6.2's amendment — is
 `browser-inline.md` §5's class 1, *"A limit of the compiler: … does not prerender yet"*.
@@ -1321,6 +1685,12 @@ decided: a build is one entry point and one platform (`boundary.md` §5.3), so t
 program; §3's guarantee, so the build renders from the bytes the page holds; TEA, so the value
 reaches the program through `init`.
 
+*2026-10-29 (#1211):* §8.12 adds no question either. Its choices follow from what is decided or
+are technical: the file holds the page's bytes, so §3's argument carries to it; the command is a
+TEA command with typed errors (CLAUDE.md rule 9); a narrower schema is allowed, since refusing it
+would buy no guarantee (rule 7); and a later request supersedes an earlier one, as Solid Router's
+navigations do.
+
 ## 11. The slices
 
 Each a pull request with its goldens, part of #1160, in this order. The brief proposed the same
@@ -1334,6 +1704,7 @@ order with per-route pages in the first slice; they move to P3, because a page p
 | **P2b** — input before the takeover | §6.5, its shape amended there first: the capture script, delivery by direct call with the control state written back | a click, typed text and a checked box made before the module runs reach `update` once each, in order, after the first pass; no default action runs twice; the script's bytes and the time to interactive are measured | `browser/prerender/EarlyInput` (click, `input`, `change` on a checkbox, a `select`), `EarlyNone` (a page whose program has no listener: no script written) |
 | **P3** — routes | §7: `Tea.application` and `Tea.document` on `browser-inline`, `Browser.Navigation`'s commands and the two subscriptions, `Browser.prerender` (and `browser-tea`'s identity), `"build"."origin"`, the route in `data-beni`, the address replaced and sent after the first render, route files and `invalid_route`, `{{title}}`, `beni serve`'s `.html` rule; the hidden flag goes | a site of three routes and a blog of two posts builds into five files a static server answers, each taken over by the program, and a link click navigates on the client with no page load | `browser/prerender/Blog/` (routes from a list of posts; a link click; back; a page opened with a query and a fragment), `Titles`; `build/bad/prerender/`: `RouteUnderscore`, `RouteDotDot`, `RouteNonAscii`, `RouteCollision` (`/a/` and `/a/index`), `RouteFolded` (`/About`, `/about`), `RouteImpure`; a `browser/tea/` page showing that the same source builds on `browser-tea`; a `serve` case in `tests/blackbox/` for `/about` → `about.html` |
 | **P4** — build-time data | §8: `"build"."data"` (and its row in `frontend.md` §10.1); `node`'s `Prerender.pages` and its records; `Browser.prerenderData` on `browser-inline` — the spine and the parameter rule (§8.4), the client's read of the script before `init`, the tree's `render(route, text)`; the data program built and run before the tree, in development mode, at the project root; the script and its escaping (§8.6); `index.html` only for `/`; the four new codes and the existing ones' new cases (§9); `serve` and `--watch` watching the data program's paths and `"inputs"` (§8.8); `--no-prerender` for a data site (§8.10); the lowering interface's next version, recorded in `boundary.md` §9.4.6, if the placement needs one; `skills/beni/references/prerender.md` | a blog whose posts are files under `posts/` builds, through a data program that reads them, a page per post and one for `/`, each holding only its own value, and each taken over with no element replaced; its transcripts equal the `--no-prerender` build's; a post whose text holds `</script>`, `<!--` and `&amp;` shows them as text in the build and after the takeover; a site whose schema reads a field at another type than the data program's writes fails with `prerender_data_invalid` naming the route; an edit of a post under `serve` rebuilds and the page reloads with it; no `emit/inline/` golden and no `bench/size.mjs` `page` line moves; the determinism test builds a data site; what the data adds to a client is measured, release, brotli | `browser/prerender/` adds `DataBlog` (`data/`, `shared/`, `posts/`; a `Tea.document`), `DataEscapes` (`</script>`, `<!--`, `<script`, `&amp;`, U+2028, a character past U+FFFF, a backslash, a quote), `DataSandbox` (a `Tea.sandbox` with data), `DataApplication` (a `Tea.application`: the route's `Url` and the value), `DataBaked` (a model path `init` sets to a literal baked, one it sets from the value a hole), `DataTampered` (the script's text changed before load so that it does not decode: the page stops, in both modes and in the `--no-prerender` build too; the harness learns a setup step that edits the script's text, which acts on a page with no unit as well, and the kind a golden per mode for the `--no-prerender` build, both written in `tests/corpus/README.md`), `DataScriptRoute` (a `--no-prerender` application whose `init` gets the script's route), `DataDebugRelease` (a data program that calls `Debug.log`, built with `--release` and no `--allow-debug`: it builds), `DataUnicode` (a value with non-ASCII text in a shell with no `charset`: the same value in both), `DataLibrarySchema` in `build/bad/prerender/` (a schema built by the library's builders: `program_shape`), `DataIgnored` (a `"data"` and a `main` with `Browser.prerender`: the warning, as `_expected.diag`); `build/bad/prerender/`: `DataMissing` (`prerender_needs_data`), `DataErr` (`Err`), `DataThrows`, `DataUnencodable` (an `Int` past 2⁵³), `DataNotPages` (a data `main` that is `Node.print`), `DataMismatch` (`prerender_data_invalid`), `DataReadInView` and `DataOffSpine` (`program_shape`), `DataImpureConversion` (`prerender_impure` at a `via`), `DataRoute` (`invalid_route` from the data), `DataTypeMismatch` (an `init` that reads a field the schema does not have: the checker's error), `DataSharedImportsTea` (a shared module that imports `Tea`: the data build's `unknown_module`); `tests/blackbox/devloop_test.zig`: *serve reruns the data program when an input changes*; `tests/blackbox/build_test.zig`: the data program built and run from another working directory reads the project's files |
+| **P4b** — navigation to another route's value (#1211) | §8.12: the `_data/` files, written when the client reaches `Navigation.fetchData`, their collisions in the route check, `_data/` in `backend.md` §2's rule 1; `Browser.Navigation`'s `DataError` and `fetchData` — the route check, the request, the answers in §8.12.2's order, the superseding rule; `Build.base`, interface 1.24, passed to `Inline.pageData`; `fetch_data_unwritten`; the driver's `respond <n> file` step and the `_data/` goldens (`tests/corpus/README.md`); `skills/beni/references/prerender.md` and the generated `api-*.md` | a data site with a link from `/` to `/blog/hello` navigates with no page load, and its transcript after the click equals the one of `/blog/hello`'s page opened directly; each data file is byte for byte its page's script text; the `--no-prerender` build's transcripts equal the prerendered one's; a site whose client does not call `fetchData` writes what P4 wrote, file for file, and no `emit/inline/` golden or `bench/size.mjs` `page` line moves; every row of §8.12.2's table has a fixture; the determinism test builds a site that navigates; §8.12.5's four measurements are in the *As built* note, and beni's click-to-text time is at most Solid 2's by the median | `browser/prerender/` adds `DataNavigate` (an application: a link click, the file fetched, the new page; `back`; a page opened at `/?from=feed` fetches nothing), `DataNavigateEscapes` (`DataEscapes`' values reached by navigation: the same transcript as their pages), `DataNavigateBase` (base `/app/`), `DataNavigateMissing` (a route with no file, `404`: `NotFound`, the page loaded), `DataNavigateFallback` (a `200` `text/html` answer: `NotFound`), `DataNavigateStatus` (`500`: `BadStatus 500`), `DataNavigateOffline` (`fail`: `NetworkError`), `DataNavigateBadData` (a text that does not decode: `BadData`, its issues shown), `DataNavigateNotARoute` (another origin, a path outside the base, a `_` first segment: no request), `DataNavigateSuperseded` (A then B before A's answer: A aborted, B's value only), `DataNavigateNarrow` (a second schema that reads only the title), `DataNavigateDefect` (a rejection that is a `RangeError`: the page stops); `build/bad/prerender/DataFileCollision` (`/a` and `/a.json/x`: `output_path_collision`); `browser/prerender/DataFetchUnwritten` (a `Browser.prerender` site that calls `fetchData`: the warning as `_expected.diag`, `NotFound` with no request); `emit/prerender/` pins the command's shape in both modes; `tests/blackbox/devloop_test.zig`: *serve answers a data file as application/json, and a missing one 404* |
 
 The hang guard of 120 s applies to every case as to any other, and a prerendered fixture's Node run
 is part of its case.

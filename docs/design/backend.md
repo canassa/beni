@@ -305,6 +305,11 @@ a subdirectory, which only moves the collision. The reserved names are:
 All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
 `Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.
 
+*Specified 2026-10-29, not built (#1211; `prerender.md` §8.12.1, slice P4b):* a prerendered site
+with build-time data whose client fetches another route's value writes one more reserved name,
+`_data/`, the directory of each route's data file. No route can reach it, since a route's first
+segment cannot begin with `_` (`prerender.md` §7.4).
+
 Inside `_core/`, a `_` name is the emitter's own for the same reason: `_core/_derived.mjs` is the
 derived-comparison runtime (Â§4, *Derived comparisons do not grow the native stack*), which no core
 module file (an upper name) can take.
