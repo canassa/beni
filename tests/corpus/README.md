@@ -105,7 +105,15 @@ Nothing is committed, and nothing records on demand (the owner,
 2026-10-23, #875): a fresh clone, a new Node or a change to what the
 compiler emits runs the affected programs once. On CI `actions/cache` keeps
 the directory, saved from master and restored into every run; a pull
-request writes only in its own scope. The code is
+request writes only in its own scope, under a key that also hashes the
+harness (`tests/blackbox/`, `tests/browser/`, `tests/serve/`,
+`tests/workers/`, `tests/test_runner.zig`, `build.zig`; the owner,
+2026-10-28), so a pull request that changes what "passed" means restores
+nothing it recorded with the old meaning. Locally one directory serves
+every worktree, so run a branch that changes the harness with a
+`BENI_RUN_HASH_DIR` of its own. Headless Chrome (`zig build test-browser`)
+looks nothing up and records nothing: it runs every page, every time (the
+owner, 2026-10-28). The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
 show a verified build skipped, a changed one run, a mismatch failed with
 nothing written, and one digest written by eight writers at once.
