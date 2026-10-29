@@ -23,6 +23,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
+| 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-30**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -881,3 +882,32 @@ relay's queue — a program array's `push` — and reaches the tagger through `J
 read out of an array, neither of which fact 3 follows.
 
 *Decided by the owner, 2026-10-02:* a `Js` comparison intrinsic (`Js.lt` and its siblings, written in place as JavaScript's `<` and friends, specified in `boundary.md` §4.2 before it is built) so that `Hosted.js`'s last functions, `keyOf` and `compareKeys`, move to beni without reaching `String.compare`.
+
+## Step 11 — the `cloudflare` siblings (2026-10-30)
+
+**What moved.** The three siblings' four exports, each a `catch` or a walk. `resolveUrl` is
+`Js.catchIf` around `new URL(target, base)`, naming the `TypeError` that call alone throws
+(`boundary.md` §9.12 (d)) and answering `Nothing`; `idFromString` the same around the namespace's
+`idFromString`, whose `TypeError` is "Invalid Durable Object ID". `kvPut` is `Js.catchIf` around
+`kv.put`, naming an `Error` whose message holds `SQLITE_FULL` and answering `False`; anything else
+each catch throws again (`CLAUDE.md` rule 9), which is `Js.catchIf`'s contract (§4.2). `repliesIn`
+is the walk over a message's arrays and plain objects, in beni: a `Set` of what was seen, a handle
+`{ id, instance, schema }` whose `instance` is an object record pushes its `id`, an array walks its
+elements with `Js.each`, a plain object (its prototype `Object.prototype` or `null`,
+`Object.getPrototypeOf` through `Js.call`) walks `Object.values`, and a host object stops it. All
+four are `impure` by inference, as the `foreign`s declared. `runtime.js`, the Durable Object
+classes, is the platform's one file of JavaScript now.
+
+**What changes shape.** The two `Maybe`s and the `Bool` crossed the boundary through the
+`foreign` annotations; nothing crosses now, so a release build gives `Maybe` integer tags in
+the two callers (`redirect`, `byId`). The handle's three keys stay plain names: the walk reads
+them as plain properties, and `ask` writes the record through `Js.from`. The Workers corpus pins
+the behaviour under Miniflare (`tests/corpus/workers/`, `zig build test-workers`, not a gate):
+`HelloWorker`'s redirects (a target that does not resolve is a 500), `ObjectCounter`'s `byId`
+(an invalid id is `Err InvalidId`, the id a `unique` ref reports resolves), `ObjectStorage`'s
+and `ObjectCounter`'s `put`, and the ask fixtures' replies through `post` to `self`.
+
+**Sizes.** A Worker is not measured by `bench/size.mjs` or `pages.mjs`; the Workers corpus's
+release builds are compared by their run hashes. The figures of the four release bundles are in
+the pull request's body.
+
