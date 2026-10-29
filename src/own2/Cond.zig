@@ -1269,17 +1269,16 @@ pub const Table = struct {
     pub fn reachAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!Agg {
         try charge.reserve(gpa, .memo, 1);
         if (t.reach_agg.get(.{n.int()})) |hit| return t.aggs.items[hit];
-        if (!try memoRank(gpa, charge, v, n)) {
-            const set = try v.shapes.reach(gpa, charge.account, &v.cells.sets, n);
-            const a = try t.aggAll(gpa, charge, v.cells, v.places, .{}, set, false);
-            (try t.reach_agg.getOrPut(gpa, .{n.int()})).value_ptr.* = try t.agg(gpa, a);
-            return a;
-        }
         // Post-order over the parts on an explicit stack (a value is as
-        // deep as the source); finite rank: no cycle.
+        // deep as the source). A part met again while it is open is on a
+        // cycle: a node whose part has no aggregate yet takes its own from
+        // its reach set (`Shape.reach` closes the cycle), so only a cycle,
+        // never a recast or a deep DAG, reads a whole reach.
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
         var parts: std.ArrayList(NodeId) = .empty;
         defer parts.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });
@@ -1288,19 +1287,26 @@ pub const Table = struct {
             parts.clearRetainingCapacity();
             try partsOf(gpa, v, f.node, &parts);
             if (!f.expanded) {
+                if (open.contains(f.node)) continue;
+                try open.put(gpa, f.node, {});
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
                 for (parts.items) |p| if (t.reach_agg.get(.{p.int()}) == null) try stack.append(gpa, .{ .node = p, .expanded = false });
                 continue;
             }
+            open.remove(f.node);
             // The largest part's aggregate, the others' and the node's own
             // cells added to it.
             var best: ?Agg = null;
-            for (parts.items) |p| {
+            const whole = for (parts.items) |p| {
                 try charge.reserve(gpa, .memo, 1);
-                const pa = t.aggs.items[t.reach_agg.get(.{p.int()}).?];
+                const pi = t.reach_agg.get(.{p.int()}) orelse break true;
+                const pa = t.aggs.items[pi];
                 best = if (best) |b| try t.aggMerge(gpa, charge, v.cells, v.places, b, pa, false) else pa;
-            }
-            const a = try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, v.shapes.cells(f.node), false);
+            } else false;
+            const a = if (whole)
+                try t.aggAll(gpa, charge, v.cells, v.places, .{}, try v.shapes.reach(gpa, charge.account, &v.cells.sets, f.node), false)
+            else
+                try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, v.shapes.cells(f.node), false);
             (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = try t.agg(gpa, a);
         }
         return t.aggs.items[t.reach_agg.get(.{n.int()}).?];
