@@ -2694,24 +2694,26 @@ members (#1054); exact same-base comparisons remain individually charged. `Cond.
 need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
-**Read-off and run-wide reads: the source continuation** (the manager's decision, 2026-10-29, #1188; it
-replaces the per-request read-off continuation this paragraph specified before). Each owning declaration's
-account holds a *source continuation* of K·S_f records. K is `continuation_per_atom` = **1 024**, a huge named
-bound, never tuned: an order of magnitude past every measurement below. S_f is the declaration's written
-instructions, known before its walk starts. A reservation in a growth context — one that names no lane: a
+**Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
+versus growth*; #1188; it replaces the per-request read-off continuation this paragraph specified before). Each
+owning declaration's account holds a *source continuation* of K·I_f records. K is `continuation_per_atom` =
+**1 024**, a huge named bound, never tuned: an order of magnitude past every measurement below. I_f is the
+declaration's written instructions only, never its imports and never another declaration's, known before its
+walk starts; I_f ≤ S_f. A reservation in a growth context — one that names no lane: a
 general task, an item's value-sized work, a walk from a DAG node, the read-off — takes its records from the
 continuation when they fit, whole, in what remains of it. Otherwise it takes them from G_f. The choice is made
 at that reservation, before its work, from the owner's own counts. So it does not depend on thread timing,
-on declaration order or on another declaration: each owner has its own account, and its S_f is its own
+on declaration order or on another declaration: each owner has its own account, and its I_f is its own
 source. The records the continuation lends count in B_f under the category they were reserved for. They
-add at most 1 024·S_f to B_f, an order of magnitude inside the 10 304·S_f this section lets B_f reach. Only what passes K·S_f is growth, and
+add at most 1 024·I_f ≤ 1 024·S_f to B_f, on top of the 10 304·S_f the lanes may reach: B_f ≤ 11 328·S_f
+(§4.4's total source bound). Only what passes K·I_f is growth, and
 past R_f that is the loud `ownership_summary_size`. Lanes and their ceilings are unchanged. The continuation
 never funds a lane: a lane past its ceiling is `ownership_accounting_invariant`, a defect, as before. The dump
 prints the continuation spent and its cap on each owner's `account` line. Parameter R/W/E/A marks use the
 use, demand, escape or result occurrence that causes them. The final scan reads each class once. It cannot
 silently perform a second whole-class traversal per source item.
 
-*Why source-shaped work stays inside K·S_f.* Each source atom's own transfer makes O(P) records, P the positions
+*Why source-shaped work stays inside K·I_f.* Each source atom's own transfer makes O(P) records, P the positions
 of its value's type at its place, plus a bounded number of insertions into persistent sets. A
 `Cell.Radix` insertion copies at most its path, at most 33 nodes for a 32-bit key. So a literal's n log n is
 capped at 33 records per item for its root set, whatever n is. The shapes below then cost O(1) records per
@@ -2875,13 +2877,16 @@ resumption and diagnostics, not a second counter of instructions or rounds. Drop
 is outside this implementation. The cost counts the full workspace, and the limit guards all records outside the proved source lanes
 (§4.4); counting only final serialized facts would not prove the bound. Instrument category counts separately.
 
-**Source work versus growth [O 2026-10-25].** The resource counter is **G_f**,
+**Source work versus growth [O 2026-10-25, O 2026-10-29].** The resource counter is **G_f**,
 non-source-proportional retained records, not every record of a declaration. Its default allowance **R_f** is
 65,536. N_f = B_f + G_f counts the whole workspace for cost measurement. B_f has nonfungible source/import
-provenance: a record can enter B_f only through one of the fixed lanes below. No global pool of unused source
-credit can pay for a context expansion. This chooses the owner's permitted “charge only growth” alternative.
-A fungible L=65,536+c·(source+imports) is rejected: w_k could pay for twice its predecessor's expanded table
-from that table's import credit forever. Reading an imported label is baseline; minting a product of call contexts and imported labels
+provenance: a record can enter B_f only through one of the fixed lanes below, or, for a reservation in a growth
+context, through the declaration's own source continuation (§4.1): K·I_f records, K = 1,024, I_f its written
+instructions only, which pays for growth before R_f [O 2026-10-29]. No other pool of source credit, and no pool
+of import credit at all, can pay for a context expansion. This chooses the owner's permitted “charge only
+growth” alternative. A fungible L=65,536+c·(source+imports) stays rejected: w_k could pay for twice its
+predecessor's expanded table from that table's import credit forever. The source continuation counts no
+import, so a predecessor's table never funds its successor's expansion. Reading an imported label is baseline; minting a product of call contexts and imported labels
 is growth. A singleton result label or a label selected by an explicit written caller path may use that
 call/path atom's direct-obligation lane below; unselected multi-label summary export cannot. A callee's own
 source credit never pays for its caller's expansion.
@@ -2961,8 +2966,9 @@ word* for that step (S_f, above); no range query runs on the call-view lane.
 The at-most-64-step ancestry query is an iterative fixed-word primitive with no per-step allocation;
 its ≤32 precomputed slots belong to the separate original-region atom. Region preprocessing, original arm/field runs and written actual arguments
 have their own original atoms; they cannot be hidden variable-size payloads in a call/query lane.
-The total source bound is now
-`B_f ≤ [2·(32+8·512) + 4·512] S_f = 10,304 S_f < 16,384 S_f`.
+The total source bound, with the source continuation (§4.1, [O 2026-10-29]), is now
+`B_f ≤ [2·(32+8·512) + 4·512 + 1,024] S_f = 11,328 S_f < 16,384 S_f`: the lanes' 10,304, and K = 1,024 per
+written instruction, I_f ≤ S_f.
 The initial walk is the original lane set; the final validation is its sole second copy. The four other
 lanes never buy another frame walk. This is a constructive bound for the specified kernels, **not** a theorem
 that arbitrary holder queries, callee discharges or entry propagation are source-linear.
