@@ -147,10 +147,10 @@ pub const Table = struct {
     /// met → the snapshot its walk puts at its position. Written only once
     /// a call has finished.
     memo_prop: Ids.FixedDict(3) = .{},
-    /// The incremental apart reads (#1121): the aggregates, each node's reach's,
-    /// each group's predecessor and added cell, each cell set node's `anyLost`.
+    /// The apart aggregates (#1121): reach memo (with tie epoch), group provenance, `anyLost`.
     aggs: std.ArrayList(Agg) = .empty,
     reach_agg: Ids.FixedDict(1) = .{},
+    reach_epoch: Ids.FixedDict(1) = .{},
     group_prov: Ids.FixedDict(1) = .{},
     group_steps: std.ArrayList([2]u32) = .empty,
     lost_memo: Ids.FixedDict(1) = .{},
@@ -193,6 +193,7 @@ pub const Table = struct {
         t.memo_prop.deinit(gpa);
         t.aggs.deinit(gpa);
         t.reach_agg.deinit(gpa);
+        t.reach_epoch.deinit(gpa);
         t.group_prov.deinit(gpa);
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
@@ -1268,7 +1269,7 @@ pub const Table = struct {
     /// or above a cycle, from its reach set.
     pub fn reachAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!Agg {
         try charge.reserve(gpa, .memo, 1);
-        if (t.reach_agg.get(.{n.int()})) |hit| return t.aggs.items[hit];
+        if (t.reachMemo(v, n)) |hit| return t.aggs.items[hit];
         // Post-order over the parts on an explicit stack (a value is as
         // deep as the source). A part met again while it is open is on a
         // cycle: a node whose part has no aggregate yet takes its own from
@@ -1283,14 +1284,14 @@ pub const Table = struct {
         defer parts.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });
         while (stack.pop()) |f| {
-            if (t.reach_agg.get(.{f.node.int()}) != null) continue;
+            if (t.reachMemo(v, f.node) != null) continue;
             parts.clearRetainingCapacity();
             try partsOf(gpa, v, f.node, &parts);
             if (!f.expanded) {
                 if (open.contains(f.node)) continue;
                 try open.put(gpa, f.node, {});
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                for (parts.items) |p| if (t.reach_agg.get(.{p.int()}) == null) try stack.append(gpa, .{ .node = p, .expanded = false });
+                for (parts.items) |p| if (t.reachMemo(v, p) == null) try stack.append(gpa, .{ .node = p, .expanded = false });
                 continue;
             }
             open.remove(f.node);
@@ -1299,7 +1300,7 @@ pub const Table = struct {
             var best: ?Agg = null;
             const whole = for (parts.items) |p| {
                 try charge.reserve(gpa, .memo, 1);
-                const pi = t.reach_agg.get(.{p.int()}) orelse break true;
+                const pi = t.reachMemo(v, p) orelse break true;
                 const pa = t.aggs.items[pi];
                 best = if (best) |b| try t.aggMerge(gpa, charge, v.cells, v.places, b, pa, false) else pa;
             } else false;
@@ -1308,8 +1309,15 @@ pub const Table = struct {
             else
                 try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, v.shapes.cells(f.node), false);
             (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = try t.agg(gpa, a);
+            (try t.reach_epoch.getOrPut(gpa, .{f.node.int()})).value_ptr.* = v.shapes.ties;
         }
-        return t.aggs.items[t.reach_agg.get(.{n.int()}).?];
+        return t.aggs.items[t.reachMemo(v, n).?];
+    }
+
+    /// `n`'s reach aggregate, if made since the last knot was tied.
+    fn reachMemo(t: *const Table, v: View, n: NodeId) ?u32 {
+        const at = t.reach_agg.get(.{n.int()}) orelse return null;
+        return if (t.reach_epoch.get(.{n.int()}) == v.shapes.ties) at else null;
     }
 
     /// The parts of `n` whose cells its reach holds.
@@ -1335,22 +1343,37 @@ pub const Table = struct {
         defer chain.deinit(gpa);
         var at = group;
         var start: Agg = .{};
+        var base: SetId = .none;
         while (at != .none) {
             try charge.reserve(gpa, .memo, 1);
             if (memo.get(.{at.int()})) |hit| {
                 start = t.aggs.items[hit];
                 break;
             }
+            // A set no aggregate built: its cells from nothing.
             const step = t.group_prov.get(.{at.int()}) orelse {
-                // A set no aggregate built: its cells from nothing.
-                var it = cellt.sets.iterate(at);
-                while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
-                (try memo.getOrPut(gpa, .{at.int()})).value_ptr.* = try t.agg(gpa, start);
+                base = at;
                 break;
             };
             const s = t.group_steps.items[step];
             try chain.append(gpa, .{ at.int(), s[1] });
             at = .from(s[0]);
+        }
+        // New cells imaged in set order: `image` numbers by content (#1150).
+        var fresh: std.ArrayList(u32) = .empty;
+        defer fresh.deinit(gpa);
+        var bt = cellt.sets.iterate(base);
+        while (bt.next()) |e| try fresh.append(gpa, e.key);
+        for (chain.items) |x| try fresh.append(gpa, x[1]);
+        std.mem.sort(u32, fresh.items, {}, std.sort.asc(u32));
+        for (fresh.items) |c| {
+            try charge.reserve(gpa, .inspection, 1);
+            _ = try image(ctx, .from(c));
+        }
+        if (base != .none) {
+            var it = cellt.sets.iterate(base);
+            while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
+            (try memo.getOrPut(gpa, .{base.int()})).value_ptr.* = try t.agg(gpa, start);
         }
         var a = start;
         while (chain.pop()) |x| {
@@ -4455,4 +4478,250 @@ test "#1121: an incremental apart aggregate decides what apart over the same mul
     defer memo2.deinit(gpa);
     const ident: Img = .{ .from = p3, .to = p3 };
     try expectSameCond(t, gpa, f.charge(), try f.apart(&.{ p1, p2, p3 }), try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo2, &ident, Img.of));
+}
+
+fn aggSame(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) !u8 {
+    if (a == b) return 0;
+    if (Table.fails(a) or Table.fails(b)) return 1;
+    if (try t.flat(gpa, charge, a) == try t.flat(gpa, charge, b)) return 0;
+    return 2;
+}
+
+test "#1150 review: random aggregates decide what apart over the same multiset decides" {
+    // The review's differential: random members built of random parts
+    // (sites, parameters at folded paths, ⊤, two splits' refinements, a
+    // taken element and its container, approximate occurrences), merged in
+    // both orders and one occurrence at a time; random groups' images; and
+    // random cyclic shapes' reach aggregates.
+
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    var t = &f.conds;
+    const list = try f.placeOf(1);
+    var pool: std.ArrayList(CellId) = .empty;
+    defer pool.deinit(gpa);
+    try pool.append(gpa, try f.cells.site(gpa, &f.account, 7, list, .list));
+    try pool.append(gpa, try f.cells.site(gpa, &f.account, 8, list, .list));
+    const p1 = try f.param(1, 1, &.{});
+    try pool.append(gpa, p1);
+    try pool.append(gpa, try f.param(2, 1, &.{}));
+    try pool.append(gpa, try f.param(3, 1, &.{}));
+    try pool.append(gpa, try f.cells.top(gpa, &f.account));
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    _ = try f.cells.split(gpa, &f.account, p1, 40, l1, shared);
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .elem, p1, l1, 0, .none, .none));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .elem, p1, l1, 1, .none, .none));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .others, p1, l1, 0, .none, .list));
+    const xs = try f.param(4, 1, &.{});
+    _ = try f.cells.split(gpa, &f.account, xs, 41, l1, try t.excl(gpa, f.charge(), xs));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .elem, xs, l1, 0, .none, .none));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .others, xs, l1, 0, .none, .list));
+    // A taken element and its container's [*].
+    const r0 = try f.param(5, 3, &.{});
+    const l2 = try f.cells.label(gpa, &f.account, 42, .none, false);
+    _ = try f.cells.split(gpa, &f.account, r0, 42, l2, try t.excl(gpa, f.charge(), r0));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .elem, r0, l2, 0, .none, .none));
+    try pool.append(gpa, try f.param(5, 3, &.{Place.Step.elem}));
+    try pool.append(gpa, try f.param(0, 3, &.{Place.Step.elem}));
+    const lf = try f.cells.label(gpa, &f.account, 43, .none, true);
+    _ = try f.cells.split(gpa, &f.account, p1, 43, lf, try t.excl(gpa, f.charge(), p1));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .elem, p1, lf, 0, .none, .none));
+    try pool.append(gpa, try f.cells.refine(gpa, &f.account, .others, p1, lf, 0, .none, .list));
+    try pool.append(gpa, try f.param(1, 3, &.{Place.Step.elem}));
+    try pool.append(gpa, try f.param(1, 3, &.{}));
+    try pool.append(gpa, try f.param(2, 3, &.{ Place.Step.elem, Place.Step.elem }));
+    try pool.append(gpa, try f.param(2, 3, &.{}));
+    try pool.append(gpa, try f.cells.site(gpa, &f.account, 9, list, .list));
+    const n_pool = pool.items.len;
+    f.account.allowance = std.math.maxInt(u32) - 1;
+
+    var prng = std.Random.DefaultPrng.init(777);
+    const r = prng.random();
+    var bad: u32 = 0;
+    var iter: u32 = 0;
+    while (iter < 400) : (iter += 1) {
+        // Members, each a set made of parts.
+        const n_members = 1 + r.uintLessThan(usize, 4);
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(gpa);
+        var together: Table.Agg = .{};
+        var together2: Table.Agg = .{};
+        var member_aggs: [4]Table.Agg = undefined;
+        for (0..n_members) |mi| {
+            const n_parts = 1 + r.uintLessThan(usize, 3);
+            var mset: SetId = .none;
+            var magg: ?Table.Agg = null;
+            for (0..n_parts) |_| {
+                var ps: SetId = .none;
+                for (0..r.uintLessThan(usize, 4)) |_| {
+                    ps = try f.cells.sets.insert(gpa, f.charge(), ps, pool.items[r.uintLessThan(usize, n_pool)].int(), @intFromBool(r.uintLessThan(u8, 4) == 0));
+                }
+                mset = try f.cells.sets.unionWith(gpa, f.charge(), mset, ps);
+                const pa = try t.aggAll(gpa, f.charge(), &f.cells, &f.places, .{}, ps, false);
+                magg = if (magg) |m| (if (r.boolean()) try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, m, pa, false) else try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, pa, m, false)) else pa;
+            }
+            var it = f.cells.sets.iterate(mset);
+            while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+            member_aggs[mi] = magg.?;
+            together = try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, together, magg.?, true);
+        }
+        // Reverse order too.
+        var mi2 = n_members;
+        while (mi2 > 0) {
+            mi2 -= 1;
+            together2 = try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, together2, member_aggs[mi2], true);
+        }
+        // One by one.
+        var one: Table.Agg = .{};
+        for (items.items) |x| one = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, one, x.cell, x.approx, true);
+        const scratch = try gpa.dupe(Item, items.items);
+        defer gpa.free(scratch);
+        const want = try t.apart(gpa, f.charge(), &f.cells, &f.places, scratch, null);
+        for ([_]Table.Agg{ together, together2, one }, 0..) |a, which| {
+            const got = try t.aggCond(gpa, f.charge(), &f.cells, &f.places, a);
+            const s = try aggSame(t, gpa, f.charge(), want, got);
+            if (s != 0) {
+                bad += 1;
+                _ = which;
+            }
+        }
+        // Images.
+        var g: Table.Agg = .{};
+        var gcells: std.ArrayList(CellId) = .empty;
+        defer gcells.deinit(gpa);
+        for (0..r.uintLessThan(usize, 6)) |_| {
+            const c = pool.items[r.uintLessThan(usize, n_pool)];
+            g = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, g, c, false, r.boolean());
+        }
+        if (g.group != .none) {
+            var map: [32]CellId = undefined;
+            for (pool.items, 0..) |c, j| map[j] = if (r.uintLessThan(u8, 3) == 0) pool.items[r.uintLessThan(usize, n_pool)] else c;
+            const Img = struct {
+                pool: []const CellId,
+                map: []const CellId,
+                fn of(s: *const @This(), c: CellId) Error!CellId {
+                    for (s.pool, 0..) |p, j| if (p == c) return s.map[j];
+                    return c;
+                }
+            };
+            const img: Img = .{ .pool = pool.items, .map = map[0..n_pool] };
+            var memo: Ids.FixedDict(1) = .{};
+            defer memo.deinit(gpa);
+            var it = f.cells.sets.iterate(g.group);
+            var im: std.ArrayList(Item) = .empty;
+            defer im.deinit(gpa);
+            while (it.next()) |e| try im.append(gpa, .{ .cell = try img.of(.from(e.key)), .approx = false });
+            const want_i = try t.apart(gpa, f.charge(), &f.cells, &f.places, im.items, null);
+            const got_i = try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo, &img, Img.of);
+            // Twice, memo hit.
+            const got_i2 = try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo, &img, Img.of);
+            if (try aggSame(t, gpa, f.charge(), want_i, got_i) != 0 or try aggSame(t, gpa, f.charge(), want_i, got_i2) != 0) {
+                bad += 1;
+            }
+        }
+    }
+    // Shapes: reachAgg against reach.
+    const fa = try Place.Step.field(&f.account, 10);
+    const rec = try f.placeOf(0);
+    var sbad: u32 = 0;
+    var siter: u32 = 0;
+    while (siter < 1500) : (siter += 1) {
+        const nk = 2 + r.uintLessThan(usize, 7);
+        var ks: [9]NodeId = undefined;
+        for (ks[0..nk]) |*k| k.* = try f.shapes.knot(gpa, &f.account);
+        var lvs: [3]NodeId = undefined;
+        for (&lvs) |*l| {
+            var cs: SetId = .none;
+            for (0..r.uintLessThan(usize, 3)) |_| cs = try f.cells.sets.insert(gpa, f.charge(), cs, pool.items[r.uintLessThan(usize, n_pool)].int(), @intFromBool(r.uintLessThan(u8, 4) == 0));
+            l.* = try f.shapes.leaf(gpa, &f.account, rec, cs);
+        }
+        for (ks[0..nk], 0..) |k, ki| {
+            var cs: SetId = .none;
+            for (0..r.uintLessThan(usize, 3)) |_| cs = try f.cells.sets.insert(gpa, f.charge(), cs, pool.items[r.uintLessThan(usize, n_pool)].int(), @intFromBool(r.uintLessThan(u8, 4) == 0));
+            // Mostly forward edges, some back edges.
+            const pickk = struct {
+                fn of(rr: std.Random, kss: []NodeId, ls: []NodeId, i: usize) NodeId {
+                    if (rr.uintLessThan(u8, 3) == 0) return ls[rr.uintLessThan(usize, ls.len)];
+                    if (rr.uintLessThan(u8, 5) == 0 or i + 1 >= kss.len) return kss[rr.uintLessThan(usize, kss.len)];
+                    return kss[i + 1 + rr.uintLessThan(usize, kss.len - i - 1)];
+                }
+            }.of;
+            switch (r.uintLessThan(u8, 5)) {
+                0, 1 => {
+                    var over: u32 = Ids.none_int;
+                    over = try f.shapes.overPut(gpa, &f.account, over, fa, pickk(r, ks[0..nk], &lvs, ki));
+                    if (r.boolean()) over = try f.shapes.overPut(gpa, &f.account, over, Place.Step.elem, pickk(r, ks[0..nk], &lvs, ki));
+                    f.shapes.tie(k, .{ .kind = .node, .place = rec, .cells = cs, .a = over, .b = 0, .reach = .none });
+                },
+                2 => {
+                    const inner = pickk(r, ks[0..nk], &lvs, ki);
+                    f.shapes.tie(k, .{ .kind = .recast, .place = rec, .cells = f.shapes.cells(inner), .a = inner.int(), .b = 0, .reach = .none });
+                },
+                else => {
+                    const a = pickk(r, ks[0..nk], &lvs, ki);
+                    const b = pickk(r, ks[0..nk], &lvs, ki);
+                    f.shapes.tie(k, .{ .kind = if (r.boolean()) .@"union" else .positions, .place = rec, .cells = try f.cells.sets.unionWith(gpa, f.charge(), f.shapes.cells(a), f.shapes.cells(b)), .a = a.int(), .b = b.int(), .reach = .none });
+                },
+            }
+        }
+        // Read members in random order (memo order varies).
+        const nm = 1 + r.uintLessThan(usize, 3);
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(gpa);
+        var tog: Table.Agg = .{};
+        for (0..nm) |_| {
+            const m = ks[r.uintLessThan(usize, nk)];
+            const ag = try t.reachAgg(gpa, f.charge(), f.view(), m);
+            tog = try t.aggMerge(gpa, f.charge(), &f.cells, &f.places, tog, ag, true);
+            var it = f.cells.sets.iterate(try f.shapes.reach(gpa, &f.account, &f.cells.sets, m));
+            while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+        }
+        const want = try t.apart(gpa, f.charge(), &f.cells, &f.places, items.items, null);
+        const got = try t.aggCond(gpa, f.charge(), &f.cells, &f.places, tog);
+        if (try aggSame(t, gpa, f.charge(), want, got) != 0) {
+            sbad += 1;
+        }
+    }
+    try testing.expectEqual(@as(u32, 0), bad);
+    try testing.expectEqual(@as(u32, 0), sbad);
+}
+
+test "#1150 review: a group's image numbers its cells in set order, whatever order built it; a tie renews a reach aggregate" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    var t = &f.conds;
+    const p1 = try f.param(1, 1, &.{});
+    const p2 = try f.param(2, 1, &.{});
+    // The group {p1, p2}, first built p2 then p1: its provenance says so.
+    var g: Table.Agg = .{};
+    g = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, g, p2, false, false);
+    g = try t.aggAdd(gpa, f.charge(), &f.cells, &f.places, g, p1, false, false);
+    const Seen = struct {
+        order: [4]CellId = undefined,
+        n: usize = 0,
+        fn of(s: *@This(), c: CellId) Error!CellId {
+            for (s.order[0..s.n]) |x| if (x == c) return c;
+            s.order[s.n] = c;
+            s.n += 1;
+            return c;
+        }
+    };
+    var seen: Seen = .{};
+    var memo: Ids.FixedDict(1) = .{};
+    defer memo.deinit(gpa);
+    _ = try t.apartImage(gpa, f.charge(), &f.cells, &f.places, g.group, &memo, &seen, Seen.of);
+    try testing.expectEqual(@as(usize, 2), seen.n);
+    try testing.expect(seen.order[0].int() < seen.order[1].int());
+    // A node over a knot, aggregated while the knot is pending, then tied:
+    // the aggregate reads the tied record's cells.
+    const k = try f.shapes.knot(gpa, &f.account);
+    const rec = try f.placeOf(0);
+    const n = try f.shapes.node(gpa, &f.account, rec, .none, try f.shapes.overPut(gpa, &f.account, Ids.none_int, try Place.Step.field(&f.account, 10), k));
+    try testing.expectEqual(@as(u32, 0), (try t.reachAgg(gpa, f.charge(), f.view(), n)).all_len);
+    f.shapes.tie(k, .{ .kind = .leaf, .place = rec, .cells = try f.set(&.{p1}), .a = 0, .b = 0, .reach = .none });
+    try testing.expectEqual(@as(u32, 1), (try t.reachAgg(gpa, f.charge(), f.view(), n)).all_len);
 }

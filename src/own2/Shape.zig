@@ -106,6 +106,9 @@ pub const Table = struct {
     /// The repeats `widen` found in a class it opened a collection into: the
     /// cells two of its positions hold (§2.3, #1120), by the class's node.
     fold_dups: stamped.Column(NodeId, SetId) = .{},
+    /// How many knots were tied: a memo of what a node reaches outside
+    /// the record (`Cond.reachAgg`) is valid for the count it was made at.
+    ties: u32 = 0,
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
@@ -367,6 +370,7 @@ pub const Table = struct {
     /// could have made but for the cycle.
     pub fn tie(t: *Table, id: NodeId, n: Node) void {
         t.nodes.set(id.int(), n);
+        t.ties +%= 1;
     }
 
     /// Two positions at one place (`collect`'s node, `proj`'s image of one).
