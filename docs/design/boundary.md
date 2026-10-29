@@ -2448,6 +2448,13 @@ function — or `client`, the tree the browser loads. `programPure(part)` refuse
 the call that makes it so, and returns `Reported`. A lowering that targets 1.19 sees what it saw,
 and its chain does not prerender.
 
+**Version 1.21** (*added 2026-10-29*, additive, gated on nothing; `browser-inline.md` §10.3,
+#1163): `Program.Subscription.message`, a declaration whose tagger's constructor the key tree splits
+again on the value itself, so the value reaches its key through the program's dispatcher and
+`handler` names no key; and `programSubscriptionMessage(i, payload)`, the message declaration `i`'s
+tagger makes of `payload`. Before 1.21 such a declaration made the set a `limit`. Only a lowering
+that declares `Lowering.effects` is handed a set, and `inline`, the one that does, targets 1.21.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -3835,7 +3842,10 @@ for `Url.Parser`, `Url.Parser.Query`, `Url.Builder`, `Browser.Navigation`, `Brow
 not Elm's opaque `Key`" is **superseded** by (c) below: the owner's later instruction is Elm's API,
 and the `Key` keeps what the record bought (H6). The choices taken for the owner are H6–H10 of
 `plans/http-and-routing.md`. *Amended 2026-10-02:* the owner confirmed H6–H10 as recommended,
-H7 with one change, recorded under (a).
+H7 with one change, recorded under (a). *Amended 2026-10-29 (#1163):* `browser-inline` has
+`Browser.Navigation`, `Browser.UrlRequest`, `Tea.document` and `Tea.application` too, with these
+semantics; what its `inline` lowering compiles of them, and its two departures (no `each` forms, a
+`sync` refusal tagger), are `browser-inline.md` §10.
 
 **(a) Where `Url` lives** (H7). `Url`, `Url.Parser`, `Url.Parser.Query` and `Url.Builder` are
 pure and use nothing of a page, so they are **core modules**: a library, the `node` platform and a
