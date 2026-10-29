@@ -110,10 +110,11 @@ export const startReadDir = (path, resume) => {
       resume({ $: "Ok", a: list });
     },
     (error) => {
-      if (cancelled) return;
       const code = error instanceof Error ? error.code : undefined;
       if (typeof code === "string" && Object.hasOwn(dirErrors, code)) {
-        resume({ $: "Err", a: dirErrors[code] });
+        // A cancelled fiber waits for no answer; an unknown error below is
+        // a defect even so.
+        if (!cancelled) resume({ $: "Err", a: dirErrors[code] });
         return;
       }
       // Anything else is a defect (CLAUDE.md rule 9): see `startRead`.
