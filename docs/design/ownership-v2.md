@@ -939,7 +939,7 @@ entries and links in codec size. #1132 preserves the built inner's matching part
 and keeps hidden holds at the cast's path (§2.13.9). Choice-sensitive symbolic aggregates and the
 call preimage rule remain planned. #1144 is merged and #1143 closed: Tarjan's walk builds each
 cyclic part as a record of its own kind, reading only built images (§2.11). Cursor-local κ linking
-(#1146) remains before S3b.
+(#1146) is built: a builder per route position, an active-frame column, folds and merges at ε.
 
 **A read of κ(v, q) is defined by node kind at the selected position.** A built node or delta reads its
 construction certificate, or `lost` when none was stored; its storage cells alone do not certify its children.
@@ -3306,7 +3306,7 @@ The historical *As built* notes stay intact; this table records what has moved s
 | Fold relabelling keeps its observed self-link steps. | #1133 landed, closes #1129. | §2.9, §3.4, §3.6. |
 | κ path copying/relabel/merge and call linking use explicit stacks; further shape/summary/reader walks and cyclic graft knots follow. | #1130 done in #1135; #1138 done in #1142. Keep deep/small-stack probes. | §2.3, §2.11, §3.9; R-7.12. |
 | Tarjan's graft walk builds cyclic parts as records of their own kind, reading only built images; off-cycle parts use constructors. | #1144 merged (`c709bf771`), closes #1143. No waiting or retry passes; the transitive-reader probes remain regressions. | §2.11 cyclic-record protocol; §3.9's remaining native join/leq bound. |
-| `linkArgs` scans its route per node and folds/merges κ by replaying the full root path at each knot/parameter. | #1146 remains before S3b; the X_k chain must have O(n log n) total link work at most. | §2.11 cursor-local folds, active-frame column and child linking; Appendix B counts. |
+| `linkArgs` links at each knot's own cursor: a builder per route position, an active-frame column, folds and merges at ε, each builder relinked once. | #1146 built; the X_k chain's link step counts 68 / 368 / 1,568 / 6,368 / 25,568 records (with a parameter per level 99 / 447 / 1,839 / 7,407 / 29,679), equal to the root-path replay's snapshot. | §2.11 cursor-local folds, active-frame column and child linking; Appendix B counts. |
 | Recast projection keeps a built inner's matching part; hidden holds stay at the cast's path. | #1132 landed, including #1136 and CastProjections/CastHolds. | §2.13.9. |
 | Codec size includes each snapshot map, entry and link before its work. | #1145 landed, closes #1141; depth is not summary growth. | §4.1's S and codec lane. |
 | Printer deduplicates `(node,cursor)` although two explicit paths can share both. Block's child edges alone do not prove semantic transport. | #1122 printer/read-off/caller audit; no claim of a reproduced block loss. | One path-multiset primitive, §2.9/§3.6; RepeatedPathCall and FoldedBCall. |
