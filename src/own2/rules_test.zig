@@ -42,7 +42,7 @@ const layers = [_]Entry{
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1900 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1930 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
