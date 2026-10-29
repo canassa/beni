@@ -1,4 +1,3 @@
-HttpFailures shown: lines 52-74 (not built: call)
 HttpFailures ask: lines 77-86 (not built: ext_value)
 HttpFailures refused: lines 90-116 (not built: call)
 HttpFailures sentLater: lines 120-133 (not built: call)
