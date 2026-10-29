@@ -168,7 +168,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     if (build.prerender) {
         const lowering = if (loaded.platform.lowering) |name| Emit.findLowering(name) else null;
         if (lowering == null or !lowering.?.prerenders) return fail(stderr, "beni: --prerender needs a platform whose markup lowering prerenders, as browser-inline's does", .{});
-        const tree = prerender(gpa, io, arena, &session, emit_options, stderr, options.diagnostics == .text) catch |err| switch (err) {
+        const tree = prerender(gpa, io, arena, &session, emit_options, options.path, stderr, options.diagnostics == .text) catch |err| switch (err) {
             error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
             error.OutputPath => {
                 const failure = session.io_failure.?;
@@ -303,7 +303,7 @@ const Record = struct { route: []const u8, html: []const u8 };
 /// no `{{view}}` — is the build's failure, its diagnostics rendered; one
 /// that ran gives the client tree what it needs to write the page or to
 /// refuse the build.
-fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client: Emit.Options, stderr: *Io.Writer, text: bool) (Emit.Error || error{NodeFailed})!Tree {
+fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client: Emit.Options, path: ?[]const u8, stderr: *Io.Writer, text: bool) (Emit.Error || error{NodeFailed})!Tree {
     const dir = try prerenderDir(arena, client.out_dir);
     var tree = client;
     tree.out_dir = dir;
@@ -345,7 +345,10 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
         session.io_failure = .{ .path = runner, .err = err };
         return error.OutputPath;
     };
-    const ran = std.process.run(gpa, io, .{ .argv = &.{ "node", runner, records } }) catch |err| switch (err) {
+    // Only `PATH` is searched: Zig's own search falls back to a default
+    // path when there is none, and the build must not find a `node` there.
+    const node = findOnPath(io, arena, path, "node") orelse return .{ .ran = .needs_node };
+    const ran = std.process.run(gpa, io, .{ .argv = &.{ node, runner, records } }) catch |err| switch (err) {
         error.FileNotFound => return .{ .ran = .needs_node },
         else => {
             stderr.print("beni: cannot run node: {t}\n", .{err}) catch {};
@@ -397,6 +400,22 @@ fn prerender(gpa: Allocator, io: Io, arena: Allocator, session: *Session, client
 /// output named only `.` or `..` has no name to take: its tree is
 /// `.beni-prerender` inside it, which the build removes before it writes
 /// the output, so no project's tree is another's.
+/// The first executable file called `name` in a directory of `path`, as an
+/// absolute path where it can be made one; null when `path` is null or none
+/// has one. An empty entry is skipped.
+fn findOnPath(io: Io, arena: Allocator, path: ?[]const u8, name: []const u8) ?[]const u8 {
+    var entries = std.mem.splitScalar(u8, path orelse return null, std.fs.path.delimiter);
+    while (entries.next()) |dir| {
+        if (dir.len == 0) continue;
+        const candidate = std.fs.path.join(arena, &.{ dir, name }) catch return null;
+        const stat = Io.Dir.cwd().statFile(io, candidate, .{}) catch continue;
+        if (stat.kind == .directory) continue;
+        Io.Dir.cwd().access(io, candidate, .{ .execute = true }) catch continue;
+        return Io.Dir.cwd().realPathFileAlloc(io, candidate, arena) catch candidate;
+    }
+    return null;
+}
+
 fn prerenderDir(arena: Allocator, out: []const u8) Allocator.Error![]const u8 {
     const trimmed = std.mem.trimEnd(u8, out, "/");
     const base = std.fs.path.basename(trimmed);

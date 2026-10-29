@@ -82,14 +82,14 @@ pub fn main(init: std.process.Init) u8 {
             return 0;
         },
         .build => |build| {
-            if (build.watch) return beni.devloop.Watch.run(gpa, io, stdout, stderr, sessionOptions(build.common), build, null);
-            return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build);
+            if (build.watch) return beni.devloop.Watch.run(gpa, io, stdout, stderr, withPath(sessionOptions(build.common), init), build, null);
+            return beni.build.Command.run(gpa, io, stdout, stderr, withPath(sessionOptions(build.common), init), build);
         },
         .serve => |serve| {
             // `serve` answers requests while it builds, which takes a second
             // thread (fast-compiler.md §10, *A build with no threads*).
             if (builtin.single_threaded) return fail(stderr, "beni: serve needs threads, and this beni is built with none", .{});
-            return beni.devloop.Serve.run(gpa, io, stdout, stderr, sessionOptions(serve.build.common), serve);
+            return beni.devloop.Serve.run(gpa, io, stdout, stderr, withPath(sessionOptions(serve.build.common), init), serve);
         },
         .new => |new| return beni.devloop.New.run(io, stdout, stderr, new),
         .skill => |skill| return beni.devloop.Skill.run(io, stdout, stderr, skill),
@@ -112,6 +112,13 @@ pub fn main(init: std.process.Init) u8 {
 fn fail(stderr: *Io.Writer, comptime fmt: []const u8, args: anytype) u8 {
     stderr.print(fmt ++ "\n", args) catch {};
     return 2;
+}
+
+/// `options` with the process's `PATH`, which only a prerendering build reads.
+fn withPath(options: Session.Options, init: std.process.Init) Session.Options {
+    var out = options;
+    out.path = init.environ_map.get("PATH");
+    return out;
 }
 
 fn sessionOptions(common: Cli.Common) Session.Options {
