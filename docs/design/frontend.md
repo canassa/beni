@@ -1401,6 +1401,11 @@ so a path that names no file is answered with `<path>.html` when that file exist
 single-page fallback, and `serve` prerenders after each build ([`prerender.md`](prerender.md) §5.2,
 §7.4). `"build"."origin"` joins §10.1's keys for a prerendering build (§7.3 there).
 
+*Specified 2026-10-29, not built (#1207, slice P4):* an output may have no `index.html` — a
+prerendered site with build-time data whose data program gives no `/` route writes none
+([`prerender.md`](prerender.md) §8.6). Then `/`, and every request the single-page fallback would
+answer with `index.html`, is `404`.
+
 It ends as `--watch` does; open connections are dropped. It is a development server: one thread per
 connection, no TLS, no compression, no range requests, and it is not meant to face a network.
 
