@@ -1354,7 +1354,7 @@ test "ownership words: a pin counts for the package its file lies under, not for
     var kept: std.ArrayList(u8) = .empty;
     var rows = std.mem.splitScalar(u8, list, '\n');
     while (rows.next()) |row| {
-        if (std.mem.startsWith(u8, row, "platforms/browser-inline/Tea.js") or std.mem.startsWith(u8, row, "tests/platforms/entry-shape/")) continue;
+        if (std.mem.startsWith(u8, row, "platforms/browser-inline/Tea.beni") or std.mem.startsWith(u8, row, "tests/platforms/entry-shape/")) continue;
         try kept.appendSlice(state.allocator(), row);
         try kept.append(state.allocator(), '\n');
     }
