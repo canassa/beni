@@ -6,9 +6,9 @@
 -- is an export of another beni module and passes: `viaOther`'s lambda is
 -- printed as the alias. A function `Spec` moves into its one caller is
 -- planned there too (`run/EtaReduceHostValue`'s `viaAlias`). Harmless
--- today: a sibling's export is an arrow of the declared arity that names
--- no `arguments` (`boundary.md` §4, checks 3 and 4). This golden shows
--- both shapes, so that a change to either check shows here.
+-- today: a sibling's export takes the declared arity (check 4) and names
+-- no `arguments` (check 3); no shipped sibling uses check 4's `function`
+-- forms, which can read `this`; one that does must revisit this golden.
 import Counted
 import Node exposing (Program)
 
