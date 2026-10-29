@@ -58,6 +58,8 @@ module Node
   value exitWith : String, Int → Program
   value print : String → Program
   value printLines : List String → Program
+module Prerender
+  value pages : Schema e d, (⊤ → Result String (List (String × d))) → Program  -- impure
 module Random
   alias Generator a
   alias Seed

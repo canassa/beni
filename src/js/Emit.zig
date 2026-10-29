@@ -258,6 +258,10 @@ pub fn findLowering(name: []const u8) ?*const beni_markup.Lowering {
 /// `Named.routed` constructor's, which needs the project's origin.
 pub const Prerenders = struct {
     routed: bool,
+    /// The outermost call is `Browser.prerenderData`'s (`prerender.md`
+    /// §8.4): the routes and each page's value come from the project's data
+    /// program.
+    data: bool = false,
     /// The outermost `prerender` call on the spine, and its module.
     module: Graph.Index,
     call: Bir.Inst.Index,
@@ -285,6 +289,7 @@ pub fn prerenders(session: *const Session, lowering: *const beni_markup.Lowering
     const b = session.artifacts.bir(session.graph.moduleFile(found.module));
     var at = b.decls[found.decl].body.unwrap() orelse return null;
     var call: ?Bir.Inst.Index = null;
+    var data = false;
     var depth: u32 = 0;
     while (depth < 64) : (depth += 1) {
         // The program may be a top-level value of `main`'s module that the
@@ -308,13 +313,24 @@ pub fn prerenders(session: *const Session, lowering: *const beni_markup.Lowering
             // The program the spine ends at.
             const c = call orelse return null;
             for (lowering.programs) |p| {
-                if (std.mem.eql(u8, p.module, callee.module) and std.mem.eql(u8, p.name, callee.name)) return .{ .routed = p.routed, .module = found.module, .call = c };
+                if (std.mem.eql(u8, p.module, callee.module) and std.mem.eql(u8, p.name, callee.name)) return .{ .routed = p.routed, .data = data, .module = found.module, .call = c };
             }
-            return .{ .routed = false, .module = found.module, .call = c };
+            return .{ .routed = false, .data = data, .module = found.module, .call = c };
         };
         switch (placement.places) {
             .prerender => if (call == null) {
                 call = at;
+            },
+            // `prerender.md` §8.4: the spine goes on through the lambda's
+            // body, the program the page's value makes.
+            .prerender_data => {
+                if (call == null) {
+                    call = at;
+                    data = true;
+                }
+                if (args.len != 2 or b.instTag(args[1]) != .lambda) break;
+                at = @fromBackingInt(@intCast(b.instData(args[1]).rhs));
+                continue;
             },
             .first => {},
             else => break,
@@ -322,7 +338,45 @@ pub fn prerenders(session: *const Session, lowering: *const beni_markup.Lowering
         if (args.len == 0) break;
         at = args[0];
     }
-    return if (call) |c| .{ .routed = false, .module = found.module, .call = c } else null;
+    return if (call) |c| .{ .routed = false, .data = data, .module = found.module, .call = c } else null;
+}
+
+/// Where the app's one `main` is declared: its file and its name's token;
+/// null with none, or two.
+pub const MainPlace = struct { file: SourceStore.Index, token: u32 };
+
+pub fn mainPlace(session: *const Session) ?MainPlace {
+    var found: ?MainPlace = null;
+    for (0..session.graph.count()) |i| {
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
+        if (session.store.package(session.graph.moduleFile(m)) != .app) continue;
+        const b = session.artifacts.bir(session.graph.moduleFile(m));
+        for (b.decls) |d| {
+            if (d.kind != .value or b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+            if (found != null) return null;
+            found = .{ .file = session.graph.moduleFile(m), .token = d.name_token };
+        }
+    }
+    return found;
+}
+
+/// Whether the app's one `main` is a call of the platform value `name` of
+/// module `module`: a data program's `Prerender.pages` (`prerender.md`
+/// §8.5 item 1).
+pub fn mainCalls(session: *const Session, module: []const u8, name: []const u8) bool {
+    for (0..session.graph.count()) |i| {
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
+        if (session.store.package(session.graph.moduleFile(m)) != .app) continue;
+        const b = session.artifacts.bir(session.graph.moduleFile(m));
+        for (b.decls) |d| {
+            if (d.kind != .value or b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+            const body = d.body.unwrap() orelse return false;
+            if (b.instTag(body) != .call) return false;
+            const callee = platformValueOf(session, m, b, @fromBackingInt(@intCast(b.instData(body).lhs))) orelse return false;
+            return std.mem.eql(u8, callee.module, module) and std.mem.eql(u8, callee.name, name);
+        }
+    }
+    return false;
 }
 
 /// The platform value instruction `at` of module `m` names, by its
@@ -472,6 +526,11 @@ pub const Options = struct {
     /// The app's root, whose `beni.json` `prerender_needs_origin` is
     /// reported against.
     app_root: []const u8 = ".",
+    /// A prerendering build's: `main` says `Browser.prerenderData`, so the
+    /// routes and each page's value are the data program's (`prerender.md`
+    /// §8): each page holds its value's script, and `index.html` is the
+    /// page of `/` or not written.
+    data: bool = false,
 };
 
 /// The trees of a prerendering build (`prerender.md` §5.1).
@@ -489,6 +548,11 @@ pub const Prerender = union(enum) {
     /// gave: the page's view, or why there is none, which is the build's
     /// failure.
     client: Outcome,
+    /// A data site built with the hidden `--no-prerender` (`prerender.md`
+    /// §8.10): each route's page holds its value and no view, and the client
+    /// is the one a program that does not prerender gets, which mounts
+    /// fresh from the value.
+    fresh: Outcome,
 
     pub const Outcome = union(enum) {
         /// Each route's page, in the list's order (`prerender.md` §5.4).
@@ -498,16 +562,20 @@ pub const Prerender = union(enum) {
         /// The run failed (§5.5, `prerender_failed`): the route with no
         /// record (null: the route list), and why, in prose.
         failed: struct { route: ?[]const u8, why: []const u8 },
+        /// The site's schema cannot decode a route's text (§8.5 item 5,
+        /// `prerender_data_invalid`): the route, and each issue as a line.
+        invalid: struct { route: []const u8, issues: []const []const u8 },
     };
 
     /// A route's page: the route, the HTML of its first render for the
     /// shell's `{{view}}`, and a document's title for `{{title}}`, null for
-    /// a program that has none (`prerender.md` §7.5).
-    pub const Page = struct { route: []const u8, html: []const u8, title: ?[]const u8 = null };
+    /// a program that has none (`prerender.md` §7.5); a data site's, the
+    /// text of its value, as the page holds it (§8.6).
+    pub const Page = struct { route: []const u8, html: []const u8, title: ?[]const u8 = null, data: ?[]const u8 = null };
 
     pub fn mode(p: Prerender) beni_markup.Build.Prerender {
         return switch (p) {
-            .none => .none,
+            .none, .fresh => .none,
             .tree => .tree,
             .client => .client,
         };
@@ -656,6 +724,7 @@ pub fn run(
         try e.runWrites();
         try e.findLifts();
         try e.cutPrerender();
+        try e.checkDataSchema();
     };
     try e.eliminate(entry);
     try e.shareValidators();
@@ -3085,10 +3154,13 @@ const Emitter = struct {
     /// `Browser.prerender` call is compiled as its program, so neither the
     /// callee nor the route list is reached through it: a client page ships
     /// neither, nor what only the list names.
+    /// `prerender.md` §8.4: `Browser.prerenderData`'s call is compiled as its
+    /// lambda's body in every tree, so its callee is cut in each; its schema
+    /// is the one the program decodes its value with, and stays.
     fn cutPrerender(e: *Emitter) !void {
-        if (e.options.prerender == .tree) return;
         const lowering = findLowering(e.options.platform.lowering orelse return) orelse return;
         const spine = prerenders(e.session, lowering) orelse return;
+        if (e.options.prerender == .tree and !spine.data) return;
         const b = e.bir(spine.module);
         const d = b.instData(spine.call);
         const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
@@ -3096,8 +3168,236 @@ const Emitter = struct {
         var cuts: std.ArrayList(Reach.Cut) = .empty;
         try cuts.appendSlice(e.scratch, e.cuts);
         try cuts.append(e.scratch, .{ .module = spine.module, .lo = d.lhs, .hi = d.lhs });
+        if (spine.data) {
+            e.cuts = cuts.items;
+            return;
+        }
         try cuts.append(e.scratch, .{ .module = spine.module, .lo = try Lift.low(b, e.scratch, args[1].int()), .hi = args[1].int() });
         e.cuts = cuts.items;
+    }
+
+    /// `prerender.md` §8.4: the schema `Browser.prerenderData` is handed is
+    /// statically known — a `schema` declaration's `S.schema ⊤`,
+    /// `Schema.derived ⊤`, a primitive, or a composition of those by
+    /// `Schema.list`, `Schema.nullable`, `Schema.converted` and generic
+    /// arguments — or the build is refused, `program_shape`: a schema the
+    /// library's builders make when the page runs holds its conversions as
+    /// values no walk can read. In the prerender tree, each conversion and
+    /// check of the plans it reaches, in whichever module, must be pure by
+    /// the checker's answers at the calls its code makes, or the build is
+    /// refused, `prerender_impure`, at the conversion.
+    fn checkDataSchema(e: *Emitter) !void {
+        const lowering = findLowering(e.options.platform.lowering orelse return) orelse return;
+        const spine = prerenders(e.session, lowering) orelse return;
+        if (!spine.data) return;
+        const b = e.bir(spine.module);
+        const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(b.instData(spine.call).rhs))), Bir.Inst.Index);
+        if (args.len != 2) return;
+        const count = e.graph().count();
+        const birs = try e.scratch.alloc(*const Bir, count);
+        for (birs, 0..) |*slot, i| slot.* = e.bir(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
+        const sg: SchemaGraph = .{
+            .graph = e.graph(),
+            .plans = e.session.checked.plans,
+            .birs = birs,
+            .interfaces = e.session.resolution.interfaces,
+            .provenance = e.session.resolution.provenance,
+            .interner = &e.session.interner,
+        };
+        var refs: std.ArrayList(SchemaGraph.Ref) = .empty;
+        const file = e.graph().moduleFile(spine.module);
+        if (try e.staticSchema(&sg, spine.module, b, args[0], &refs, 0)) |at| {
+            return e.report(.program_shape, file, b.insts.items(.main_token)[at.int()],
+                \\A limit of the compiler: the schema a page's value is decoded with must be one the
+                \\compiler can see whole — a `schema` declaration's `Page.schema ⊤`, `Schema.derived ⊤`,
+                \\or those composed by `Schema.list`, `Schema.nullable` and `Schema.converted` — and this
+                \\is a schema made when the program runs. Its conversions are values inside it that no
+                \\walk of the program can read, so the build could not tell that decoding the value is
+                \\pure (`docs/design/prerender.md` §8.4; `docs/design/browser-inline.md` §5, class 4).
+                \\Declare it with `schema`.
+            , .{});
+        }
+        if (e.options.prerender != .tree) return;
+        // Every definition the schema reaches, through references.
+        var at: usize = 0;
+        while (at < refs.items.len) : (at += 1) {
+            const r = refs.items[at];
+            const def = sg.definition(r.module, r.decl) orelse continue;
+            const plan = sg.planOf(r.module);
+            var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+            try SchemaGraph.subtree(plan, e.scratch, def.root, &nodes);
+            for (nodes.items) |n| {
+                switch (SchemaGraph.tag(plan, n)) {
+                    .reference => if (sg.target(r.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))))) |t| {
+                        const known = for (refs.items) |k| {
+                            if (k.module == t.module and k.decl == t.decl) break true;
+                        } else false;
+                        if (!known) try refs.append(e.scratch, t);
+                    },
+                    .conversion => {
+                        const index = SchemaGraph.rhs(plan, n);
+                        if (index >= plan.conversions.len) continue;
+                        const c = plan.conversions[index];
+                        if (try e.impureIn(r.module, c.expr)) return e.reportImpureConversion(r.module, c.token);
+                    },
+                    .check => {
+                        const index = SchemaGraph.rhs(plan, n);
+                        if (index >= plan.checks.len) continue;
+                        const c = plan.checks[index];
+                        const call = c.call.unwrap() orelse continue;
+                        if (try e.impureIn(r.module, call)) return e.reportImpureConversion(r.module, c.token);
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+
+    fn reportImpureConversion(e: *Emitter, m: Graph.Index, token: u32) !void {
+        try e.report(.prerender_impure, e.graph().moduleFile(m), token,
+            \\This program prerenders from each page's value, and decoding the value runs this
+            \\conversion, which may have an effect or wait: it may read or change something outside
+            \\the program. The build decodes each page's value with the schema, and the browser
+            \\decodes the same text with it again before `init`, so a read of the host, the clock or
+            \\randomness could make the two values differ (`docs/design/prerender.md` §8.4, §3.1).
+            \\Make the conversion pure.
+        , .{});
+    }
+
+    /// The instruction of `inst`'s subtree that makes the schema it is not
+    /// statically known, or null when it is; each `schema` declaration it
+    /// names appended to `refs` (`checkDataSchema`).
+    fn staticSchema(e: *Emitter, sg: *const SchemaGraph, m: Graph.Index, b: *const Bir, inst: Bir.Inst.Index, refs: *std.ArrayList(SchemaGraph.Ref), depth: u32) !?Bir.Inst.Index {
+        if (depth > 64) return inst;
+        const d = b.instData(inst);
+        switch (b.instTag(inst)) {
+            // A top-level schema of this module, `pageSchema = Page.schema ⊤`.
+            .top => {
+                if (d.lhs >= b.decls.len or b.decls[d.lhs].params != 0) return inst;
+                const body = b.decls[d.lhs].body.unwrap() orelse return inst;
+                return e.staticSchema(sg, m, b, body, refs, depth + 1);
+            },
+            // `Schema.string`, `Schema.int`, … — core's primitives.
+            .ext_value => {
+                const name = e.coreSchemaValue(inst, b) orelse return inst;
+                for ([_][]const u8{ "string", "bool", "int", "float", "finiteFloat", "null", "value" }) |p| {
+                    if (std.mem.eql(u8, name, p)) return null;
+                }
+                return inst;
+            },
+            .call => {
+                const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+                const cd = b.instData(callee);
+                switch (b.instTag(callee)) {
+                    // `S.schema a₁ … aₙ`: the declaration, and each argument.
+                    .schema_member_top, .ext_schema_member => {
+                        const ref: SchemaGraph.Ref = if (b.instTag(callee) == .schema_member_top) blk: {
+                            if (std.enums.fromInt(Interface.SchemaMember.Kind, cd.rhs) != .schema) return inst;
+                            break :blk .{ .module = m, .decl = cd.lhs };
+                        } else blk: {
+                            const other: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
+                            if (other.int() >= sg.interfaces.len or other.int() >= sg.provenance.len) return inst;
+                            const iface = &sg.interfaces[other.int()];
+                            if (cd.rhs >= iface.schema_members.len) return inst;
+                            const member = iface.schema_members[cd.rhs];
+                            if (member.kind != .schema) return inst;
+                            const decl = sg.provenance[other.int()].schemaDecl(@backingInt(member.schema)) orelse return inst;
+                            break :blk .{ .module = other, .decl = decl.int() };
+                        };
+                        try refs.append(e.scratch, ref);
+                        for (args) |a| {
+                            if (b.instTag(a) == .unit) continue;
+                            if (try e.staticSchema(sg, m, b, a, refs, depth + 1)) |bad| return bad;
+                        }
+                        return null;
+                    },
+                    .ext_value => {
+                        const name = e.coreSchemaValue(callee, b) orelse return inst;
+                        if (std.mem.eql(u8, name, "derived")) return null;
+                        if ((std.mem.eql(u8, name, "list") or std.mem.eql(u8, name, "nullable") or std.mem.eql(u8, name, "converted")) and args.len >= 1)
+                            return e.staticSchema(sg, m, b, args[0], refs, depth + 1);
+                        return inst;
+                    },
+                    else => return inst,
+                }
+            },
+            else => return inst,
+        }
+    }
+
+    /// The name of the core `Schema` value `inst` of `b` names, or null.
+    fn coreSchemaValue(e: *Emitter, inst: Bir.Inst.Index, b: *const Bir) ?[]const u8 {
+        if (b.instTag(inst) != .ext_value) return null;
+        const d = b.instData(inst);
+        const other: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+        if (other.int() >= e.session.resolution.interfaces.len) return null;
+        if (e.graph().modulePackage(other) != .core) return null;
+        if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(other)), "Schema")) return null;
+        const iface = &e.session.resolution.interfaces[other.int()];
+        if (d.rhs >= iface.values.len) return null;
+        return e.session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    }
+
+    /// Whether evaluating `root` of module `m`, or calling a function it
+    /// names, may have an effect or wait, by the checker's answers at the
+    /// calls (`checker-v2.md` §26): the walk enters lambdas, and the bodies
+    /// of the app's and the platform's declarations `root` names, in their
+    /// own modules, each once; a call of `Debug`'s is exempt (§3.1), and
+    /// core's functions are answered at their calls.
+    fn impureIn(e: *Emitter, m: Graph.Index, root: Bir.Inst.Index) !bool {
+        const debug = e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol());
+        const Visit = struct { m: Graph.Index, inst: Bir.Inst.Index };
+        var stack: std.ArrayList(Visit) = .empty;
+        var seen: std.ArrayList(struct { m: Graph.Index, decl: u32 }) = .empty;
+        try stack.append(e.scratch, .{ .m = m, .inst = root });
+        var children: std.ArrayList(Bir.Inst.Index) = .empty;
+        while (stack.pop()) |item| {
+            const b = e.bir(item.m);
+            const d = b.instData(item.inst);
+            switch (b.instTag(item.inst)) {
+                .call, .method_call, .type_dispatch => {
+                    const site = e.dispatchOf(item.m).effectAt(item.inst);
+                    if (site.impure or site.own != .no) {
+                        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                        const is_debug = b.instTag(item.inst) == .call and b.instTag(callee) == .ext_value and debug != null and b.instData(callee).lhs == debug.?.int();
+                        if (!is_debug) return true;
+                    }
+                },
+                .top => if (d.lhs < b.decls.len) {
+                    const known = for (seen.items) |s| {
+                        if (s.m == item.m and s.decl == d.lhs) break true;
+                    } else false;
+                    if (!known) {
+                        try seen.append(e.scratch, .{ .m = item.m, .decl = d.lhs });
+                        if (b.decls[d.lhs].body.unwrap()) |body| try stack.append(e.scratch, .{ .m = item.m, .inst = body });
+                    }
+                },
+                .ext_value => {
+                    const other: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                    const package = e.graph().modulePackage(other);
+                    if ((package == .app or package == .platform) and other.int() < e.session.resolution.provenance.len) {
+                        const prov = &e.session.resolution.provenance[other.int()];
+                        if (d.rhs < prov.value_decl.len) {
+                            const decl = prov.value_decl[d.rhs].int();
+                            const known = for (seen.items) |s| {
+                                if (s.m == other and s.decl == decl) break true;
+                            } else false;
+                            const ob = e.bir(other);
+                            if (!known and decl < ob.decls.len) {
+                                try seen.append(e.scratch, .{ .m = other, .decl = decl });
+                                if (ob.decls[decl].body.unwrap()) |body| try stack.append(e.scratch, .{ .m = other, .inst = body });
+                            }
+                        }
+                    }
+                },
+                else => {},
+            }
+            children.clearRetainingCapacity();
+            try b.operands(e.scratch, item.inst, &children);
+            for (children.items) |c| try stack.append(e.scratch, .{ .m = item.m, .inst = c });
+        }
+        return false;
     }
 
     fn findLifts(e: *Emitter) !void {
@@ -7916,6 +8216,13 @@ const Emitter = struct {
     /// render function and the routes, an array of strings, which is what
     /// `main` is in the prerender tree (`Placement.Places.prerender`).
     fn prerenderExports(e: *Emitter, main_name: []const u8) ![]const u8 {
+        // A data site's `main` is the render function itself, of a route and
+        // its page's text; its routes are the data program's (`prerender.md`
+        // §8.5).
+        if (e.options.data) return if (e.options.release)
+            std.fmt.allocPrint(e.scratch, "export const render={s};", .{main_name})
+        else
+            std.fmt.allocPrint(e.scratch, "export const render = {s};", .{main_name});
         return if (e.options.release)
             std.fmt.allocPrint(e.scratch, "export const render={s}[0],routes={s}[1];", .{ main_name, main_name })
         else
@@ -8182,28 +8489,36 @@ const Emitter = struct {
             // The shell is checked and no page written: the client tree
             // writes them. An application's routes are `Url`s made with the
             // project's origin, which it must name (`prerender.md` §7.3).
-            .tree => {
-                if (e.options.routed and e.options.origin == null) {
-                    const root = e.options.app_root;
-                    const app_manifest = if (root.len == 0 or std.mem.eql(u8, root, ".")) Manifest.file_name else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
-                    return e.reportInFile(
-                        .prerender_needs_origin,
-                        .{ .path = app_manifest },
-                        \\This program prerenders a `Tea.application`, whose `init` is handed the `Url` of
-                        \\each page's route, and this project names no origin to make it with.
-                        \\
-                        \\Add the address the site is served at to `"build"`:
-                        \\`"build": {{ "origin": "https://example.com" }}`. Each page's `init` is then
-                        \\handed `https://example.com` with the base and the route after it
-                        \\(`docs/design/prerender.md` §7.3).
-                    ,
-                        .{},
-                    );
-                }
-                return;
+            .tree => return e.needsOrigin(),
+            // A data site built with `--no-prerender` has no tree, and its
+            // application's `init` is handed its route's `Url` all the same
+            // (§8.6).
+            .fresh => |outcome| if (e.options.routed and e.options.origin == null) return e.needsOrigin() else switch (outcome) {
+                .pages => |all| all,
+                .needs_node => return e.reportAtEntry(entry, .prerender_needs_node,
+                    \\This program prerenders, and the build runs its data program with Node, but there
+                    \\is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`
+                    \\(`docs/design/prerender.md` §5.1, §8.5).
+                , .{}),
+                // No tree renders: nothing else fails here.
+                else => return,
             },
             .client => |outcome| switch (outcome) {
                 .pages => |all| all,
+                .invalid => |bad| {
+                    const issues = try std.mem.join(e.scratch, "\n", bad.issues);
+                    const at = e.dataCallAt() orelse SourcePlace{ .file = e.graph().moduleFile(entry.module), .token = e.bir(entry.module).decl(entry.decl).name_token };
+                    return e.report(.prerender_data_invalid, at.file, at.token,
+                        \\This program prerenders from each page's value, and its schema cannot decode the
+                        \\text the data program gave for the route `{s}`, so the build has no value to
+                        \\render the page from (`docs/design/prerender.md` §8.5):
+                        \\
+                        \\{s}
+                        \\
+                        \\The data program encodes each value with its schema, and this program decodes it
+                        \\with its own: the two must agree.
+                    , .{ bad.route, issues });
+                },
                 .needs_node => return e.reportAtEntry(entry, .prerender_needs_node,
                     \\This program prerenders, and the build runs its prerender tree with Node, but
                     \\there is no `node` on `PATH`. Install Node 24 or later, or put it on `PATH`
@@ -8230,7 +8545,15 @@ const Emitter = struct {
         var bad = false;
         for (pages, files) |page, *file| {
             if (routeFault(page.route)) |why| {
-                try e.reportAtEntry(entry, .invalid_route,
+                if (e.options.data) try e.reportAtEntry(entry, .invalid_route,
+                    \\This program prerenders the route `{s}`, which its data program gave, and {s}.
+                    \\
+                    \\A route is a path below the base that names the file its page is written to:
+                    \\it begins with `/`, its segments are not empty (but for the last, in a route
+                    \\ending in `/`), not `.` and not `..`, and hold only ASCII letters, digits, `-`,
+                    \\`.`, `_` and `~`; and the first segment does not begin with `_`, which names
+                    \\the compiler's own files (`docs/design/prerender.md` §7.4, §8.5).
+                , .{ page.route, why }) else try e.reportAtEntry(entry, .invalid_route,
                     \\This program prerenders the route `{s}`, and {s}.
                     \\
                     \\A route is a path below the base that names the file its page is written to:
@@ -8249,9 +8572,53 @@ const Emitter = struct {
         const index_is_a_page = for (files) |f| {
             if (std.ascii.eqlIgnoreCase(f, html_file)) break true;
         } else false;
-        if (!index_is_a_page) try e.produce(html_file, try fillShell(e.scratch, with_base, "", null), path);
+        // A data site's page with no value could not start, so it writes
+        // none (`prerender.md` §8.6).
+        if (!index_is_a_page and !e.options.data) try e.produce(html_file, try fillShell(e.scratch, with_base, "", null), path);
         if (try e.routesCollide(entry, pages, files)) return;
-        for (pages, files) |page, file| try e.produce(file, try fillShell(e.scratch, with_base, page.html, page.title), path);
+        for (pages, files) |page, file| {
+            // A data site's page holds its value's text in a script, then
+            // the view (§8.6).
+            const view = if (page.data) |text|
+                try std.fmt.allocPrint(e.scratch, "<script type=\"application/json\" data-beni-data=\"{s}\">{s}</script>{s}", .{ page.route, text, page.html })
+            else
+                page.html;
+            try e.produce(file, try fillShell(e.scratch, with_base, view, page.title), path);
+        }
+    }
+
+    /// `prerender_needs_origin` (`prerender.md` §7.3): a prerendered
+    /// application, whose routes are `Url`s, in a project that names no
+    /// origin to make them with.
+    fn needsOrigin(e: *Emitter) !void {
+        if (!e.options.routed or e.options.origin != null) return;
+        const root = e.options.app_root;
+        const app_manifest = if (root.len == 0 or std.mem.eql(u8, root, ".")) Manifest.file_name else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
+        return e.reportInFile(
+            .prerender_needs_origin,
+            .{ .path = app_manifest },
+            \\This program prerenders a `Tea.application`, whose `init` is handed the `Url` of
+            \\each page's route, and this project names no origin to make it with.
+            \\
+            \\Add the address the site is served at to `"build"`:
+            \\`"build": {{ "origin": "https://example.com" }}`. Each page's `init` is then
+            \\handed `https://example.com` with the base and the route after it
+            \\(`docs/design/prerender.md` §7.3).
+        ,
+            .{},
+        );
+    }
+
+    const SourcePlace = struct { file: SourceStore.Index, token: u32 };
+
+    /// Where `main`'s `Browser.prerenderData` call is (`prerender.md`
+    /// §8.5), which `prerender_data_invalid` points at.
+    fn dataCallAt(e: *Emitter) ?SourcePlace {
+        const lowering = findLowering(e.options.platform.lowering orelse return null) orelse return null;
+        const spine = prerenders(e.session, lowering) orelse return null;
+        if (!spine.data) return null;
+        const b = e.bir(spine.module);
+        return .{ .file = e.graph().moduleFile(spine.module), .token = b.insts.items(.main_token)[spine.call.int()] };
     }
 
     /// The shell with its `{{title}}` and its `{{view}}` filled: the title

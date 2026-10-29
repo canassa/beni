@@ -1,0 +1,20 @@
+-- url "/blog/hello"
+-- load
+<body>
+  <main>
+    <h1>"Post hello"</h1>
+    <p id="text">"Hello: </script> <!-- a comment? &amp; is text.\n"</p>
+    <button id="more">"more"</button>
+  </main>
+</body>
+-- title
+(title: "Post hello")
+(the DOM did not change)
+-- click #more
+<body>
+  <main>
+    <h1>"Post hello"</h1>
+    <p id="text">"Hello: </script> <!-- a comment? &amp; is text.\n"</p>
+    <button id="more">"less"</button>
+  </main>
+</body>

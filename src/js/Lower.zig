@@ -14140,10 +14140,29 @@ pub const Lowerer = struct {
 
     /// A call of a `prerender` placement in this module (`prerender.md`
     /// §7.2), and whether it is on `main`'s spine.
-    pub const PrerenderCall = struct { inst: u32, spine: bool, twice: bool = false };
+    /// Version 1.23: `data`, a call of a `prerender_data` placement
+    /// (`prerender.md` §8.4), whose second argument is a lambda written in
+    /// place.
+    pub const PrerenderCall = struct { inst: u32, spine: bool, twice: bool = false, data: bool = false };
+
+    /// What a `Program.data` program's call reads its value through
+    /// (version 1.23, `prerender.md` §8.4): the `prerender_data` call, the
+    /// schema it is handed, and its lambda's one parameter.
+    pub const DataSite = struct { call: Inst.Index, schema: Inst.Index, param: Inst.Index };
+
+    /// The body of the lambda a `prerender_data` call at `inst` is handed,
+    /// or null when it is not one written in place with one parameter.
+    fn dataBody(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
+        if (args.len != 2 or l.bir.instTag(args[1]) != .lambda) return null;
+        const d = l.bir.instData(args[1]);
+        if (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index).len != 1) return null;
+        return @fromBackingInt(@intCast(d.rhs));
+    }
 
     /// `inst`, or, while it is a call of a `prerender` placement, its first
-    /// argument.
+    /// argument; while it is one of a `prerender_data` placement, its
+    /// lambda's body.
     fn throughPrerender(l: *Lowerer, inst: Inst.Index) Inst.Index {
         var at = inst;
         var depth: u32 = 0;
@@ -14151,10 +14170,15 @@ pub const Lowerer = struct {
             if (l.bir.instTag(at) != .call) return at;
             const d = l.bir.instData(at);
             const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return at;
-            if (placement.places != .prerender) return at;
             const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
-            if (args.len != 2) return at;
-            at = args[0];
+            switch (placement.places) {
+                .prerender => {
+                    if (args.len != 2) return at;
+                    at = args[0];
+                },
+                .prerender_data => at = l.dataBody(at) orelse return at,
+                else => return at,
+            }
         }
         return at;
     }
@@ -14162,7 +14186,10 @@ pub const Lowerer = struct {
     /// Version 1.22: every call of a `prerender` placement, sorted, each
     /// marked when it is on `main`'s spine: `main`'s body, or the first
     /// argument, again and again, of a `first` or `prerender` placement
-    /// there (`prerender.md` §7.2).
+    /// there (`prerender.md` §7.2). Version 1.23: and every call of a
+    /// `prerender_data` placement, the spine going on through its lambda's
+    /// body (§8.4); the program call that body is, through `first`
+    /// placements, reads its value through it (`ProgramCall.data`).
     fn findPrerenders(l: *Lowerer) !void {
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
@@ -14173,25 +14200,36 @@ pub const Lowerer = struct {
             while (at < d.inst_end.int()) : (at += 1) {
                 if (tags[at] != .call) continue;
                 const placement = l.placementOf(@fromBackingInt(@intCast(data[at].lhs))) orelse continue;
-                if (placement.places != .prerender) continue;
-                try calls.append(l.scratch, .{ .inst = @intCast(at), .spine = false });
+                if (placement.places != .prerender and placement.places != .prerender_data) continue;
+                try calls.append(l.scratch, .{ .inst = @intCast(at), .spine = false, .data = placement.places == .prerender_data });
             }
         }
         // `Browser.prerender` used as a value — bound to a name, passed to a
         // function — would run as written in a page and hand it the pair
         // the prerender tree reads (`prerender.md` §7.2): refused, as a
-        // program constructor used as a value is.
+        // program constructor used as a value is. `Browser.prerenderData`
+        // likewise (§8.4).
         for (l.bir.decls, 0..) |d, di| {
             if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
             var at = d.inst_start.int();
             while (at < d.inst_end.int()) : (at += 1) {
                 if (tags[at] != .ext_value and tags[at] != .top) continue;
                 const placement = l.placementOf(@fromBackingInt(@intCast(at))) orelse continue;
-                if (placement.places != .prerender) continue;
+                if (placement.places != .prerender and placement.places != .prerender_data) continue;
                 const called = for (calls.items) |c| {
                     if (data[c.inst].lhs == at) break true;
                 } else false;
                 if (called) continue;
+                if (placement.places == .prerender_data) {
+                    try l.report(.program_shape, @fromBackingInt(@intCast(at)),
+                        \\`{s}` is used here as a value rather than called, so the build cannot see which
+                        \\program it prerenders from each page's value. Call it where `main` says what the
+                        \\page's program is (`docs/design/prerender.md` §8.4):
+                        \\
+                        \\    main = Browser.prerenderData (Page.schema ⊤) λpage → Tea.document {{ … }}
+                    , .{"Browser.prerenderData"});
+                    continue;
+                }
                 try l.report(.program_shape, @fromBackingInt(@intCast(at)),
                     \\`{s}` is used here as a value rather than called, so the build cannot see which
                     \\program it prerenders, and a page would run it as written. Call it where `main`
@@ -14212,22 +14250,35 @@ pub const Lowerer = struct {
         var at = l.bir.decls[entry].body.unwrap() orelse return;
         var depth: u32 = 0;
         var seen = false;
+        var site: ?DataSite = null;
         while (depth < 64 and l.bir.instTag(at) == .call) : (depth += 1) {
             const d = l.bir.instData(at);
-            const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return;
+            const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse break;
             const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
             switch (placement.places) {
                 .first => {},
-                .prerender => if (l.prerenderCallAt(at)) |pc| {
+                .prerender, .prerender_data => if (l.prerenderCallAt(at)) |pc| {
                     pc.spine = true;
                     pc.twice = seen;
                     seen = true;
                 },
-                else => return,
+                else => break,
             }
-            if (args.len == 0) return;
+            if (placement.places == .prerender_data) {
+                const body = l.dataBody(at) orelse break;
+                const lambda = l.bir.instData(args[1]);
+                const param = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index)[0];
+                if (site == null) site = .{ .call = at, .schema = args[0], .param = param };
+                at = body;
+                continue;
+            }
+            if (args.len == 0) break;
             at = args[0];
         }
+        // The program the spine ends at reads the value (§8.4).
+        if (site) |s| if (l.programCallAt(at)) |pc| {
+            pc.data = s;
+        };
     }
 
     /// The `prerender` placement's call at `inst`, if it is one.
@@ -14245,6 +14296,7 @@ pub const Lowerer = struct {
     /// Null: compile the call as written.
     fn prerenderCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index) Allocator.Error!?Node.Index {
         const pc = l.prerenderCallAt(inst) orelse return null;
+        if (pc.data) return try l.dataCall(out, inst, pc);
         if (!pc.spine) {
             try l.report(.program_shape, inst,
                 \\`{s}` says which program the build prerenders, so it is written where `main` says
@@ -14285,6 +14337,134 @@ pub const Lowerer = struct {
             , .{}),
         }
         return null;
+    }
+
+    /// Version 1.23 (`prerender.md` §8.4): a `prerender_data` placement's
+    /// call, compiled as its lambda's body in every tree, the program there
+    /// reading the value through `ProgramCall.data`. One off `main`'s
+    /// spine, a second on it, one handed anything but a lambda written in
+    /// place whose body is a program call, and a read of the lambda's
+    /// parameter outside the record's `init`, are each `program_shape`.
+    /// The schema it is handed is checked where the build checks the
+    /// program as a whole (`Emit`): statically known, and pure.
+    fn dataCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, pc: *const PrerenderCall) Allocator.Error!Node.Index {
+        const p = l.pos(inst);
+        const refused = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const spelled = "Browser.prerenderData";
+        if (!pc.spine) {
+            try l.report(.program_shape, inst,
+                \\`{s}` says which program the build prerenders from each page's value, so it is
+                \\written where `main` says what the page's program is:
+                \\`main = Browser.prerenderData (Page.schema ⊤) λpage → Tea.document {{ … }}`, or inside
+                \\a `Browser.mountAt` there (`docs/design/prerender.md` §8.4). Here it is somewhere
+                \\else, where the build would not see it.
+            , .{spelled});
+            return refused;
+        }
+        if (pc.twice) {
+            try l.report(.program_shape, inst,
+                \\This program is prerendered twice: `{s}` is written around a program that is
+                \\prerendered already, or inside one. A site whose pages hold data gets its routes
+                \\from its data program alone, so write one `{s}` and no `Browser.prerender`
+                \\(`docs/design/prerender.md` §8.4).
+            , .{ spelled, spelled });
+            return refused;
+        }
+        const body = l.dataBody(inst) orelse {
+            try l.report(.program_shape, inst,
+                \\`{s}` is handed a function the build cannot read: its second argument must be a
+                \\lambda of one parameter written in place, `λpage → Tea.document {{ … }}`, so that the
+                \\build sees the program the page's value makes (`docs/design/prerender.md` §8.4).
+            , .{spelled});
+            return refused;
+        };
+        const data_args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
+        const lambda = l.bir.instData(data_args[1]);
+        const param = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(lambda.lhs))), Inst.Index)[0];
+        const program = l.programCallAt(l.throughFirst(body));
+        if (program == null or program.?.data == null or program.?.data.?.call != inst) {
+            try l.report(.program_shape, body,
+                \\The lambda `{s}` is handed must be a program constructor's call, or a
+                \\`Browser.mountAt` around one, written as its body: `λpage → Tea.document {{ … }}`
+                \\(`docs/design/prerender.md` §8.4). This one computes something else first, so the
+                \\build cannot see which program each page's value makes. Bind the names inside the
+                \\record's `init`, or as top-level values.
+            , .{spelled});
+            return refused;
+        }
+        if (l.bir.instTag(param) != .pat_var and l.bir.instTag(param) != .pat_wild) {
+            try l.report(.program_shape, param,
+                \\A limit of the compiler: the lambda `{s}` is handed takes its value as a name,
+                \\`λpage → …`, and this one takes it apart in its parameter (`docs/design/prerender.md`
+                \\§8.4; `docs/design/browser-inline.md` §5, class 4). Name the value, and take it apart in
+                \\the record's `init`.
+            , .{spelled});
+            return refused;
+        }
+        // The value is read by `init` alone (§8.4): `view`, `update` and
+        // `subscriptions` are functions of the model, whose writes the
+        // lowering tracks by model path, and the value is not in the model
+        // until `init` puts it there.
+        if (l.bir.instTag(param) == .pat_var) {
+            const local = l.bir.instData(param).lhs;
+            const init = program.?.init;
+            var stack: std.ArrayList(Inst.Index) = .empty;
+            try stack.append(l.scratch, body);
+            var first: ?Inst.Index = null;
+            while (stack.pop()) |at| {
+                if (init != null and at == init.?) continue;
+                if (l.bir.instTag(at) == .local and l.bir.instData(at).lhs == local) {
+                    if (first == null or at.int() < first.?.int()) first = at;
+                    continue;
+                }
+                try l.instChildren(at, &stack);
+            }
+            if (first) |at| {
+                try l.report(.program_shape, at,
+                    \\The page's value is read here, outside the record's `init`: only `init` may read it.
+                    \\Put it in the model in `init`, `init = λ⊤ → ( {{ page = page }}, Cmd.none )`, and read
+                    \\`model.page` in `view` and `update`. A limit of the compiler, not a rule: `view`,
+                    \\`update` and `subscriptions` are compiled as functions of the model, whose writes
+                    \\the compiler tracks, and the value is not in the model until `init` puts it there
+                    \\(`docs/design/prerender.md` §8.4; `docs/design/browser-inline.md` §5, class 4).
+                , .{});
+                return refused;
+            }
+        }
+        if (l.in.markup.?.build.prerender == .tree) {
+            // The schema must be pure, as the route list must (§8.4, §3.1):
+            // it cannot choose another schema in the build than in the
+            // browser.
+            const verdicts = try l.scratch.alloc(Purity, l.bir.decls.len);
+            @memset(verdicts, .unknown);
+            switch (try l.effectOf(data_args[0], verdicts)) {
+                .none, .debug => {},
+                .unread, .site => |at| try l.report(.prerender_impure, at,
+                    \\This program prerenders from each page's value, so the schema it decodes the value
+                    \\with must be pure, and this may have an effect: the build decodes each page's value
+                    \\with it, and the browser decodes the same text with it again, so the two must be
+                    \\the same schema (`docs/design/prerender.md` §8.4). Name a `schema` declaration's
+                    \\`schema`, as `Page.schema ⊤`.
+                , .{}),
+            }
+        }
+        return try l.expr(out, body);
+    }
+
+    /// `inst`, or, while it is a call of a `first` placement, its first
+    /// argument.
+    fn throughFirst(l: *Lowerer, inst: Inst.Index) Inst.Index {
+        var at = inst;
+        var depth: u32 = 0;
+        while (depth < 64 and l.bir.instTag(at) == .call) : (depth += 1) {
+            const d = l.bir.instData(at);
+            const placement = l.placementOf(@fromBackingInt(@intCast(d.lhs))) orelse return at;
+            if (placement.places != .first) return at;
+            const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+            if (args.len == 0) return at;
+            at = args[0];
+        }
+        return at;
     }
 
     /// The placement call at `inst` compiled as its first argument, if it
@@ -14483,6 +14663,7 @@ pub const Lowerer = struct {
             .document_branch = l.documentBranchOf(pc),
             .update = if (pc.record) update else .computed,
             .placed = pc.placed,
+            .data = pc.data != null,
         };
         // A `view` whose body is a branch evaluates its `let`s wherever the
         // values of its arms are: one that may have an effect is refused, as
@@ -19045,6 +19226,9 @@ const ProgramCall = struct {
     /// Version 1.14: the element a placement around the call mounts it at
     /// (`findPlaced`).
     placed: beni_markup.Program.Placed = .unknown,
+    /// Version 1.23: the `prerender_data` call whose lambda this call is
+    /// the body of, on `main`'s spine (`findPrerenders`).
+    data: ?Lowerer.DataSite = null,
 };
 
 /// What the compiler keeps while it lowers one module's markup.
@@ -19662,6 +19846,49 @@ const markup_vtable: beni_markup.VTable = struct {
         if (!try lowerer(impl).directPure(part)) return error.Reported;
     }
 
+    /// Version 1.23 (`prerender.md` §8.4): the `prerender_data` call's
+    /// schema, evaluated into `into`, in the frame of the declaration that
+    /// holds the call.
+    fn programDataSchema(impl: *anyopaque, into: M.Block) E!M.Expr {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return expr(try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused));
+        const site = pc.data orelse {
+            try l.report(.internal, @fromBackingInt(pc.inst), "A markup lowering asked for the schema of a program that reads no page value.", .{});
+            return expr(try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused));
+        };
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(pc.decl);
+        defer l.leaveDecl(saved);
+        const schema = try l.expr(&stmts, site.schema);
+        try st.blocks.items[@backingInt(into)].appendSlice(l.scratch, stmts.items);
+        return expr(schema);
+    }
+
+    /// Version 1.23: the `prerender_data` call's lambda parameter bound to
+    /// `value` in `into`. Bound in the frame of the declaration being
+    /// lowered, which holds the call, so `init`, evaluated after it in the
+    /// same frame, reads it by that name.
+    fn programDataBind(impl: *anyopaque, into: M.Block, bound: M.Expr) E!void {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        const pc = l.program_now orelse return;
+        const site = pc.data orelse return;
+        if (l.decl_index != pc.decl) {
+            try l.report(.internal, @fromBackingInt(pc.inst), "A markup lowering bound a page value outside the declaration of its program.", .{});
+            return;
+        }
+        var stmts: StmtList = .empty;
+        try l.bindParam(&stmts, site.param, node(bound));
+        try st.blocks.items[@backingInt(into)].appendSlice(l.scratch, stmts.items);
+    }
+
     fn directPlan(l: *Lowerer) ?*const Direct.Plan {
         const pc = l.program_now orelse return null;
         const d = pc.direct orelse return null;
@@ -19956,6 +20183,8 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_subscription_message = programSubscriptionMessage,
         .program_command = programCommand,
         .program_pure = programPure,
+        .program_data_schema = programDataSchema,
+        .program_data_bind = programDataBind,
         .program_rows = programRows,
         .program_root_row = programRootRow,
         .program_model_cell = programModelCell,

@@ -64,7 +64,12 @@ const std = @import("std");
 /// program prerenders and holds its route list (`Placement.Places.prerender`),
 /// a constructor whose `init` is handed its route (`Named.routed`), and the
 /// origin and base a route's `Url` is made with (`Build.address`).
-pub const version: Version = .{ .major = 1, .minor = 22 };
+/// Version 1.23 adds build-time data (`prerender.md` §8.4): the placement
+/// whose lambda makes the program of each page's value
+/// (`Placement.Places.prerender_data`), the program it makes
+/// (`Program.data`), and the two calls that read the value into the
+/// lambda's parameter (`programDataSchema`, `programDataBind`).
+pub const version: Version = .{ .major = 1, .minor = 23 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -211,6 +216,19 @@ pub const Placement = struct {
         /// routes as an array, which the prerender entry exports. Only a
         /// lowering that `prerenders` declares one.
         prerender,
+        /// 1.23 (`prerender.md` §8.4): its first argument, a schema, and its
+        /// second, a lambda written in place whose body is a program call,
+        /// or a `first` placement around one (`Browser.prerenderData`):
+        /// the build prerenders the program at each route the project's data
+        /// program gives, the lambda's parameter that route's value. `main`'s
+        /// body says so, or a `first` placement there; anywhere else, and
+        /// with another `prerender` or `prerender_data` call on the same
+        /// spine, the call is refused. In every tree the call is compiled as
+        /// the lambda's body, whose program is `Program.data`: its lowering
+        /// reads the value where it mounts or renders and binds the
+        /// parameter to it (`programDataBind`). Only a lowering that
+        /// `prerenders` declares one.
+        prerender_data,
         _,
     };
 };
@@ -290,6 +308,13 @@ pub const Program = struct {
     placed: Placed = .unknown,
     /// 1.12: the root value slot keeps complete helper/branch documents for body and title.
     document_branch: bool = false,
+    /// 1.23 (`prerender.md` §8.4): the program is the body of a
+    /// `prerender_data` placement's lambda, whose parameter, the page's
+    /// value, its `init` may read. The lowering binds it
+    /// (`programDataBind`) before it evaluates `init`, in the mount and in
+    /// the render function alike, to the value it decodes with the schema
+    /// `programDataSchema` gives.
+    data: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,
@@ -1812,6 +1837,22 @@ pub const Context = struct {
     pub fn programPure(cx: *Context, part: Program.Part) error{ OutOfMemory, Reported }!void {
         return cx.vtable.program_pure(cx.impl, part);
     }
+
+    /// 1.23 (`prerender.md` §8.4), inside `Lowering.program` of a
+    /// `Program.data` program only: the schema the `prerender_data`
+    /// placement is handed, evaluated into `block`. At most once per
+    /// program site.
+    pub fn programDataSchema(cx: *Context, block: Block) Error!Expr {
+        return cx.vtable.program_data_schema(cx.impl, block);
+    }
+
+    /// 1.23, inside `Lowering.program` of a `Program.data` program only:
+    /// bind the `prerender_data` placement's lambda parameter to `bound` in
+    /// `block`, before `programInit` or `programStart` evaluates `init`,
+    /// which may read it.
+    pub fn programDataBind(cx: *Context, block: Block, bound: Expr) Error!void {
+        return cx.vtable.program_data_bind(cx.impl, block, bound);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -2029,6 +2070,8 @@ pub const VTable = struct {
     program_subscription_message: *const fn (impl: *anyopaque, i: u32, payload: Expr) Error!Expr,
     program_command: *const fn (impl: *anyopaque, key: ?u32) Program.Command,
     program_pure: *const fn (impl: *anyopaque, part: Program.Part) error{ OutOfMemory, Reported }!void,
+    program_data_schema: *const fn (impl: *anyopaque, block: Block) Error!Expr,
+    program_data_bind: *const fn (impl: *anyopaque, block: Block, value: Expr) Error!void,
     program_rows: *const fn (impl: *anyopaque) []const u32,
     program_root_row: *const fn (impl: *anyopaque, node: ?Node.Index) ?u32,
     program_model_cell: *const fn (impl: *anyopaque) bool,

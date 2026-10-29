@@ -3,6 +3,7 @@
 --! `document.body` unless `mountAt` names an element.
 
 import Js
+import Schema exposing (Schema)
 import Url exposing (Url)
 
 
@@ -59,3 +60,33 @@ prerender page routes =
     list = Js.array []
     List.foldl routes ⊤ λroute _ → Js.to (Js.call list "push" [ Js.from route ])
     Js.to (Js.array [ Js.from page, list ])
+
+
+--| A site whose pages hold data the build reads from files
+--| (`docs/design/prerender.md` §8): the program `body` makes of each
+--| page's value. The project's `"build"."data"` names a data program,
+--| built for `node`, whose `main` is `Prerender.pages`: it gives each route
+--| and its value. The build writes one page per route, the value encoded
+--| by `schema` in a `<script type="application/json">` of the page, and
+--| renders the page from the value it decodes from that text. The page
+--| decodes the same text when it loads, before `init` runs. `schema` must
+--| be a `schema` declaration's `X.schema ⊤`, `Schema.derived ⊤`, or one of
+--| those composed by `Schema.list`, `Schema.nullable` or
+--| `Schema.converted`; its conversions must be pure. Only the record's
+--| `init` may read the value: put it in the model there.
+--|
+--|     main : Program
+--|     main =
+--|         Browser.prerenderData (Page.schema ⊤) λpage →
+--|             Tea.document
+--|                 { init = λ⊤ → ( { page = page }, Cmd.none )
+--|                 , update = update
+--|                 , view = view
+--|                 , subscriptions = λ_ → Sub.none
+--|                 }
+pub prerenderData : Schema e d, (d → Program) → Program
+prerenderData schema body =
+    -- Where `main` says so, the build compiles the call away: a page reads
+    -- and decodes its value where its program mounts, and the prerender
+    -- tree where it renders the page.
+    Js.to (Js.array [ Js.from schema, Js.from body ])

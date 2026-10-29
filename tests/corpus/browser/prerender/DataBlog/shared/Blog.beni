@@ -1,0 +1,10 @@
+--! What the data program gives each page, and what the site's `init`
+--! receives: one schema, in a module both programs compile.
+
+pub schema Page tagged "page" of
+    Home as "home"
+        titles : List String
+    Article as "article"
+        slug : String
+        title : String
+        body : String

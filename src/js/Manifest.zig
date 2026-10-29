@@ -116,6 +116,19 @@ pub const Build = struct {
     /// `"build"."origin"` (`prerender.md` §7.3): the address a prerendered
     /// site is served at, which an application's routes are `Url`s below.
     origin: ?[]const u8 = null,
+    /// `"build"."data"` (`prerender.md` §8.2): the project's data program,
+    /// built for `node`, which gives a prerendered site's routes and each
+    /// page's value.
+    data: ?Data = null,
+
+    /// `"build"."data"`'s fields: `paths`, required and nonempty, relative
+    /// to the project root as `"build"."paths"` are; and `inputs`, the
+    /// files and directories `serve` and `--watch` watch for it besides its
+    /// sources (§8.8). A key it does not know is ignored.
+    pub const Data = struct {
+        paths: []const []const u8,
+        inputs: []const []const u8 = &.{},
+    };
 };
 
 /// `"lists"` (`boundary.md` §5.2): what the chain's code may do with a
@@ -178,6 +191,9 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         },
         else => return error.Malformed,
     } else .none;
+    // `"build"."data"`'s `"paths"` names at least one path (`prerender.md`
+    // §8.2).
+    if (parsed.build) |b| if (b.data) |d| if (d.paths.len == 0) return error.Malformed;
     return .{
         .platform = parsed.platform orelse false,
         .name = parsed.name,
@@ -289,6 +305,27 @@ test "a page shell, and a project's build defaults" {
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "build": { "paths": "src" } }
     ));
+}
+
+test "a project's data program: paths required and nonempty, inputs optional" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "build": { "data": { "paths": ["data", "shared"], "inputs": ["posts"], "later": 1 } } }
+    );
+    try testing.expectEqualStrings("shared", m.build.data.?.paths[1]);
+    try testing.expectEqualStrings("posts", m.build.data.?.inputs[0]);
+    const bare = try parse(arena.allocator(), "{ \"build\": { \"data\": { \"paths\": [\"data\"] } } }");
+    try testing.expectEqual(@as(usize, 0), bare.build.data.?.inputs.len);
+    for ([_][]const u8{
+        \\{ "build": { "data": "data" } }
+        ,
+        \\{ "build": { "data": { "inputs": ["posts"] } } }
+        ,
+        \\{ "build": { "data": { "paths": [] } } }
+        ,
+        \\{ "build": { "data": { "paths": ["data"], "inputs": "posts" } } }
+    }) |bad| try testing.expectError(error.Malformed, parse(arena.allocator(), bad));
 }
 
 test "exports: a mode on a platform, a list of names on an app" {

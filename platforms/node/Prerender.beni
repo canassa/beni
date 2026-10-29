@@ -1,0 +1,116 @@
+--! The data program of a prerendered site (`docs/design/prerender.md` §8.3):
+--! a `node` program that reads what a site's pages hold — files, say — once,
+--! when the site is built, and gives each route and its value.
+--!
+--! A site with build-time data is two programs over shared modules. The
+--! site, built for `browser-inline`, says
+--! `main = Browser.prerenderData (Page.schema ⊤) λpage → …`. The data
+--! program, built for `node` from the project's `"build"."data"` paths,
+--! says `main = Prerender.pages (Page.schema ⊤) pages`. The build runs the
+--! data program first, under Node, and writes one page per route it gives.
+--!
+--!     main : Program
+--!     main = Prerender.pages (Page.schema ⊤) λ⊤ →
+--!         Ok [ ( "/", Page.Home { titles = [] } ) ]
+
+import Io
+import Js
+import Node exposing (Program)
+import Schema exposing (Field, Index, Issue, PathSegment, Schema)
+
+
+--| A data program: `body` runs once in a fiber, as `Io.run`'s does, so it
+--| may wait and read files, and gives each route and its value, in the
+--| order the build writes the pages. Each value is encoded with
+--| `schema`'s `print`. `Err` fails the build with its text; so does a value
+--| the schema cannot encode. A route begins with `/`, and the rules of
+--| `Browser.prerender`'s routes hold for it.
+--|
+--| Built by the build, the program runs with its working directory at the
+--| project's root, and writes its records to the file the build names.
+--| Built on its own and run with no argument, it writes them to standard
+--| output, one JSON line per page and a last `{"end": n}`.
+pub pages : Schema e d, (⊤ → Result String (List (String × d))) → Program
+pages schema body = Io.run λ⊤ →
+    case body ⊤ of
+        Err why →
+            record = Js.construct (Js.global "Object") []
+            Js.set record "error" (Js.from why)
+            finish [ line record ]
+            Node.exitWith "beni: the data program failed; its records say why" 1
+
+        Ok given →
+            case encode schema given of
+                Ok lines →
+                    finish lines
+                    Node.done
+
+                Err lines →
+                    finish lines
+                    Node.exitWith "beni: the data program failed; its records say why" 1
+
+
+-- Each page's record, `{ route, data }`, then `{ end }`; or the pages
+-- before the first value its schema cannot encode, then that one's
+-- `{ route, issues }`, as `Err`.
+encode : Schema e d, List (String × d) → Result (List String) (List String)
+encode schema given =
+    lines = Js.array []
+    failed = Js.ref False
+    List.foldl given ⊤ λ( route, value ) _ →
+        if not (Js.read failed) then
+            record = Js.construct (Js.global "Object") []
+            Js.set record "route" (Js.from route)
+            case Schema.print schema value of
+                Ok text →
+                    Js.set record "data" (Js.from text)
+
+                Err issues →
+                    Js.write failed True
+                    Js.set record "issues" (issueLines issues)
+            _ = Js.call lines "push" [ Js.from (line record) ]
+            ⊤
+    count = Js.get lines "length"
+    if Js.read failed then
+        Err (Js.to lines)
+    else
+        record = Js.construct (Js.global "Object") []
+        Js.set record "end" count
+        _ = Js.call lines "push" [ Js.from (line record) ]
+        Ok (Js.to lines)
+
+
+line : Js.Value → String
+line record = Js.to (Js.call (Js.global "JSON") "stringify" [ record ])
+
+
+-- Each issue as a line, `.posts[0].title: <message>`, in an array.
+issueLines : List Issue → Js.Value
+issueLines issues =
+    shown = Js.array []
+    List.foldl issues ⊤ λissue _ →
+        _ = Js.call shown "push" [ Js.from "${pathText issue.path}: ${issue.message}" ]
+        ⊤
+    shown
+
+
+pathText : List PathSegment → String
+pathText path =
+    if List.isEmpty path then
+        "the value"
+    else
+        List.foldl path "" λsegment shown →
+            case segment of
+                Field name →
+                    "${shown}.${name}"
+
+                Index i →
+                    "${shown}[${String.fromInt i}]"
+
+
+-- The records, in one write, each a line.
+finish : List String → ⊤
+finish lines = writeRecords (String.join (List.map lines λl → "${l}\n") "")
+
+
+foreign impure writeRecords : String → ⊤

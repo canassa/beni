@@ -16,6 +16,7 @@ module Browser
     External
   value mountAt : Program, String → Program
   value prerender : Program, List String → Program  -- impure
+  value prerenderData : Schema e d, (d → Program) → Program  -- impure
 module Browser.Navigation
   type Error
     BadUrl
@@ -55,6 +56,7 @@ module Inline
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
+  value decoded : Schema e d, V → V  -- impure
   value deliver : V → ⊤  -- impure
   value entry : V, V → V  -- impure
   value escape : V → V  -- impure
@@ -80,6 +82,7 @@ module Inline
   value onArmTaken : V, V, V, V, V → ⊤  -- impure
   value onTaken : V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
+  value pageData : Schema e d, V → V  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
   value pass : V → ⊤  -- impure

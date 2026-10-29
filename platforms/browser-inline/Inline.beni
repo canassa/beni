@@ -8,6 +8,7 @@
 
 import Cmd exposing (Cmd)
 import Js
+import Schema exposing (Field, Index, Issue, PathSegment, Schema)
 import Url exposing (Url)
 
 
@@ -302,6 +303,82 @@ title value =
     document = Js.global "document"
     if not (Js.same (Js.get document "title") (Js.from value)) then
         Js.set document "title" (Js.from value)
+
+
+-- ---- Build-time data (`prerender.md` §8) --------------------------------
+
+--| `(schema, at)`: what a page of a data site holds for its program, read
+--| before `init` (`prerender.md` §8.6): the first child of `at`, the
+--| element the program mounts at, that is a `script` with
+--| `data-beni-data`, removed from the page, its text decoded with
+--| `schema` — `[route, value]`, the route its `data-beni-data` names. A
+--| page with no such script, or whose text does not decode, is not one the
+--| build wrote, and stops as a defect: there is no value to start from.
+pub pageData : Schema e d, V → V
+pageData schema at =
+    script = Js.call at "querySelector" [ Js.from ":scope>script[data-beni-data]" ]
+    if Js.isNull script then
+        if Js.development ⊤ then
+            fault
+                "cannot start the page: it holds no <script type=\"application/json\" data-beni-data> as a child of the element the program mounts at, so it has no value for init. It is not a page the build wrote, or something took the script out."
+        else
+            fault "no data"
+    route = Js.call script "getAttribute" [ Js.from "data-beni-data" ]
+    held : String
+    held = Js.to (Js.get script "textContent")
+    _ = Js.call script "remove" []
+    case Schema.parse schema held of
+        Ok value →
+            Js.array [ route, Js.from value ]
+
+        Err issues →
+            if Js.development ⊤ then
+                lines = issueLines issues
+                shown : String
+                shown = Js.to (Js.call lines "join" [ Js.from "; " ])
+                fault "cannot start the page: the value its script holds does not decode: ${shown}"
+            else
+                fault "bad data"
+            Js.undefined
+
+
+--| `(schema, text)`: the prerender tree's decode of a page's text with the
+--| function the page decodes it with (`prerender.md` §8.5 item 5): `{ value }`,
+--| or `{ issues }`, each issue a line naming its path and its message.
+pub decoded : Schema e d, V → V
+decoded schema page =
+    answer = Js.construct (Js.global "Object") []
+    case Schema.parse schema (Js.to page) of
+        Ok value →
+            Js.set answer "value" (Js.from value)
+
+        Err issues →
+            Js.set answer "issues" (issueLines issues)
+    answer
+
+
+-- Each issue as a line, `.posts[0].title: <message>`, in an array.
+issueLines : List Issue → V
+issueLines issues =
+    lines = Js.array []
+    List.foldl issues ⊤ λissue _ →
+        _ = Js.call lines "push" [ Js.from "${pathText issue.path}: ${issue.message}" ]
+        ⊤
+    lines
+
+
+pathText : List PathSegment → String
+pathText path =
+    if List.isEmpty path then
+        "the value"
+    else
+        List.foldl path "" λsegment shown →
+            case segment of
+                Field name →
+                    "${shown}.${name}"
+
+                Index i →
+                    "${shown}[${String.fromInt i}]"
 
 
 -- ---- The unmount (`boundary.md` §9.4.5, amended 2026-10-17) -------------

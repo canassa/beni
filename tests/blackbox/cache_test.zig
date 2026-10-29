@@ -2419,9 +2419,10 @@ test "a platform read from a directory is checked by the build, and an embedded 
     // `Random` and `Ssr` — so the platform's other modules (`Io`,
     // `Http.Server`) are not in its graph, and none of them is checked.
     // Neither are the three core modules only `Io` reaches: `Log`, for the
-    // sink `Io.run` installs, and the `Clock` and `Record` that `Log` uses.
+    // sink `Io.run` installs, and the `Clock` and `Record` that `Log` uses;
+    // nor `Schema`, which only `Prerender` reaches.
     const unreached = node_modules - 3;
-    const unreached_core = 3;
+    const unreached_core = 4;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
     try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached + unreached_core);
 }

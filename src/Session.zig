@@ -165,6 +165,11 @@ diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
 /// diagnostic points at that the store does not hold, or must not be asked
 /// for. Borrowed from that call's stack.
 late_sources: []const LateSource = &.{},
+/// What another session of this process resolved for this one's render
+/// (`exportLate`): a site's data program, built beside it
+/// (`prerender.md` §8.5 item 2), whose diagnostics are one render with the
+/// site's. The session that made them outlives the render.
+foreign: Foreign = .{},
 /// Set when `run` fails on I/O so `main` can say which path.
 io_failure: ?IoFailure = null,
 /// Shared by all workers: the next position in `wave` to claim.
@@ -3110,7 +3115,7 @@ pub const At = struct {
 /// diagnostics in one stream may name the same file and want different
 /// answers — `missing_main` wants none, and a warning ten lines down wants
 /// its own line.
-const LateSource = struct { span: diagnostic.Span, source: ?[]const u8 };
+pub const LateSource = struct { span: diagnostic.Span, source: ?[]const u8 };
 
 fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
     return std.mem.eql(u8, a.file, b.file) and
@@ -3133,7 +3138,7 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     // Build/check return before this phase when the run reports errors;
     // deferred diagnostics reaching renderLate are warnings, never held errors.
     const held = if (session.options.defer_render) session.diagnostics.items else &.{};
-    if (items.len == 0 and held.len == 0) return 0;
+    if (items.len == 0 and held.len == 0 and session.foreign.diagnostics.len == 0) return 0;
     const gpa = session.gpa;
     const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len + held.len);
     defer gpa.free(rendered);
@@ -3171,16 +3176,71 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
         if (item.at) |at| try late_sources.append(gpa, .{ .span = slot.span, .source = at.source });
     }
     @memcpy(rendered[items.len..], held);
-    diagnostic.sort(rendered);
+    // Another session's diagnostics, but one this run says already, at the
+    // same place with the same text: a warning of a module both programs
+    // compile is rendered once (`prerender.md` §8.5 item 2).
+    var all: std.ArrayList(diagnostic.Diagnostic) = .empty;
+    defer all.deinit(gpa);
+    try all.appendSlice(gpa, rendered);
+    for (session.foreign.diagnostics) |d| {
+        const said = for (rendered) |r| {
+            if (r.code == d.code and r.severity == d.severity and sameSpan(r.span, d.span) and std.mem.eql(u8, r.message, d.message)) break true;
+        } else false;
+        if (!said) try all.append(gpa, d);
+    }
+    try late_sources.appendSlice(gpa, session.foreign.sources);
+    diagnostic.sort(all.items);
     session.late_sources = late_sources.items;
     defer session.late_sources = &.{};
-    try session.render(rendered, stderr);
+    try session.render(all.items, stderr);
     var errors: u32 = 0;
     // Sorting interleaves held warnings with late errors; count the whole stream.
-    for (rendered) |d| {
+    for (all.items) |d| {
         if (d.severity == .@"error") errors += 1;
     }
     return errors;
+}
+
+/// Diagnostics another session renders as its own (`Session.foreign`).
+pub const Foreign = struct {
+    diagnostics: []const diagnostic.Diagnostic = &.{},
+    sources: []const LateSource = &.{},
+};
+
+/// What `renderLate` would render of `items` and of what `run` held back,
+/// resolved for ANOTHER session's render (`Session.foreign`): each span by
+/// this session's files, each with its file's bytes for the excerpt, the
+/// late messages wrapped once. In `a`, which outlives that render, as this
+/// session must: the paths and the held messages are its own.
+pub fn exportLate(session: *Session, a: Allocator, items: []const LateItem) Allocator.Error!Foreign {
+    const held = if (session.options.defer_render) session.diagnostics.items else &.{};
+    const out = try a.alloc(diagnostic.Diagnostic, items.len + held.len);
+    var sources: std.ArrayList(LateSource) = .empty;
+    for (items, out[0..items.len]) |item, *slot| {
+        const start, const end = if (item.at) |at|
+            .{ at.start, at.end }
+        else if (item.end_token) |last|
+            .{ session.tokenSpan(item.file, item.token)[0], session.tokenSpan(item.file, last)[1] }
+        else
+            session.tokenSpan(item.file, item.token);
+        const wrapped = try wrap.reflow(session.gpa, item.message);
+        defer session.gpa.free(wrapped);
+        slot.* = .{
+            .code = item.code,
+            .severity = item.severity,
+            .span = .{ .file = if (item.at) |at| at.path else session.store.path(item.file), .start = start, .end = end },
+            .title = diagnostic.title(item.code),
+            .message = try a.dupe(u8, wrapped),
+        };
+        const source = if (item.at) |at| at.source else session.store.bytes(item.file);
+        try sources.append(a, .{ .span = slot.span, .source = source });
+    }
+    @memcpy(out[items.len..], held);
+    for (held) |d| {
+        const source = if (session.store.find(d.span.file)) |index| session.store.bytes(index) else null;
+        try sources.append(a, .{ .span = d.span, .source = source });
+    }
+    return .{ .diagnostics = out, .sources = sources.items };
 }
 
 /// One wave of diagnostics onto `stderr`, in the run's format. The only

@@ -1,0 +1,34 @@
+-- The data program (docs/design/prerender.md §8.3): built for `node`, run
+-- once by the build with its working directory at the project root, it
+-- reads each post's file and gives a route per post and one for `/`.
+import Blog exposing (Page)
+import Io
+import Node exposing (Program)
+import Prerender
+
+
+slugs : List String
+slugs = [ "hello", "second" ]
+
+
+article : String → Result String (String × Page.Type)
+article slug =
+    case Io.readFile "posts/${slug}.txt" of
+        Ok body →
+            Ok
+                ( "/blog/${slug}"
+                , Page.Article { slug = slug, title = "Post ${slug}", body = body }
+                )
+
+        Err _ →
+            Err "cannot read posts/${slug}.txt"
+
+
+pages : ⊤ → Result String (List (String × Page.Type))
+pages _ =
+    articles = Result.combine (List.map slugs article)?
+    Ok [ ( "/", Page.Home { titles = slugs } ), …articles ]
+
+
+main : Program
+main = Prerender.pages (Page.schema ⊤) pages
