@@ -145,12 +145,12 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 76bd02aa4473b86c846515ead4fc065ad99b4dcf0783d38d5fc0c33e4033a3b0
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 bf02f030b3c9014cb70be900d9c235549e4c16ff0295604ca48ed2d030f06f29
 ordering_test.test.nullary methods and record defaults print the same reversed #0 f99bac19c8930988990d032f3c2421a5966ed6d03c968bad7073310b1415a110
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 86dc445a7d96434474fb873a1340c1cdcb1a8ce814e6edf06a793e26bdb22012
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 ff7a206a95a54a3ccd6bdaec3ffa925ed50acdca9aa9772375ef7d372df17a1f
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 10995ca8d812463d67fc2bd7f8508a43341df39740e8469fa787322f4d638049
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 00c35b55d9e74135db158ee68f396a5749f54e39835b33e4b20df3b54b03747d
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 b6a7ea9f04da1f70807c9e6da4f9e37b88ec3ba9ca872f186882c48338d64a68
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 a4346450b9d8302eb060343723a0aa783a73747faea3b72f5761870dde0e8a93
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 76f29c4a3f9178adc460cc54d37eb0636eefe0ec45d77a27cfa7334d52b289e3
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 220824ec7c82093bda3494ed78cea5a8468ac9668995df2f9f9a9320713e25af
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 92b060845e826d3968b09b8c1281920b3e6290a152b0f454d68343d40b42946b
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 fff6dff3be00203882e08b45d48e421e1f1ef01d8af0f77df809b01f155c25e0
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 defd9873a4b3d25dfb8653a781b1935dd3ba61c5b5b1e07b38a5233926c1dfd0
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 c9a8786f59fc748c76bc170b342e54df381d9879ac9df0ad3fec72b7538403b6
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 503f53e9342855e71ffb19fba44f3177ff580310529736703691267427a2dd61
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 fe6ab13b599207e865649c1cd31e2601f4231eb2281099b2310dee5c3f6e2035
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 64acb624a904a569586774fbce982d795c4381ade3ea1c20bf81de12ae5d9237
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 68e8aaf73059df63c683e0b97d3ca69c222b5cd09c42cd1239689cb2952c6c92
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
