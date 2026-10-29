@@ -119,7 +119,16 @@ pub const Options = struct {
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
-    recursion_limit: u32 = 256,
+    ///
+    /// The number comes from the stack a level costs. In the Debug test
+    /// binary (2026-10-29) one level is three frames, `rawRecursive`
+    /// 3 664 B, `expression` 240 B and `raw` 144 B, about 3.9 KB with the
+    /// return addresses, so 128 levels take about 0.5 MiB: half of
+    /// `small_stack.size`, the stack the depth tests run on, with the other
+    /// half for the printer's entry frames and for `testing.allocator`'s
+    /// stack-trace capture under an allocation. At 256 the levels alone took
+    /// about 1 000 KB of its 1 024 KB, and a frame 32 B larger overflowed it.
+    recursion_limit: u32 = 128,
     /// A scope-hoisted build (§9, *One scope-hoisted file under
     /// `--release`*): the module's `import` and `export` statements are not
     /// printed, because every name they carry is already one binding of the
@@ -493,7 +502,8 @@ const Printer = struct {
     work: std.ArrayList(Work) = .empty,
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
-    recursion_limit: u32 = 256,
+    /// `Options.recursion_limit`.
+    recursion_limit: u32 = 128,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
@@ -4238,11 +4248,13 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
     try testing.expect(!isReservedWord("newer"));
 }
 
-/// Twice the depth the printer fails at when it only recurses, on
-/// `small_stack.size`: with no switch to its work stack
-/// (`recursion_limit` unbounded) it printed 250 links on the Debug test
-/// binary and overflowed at 400. Its default 256 recursive levels fit, with
-/// about a third of the stack to spare.
+/// Deeper than the printer can take by recursion on `small_stack.size`:
+/// with no switch to its work stack (`recursion_limit` unbounded) it printed
+/// 250 links on the Debug test binary and overflowed at 400, when the test
+/// was written. Its default 128 recursive levels take about half of that
+/// stack (`Options.recursion_limit` has the frames); 256 took nearly all of
+/// it, and the overflow a few more bytes per frame caused was found only as
+/// a hang (the segfault handler deadlocks the test process).
 const deep_chain = 800;
 
 test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {
