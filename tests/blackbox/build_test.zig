@@ -9332,15 +9332,15 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1⟲ RA, π1⟲#Rose.0 RAW; res .0 fresh2, .0 π1⟲#Rose.0, .0[*] π1⟲{excl π1⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
 }
 
-test "the checker v2's widen folds through a choice at a recursive value's root (#1360): one class per canonical path" {
+test "the checker v2's widen keeps a non-recursive function's choice at a tree's root exact (#1360)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `pick`'s result is a branch join at the root whose first arm holds a
-    // re-entering choice at `#Node.0`. Widen kept the root whole, so the
-    // inner node stayed a second node at `#Node.0#Node.0` and a recursive
-    // group nesting it every round never settled. Opened, its knot prints
-    // as a node with a node does (`#Node.2 = #Node.0`).
+    // `pick`'s result is a branch join at the root whose first arm builds a
+    // node at `#Node.0`: a finite value, no cycle. Outside a recursive
+    // group's rounds widen keeps the join, so the summary names
+    // `#Node.0#Node.0` exactly, as master's does; folding it merged every
+    // level into one class (`#Node.2 = #Node.0`).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -9353,8 +9353,7 @@ test "the checker v2's widen folds through a choice at a recursive value's root 
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "#Node.0#Node.0") == null);
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.1 RA, π1⟲ RA, π1⟲#Node.1 RA, π2 RA; res #Node.0 π1⟲ π1⟲ π2 π2{lost}, #Node.0#Node.1 π1#Node.1 π1⟲#Node.1{apart [π1#Node.1] [π1⟲#Node.1]}, #Node.1 π1#Node.1 π1⟲#Node.1{apart [π1#Node.1] [π1⟲#Node.1]}, #Node.2 = #Node.0, π1⟲ π1⟲ π2 π2{lost}\n") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.1 RA, π1⟲ RA, π1⟲#Node.1 RA, π2 RA; res #Node.0 π2, #Node.0#Node.0 π1⟲, #Node.0#Node.1 π1⟲#Node.1, #Node.0#Node.2 π2, #Node.1 π1#Node.1\n") != null);
 }
 
 test "the checker v2's growth is linear in a recursive tower's height: a one-member literal is its member's snapshot" {

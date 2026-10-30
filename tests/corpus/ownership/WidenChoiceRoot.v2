@@ -1,1 +1,1 @@
-v2 folds a choice at the root of a recursive value (ownership-v2.md §2.3, #1360); v1 has no such fold.
+v2 keeps a non-recursive branch join exact outside a group's rounds (ownership-v2.md §2.3, #1360); v1's summary is its own.
