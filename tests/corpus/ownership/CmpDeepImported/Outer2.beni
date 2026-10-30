@@ -1,0 +1,14 @@
+import Inner
+
+
+pub type Outer2
+    = Outer2 Int Inner.Inner
+
+
+pub eq : Outer2, Outer2 → Bool
+eq a b =
+    case a of
+        Outer2 _ x →
+            case b of
+                Outer2 _ y →
+                    x == y

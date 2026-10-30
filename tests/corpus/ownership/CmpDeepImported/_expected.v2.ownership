@@ -1,0 +1,74 @@
+module Inner
+  9:26 List.push l: accepted param
+  account eq: source 20, baseline 271, growth 0 of 65536, total 271, continuation 182 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Inner.0 RW
+  block: 472 bytes, hash 2f6441dcb447764e
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  13:16 List.eq os[*]#Outer2.1#Inner.0: accepted param
+  13:16 List.eq <literal>[*]#Outer2.1#Inner.0: accepted fresh
+  17:19 Main.listOf os[*]#Outer2.1#Inner.0: rejected element: os[*]#Outer2.1#Inner.0 holds it and is read at 17:17 (approx)
+  22:47 call <expression>.0#Outer2.1#Inner.0: rejected alias: xs holds it and is read at 22:5
+  22:47 call <expression>.0#Outer2.1#Inner.0: accepted fresh
+  27:47 call <expression>.0#Outer2.1#Inner.0: accepted fresh
+  27:47 call <expression>.0#Outer2.1#Inner.0: rejected alias: xs holds it and is read at 27:5
+  31:28 call <expression>.0#Outer2.1#Inner.0: rejected disjoint: another operand of the same operation reaches it
+  31:28 call <expression>.0#Outer2.1#Inner.0: rejected disjoint: another operand of the same operation reaches it
+  35:53 call <expression>.0#Outer2.1#Inner.0: accepted param
+  35:53 call <expression>.0#Outer2.1#Inner.0: accepted fresh
+  39:21 Main.viaFn2 xs: rejected later-use: xs is read again at 39:19
+  43:17 List.eq os[*]#Outer3.1#Mid.1#Inner.0: accepted param
+  43:17 List.eq <literal>[*]#Outer3.1#Mid.1#Inner.0: accepted fresh
+  47:20 Main.listOf3 os[*]#Outer3.1#Mid.1#Inner.0: rejected element: os[*]#Outer3.1#Mid.1#Inner.0 holds it and is read at 47:18 (approx)
+  53:9 call <expression>.0#Outer3.1#Mid.1#Inner.0: rejected alias: xs holds it and is read at 52:5
+  53:9 call <expression>.0#Outer3.1#Mid.1#Inner.0: accepted fresh
+  account listOf: source 9, baseline 327, growth 0 of 65536, total 327, continuation 249 of 9216, demands 46, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 10, step lanes 3
+  crossing: reads 0, redone 0, base moves 0
+  summary listOf: π1 R, π1[*] R, π1[*]#Outer2.1 R, π1[*]#Outer2.1#Inner.0 RW
+  account callerList: source 15, baseline 218, growth 0 of 65536, total 218, continuation 200 of 15360, demands 44, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16, step lanes 3
+  summary callerList: π1 RA, π1[*] R, π1[*]#Outer2.1 R, π1[*]#Outer2.1#Inner.0 RW; res .1 π1
+  account nestedLeft: source 29, baseline 425, growth 0 of 65536, total 425, continuation 293 of 29696, demands 48, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
+  summary nestedLeft: π1 RAW; res .1 π1
+  account nestedRight: source 29, baseline 425, growth 0 of 65536, total 425, continuation 293 of 29696, demands 48, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
+  summary nestedRight: π1 RAW; res .1 π1
+  account nestedParam: source 15, baseline 395, growth 0 of 65536, total 395, continuation 291 of 15360, demands 14, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 16, step lanes 4
+  summary nestedParam: π1 RA, π1#Outer2.1 R, π1#Outer2.1#Inner.0 RW; res .1 π1
+  account viaFn2: source 23, baseline 365, growth 0 of 65536, total 365, continuation 242 of 23552, demands 35, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
+  summary viaFn2: π1 RW
+  account callerViaFn2: source 15, baseline 118, growth 0 of 65536, total 118, continuation 103 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerViaFn2: π1 RAW; res .1 π1
+  account listOf3: source 9, baseline 400, growth 0 of 65536, total 400, continuation 301 of 9216, demands 54, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 10, step lanes 4
+  summary listOf3: π1 R, π1[*] R, π1[*]#Outer3.1 R, π1[*]#Outer3.1#Mid.1 R, π1[*]#Outer3.1#Mid.1#Inner.0 RW
+  account callerList3: source 15, baseline 251, growth 0 of 65536, total 251, continuation 232 of 15360, demands 52, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16, step lanes 4
+  summary callerList3: π1 RA, π1[*] R, π1[*]#Outer3.1 R, π1[*]#Outer3.1#Mid.1 R, π1[*]#Outer3.1#Mid.1#Inner.0 RW; res .1 π1
+  account nested3: source 35, baseline 503, growth 0 of 65536, total 503, continuation 333 of 35840, demands 48, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 7, transfer_settlement lanes 36
+  summary nested3: π1 RAW; res .1 π1
+  block: 2672 bytes, hash 518cc1bb9179fd08
+  demands 17: accepted 9 (fresh 6, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+module Mid
+  14:23 Inner.eq x#Inner.0: accepted param
+  account eq: source 23, baseline 259, growth 0 of 65536, total 259, continuation 172 of 23552, demands 32, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 2
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Mid.1 R, π1#Mid.1#Inner.0 RW, π2 R, π2#Mid.1 R
+  block: 716 bytes, hash 122643ab7e149e42
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Outer2
+  14:23 Inner.eq x#Inner.0: accepted param
+  account eq: source 23, baseline 259, growth 0 of 65536, total 259, continuation 172 of 23552, demands 32, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 2
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Outer2.1 R, π1#Outer2.1#Inner.0 RW, π2 R, π2#Outer2.1 R
+  block: 720 bytes, hash 74209be8d6566f8d
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Outer3
+  14:23 Mid.eq x#Mid.1#Inner.0: accepted param
+  account eq: source 23, baseline 342, growth 0 of 65536, total 342, continuation 229 of 23552, demands 40, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 3
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Outer3.1 R, π1#Outer3.1#Mid.1 R, π1#Outer3.1#Mid.1#Inner.0 RW, π2 R, π2#Outer3.1 R, π2#Outer3.1#Mid.1 R
+  block: 892 bytes, hash 08b6961832e223e4
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 21: accepted 13 (fresh 6, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause disjoint 2
+cause later-use 1
+cause alias 3
+cause element 2
