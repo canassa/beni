@@ -816,6 +816,27 @@ const Grafter = struct {
         return c;
     }
 
+    /// A template leaf's parts as the eager graft joined them (§2.11, the
+    /// view's eager image, `Shape.Table.eager`): the actual at each parameter
+    /// cell, marked where the cell is approximate (its recast), then the other
+    /// cells mapped into one leaf, which is there when nothing else is.
+    fn eagerParts(g: *Grafter, at: PlaceId, cells: SetId, out: *std.ArrayList(Shape.Table.LeafPart)) Error!void {
+        const first = out.items.len;
+        var rest: SetId = .none;
+        var it = g.env.cells.sets.iterate(cells);
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const cell: CellId = .from(e.key);
+            if (g.env.cells.origin(cell) == .param) {
+                const x = g.env.cells.get(cell);
+                try out.append(g.gpa(), .{ .node = try g.argAt(x.a, .from(x.b), at), .approx = e.value == 1 });
+                continue;
+            }
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
+        }
+        if (rest != .none or out.items.len == first) try out.append(g.gpa(), .{ .node = try g.env.shapes.leaf(g.gpa(), g.account(), at, rest), .approx = false });
+    }
+
     /// A view's leaf image (§2.11): a re-root template (one exact parameter
     /// cell) answers the actual there (`argAt`); otherwise each parameter
     /// part is a re-root view over an interned one-cell leaf (a recast when
@@ -997,7 +1018,7 @@ pub const Views = struct {
 
     /// Set on `v.shapes` once, before the first call.
     pub fn instantiation(v: *Views) Shape.Table.Instantiation {
-        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage, .reroot = rerootImage };
+        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage, .reroot = rerootImage, .parts = partsImage };
     }
 
     /// One call's environment.
@@ -1025,6 +1046,13 @@ pub const Views = struct {
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
         return g.viewLeaf(&v.members, t.place(template), t.cells(template));
+    }
+
+    fn partsImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId, out: *std.ArrayList(Shape.Table.LeafPart)) Error!void {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, account_, e, &none);
+        return g.eagerParts(t.place(template), t.cells(template), out);
     }
 
     fn cellsImage(ctx: *anyopaque, _: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, s: SetId, at: PlaceId) Error!SetId {

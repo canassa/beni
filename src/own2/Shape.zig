@@ -152,8 +152,13 @@ pub const Table = struct {
     relevant: stamped.Column(NodeId, void) = .{},
     /// `inners` by forced node.
     memo_inners: stamped.Column(NodeId, SetId) = .{},
-    /// `reintern`'s images of one mapped value.
-    memo_reintern: stamped.Column(NodeId, NodeId) = .{},
+    /// `eager`'s images (§2.11 *κ at a view*), valid while `ties` is
+    /// `eager_ties`; `answered` names the view whose fresh raw answer a node is.
+    memo_eager: stamped.Column(NodeId, NodeId) = .{},
+    eager_ties: u32 = 0,
+    answered: stamped.Column(NodeId, NodeId) = .{},
+    /// Where an `eager` image is ordered: the node it stands for (`birth`).
+    born: stamped.Column(NodeId, NodeId) = .{},
     /// `dagHas`'s node sets: what a union's or a choice's DAG reaches, by
     /// `(kind, node)`, until a knot is tied.
     memo_dag_members: Ids.FixedDict(2) = .{},
@@ -198,7 +203,9 @@ pub const Table = struct {
         t.cons_single.deinit(gpa);
         t.relevant.deinit(gpa);
         t.memo_inners.deinit(gpa);
-        t.memo_reintern.deinit(gpa);
+        t.memo_eager.deinit(gpa);
+        t.answered.deinit(gpa);
+        t.born.deinit(gpa);
         t.memo_dag_members.deinit(gpa);
         t.dag_members_ties.deinit(gpa);
     }
@@ -480,7 +487,14 @@ pub const Table = struct {
         /// The snapshot position a re-root view's template reads its actual
         /// at, null for a template that is no re-root leaf (*The crossing*).
         reroot: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!?Ids.KappaId,
+        /// A template leaf's parts as the eager graft joined them (`eager`):
+        /// the actual at each parameter cell (`approx` where the cell is
+        /// approximate), then the other cells mapped into one leaf.
+        parts: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId, out: *std.ArrayList(LeafPart)) Error!void,
     };
+
+    /// One part of a template leaf's eager image.
+    pub const LeafPart = struct { node: NodeId, approx: bool };
 
     /// `view(template, env)`: a call's result by reference, interned, its
     /// cells lazy until a reader asks.
@@ -532,7 +546,10 @@ pub const Table = struct {
             }
             if (chain.items.len == 1) task = try account.enter(gpa, null);
             try chain.append(gpa, at);
+            const made = t.nodes.len;
             const next = try t.expandView(gpa, account, at);
+            // A raw answer made here stands for this view (`eager`).
+            if (next.int() >= made and t.kind(next) != .view) try t.answered.put(gpa, next, at);
             if (t.kind(next) == .view) try t.memo_step.put(gpa, at, next);
             at = next;
         }
@@ -1139,7 +1156,7 @@ pub const Table = struct {
         const lv = t.kind(l) == .view;
         const rv = t.kind(r) == .view;
         if (!lv and !rv or lv and rv) return null;
-        if (try t.force(gpa, account, l) != try t.force(gpa, account, r)) return null;
+        if (t.eagerOf(l) != t.eagerOf(r) and try t.force(gpa, account, l) != try t.force(gpa, account, r)) return null;
         return if (lv) l else r;
     }
 
@@ -1927,11 +1944,10 @@ pub const Table = struct {
         return if (t.kind(n) == .delta) .from(t.nodes.items(.a)[n.int()]) else n;
     }
 
-    /// What a join groups a member by (§2.11): its answer's base, a view base
-    /// read at its answer, as the eager image put it.
+    /// What a join groups a member by (§2.11): its eager image's base, as
+    /// the eager join grouped it.
     fn groupBase(t: *const Table, n: NodeId) NodeId {
-        const b = t.baseOf(t.forced(n));
-        return t.answerOf(b) orelse b;
+        return t.baseOf(t.eagerOf(n));
     }
 
     /// `join` on an explicit stack (#1138: deltas nest as deep as the
@@ -1971,13 +1987,11 @@ pub const Table = struct {
 
         fn request(w: *JoinWalk, members: []const NodeId) Error!u32 {
             const first: u32 = @intCast(w.pool.items.len);
-            // A view is grouped by its answer (§2.11) and kept itself: a member
-            // taken whole is a side of the join, where its own κ is read
-            // (*κ at a view*); a forced node is never read alone.
+            // A member is grouped by its eager image (§2.11) and kept itself: a
+            // member taken whole is a side of the join, where its own κ is read
+            // (*κ at a view*); an image is never read alone.
             for (members) |m| {
-                const f = try w.t.force(w.gpa, w.account, m);
-                // A delta's base is grouped by its answer too.
-                if (w.t.kind(f) == .delta) _ = try w.t.force(w.gpa, w.account, w.t.baseOf(f));
+                _ = try w.t.eager(w.gpa, w.account, w.places, w.cellt, m);
                 try w.pool.append(w.gpa, m);
             }
             const id: u32 = @intCast(w.reqs.items.len);
@@ -2022,13 +2036,15 @@ pub const Table = struct {
             const members = w.pool.items[r.first..][0..r.len];
             std.mem.sort(NodeId, members, t, struct {
                 fn lessThan(tt: *Table, a: NodeId, b: NodeId) bool {
-                    const ba = tt.groupBase(a).int();
-                    const bb = tt.groupBase(b).int();
-                    if (ba != bb) return ba < bb;
-                    // One answer's members next to each other.
-                    const fa = tt.forced(a).int();
-                    const fb = tt.forced(b).int();
-                    return if (fa != fb) fa < fb else a.int() < b.int();
+                    // Groups in the order the eager join met them (`birth`).
+                    const ga = tt.groupBase(a);
+                    const gb = tt.groupBase(b);
+                    if (ga != gb) return if (tt.birth(ga) != tt.birth(gb)) tt.birth(ga) < tt.birth(gb) else ga.int() < gb.int();
+                    // One image's members next to each other.
+                    const fa = tt.eagerOf(a);
+                    const fb = tt.eagerOf(b);
+                    if (fa != fb) return if (tt.birth(fa) != tt.birth(fb)) tt.birth(fa) < tt.birth(fb) else fa.int() < fb.int();
+                    return a.int() < b.int();
                 }
             }.lessThan);
             const parts_first: u32 = @intCast(w.parts.items.len);
@@ -2043,14 +2059,14 @@ pub const Table = struct {
                 while (j < run_now.len and t.groupBase(run_now[j]) == t.groupBase(run_now[i])) j += 1;
                 const grp = run_now[i..j];
                 i = j;
-                // One group: deduplicate by answer, then join the deltas over one
-                // base. Of members with one answer a view is kept: its read joins
+                // One group: deduplicate by image, then join the deltas over one
+                // base. Of members with one image a view is kept: its read joins
                 // the class's entry under it with its answer's (*κ at a view*).
                 var distinct: usize = 1;
                 for (grp[1..]) |m| {
                     const prev = &grp[distinct - 1];
                     const views = @as(u2, @intFromBool(t.kind(prev.*) == .view)) + @intFromBool(t.kind(m) == .view);
-                    if (m == prev.* or (t.forced(m) == t.forced(prev.*) and views < 2)) {
+                    if (m == prev.* or (t.eagerOf(m) == t.eagerOf(prev.*) and views < 2)) {
                         if (t.kind(m) == .view) prev.* = m;
                         continue;
                     }
@@ -2058,7 +2074,7 @@ pub const Table = struct {
                     distinct += 1;
                 }
                 if (distinct == 1) {
-                    const one = t.forced(grp[0]);
+                    const one = t.eagerOf(grp[0]);
                     if (t.kind(one) == .leaf) {
                         leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, t.cells(one));
                         leaf_place = t.place(one);
@@ -2067,11 +2083,11 @@ pub const Table = struct {
                     }
                     continue;
                 }
-                // Copy the group out, at their answers: requests below append
+                // Copy the group out, at their images: requests below append
                 // to the pool.
                 const copy = try w.gpa.dupe(NodeId, grp[0..distinct]);
                 defer w.gpa.free(copy);
-                for (copy) |*c| c.* = t.forced(c.*);
+                for (copy) |*c| c.* = t.eagerOf(c.*);
                 try w.deltaGroup(copy, &children);
             }
             if (leaf_place != .none) try w.parts.append(w.gpa, .{ .kind = .leaf, .place = leaf_place, .cells = leaf_cells });
@@ -2178,7 +2194,7 @@ pub const Table = struct {
         // after its parts.
         // `f` runs on entry, as the recursion ran it, and parts in the
         // recursion's order, so what `f` interns is interned as before.
-        const Frame = struct { node: NodeId, expanded: bool, cells: SetId = .none };
+        const Frame = struct { node: NodeId, expanded: bool, cells: SetId = .none, eager: NodeId = .none };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         var kids: std.ArrayList(NodeId) = .empty;
@@ -2189,6 +2205,12 @@ pub const Table = struct {
             const d = t.get(n);
             if (!fr.expanded) {
                 if (t.memo_map.get(n) != null) continue;
+                // A node `eager` made again is published as its image (§2.11).
+                const img = t.eagerOf(n);
+                if (img != n) {
+                    try stack.appendSlice(gpa, &.{ .{ .node = n, .expanded = true, .eager = img }, .{ .node = img, .expanded = false } });
+                    continue;
+                }
                 switch (d.kind) {
                     .leaf => try t.memo_map.put(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
                     .recast => {
@@ -2198,7 +2220,10 @@ pub const Table = struct {
                     },
                     .@"union", .choice, .positions => {
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
-                        try stack.appendSlice(gpa, &.{ .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
+                        // A union's or a choice's sides in `birth` order: an eager image
+                        // made at publish where the eager graft made it.
+                        const sides = t.sidesInOrder(n);
+                        try stack.appendSlice(gpa, &.{ .{ .node = sides[1], .expanded = false }, .{ .node = sides[0], .expanded = false } });
                     },
                     // A view's image is its answer's.
                     .view => {
@@ -2227,6 +2252,16 @@ pub const Table = struct {
                 }
                 continue;
             }
+            if (fr.eager != .none) {
+                if (t.memo_map.get(n) != null) continue;
+                const image = t.memo_map.get(fr.eager).?;
+                var id: ?NodeId = n;
+                while (id) |x| : (id = if (t.kind(x) == .view) t.chainNext(x) else null) {
+                    if (t.memo_map.get(x) != null) break;
+                    try t.memo_map.put(gpa, x, image);
+                }
+                continue;
+            }
             switch (d.kind) {
                 .leaf => unreachable,
                 .view => {
@@ -2250,8 +2285,9 @@ pub const Table = struct {
                 .@"union", .choice, .positions => {
                     if (t.memo_map.get(n) != null) continue;
                     const c = fr.cells;
-                    const l = t.memo_map.get(.from(d.a)).?;
-                    const r = t.memo_map.get(.from(d.b)).?;
+                    const sides = t.sidesInOrder(n);
+                    const l = t.memo_map.get(sides[0]).?;
+                    const r = t.memo_map.get(sides[1]).?;
                     try account.reserve(.shape, 1);
                     const out: NodeId = .from(t.count());
                     try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
@@ -2286,86 +2322,200 @@ pub const Table = struct {
         return t.memo_map.get(root).?;
     }
 
-    /// A mapped image rebuilt with the constructors (§2.11 *Blocks force a
-    /// view at publish*): a view's expansion joins its sides raw, so a value
-    /// built of views holds unions no constructor would keep and nodes no
-    /// interning met. Bottom-up on an explicit stack, each node of the image
-    /// once (`memo_reintern`): a node, a delta (composed over a delta base), a
-    /// recast, a union, a choice and a positions node made again, absorbing
-    /// and interning as an eager image did. A cyclic image (a widened knot)
-    /// stays as it is. `reinternOf` answers what a mapped node became.
-    pub fn reintern(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, root: NodeId) Error!NodeId {
-        t.memo_reintern.clear();
-        const Frame = struct { node: NodeId, expanded: bool };
+    /// What value `root` is as the eager graft made it (§2.11 *κ at a view*):
+    /// a view its class's `res` grafted onto the canonical actuals with the
+    /// eager image's constructors — a leaf the `join` of its parts (the actual
+    /// at an exact parameter cell, its recast at an approximate one, the other
+    /// cells one mapped leaf), a node over its children's images, a delta its
+    /// base's image `put` at each override, a recast of its inner's image, a
+    /// union `join`, a choice `joinChoice`, a positions node `collect`. The raw
+    /// answer `force` made for a view is that view's image; any other node
+    /// holding a view is made again with the constructors over its parts'
+    /// images, as the frame made it of eager values. Joins group and absorb
+    /// by it and read-off publishes it, so no view and no raw expansion
+    /// reaches a published value. Bottom-up on an explicit stack, memoised
+    /// per node until a knot is tied: a chain of calls costs each call the
+    /// nodes its template adds. A cyclic value (a widened knot) stays as it is.
+    pub fn eager(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, root: NodeId) Error!NodeId {
+        if (root == .none) return root;
+        if (t.eager_ties != t.ties) {
+            t.memo_eager.clear();
+            t.eager_ties = t.ties;
+        }
+        if (t.memo_eager.get(root)) |e| return e;
+        if (t.kind(root) != .view and !try t.holdsView(gpa, root)) return root;
+        const Frame = struct { node: NodeId, expanded: bool, parts_first: u32 = 0, parts_len: u32 = 0, key: u32 = 0 };
+        // What an image made here is ordered by (`birth`): the node met before
+        // this walk it stands for, as the eager graft made it then; within
+        // one, the order this walk makes them, the graft's.
+        const start = t.nodes.len;
+        const keyOf = struct {
+            fn of(tt: *const Table, x: NodeId) u32 {
+                return tt.birth(tt.answered.get(x) orelse x);
+            }
+        }.of;
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         var open: stamped.Column(NodeId, void) = .{};
         defer open.deinit(gpa);
         var kids: std.ArrayList(NodeId) = .empty;
         defer kids.deinit(gpa);
-        try stack.append(gpa, .{ .node = root, .expanded = false });
+        var parts: std.ArrayList(LeafPart) = .empty;
+        defer parts.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .expanded = false, .key = keyOf(t, root) });
         while (stack.pop()) |f| {
             const n = f.node;
-            if (t.memo_reintern.contains(n)) continue;
-            const d = t.get(n);
-            if (!f.expanded) {
-                if (open.contains(n)) {
-                    // A cycle: the image is kept as the map made it.
-                    t.memo_reintern.clear();
-                    return root;
-                }
-                try account.reserve(.inspection, 1);
-                try open.put(gpa, n, {});
-                try stack.append(gpa, .{ .node = n, .expanded = true });
-                kids.clearRetainingCapacity();
-                switch (d.kind) {
-                    .leaf => {},
-                    .node, .delta => {
-                        if (d.kind == .delta) try kids.append(gpa, .from(d.a));
-                        var it = t.overEntries(if (d.kind == .node) d.a else d.b);
-                        while (it.next()) |e| try kids.append(gpa, e.node);
-                    },
-                    .recast => try kids.append(gpa, .from(d.a)),
-                    .@"union", .choice, .positions => try kids.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
-                    .view => unreachable, // a mapped image holds no view
-                }
-                for (kids.items) |k| if (!t.memo_reintern.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false });
+            if (t.memo_eager.contains(n)) continue;
+            if (f.expanded) {
+                open.remove(n);
+                const made = t.nodes.len;
+                const out = try t.eagerOne(gpa, account, places, cellt, n, parts.items[f.parts_first..][0..f.parts_len]);
+                try t.memo_eager.put(gpa, n, out);
+                // A node made here is ordered where the node it stands for was
+                // made, as the eager graft made it then (`birth`).
+                if (out.int() >= made) try t.born.put(gpa, out, .from(f.key));
                 continue;
             }
-            open.remove(n);
-            const out: NodeId = switch (d.kind) {
-                .leaf => n,
-                .node => blk: {
-                    var over: u32 = over_none;
-                    var it = t.overEntries(d.a);
-                    while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.reinternOf(e.node));
-                    break :blk try t.node(gpa, account, d.place, d.cells, over);
-                },
-                .delta => blk: {
-                    var base = t.reinternOf(.from(d.a));
-                    var over: u32 = over_none;
-                    if (t.kind(base) == .delta) {
-                        over = t.nodes.items(.b)[base.int()];
-                        base = .from(t.nodes.items(.a)[base.int()]);
+            // A cycle: the value is kept as the frame made it.
+            if (open.contains(n)) return root;
+            try account.reserve(.inspection, 1);
+            if (t.kind(n) != .view and t.answered.get(n) == null and !try t.holdsView(gpa, n)) {
+                try t.memo_eager.put(gpa, n, n);
+                continue;
+            }
+            var fr: Frame = .{ .node = n, .expanded = true, .key = f.key };
+            kids.clearRetainingCapacity();
+            const d = t.get(n);
+            // A view's template children are made with it (the graft's order).
+            const inherit = t.answered.get(n) != null or (d.kind == .view and t.kind(.from(d.a)) != .leaf);
+            if (t.answered.get(n)) |v| {
+                try kids.append(gpa, v);
+            } else switch (d.kind) {
+                .view => {
+                    const inst = t.instantiation orelse unreachable; // a view exists only under one
+                    const tm = t.get(.from(d.a));
+                    switch (tm.kind) {
+                        .leaf => {
+                            fr.parts_first = @intCast(parts.items.len);
+                            try inst.parts(inst.ctx, t, gpa, account, d.b, .from(d.a), &parts);
+                            fr.parts_len = @intCast(parts.items.len - fr.parts_first);
+                            for (parts.items[fr.parts_first..]) |p| try kids.append(gpa, p.node);
+                        },
+                        .node, .delta => {
+                            if (tm.kind == .delta) try kids.append(gpa, try t.view(gpa, account, .from(tm.a), d.b));
+                            var it = t.overEntries(if (tm.kind == .node) tm.a else tm.b);
+                            while (it.next()) |e| try kids.append(gpa, try t.view(gpa, account, e.node, d.b));
+                        },
+                        .recast => try kids.append(gpa, try t.view(gpa, account, .from(tm.a), d.b)),
+                        .@"union", .choice, .positions => try kids.appendSlice(gpa, &.{ try t.view(gpa, account, .from(tm.a), d.b), try t.view(gpa, account, .from(tm.b), d.b) }),
+                        .view => unreachable, // a class is stored forced
                     }
-                    var it = t.overEntries(d.b);
-                    while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.reinternOf(e.node));
-                    break :blk try t.delta(gpa, account, base, over);
                 },
-                .recast => try t.recast(gpa, account, d.place, t.reinternOf(.from(d.a))),
-                .@"union" => try t.@"union"(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
-                .choice => try t.choice(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
-                .positions => try t.positions(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
-                .view => unreachable,
-            };
-            try t.memo_reintern.put(gpa, n, out);
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try kids.append(gpa, .from(d.a));
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| try kids.append(gpa, e.node);
+                },
+                .recast => try kids.append(gpa, .from(d.a)),
+                .@"union", .choice, .positions => try kids.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            }
+            try open.put(gpa, n, {});
+            try stack.append(gpa, fr);
+            for (kids.items) |k| if (!t.memo_eager.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false, .key = if (!inherit and k.int() < start) keyOf(t, k) else f.key });
         }
-        return t.reinternOf(root);
+        return t.eagerOf(root);
     }
 
-    /// What `reintern` made of mapped node `n`, `n` itself when it met none.
-    pub fn reinternOf(t: *const Table, n: NodeId) NodeId {
-        return t.memo_reintern.get(n) orelse n;
+    /// `n`'s eager image, its parts' images made (`eager`).
+    fn eagerOne(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, parts: []const LeafPart) Error!NodeId {
+        if (t.answered.get(n)) |v| return t.eagerOf(v);
+        const d = t.get(n);
+        switch (d.kind) {
+            .leaf => return n,
+            .view => {
+                const inst = t.instantiation orelse unreachable;
+                const tm = t.get(.from(d.a));
+                return switch (tm.kind) {
+                    .leaf => blk: {
+                        if (parts.len == 1 and !parts[0].approx) break :blk t.eagerOf(parts[0].node);
+                        const ms = try gpa.alloc(NodeId, parts.len);
+                        defer gpa.free(ms);
+                        for (parts, ms) |p, *m| m.* = if (p.approx) try t.recast(gpa, account, tm.place, t.eagerOf(p.node)) else t.eagerOf(p.node);
+                        break :blk if (ms.len == 1) ms[0] else try t.join(gpa, account, places, cellt, ms);
+                    },
+                    .node => blk: {
+                        const c = if (tm.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, d.b, tm.cells, tm.place);
+                        var over: u32 = over_none;
+                        var it = t.overEntries(tm.a);
+                        while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(try t.view(gpa, account, e.node, d.b)));
+                        break :blk try t.node(gpa, account, tm.place, c, over);
+                    },
+                    .delta => blk: {
+                        var x = t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b));
+                        var it = t.overEntries(tm.b);
+                        while (it.next()) |e| x = try t.put(gpa, account, places, cellt, x, e.step, t.eagerOf(try t.view(gpa, account, e.node, d.b)), true, .none);
+                        break :blk x;
+                    },
+                    .recast => try t.recast(gpa, account, tm.place, t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b))),
+                    .@"union", .choice => blk: {
+                        var two = [_]NodeId{ t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b)), t.eagerOf(try t.view(gpa, account, .from(tm.b), d.b)) };
+                        break :blk if (tm.kind == .choice) try t.joinChoice(gpa, account, places, cellt, &two) else try t.join(gpa, account, places, cellt, &two);
+                    },
+                    .positions => try t.collect(gpa, account, &cellt.sets, &.{ t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b)), t.eagerOf(try t.view(gpa, account, .from(tm.b), d.b)) }),
+                    .view => unreachable,
+                };
+            },
+            .node => {
+                var over: u32 = over_none;
+                var it = t.overEntries(d.a);
+                while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(e.node));
+                return t.node(gpa, account, d.place, d.cells, over);
+            },
+            .delta => {
+                var base = t.eagerOf(.from(d.a));
+                var over: u32 = over_none;
+                if (t.kind(base) == .delta) {
+                    over = t.nodes.items(.b)[base.int()];
+                    base = .from(t.nodes.items(.a)[base.int()]);
+                }
+                var it = t.overEntries(d.b);
+                while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(e.node));
+                return t.delta(gpa, account, base, over);
+            },
+            .recast => return t.recast(gpa, account, d.place, t.eagerOf(.from(d.a))),
+            .@"union" => return t.@"union"(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
+            .choice => return t.choice(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
+            .positions => return t.positions(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
+        }
+    }
+
+    /// Where `n` is ordered among its siblings (a join's groups, a union's
+    /// sides at publish): an `eager` image where the node it stands for was
+    /// made, which is where the eager graft made it; any other node where it
+    /// was made. So publishing a value made of views orders it as the eager
+    /// image did, and its fresh cells are numbered alike.
+    pub fn birth(t: *const Table, n: NodeId) u32 {
+        return (t.born.get(n) orelse n).int();
+    }
+
+    /// A union's or a choice's sides in `birth` order; a positions node's as
+    /// they are (its order is its structure).
+    fn sidesInOrder(t: *const Table, n: NodeId) [2]NodeId {
+        const d = t.get(n);
+        const a: NodeId = .from(d.a);
+        const b: NodeId = .from(d.b);
+        if (d.kind == .positions or t.birth(a) <= t.birth(b)) return .{ a, b };
+        return .{ b, a };
+    }
+
+    /// What `eager` made of `n`: the image of the view whose raw answer it is,
+    /// `n` itself when `eager` met neither.
+    pub fn eagerOf(t: *const Table, n: NodeId) NodeId {
+        if (t.eager_ties != t.ties) return n;
+        if (t.memo_eager.get(n)) |e| return e;
+        if (t.answered.get(n)) |v| if (t.memo_eager.get(v)) |e| return e;
+        return n;
     }
 
     // ---- order --------------------------------------------------------------------------------
@@ -3824,7 +3974,7 @@ pub const TestInstantiation = struct {
     arg: NodeId,
 
     pub fn inst(x: *TestInstantiation) Table.Instantiation {
-        return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot };
+        return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot, .parts = parts };
     }
 
     fn of(ctx: *anyopaque) *TestInstantiation {
@@ -3841,6 +3991,10 @@ pub const TestInstantiation = struct {
         _ = env;
         const x = of(ctx);
         return if (x.isParam(t.cells(template))) x.arg else t.leaf(gpa, account, t.place(template), t.cells(template));
+    }
+
+    fn parts(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId, out: *std.ArrayList(Table.LeafPart)) Error!void {
+        try out.append(gpa, .{ .node = try leaf(ctx, t, gpa, account, env, template), .approx = false });
     }
 
     fn cells(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, s: SetId, at: PlaceId) Error!SetId {

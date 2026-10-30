@@ -1636,10 +1636,30 @@ of the same handle still add multiplicity through the path-multiset primitive.
   the write is O(Σ the widths of the callee nodes forced), not argument-sized. That work is the
   publishing declaration's: it is charged to that declaration's source continuation, as read-off is
   (§4.1), and to its growth only past it. A frame's temporaries are never forced for a block.
+- **The eager image** [As built 2026-10-30, #1309]. A view's answer is one raw step (`expandView`): a
+  union of its sides with no absorption, a leaf's parts joined raw. What the eager graft made of the same
+  call is a different node: a template union was `join`ed, a choice `joinChoice`d, a delta `put` at each
+  override, a leaf's parts joined. `Shape.eager(n)` makes that node lazily, bottom-up on an explicit
+  stack, memoised per node until a knot is tied: a view's template grafted onto its actuals' eager
+  images (the leaf's parts from the instantiation's `parts`), a view's raw answer that view's image, any
+  other node holding a view made again with the constructors over its parts' images (as the frame made
+  it of eager values), a view-free node itself. A cyclic value stays as it is.
+  - *Joins group by it.* `join` groups, deduplicates and merges leaves by its members' eager images,
+    and keeps a view where it and another member have one image, so its κ is read at the view. Read-off
+    publishes it: `Shape.map` maps each node `eager` made again as its image.
+  - *Order.* An image made at publish is newer than the frame's nodes, and a union's sides, a join's
+    groups and so a summary's fresh cells are ordered by node. So each image is ordered (`birth`) where
+    the node it stands for was made, and within one view's image in the order `eager` makes them, the
+    graft's: a publish orders a value of views as the eager image ordered it.
+  - *Cost.* A frame join meets a view about once per declaration in the counted families, so the images
+    are made at read-off, once per node; each call adds its template's nodes. `CallChainShare`'s share
+    per call is that of the forced join or lower at 10 and 100 calls.
+  - *κ.* Read-off's relabel drops an entry whose node no image holds. Over the ownership corpus it drops
+    2 205 entries where the forced join (001fe16c9) dropped 2 261, and never one more in any fixture.
 - **Who holds a view.** Only a frame's values hold views: a call's result, what is built from it, and
   what a reader projects from those. **A class is stored forced.** Read-off maps the result through
-  `force` before it widens (`Shape.map`, which gives every view of a forced chain the answer's image, so
-  κ stored under a middle view is carried over), use shapes are built from marks, and `Summary.Table.add`
+  its eager image before it widens (`Shape.eager`, *The eager image* above; `Shape.map` gives every view
+  of a forced chain, and a view's raw answer, that image, so κ stored under them is carried over), use shapes are built from marks, and `Summary.Table.add`
   checks `res`, the use shapes and the nodes κ is stored under in a `runtime_safety` build.
   - So these hold no view, and their readers need no view arm: a template (`expandView`'s or the
     graft's), a block, a printed or normalized summary, `Rows`' result, and a class's use node in
@@ -3898,7 +3918,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `view`, `force`, `viewReach`, `isNothing` | Ids, Place, Cell | ≤ 2 950 |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 080 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 200 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
