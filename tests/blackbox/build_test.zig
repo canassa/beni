@@ -10909,3 +10909,30 @@ test "a derived comparison over a mutually recursive syntax tree is checked" {
     );
     try testing.expect(cost <= 700);
 }
+
+// These two wait on #1334: every writing path is a demand of its own in a caller, checked against every other, so a type with n writing paths costs n² (160 fields), 2^8 (the doubling type) until the checks are by node.
+test "a derived comparison over a wide type costs its places, not its fields squared" {
+    // `W (List Int) Inner …` with a writing `Inner.eq` at every field: each
+    // writing path is a demand of its own in a caller (#1334).
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(w.arena.allocator(), "import Inner\n\n\ntype W\n    = W");
+    for (0..160) |_| try src.appendSlice(w.arena.allocator(), " (List Int) Inner.Inner");
+    try src.appendSlice(w.arena.allocator(), "\n\n\npub f : W, W → Bool\nf a b = ( a, 0 ) == ( b, 0 )\n");
+    const cost = try derivedComparisonCost(&w, src.items);
+    try testing.expect(cost <= 500);
+}
+
+test "a derived comparison over a doubling type with a component costs its places" {
+    // `w8 x` is a tuple type 256 levels deep whose every level shares one
+    // node, with a writing `Inner` at the bottom: 2^8 paths, 8 places.
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(w.arena.allocator(), "import Inner\n\n\nw1 x = ( x, x )\n");
+    for (2..9) |i| try src.print(w.arena.allocator(), "\n\nw{d} x = w{d} (w{d} x)\n", .{ i, i - 1, i - 1 });
+    try src.appendSlice(w.arena.allocator(), "\n\npub f : List Int, List Int → Bool\nf a b = w8 (Inner.Inner a) == w8 (Inner.Inner b)\n");
+    const cost = try derivedComparisonCost(&w, src.items);
+    try testing.expect(cost <= 12000);
+}
