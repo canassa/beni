@@ -2291,6 +2291,20 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    shape: an unstepped restoration restores those facts together (a recast and its inner are one position,
    §2.9, so what the snapshot stores at the inner and below it is read at the recast), while a stepped recast cannot recover
    a stronger certificate by finding a structurally equal type later; `(xs, xs)` read as a list of lists stays `shared`; casts compose to one `recast`.
+   **A recast that keeps its whole inner is a node of its own** [#1310, #1311]. It stands for some value
+   inside the inner, so its cells are the inner's reach, each one approximate. It is marked whole and
+   interned apart from the plain recast of the same inner at the same place, whose cells are the inner's
+   own. Every rebuild keeps the mark: a cast of it (a cast of a value inside the inner is still one), a
+   call's image (there a parameter cell stands for what the actual reaches, not for the actual's own
+   cells), a relabelling, a view's step and the block. Its κ is what the leaf rule gives approximate
+   cells: `lost`. The one rule therefore gives `lost` for `[*]` of `Js.to (Js.from xs)` when `xs` is a
+   parameter, whether the cast is written inline or reached through a call of a declaration that casts.
+   `excl π1` is a certificate that the cast lost, and v2 read it only where the two recasts were one
+   node. There, the declaration that made the node first decided its cells, so the κ depended on
+   declaration order. Without the mark, the result of `List.push (generic xss) [ 1 ]` took the actual's
+   own cells (`[ l, l ]`, fresh) for its elements, and an edit of `l` through it was accepted. The
+   fixtures are `CastCallHolds` (core), which holds v1's verdicts, and `CastOrder` (core), which is
+   checked in both declaration orders.
    **A hold below a cast stays at the cast's path** [#1136]. The inner's structure can name a step the cast's
    place lacks (`Js.from [ xs ]`: `[*]` under `Js.Value`). The object there is still held by the cast value,
    somewhere the cast hides, so a holder walk (`Demands.holdPaths`) that cannot extend its path by the inner's

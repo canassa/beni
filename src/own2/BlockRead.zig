@@ -852,7 +852,11 @@ const Reader = struct {
                 shapes.tie(id, .{ .kind = .delta, .place = at, .cells = shapes.cells(base), .a = base.int(), .b = none, .reach = .none });
                 break :blk id;
             },
-            .recast => try shapes.recast(gpa, acct, at, try r.side()),
+            .recast => blk: {
+                const whole = try r.flag(1) == 1;
+                const inner = try r.side();
+                break :blk if (whole) try shapes.recastWhole(gpa, acct, sets, at, inner) else try shapes.recast(gpa, acct, at, inner);
+            },
             .@"union", .choice, .positions => blk: {
                 if (try r.get() != 2) return error.Malformed;
                 const a = try r.side();
@@ -1569,7 +1573,7 @@ test "a knot's member may name itself by a child step and by nothing else" {
     // A node whose `[*]` child is itself: a knot.
     const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
     // A recast of itself: no constructor makes it.
-    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0, 1, 0, 0, 0 };
+    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0, 0, 1, 0, 0, 0 };
     // A union with itself as a side.
     const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 1, none, 0, 0 };
     var out: std.ArrayList(ClassId) = .empty;
@@ -2240,6 +2244,29 @@ test "a block keeps a κ stored under a leaf and at an empty projection" {
         try testing.expectEqual(Cond.shared, k[0]);
         try testing.expectEqual(k[0], k[1]);
     }
+}
+
+test "#1311: a whole recast reads back whole, apart from the plain recast of the same inner" {
+    const gpa = testing.allocator;
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const list = try a.place(0);
+    const lists = try a.place(2);
+    // `[ [ π1 ] ]` cast to `List Int`, as a class's `res`: whole, it holds
+    // what the literal reaches (`π1`); plain, the literal's own site.
+    const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, list), 0);
+    const site = try a.cells.site(gpa, &a.account, 1, lists, .list);
+    const kids = try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, a.env().charge, .none, p.int(), 0)));
+    const inner = try a.shapes.node(gpa, &a.account, lists, try a.cells.sets.insert(gpa, a.env().charge, .none, site.int(), 0), kids);
+    const whole = try a.shapes.recastWhole(gpa, &a.account, &a.cells.sets, list, inner);
+    try testing.expect(whole != try a.shapes.recast(gpa, &a.account, list, inner));
+    const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = whole, .kappas = .none });
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    // The same words and the same printed class again (`roundTrip`).
+    try testing.expect(b.shapes.isWhole(b.sums.get(try roundTrip(&a, &b, c)).res));
 }
 
 test "supplies that hold one value under one map are one owner: the cost stays flat in their number" {

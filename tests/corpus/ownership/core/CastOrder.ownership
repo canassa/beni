@@ -1,0 +1,8 @@
+module CastOrder
+  17:22 List.push <call Js.to>: accepted param
+  21:23 List.push <call CastOrder.generic>: accepted param
+  summary generic: π1 RA; res π1
+  summary inlineRoundTrip: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary genericRoundTrip: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
