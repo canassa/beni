@@ -1078,12 +1078,16 @@ pub const Table = struct {
                 }
                 const l = if (two[0] == .none) SetId.none else SetId.from(t.memo_view_reach.get(.{ two[0].int(), env }).?);
                 const r = if (two[1] == .none) SetId.none else SetId.from(t.memo_view_reach.get(.{ two[1].int(), env }).?);
-                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = (try cellsets.unionWith(gpa, .growth(account), l, r)).int();
+                const got = try cellsets.unionWith(gpa, .growth(account), l, r);
+                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = got.int();
             } else {
                 var it = cellsets.iterate(f.set);
                 const e = it.next().?;
                 try account.reserve(.inspection, 1);
-                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = (try inst.reach(inst.ctx, t, gpa, account, env, .from(e.key), e.value)).int();
+                // Computed before the slot is taken: the instantiation may grow this
+                // memo (a nested view), and an error leaves no undefined entry.
+                const got = try inst.reach(inst.ctx, t, gpa, account, env, .from(e.key), e.value);
+                (try t.memo_view_reach.getOrPut(gpa, .{ f.set.int(), env })).value_ptr.* = got.int();
             }
         }
         return if (whole == .none) .none else .from(t.memo_view_reach.get(.{ whole.int(), env }).?);

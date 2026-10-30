@@ -1826,7 +1826,8 @@ pub const Table = struct {
             }
             if (missing) continue;
             try charge.reserve(gpa, .memo, 1);
-            (try t.memo_cell_part.getOrPut(gpa, .{ @backingInt(which), x.int() })).value_ptr.* = (try cellt.sets.unionWith(gpa, charge, halves[0], halves[1])).int();
+            const got = try cellt.sets.unionWith(gpa, charge, halves[0], halves[1]);
+            (try t.memo_cell_part.getOrPut(gpa, .{ @backingInt(which), x.int() })).value_ptr.* = got.int();
             _ = stack.pop();
         }
         return .from(t.memo_cell_part.get(.{ @backingInt(which), cells.int() }).?);
@@ -1873,7 +1874,8 @@ pub const Table = struct {
                 if (cellt.origin(.from(e.key)) == .mark) break :blk .{};
                 break :blk try t.aggAdd(gpa, charge, cellt, places, .{}, .from(e.key), e.value == 1, false);
             };
-            (try t.memo_set_agg.getOrPut(gpa, .{x.int()})).value_ptr.* = try t.agg(gpa, a);
+            const got = try t.agg(gpa, a);
+            (try t.memo_set_agg.getOrPut(gpa, .{x.int()})).value_ptr.* = got;
             _ = stack.pop();
         }
         return t.aggs.items[t.memo_set_agg.get(.{cells.int()}).?];
@@ -2191,7 +2193,8 @@ pub const Table = struct {
             // Disjoint prefixes: no repeat.
             break :blk try t.aggJoin(gpa, charge, cellt, places, try t.setAgg(gpa, charge, cellt, places, a), try t.setAgg(gpa, charge, cellt, places, b));
         };
-        (try t.memo_agg_pair.getOrPut(gpa, key)).value_ptr.* = try t.agg(gpa, out);
+        const got = try t.agg(gpa, out);
+        (try t.memo_agg_pair.getOrPut(gpa, key)).value_ptr.* = got;
         return out;
     }
 
@@ -2313,7 +2316,8 @@ pub const Table = struct {
                 try t.aggAll(gpa, charge, v.cells, v.places, .{}, try v.shapes.reach(gpa, charge.account, &v.cells.sets, f.node), false)
             else
                 try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, if (v.shapes.isLazy(f.node)) SetId.none else v.shapes.cells(f.node), false);
-            (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = try t.agg(gpa, a);
+            const got = try t.agg(gpa, a);
+            (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = got;
             (try t.reach_epoch.getOrPut(gpa, .{f.node.int()})).value_ptr.* = v.shapes.ties;
         }
         return t.aggs.items[t.reachMemo(v, n).?];
@@ -2380,12 +2384,14 @@ pub const Table = struct {
         if (base != .none) {
             var it = cellt.sets.iterate(base);
             while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
-            (try memo.getOrPut(gpa, .{base.int()})).value_ptr.* = try t.agg(gpa, start);
+            const got = try t.agg(gpa, start);
+            (try memo.getOrPut(gpa, .{base.int()})).value_ptr.* = got;
         }
         var a = start;
         while (chain.pop()) |x| {
             a = try t.aggAdd(gpa, charge, cellt, places, a, try image(ctx, .from(x[1])), false, true);
-            (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = try t.agg(gpa, a);
+            const got = try t.agg(gpa, a);
+            (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = got;
         }
         return t.aggCond(gpa, charge, cellt, places, a);
     }
@@ -4003,7 +4009,8 @@ pub const Table = struct {
                 }
             }
             if (missing) continue;
-            (try t.memo_resolved.getOrPut(gpa, .{x.int()})).value_ptr.* = (try t.@"and"(gpa, charge, sides[0], sides[1])).int();
+            const got = try t.@"and"(gpa, charge, sides[0], sides[1]);
+            (try t.memo_resolved.getOrPut(gpa, .{x.int()})).value_ptr.* = got.int();
             _ = stack.pop();
         }
         return .from(t.memo_resolved.get(.{k.int()}).?);
