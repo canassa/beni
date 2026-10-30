@@ -1,4 +1,3 @@
 RefUpdateAcrossFibers bump: lines 14-21 (not built: local)
-RefUpdateAcrossFibers bumpRacily: lines 24-32 (not built: recursion)
 RefUpdateAcrossFibers twice: lines 35-42 (not built: call)
 RefUpdateAcrossFibers main: lines 45-52 (not built: top)

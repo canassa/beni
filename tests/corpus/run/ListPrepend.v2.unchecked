@@ -1,6 +1,4 @@
 ListPrepend summary: lines 31-35 (not built: local)
-ListPrepend prependMany: lines 48-53 (not built: recursion)
-ListPrepend pushMany: lines 56-61 (not built: recursion)
 ListPrepend both: lines 64-65 (not built: call)
 ListPrepend forms: lines 68-79 (not built: call)
 ListPrepend prepends: lines 83-90 (not built: call)

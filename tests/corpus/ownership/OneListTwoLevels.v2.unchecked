@@ -1,4 +1,4 @@
-OneListTwoLevels wrap: lines 18-23 (not built: recursion)
+OneListTwoLevels wrap: lines 18-23 (not built: polymorphic recursion)
 OneListTwoLevels throughWrap: lines 47-60 (not built: call)
 OneListTwoLevels h: lines 69-76 (not built: call)
 OneListTwoLevels viaConcat: lines 79-82 (not built: call)
