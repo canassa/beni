@@ -327,6 +327,12 @@ pub const Table = struct {
     /// before anything is appended. Funs are stored sorted by `j`, their
     /// supplies and keeps sorted by their keys, the once paths by id.
     pub fn add(t: *Table, env: Env, d: Draft) Error!ClassId {
+        // A class is stored forced: no view in its `res` or use shapes, so a
+        // template, a block and a printer never meet one (§2.11).
+        if (std.debug.runtime_safety) {
+            std.debug.assert(!try env.shapes.holdsView(env.gpa, d.res));
+            for (d.params) |u| std.debug.assert(!try env.shapes.holdsView(env.gpa, u));
+        }
         var n: u32 = 1 + @as(u32, @intCast(d.params.len + d.funs.len + d.slots.len + d.classes.len + d.once.len));
         for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len + f.backs.len);
         try env.charge.reserve(env.gpa, .class, n);
@@ -947,7 +953,8 @@ pub const Table = struct {
                     }
                 },
                 .node => {
-                    const id: NodeId = .from(a.id);
+                    // A view normalizes as its answer (§2.11); a stored class holds none.
+                    const id = try n.env.shapes.force(n.env.gpa, n.env.account(), .from(a.id));
                     const at_summary = a.at_summary;
                     const cur = a.cur;
                     try n.env.charge.reserve(n.env.gpa, .inspection, 1);
@@ -966,7 +973,7 @@ pub const Table = struct {
                     try n.cond(try n.env.conds.kappaOf(n.env.gpa, n.env.charge, n.env.view(), cur, id, at_summary));
                     // The parts, pushed in reverse.
                     switch (d.kind) {
-                        .view => unreachable, // a summary holds no views: blocks force them at publish (§2.11)
+                        .view => unreachable, // forced above
                         .leaf => {},
                         .node => try stack.append(n.env.gpa, .{ .kind = .overs, .id = d.a, .at_summary = at_summary, .cur = cur }),
                         .delta => {

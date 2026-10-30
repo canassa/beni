@@ -1082,6 +1082,8 @@ pub const Frame = struct {
         var at = v.node;
         for (steps, 0..) |s, i| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
+            // A view is its answer here (§2.11).
+            at = try shapes.force(f.gpa, f.account(), at);
             if (shapes.kind(at) == .leaf) return i;
             // A `[*]` or `⟲` before the leaf stands for many positions: the
             // shared prefix does not prove both paths reach the same one.

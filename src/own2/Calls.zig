@@ -2114,7 +2114,7 @@ fn snapshotYes(x: *KnotFixture, n: NodeId, path: *std.ArrayList(Step), ak: *Cond
     const gpa = testing.allocator;
     const d = x.shapes.get(n);
     switch (d.kind) {
-        .view => unreachable, // the fixtures make no views
+        .view => try snapshotYes(x, try x.shapes.force(gpa, &x.account, n), path, ak),
         .node, .delta => {
             // A cyclic source (a knot) is snapshotted to a bounded depth.
             if (path.items.len > 16) return;
@@ -2544,5 +2544,36 @@ test "#1196 decision 1, #1199: a callee writing at `0·[*]·⟲·arg` while it a
         defer s.deinit(gpa);
         const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
         try testing.expectEqual(shared_list, Cond.Table.fails(applied.xreq));
+    }
+}
+
+test "a call's argument that is a view folds its preimage as its eager image does" {
+    // `Pre` and `unionSides` read a view as its answer at its path (§2.11):
+    // `B xs xs` (k at `.0[*].0` and `.1[*].0`) refuses, `B xs []` accepts,
+    // as their eager twins do.
+    const gpa = testing.allocator;
+    const e = Place.Step.elem;
+    for (0..2) |probe| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
+        const B = try x.places.of(gpa, &x.account, src, 8);
+        const LB = try x.places.of(gpa, &x.account, src, 9);
+        const b0 = try x.places.ctorStep(gpa, &x.account, 4, 0);
+        const k = try bList(&x, 1, &.{});
+        const xs = try bList(&x, 4, &.{try bOf(&x, k, try bList(&x, 5, &.{}))});
+        const empty = try bList(&x, 6, &.{});
+        const p = try x.shapes.leaf(gpa, &x.account, LB, try x.cells.sets.insert(gpa, .growth(&x.account), .none, (try x.cells.symbolic(gpa, &x.account, &x.places, .param, 3, try x.places.rootPath(gpa, LB), 0)).int(), 0));
+        var ti: Shape.TestInstantiation = .{ .cellt = &x.cells, .arg = xs };
+        x.shapes.instantiation = ti.inst();
+        const template = try bOf(&x, p, if (probe == 0) p else empty);
+        const eager = try bOf(&x, xs, if (probe == 0) xs else empty);
+        const v = try x.shapes.view(gpa, &x.account, template, 0);
+        const steps = [_]Step{ b0, e, b0 };
+        const want = try foldProbe(&x, B, &steps, eager);
+        try testing.expectEqual(if (probe == 0) Cond.lost else Cond.yes, want);
+        try testing.expectEqual(want, try foldProbe(&x, B, &steps, v));
     }
 }

@@ -184,7 +184,7 @@ pub const Table = struct {
     /// by its producers (§4.1, #1098). From any other node, the kernel's.
     pub fn dagWalk(t: *const Table, gpa: Allocator, account: *Account, n: NodeId) Error!?Account.Kernel {
         return switch (t.kind(n)) {
-            .positions, .@"union", .choice => try account.enter(gpa, null),
+            .positions, .@"union", .choice, .view => try account.enter(gpa, null),
             else => null,
         };
     }
@@ -347,6 +347,12 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .leaf, .place = at, .cells = c, .a = 0, .b = 0, .reach = .none });
     }
 
+    /// Whether `n` is the empty value, a view read at its answer (§2.11).
+    pub fn isNothing(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!bool {
+        const x = try t.force(gpa, account, n);
+        return t.kind(x) == .leaf and t.cells(x) == .none;
+    }
+
     /// The empty value at `at`: provably no cell (§2.3).
     pub fn nothing(t: *Table, gpa: Allocator, account: *Account, at: PlaceId) Error!NodeId {
         return t.leaf(gpa, account, at, .none);
@@ -367,7 +373,9 @@ pub const Table = struct {
 
     pub fn recast(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, inner: NodeId) Error!NodeId {
         // Casts compose to one recast (§2.13.9).
-        const in = if (t.kind(inner) == .recast) NodeId.from(t.nodes.items(.a)[inner.int()]) else inner;
+        // Casts compose through a view's answer too (§2.11).
+        const inn = try t.force(gpa, account, inner);
+        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = t.cells(in), .a = in.int(), .b = 0, .reach = .none });
     }
 
@@ -401,6 +409,13 @@ pub const Table = struct {
     pub fn forced(t: *const Table, n: NodeId) NodeId {
         if (t.kind(n) != .view) return n;
         return t.memo_force.get(n).?;
+    }
+
+    /// A view's answer when it has been forced, null for one that has not
+    /// or for a node that is no view.
+    pub fn answerOf(t: *const Table, n: NodeId) ?NodeId {
+        if (t.kind(n) != .view) return null;
+        return t.memo_force.get(n);
     }
 
     /// `n`, or a view's answer: expanded one step (its children views
@@ -438,6 +453,34 @@ pub const Table = struct {
         return t.memo_step.get(v);
     }
 
+    /// Whether `n`'s DAG holds a view: a check of the invariant that a class
+    /// is stored forced (§2.11), uncharged, for `runtime_safety` builds.
+    pub fn holdsView(t: *const Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
+        if (n == .none) return false;
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (seen.contains(x)) continue;
+            try seen.put(gpa, x, {});
+            const d = t.get(x);
+            switch (d.kind) {
+                .view => return true,
+                .leaf => {},
+                .node, .delta => {
+                    if (d.kind == .delta) try stack.append(gpa, .from(d.a));
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| try stack.append(gpa, e.node);
+                },
+                .recast => try stack.append(gpa, .from(d.a)),
+                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            }
+        }
+        return false;
+    }
+
     /// A view's one step (§2.11): its template's kind with views for
     /// children; a leaf's image; the sides of a join built raw, lazy, with no
     /// absorption test, so a step never reads them.
@@ -465,9 +508,9 @@ pub const Table = struct {
             },
             .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = 0, .reach = .none }),
             .@"union", .choice, .positions => t.make(gpa, account, .{ .kind = d.kind, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = (try t.view(gpa, account, .from(d.b), env)).int(), .reach = .none }),
-            // A class built of an earlier call's views: that view's answer,
-            // read under this environment.
-            .view => t.view(gpa, account, try t.force(gpa, account, template), env),
+            // A template is a class's node, and a class is stored forced
+            // (`Summary.Table.add` checks it): it holds no view (§2.11).
+            .view => unreachable,
         };
     }
 
@@ -512,7 +555,9 @@ pub const Table = struct {
     /// own cells, which are the value around it (#1132's defect, through a
     /// call's instantiated place).
     fn recastWhole(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, at: PlaceId, inner: NodeId) Error!NodeId {
-        const in = if (t.kind(inner) == .recast) NodeId.from(t.nodes.items(.a)[inner.int()]) else inner;
+        // Casts compose through a view's answer too (§2.11).
+        const inn = try t.force(gpa, account, inner);
+        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
         var c: SetId = .none;
         var it = cellsets.iterate(try t.reach(gpa, account, cellsets, in));
         while (it.next()) |e| {
@@ -661,8 +706,8 @@ pub const Table = struct {
         // A side that is nothing (an empty leaf) is no position: no object
         // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
         // `[*]` past the empty list is `x`'s alone, not a new node per level.
-        if (t.kind(r) == .leaf and t.cells(r) == .none) return l;
-        if (t.kind(l) == .leaf and t.cells(l) == .none) return r;
+        if (try t.isNothing(gpa, account, r)) return l;
+        if (try t.isNothing(gpa, account, l)) return r;
         _ = cellsets;
         // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
         return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
@@ -700,7 +745,9 @@ pub const Table = struct {
     /// `put(n, s, m)` (§2.3): the same object written (`same_object`) is a
     /// delta over `n`; a construction is a copy with one child changed, a
     /// fresh base with `n`'s children and `fresh` at `ε`.
-    pub fn put(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step, m: NodeId, same_object: bool, fresh: SetId) Error!NodeId {
+    pub fn put(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId, s: Step, m: NodeId, same_object: bool, fresh: SetId) Error!NodeId {
+        // A view is written, recelled or materialized as its answer (§2.11).
+        const n = try t.force(gpa, account, view_or_n);
         if (same_object) {
             if (t.kind(n) == .delta) {
                 const d = t.get(n);
@@ -715,7 +762,9 @@ pub const Table = struct {
     /// `n` with its `ε` cells replaced by `c` and its children as they are:
     /// a leaf stays a leaf, anything else becomes a `node` over its
     /// materialised children (what a use shape's builder needs, §2.10).
-    pub fn withCells(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, c: SetId) Error!NodeId {
+    pub fn withCells(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId, c: SetId) Error!NodeId {
+        // A view is written, recelled or materialized as its answer (§2.11).
+        const n = try t.force(gpa, account, view_or_n);
         if (t.kind(n) == .leaf) return t.leaf(gpa, account, t.place(n), c);
         return t.node(gpa, account, t.place(n), c, try t.materialize(gpa, account, places, cellt, n));
     }
@@ -724,13 +773,15 @@ pub const Table = struct {
     /// (`proj`): a node's children as they are, and for a leaf, a delta over
     /// one, a recast or a union the projections a copy would otherwise
     /// drop. A step that projects to nothing is left out.
-    fn materialize(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId) Error!u32 {
+    fn materialize(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId) Error!u32 {
+        // A view is written, recelled or materialized as its answer (§2.11).
+        const n = try t.force(gpa, account, view_or_n);
         if (t.kind(n) == .node) return t.nodes.items(.a)[n.int()];
         var m: u32 = over_none;
         const steps = places.steps(t.place(n));
         for (steps.steps) |s| {
             const c = (try t.proj(gpa, account, places, cellt, n, s)) orelse continue;
-            if (t.kind(c) == .leaf and t.cells(c) == .none) continue;
+            if (try t.isNothing(gpa, account, c)) continue;
             m = try t.overPut(gpa, account, m, s, c);
         }
         return m;
@@ -779,7 +830,7 @@ pub const Table = struct {
     fn projBelow(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
         switch (d.kind) {
-            .recast => if (t.recastPart(places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
+            .recast => if (try t.recastPart(gpa, account, places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
             .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
             // A view projects as its answer does.
@@ -791,8 +842,9 @@ pub const Table = struct {
     /// A recast's inner when the recast's part at `s` is the inner's own
     /// part: a built inner (a word's recast of a leaf may hold its cell
     /// anywhere) whose place has the step to the same place.
-    fn recastPart(t: *Table, places: *Place.Table, n: NodeId, s: Step) ?NodeId {
-        const inner: NodeId = .from(t.get(n).a);
+    fn recastPart(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, n: NodeId, s: Step) Error!?NodeId {
+        // A view's raw recast (`expandView`) wraps a view: its answer'"'"'s part.
+        const inner = try t.force(gpa, account, .from(t.get(n).a));
         if (t.kind(inner) != .node and t.kind(inner) != .delta) return null;
         const child = places.child(t.place(n), s) orelse return null;
         return if (places.child(t.place(inner), s) == child) inner else null;
@@ -817,7 +869,7 @@ pub const Table = struct {
             // A recast projects to a recast of its inner's own part where
             // `recastPart` finds one (§2.13.9, #1132's review); otherwise of
             // the whole inner, as far as anyone knows.
-            .recast => if (t.recastPart(places, n, s)) |inner| try t.recast(gpa, account, child_place, got(t, inner.int(), s)) else try t.recastWhole(gpa, account, &cellt.sets, child_place, .from(d.a)),
+            .recast => if (try t.recastPart(gpa, account, places, n, s)) |inner| try t.recast(gpa, account, child_place, got(t, inner.int(), s)) else try t.recastWhole(gpa, account, &cellt.sets, child_place, .from(d.a)),
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
@@ -1300,7 +1352,8 @@ pub const Table = struct {
 
         fn request(w: *JoinWalk, members: []const NodeId) Error!u32 {
             const first: u32 = @intCast(w.pool.items.len);
-            try w.pool.appendSlice(w.gpa, members);
+            // A view joins as its answer (§2.11): grouped by what it is.
+            for (members) |m| try w.pool.append(w.gpa, try w.t.force(w.gpa, w.account, m));
             const id: u32 = @intCast(w.reqs.items.len);
             try w.reqs.append(w.gpa, .{ .first = first, .len = @intCast(members.len) });
             try w.stack.append(w.gpa, id);
@@ -1615,7 +1668,7 @@ pub const Table = struct {
                         break;
                     };
                     if (pn == pm) continue;
-                    if (t.cells(pn) == .none and t.kind(pn) == .leaf) continue; // nothing is below anything
+                    if (try t.isNothing(gpa, account, pn)) continue; // nothing is below anything
                     below = .{ pn, pm };
                     break;
                 }
@@ -1953,7 +2006,8 @@ pub const Table = struct {
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
             if (!w.any_merge) return root; // the identity
-            const out = try w.emit(root);
+            // The classes are of the answers `run` visited (a view root's too).
+            const out = try w.emit(try w.t.force(w.gpa, w.account, root));
             if (w.out) |fo| {
                 try w.exportFold(fo);
                 fo.root = out;
@@ -2099,7 +2153,7 @@ pub const Table = struct {
             const steps = places.steps(t.place(f.node));
             for (steps.steps) |s| {
                 const c = (try t.proj(gpa, account, places, cellt, f.node, s)) orelse continue;
-                if (t.cells(c) == .none and t.kind(c) == .leaf) continue;
+                if (try t.isNothing(gpa, account, c)) continue;
                 try stack.append(gpa, .{ .node = c, .depth = f.depth + 1, .step = s });
             }
         }
@@ -3015,13 +3069,14 @@ test "#1158 review: a recast or a delta over a lazy node is one node before and 
 }
 
 /// A test environment for views: every parameter cell of a template is the
-/// one actual `arg`; every other cell is itself.
-const TestInstantiation = struct {
-    f: *Fixture,
+/// one actual `arg`; every other cell is itself. For the tests of the
+/// layers above too.
+pub const TestInstantiation = struct {
+    cellt: *Cell.Table,
     arg: NodeId,
 
-    fn inst(x: *TestInstantiation) Table.Instantiation {
-        return .{ .ctx = x, .sets = &x.f.cells.sets, .leaf = leaf, .cells = cells, .reach = reach };
+    pub fn inst(x: *TestInstantiation) Table.Instantiation {
+        return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach };
     }
 
     fn of(ctx: *anyopaque) *TestInstantiation {
@@ -3029,8 +3084,8 @@ const TestInstantiation = struct {
     }
 
     fn isParam(x: *TestInstantiation, s: SetId) bool {
-        var it = x.f.cells.sets.iterate(s);
-        while (it.next()) |e| if (x.f.cells.origin(.from(e.key)) == .param) return true;
+        var it = x.cellt.sets.iterate(s);
+        while (it.next()) |e| if (x.cellt.origin(.from(e.key)) == .param) return true;
         return false;
     }
 
@@ -3048,8 +3103,8 @@ const TestInstantiation = struct {
     fn reach(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, c: CellId, approx: u1) Error!SetId {
         _ = env;
         const x = of(ctx);
-        if (x.f.cells.origin(c) == .param) return t.reach(gpa, account, &x.f.cells.sets, x.arg);
-        return x.f.cells.sets.insert(gpa, .growth(account), .none, c.int(), approx);
+        if (x.cellt.origin(c) == .param) return t.reach(gpa, account, &x.cellt.sets, x.arg);
+        return x.cellt.sets.insert(gpa, .growth(account), .none, c.int(), approx);
     }
 };
 
@@ -3069,7 +3124,7 @@ test "a view answers its template's instantiation one step at a time: proj, cell
     kids = try f.shapes.overPut(gpa, &f.account, kids, fb, empty);
     const template = try f.shapes.node(gpa, &f.account, rec, try f.site(8, rec, .record), kids);
     const arg = try f.shapes.leaf(gpa, &f.account, list, try f.site(9, list, .list));
-    var ti: TestInstantiation = .{ .f = &f, .arg = arg };
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
     f.shapes.instantiation = ti.inst();
     const v = try f.shapes.view(gpa, &f.account, template, 0);
     try testing.expectEqual(Kind.view, f.shapes.kind(v));
@@ -3090,10 +3145,121 @@ test "a view answers its template's instantiation one step at a time: proj, cell
     const r = try f.shapes.reach(gpa, &f.account, &f.cells.sets, v);
     try testing.expectEqual(@as(u32, 3), f.cells.sets.count(r));
     try testing.expectEqual(r, try f.shapes.reach(gpa, &f.account, &f.cells.sets, answer));
-    // A view of a view is a chain: it answers the inner view's answer, and
-    // the chain keeps each step for κ's reads.
-    const outer = try f.shapes.view(gpa, &f.account, v, 0);
-    const outer_answer = try f.shapes.force(gpa, &f.account, outer);
-    try testing.expect(f.shapes.kind(outer_answer) != .view);
-    try testing.expect(f.shapes.chainNext(outer) != null);
+    // A chain: a parameter leaf whose actual is that view answers it, and
+    // forcing it follows the chain to the view's answer, each step kept.
+    ti.arg = v;
+    const outer = try f.shapes.view(gpa, &f.account, p1, 1);
+    try testing.expectEqual(answer, try f.shapes.force(gpa, &f.account, outer));
+    try testing.expectEqual(v, f.shapes.chainNext(outer).?);
+    try testing.expectEqual(answer, f.shapes.answerOf(outer).?);
+}
+
+/// `{ a = recast (delta { a = π1, b = choice [] π1 } { a = positions π1 [] }),
+/// b = positions π1 [] }` over `x` for π1: every kind a template holds,
+/// eager (`x` written in) or as the view's template (`p1` the parameter).
+fn everyKind(f: *Fixture, x: NodeId, a_site: SetId, b_site: SetId) !NodeId {
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const list = try f.placeOf(1);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const a = try f.shapes.leaf(gpa, &f.account, list, a_site);
+    const b = try f.shapes.leaf(gpa, &f.account, list, b_site);
+    const ua = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, x, a);
+    const cb = try f.shapes.choice(gpa, &f.account, &f.cells.sets, b, x);
+    const pos = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, a });
+    const inner = try f.shapes.node(gpa, &f.account, rec, try f.site(6, rec, .record), try f.shapes.overPut(gpa, &f.account, try f.one(fa, ua), fb, cb));
+    const dl = try f.shapes.delta(gpa, &f.account, inner, try f.one(fa, pos));
+    const rc = try f.shapes.recast(gpa, &f.account, list, dl);
+    return f.shapes.node(gpa, &f.account, rec, try f.site(9, rec, .record), try f.shapes.overPut(gpa, &f.account, try f.one(fa, rc), fb, pos));
+}
+
+test "a view of every kind forces to its eager image: map, widen and join read it as the image" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const a_site = try f.site(7, list, .list);
+    const b_site = try f.site(8, list, .list);
+    const p1 = try f.shapes.leaf(gpa, &f.account, list, try f.param(1, list));
+    const arg = try f.shapes.leaf(gpa, &f.account, list, try f.site(20, list, .list));
+    const template = try everyKind(&f, p1, a_site, b_site);
+    const eager = try everyKind(&f, arg, a_site, b_site);
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, template, 0);
+    const Id = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    // `map` forces every view it meets (`expandView`'s every arm): the copy
+    // holds none and is the eager image.
+    const mapped = try f.shapes.map(gpa, &f.account, v, {}, Id.same);
+    try testing.expect(!try f.shapes.holdsView(gpa, mapped));
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, mapped, eager));
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, v, eager));
+    try testing.expectEqual(try f.shapes.reach(gpa, &f.account, &f.cells.sets, eager), try f.shapes.reach(gpa, &f.account, &f.cells.sets, v));
+    // `widen` forces as it descends: the same quotient as the image's (with
+    // nothing to merge it is the identity, the view itself).
+    const wv = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, v);
+    const we = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, eager);
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, wv, we));
+    // `join` groups a view as its answer: one member with the image's twin.
+    var two = [_]NodeId{ v, eager };
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, try f.shapes.join(gpa, &f.account, &f.places, &f.cells, &two), eager));
+}
+
+test "a view of the empty value is nothing: a positions side and a pattern's rest drop it" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const empty = try f.shapes.nothing(gpa, &f.account, list);
+    const a = try f.shapes.leaf(gpa, &f.account, list, try f.site(7, list, .list));
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = a };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, empty, 0);
+    try testing.expect(try f.shapes.isNothing(gpa, &f.account, v));
+    try testing.expectEqual(a, try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ a, v }));
+}
+
+/// `Node (Node x [ 1 ] x) [ 2 ] (Node x [ 1 ] x)` over `x` at the tree place.
+fn twoLevels(f: *Fixture, x: NodeId) !NodeId {
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    var ic = try f.one(s0, x);
+    ic = try f.shapes.overPut(gpa, &f.account, ic, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list)));
+    ic = try f.shapes.overPut(gpa, &f.account, ic, s2, x);
+    const inner = try f.shapes.node(gpa, &f.account, tree, .none, ic);
+    var oc = try f.one(s0, inner);
+    oc = try f.shapes.overPut(gpa, &f.account, oc, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(2, list, .list)));
+    oc = try f.shapes.overPut(gpa, &f.account, oc, s2, inner);
+    return f.shapes.node(gpa, &f.account, tree, .none, oc);
+}
+
+test "widen folds a view's levels as it folds its eager image's" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const p = try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree));
+    const arg = try f.shapes.leaf(gpa, &f.account, tree, try f.site(30, tree, .record));
+    const template = try twoLevels(&f, p);
+    const eager = try twoLevels(&f, arg);
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, template, 0);
+    const wv = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, v);
+    try testing.expect(wv != v);
+    try testing.expect(!try f.shapes.holdsView(gpa, wv));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, v, wv));
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, wv, try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, eager)));
 }

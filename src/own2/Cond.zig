@@ -166,6 +166,8 @@ pub const Table = struct {
     /// `dagKappa`'s memo: `(position, node, class)` → its read; the
     /// position and the node are immutable, so it is never stale.
     memo_dag: Ids.FixedDict(3) = .{},
+    /// A view's chain join by `(ctx, view)` (`chainStored`), `none` for nothing.
+    memo_chain: Ids.FixedDict(2) = .{},
     /// Node marks for a walk over the node table, one per walk in progress,
     /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
     marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
@@ -215,6 +217,7 @@ pub const Table = struct {
         t.classes_done.deinit(gpa);
         t.fold_of.deinit(gpa);
         t.memo_dag.deinit(gpa);
+        t.memo_chain.deinit(gpa);
         t.memo_merge.deinit(gpa);
     }
 
@@ -943,7 +946,8 @@ pub const Table = struct {
             const d = v.shapes.get(n);
             if (nk != .@"union" and nk != .choice and nk != .positions) {
                 try memo.put(gpa, n, try t.kappaOf(gpa, charge, v, ctx, n, at_summary));
-                if (nk == .recast) try approx.put(gpa, n, {});
+                // A view of a recast is a recast read at its answer (§2.11).
+                if (nk == .recast or (nk == .view and v.shapes.kind(try v.shapes.force(gpa, charge.account, n)) == .recast)) try approx.put(gpa, n, {});
             } else if (!f.expanded) {
                 try memo.put(gpa, n, yes);
                 try stack.appendSlice(gpa, &.{ .{ .node = n, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
@@ -968,6 +972,48 @@ pub const Table = struct {
         return t.@"and"(gpa, charge, memo.get(root).?, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, dups.items));
     }
 
+    /// What is stored for view `n` along its chain (§2.11 *κ at a view*):
+    /// the entries under the view and every view its chain passes through,
+    /// joined as stored values, the answer's left to the reader. Memoised
+    /// per `(ctx, view)`, each view on a chain once: a chain of L views costs
+    /// L, never L². Null when no id on the chain stores anything.
+    fn chainStored(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?CondId {
+        // Down the chain to its end or to a view already joined.
+        var views: std.ArrayList(NodeId) = .empty;
+        defer views.deinit(gpa);
+        var joined: ?CondId = null;
+        var id: ?NodeId = n;
+        while (id) |x| : (id = v.shapes.chainNext(x)) {
+            try charge.reserve(gpa, .memo, 1);
+            if (t.memo_chain.get(.{ ctx.int(), x.int() })) |hit| {
+                joined = if (hit == Ids.none_int) null else CondId.from(hit);
+                break;
+            }
+            try views.append(gpa, x);
+        }
+        // Back up it, each view's entry joined onto what lies joined it.
+        var k = views.items.len;
+        while (k > 0) {
+            k -= 1;
+            const x = views.items[k];
+            if (t.kappaGet(ctx, x)) |s| joined = if (joined) |b| try t.join(gpa, charge, s, b) else s;
+            try charge.reserve(gpa, .memo, 1);
+            (try t.memo_chain.getOrPut(gpa, .{ ctx.int(), x.int() })).value_ptr.* = if (joined) |b| b.int() else Ids.none_int;
+        }
+        return joined;
+    }
+
+    /// What is stored at `n` itself, a view's chain and answer joined in:
+    /// what a reader of one position (a recast's inner, `innersOf`) takes.
+    fn storedAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?CondId {
+        if (v.shapes.kind(n) != .view) return t.kappaGet(ctx, n);
+        const answer = try v.shapes.force(gpa, charge.account, n);
+        const chain = try t.chainStored(gpa, charge, v, ctx, n);
+        const own = t.kappaGet(ctx, answer);
+        if (chain) |c| return if (own) |o| try t.join(gpa, charge, c, o) else c;
+        return own;
+    }
+
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
@@ -977,11 +1023,7 @@ pub const Table = struct {
         var chain_stored: ?CondId = null;
         if (v.shapes.kind(n) == .view) {
             at = try v.shapes.force(gpa, charge.account, n);
-            var id: ?NodeId = n;
-            while (id) |x| : (id = v.shapes.chainNext(x)) {
-                try charge.reserve(gpa, .inspection, 1);
-                if (t.kappaGet(ctx, x)) |s| chain_stored = if (chain_stored) |c| try t.join(gpa, charge, c, s) else s;
-            }
+            chain_stored = try t.chainStored(gpa, charge, v, ctx, n);
         }
         const k = try t.kappaRead(gpa, charge, v, ctx, at, at_summary, chain_stored);
         // A widened class image owes its path-multiset obligation wherever it
@@ -1016,7 +1058,7 @@ pub const Table = struct {
                 var inners: std.ArrayList(NodeId) = .empty;
                 defer inners.deinit(gpa);
                 try innersOf(gpa, charge, v, n, &inners);
-                for (inners.items) |i| if (t.kappaGet(ctx, i)) |s| {
+                for (inners.items) |i| if (try t.storedAt(gpa, charge, v, ctx, i)) |s| {
                     d = try t.join(gpa, charge, s, d);
                 };
                 // At a summary position its cells owe what a leaf's do (#1115).
@@ -1580,6 +1622,15 @@ pub const Table = struct {
                     }
                     acc = try t.@"and"(gpa, charge, acc, try t.@"and"(gpa, charge, l.?, r.?));
                 },
+                // A view's side owes what its answer owes (§2.11).
+                .view => {
+                    const answer = try v.shapes.force(gpa, charge.account, x);
+                    const a = t.fold_of.get(answer) orelse {
+                        try stack.append(gpa, answer);
+                        continue;
+                    };
+                    acc = try t.@"and"(gpa, charge, acc, a);
+                },
                 else => {},
             }
             try t.fold_of.put(gpa, x, acc);
@@ -1617,7 +1668,8 @@ pub const Table = struct {
         var parts: std.ArrayList(NodeId) = .empty;
         defer parts.deinit(gpa);
         var cyclic = false;
-        try stack.append(gpa, .{ .node = x, .expanded = false });
+        // The widen walked answers: a view root is read at its answer.
+        try stack.append(gpa, .{ .node = try v.shapes.force(gpa, charge.account, x), .expanded = false });
         while (stack.pop()) |f| {
             if (memo.get(f.node) != null) continue;
             parts.clearRetainingCapacity();
@@ -1652,7 +1704,7 @@ pub const Table = struct {
             }
             try memo.put(gpa, f.node, acc);
         }
-        if (!cyclic) return memo.get(x).?;
+        if (!cyclic) return memo.get(v.shapes.forced(x)).?;
         // On a cycle: every source node's cells at its class, all repeated.
         var all: stamped.Column(NodeId, SetId) = .{};
         defer all.deinit(gpa);
@@ -1662,7 +1714,7 @@ pub const Table = struct {
         defer seen.deinit(gpa);
         var walk: std.ArrayList(NodeId) = .empty;
         defer walk.deinit(gpa);
-        try walk.append(gpa, x);
+        try walk.append(gpa, try v.shapes.force(gpa, charge.account, x));
         while (walk.pop()) |n| {
             if (seen.contains(n)) continue;
             try seen.put(gpa, n, {});
@@ -2139,7 +2191,7 @@ pub const Table = struct {
             // Through a recast's inner only what a snapshot stores is more:
             // an unstored inner adds nothing to the recast's derived read.
             const explicit = via == .none and explicit_here;
-            const empty = v.shapes.kind(c) == .leaf and v.shapes.cells(c) == .none;
+            const empty = try v.shapes.isNothing(gpa, charge.account, c);
             if (!linked and (!explicit or empty)) continue;
             try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = w, .explicit = explicit, .via = via });
         }
@@ -2160,20 +2212,24 @@ pub const Table = struct {
     /// path, those found inside an inner (a recast of a union of recasts,
     /// #1101), each once. A record per node.
     fn innersOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
-        switch (v.shapes.kind(n)) {
+        // A view is read at its answer; a recast's inner is listed as stored
+        // (a view's κ is its chain's, `storedAt`) and walked at its answer.
+        const n0 = try v.shapes.force(gpa, charge.account, n);
+        switch (v.shapes.kind(n0)) {
             .recast, .@"union", .choice, .positions => {},
             else => return,
         }
         // A finite rank: no recast anywhere below, so none at this path.
-        if (try v.shapes.rank(gpa, charge.account, n) != Shape.Table.rank_unbounded) return;
+        if (try v.shapes.rank(gpa, charge.account, n0) != Shape.Table.rank_unbounded) return;
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         var seen: stamped.Column(NodeId, void) = .{};
         defer seen.deinit(gpa);
         var listed: stamped.Column(NodeId, void) = .{};
         defer listed.deinit(gpa);
-        try stack.append(gpa, n);
-        while (stack.pop()) |x| {
+        try stack.append(gpa, n0);
+        while (stack.pop()) |popped| {
+            const x = try v.shapes.force(gpa, charge.account, popped);
             if (seen.contains(x)) continue;
             try charge.reserve(gpa, .inspection, 1);
             try seen.put(gpa, x, {});
@@ -2332,7 +2388,7 @@ pub const Table = struct {
                 for (0..f.len) |i| {
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
-                    if (c == .none and nothingAt(v, m)) continue;
+                    if (c == .none and try nothingAt(gpa, charge, v, m)) continue;
                     if (m0 == .none) {
                         m0 = m;
                         c0 = c;
@@ -2444,7 +2500,8 @@ pub const Table = struct {
             // derives there is the same before and after the join.
             // (Against the read without its fold obligation, so the snapshot
             // stores the obligation itself, #1128.)
-            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, f.node, f.summary, null));
+            const plain = try v.shapes.force(gpa, charge.account, f.node);
+            const redundant = v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, f.summary, null));
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
@@ -2601,8 +2658,8 @@ pub const Table = struct {
     }
 
     /// An empty leaf: no object can be there.
-    fn nothingAt(v: View, n: NodeId) bool {
-        return v.shapes.kind(n) == .leaf and v.shapes.cells(n) == .none;
+    fn nothingAt(gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!bool {
+        return v.shapes.isNothing(gpa, charge.account, n);
     }
 
     /// Whether `joined` is `m` with nothing but empty leaves: a `via` DAG
@@ -2620,7 +2677,7 @@ pub const Table = struct {
                 found += 1;
                 continue;
             }
-            if (nothingAt(v, x)) continue;
+            if (try nothingAt(gpa, charge, v, x)) continue;
             const xk = v.shapes.kind(x);
             // Alternatives are joined as a `choice` or a `union` (§2.3).
             if (xk != via and !(via == .@"union" and xk == .choice)) return false;
@@ -5249,4 +5306,81 @@ test "#1157 review: a fold obligation read through a chain of unions costs each 
     // Twice the links, about twice the work, never four times.
     try testing.expect(cost[1] <= 3 * cost[0]);
     try testing.expect(cost[2] <= 3 * cost[1]);
+}
+
+/// `Rose [ Rose x, Rose [] ]` with `x` at the children list: a value whose
+/// widen folds its levels.
+fn roseTwoLevels(f: *Fixture, x: NodeId) !NodeId {
+    const gpa = testing.allocator;
+    const rose = try f.placeOf(6);
+    const kids = try f.placeOf(7);
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    const rk = Cell.Kind.ofPlace(f.places.kind(rose));
+    const lk = Cell.Kind.ofPlace(f.places.kind(kids));
+    const empty = try f.shapes.nothing(gpa, &f.account, kids);
+    const ra = try f.shapes.node(gpa, &f.account, rose, try f.set(&.{try f.cells.site(gpa, &f.account, 2, rose, rk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, arg, x));
+    const rb = try f.shapes.node(gpa, &f.account, rose, try f.set(&.{try f.cells.site(gpa, &f.account, 3, rose, rk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, arg, empty));
+    const lit = try f.shapes.node(gpa, &f.account, kids, try f.set(&.{try f.cells.site(gpa, &f.account, 4, kids, lk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.collect(&.{ ra, rb })));
+    return f.shapes.node(gpa, &f.account, rose, try f.set(&.{try f.cells.site(gpa, &f.account, 1, rose, rk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, arg, lit));
+}
+
+test "κ at a view: its chain's entries join its answer's, a recast's inner view and a union's view of a recast read alike" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lk = Cell.Kind.ofPlace(f.places.kind(list));
+    const arg = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 1, list, lk)});
+    const p1 = try f.leaf(1, &.{try f.param(1, 1, &.{})});
+    var ti: Shape.TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const k1 = try f.sep(try f.param(2, 1, &.{}), try f.param(3, 1, &.{}));
+    // A chain: `outer` answers `mid`, which answers `arg`.
+    const mid = try f.shapes.view(gpa, &f.account, p1, 0);
+    try testing.expectEqual(arg, try f.shapes.force(gpa, &f.account, mid));
+    ti.arg = mid;
+    const outer = try f.shapes.view(gpa, &f.account, p1, 1);
+    try testing.expectEqual(arg, try f.shapes.force(gpa, &f.account, outer));
+    // Stored under the middle view, read at the outer one: as stored at `arg`.
+    const at_mid = try f.setK(.none, mid, k1);
+    const at_arg = try f.setK(.none, arg, k1);
+    try testing.expectEqual(try f.kappa(at_arg, arg, false), try f.kappa(at_mid, outer, false));
+    try testing.expectEqual(try f.kappa(at_arg, arg, false), try f.kappa(at_mid, outer, false)); // memoised: the same again
+    // A recast's inner is a position of the recast: a view there reads its chain.
+    const rec_v = try f.shapes.recast(gpa, &f.account, try f.placeOf(3), outer);
+    const rec_e = try f.shapes.recast(gpa, &f.account, try f.placeOf(3), arg);
+    try testing.expectEqual(try f.kappa(at_arg, rec_e, true), try f.kappa(at_mid, rec_v, true));
+    // A union's side that is a view of a recast is approximate as the recast is.
+    ti.arg = arg;
+    const b = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 2, list, lk)});
+    const rc_t = try f.shapes.recast(gpa, &f.account, list, try f.leaf(3, &.{try f.param(1, 3, &.{})}));
+    const vr = try f.shapes.view(gpa, &f.account, rc_t, 2);
+    try testing.expectEqual(Shape.Kind.recast, f.shapes.kind(try f.shapes.force(gpa, &f.account, vr)));
+    const eager_rc = try f.shapes.recast(gpa, &f.account, list, arg);
+    try testing.expectEqual(try f.kappa(.none, try f.join2(eager_rc, b), true), try f.kappa(.none, try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, vr, b), true));
+}
+
+test "a view's reach aggregate and its widened fold are its eager image's" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const kids = try f.placeOf(7);
+    const lk = Cell.Kind.ofPlace(f.places.kind(kids));
+    const arg = try f.shapes.leaf(gpa, &f.account, kids, try f.set(&.{try f.cells.site(gpa, &f.account, 9, kids, lk)}));
+    const p = try f.shapes.leaf(gpa, &f.account, kids, try f.set(&.{try f.param(1, 7, &.{})}));
+    var ti: Shape.TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const eager = try roseTwoLevels(&f, arg);
+    const v = try f.shapes.view(gpa, &f.account, try roseTwoLevels(&f, p), 0);
+    // `partsOf` reads a view as its answer.
+    try testing.expect(std.meta.eql(try f.conds.reachAgg(gpa, f.charge(), f.view(), eager), try f.conds.reachAgg(gpa, f.charge(), f.view(), v)));
+    // The fold's source walk (`sourceParts`) reads the answers widen visited.
+    const we = try f.conds.widenValue(gpa, f.charge(), f.view(), eager, .none);
+    const wv = try f.conds.widenValue(gpa, f.charge(), f.view(), v, .none);
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, we.node, wv.node));
+    try testing.expectEqual(try f.kappa(we.kappas, we.node, false), try f.kappa(wv.kappas, wv.node, false));
+    const arg_step = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    try testing.expectEqual(try f.kappaPath(we.kappas, &.{ arg_step, Place.Step.elem }, try f.projOf(try f.projOf(we.node, arg_step), Place.Step.elem), true), try f.kappaPath(wv.kappas, &.{ arg_step, Place.Step.elem }, try f.projOf(try f.projOf(wv.node, arg_step), Place.Step.elem), true));
 }
