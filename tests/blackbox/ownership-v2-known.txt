@@ -208,3 +208,6 @@ tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 44:21 #0 :: CmpDeep
 tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 13:13 #0 :: RefMakeWrapped.wrapped xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
 tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 17:19 #0 :: Ref.make xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
 tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 9:14 #0 :: Ref.make <literal> :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+#
+# v2 makes one demand per path of a use's pair graph with the argument (ownership-v2.md §2.11 item 3): paths that meet one value are one demand, named by the last.
+tests/corpus/ownership/CallOtherPathsKeys.beni [node] CallOtherPathsKeys 16:5 #0 :: CallOtherPathsKeys.two <record>.x :: rejected :: absent  `x` and `z` hold one list: one demand, at `.z`, refused `disjoint` as both were (#1356)

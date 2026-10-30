@@ -8,7 +8,8 @@
 //! 1. **Uses** are the caller's (`Transfer` records each argument at the
 //!    call, kind `call`, the class's use shape for that parameter).
 //! 2. **W**: every path of a parameter's use shape marked `W` (deep with
-//!    `S`) is a write the caller turns into a demand on the argument there.
+//!    `S`) is a write the caller turns into a demand on the argument there,
+//!    one per path of the use's pair graph with the argument (`Routes`).
 //! 3. **E**: every path marked `E` lets the argument there escape, deeply.
 //! 4. **Result**: `res` grafted: `πᵢ·q ↦ proj(aᵢ, q)`, the class's `fresh k`
 //!    a `result ι·k`, its `esc k` an `esc ι·k` that escapes, `⊤` and `shared`
@@ -53,38 +54,23 @@ pub const Env = Summary.Env;
 pub const Step = Shape.Step;
 pub const Error = Ids.ChargeError;
 
-/// A parameter path the class writes (`W`), deeply when `deep` (`S`).
-pub const Write = struct { param: u32, steps: Ids.Range, deep: bool };
-/// A parameter path the class lets escape (`E`).
-pub const Escape = struct { param: u32, steps: Ids.Range };
-
 pub const Applied = struct {
     result: Value,
     /// The instantiated `xreq`: `yes` when the class relies on nothing.
     xreq: CondId,
-    writes: []const Write,
-    escapes: []const Escape,
     /// The values the result lets escape (an `esc k`), deeply.
     escaped: []const NodeId,
-    /// The steps the `Write`s and `Escape`s name, root first.
-    steps: []const Step,
 };
 
 /// One call's scratch, reused across calls of one walk.
 pub const Scratch = struct {
     memo: stamped.Column(NodeId, NodeId) = .{},
-    writes: std.ArrayList(Write) = .empty,
-    escapes: std.ArrayList(Escape) = .empty,
     escaped: std.ArrayList(NodeId) = .empty,
-    steps: std.ArrayList(Step) = .empty,
     members: std.ArrayList(NodeId) = .empty,
 
     pub fn deinit(s: *Scratch, gpa: Allocator) void {
         s.memo.deinit(gpa);
-        s.writes.deinit(gpa);
-        s.escapes.deinit(gpa);
         s.escaped.deinit(gpa);
-        s.steps.deinit(gpa);
         s.members.deinit(gpa);
     }
 };
@@ -1157,77 +1143,117 @@ fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
     return memo.get(.{use.int()}).?;
 }
 
-/// The writes and escapes a use shape marks, with their paths: a walk of
-/// its explicit structure (a leaf's marks hold below it, so a leaf ends a
-/// path) through the subtrees that hold a `W` or an `E` only (`marksBelow`),
-/// so a use that is a DAG of reads is never walked path by path. Every node
-/// visited is a record. A write's other paths (§2.11 item 3) are not listed
-/// here: `Transfer` walks the use shape for them, by node (#1325).
-fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
-    if (use == .none) return;
-    var below: Ids.FixedDict(1) = .{};
-    defer below.deinit(env.gpa);
-    if (try marksBelow(env, use, &below) == 0) return;
-    // Paths as parent chains: a node's path is its entry's.
+/// A parameter's routes to what its use shape writes (`W`, deep with `S`)
+/// or lets escape (`E`), one at a time, each with its steps from the root
+/// (§2.11 items 3 and 4): a walk of the shape's explicit structure (a leaf's
+/// marks hold below it, so a leaf ends a route) through the subtrees that
+/// hold what is wanted only (`marksBelow`), paired with the argument's value
+/// as `Transfer.positionsAt` reads it. A missing step keeps the value
+/// reached; below a `⟲` a route is no single value and pairs with none.
+///
+/// **One route per path of the pair graph (#1356).** Sibling routes that
+/// meet one `(use node, value node)` pair are one route from there: they
+/// have one base, one set of other paths and one set of marks below it,
+/// and the route met first names them. So a use that is a DAG over a value
+/// that shares its parts costs its distinct pairs, never its paths; over
+/// distinct values (a tree, a parameter's positions) every route is its own.
+/// A value is projected when its route is popped, in the order a caller
+/// that reads the routes one by one and projects each made it. Each pair
+/// popped is a record. A write's other paths are `Transfer`'s (#1325).
+pub const Routes = struct {
+    env: Env,
+    below: Ids.FixedDict(1) = .{},
+    seen: Ids.FixedDict(4) = .{},
+    entries: std.ArrayList(Entry) = .empty,
+    stack: std.ArrayList(Item) = .empty,
+    steps: std.ArrayList(Step) = .empty,
+    want: u32 = 0,
+
     const Entry = struct { step: Step, parent: u32 };
-    var entries: std.ArrayList(Entry) = .empty;
-    defer entries.deinit(env.gpa);
-    const Frame = struct { node: NodeId, entry: u32 };
-    var stack: std.ArrayList(Frame) = .empty;
-    defer stack.deinit(env.gpa);
-    try stack.append(env.gpa, .{ .node = use, .entry = Ids.none_int });
-    while (stack.pop()) |f| {
-        try env.charge.reserve(env.gpa, .inspection, 1);
-        var w = false;
-        var e = false;
-        var deep = false;
-        var it = env.cells.sets.iterate((try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, f.node)));
-        while (it.next()) |x| {
-            const c: CellId = .from(x.key);
-            if (env.cells.origin(c) != .mark) continue;
-            switch (env.cells.markOf(c)) {
-                .w => w = true,
-                .e => e = true,
-                .deep => deep = true,
-                else => {},
-            }
-        }
-        if (w or e) {
-            const start: u32 = @intCast(s.steps.items.len);
-            var at = f.entry;
-            while (at != Ids.none_int) : (at = entries.items[at].parent) try s.steps.append(env.gpa, entries.items[at].step);
-            std.mem.reverse(Step, s.steps.items[start..]);
-            const r: Ids.Range = .{ .start = start, .len = @intCast(s.steps.items.len - start) };
-            if (w) try s.writes.append(env.gpa, .{ .param = param, .steps = r, .deep = deep });
-            if (e) try s.escapes.append(env.gpa, .{ .param = param, .steps = r });
-        }
-        if (env.shapes.kind(f.node) != .node) continue;
-        var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
-        while (kt.next()) |k| {
-            if ((below.get(.{k.node.int()}) orelse 3) == 0) continue;
-            const id: u32 = @intCast(entries.items.len);
-            try entries.append(env.gpa, .{ .step = k.step, .parent = f.entry });
-            try stack.append(env.gpa, .{ .node = k.node, .entry = id });
-        }
+    /// A use node, its route's entry, and the argument's value: the
+    /// parent's until the item is popped, then its own. `stuck` once a step
+    /// is missing; `free`, no value, below a `⟲` or with no argument.
+    const Item = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool };
+    pub const Route = struct { steps: []const Step, deep: bool };
+    pub const Want = enum(u2) { writes = 1, escapes = 2 };
+
+    pub fn deinit(r: *Routes) void {
+        r.below.deinit(r.env.gpa);
+        r.seen.deinit(r.env.gpa);
+        r.entries.deinit(r.env.gpa);
+        r.stack.deinit(r.env.gpa);
+        r.steps.deinit(r.env.gpa);
     }
-}
+
+    /// Walk `use`'s routes of `want` over the argument's value `arg`
+    /// (`.none`: no argument).
+    pub fn start(r: *Routes, use: NodeId, arg: NodeId, want: Want) Error!void {
+        r.deinit();
+        r.* = .{ .env = r.env, .want = @backingInt(want) };
+        if (use == .none or try marksBelow(r.env, use, &r.below) & r.want == 0) return;
+        try r.stack.append(r.env.gpa, .{ .node = use, .entry = Ids.none_int, .value = arg, .stuck = false, .free = arg == .none });
+    }
+
+    /// The next route, or null; its steps live until the next call.
+    pub fn next(r: *Routes) Error!?Route {
+        const env = r.env;
+        while (r.stack.pop()) |it0| {
+            try env.charge.reserve(env.gpa, .inspection, 1);
+            var it = it0;
+            if (it.entry != Ids.none_int and !it.free) {
+                const e = r.entries.items[it.entry];
+                if (e.step.kind == .level) {
+                    it.free = true;
+                } else if (!it.stuck) {
+                    if (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, it.value, e.step)) |n| it.value = n else it.stuck = true;
+                }
+                if (!it.free and (try r.seen.getOrPut(env.gpa, .{ e.parent, it.node.int(), it.value.int(), @intFromBool(it.stuck) })).found_existing) continue;
+            }
+            var w = false;
+            var e = false;
+            var deep = false;
+            var ct = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, it.node));
+            while (ct.next()) |x| {
+                const c: CellId = .from(x.key);
+                if (env.cells.origin(c) != .mark) continue;
+                switch (env.cells.markOf(c)) {
+                    .w => w = true,
+                    .e => e = true,
+                    .deep => deep = true,
+                    else => {},
+                }
+            }
+            if (env.shapes.kind(it.node) == .node) {
+                var kt = env.shapes.overEntries(env.shapes.get(it.node).a);
+                while (kt.next()) |k| {
+                    if ((r.below.get(.{k.node.int()}) orelse 3) & r.want == 0) continue;
+                    const id: u32 = @intCast(r.entries.items.len);
+                    try r.entries.append(env.gpa, .{ .step = k.step, .parent = it.entry });
+                    try r.stack.append(env.gpa, .{ .node = k.node, .entry = id, .value = it.value, .stuck = it.stuck, .free = it.free });
+                }
+            }
+            if (!(if (r.want == 1) w else e)) continue;
+            r.steps.clearRetainingCapacity();
+            var at = it.entry;
+            while (at != Ids.none_int) : (at = r.entries.items[at].parent) try r.steps.append(env.gpa, r.entries.items[at].step);
+            std.mem.reverse(Step, r.steps.items);
+            return .{ .steps = r.steps.items, .deep = deep };
+        }
+        return null;
+    }
+};
 
 /// Apply class `class` at call instruction `inst` to `args` (§2.11). The
 /// answer's slices live in `s` until its next call.
 pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const Value, inst: u32, s: *Scratch) Error!Applied {
     const gpa = env.gpa;
     s.memo.clear();
-    s.writes.clearRetainingCapacity();
-    s.escapes.clearRetainingCapacity();
     s.escaped.clearRetainingCapacity();
-    s.steps.clearRetainingCapacity();
     const cls = sums.get(class);
     const label = try env.cells.label(gpa, env.account(), inst, .none, false);
     var g: Grafter = .{ .env = env, .sums = sums, .args = args, .label = label, .s = s };
     defer g.folded.deinit(gpa);
     defer g.deeps.deinit(gpa);
-    // 2, 3: the writes and escapes the use shapes mark.
-    for (sums.paramUses(class), 0..) |u, i| try marked(env, u, @intCast(i), s);
     // 4: the result, by reference (§2.11 *Representation of a view*): the
     // view of `res` under this call's environment, or at an identity class
     // the actual itself. Nothing of the arguments is read or copied.
@@ -1258,10 +1284,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     return .{
         .result = .{ .node = res, .kappa = kappa },
         .xreq = xreq,
-        .writes = s.writes.items,
-        .escapes = s.escapes.items,
         .escaped = s.escaped.items,
-        .steps = s.steps.items,
     };
 }
 
@@ -1426,8 +1449,6 @@ pub const Beside = struct {
 };
 
 comptime {
-    Ids.assertRecord(Write);
-    Ids.assertRecord(Escape);
     _ = Facts;
 }
 

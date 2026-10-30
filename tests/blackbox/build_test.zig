@@ -9089,6 +9089,42 @@ test "the checker v2's call writing 640 fields of one parameter stays in its lan
     }
 }
 
+test "the checker v2's write through a doubling DAG of shared values costs its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (#1356): `t_k ( a, b )` pushes onto
+    // every leaf of a 2^k-path tuple; `f` hands it `x_k = ( x_{k-1},
+    // x_{k-1} )` over one list. Every route meets the same values, so it
+    // is one demand, refused `disjoint` (the list is written 2^k times).
+    // Depth 8 costs `f` at most 2.5 times what depth 4 does, with no limit
+    // (it was 27 times: one demand per path).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 4, 8 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "touch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nt1 ( a, b ) =\n    touch a + touch b\n");
+        for (2..n + 1) |k| try src.print(a, "\n\nt{d} ( a, b ) =\n    t{d} a + t{d} b\n", .{ k, k - 1, k - 1 });
+        try src.appendSlice(a, "\n\npub f : Int → Int\nf k =\n    x0 = [ k ]\n");
+        for (1..n) |k| try src.print(a, "    x{d} = ( x{d}, x{d} )\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "    t{d} ( x{d}, x{d} )\n", .{ n, n - 1, n - 1 });
+        const dump = try ownDumpNoLimit(&w, src.items);
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump, "rejected disjoint"));
+        totals[run] = try accountTotal(dump, "f");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 25) {
+        std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2's call writing many fields of a fresh record literal is linear" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -10961,3 +10997,26 @@ test "a derived comparison over a wide type costs its fields, not their square" 
     try testing.expect(costs[1] * 10 <= costs[0] * 22);
 }
 
+test "a derived comparison over a doubling type with a component costs its levels" {
+    // `ownership-v2.md` §2.11 item 3 (#1356): `w_k x = w_{k-1} (w_{k-1} x)`
+    // is a tuple 2^(k-1) levels deep whose every level holds one value
+    // twice, with a writing `Inner` at the bottom. The comparison writes
+    // every path of it; one route per path of the (use, value) pair graph
+    // makes one demand per operand. Depth 8 (128 levels) costs at most 20
+    // times what depth 4 (8 levels) does, with no limit (it was 56 633
+    // records at depth 4 and `ownership_summary_size` at 5).
+    var w = try world.World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var costs: [2]u64 = undefined;
+    for ([_]usize{ 4, 8 }, &costs) |depth, *cost| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(w.arena.allocator(), "import Inner\n\n\nw1 x = ( x, x )\n");
+        for (2..depth + 1) |i| try src.print(w.arena.allocator(), "\n\nw{d} x = w{d} (w{d} x)\n", .{ i, i - 1, i - 1 });
+        try src.print(w.arena.allocator(), "\n\npub f : List Int, List Int → Bool\nf a b = w{d} (Inner.Inner a) == w{d} (Inner.Inner b)\n", .{ depth, depth });
+        cost.* = try derivedComparisonCost(&w, src.items);
+    }
+    if (costs[1] > costs[0] * 20) {
+        std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ costs[0], costs[1] });
+        return error.TestUnexpectedResult;
+    }
+}

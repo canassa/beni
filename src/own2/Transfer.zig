@@ -1084,53 +1084,56 @@ pub const Frame = struct {
                 // reported there (§2.11 step 7); a call that writes nothing owes
                 // it as the frame's.
                 const first_demand = f.demands.items.len;
-                for (applied.escapes) |e| {
-                    if (e.param >= arg_insts.len) continue;
-                    const pos = (try f.positionsAt(argv.items[e.param], applied.steps[e.steps.start..][0..e.steps.len])) orelse continue;
-                    try f.escapes.append(f.gpa, .{ .node = pos.node, .point = i });
+                // What the use shapes let escape and write, one route per path
+                // of their pair graph with the argument (#1356), in growth.
+                var routes: Calls.Routes = .{ .env = f.env };
+                defer routes.deinit();
+                const n_args = @min(uses.len, arg_insts.len);
+                for (uses[0..n_args], 0..) |u, k| {
+                    const esc_walk = try f.account().enter(f.gpa, null);
+                    defer f.account().leave(esc_walk);
+                    try routes.start(u, argv.items[k].node, .escapes);
+                    while (try routes.next()) |e| if (try f.positionsAt(argv.items[k], e.steps)) |pos|
+                        try f.escapes.append(f.gpa, .{ .node = pos.node, .point = i });
                 }
                 for (applied.escaped) |n| try f.escapes.append(f.gpa, .{ .node = n, .point = i });
                 const answer = applied.result;
-                // Copy out the writes: `apply`'s scratch is reused.
-                const writes = try f.gpa.dupe(Calls.Write, applied.writes);
-                defer f.gpa.free(writes);
-                const steps = try f.gpa.dupe(Step, applied.steps);
-                defer f.gpa.free(steps);
                 // The children beside the writes' paths, indexed once for
                 // every write of this call (#1334).
                 var beside: Beside = .{};
                 defer beside.deinit(f.gpa);
-                for (writes) |w| {
-                    if (w.param >= arg_insts.len) continue;
-                    // The callee's path is value-sized: growth chosen before its
-                    // walks, never the call's lane (§4.1, *call view and direct
-                    // obligation*; a write `depth` steps below its argument).
-                    const base_walk = try f.account().enter(f.gpa, null);
-                    const base = (try f.positionsAt(argv.items[w.param], steps[w.steps.start..][0..w.steps.len])) orelse {
+                for (uses[0..n_args], 0..) |use, param| {
+                    try routes.start(use, argv.items[param].node, .writes);
+                    while (true) {
+                        // The callee's path is value-sized: growth chosen before its
+                        // walks, never the call's lane (§4.1, *call view and direct
+                        // obligation*; a write `depth` steps below its argument).
+                        const base_walk = try f.account().enter(f.gpa, null);
+                        const w = (try routes.next()) orelse break f.account().leave(base_walk);
+                        const wsteps = w.steps;
+                        const pos = try f.positionsAt(argv.items[param], wsteps);
                         f.account().leave(base_walk);
-                        continue;
-                    };
-                    f.account().leave(base_walk);
-                    var others: std.ArrayList(u32) = .empty;
-                    defer others.deinit(f.gpa);
-                    for (arg_insts, 0..) |a, k| if (k != w.param) try others.append(f.gpa, a.int());
-                    try f.demand(i, if (w.deep) .consumed else .writer, arg_insts[w.param].int(), base, others.items, callee_inst);
-                    // Disjoint against every other path of the argument the
-                    // callee touches (§2.11 item 3, R-5.1.5): a write at `.x`
-                    // while `.y` is read or answered is one object written
-                    // twice if the actual's `.x` and `.y` are one. One
-                    // operand, by node (#1325).
-                    try f.otherPaths(&beside, if (w.param < uses.len) uses[w.param] else .none, argv.items[w.param], steps[w.steps.start..][0..w.steps.len], base, arg_insts[w.param].int(), w.deep);
-                    // The write's path below the argument: the demand's text,
-                    // and the part of the argument's local it writes, which
-                    // a later read must reach to conflict (§2.8).
-                    const wsteps = steps[w.steps.start..][0..w.steps.len];
-                    if (wsteps.len != 0) {
-                        const dm = &f.demands.items[f.demands.items.len - 1];
-                        const path_walk = try f.account().enter(f.gpa, null);
-                        defer f.account().leave(path_walk);
-                        dm.write_path = try f.extendPath(try f.env.places.rootPath(f.gpa, try f.placeOf(arg_insts[w.param].int())), wsteps);
-                        if (dm.base_path != .none) dm.base_path = try f.extendPath(dm.base_path, wsteps);
+                        const base = pos orelse continue;
+                        var others: std.ArrayList(u32) = .empty;
+                        defer others.deinit(f.gpa);
+                        for (arg_insts, 0..) |a, k| if (k != param) try others.append(f.gpa, a.int());
+                        try f.demand(i, if (w.deep) .consumed else .writer, arg_insts[param].int(), base, others.items, callee_inst);
+                        // Disjoint against every other path of the argument the
+                        // callee touches (§2.11 item 3, R-5.1.5): a write at `.x`
+                        // while `.y` is read or answered is one object written
+                        // twice if the actual's `.x` and `.y` are one. One
+                        // operand, by node (#1325).
+                        try f.otherPaths(&beside, use, argv.items[param], wsteps, base, arg_insts[param].int(), w.deep);
+                        // The write's path below the argument: the demand's text,
+                        // and the part of the argument's local it writes, which
+                        // a later read must reach to conflict (§2.8).
+                        if (wsteps.len != 0) {
+                            const dm = &f.demands.items[f.demands.items.len - 1];
+                            const path_walk = try f.account().enter(f.gpa, null);
+                            defer f.account().leave(path_walk);
+                            dm.write_path = try f.extendPath(try f.env.places.rootPath(f.gpa, try f.placeOf(arg_insts[param].int())), wsteps);
+                            if (dm.base_path != .none) dm.base_path = try f.extendPath(dm.base_path, wsteps);
+                        }
                     }
                 }
                 if (f.demands.items.len > first_demand) {
