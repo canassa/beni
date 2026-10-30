@@ -11,6 +11,11 @@
 # other. Both fail on any other difference, and on an entry that no longer
 # occurs.
 #
+# A known limit, a declaration v2 stops at its summary-size limit where the
+# fixture is not about limits, is one line too, with its owner:
+#
+#     <root> <module> limit <declaration>  <owner and why>
+#
 # v2 accepts where v1 refused.
 tests/corpus/ownership/Copy.beni [node] Copy 24:27 #0 :: construction first :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
 tests/corpus/ownership/Split.beni [node] Split 38:27 #0 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
@@ -452,3 +457,91 @@ tests/corpus/ownership/InitializationLimit.beni [browser-inline] InitializationL
 tests/corpus/ownership/InitializationLimit.beni [browser-inline] InitializationLimit 56:9 #0 :: InitializationLimit.rotate p37 :: accepted :: absent  v1's round limit; v2 settles `rotate`, which writes nothing
 tests/corpus/ownership/InitializationLimit.beni [browser-inline] InitializationLimit 56:9 #0 :: InitializationLimit.rotate p38 :: accepted :: absent  v1's round limit; v2 settles `rotate`, which writes nothing
 tests/corpus/ownership/InitializationLimit.beni [browser-inline] InitializationLimit 56:9 #0 :: InitializationLimit.rotate p39 :: accepted :: absent  v1's round limit; v2 settles `rotate`, which writes nothing
+#
+# Slice 4a (#1354): a recursive tree writer's own calls under the first return (#1253, option B): the
+# same writes as v1's `⟨Tree⟩` path, named by the child each level went through.
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:19 #0 :: MarkerAcross.incAll l⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:19 #0 :: MarkerAcross.incAll l#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:19 #0 :: MarkerAcross.incAll l#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:19 #0 :: MarkerAcross.incAll l#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:47 #0 :: LevelRecursiveUpdates.incAll r#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:47 #0 :: LevelRecursiveUpdates.incAll r#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:47 #0 :: LevelRecursiveUpdates.incAll r#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:47 #0 :: LevelRecursiveUpdates.incAll r⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:19 #0 :: LevelRecursiveUpdates.incAll2 l#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:19 #0 :: LevelRecursiveUpdates.incAll2 l#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:19 #0 :: LevelRecursiveUpdates.incAll2 l#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:19 #0 :: LevelRecursiveUpdates.incAll2 l⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:34 #0 :: LevelRecursiveUpdates.incAll2 r#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:34 #0 :: LevelRecursiveUpdates.incAll2 r#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:34 #0 :: LevelRecursiveUpdates.incAll2 r#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 26:34 #0 :: LevelRecursiveUpdates.incAll2 r⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 37:19 #0 :: LevelRecursiveUpdates.incLeft l#Node.0#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+# Slice 4a: the same call refused, at the paths of the first return; v2 accepts the fresh root list v1 refuses with them.
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 44:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 48:9 #0 :: LevelRecursiveUpdates.incAll2 <Node …>⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 58:5 #0 :: LevelRecursiveUpdates.incLeft <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 52:9 #0 :: LevelRecursiveUpdates.incLeft <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the call is refused at the shared `xs` as by v1
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 52:9 #0 :: LevelRecursiveUpdates.incLeft <Node …>#Node.1 :: rejected :: accepted  the root list `[]` is fresh and apart from the shared `xs` below it; v1 refuses every list of the call
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 64:5 #0 :: LevelRecursiveUpdates.incLeft <Node …>#Node.0#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same write and verdict as v1's
+tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 64:5 #0 :: LevelRecursiveUpdates.incLeft <Node …>#Node.0⟨Tree⟩#Node.1 :: accepted :: rejected  #1253: the first return cannot yet tell three distinct levels of literals apart (it could not land in #1382)
+# Slice 4a: S4 owns these (`within`). A recursive builder's own list and its recursive calls' `ι⋆` widen into one class, which reads `lost`.
+tests/corpus/ownership/FoldLevels.beni [node] FoldLevels 94:23 #0 :: List.push xs :: accepted :: rejected  S4 (`within`): `build`'s own `[ n ]` and its recursive calls' `ι⋆` widen into one class, which reads `lost` (slice 4 plan, *What the certificate does not cover*)
+tests/corpus/ownership/LevelFresh.beni [node] LevelFresh 46:23 #0 :: List.push xs :: accepted :: rejected  S4 (`within`): `build`'s own `[ n ]` and its recursive calls' `ι⋆` widen into one class, which reads `lost` (slice 4 plan, *What the certificate does not cover*)
+# Slice 4a: v2 defects that a solved group exposes; each reproduces with no recursion.
+tests/corpus/run/ListPrependDeep.beni ListPrependDeep 81:9 #0 :: ListPrependDeep.churn <record>.kept :: accepted :: rejected  #1367: a callee that answers the written argument's holder makes it a disjoint operand
+tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 31:9 #0 :: Ref.set cell◆ :: absent :: rejected  #1366: a `Ref.set` followed by a call that writes the cell is refused `later-use`
+tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 32:9 #0 :: RefUpdateAcrossFibers.bumpRacily cell◆ :: absent :: accepted  #1366: a `Ref.set` followed by a call that writes the cell is refused `later-use`
+# Slice 4a: known limits.
+tests/corpus/ownership/MarkerAcross.beni MarkerAcross limit keepRight  #1372: applying `incAll`'s class costs 85 222 growth (memo, inspection); refused at 30:23 as v1 with the allowance raised
+tests/corpus/run/TailModConsMerge.beni TailModConsMerge limit mergeSort  #1368: 4 walks, the last about 167 000 growth; v1's verdicts with the allowance raised
+core Dict limit removeMin  #1372: a red-black removal that settles in 7 walks, the later ones about 130 000 growth each
+core Dict limit descend  #1372: the cursor walk settles in 6 walks with 176 480 growth (memo 88 161, inspection 66 653)
+# Slice 4a: core's groups, solved.
+core List 1212:38 #0 :: List.put b :: accepted :: rejected  #1393: a builder written with an element of a type variable read from another list is refused `disjoint`; v1 relies on `sep`
+core List 1799:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core List 1813:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core Result 271:21 #1 :: Result.partitionHelp <literal> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+# WriteOneLevel (R-4.7.8, moved from tests/pending by slice 4a).
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 28:10 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 34:5 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:19 #0 :: WriteOneLevel.incAll2 l⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:34 #0 :: WriteOneLevel.incAll2 r⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 28:10 #0 :: WriteOneLevel.f <Node …>#Node.0#Node.1 :: absent :: accepted  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 34:5 #0 :: WriteOneLevel.f <Node …>#Node.0#Node.1 :: absent :: accepted  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:19 #0 :: WriteOneLevel.incAll2 l#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:19 #0 :: WriteOneLevel.incAll2 l#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:19 #0 :: WriteOneLevel.incAll2 l#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:34 #0 :: WriteOneLevel.incAll2 r#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:34 #0 :: WriteOneLevel.incAll2 r#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 42:34 #0 :: WriteOneLevel.incAll2 r#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1 :: absent :: rejected  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 49:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.1 :: absent :: rejected  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1
+tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteOneLevel.incAll2 <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (#1253 option B): incAll2's calls refused at the shared lists, accepted at its own, as v1

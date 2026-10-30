@@ -1,0 +1,31 @@
+-- ownership: a late alias carried through a mutual group's result cycle
+-- (ownership-v2.md Appendix B, RecursiveSummaryGeneration; §8 S3b slice 4).
+-- `swap` and `again` are one group: `swap` answers its two lists, swapped
+-- on each round trip, so the first answer may be either argument, which
+-- the first round does not see. The final validation refuses `unsafe`,
+-- which pushes onto the first answer and reads `ys` after; `fresh` hands a
+-- fresh list in `ys`'s place and reads nothing after, and is accepted.
+swap : List Int, List Int, Int → List Int × List Int
+swap a b n =
+    if n == 0 then
+        ( a, b )
+    else
+        again b a (n - 1)
+
+
+again : List Int, List Int, Int → List Int × List Int
+again a b n = swap a b n
+
+
+unsafe : List Int, List Int → List Int × Int
+unsafe xs ys =
+    case swap xs ys 3 of
+        ( p, _ ) →
+            ( List.push p 1, List.length ys )
+
+
+fresh : List Int → List Int × Int
+fresh xs =
+    case swap xs [] 3 of
+        ( p, _ ) →
+            ( List.push p 1, 0 )

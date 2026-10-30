@@ -11196,6 +11196,8 @@ test "a derived comparison over a doubling type with a component costs its level
         std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ costs[0], costs[1] });
         return error.TestUnexpectedResult;
     }
+}
+
 /// `go acc xs`, a recursive group of one, after `n` scalar statements
 /// (`GroupSelfFold`, ownership-v2.md §8 S3b slice 4).
 fn groupSelfFold(w: *World, n: usize) !world.Result {
