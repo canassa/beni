@@ -1622,6 +1622,84 @@ test "#1143: a cycle with no node on it, a delta over the union it sits in, is g
     try testing.expectEqual(r.int(), x.shapes.get(dr).a);
 }
 
+test "#1314: every lazy reader of a view of a cycle with no node on it ends, its cells the cycle's least fixed point" {
+    // `U = union(leaf{π0}, D)`, `D = delta(U, {[*]: site})` (and its sides
+    // swapped), applied to a list `a`: a view's union answer, whose delta
+    // side's base is the same interned view. Each reader is bounded by the
+    // allowance, so a read that does not end fails. The cells are the
+    // cycle's least fixed point, what enters it from outside: `a`'s own, as
+    // the eager image of the cycle's one exit, the leaf, is.
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |swap| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const L = x.list;
+        const p0 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, try x.places.rootPath(gpa, L), 0);
+        const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
+        const pleaf = try x.shapes.leaf(gpa, &x.account, L, p0_set);
+        const uu = try x.shapes.knot(gpa, &x.account);
+        const ud = try x.shapes.knot(gpa, &x.account);
+        x.shapes.tie(ud, .{ .kind = .delta, .place = L, .cells = p0_set, .a = uu.int(), .b = try x.one(Place.Step.elem, try x.site(26, x.t_place)), .reach = .none });
+        if (swap) try x.tieUnion(uu, ud, pleaf) else try x.tieUnion(uu, pleaf, ud);
+        const u = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = uu, .kappas = .none });
+        const a = try listAt(&x, L, 20, try x.site(21, x.t_place));
+        const ak = (try x.conds.kappaSet(gpa, x.env().charge, .none, a, Cond.yes)).ctx;
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, u, &.{.{ .node = a, .kappa = ak }}, 0, &s);
+        const v = applied.result.node;
+        try testing.expectEqual(Shape.Kind.view, x.shapes.kind(v));
+        x.account.allowance = x.account.growth + 1_000_000;
+        const sh = &x.shapes;
+        const sets = &x.cells.sets;
+        // The cells: `a`'s, at the view, its answer and the delta side.
+        const cells = try sh.cellsOf(gpa, &x.account, sets, v);
+        try testing.expectEqual(x.shapes.cells(a), cells);
+        const fu = try sh.force(gpa, &x.account, v);
+        try testing.expectEqual(Shape.Kind.@"union", sh.kind(fu));
+        try testing.expectEqual(cells, try sh.cellsOf(gpa, &x.account, sets, fu));
+        const side = try sh.force(gpa, &x.account, .from(if (swap) sh.get(fu).a else sh.get(fu).b));
+        try testing.expectEqual(Shape.Kind.delta, sh.kind(side));
+        try testing.expectEqual(v.int(), sh.get(side).a);
+        try testing.expectEqual(cells, try sh.cellsOf(gpa, &x.account, sets, side));
+        // The eager image keeps a cycle as it is (§2.11 *The eager image*):
+        // its cells are the same.
+        try testing.expectEqual(cells, try sh.cellsOf(gpa, &x.account, sets, try sh.eager(gpa, &x.account, &x.places, &x.cells, v)));
+        // The other readers end.
+        _ = try sh.reach(gpa, &x.account, sets, v);
+        _ = try sh.arrivals(gpa, &x.account, &x.cells, sets, v);
+        _ = try sh.rank(gpa, &x.account, v);
+        _ = try sh.namedSteps(gpa, &x.account, v);
+        const elem = (try sh.proj(gpa, &x.account, &x.places, &x.cells, v, Place.Step.elem)).?;
+        _ = try sh.cellsOf(gpa, &x.account, sets, elem);
+        try testing.expect(try sh.leq(gpa, &x.account, &x.places, &x.cells, v, v));
+        try testing.expect(try sh.eq(gpa, &x.account, &x.places, &x.cells, v, v));
+        _ = try sh.widen(gpa, &x.account, &x.places, &x.cells, v);
+        var two = [_]NodeId{ v, a };
+        _ = try sh.join(gpa, &x.account, &x.places, &x.cells, &two);
+        const whole = try sh.recastWhole(gpa, &x.account, sets, x.t_place, v);
+        _ = try sh.cellsOf(gpa, &x.account, sets, whole);
+        _ = try x.conds.kappaOf(gpa, x.env().charge, x.env().view(), applied.result.kappa, v, false);
+        _ = try x.conds.deep(gpa, x.env().charge, x.env().view(), applied.result.kappa, v, false);
+        // The view as an actual: a callee relying on `sep(π0, π1)`, applied
+        // to `(v, a)`, is refused, `v` being `a`; one answering a node over
+        // `π0` holds `a`'s cells.
+        const p1 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 1, try x.places.rootPath(gpa, L), 0);
+        const g = try x.sums.add(x.env(), .{ .params = &.{ .none, .none }, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, try x.conds.sepAtom(gpa, x.env().charge, p0, p1)) });
+        var s1: Scratch = .{};
+        defer s1.deinit(gpa);
+        const ga = try apply(x.env(), &x.sums, g, &.{ .{ .node = v, .kappa = applied.result.kappa }, .{ .node = a, .kappa = ak } }, 1, &s1);
+        try testing.expect(Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, ga.xreq)));
+        const h = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.node(gpa, &x.account, L, p0_set, try x.one(Place.Step.elem, try x.site(27, x.t_place))), .kappas = .none });
+        var s2: Scratch = .{};
+        defer s2.deinit(gpa);
+        const ha = try apply(x.env(), &x.sums, h, &.{.{ .node = v, .kappa = applied.result.kappa }}, 2, &s2);
+        try testing.expectEqual(cells, try sh.cellsOf(gpa, &x.account, sets, ha.result.node));
+    }
+}
+
 /// #1146's chain (`unionChainCost`'s), each `N_k` also holding `π0` at its
 /// own path when `params`; its root, and `lf` its seed and argument.
 fn linkChain(x: *KnotFixture, n: usize, params: bool, lf: NodeId) !NodeId {
@@ -2662,8 +2740,9 @@ test "#1219: an actual below a level stands for a value inside it, so its sep an
     // else xs`), or the base of a delta (`f a` with an element written), or
     // that delta a side of a union. A separate list accepts. `h` answers a
     // node over `π0`; applied to any of the recast actuals, its image holds
-    // `k`, approximately. The cyclic union of the eager graft's fixture is
-    // #1314 (the cells of a view of a knot do not end).
+    // `k`, approximately, and so does `u`'s, whose result is a knot
+    // `U = union(leaf{π0}, delta(U, {[*]: site}))`: a view of it reads its
+    // cycle's cells as their least fixed point (§2.11, #1314).
     const gpa = testing.allocator;
     for (0..6) |kind| {
         var x: KnotFixture = .{};
@@ -2705,12 +2784,24 @@ test "#1219: an actual below a level stands for a value inside it, so its sep an
         // `h`'s result is a node at `L` whose object is `π0`.
         const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
         const h = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.node(gpa, &x.account, L, p0_set, try x.one(Place.Step.elem, try listAt(&x, L, 25, null))), .kappas = .none });
-        var s2: Scratch = .{};
-        defer s2.deinit(gpa);
-        const image = try apply(x.env(), &x.sums, h, &.{.{ .node = first, .kappa = .none }}, 0, &s2);
-        const cells = try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, image.result.node);
+        // `u`'s result is a knot: `U = union(leaf{π0}, D)`,
+        // `D = delta(U, {[*]: site})`.
+        const uu = try x.shapes.knot(gpa, &x.account);
+        const ud = try x.shapes.knot(gpa, &x.account);
+        x.shapes.tie(ud, .{ .kind = .delta, .place = L, .cells = p0_set, .a = uu.int(), .b = try x.one(Place.Step.elem, try x.site(26, T)), .reach = .none });
+        try x.tieUnion(uu, try x.shapes.leaf(gpa, &x.account, L, p0_set), ud);
+        const u = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = uu, .kappas = .none });
         var it = x.cells.sets.iterate(x.shapes.cells(k));
         const kc = it.next().?.key;
-        try testing.expectEqual(kind != 0, x.cells.sets.member(cells, kc));
+        for ([_]ClassId{ h, u }) |c| {
+            var s2: Scratch = .{};
+            defer s2.deinit(gpa);
+            const image = try apply(x.env(), &x.sums, c, &.{.{ .node = first, .kappa = .none }}, 0, &s2);
+            // Bounded: a read that does not end exhausts the allowance.
+            x.account.allowance = x.account.growth + 1_000_000;
+            const cells = try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, image.result.node);
+            x.account.allowance = std.math.maxInt(u32) - 1;
+            try testing.expectEqual(kind != 0, x.cells.sets.member(cells, kc));
+        }
     }
 }
