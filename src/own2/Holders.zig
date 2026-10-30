@@ -165,6 +165,18 @@ pub fn answer(env: Env, frame: Frame, wanted: []const bool, out: []Answer, split
     if (std.debug.runtime_safety and (frame.holders.len <= cross_check_holders or Cond.full_cross_check)) try ix.crossCheck(wanted, out, splits.items);
 }
 
+/// What a holder's value `n` gives at one path for candidate `x` of target
+/// `c` (§2.8 step 3, `Index.expand`): the hold bits, and the states with
+/// children that reach `x` into `kids`. One frame-free read of the
+/// closure, for a caller with no frame (the knot tests of `Calls`).
+pub fn closureOf(env: Env, n: NodeId, x: CellId, c: CellId, kids: *std.ArrayList(NodeId)) Error!struct { any: bool, plain: bool, alt: bool } {
+    var ix: Index = .{ .gpa = env.gpa, .env = env, .frame = undefined };
+    defer ix.deinit();
+    const clo = ix.clos.items[try ix.closure(n, x, c)];
+    for (ix.pool.items[clo.start..][0..clo.len]) |s| try kids.append(env.gpa, s.node);
+    return .{ .any = clo.bits.any, .plain = clo.bits.plain, .alt = clo.bits.alt };
+}
+
 const cross_check_holders = 8;
 /// A counter slot of an own-split chain (`Sib`), apart from group ids.
 const sib_tag: u32 = 1 << 31;
@@ -265,7 +277,6 @@ const Index = struct {
     clos: std.ArrayList(Clo) = .empty,
     pool: std.ArrayList(St) = .empty,
     desc: Descent = .{},
-    clo_stack: std.ArrayList(struct { NodeId, bool }) = .empty,
     kid_cache: std.ArrayList([2]u32) = .empty,
 
     fn deinit(ix: *Index) void {
@@ -937,79 +948,186 @@ const Index = struct {
         }
     }
 
+    /// `closure(n0, x, c)`: one Tarjan walk (`Shape.Table.cycleWalk`) over
+    /// what each state's closure is read from, its sides, so a cycle with
+    /// no `node` on it (#1314's knot, #1335) ends at its least fixed point.
     fn closure(ix: *Index, n0: NodeId, x: CellId, c: CellId) Error!u32 {
-        const gpa = ix.gpa;
+        const key: Key = .{ n0.int(), x.int(), c.int(), 0 };
+        if (ix.clo_of.get(key)) |hit| return hit;
+        var w: CloWalk = .{ .ix = ix, .x = x, .c = c };
+        defer w.deinit();
+        try ix.env.shapes.cycleWalk(ix.gpa, n0, &w);
+        return ix.clo_of.get(key).?;
+    }
+
+    /// The states at one path from `n`, its sides with their route flags
+    /// (`expand`), and how many; a view's answer forced unless `settling`.
+    fn sidesOf(ix: *Index, n: NodeId, settling: bool) Error!struct { [2]St, usize } {
         const shapes = ix.env.shapes;
-        // Buffers kept by the index: a closure is computed per node and
-        // candidate, so a deep holder's pairs make many (§4.1: constant
-        // work a record).
-        const stack = &ix.clo_stack;
-        stack.clearRetainingCapacity();
-        var sides: [2]St = undefined;
-        try stack.append(gpa, .{ n0, false });
-        while (stack.pop()) |top| {
-            const n = top[0];
-            const key: Key = .{ n.int(), x.int(), c.int(), 0 };
-            if (ix.clo_of.get(key) != null) continue;
+        const k = shapes.get(n);
+        return switch (k.kind) {
+            .leaf, .node => .{ undefined, 0 },
+            .delta => .{ .{ .{ .node = .from(k.a) }, undefined }, 1 },
+            .recast => .{ .{ .{ .node = .from(k.a), .cast = true }, undefined }, 1 },
+            .view => .{ .{ .{ .node = if (settling) shapes.forced(n) else try shapes.force(ix.gpa, ix.env.account(), n) }, undefined }, 1 },
+            .@"union", .choice, .positions => blk: {
+                const alt = k.kind == .@"union" or k.kind == .choice;
+                break :blk .{ .{ .{ .node = .from(k.a), .alt = alt }, .{ .node = .from(k.b), .alt = alt } }, 2 };
+            },
+        };
+    }
+
+    /// `closure`'s relation for `cycleWalk`. A state whose reach lacks `x`
+    /// is settled on entry, empty, and reads nothing. A record alone takes
+    /// its own hold and children, then its sides' closures under their
+    /// flags, deduplicated in that order; a cycle starts each member so and
+    /// adds its sides' (a member's as it stands) until nothing changes:
+    /// `under` only sets flags, so the states and bits only grow, within the
+    /// cycle's reach (§2.11 *A cycle with no node on it*).
+    const CloWalk = struct {
+        ix: *Index,
+        x: CellId,
+        c: CellId,
+        /// A cycle's members' states and bits while it is settled.
+        lists: std.ArrayList(std.ArrayList(St)) = .empty,
+        bits: std.ArrayList(Bits) = .empty,
+
+        fn deinit(w: *CloWalk) void {
+            const gpa = w.ix.gpa;
+            for (w.lists.items) |*l| l.deinit(gpa);
+            w.lists.deinit(gpa);
+            w.bits.deinit(gpa);
+        }
+
+        fn key(w: *const CloWalk, n: NodeId) Key {
+            return .{ n.int(), w.x.int(), w.c.int(), 0 };
+        }
+
+        pub fn from(w: *CloWalk, n: NodeId) Error![2]NodeId {
+            const ix = w.ix;
             try ix.rec(1);
-            const k = shapes.get(n);
-            const m: usize = switch (k.kind) {
-                .leaf, .node => 0,
-                .delta, .recast, .view => 1,
-                .@"union", .choice, .positions => 2,
-            };
-            switch (k.kind) {
-                .leaf, .node => {},
-                .delta => sides[0] = .{ .node = .from(k.a) },
-                .recast => sides[0] = .{ .node = .from(k.a), .cast = true },
-                .view => sides[0] = .{ .node = try shapes.force(gpa, ix.env.account(), n) },
-                .@"union", .choice, .positions => {
-                    const alt = k.kind == .@"union" or k.kind == .choice;
-                    sides = .{ .{ .node = .from(k.a), .alt = alt }, .{ .node = .from(k.b), .alt = alt } };
-                },
+            const two = try ix.sidesOf(n, false);
+            if (!ix.env.cells.sets.member(try ix.reach(n), w.x.int())) {
+                try ix.clo_of.put(ix.gpa, w.key(n), @intCast(ix.clos.items.len));
+                try ix.clos.append(ix.gpa, .{ .start = 0, .len = 0, .bits = .{} });
+                return .{ .none, .none };
             }
-            if (!top[1]) {
-                if (!ix.env.cells.sets.member(try ix.reach(n), x.int())) {
-                    try ix.clo_of.put(gpa, key, @intCast(ix.clos.items.len));
-                    try ix.clos.append(gpa, .{ .start = 0, .len = 0, .bits = .{} });
-                    continue;
-                }
-                try stack.append(gpa, .{ n, true });
-                for (sides[0..m]) |side| try stack.append(gpa, .{ side.node, false });
-                continue;
-            }
+            var out: [2]NodeId = .{ .none, .none };
+            for (two[0][0..two[1]], 0..) |s, i| out[i] = s.node;
+            return out;
+        }
+
+        pub fn settled(w: *const CloWalk, n: NodeId) bool {
+            return w.ix.clo_of.get(w.key(n)) != null;
+        }
+
+        /// Member `n`'s own hold bits and, for a node or a delta with a
+        /// child that reaches `x`, itself as the state with children.
+        fn own(w: *CloWalk, n: NodeId, list: *std.ArrayList(St)) Error!Bits {
+            const ix = w.ix;
             var bits: Bits = .{};
-            if (try ix.holdAt(.{ .node = n }, x, c)) |hd| {
+            if (try ix.holdAt(.{ .node = n }, w.x, w.c)) |hd| {
                 bits.any = true;
                 bits.plain = !hd.approx and !hd.several;
                 bits.alt = !hd.approx and hd.several;
             }
-            const start: u32 = @intCast(ix.pool.items.len);
-            // Only a state with a child that reaches `x` has children to
-            // descend: a join of k values that hold `x` at this path alone is
-            // its hold bits (§2.8 step 3).
-            if (k.kind == .node or k.kind == .delta) {
+            const kind = ix.env.shapes.kind(n);
+            if (kind == .node or kind == .delta) {
                 const lo: u32 = @intCast(ix.kid_cache.items.len);
-                try ix.kidsOf(n, x, &ix.kid_cache);
+                try ix.kidsOf(n, w.x, &ix.kid_cache);
                 const len = @as(u32, @intCast(ix.kid_cache.items.len)) - lo;
-                if (len > 0) try ix.pool.append(gpa, .{ .node = n, .kids = .{ .start = lo, .len = len } });
+                if (len > 0) try list.append(ix.gpa, .{ .node = n, .kids = .{ .start = lo, .len = len } });
             }
-            for (sides[0..m]) |side| {
-                const sub = ix.clos.items[ix.clo_of.get(.{ side.node.int(), x.int(), c.int(), 0 }).?];
-                bits = bitsOr(bits, bitsUnder(side, sub.bits));
-                var i: u32 = 0;
-                while (i < sub.len) : (i += 1) {
-                    const st = under(side, ix.pool.items[sub.start + i]);
-                    for (ix.pool.items[start..]) |o| {
-                        if (std.meta.eql(o, st)) break;
-                    } else try ix.pool.append(gpa, st);
+            return bits;
+        }
+
+        /// `src`'s states under `side`'s flags into `list`, each once;
+        /// whether one was new.
+        fn add(w: *CloWalk, side: St, src: []const St, list: *std.ArrayList(St)) Error!bool {
+            var grew = false;
+            for (src) |p| {
+                const st = under(side, p);
+                for (list.items) |o| {
+                    if (std.meta.eql(o, st)) break;
+                } else {
+                    try list.append(w.ix.gpa, st);
+                    grew = true;
                 }
             }
-            try ix.clo_of.put(gpa, key, @intCast(ix.clos.items.len));
-            try ix.clos.append(gpa, .{ .start = start, .len = @as(u32, @intCast(ix.pool.items.len)) - start, .bits = bits });
+            return grew;
         }
-        return ix.clo_of.get(.{ n0.int(), x.int(), c.int(), 0 }).?;
-    }
+
+        pub fn settle(w: *CloWalk, members: []const NodeId) Error!void {
+            const ix = w.ix;
+            const gpa = ix.gpa;
+            // Settled on entry: its reach lacks `x`.
+            if (members.len == 1 and w.settled(members[0])) return;
+            try ix.rec(@intCast(members.len));
+            // A member's index by node, for a cycle of several.
+            var member: Ids.FixedDict(1) = .{};
+            defer member.deinit(gpa);
+            if (members.len > 1) for (members, 0..) |m, i| {
+                (try member.getOrPut(gpa, .{m.int()})).value_ptr.* = @intCast(i);
+            };
+            while (w.lists.items.len < members.len) try w.lists.append(gpa, .empty);
+            try w.bits.resize(gpa, members.len);
+            // A cycle: several members, or one that reads itself.
+            var cyclic = members.len > 1;
+            if (!cyclic) {
+                const two = try ix.sidesOf(members[0], true);
+                for (two[0][0..two[1]]) |side| cyclic = cyclic or side.node == members[0];
+            }
+            const lists = w.lists.items[0..members.len];
+            for (members, lists, w.bits.items) |m, *l, *b| {
+                l.clearRetainingCapacity();
+                b.* = try w.own(m, l);
+            }
+            // One pass for a record alone; a cycle's until it is still.
+            var again = true;
+            while (again) {
+                again = false;
+                for (members, lists, w.bits.items) |m, *l, *b| {
+                    const two = try ix.sidesOf(m, false);
+                    for (two[0][0..two[1]]) |side| {
+                        const before = b.*;
+                        const src: []const St, const sb: Bits = if (if (members.len == 1) (if (side.node == members[0]) @as(?u32, 0) else null) else member.get(.{side.node.int()})) |j|
+                            .{ lists[j].items, w.bits.items[j] }
+                        else blk: {
+                            const sub = ix.clos.items[ix.clo_of.get(w.key(side.node)).?];
+                            break :blk .{ ix.pool.items[sub.start..][0..sub.len], sub.bits };
+                        };
+                        // A cycle's passes are charged per state they read.
+                        if (cyclic) try ix.rec(@intCast(src.len));
+                        b.* = bitsOr(b.*, bitsUnder(side, sb));
+                        const grew = try w.add(side, src, l);
+                        if (cyclic) again = again or grew or @as(u8, @bitCast(before)) != @as(u8, @bitCast(b.*));
+                    }
+                }
+            }
+            for (members, lists, w.bits.items) |m, l, b| {
+                const start: u32 = @intCast(ix.pool.items.len);
+                try ix.pool.appendSlice(gpa, l.items);
+                try ix.clo_of.put(gpa, w.key(m), @intCast(ix.clos.items.len));
+                try ix.clos.append(gpa, .{ .start = start, .len = @intCast(l.items.len), .bits = b });
+            }
+            // A cycle's fixed point: each member holds what it reads.
+            if (std.debug.runtime_safety and cyclic) for (members) |m| {
+                const mine = ix.clos.items[ix.clo_of.get(w.key(m)).?];
+                const two = try ix.sidesOf(m, true);
+                for (two[0][0..two[1]]) |side| {
+                    const sub = ix.clos.items[ix.clo_of.get(w.key(side.node)).?];
+                    const sb: u8 = @bitCast(bitsUnder(side, sub.bits));
+                    std.debug.assert(sb & @as(u8, @bitCast(mine.bits)) == sb);
+                    for (ix.pool.items[sub.start..][0..sub.len]) |p| {
+                        const st = under(side, p);
+                        for (ix.pool.items[mine.start..][0..mine.len]) |o| {
+                            if (std.meta.eql(o, st)) break;
+                        } else unreachable;
+                    }
+                }
+            };
+        }
+    };
 
     /// The children of node `n` whose reach holds `x`, as `(step, child)`:
     /// a wide node's from a cell-to-children index built once (§2.8 step 3).

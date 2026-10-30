@@ -2516,48 +2516,80 @@ pub const Table = struct {
         return t.foldCondWalk(gpa, charge, v, n);
     }
 
+    /// `foldCondOf`'s walk: one Tarjan walk (`Shape.Table.cycleWalk`) over
+    /// a union's, a choice's or a positions node's sides and a view's
+    /// answer, so a cycle of them with no node on it (#1335) ends at its
+    /// least fixed point: every member owes what every member owns and what
+    /// enters the cycle (§2.11 *A cycle with no node on it*).
     fn foldCondWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
-        // Post-order on an explicit stack: a side's answer from the memo, so
-        // a chain of unions costs each its own node.
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, n);
-        while (stack.items.len > 0) {
-            const x = stack.items[stack.items.len - 1];
-            if (t.fold_of.get(x) != null) {
-                _ = stack.pop();
-                continue;
-            }
-            try charge.reserve(gpa, .inspection, 1);
-            var acc: CondId = t.fold_cond.get(x) orelse yes;
-            switch (v.shapes.kind(x)) {
-                .@"union", .choice, .positions => {
-                    const d = v.shapes.get(x);
-                    const l = t.fold_of.get(.from(d.a));
-                    const r = t.fold_of.get(.from(d.b));
-                    if (l == null or r == null) {
-                        if (l == null) try stack.append(gpa, .from(d.a));
-                        if (r == null) try stack.append(gpa, .from(d.b));
-                        continue;
-                    }
-                    acc = try t.@"and"(gpa, charge, acc, try t.@"and"(gpa, charge, l.?, r.?));
-                },
-                // A view's side owes what its answer owes (§2.11).
-                .view => {
-                    const answer = try v.shapes.force(gpa, charge.account, x);
-                    const a = t.fold_of.get(answer) orelse {
-                        try stack.append(gpa, answer);
-                        continue;
-                    };
-                    acc = try t.@"and"(gpa, charge, acc, a);
-                },
-                else => {},
-            }
-            try t.fold_of.put(gpa, x, acc);
-            _ = stack.pop();
-        }
+        var w: FoldWalk = .{ .t = t, .gpa = gpa, .charge = charge, .v = v };
+        try v.shapes.cycleWalk(gpa, n, &w);
         return t.fold_of.get(n).?;
     }
+
+    /// `foldCondWalk`'s relation. A record whose parts are answered already
+    /// is answered on entry, so a chain of unions costs each its own node
+    /// once, a record that waited once more, as the post-order on a stack did.
+    const FoldWalk = struct {
+        t: *Table,
+        gpa: Allocator,
+        charge: Charge,
+        v: View,
+
+        /// The right side first; a view's answer.
+        fn parts(w: *FoldWalk, x: NodeId) Error![2]NodeId {
+            const shapes = w.v.shapes;
+            return switch (shapes.kind(x)) {
+                .@"union", .choice, .positions => .{ .from(shapes.get(x).b), .from(shapes.get(x).a) },
+                .view => .{ try shapes.force(w.gpa, w.charge.account, x), .none },
+                else => .{ .none, .none },
+            };
+        }
+
+        /// `x`'s own certificate and its parts' answers, the left side's
+        /// first, or null while a part has none.
+        fn answer(w: *FoldWalk, x: NodeId, two: [2]NodeId) Error!?CondId {
+            const t = w.t;
+            const acc: CondId = t.fold_cond.get(x) orelse yes;
+            if (two[0] == .none) return acc;
+            const r = t.fold_of.get(two[0]) orelse return null;
+            if (two[1] == .none) return try t.@"and"(w.gpa, w.charge, acc, r);
+            const l = t.fold_of.get(two[1]) orelse return null;
+            return try t.@"and"(w.gpa, w.charge, acc, try t.@"and"(w.gpa, w.charge, l, r));
+        }
+
+        pub fn from(w: *FoldWalk, x: NodeId) Error![2]NodeId {
+            try w.charge.reserve(w.gpa, .inspection, 1);
+            const two = try w.parts(x);
+            if (try w.answer(x, two)) |k| try w.t.fold_of.put(w.gpa, x, k);
+            return two;
+        }
+
+        pub fn settled(w: *const FoldWalk, x: NodeId) bool {
+            return w.t.fold_of.get(x) != null;
+        }
+
+        pub fn settle(w: *FoldWalk, members: []const NodeId) Error!void {
+            const t = w.t;
+            if (members.len == 1 and w.settled(members[0])) return;
+            try w.charge.reserve(w.gpa, .inspection, @intCast(members.len));
+            if (members.len == 1) {
+                const two = try w.parts(members[0]);
+                if (try w.answer(members[0], two)) |k| return t.fold_of.put(w.gpa, members[0], k);
+            }
+            // A cycle: what its members own, and what enters it.
+            var acc: CondId = yes;
+            for (members) |m| {
+                acc = try t.@"and"(w.gpa, w.charge, acc, t.fold_cond.get(m) orelse yes);
+                for (try w.parts(m)) |y| if (y != .none) if (t.fold_of.get(y)) |k| {
+                    acc = try t.@"and"(w.gpa, w.charge, acc, k);
+                };
+            }
+            // A fixed point by construction: each member owes every
+            // conjunct of every member.
+            for (members) |m| try t.fold_of.put(w.gpa, m, acc);
+        }
+    };
 
     /// A folded class's obligation from its aggregate: a repeat is
     /// identified through the fold (`lost`, never `shared`: the levels it
@@ -6801,6 +6833,34 @@ test "#1279 review: a union's view side owes its answer's fold certificate" {
     try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u_v));
 }
 
+test "#1335: a cycle of a union and a view with no node on it owes, at each member, what enters it" {
+    // `U = union(image, V)`, `V` a view whose answer is `U`: a cycle of
+    // unions and views alone, which `foldCondOf` walks with no node to
+    // stop it. Each member owes the image's certificate, the one thing
+    // that enters the cycle. Bounded by the allowance, so a walk that does
+    // not end fails fast.
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |swap| {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const list = try f.placeOf(1);
+        const lk = Cell.Kind.ofPlace(f.places.kind(list));
+        const image = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 9, list, lk)});
+        try f.conds.fold_cond.put(gpa, image, lost);
+        f.conds.fold_cond_n += 1;
+        const u = try f.shapes.knot(gpa, &f.account);
+        var ti: Shape.TestInstantiation = .{ .cellt = &f.cells, .arg = u };
+        f.shapes.instantiation = ti.inst();
+        const v = try f.shapes.view(gpa, &f.account, try f.leaf(1, &.{try f.param(1, 1, &.{})}), 0);
+        const l, const r = if (swap) .{ v, image } else .{ image, v };
+        f.shapes.tie(u, .{ .kind = .@"union", .place = list, .cells = f.shapes.cells(image), .a = l.int(), .b = r.int(), .reach = .none });
+        try testing.expectEqual(u, try f.shapes.force(gpa, &f.account, v));
+        f.account.allowance = f.account.growth + 100_000;
+        try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), v));
+        try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u));
+    }
+}
 test "#1121: a cell set's derivation over its aggregate and an atom's two sides merged along their tries are apart's" {
     // `ownership-v2.md` §2.11 *The derivation*: `derivedCells` over the set
     // aggregate (memoised per radix node), the repeats added as sets, and

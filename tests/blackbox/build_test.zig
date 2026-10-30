@@ -9668,6 +9668,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // directory names `w2` and whether an importer may apply its class
     // (1 776 → 1 796 bytes, #1316). The block version 13 (#1328) changes
     // the hash, not the size.
+    // Version 14 (#1335) changes the hash only.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",

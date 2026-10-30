@@ -51,7 +51,8 @@ const layers = [_]Entry{
     // 2 550 since #1128: the path-multiset primitive (arrivals, aggregates by
     // destination class, the fold conditions), which §3.4 puts in Cond.
     // 2 700 since #1199: the read's summaryExcl and the cell set per key.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4200 },
+    // 4 220 since #1335: `foldCondOf` by the cycle walk.
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4220 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
@@ -61,7 +62,8 @@ const layers = [_]Entry{
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
-    .{ .file = "Holders.zig", .layer = 6, .max_lines = 1900 },
+    // 2 010 since #1335: the same-path closure by the cycle walk.
+    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2010 },
     // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
@@ -84,13 +86,15 @@ const layers = [_]Entry{
     // map's entries, and the shared format; the reader is `BlockRead`, the
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1690 },
+    // 1 770 since #1335: a knot whose cycle no child step closes.
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1770 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
     // §5 says 950 since #1073: a snapshot rebuilt from its positions.
     // 1 050 since S3b slice 3: the commit re-interns the block's places.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1050 },
+    // 1 125 since #1335: a knot's members tied raw, set once it is read.
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1125 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
     .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
 };
