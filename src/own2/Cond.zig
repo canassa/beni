@@ -194,6 +194,9 @@ pub const Table = struct {
     memo_map_union: Ids.FixedDict(3) = .{},
     /// A read made with no crossing (a redo, the cross-check) and with no
     /// memo (the cross-check); and how many reads crossed, and were redone.
+    /// The shape table whose nodes key this table's entries, told of each new
+    /// key (`keyed`); null: it tracks no relevance, and every node is relevant.
+    shapes_hook: ?*Shape.Table = null,
     no_cross: bool = false,
     no_memo: bool = false,
     crossed_reads: u32 = 0,
@@ -673,11 +676,17 @@ pub const Table = struct {
 
     /// `ctx` with κ(n) at this position joined with `k` (monotone, §2.12):
     /// the new root and whether κ(n) changed; the same root when not.
+    /// `n` became a κ key: relevant to the crossing's `base_epoch` (*Bases*).
+    fn keyed(t: *Table, gpa: Allocator, charge: Charge, n: NodeId) Error!void {
+        if (t.shapes_hook) |s| try s.markRelevant(gpa, charge.account, n);
+    }
+
     pub fn kappaSet(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, n: NodeId, k: CondId) Error!Set {
         const old = t.kappaGet(ctx, n);
         const new = if (old) |o| try t.join(gpa, charge, o, k) else k;
         if (old) |o| if (o == new) return .{ .ctx = ctx, .changed = false };
         const p = t.position(ctx);
+        try t.keyed(gpa, charge, n);
         return .{ .ctx = try t.makePos(gpa, charge, .{ .here = try t.mapPut(gpa, charge, p.here, n.int(), new.int()), .links = p.links, .fold = p.fold }), .changed = true };
     }
 
@@ -965,6 +974,7 @@ pub const Table = struct {
             const k = try r.cond(r.ctx, t, gpa, charge, .from(e.value));
             const old = t.mapGet(here, m.int());
             const v = if (old) |o| try t.join(gpa, charge, .from(o), k) else k;
+            try t.keyed(gpa, charge, m);
             here = try t.mapPut(gpa, charge, here, m.int(), v.int());
         }
         // A fold's links are the steps it saw, its sparse frontier (§2.9),
@@ -1550,25 +1560,19 @@ pub const Table = struct {
             if (!try v.shapes.tested(gpa, charge.account, .from(na.prefix), region)) return true;
             return t.sameCond(gpa, charge, .from(na.left), .from(nb.left));
         }
+        if (na.mask == 0 and nb.mask == 0) return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
         if (na.mask == 0 or nb.mask == 0) {
-            // One leaf against a map: its key against the map's value there,
-            // every other key of the map bound alone.
-            const leaf = if (na.mask == 0) na else nb;
-            const other = if (na.mask == 0) b else a;
-            var it = t.mapEntries(other);
-            var met = false;
-            while (it.next()) |e| {
-                try charge.reserve(gpa, .inspection, 1);
-                if (e.key == leaf.prefix) {
-                    met = true;
-                    if (e.value == leaf.left) continue;
-                    if (try v.shapes.tested(gpa, charge.account, .from(e.key), region) and !try t.sameCond(gpa, charge, .from(e.value), .from(leaf.left))) return false;
-                    continue;
-                }
-                if (try v.shapes.tested(gpa, charge.account, .from(e.key), region)) return false;
-            }
-            if (!met and try v.shapes.tested(gpa, charge.account, .from(leaf.prefix), region)) return false;
-            return true;
+            // A leaf against a branch: the leaf against the side its key would
+            // be in, the other side bound alone.
+            const leaf_a = na.mask == 0;
+            const leaf = if (leaf_a) na else nb;
+            const br = if (leaf_a) nb else na;
+            if (!matches(leaf.prefix, br.prefix, br.mask)) return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
+            const zero = leaf.prefix & br.mask == 0;
+            const near = if (zero) br.left else br.right;
+            const far = if (zero) br.right else br.left;
+            if (leaf_a) return try t.mapsEqOn(gpa, charge, v, a, near, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, far, region);
+            return try t.mapsEqOn(gpa, charge, v, near, b, region) and try t.mapsEqOn(gpa, charge, v, far, Ids.none_int, region);
         }
         if (na.mask == nb.mask and na.prefix == nb.prefix) return try t.mapsEqOn(gpa, charge, v, na.left, nb.left, region) and try t.mapsEqOn(gpa, charge, v, na.right, nb.right, region);
         if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
@@ -2735,38 +2739,12 @@ pub const Table = struct {
     /// #1101), each once. A record per node.
     fn innersOf(gpa: Allocator, charge: Charge, v: View, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
         // A view is read at its answer; a recast's inner is listed as stored
-        // (a view's κ is its chain's, `storedAt`) and walked at its answer.
-        const n0 = try v.shapes.force(gpa, charge.account, n);
-        switch (v.shapes.kind(n0)) {
-            .recast, .@"union", .choice, .positions => {},
-            else => return,
-        }
-        // A finite rank: no recast anywhere below, so none at this path.
-        if (try v.shapes.rank(gpa, charge.account, n0) != Shape.Table.rank_unbounded) return;
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
-        var listed: stamped.Column(NodeId, void) = .{};
-        defer listed.deinit(gpa);
-        try stack.append(gpa, n0);
-        while (stack.pop()) |popped| {
-            const x = try v.shapes.force(gpa, charge.account, popped);
-            if (seen.contains(x)) continue;
+        // (a view's κ is its chain's, `storedAt`) and walked at its answer:
+        // `Shape.inners`, memoised per node, in node order.
+        var it = v.shapes.node_sets.iterate(try v.shapes.inners(gpa, charge.account, n));
+        while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
-            try seen.put(gpa, x, {});
-            const d = v.shapes.get(x);
-            switch (d.kind) {
-                .recast => {
-                    if (!listed.contains(.from(d.a))) {
-                        try listed.put(gpa, .from(d.a), {});
-                        try out.append(gpa, .from(d.a));
-                    }
-                    try stack.append(gpa, .from(d.a));
-                },
-                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
-                else => {},
-            }
+            try out.append(gpa, .from(e.key));
         }
     }
 
@@ -3126,6 +3104,7 @@ pub const Table = struct {
             const at = owner[w.path];
             const old = t.mapGet(here[at], w.node.int());
             const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
+            try t.keyed(gpa, charge, w.node);
             here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
         }
         // The linked positions by the output position they are at.

@@ -965,6 +965,8 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
     mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
     mod.shapes.instantiation = mod.views.instantiation();
+    mod.conds.shapes_hook = &mod.shapes;
+    mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
 }

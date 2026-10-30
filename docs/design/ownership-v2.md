@@ -1683,7 +1683,7 @@ of the same handle still add multiplicity through the path-multiset primitive.
       with it. Both positions step together: `C_Q.child(s)` and `R_Q.child(s)`. At each position,
       while `eqOn` holds at that pair:
       - a node wholly of the actual's region is read at `R_Q`. That is a node of `region(a)`, or one
-        made by `proj` or a join from such nodes only;
+        made by `proj` or a join from such nodes only (*Wholly of the region*, below);
       - every other node is read at `C_Q`, a union that mixes the actual with another value
         included, and each side of it by this rule again. In `x_k = step x_{k-1} [ k ]` the union
         below `[*]` holds `x_{k-1}`'s part and the literal's: it is read at `C_Q`, the first side at
@@ -1721,13 +1721,41 @@ of the same handle still add multiplicity through the path-multiset primitive.
       records the view's answer as its base, not the view: the answer is the node of the region.
       `bases(m)` is a persistent node set per node. An interned node made again from another base
       gains that base too. `force` records no base, so a call, which forces its views, never adds
-      one. A key `m` is **tested** when `m ∈ region(a)` or its base chain reaches `region(a)`:
+      one. Only a `proj` that makes a node records one: a leaf's, a recast's or a join's image,
+      and the empty value past a missing child. An explicit child, an override and a delta base's
+      projection are nodes of the value already, and record nothing. Each making is also kept
+      apart, as a *construction*: the members it was made from (one for a `proj`).
+      A key `m` is **tested** when `m ∈ region(a)` or its base chain reaches `region(a)`:
       `bases*(m) ∩ region(a) ≠ ∅`, with `bases*` the transitive closure, memoised per node.
-      - An answer about `bases*` can change only when an existing node gains a base. The table
-        keeps a counter, `base_epoch`, bumped then. The comparison memo below is valid only within
-        one epoch, as `reach` is within one `ties` epoch. A node made fresh never changes the epoch.
+      - *Relevance.* A node is **relevant** when it is a κ key, or is in `bases*` of a κ key. A
+        node is marked once: when it is first stored as a key (`kappaSet`, a relabelled entry,
+        `propagate`'s stores), or when a relevant node gains it as a base. The mark is carried
+        down its bases on an explicit stack. Each node is marked at most once, so the marking
+        costs O(nodes) in all.
+      - *The epoch.* An answer about `bases*` of a key changes only when a relevant node gains a
+        base. The table keeps a counter, `base_epoch`, bumped then and only then. The comparison
+        memo below is valid only within one epoch, as `reach` is within one `ties` epoch. A node
+        made fresh never changes the epoch.
+      - *Why relevance is enough.* `tested` is asked of keys only, and it reads only the key's
+        `bases*`. A base that an irrelevant node gains is in no key's `bases*`, so it changes no
+        `tested` answer, no `eqOn` answer and no read in flight. A node that becomes a key later
+        is marked then, and its `bases*` is computed fresh. Without this gate, `deep`'s frontier
+        in the step chain projects each call's new mixed union to one old interned union, which
+        is no key, and bumps the epoch once per call (measured 2026-10-30).
       - The counted tests count the bumps. If they are per call, the bound below does not hold, and
         that is a finding to report, not to work around.
+    - *Wholly of the region.* A node is **wholly** of `region(a)` when it is in it, or when one
+      of its constructions has every member wholly of it (a `proj` of such a node, or a join of
+      such nodes only). This is decided per construction, never from `bases(m)` as one set. Such
+      a construction alone fixes what a walk below `m` reads:
+      - an interned node has one immutable structure, whichever construction made it;
+      - built from nodes of the region, by `proj` and joins only, every node of that structure is
+        a node of the region or a projection of one, so every key it holds is tested.
+      - So a construction that `m` gains later, from outside the region, changes nothing below
+        `m`. A yes stays a yes and is memoised for good. A no may become a yes when `m` is made
+        again, so it is kept only within one `base_epoch`. A construction whose member is still
+        being decided (a cycle) counts as no and is not kept. A no only costs time: the node is
+        read at `C`, exact.
       - *When a `proj` image is made.* A key of `C` is a node made before `C` was. A `proj` image
         the walk makes later is either a fresh node, which no position stores and no key tests, or
         an interned node gaining a base, which bumps `base_epoch` and drops every `eqOn` answer
