@@ -10,10 +10,10 @@ module Key
   demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Main
   11:26 Key.compare <Key …>#Key.0: rejected alias: xs holds it and is read at 11:13
-  15:36 call <Wrap …>#Wrap.0: rejected alias: xs holds it and is read at 15:16
-  15:36 call <Wrap …>#Wrap.0: accepted fresh
-  19:36 call <Wrap …>#Wrap.0: rejected alias: xs holds it and is read at 19:16
-  19:36 call <Wrap …>#Wrap.0: accepted fresh
+  15:36 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 15:16
+  15:36 call <Wrap …>#Wrap.0#Key.0: accepted fresh
+  19:36 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 19:16
+  19:36 call <Wrap …>#Wrap.0#Key.0: accepted fresh
   account direct: source 19, baseline 194, growth 0 of 65536, total 194, continuation 99 of 19456, demands 40, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 20
   crossing: reads 0, redone 0, base moves 0
   summary direct: π1 RAW; res .1 π1

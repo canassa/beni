@@ -9,10 +9,10 @@ module Key
   block: 496 bytes, hash 257d3acc82a09bfb
   demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Main
-  9:41 call <Wrap …>#Wrap.0: rejected alias: xs holds it and is read at 9:16
-  9:41 call <Wrap …>#Wrap.0: accepted fresh
-  13:41 call <Wrap …>#Wrap.0: rejected alias: xs holds it and is read at 13:16
-  13:41 call <Wrap …>#Wrap.0: accepted fresh
+  9:41 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 9:16
+  9:41 call <Wrap …>#Wrap.0#Key.0: accepted fresh
+  13:41 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 13:16
+  13:41 call <Wrap …>#Wrap.0#Key.0: accepted fresh
   account derivedLt: source 23, baseline 227, growth 0 of 65536, total 227, continuation 89 of 23552, demands 56, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 6, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
   crossing: reads 0, redone 0, base moves 0
   summary derivedLt: π1 RA; res .1 π1

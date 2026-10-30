@@ -1,0 +1,28 @@
+-- ownership (project): the same with `Inner` imported (ownership-v2.md
+-- §2.13.13). A fresh `Inner` holding a parameter, inside a tuple, a list and a
+-- record, is written by `Inner.eq` and is no longer the caller's to keep.
+import Inner
+
+
+pub viaTuple : List Int, List Int → Bool
+viaTuple xs ys = ( Inner.Inner xs, ys ) == ( Inner.Inner [], [] )
+
+
+pub callerTuple : List Int → Bool × List Int
+callerTuple xs = ( viaTuple xs [], xs )
+
+
+pub viaList : List Int → Bool
+viaList xs = [ Inner.Inner xs ] == []
+
+
+pub callerList : List Int → Bool × List Int
+callerList xs = ( viaList xs, xs )
+
+
+pub viaRecord : List Int → Bool
+viaRecord xs = { left = Inner.Inner xs, other = [] } == { left = Inner.Inner [], other = [] }
+
+
+pub callerRecord : List Int → Bool × List Int
+callerRecord xs = ( viaRecord xs, xs )
