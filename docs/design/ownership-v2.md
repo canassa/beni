@@ -679,24 +679,36 @@ Operations, memoised on their node arguments:
   (`w5`: 17 steps, #856). Its correspondence hook reports old/new node and child edges, including backedges;
   `Cond` transports the associated κ snapshot through that mapping in S3b. Shape sharing alone never selects
   or overwrites a condition.
-  **An image on no knot is interned** [M 2026-10-30, #1372]. A node or delta image is made before its parts
-  so that a cyclic part can name it, and it is open until its parts are mapped. An image that reaches no
-  open node (Tarjan's low link: no part named it or an open ancestor) is on no knot, and is interned: an
-  equal record made before is the image, so a value a round leaves unchanged keeps its `NodeId`, and
-  `memo_join`, the node-set unions, `view` interning and the choice deduplication hit across rounds. Before
-  this, read-off made a copy of every node each round: at GroupFieldShift n = 4 the port held `R 3 4 5 6` six
-  times. An image on a knot stays a record of its own, as a widened knot is unique by construction. A union,
-  choice or positions image is interned as the record it was made as, never through `union`'s or `choice`'s
-  absorption, so both sides stay and no occurrence is dropped: `positions(x₁, x₂)` whose sides relabel
-  alike is `positions(x, x)`, two edges, which every multiplicity reader counts as two (§2.9's aggregates
+  **An image no back edge can name is interned** [M 2026-10-30, #1372]. A node or delta image is made before
+  its parts so that a cyclic part can name it, and it is open until its parts are mapped. An image that reaches
+  no node still open is interned: an equal record made before is the image, so a value a round leaves unchanged
+  keeps its `NodeId`, and `memo_join`, the node-set unions, `view` interning and the choice deduplication hit
+  across rounds. Before this, read-off made a copy of every node each round: at GroupFieldShift n = 4 the port
+  held `R 3 4 5 6` six times. An image that a part names, or that reaches an open node, stays the record it
+  was made as, as a widened knot is unique by construction. The test is not Tarjan's low link: a node met again
+  after the knot it reached has closed is interned even where it lies on an enclosing knot, which is harmless,
+  since no back edge names its slot. A union, choice or positions image is interned as the record it was made
+  as, never through `union`'s or `choice`'s absorption, so both sides stay and no occurrence is dropped.
+  **Two built sources at one position** [M 2026-10-30, #1372's review]. Their κ entries are carried node by
+  node (`kappaRelabel`), and a built node with no entry reads `lost` (§2.9). When two built nodes at one
+  position intern to one image, the entry of one would answer for the other, which has none, stronger than it
+  reads. So a missing entry counts as `lost`: where two built sources of one image stand at one position and
+  not every one has an entry there, the image's entry there is `lost` (`Relabel.present`). Read-off finds
+  which sources stand at each position by one walk of the value paired with its snapshot, each `(node,
+  position)` once, run only when `map` gave two built sources one image (`map_shared`). Two sources of one
+  image at different positions each keep their own entry, as before. A record mapped twice is one image at two
+  positions, `positions(x, x)`, two edges, which every multiplicity reader counts as two (§2.9's aggregates
   compose by edge: `Cond.arrivalAggs`, `Calls.preimage` and `dagKappa`'s intersection of the sides). Two
-  source nodes that become one image at one position carry their κ entries joined (`kappaRelabel`), which
-  only weakens. The summary printer's provenance list is a set per distinct node (#1182): `[ x, x ]`
-  prints `x` once, and its κ (`shared`) is what says two. So a node a round copied once per round now
-  prints once. TailModConsMerge's `mergeSort` (4a) prints `fresh1` at `res`'s root instead of
-  `fresh1 fresh1 fresh1` (copies that were arms of the round choice), and at `[*]` `~fresh10 ~fresh11 …`
-  instead of `~fresh10 ~fresh10 ~fresh11 …`, two lines that were copies of one becoming one; every κ
-  printed and every verdict is the same.
+  source leaves or union, choice or positions nodes, a view and its answer, or a node and its `eager` image
+  becoming one image join their entries, as before: a leaf with no entry reads its derivation, a DAG node its
+  sides, and the others are one value. Two `positions` (or union, choice) images whose sides relabel alike
+  are one node, and their entries join, which only weakens: a summary that printed such a node twice, one
+  `{lost}` line and one `{shared}`, prints it once as `{shared}` (#1384's review). The summary printer's
+  provenance list is a set per distinct node (#1182): `[ x, x ]` prints `x` once, and its κ (`shared`) is
+  what says two. So a node a round copied once per round now prints once. TailModConsMerge's `mergeSort`
+  (4a) prints `fresh1` at `res`'s root instead of `fresh1 fresh1 fresh1` (copies that were arms of the
+  round choice), and at `[*]` `~fresh10 ~fresh11 …` instead of `~fresh10 ~fresh10 ~fresh11 …`, two lines
+  that were copies of one becoming one; there every κ printed and every verdict is the same.
 - `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality (the kind-blind γ-inclusion above), memoised per immutable-version pair with a **shape-only** coinductive assumption on
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
@@ -3448,8 +3460,9 @@ multiplicity reader (§2.9's primitive) is the only one that tells them apart.
 `joinAlternatives(members)` is `joinChoice` with its choice members flattened into one set of arms (the
 largest kept whole, `armCount`), for a caller that sets κ from the members read whole; `memo_join` keys it
 apart (§2.3 *A choice member is flattened*, #1372).
-`map` interns an image on no knot (`map_open`, `map_low`: a node's entry index while open, the earliest open
-node an image reaches) and keeps a knot's images records of their own (§2.3 *map*, #1372).
+`map` interns an image no back edge can name (`map_open`, `map_low`: a node's entry index while open, the earliest open
+node an image reaches); `map_src`, `map_shared` and `mapSource` tell read-off which built sources an image
+stands for (§2.3 *map*, #1372).
 
 *As built (#1098, first part):* a `positions` node's `cells` is the marker `lazy_cells` until a reader asks
 (`cellsOf`, which builds it from its sides on an explicit stack and keeps it in the record); a recast or a
@@ -4470,7 +4483,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 220 (#1335: `foldCondOf` by the cycle walk) |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 260 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
@@ -5218,10 +5231,10 @@ deliveries into its class, the Prover goals keyed by it, and its validation.
     round's choice nested the last one, so the port grew to 2 056 nodes and 6 376 edges at n = 16
     with 37 distinct. With `map` interning images on no knot and `joinAlternatives` flattening a
     choice member (§2.3, #1372), the port holds its distinct structure and a walk is about 60 records
-    per element of it: 20 194 / 78 098 / 385 482 at n = 4 / 8 / 16 (1.1 s), about n³·c with
-    c ≈ 60 (growth 21 380 at n = 8, 303 768 at 16), so it passes the allowance between n = 8 and 16.
+    per element of it: 20 320 / 78 622 / 388 130 at n = 4 / 8 / 16 (1.9 s), about n³·c with
+    c ≈ 60 (growth 21 904 at n = 8, 306 416 at 16), so it passes the allowance between n = 8 and 16.
     Its verdicts and summary lines are byte-identical. The same change takes `mergeSort` from
-    213 096 to 125 352 records and the self-map `f (Node xs c₁ … cₙ) = Node xs (f c₁) … (f cₙ)` at
+    213 096 to 125 868 records and the self-map `f (Node xs c₁ … cₙ) = Node xs (f c₁) … (f cₙ)` at
     n = 16 from 134 542 to 90 141. `mergeSort` stays past the allowance: its `res[*]` positions
     multiset nests both views of the last port every round (#1368), and a self-map's n views are
     forced one by one before widen folds them into one class; both are open (#1372).
