@@ -869,7 +869,10 @@ pub const Table = struct {
     /// anywhere) whose place has the step to the same place.
     fn recastPart(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, n: NodeId, s: Step) Error!?NodeId {
         // A view's raw recast (`expandView`) wraps a view: its answer's part.
-        const inner = try t.force(gpa, account, .from(t.get(n).a));
+        // Casts compose, as `recast` composes them: an answer that is a
+        // recast is read through to its inner.
+        var inner = try t.force(gpa, account, .from(t.get(n).a));
+        if (t.kind(inner) == .recast) inner = try t.force(gpa, account, .from(t.get(inner).a));
         if (t.kind(inner) != .node and t.kind(inner) != .delta) return null;
         const child = places.child(t.place(n), s) orelse return null;
         return if (places.child(t.place(inner), s) == child) inner else null;
