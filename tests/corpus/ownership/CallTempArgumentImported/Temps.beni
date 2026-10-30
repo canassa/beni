@@ -1,0 +1,37 @@
+-- ownership (project): see Main.beni. The callees, whose classes read a
+-- part of a new value they build or are handed (#1330).
+pub rbc r = List.length r.b.c
+
+
+pub wrapRec g = rbc { b = g.x }
+
+
+tb ( _, r ) = List.length r.c
+
+
+pub wrapTuple g = tb ( 0, g.x )
+
+
+just m =
+    case m of
+        Just r →
+            List.length r.c
+
+        Nothing →
+            0
+
+
+pub wrapCtor g = just (Just g.x)
+
+
+pub pick : { c : List Int, d : List Int } → { c : List Int, d : List Int }
+pick r = r
+
+
+pub rbx r = List.length r.c
+
+
+pub n1 g = rbx (pick g.x)
+
+
+pub n2 g = List.length (pick g.x).c

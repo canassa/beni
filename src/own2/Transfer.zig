@@ -53,6 +53,12 @@ pub const PlaceId = Ids.PlaceId;
 pub const CondId = Ids.CondId;
 pub const ClassId = Ids.ClassId;
 pub const Value = Demands.Value;
+const Beside = Calls.Beside;
+const aliasKey = Calls.aliasKey;
+const key_top = Calls.key_top;
+const key_param = Calls.key_param;
+const key_always = Calls.key_always;
+const key_param_leaf = Calls.key_param_leaf;
 pub const Env = Summary.Env;
 pub const Step = Place.Step;
 pub const Error = Ids.ChargeError;
@@ -100,6 +106,10 @@ const Val = struct {
     path: PathId = .none,
 };
 
+/// A parameter cell a consumed value holds (`Frame.readsOf`): read at its
+/// path (`use_node` none), or there with a callee's use below it.
+pub const ParamRead = struct { cell: CellId, use_node: NodeId };
+
 pub const Frame = struct {
     gpa: Allocator,
     env: Env,
@@ -129,6 +139,9 @@ pub const Frame = struct {
     uses: std.ArrayList(Facts.Use) = .empty,
     /// Per use: its consumer's main token, the position a message prints.
     use_tokens: std.ArrayList(u32) = .empty,
+    /// The parameter parts consumed values hold, for the read-off's `R`
+    /// (`readsOf`): no liveness use, which is a local's (§2.7).
+    param_reads: std.ArrayList(ParamRead) = .empty,
     demands: std.ArrayList(Demands.Demand) = .empty,
     operands: std.ArrayList(Demands.Operand) = .empty,
     holders: std.ArrayList(Demands.Holder) = .empty,
@@ -156,6 +169,7 @@ pub const Frame = struct {
         gpa.free(f.binding);
         f.uses.deinit(gpa);
         f.use_tokens.deinit(gpa);
+        f.param_reads.deinit(gpa);
         f.demands.deinit(gpa);
         f.operands.deinit(gpa);
         f.holders.deinit(gpa);
@@ -368,9 +382,13 @@ pub const Frame = struct {
 
     // ---- uses ----------------------------------------------------------------
 
-    /// Operand `o` consumed by `by`: a use of the local it reads, if any.
+    /// Operand `o` consumed by `by`: a use of the local it reads, if any,
+    /// and, where the consumer reads it (a call's argument, a case's
+    /// scrutinee; a store or a binding only moves it), the parameter parts
+    /// its value holds (`readsOf`).
     fn consume(f: *Frame, o: u32, by: u32, kind: Facts.UseKind, use_node: NodeId) Error!void {
         const v = f.val(o);
+        if (kind == .call or f.tag(by) == .case) try f.readsOf(v.value, use_node, v.local != none and f.env.places.pathDepth(v.path) == 0);
         if (v.local == none) return;
         const point = f.point_of[f.rel(o)];
         const k: Facts.UseKind = if (kind == .whole and f.env.places.pathDepth(v.path) > 0) .field else kind;
@@ -384,6 +402,72 @@ pub const Frame = struct {
             .atom = @intCast(f.uses.items.len),
         });
         try f.use_tokens.append(f.gpa, f.token(by));
+    }
+
+    /// The parameter parts a consumed value holds, read where the consumer
+    /// reads them (§2.6: an operand is used at its consumer; §2.10's
+    /// read-off: `R` from uses), for the read-off: each parameter cell at
+    /// the value's root is read there (`.none`), and under a call (`use`,
+    /// the callee's use of the argument) every parameter cell of the value
+    /// is read at the paths of `use` below it. The value is the operand's:
+    /// a temporary's, a construction or a call's result, which has no
+    /// local to be a use of (#1330: `rbc { b = g.x }` with `rbc r =
+    /// List.length r.b.c` reads `π1.x.c`, as `t = { b = g.x }; rbc t`
+    /// does), or a local's at its use's path. A local read whole (`bare`)
+    /// is the read-off's own at its root. The pair (use node, value node)
+    /// is walked as a DAG, each pair once, down to the value's leaves,
+    /// whose parameter cells take the use below them whole; a leaf of
+    /// marks reads every parameter cell the value reaches. A walk of the
+    /// value, growth chosen before it (§4.1).
+    fn readsOf(f: *Frame, value: Value, use: NodeId, bare: bool) Error!void {
+        if (value.node == .none or (bare and use == .none)) return;
+        const gpa = f.gpa;
+        const shapes = f.env.shapes;
+        const cells = f.env.cells;
+        const root = try shapes.force(gpa, f.account(), value.node);
+        const deeper = use != .none and shapes.kind(root) != .leaf;
+        if (bare and !deeper) return;
+        const task = try f.account().enter(gpa, null);
+        defer f.account().leave(task);
+        if (!bare) try f.paramReads(try shapes.cellsOf(gpa, f.account(), &cells.sets, root), .none, use);
+        if (!deeper) return;
+        var stack: std.ArrayList([2]NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(gpa);
+        var frontier: std.ArrayList(NodeId) = .empty;
+        defer frontier.deinit(gpa);
+        try stack.append(gpa, .{ use, root });
+        while (stack.pop()) |it| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            if ((try seen.getOrPut(gpa, .{ it[0].int(), it[1].int() })).found_existing) continue;
+            const n = try shapes.force(gpa, f.account(), it[1]);
+            if (it[0] != use or n != root) try f.paramReads(try shapes.cellsOf(gpa, f.account(), &cells.sets, n), it[0], .none);
+            if (shapes.kind(n) == .leaf) continue;
+            const d = shapes.get(it[0]);
+            if (d.kind != .node) {
+                try f.paramReads(try shapes.reach(gpa, f.account(), &cells.sets, n), it[0], .none);
+                continue;
+            }
+            var kt = shapes.overEntries(d.a);
+            while (kt.next()) |k| if (k.step.kind == .level) {
+                frontier.clearRetainingCapacity();
+                try f.reentries(n, &frontier);
+                for (frontier.items) |x| try stack.append(gpa, .{ k.node, x });
+            } else if (try shapes.proj(gpa, f.account(), f.env.places, cells, n, k.step)) |x| try stack.append(gpa, .{ k.node, x });
+        }
+    }
+
+    /// Each parameter cell of `s`, read with use `a`, and with `b` too.
+    fn paramReads(f: *Frame, s: SetId, a: NodeId, b: NodeId) Error!void {
+        const cells = f.env.cells;
+        var it = cells.sets.iterate(s);
+        while (it.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            if (cells.origin(cells.base(.from(e.key))) != .param) continue;
+            try f.param_reads.append(f.gpa, .{ .cell = .from(e.key), .use_node = a });
+            if (b != .none) try f.param_reads.append(f.gpa, .{ .cell = .from(e.key), .use_node = b });
+        }
     }
 
     /// A computed operand evaluated before its consumer: pending between.
@@ -1012,6 +1096,10 @@ pub const Frame = struct {
                 defer f.gpa.free(writes);
                 const steps = try f.gpa.dupe(Step, applied.steps);
                 defer f.gpa.free(steps);
+                // The children beside the writes' paths, indexed once for
+                // every write of this call (#1334).
+                var beside: Beside = .{};
+                defer beside.deinit(f.gpa);
                 for (writes) |w| {
                     if (w.param >= arg_insts.len) continue;
                     // The callee's path is value-sized: growth chosen before its
@@ -1032,7 +1120,7 @@ pub const Frame = struct {
                     // while `.y` is read or answered is one object written
                     // twice if the actual's `.x` and `.y` are one. One
                     // operand, by node (#1325).
-                    try f.otherPaths(if (w.param < uses.len) uses[w.param] else .none, argv.items[w.param], steps[w.steps.start..][0..w.steps.len], base, arg_insts[w.param].int());
+                    try f.otherPaths(&beside, if (w.param < uses.len) uses[w.param] else .none, argv.items[w.param], steps[w.steps.start..][0..w.steps.len], base, arg_insts[w.param].int(), w.deep);
                     // The write's path below the argument: the demand's text,
                     // and the part of the argument's local it writes, which
                     // a later read must reach to conflict (§2.8).
@@ -1082,23 +1170,65 @@ pub const Frame = struct {
     /// before the work (§4.1, *call view and direct obligation*: a graph is
     /// descended by pre-reserved growth tasks), so a huge use is the loud
     /// `ownership_summary_size`, never a lane past its ceiling.
-    fn otherPaths(f: *Frame, use: NodeId, arg: Value, ws: []const Step, base: Value, inst: u32) Error!void {
+    ///
+    /// **Only what may be the base (#1334).** Two cells whose bases may
+    /// not alias (`Cell.alias`) never conflict in Disjoint, so the operand
+    /// keeps a cell other than a parameter's only when its alias key
+    /// (`aliasKey`) is one of the base's or `⊤`, a parameter's by rule (c).
+    /// A node of the write's path finds its children beside the write by
+    /// those keys (`Beside`, built once per call and shared by its
+    /// writes): `n` writes of `n` fields of one argument cost n, not n².
+    fn otherPaths(f: *Frame, bs: *Beside, use: NodeId, arg: Value, ws: []const Step, base: Value, inst: u32, deep: bool) Error!void {
         if (use == .none) return;
         const task = try f.account().enter(f.gpa, null);
         defer f.account().leave(task);
         const gpa = f.gpa;
         const shapes = f.env.shapes;
-        const places = f.env.places;
         const cells = f.env.cells;
         const own = try shapes.reach(gpa, f.account(), &cells.sets, base.node);
+        // What may be the base: its cells as Demands reads them (a deep
+        // demand's reach, whose symbolic cells' descendants share their
+        // keys), by alias key; and the parameter cells of `own`, by the
+        // paths a parameter leaf beside them may sit at (`unreached`).
+        var want: Want = .{};
+        defer want.deinit(gpa);
+        var bt = cells.sets.iterate(if (deep) own else try shapes.cellsOf(gpa, f.account(), &cells.sets, base.node));
+        while (bt.next()) |e| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            if (cells.origin(cells.base(c)) == .param) continue;
+            const k = aliasKey(cells, c);
+            if (k[0] == key_top) want.all = true;
+            try want.keys.append(gpa, k);
+        }
+        var ot = cells.sets.iterate(own);
+        while (ot.next()) |e| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            if (cells.origin(cells.base(c)) != .param) continue;
+            try want.params.append(gpa, c);
+            const at = (try cells.unrefined(gpa, f.account(), f.env.places, c)) orelse {
+                want.any_param_leaf = true;
+                continue;
+            };
+            const p = cells.get(at);
+            var path: PathId = .from(p.b);
+            while (true) {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                try want.keys.append(gpa, .{ key_param, p.a, path.int(), 0 });
+                if (path == .none or f.env.places.pathParent(path) == .none) break;
+                path = f.env.places.pathParent(path);
+            }
+        }
+        try want.keys.append(gpa, .{ key_top, 0, 0, 0 });
+        try want.keys.append(gpa, .{ key_always, 0, 0, 0 });
+        if (want.any_param_leaf) try want.keys.append(gpa, .{ key_param_leaf, 0, 0, 0 });
         // Two paths fold through one leaf when both meet it through one
         // exact prefix: the write's path meets one at
         // depth `leaf`, and another path does at that depth when it is still
         // the write's path there.
         const leaf = try f.leafDepth(arg, ws);
         const exact = exactPath(ws);
-        const Mode = enum(u2) { spine, below, off };
-        const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool };
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(gpa);
         var seen: Ids.FixedDict(3) = .{};
@@ -1129,48 +1259,45 @@ pub const Frame = struct {
                     .below, .off => .{ true, it.folded },
                 };
                 if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
-                    try f.keepBeside(it.v, own, folded, &kept, &excl);
+                    try f.keepBeside(bs, &want, it.v, folded, &kept, &excl);
             }
             if (d.kind != .node) continue;
+            if (it.mode == .spine and it.depth < ws.len) {
+                // On the write's path: its next step, and the children
+                // beside it that may hold a cell of the base (`Beside`).
+                if (shapes.overGet(d.a, ws[it.depth])) |child| {
+                    const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level };
+                    try f.advance(it, ws[it.depth], next, &stack);
+                }
+                const folded = leaf != null and leaf.? <= it.depth;
+                const sp = try f.spineOf(bs, it);
+                if (want.all) {
+                    const r = bs.ranges.items[sp];
+                    for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, &stack);
+                    continue;
+                }
+                for (want.keys.items) |k| {
+                    var link = bs.head(sp, k);
+                    while (link != none) : (link = bs.links.items[link][1]) {
+                        try f.env.charge.reserve(gpa, .inspection, 1);
+                        try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, &stack);
+                    }
+                }
+                continue;
+            }
+            if (it.mode == .spine and exact) continue;
             var kt = shapes.overEntries(d.a);
             while (kt.next()) |k| {
-                var next: Item = .{ .u = k.node, .v = it.v, .mode = it.mode, .depth = 0, .folded = it.folded, .stuck = it.stuck, .level = it.level };
+                var next = it;
+                next.u = k.node;
                 if (it.mode == .spine) {
-                    if (it.depth < ws.len and std.meta.eql(k.step, ws[it.depth])) {
-                        next.depth = it.depth + 1;
-                    } else if (it.depth == ws.len) {
-                        // Inside the written object: beside it only when the
-                        // write's path stands for several positions.
-                        if (exact) continue;
-                        next.mode = .below;
-                        next.folded = leaf != null;
-                    } else {
-                        next.mode = .off;
-                        next.folded = leaf != null and leaf.? <= it.depth;
-                    }
+                    // Inside the written object: beside it only when the
+                    // write's path stands for several positions.
+                    next.mode = .below;
+                    next.folded = leaf != null;
+                    next.depth = 0;
                 }
-                // The value at the step, as `positionsAt` reads a path: a
-                // missing step keeps the value reached (`along`) unless the
-                // path goes through `⟲`, where it is no position.
-                if (it.stuck) {
-                    if (k.step.kind == .level) continue;
-                    try stack.append(gpa, next);
-                } else if (k.step.kind == .level) {
-                    next.level = true;
-                    var frontier: std.ArrayList(NodeId) = .empty;
-                    defer frontier.deinit(gpa);
-                    try f.reentries(it.v, &frontier);
-                    for (frontier.items) |n| {
-                        next.v = n;
-                        try stack.append(gpa, next);
-                    }
-                } else if (try shapes.proj(gpa, f.account(), places, cells, it.v, k.step)) |n| {
-                    next.v = n;
-                    try stack.append(gpa, next);
-                } else if (!it.level) {
-                    next.stuck = true;
-                    try stack.append(gpa, next);
-                }
+                try f.advance(it, k.step, next, &stack);
             }
         }
         const dm = &f.demands.items[f.demands.items.len - 1];
@@ -1181,28 +1308,118 @@ pub const Frame = struct {
         dm.operands.len += 1;
     }
 
-    /// The cells of `v` beside the base, added to `kept`, its folded parameter cells
-    /// to `excl`: a parameter's cell the base does not reach is another path
-    /// of this frame's parameter, distinct here; one it reaches at a path
-    /// through `[*]` or `⟲`, where two paths fold through one leaf, is owed
-    /// as `excl` (§2.11 item 3 (c)).
-    fn keepBeside(f: *Frame, v: NodeId, own: SetId, folded: bool, kept: *SetId, excl: *SetId) Error!void {
-        const shapes = f.env.shapes;
-        const cells = f.env.cells;
-        var it = cells.sets.iterate(try shapes.reach(f.gpa, f.account(), &cells.sets, v));
-        while (it.next()) |e| {
-            try f.env.charge.reserve(f.gpa, .inspection, 1);
-            const c: CellId = .from(e.key);
-            if (cells.origin(cells.base(c)) == .param) {
-                if (!cells.sets.member(own, e.key)) continue;
-                if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
-                    excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, e.key, 0);
-                    continue;
-                }
+    /// One item of `otherPaths`' walk: a use node, the argument's value
+    /// there, and how the path it stands for lies to the write's.
+    const Mode = enum(u2) { spine, below, off };
+    const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool };
+
+    /// `next`, a child of `it` at step `s`, with the argument's value there
+    /// as `positionsAt` reads a path: a missing step keeps the value
+    /// reached (`along`) unless the path goes through `⟲`, where it is no
+    /// position.
+    fn advance(f: *Frame, it: Item, s: Step, next0: Item, out: *std.ArrayList(Item)) Error!void {
+        var next = next0;
+        if (it.stuck) {
+            if (s.kind == .level) return;
+            try out.append(f.gpa, next);
+        } else if (s.kind == .level) {
+            next.level = true;
+            var frontier: std.ArrayList(NodeId) = .empty;
+            defer frontier.deinit(f.gpa);
+            try f.reentries(it.v, &frontier);
+            for (frontier.items) |n| {
+                next.v = n;
+                try out.append(f.gpa, next);
             }
-            kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, e.key, e.value);
+        } else if (try f.env.shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, it.v, s)) |n| {
+            next.v = n;
+            try out.append(f.gpa, next);
+        } else if (!it.level) {
+            next.stuck = true;
+            try out.append(f.gpa, next);
         }
     }
+
+    /// The `Beside` index of the children of `it`, a node on a write's
+    /// path: the items the walk would push for them, built at the node's
+    /// first visit in the call.
+    fn spineOf(f: *Frame, bs: *Beside, it: Item) Error!u32 {
+        const key: [3]u32 = .{ it.u.int(), it.v.int(), @as(u32, @intFromBool(it.stuck)) | @as(u32, @intFromBool(it.level)) << 1 };
+        if (try bs.lookup(f.env, key)) |sp| return sp;
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(f.gpa);
+        var kids: std.ArrayList(Beside.Kid) = .empty;
+        defer kids.deinit(f.gpa);
+        var kt = f.env.shapes.overEntries(f.env.shapes.get(it.u).a);
+        while (kt.next()) |k| {
+            items.clearRetainingCapacity();
+            var next = it;
+            next.u = k.node;
+            try f.advance(it, k.step, next, &items);
+            for (items.items) |x| try kids.append(f.gpa, .{ .step = k.step, .u = x.u, .v = x.v, .stuck = x.stuck, .level = x.level });
+        }
+        return bs.add(f.env, key, kids.items);
+    }
+
+    /// A child of a node on the write's path, off it unless at its step.
+    fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, out: *std.ArrayList(Item)) Error!void {
+        if (k.step.word() == on.word()) return;
+        try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level });
+    }
+
+    /// The cells of `v` beside the base that may be one of its objects,
+    /// added to `kept`, its folded parameter cells to `excl`: a parameter's
+    /// cell the base does not reach is another path of this frame's
+    /// parameter, distinct here; one it reaches at a path through `[*]` or
+    /// `⟲`, where two paths fold through one leaf, is owed as `excl`
+    /// (§2.11 item 3 (c)). Any other cell is kept when its alias key is one
+    /// of the base's (`want`), read from `v`'s reach by key (`Beside.keyed`),
+    /// never cell by cell.
+    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, kept: *SetId, excl: *SetId) Error!void {
+        const cells = f.env.cells;
+        const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
+        for (want.params.items) |c| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const value = cells.sets.get(reach, c.int()) orelse continue;
+            if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
+                excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
+                continue;
+            }
+            kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), value);
+        }
+        if (want.all) {
+            var it = cells.sets.iterate(reach);
+            while (it.next()) |e| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if (cells.origin(cells.base(.from(e.key))) == .param) continue;
+                kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, e.key, e.value);
+            }
+            return;
+        }
+        for (want.keys.items) |k| {
+            if (k[0] == key_param or k[0] == key_always or k[0] == key_param_leaf) continue;
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const s = try bs.keyed(f.env, v, reach, k);
+            if (s != .none) kept.* = try cells.sets.unionWith(f.gpa, f.env.charge, kept.*, s);
+        }
+    }
+
+    /// What a write's base may be (`otherPaths`): its alias keys, and its
+    /// parameter cells.
+    const Want = struct {
+        /// The base holds `⊤`: any cell may be it.
+        all: bool = false,
+        /// A parameter cell of the base with no canonical position: every
+        /// parameter leaf beside it is looked at, as `unreached` does.
+        any_param_leaf: bool = false,
+        keys: std.ArrayList([4]u32) = .empty,
+        params: std.ArrayList(CellId) = .empty,
+
+        fn deinit(w: *Want, gpa: Allocator) void {
+            w.keys.deinit(gpa);
+            w.params.deinit(gpa);
+        }
+    };
 
     /// Whether `v` is a leaf of parameter cells none of whose positions the
     /// base reaches (`own`): every cell at or below it is a parameter's

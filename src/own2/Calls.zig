@@ -1265,6 +1265,166 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     };
 }
 
+// ---- a write's other paths, by alias key (§2.11 item 3, #1334) -------------------------
+
+/// The alias key tags (`aliasKey`, `Beside`).
+pub const key_concrete: u32 = 0;
+pub const key_symbolic: u32 = 1;
+pub const key_top: u32 = 2;
+/// A parameter leaf's cell, by `(parameter, canonical path)`.
+pub const key_param: u32 = 3;
+/// A child whose reach holds a parameter's cell and is no parameter leaf:
+/// beside every write.
+pub const key_always: u32 = 4;
+/// Every parameter leaf.
+pub const key_param_leaf: u32 = 5;
+
+/// The key two cells share whenever they may be one object (§2.2,
+/// `Cell.alias`: only cells whose bases may alias do): a concrete base
+/// itself; a symbolic base's origin, index and `j`, whose paths
+/// `pathsMayAlias` tells apart; `⊤`, which may be anything.
+pub fn aliasKey(cells: *const Cell.Table, c: CellId) [4]u32 {
+    const b = cells.base(c);
+    const o = cells.origin(b);
+    if (o == .top) return .{ key_top, 0, 0, 0 };
+    if (!o.isSymbolic()) return .{ key_concrete, b.int(), 0, 0 };
+    const x = cells.get(b);
+    return .{ key_symbolic, @backingInt(o), x.a, x.c };
+}
+
+/// A call's index of the children beside a write's path (`Transfer`'s
+/// `otherPaths`, #1334): per node of a write's path, the items its walk
+/// would push for the node's children, each listed under the alias keys of
+/// the cells its value reaches (a parameter leaf under its cells' canonical
+/// positions, as `unreached` reads them; a child holding any other
+/// parameter cell under `key_always`). Built once per `(use node, value
+/// node, state)` and shared by every write of the call through that node,
+/// in growth chosen before it. A child listed under none of a write's keys
+/// holds no cell that may be its base at any path below it: a concrete
+/// cell projects to nothing, a symbolic one to cells of its own origin and
+/// key (`Shape.projectLeaf`).
+pub const Beside = struct {
+    /// `(use node, value node, state)` → spine index.
+    memo: Ids.FixedDict(3) = .{},
+    /// Per spine index: its children's run in `kids`.
+    ranges: std.ArrayList([2]u32) = .empty,
+    kids: std.ArrayList(Kid) = .empty,
+    /// `(spine, key)` → the first link of its children.
+    heads: Ids.FixedDict(5) = .{},
+    /// `(kid, next link)`.
+    links: std.ArrayList([2]u32) = .empty,
+    /// `(value node, key)` → its reach's cells of that key (`keyed`).
+    sets: Ids.FixedDict(5) = .{},
+    keyed_done: Ids.FixedDict(1) = .{},
+
+    pub const Kid = struct { step: Place.Step, u: NodeId, v: NodeId, stuck: bool, level: bool };
+
+    pub fn deinit(b: *Beside, gpa: Allocator) void {
+        b.memo.deinit(gpa);
+        b.ranges.deinit(gpa);
+        b.kids.deinit(gpa);
+        b.heads.deinit(gpa);
+        b.links.deinit(gpa);
+        b.sets.deinit(gpa);
+        b.keyed_done.deinit(gpa);
+    }
+
+    /// The spine index of a node built already, or null.
+    pub fn lookup(b: *Beside, env: Env, key: [3]u32) Error!?u32 {
+        try env.charge.reserve(env.gpa, .memo, 1);
+        return b.memo.get(key);
+    }
+
+    /// The first link of `key`'s children at spine `sp`, or `none`.
+    pub fn head(b: *const Beside, sp: u32, key: [4]u32) u32 {
+        return b.heads.get(.{ sp, key[0], key[1], key[2], key[3] }) orelse Ids.none_int;
+    }
+
+    /// The children of a node of a write's path, `kids` (each an item its
+    /// walk would push), indexed by key: their spine index.
+    pub fn add(b: *Beside, env: Env, key: [3]u32, kids: []const Kid) Error!u32 {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const cells = env.cells;
+        const sp: u32 = @intCast(b.ranges.items.len);
+        (try b.memo.getOrPut(gpa, key)).value_ptr.* = sp;
+        const start: u32 = @intCast(b.kids.items.len);
+        try b.kids.appendSlice(gpa, kids);
+        try b.ranges.append(gpa, .{ start, @intCast(kids.len) });
+        for (kids, start..) |k, ki| {
+            const kid: u32 = @intCast(ki);
+            const n = try shapes.force(gpa, env.account(), k.v);
+            if (try paramLeaf(env, n)) {
+                try b.link(gpa, sp, .{ key_param_leaf, 0, 0, 0 }, kid);
+                var ct = cells.sets.iterate(try shapes.cellsOf(gpa, env.account(), &cells.sets, n));
+                while (ct.next()) |e| {
+                    try env.charge.reserve(gpa, .inspection, 1);
+                    const p = cells.get((try cells.unrefined(gpa, env.account(), env.places, .from(e.key))).?);
+                    try b.link(gpa, sp, .{ key_param, p.a, p.b, 0 }, kid);
+                }
+                continue;
+            }
+            var rt = cells.sets.iterate(try shapes.reach(gpa, env.account(), &cells.sets, k.v));
+            while (rt.next()) |e| {
+                try env.charge.reserve(gpa, .inspection, 1);
+                const c: CellId = .from(e.key);
+                if (cells.origin(cells.base(c)) == .param) {
+                    try b.link(gpa, sp, .{ key_always, 0, 0, 0 }, kid);
+                    break;
+                }
+                try b.link(gpa, sp, aliasKey(cells, c), kid);
+            }
+        }
+        return sp;
+    }
+
+    fn link(b: *Beside, gpa: Allocator, sp: u32, key: [4]u32, kid: u32) Error!void {
+        const got = try b.heads.getOrPut(gpa, .{ sp, key[0], key[1], key[2], key[3] });
+        if (got.found_existing and b.links.items[got.value_ptr.*][0] == kid) return;
+        const prev = if (got.found_existing) got.value_ptr.* else Ids.none_int;
+        got.value_ptr.* = @intCast(b.links.items.len);
+        try b.links.append(gpa, .{ kid, prev });
+    }
+
+    /// Whether `n` is a leaf of parameter cells, each with a canonical
+    /// position: what `unreached` can tell apart from a write's base.
+    fn paramLeaf(env: Env, n: NodeId) Error!bool {
+        const cells = env.cells;
+        if (env.shapes.kind(n) != .leaf) return false;
+        var ct = cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &cells.sets, n));
+        var any = false;
+        while (ct.next()) |e| {
+            try env.charge.reserve(env.gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            if (cells.origin(cells.base(c)) != .param) return false;
+            if ((try cells.unrefined(env.gpa, env.account(), env.places, c)) == null) return false;
+            any = true;
+        }
+        return any;
+    }
+
+    /// The cells of `v`'s reach of alias key `key`, none if it has none;
+    /// the reach is split by key once per value node.
+    pub fn keyed(b: *Beside, env: Env, v: NodeId, reach: SetId, key: [4]u32) Error!SetId {
+        const gpa = env.gpa;
+        const cells = env.cells;
+        try env.charge.reserve(gpa, .memo, 1);
+        if (!(try b.keyed_done.getOrPut(gpa, .{v.int()})).found_existing) {
+            var it = cells.sets.iterate(reach);
+            while (it.next()) |e| {
+                try env.charge.reserve(gpa, .inspection, 1);
+                const c: CellId = .from(e.key);
+                if (cells.origin(cells.base(c)) == .param) continue;
+                const k = aliasKey(cells, c);
+                const prev: SetId = if (b.sets.get(.{ v.int(), k[0], k[1], k[2], k[3] })) |s| .from(s) else .none;
+                const next = try cells.sets.insert(gpa, env.charge, prev, e.key, e.value);
+                (try b.sets.getOrPut(gpa, .{ v.int(), k[0], k[1], k[2], k[3] })).value_ptr.* = next.int();
+            }
+        }
+        return if (b.sets.get(.{ v.int(), key[0], key[1], key[2], key[3] })) |s| .from(s) else .none;
+    }
+};
+
 comptime {
     Ids.assertRecord(Write);
     Ids.assertRecord(Escape);
