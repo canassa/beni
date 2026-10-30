@@ -319,6 +319,9 @@ pub const Account = struct {
     /// (#1214's). A condition resolved inside it is the call's and is not.
     demands: u64 = 0,
     in_demands: bool = false,
+    /// Holder covers that fell back to listing their holds (`Holders`, a
+    /// folded path): printed, so a fallback is never silent (#1214).
+    hold_listings: u32 = 0,
     baseline_by: [Category.count]u64 = @splat(0),
     /// Set by the first refusal and never cleared: the exhaustion marker of
     /// §4.4, which makes every later reservation fail at once.

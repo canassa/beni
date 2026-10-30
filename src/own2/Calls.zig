@@ -36,7 +36,7 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
-const Demands = @import("Demands.zig");
+const Holders = @import("Holders.zig");
 const Place = @import("Place.zig");
 const stamped = @import("../stamped.zig");
 
@@ -48,7 +48,7 @@ pub const PlaceId = Ids.PlaceId;
 pub const CondId = Ids.CondId;
 pub const ClassId = Ids.ClassId;
 pub const LabelId = Ids.LabelId;
-pub const Value = Demands.Value;
+pub const Value = Holders.Value;
 pub const Env = Summary.Env;
 pub const Step = Shape.Step;
 pub const Error = Ids.ChargeError;
