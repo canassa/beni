@@ -190,6 +190,8 @@ const Dumper = struct {
                 if (i.name) |name| try d.w.print(" {s}", .{d.text(name)});
                 if (i.alias) |alias| try d.w.print(" as {s}", .{d.text(alias)});
                 if (i.exposing_token != null) try d.w.writeAll(" exposing");
+                if (i.path) |path| try d.node(path, inner);
+                if (i.type_expr) |te| try d.node(te, inner);
                 try d.children(i.exposed, inner);
             },
             // `(attribute ownership_summary_size module 262144)` (§4.4).

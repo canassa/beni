@@ -2671,6 +2671,20 @@ const Case = struct {
     fn writeSources(c: Case) ![]const []const u8 {
         var sources: std.ArrayList([]const u8) = .empty;
         if (c.fixture.project) {
+            // Text imports are compiler inputs too. Preserve their directory
+            // layout alongside the modules, without treating them as modules.
+            const roots = if (c.goldenExists("sources")) try c.sourceDirs() else &.{try c.fixturePath()};
+            for (roots) |root| {
+                var asset_dir = try Io.Dir.cwd().openDir(testing.io, root, .{ .iterate = true });
+                defer asset_dir.close(testing.io);
+                var assets = try asset_dir.walk(c.arena);
+                defer assets.deinit();
+                while (try assets.next(testing.io)) |entry| {
+                    if (entry.kind != .file or std.mem.endsWith(u8, entry.basename, ".beni") or std.mem.startsWith(u8, entry.basename, "_expected.")) continue;
+                    const from = try std.fs.path.join(c.arena, &.{ root, entry.path });
+                    try c.w.write(entry.path, try Io.Dir.cwd().readFileAlloc(testing.io, from, c.arena, .limited(world.max_stream_bytes)));
+                }
+            }
             // A project may take its modules from elsewhere in the repository:
             // `_expected.sources` holds one repo-relative directory per line,
             // so several scripts can drive one program kept outside the corpus

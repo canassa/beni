@@ -124,3 +124,13 @@ test "a release application calls the runtime's start and run inside its one fil
         \\
     , try w.read("out/_main.mjs"));
 }
+
+test "an embedded platform resolves text imports from its shipped package" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platforms/toy/assets/shader.wgsl", "wrong cwd asset");
+    try w.write("Main.beni", "import Toy\nimport Text\nmain : Toy.Program\nmain = Toy.show (<p>{Text.value}</p>)\n");
+    const built = try w.run(&.{ "build", "--platform=toy", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "p[\"bundled shader 🌍\"]\ntags: p\n" });
+}

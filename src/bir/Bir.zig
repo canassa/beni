@@ -1092,6 +1092,9 @@ pub const Decl = struct {
     body: Inst.OptionalIndex,
     /// `schema`: root of the unresolved schema instruction graph. Else none.
     schema_body: Inst.OptionalIndex,
+    /// Compile-time text import path (a string instruction), else none.
+    /// The syntax cache retains this and an empty body; Session loads the contents.
+    text_import: Inst.OptionalIndex = .none,
     /// The declaration's instructions, contiguous.
     inst_start: Inst.Index,
     inst_end: Inst.Index,
@@ -1398,6 +1401,12 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         if (!validOptionalInst(d.annotation, insts_len)) return false;
         if (!validOptionalInst(d.body, insts_len)) return false;
         if (!validOptionalInst(d.schema_body, insts_len)) return false;
+        if (!validOptionalInst(d.text_import, insts_len)) return false;
+        if (d.text_import.unwrap()) |path| {
+            if (d.kind != .value or !inDecl(d, path.int()) or bir.instTag(path) != .string) return false;
+            const body = d.body.unwrap() orelse return false;
+            if (!inDecl(d, body.int()) or bir.instTag(body) != .string or body == path) return false;
+        }
         if (d.name_token >= token_count) return false;
         var schema_i = d.inst_start.int();
         while (schema_i < d.inst_end.int()) : (schema_i += 1) {

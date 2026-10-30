@@ -13049,3 +13049,7 @@ to choose a live row's patch versus restate protocol. A clock call passed to
 a pure helper inside a helper-owned `For` must therefore update on every
 render on both browser platforms. Enabling grouped rows only on direct must
 not leave the ordinary lowering with an all-false effect table for those rows.
+
+**Compile-time text imports (2026-10-30).** Compile-time text imports (language.md §5.5) are ordinary private string values
+by emission time. Existing reachability removes unused text, and the string
+printer preserves the decoded Unicode contents in development and release.

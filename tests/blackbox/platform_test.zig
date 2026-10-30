@@ -966,3 +966,19 @@ test "browser-inline named by its directory keeps a program's keys apart" {
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(by_name, by_dir);
 }
+
+test "text imports in layered package dependencies resolve relative to their module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeLayeredProgram(&w);
+    try w.write("top/Top.beni", "import Base\nimport \"./assets/message.wgsl\" as text : String\npub shout : String → Base.Program\nshout _ = Base.say text\n");
+    try w.write("top/assets/message.wgsl", "from dependency");
+    try w.write("assets/message.wgsl", "wrong cwd");
+    const built = try w.run(&.{ "build", "--platform=top", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "from dependency\n" });
+    try w.write("top/assets/message.wgsl", "edited dependency");
+    const warm = try w.run(&.{ "build", "--platform=top", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), warm.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "edited dependency\n" });
+}

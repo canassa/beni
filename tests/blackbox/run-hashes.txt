@@ -133,9 +133,19 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
+devloop_test.test.build --watch tracks text imports across missing, edited, and deleted assets #0 202fb2d1c9646a120dcaf136750551360606dc4359da128342748c9fb80b825e
+devloop_test.test.build --watch tracks text imports across missing, edited, and deleted assets #1 b5b8959ed7bcf3504276d824d88521dec052bf886735e4305223862133bba5a8
+devloop_test.test.build --watch tracks text imports across missing, edited, and deleted assets #2 33fe3a55056a5ae3f021212177820c129fdf5ecaa2a55010e1d2144297ca5543
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 6f6577880e663ccefa508fec190be3f3daf4c19657a9f29f469c96ff234e32e4
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
+external_platform_test.test.an embedded platform resolves text imports from its shipped package #0 501e2bf12604169f38e1ed9f95ad820f6d5a6d373b4f679e6858ab9f9552b0e5
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
+frontend_test.test.text import warm builds reload edits and reject deletions without writing output #0 6327d83c7fd29fb714d026f500dc70f2a75457d485bc69a2ba096645c429d789
+frontend_test.test.text import warm builds reload edits and reject deletions without writing output #1 b1b89e05c2d47343f9140a2e731c8cc0ba607ee7f11da51a2851902f8c152b6a
+frontend_test.test.text import warm builds reload edits and reject deletions without writing output #2 b1b89e05c2d47343f9140a2e731c8cc0ba607ee7f11da51a2851902f8c152b6a
+frontend_test.test.text import warm builds reload edits and reject deletions without writing output #3 d2d164066cb94d71698978c8a1dd80bb6511765cb32fca73ef10580ac19fe88c
+frontend_test.test.text imports preserve UTF-8 text in development and release through all round trips #0 970903167a5a49ee073077c674c106b361dee5840c8e97ec5788ed8bccad5e80
+frontend_test.test.text imports preserve UTF-8 text in development and release through all round trips #1 5e81d0bf68897c0a318ac4be2d55498d1aa8ec4903f466ce0b55654da6145f62
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 0a3b21c95777c2b9adfa9ee2a2244259c00e5db1a5d379d93e62a805e1173900
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 8b88b91a97143e288728f1ae404f96838d6f51eb510902ecd8ff0cfcb52c9af8
 ordering_test.test.Json.decode inferred from use prints the same reversed #0 dbe96268562792d5883dd8d678ad90108b5d3228d72fdbde21bca8129200108c
@@ -154,3 +164,5 @@ page_fuzz_test.test.a page that stopped hands nothing to the next: a message tha
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 64acb624a904a569586774fbce982d795c4381ade3ea1c20bf81de12ae5d9237
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 68e8aaf73059df63c683e0b97d3ca69c222b5cd09c42cd1239689cb2952c6c92
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
+platform_test.test.text imports in layered package dependencies resolve relative to their module #0 849597adb1aaf177a6536a71c0e3d0cb1874f4b89d495ebe4366530bc7aa93bb
+platform_test.test.text imports in layered package dependencies resolve relative to their module #1 ce77417a8adf79df286300fc4a8def2cffa506fb110009bb86b36892edc6e0f0

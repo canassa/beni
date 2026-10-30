@@ -222,6 +222,8 @@ pub fn freeOwnershipBlocks(session: *Session) void {
 }
 
 pub const Options = struct {
+    /// Explicit text assets, copied with this allocator for the project watcher.
+    text_dependencies: ?struct { allocator: Allocator, paths: *std.ArrayList([]const u8) } = null,
     /// Worker count, at least 1. `1` runs on the calling thread.
     jobs: u32,
     /// `jobs` is a ceiling rather than a request: it is the machine's CPU
@@ -774,6 +776,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 
     // 3b. Whatever the command needs done once, with every file lowered
     //     and the symbols global: the module graph and resolution.
+    try session.loadTextImports();
     if (phases.after) |after| try after(session);
 
     // 4. Collect (file order, then stable sort), count, render.
@@ -3410,4 +3413,87 @@ test "mergeInterners numbers symbols in file order, whichever worker lexed the f
             if (local < InternPool.WellKnown.count) try testing.expectEqual(@as(u32, @intCast(local)), @backingInt(g));
         }
     }
+}
+
+/// Load text after frontend artifacts have been persisted, including cache hits.
+/// Paths remain in BIR, while the ordinary string body receives this build's text.
+fn loadTextImports(session: *Session) Allocator.Error!void {
+    const gpa = session.gpa;
+    var contents: std.ArrayList(u8) = .empty;
+    defer contents.deinit(gpa);
+    for (0..session.store.count()) |raw| {
+        const file: SourceStore.Index = @fromBackingInt(@intCast(raw));
+        const bir = session.artifacts.birMut(file);
+        for (bir.decls) |decl| {
+            const path_inst = decl.text_import.unwrap() orelse continue;
+            const pd = bir.instData(path_inst);
+            const path = bir.string_bytes[pd.lhs..][0..pd.rhs];
+            const token = bir.insts.items(.main_token)[path_inst.int()];
+            const start = session.artifacts.spans(file).starts[token];
+            const source = session.store.bytes(file);
+            const lines = session.store.lineStarts(file);
+            const pos = diagnostic.position(lines, source, start);
+            const end = diagnostic.position(lines, source, start + 1);
+            var problem: ?[]const u8 = null;
+            if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null) {
+                problem = "The text import path must be nonempty and cannot contain NUL.";
+            } else {
+                const resolved = try std.fs.path.resolve(gpa, &.{ std.fs.path.dirname(session.store.path(file)) orelse ".", path });
+                defer gpa.free(resolved);
+                const embedded = session.store.isEmbedded(file) and !std.fs.path.isAbsolute(path);
+                if (!embedded) if (session.options.text_dependencies) |deps| {
+                    const owned = try deps.allocator.dupe(u8, resolved);
+                    errdefer deps.allocator.free(owned);
+                    try deps.paths.append(deps.allocator, owned);
+                };
+                contents.clearRetainingCapacity();
+                if (embedded) {
+                    if (try session.embeddedText(resolved)) |bytes| {
+                        try contents.appendSlice(gpa, bytes);
+                    } else problem = "This text import is not included in the compiler's embedded package.";
+                } else @import("fs_read.zig").readFile(session.io, Io.Dir.cwd(), resolved, gpa, &contents, .limited(std.math.maxInt(u32))) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    else => problem = try std.fmt.allocPrint(session.workers[0].arena.allocator(), "I cannot read the text import '{s}': {t}.", .{ path, err }),
+                };
+                if (problem == null and !std.unicode.utf8ValidateSlice(contents.items))
+                    problem = "This text import is not valid UTF-8. Save the file as UTF-8; no replacement characters or newline conversions are applied.";
+                if (problem == null and contents.items.len > std.math.maxInt(u32) - bir.string_bytes.len)
+                    problem = "The imported text exceeds the compiler's 4 GiB string storage limit for this module.";
+                if (problem == null) {
+                    const offset: u32 = @intCast(bir.string_bytes.len);
+                    const bytes = try gpa.realloc(@constCast(bir.string_bytes), bir.string_bytes.len + contents.items.len);
+                    @memcpy(bytes[offset..], contents.items);
+                    bir.string_bytes = bytes;
+                    bir.insts.items(.data)[decl.body.unwrap().?.int()] = .{ .lhs = offset, .rhs = @intCast(contents.items.len) };
+                }
+            }
+            if (problem) |message| try session.workers[0].report(session, file, .text_import_failed, pos, end, message);
+        }
+    }
+}
+
+/// Embedded modules read their package's shipped bytes, never a same-named
+/// file in the app's cwd. Directory overrides continue to read the filesystem.
+fn embeddedText(session: *Session, path: []const u8) Allocator.Error!?[]const u8 {
+    if (session.options.core_root == null) {
+        for (core_package.assets) |asset| if (std.mem.eql(u8, path, asset.path)) return asset.bytes;
+        for (core_package.files) |file| {
+            const name = try std.fs.path.join(session.gpa, &.{ core_package.dir, file.rel });
+            defer session.gpa.free(name);
+            if (std.mem.eql(u8, path, name)) return file.source;
+        }
+    }
+    if (session.options.chain) |chain| for (chain.layers) |layer| {
+        const p = layer.embedded orelse continue;
+        for (p.assets) |asset| if (std.mem.eql(u8, path, asset.path)) return asset.bytes;
+        for (p.files) |file| {
+            const name = try std.fs.path.join(session.gpa, &.{ p.root, file.rel });
+            defer session.gpa.free(name);
+            if (std.mem.eql(u8, path, name)) return file.source;
+        }
+        const manifest = try std.fs.path.join(session.gpa, &.{ p.root, "beni.json" });
+        defer session.gpa.free(manifest);
+        if (std.mem.eql(u8, path, manifest)) return p.manifest;
+    };
+    return null;
 }

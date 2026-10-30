@@ -602,7 +602,7 @@ fn ownTermsOf(
         .package = module.package,
         .name = interner.slice(module.name),
         .options = option_text,
-        .source_hash = iface_bytes.hash(store.bytes(file)),
+        .source_hash = try textSourceHash(scratch, store.bytes(file), artifacts.bir(file)),
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
     });
     return bytes.toOwnedSlice(gpa);
@@ -964,4 +964,21 @@ test "a sibling that grows or shrinks while it is read hashes as its whole conte
         fs_read.StaleStat.reported = size;
         try testing.expectEqual(want, try siblingFileHash(testing.allocator, io, &.{}, sibling_path));
     }
+}
+
+/// Syntax-only frontend cache entries can survive asset edits; checked entries
+/// cannot. Hash fixed-width content hashes in declaration order, without cwd paths.
+fn textSourceHash(scratch: Allocator, source: []const u8, bir: *const Bir) Allocator.Error!iface_bytes.Hash {
+    const source_hash = iface_bytes.hash(source);
+    var parts: std.ArrayList(u8) = .empty;
+    defer parts.deinit(scratch);
+    for (bir.decls) |decl| {
+        const path = decl.text_import.unwrap() orelse continue;
+        if (parts.items.len == 0) try parts.appendSlice(scratch, &source_hash);
+        const p = bir.instData(path);
+        const b = bir.instData(decl.body.unwrap().?);
+        try parts.appendSlice(scratch, &iface_bytes.hash(bir.string_bytes[p.lhs..][0..p.rhs]));
+        try parts.appendSlice(scratch, &iface_bytes.hash(bir.string_bytes[b.lhs..][0..b.rhs]));
+    }
+    return if (parts.items.len == 0) source_hash else iface_bytes.hash(parts.items);
 }

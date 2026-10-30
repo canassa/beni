@@ -86,6 +86,10 @@ main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
 Build and run: `beni new <dir>` writes a project; `beni build` compiles it to `out/`; `node out/_main.mjs`
 runs a `node` program; `beni serve` serves a page with live reload.
 
+Use `import "./shaders/triangle.wgsl" as triangleSource : String` to embed a
+UTF-8 text file. The path is relative to this source file. The value is an ordinary
+private String. File contents are preserved. See `references/syntax.md`.
+
 ## References
 
 Open the file that your task needs. Each is short.

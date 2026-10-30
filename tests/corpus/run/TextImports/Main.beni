@@ -1,0 +1,8 @@
+-- Compile-time text uses ordinary String values, including a nested module.
+import "./shaders/triangle.wgsl" as shader : String
+import Node exposing (Program)
+import Text
+
+
+main : Program
+main = Node.print (shader ++ Text.value)

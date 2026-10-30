@@ -920,12 +920,22 @@ fn reportPendingAnnotation(p: *Parse, pending: *?PendingAnnotation) Allocator.Er
 }
 
 /// Import := 'import' (upper | qualified_upper) ('as' upper)? Exposing?
+///         | 'import' String 'as' lower ':' Type
 fn parseImport(p: *Parse) Allocator.Error!Index {
     const saved = p.startBlock(.import);
     defer p.endBlock(saved);
     const import_token = p.next();
 
     var record: Ast.Import = .{ .name = .none, .alias = .none, .exposed_start = @fromBackingInt(@intCast(0)), .exposed_end = @fromBackingInt(@intCast(0)), .exposing_token = .none };
+    if (p.peek() == .str_start) {
+        record.path = (try p.parseLiteralString(.import)).toOptional();
+        if (try p.expectToken(.keyword_as)) |_| {
+            if (try p.expectToken(.lower_ident)) |alias| record.alias = .fromToken(alias);
+        }
+        if (try p.expectToken(.colon)) |_| record.type_expr = (try p.parseType()).toOptional();
+        const extra = try p.addExtra(record);
+        return p.addNode(.{ .tag = .import, .main_token = import_token, .data = .{ .lhs = @backingInt(extra), .rhs = 0 } });
+    }
     switch (p.peek()) {
         .upper_ident, .qualified_upper => record.name = .fromToken(p.next()),
         else => {
@@ -1376,6 +1386,10 @@ fn parseSchemaModifier(p: *Parse, field: bool) Allocator.Error!Index {
 }
 
 fn parseSchemaString(p: *Parse) Allocator.Error!Index {
+    return p.parseLiteralString(.declaration);
+}
+
+fn parseLiteralString(p: *Parse, context: Diagnostics.Context) Allocator.Error!Index {
     if (p.peek() != .str_start) return p.unexpected(.error_expr, .expression);
     const string = try p.parseString();
     const data = p.nodes.items(.data)[string.int()];
@@ -1383,8 +1397,8 @@ fn parseSchemaString(p: *Parse) Allocator.Error!Index {
         const part: Index = @fromBackingInt(@intCast(raw_part));
         if (p.nodes.items(.tag)[part.int()] == .interp) {
             var item = p.itemAtToken(.unexpected_token, p.nodes.items(.main_token)[part.int()]);
-            item.context = .declaration;
-            item.construct = .expression;
+            item.context = context;
+            item.construct = if (context == .import) .text_import_path else .expression;
             _ = try p.report(item);
         }
     }
@@ -4584,6 +4598,8 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             const i = tree.fullImport(n);
             if (i.name) |t| try testing.expect(t < token_count);
             if (i.alias) |t| try testing.expect(t < token_count);
+            if (i.path) |path| try checkIndex(tree, path);
+            if (i.type_expr) |te| try checkIndex(tree, te);
             try checkIndices(tree, i.exposed);
         },
         .exposed, .attribute, .type_var, .type_unit, .type_bottom, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},

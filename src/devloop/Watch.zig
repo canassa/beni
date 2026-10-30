@@ -73,8 +73,10 @@ pub fn run(
     var watched: Watched = .init(gpa, io, build);
     defer watched.deinit();
 
+    var watch_options = options;
+    watch_options.text_dependencies = .{ .allocator = gpa, .paths = &watched.text_assets };
+    const first = buildOnce(gpa, io, stdout, stderr, watch_options, build, hook);
     var digest = watched.digest();
-    const first = buildOnce(gpa, io, stdout, stderr, options, build, hook);
     if (first == 2) return 2;
     // A first build may have created `--out`: nothing changes for the
     // digest, which never looks inside it.
@@ -90,7 +92,10 @@ pub fn run(
             next = again;
         }
         digest = next;
-        _ = buildOnce(gpa, io, stdout, stderr, options, build, hook);
+        watched.clearTextAssets();
+        _ = buildOnce(gpa, io, stdout, stderr, watch_options, build, hook);
+        // Keep the pre-build digest: an edit during a build must trigger
+        // another one. A changed dependency set is picked up next poll.
     }
 }
 
@@ -145,6 +150,7 @@ const Watched = struct {
     arena: std.heap.ArenaAllocator,
     /// Recursive roots.
     trees: []const []const u8,
+    text_assets: std.ArrayList([]const u8) = .empty,
     /// A data program's `"inputs"` (`prerender.md` §8.8): every file below
     /// each, whatever its ending.
     inputs: []const []const u8 = &.{},
@@ -181,7 +187,14 @@ const Watched = struct {
         return w;
     }
 
+    fn clearTextAssets(w: *Watched) void {
+        for (w.text_assets.items) |path| w.gpa.free(path);
+        w.text_assets.clearRetainingCapacity();
+    }
+
     fn deinit(w: *Watched) void {
+        w.clearTextAssets();
+        w.text_assets.deinit(w.gpa);
         w.arena.deinit();
     }
 
@@ -189,6 +202,11 @@ const Watched = struct {
         var acc: Accumulator = .{};
         for (w.trees) |tree| w.walk(&acc, tree, true, false);
         for (w.inputs) |input| w.walk(&acc, input, true, true);
+        for (w.text_assets.items) |asset| {
+            const stat = Io.Dir.cwd().statFile(w.io, asset, .{}) catch continue;
+            // A text import names a file, never recursively watches a directory.
+            Watched.add(&acc, asset, stat);
+        }
         w.walk(&acc, w.root, false, false);
         return acc.sum +% acc.count *% 0x9e3779b97f4a7c15;
     }

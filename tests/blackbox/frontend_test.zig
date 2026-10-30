@@ -253,3 +253,145 @@ test "--roundtrip-frontend is hidden, and is accepted by every subcommand" {
     const valued = try w.runWith(&.{ "check", "--roundtrip-frontend=1", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 2), valued.exit_code);
 }
+
+const text_import_main =
+    \\import "./shader.wgsl" as shader : String
+    \\import Node
+    \\
+    \\
+    \\main : Node.Program
+    \\main =
+    \\    Node.print shader
+    \\
+;
+
+test "text imports preserve UTF-8 text in development and release through all round trips" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const text = "\xef\xbb\xbf@vertex fn main() {\r\n\t// \"quotes\" \\ 🌍\x00\xe2\x80\xa8\xe2\x80\xa9\r\n}\n";
+    try w.write("src/Main.beni", text_import_main);
+    try w.write("src/shader.wgsl", text);
+    // A different cwd-relative file must never be read.
+    try w.write("shader.wgsl", "wrong file");
+    for ([_]bool{ false, true }) |release| {
+        var args: std.ArrayList([]const u8) = .empty;
+        defer args.deinit(testing.allocator);
+        try args.appendSlice(testing.allocator, &.{ "build", "--platform=node", "--out=out", "--roundtrip-frontend", "--roundtrip-interfaces", "--roundtrip-dispatch", "src/Main.beni" });
+        if (release) try args.append(testing.allocator, "--release");
+        const built = try w.run(args.items);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = text ++ "\n" });
+    }
+}
+
+test "text import warm builds reload edits and reject deletions without writing output" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", text_import_main);
+    try w.write("src/shader.wgsl", "first");
+    const args = &.{ "build", "--platform=node", "--cache-dir=cache", "--out=out", "src" };
+    const cold = try w.run(args);
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "first\n" });
+    try w.write("src/shader.wgsl", "other"); // same byte count
+    const warm = try w.run(args);
+    try testing.expectEqual(@as(u8, 0), warm.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "other\n" });
+    try w.tmp.dir.deleteFile(w.io, "src/shader.wgsl");
+    const missing = try w.run(args);
+    try testing.expectEqual(@as(u8, 1), missing.exit_code);
+    try testing.expectEqual(@as(usize, 1), missing.diagnostics.len);
+    try testing.expectEqual(.text_import_failed, missing.diagnostics[0].code);
+    // A failed rebuild leaves the previous, complete output.
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "other\n" });
+    try w.write("src/shader.wgsl", "again");
+    const repaired = try w.run(args);
+    try testing.expectEqual(@as(u8, 0), repaired.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "again\n" });
+}
+
+test "text imports diagnose invalid UTF-8 and unreadable files at the literal" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", text_import_main);
+    for ([_][]const u8{ "\xff", "\xc0\x80", "\xed\xa0\x80", "\xf4\x90\x80\x80" }) |invalid| {
+        try w.write("src/shader.wgsl", invalid);
+        const bad = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expectEqualDeep(&[_]@import("diagnostic").Diagnostic{.{
+            .code = .text_import_failed,
+            .severity = .@"error",
+            .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 9 } },
+            .title = "CANNOT IMPORT TEXT",
+            .message = "This text import is not valid UTF-8. Save the file as UTF-8; no replacement\ncharacters or newline conversions are applied.",
+        }}, bad.diagnostics);
+        try testing.expect(!w.exists("out"));
+    }
+    try w.tmp.dir.deleteFile(w.io, "src/shader.wgsl");
+    try w.tmp.dir.createDir(w.io, "src/shader.wgsl", .default_dir);
+    const directory = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+    try testing.expectEqual(@as(u8, 1), directory.exit_code);
+    try testing.expectEqual(@as(usize, 1), directory.diagnostics.len);
+    try testing.expectEqual(.text_import_failed, directory.diagnostics[0].code);
+}
+
+test "text import values use ordinary type resolution and name collisions" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/shader.wgsl", "text");
+    for ([_][]const u8{
+        "import \"./shader.wgsl\" as shader : Int\n",
+        "import \"./shader.wgsl\" as shader : a\n",
+        "import \"./shader.wgsl\" as shader : String\nshader = 1\n",
+        "import \"./shader.wgsl\" as shader : String\ntype String = Other\n",
+    }) |source| {
+        try w.write("src/M.beni", source);
+        const bad = try w.run(&.{ "check", "src" });
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expect(bad.diagnostics.len > 0);
+    }
+    try w.write("src/M.beni", "import \"./shader.wgsl\" as shader : Text\ntype alias Text = String\npub value = shader\n");
+    const alias = try w.run(&.{ "check", "src" });
+    try testing.expectEqual(@as(u8, 0), alias.exit_code);
+}
+
+test "text import formatter is idempotent and unreachable text is eliminated" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni", "import \"./dead.txt\" as unused : String\nimport \"./empty.txt\" as empty : String\npub answer = 42\n");
+    try w.write("src/dead.txt", "UNREACHABLE_TEXT_SENTINEL");
+    try w.write("src/empty.txt", "");
+    const fmt = try w.run(&.{ "fmt", "src" });
+    try testing.expectEqual(@as(u8, 0), fmt.exit_code);
+    const formatted = try w.read("src/Lib.beni");
+    try testing.expect(std.mem.indexOf(u8, formatted, "as unused : String\n") != null);
+    const again = try w.run(&.{ "fmt", "--check", "src" });
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+    for ([_][]const u8{ "--no-source-maps", "--release" }) |flag| {
+        const built = try w.run(&.{ "build", "--platform=node", "--library", flag, "--out=out", "src" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        const js = try w.read("out/Lib.mjs");
+        try testing.expect(std.mem.indexOf(u8, js, "UNREACHABLE_TEXT_SENTINEL") == null);
+        try testing.expect(std.mem.indexOf(u8, js, "dead.txt") == null);
+    }
+}
+
+test "malformed text imports recover without reading interpolated paths" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_][]const u8{
+        "import \"./x.txt\" as source\n",
+        "import \"./x.txt\" : String\n",
+        "import \"./x.txt\" as Upper : String\n",
+        "import \"./x.txt\" as source : String exposing (x)\n",
+        "import \"./{name}.txt\" as source : String\n",
+        "import \"\" as source : String\n",
+        "import \"./x\\u{0000}.txt\" as source : String\n",
+    }) |source| {
+        try w.write("src/M.beni", source);
+        const bad = try w.run(&.{ "check", "--roundtrip-frontend", "src" });
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expect(bad.diagnostics.len > 0);
+    }
+}

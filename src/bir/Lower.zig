@@ -833,7 +833,16 @@ fn collectDeclarations(l: *Lower) Allocator.Error!void {
             preamble = false;
         }
         switch (tag) {
-            .import, .error_decl => {},
+            .error_decl => {},
+            .import => {
+                const imp = l.tree.fullImport(node);
+                if (imp.path != null and imp.alias != null and imp.type_expr != null) {
+                    const name = imp.alias.?;
+                    const index = try l.newDecl(.value, name, .none);
+                    try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
+                    try l.declareName(&l.values, l.tokenSymbol(name), name, index, .duplicate_declaration, true);
+                }
+            },
             .attribute => {
                 if (pending) |p| try l.reportRaise(p.node, .attr_no_owner);
                 pending = null;
@@ -1355,6 +1364,15 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
         const d = &l.decls.items[i];
         d.inst_start = @fromBackingInt(@intCast(l.cur_inst_start));
         switch (l.tree.nodeTag(src.node)) {
+            .import => {
+                const imp = l.tree.fullImport(src.node);
+                // The file loader replaces only the empty body after the syntax
+                // artifact has been stored. Keep the path separately, with its token.
+                const path = try l.lowerString(imp.path.?);
+                if (l.insts.items(.tag)[path.int()] == .string) l.decls.items[i].text_import = path.toOptional();
+                l.decls.items[i].annotation = (try l.lowerSignature(imp.type_expr.?)).toOptional();
+                l.decls.items[i].body = (try l.addInstAt(imp.import_token, .string, 0, 0)).toOptional();
+            },
             .definition => try l.lowerDefinition(src.node, src.annotation),
             .annotation => {
                 const ann = l.tree.fullAnnotation(src.node);

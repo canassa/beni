@@ -1,0 +1,5 @@
+import "./shaders/message.txt" as message : String
+
+
+pub value : String
+value = message
