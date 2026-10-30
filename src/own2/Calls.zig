@@ -1201,8 +1201,14 @@ const Grafter = struct {
                         try sides.append(gpa_, try g.cellsOf(c, g.placeOfCell(c)));
                     }
                 }
+                // Two sides (a `sep`, or an `apart` of two): merged along their
+                // tries, memoised per node pair; more, one into the other.
                 var acc: Cond.Table.Agg = .{};
-                for (sides.items) |s| acc = try t.aggMergeMulti(gpa_, g.env.charge, g.env.cells, g.env.places, acc, try t.setAgg(gpa_, g.env.charge, g.env.cells, g.env.places, s));
+                if (sides.items.len == 2) {
+                    acc = try t.aggMergeSets(gpa_, g.env.charge, g.env.cells, g.env.places, sides.items[0], sides.items[1]);
+                } else for (sides.items) |s| {
+                    acc = try t.aggMergeMulti(gpa_, g.env.charge, g.env.cells, g.env.places, acc, try t.setAgg(gpa_, g.env.charge, g.env.cells, g.env.places, s));
+                }
                 const k = try t.aggCond(gpa_, g.env.charge, g.env.cells, g.env.places, acc);
                 if (std.debug.runtime_safety and Cond.full_cross_check) {
                     var items: std.ArrayList(Cond.Item) = .empty;

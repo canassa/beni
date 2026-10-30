@@ -334,3 +334,9 @@ tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
 # CK-314 (#1097): a call costs its argument's width, the graft walking it;
 # the call view by reference makes it the callee's size; ownership-v2.md §2.11.
 scenario/CK-314 grows
+
+# CK-1214 (#1214): a chain of joins of calls' views, `y_k = pick c y_{k-1} …`;
+# Demands' resolve walks each holder's view chain, so the caller's
+# continuation grows with the chain; the holder index makes it flat;
+# ownership-v2.md §2.11 *Done*.
+scenario/CK-1214 grows

@@ -197,6 +197,7 @@ pub const Table = struct {
     memo_per_cell: Ids.FixedDict(2) = .{},
     memo_set_agg: Ids.FixedDict(1) = .{},
     memo_cell_part: Ids.FixedDict(2) = .{},
+    memo_agg_pair: Ids.FixedDict(2) = .{},
     /// A read made with no crossing (a redo, the cross-check) and with no
     /// memo (the cross-check); and how many reads crossed, and were redone.
     /// The shape table whose nodes key this table's entries, told of each new
@@ -278,6 +279,7 @@ pub const Table = struct {
         t.memo_resolved_root.deinit(gpa);
         t.memo_inst_latest.deinit(gpa);
         t.memo_cell_part.deinit(gpa);
+        t.memo_agg_pair.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -2108,6 +2110,66 @@ pub const Table = struct {
         return a;
     }
 
+    /// The aggregate of two cell sets as one multiset (an atom's two sides,
+    /// `apart [A] [B]`): `aggMerge` of their set aggregates, made along the
+    /// two radix tries and memoised per pair of set nodes. Disjoint halves
+    /// join structurally (`aggJoin`); a node both sides share is all repeats;
+    /// a leaf against a set is one `aggAdd`. So two sets that both grew pay
+    /// their changed spines, never the smaller side's size. The recursion is
+    /// the key width.
+    pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        var out = try t.aggMergeSetsAt(gpa, charge, cellt, places, a, b);
+        // A member's own approximation, which `all`'s join forgets.
+        out.lost_extra = out.lost_extra or try t.anyLost(gpa, charge, cellt, a) or try t.anyLost(gpa, charge, cellt, b);
+        return out;
+    }
+
+    fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        if (a == .none) return t.setAgg(gpa, charge, cellt, places, b);
+        if (b == .none) return t.setAgg(gpa, charge, cellt, places, a);
+        const sets = &cellt.sets;
+        if (a == b) {
+            // Every cell twice: all repeats, approximate where either is.
+            var x = try t.setAgg(gpa, charge, cellt, places, a);
+            x.dups = try sets.unionWith(gpa, charge, x.dups, a);
+            x.dups_approx = try sets.unionWith(gpa, charge, x.dups_approx, try t.cellPart(gpa, charge, cellt, places, .approx, a));
+            return x;
+        }
+        const key: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_agg_pair.get(key)) |hit| return t.aggs.items[hit];
+        const na = sets.branches(a);
+        const nb = sets.branches(b);
+        const out: Agg = blk: {
+            if (na == null or nb == null) {
+                // A leaf: its one cell added to the other side, a repeat when
+                // that side holds it.
+                const leaf = if (na == null) a else b;
+                const other = if (na == null) b else a;
+                var it = sets.iterate(leaf);
+                const e = it.next().?;
+                const base = try t.setAgg(gpa, charge, cellt, places, other);
+                if (cellt.origin(.from(e.key)) == .mark) break :blk base;
+                break :blk try t.aggAdd(gpa, charge, cellt, places, base, .from(e.key), e.value == 1, true);
+            }
+            const ra = sets.radixNode(a);
+            const rb = sets.radixNode(b);
+            if (ra.mask == rb.mask and ra.prefix == rb.prefix) break :blk try t.aggJoin(gpa, charge, cellt, places, try t.aggMergeSetsAt(gpa, charge, cellt, places, na.?[0], nb.?[0]), try t.aggMergeSetsAt(gpa, charge, cellt, places, na.?[1], nb.?[1]));
+            if (ra.mask > rb.mask and sets.under(rb.prefix, ra.prefix, ra.mask)) {
+                const zero = sets.zeroAt(rb.prefix, ra.mask);
+                break :blk try t.aggJoin(gpa, charge, cellt, places, try t.aggMergeSetsAt(gpa, charge, cellt, places, if (zero) na.?[0] else na.?[1], b), try t.setAgg(gpa, charge, cellt, places, if (zero) na.?[1] else na.?[0]));
+            }
+            if (rb.mask > ra.mask and sets.under(ra.prefix, rb.prefix, rb.mask)) {
+                const zero = sets.zeroAt(ra.prefix, rb.mask);
+                break :blk try t.aggJoin(gpa, charge, cellt, places, try t.aggMergeSetsAt(gpa, charge, cellt, places, a, if (zero) nb.?[0] else nb.?[1]), try t.setAgg(gpa, charge, cellt, places, if (zero) nb.?[1] else nb.?[0]));
+            }
+            // Disjoint prefixes: no repeat.
+            break :blk try t.aggJoin(gpa, charge, cellt, places, try t.setAgg(gpa, charge, cellt, places, a), try t.setAgg(gpa, charge, cellt, places, b));
+        };
+        (try t.memo_agg_pair.getOrPut(gpa, key)).value_ptr.* = try t.agg(gpa, out);
+        return out;
+    }
+
     /// `aggMerge` of two multisets (an atom's sides): an empty side is the
     /// other, as it is.
     pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
@@ -3809,6 +3871,10 @@ pub const Table = struct {
     /// native stack (#1130).
     pub fn resolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId {
         if (k == yes or fails(k) or t.inst_queue.items.len == 0) return k;
+        // A call's condition resolved inside Demands' resolve is the call's.
+        const was = charge.account.in_demands;
+        charge.account.in_demands = false;
+        defer charge.account.in_demands = was;
         // Resolving is the reader's growth: never a lane's share (§4.1).
         const task = try charge.account.enter(gpa, null);
         defer charge.account.leave(task);

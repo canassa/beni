@@ -847,6 +847,21 @@ pub const Radix = struct {
         return out;
     }
 
+    /// A branch node's prefix and mask (`aggMergeSets` walks two tries).
+    pub fn radixNode(r: *const Radix, id: SetId) RadixNode {
+        return r.node(id);
+    }
+
+    /// Whether `key` is under the branch of `prefix` and `mask`, and on its
+    /// zero side.
+    pub fn under(_: *const Radix, key: u32, prefix: u32, mask: u32) bool {
+        return matches(key, prefix, mask);
+    }
+
+    pub fn zeroAt(_: *const Radix, key: u32, mask: u32) bool {
+        return zeroBit(key, mask);
+    }
+
     /// Whether `a` and `b` share a key: a walk of the structure they have in
     /// common, a record per node pair; the recursion is the key width.
     pub fn intersects(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!bool {

@@ -112,6 +112,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 const a = &dr.account;
                 var line: std.Io.Writer.Allocating = .init(arena);
                 line.writer.print("account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}, continuation {d} of {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total(), a.continuation, a.continuationCap() }) catch return error.OutOfMemory;
+                // Demands' resolve apart: a call's share is the rest (§2.11).
+                line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;

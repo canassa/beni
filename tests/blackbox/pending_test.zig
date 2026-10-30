@@ -80,6 +80,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
     .{ .name = "scenario/CK-314", .step = .fast },
+    .{ .name = "scenario/CK-1214", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -393,6 +394,37 @@ test "scenario/CK-314: a call's own cost is flat in its argument's width" {
         .green = flat,
         .signature = "grows",
         .detail = try std.fmt.allocPrint(a, "w=25: {d} records; w=100: {d}", .{ cost[0], cost[1] }),
+    });
+}
+
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ CK-1214: a chain of joins of calls' views costs Demands' resolve (#1214) │
+// └─────────────────────────────────────────────────────────────────────────┘
+// `ownership-v2.md` §2.11 *Done*: `y_k = pick c y_{k-1} (List.push z k)`, the
+// 2a guard's chain of joins. With calls answering views (S3b slice 2b) its
+// `apply`, read-off and publish share is flat per call, but `Demands.holdPaths`
+// and `laterUse` walk each holder's view chain: the caller's continuation
+// grows with the chain until #1214's holder index. The bound is the guard's:
+// at 4n calls at most 4n's share plus a tenth.
+test "scenario/CK-1214: a chain of joins of calls' views is flat per call" {
+    var s = try Scenario.init("CK-1214");
+    defer s.deinit();
+    const a = s.arena();
+    var cost: [2]i64 = undefined;
+    for ([_]u32{ 50, 200 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "pick : Bool, List Int, List Int → List Int\npick c a b =\n    if c then a else b\n\n\npub chain : Bool, List Int → Int\nchain c z =\n    y0 = [ 0 ]\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = pick c y{d} (List.push z {d})\n", .{ k, k - 1, k });
+        try src.print(a, "    List.length y{d}\n", .{n});
+        try s.w.write("Main.beni", src.items);
+        const r = try s.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (r.exit_code != 0) return s.finish(try s.failed(r));
+        cost[run] = try continuationOf(r.stdout, "chain");
+    }
+    try s.finish(.{
+        .green = cost[1] * 10 <= cost[0] * 44,
+        .signature = "grows",
+        .detail = try std.fmt.allocPrint(a, "n=50: {d} records; n=200: {d}", .{ cost[0], cost[1] }),
     });
 }
 
