@@ -1746,6 +1746,24 @@ of the same handle still add multiplicity through the path-multiset primitive.
   graft one actual are distinct views over the same re-rooted node, so every route stays. Each
   argument's snapshot is linked at its positions once per node (`linkArgs`, #1252), and two bindings
   mapped to one position are joined.
+  - *A cycle with no `node` on it* (#1314). A knot may close through records whose answers are read
+    from one another, with no node between: `U = union(leaf{π0}, delta(U, {[*]: s}))` (#1143's shape).
+    Under a view, `force(view(U, E))` is a raw union whose delta side's base is `view(U, E)` again, the
+    same interned id. A lazy reader of such an answer reads a view's from its answer, a union's,
+    a choice's or a positions node's from its sides, a delta's from its base and a recast's from its
+    inner (`cellsOf`'s cells; `namedSteps`' steps, a node's and a delta's own steps added). Each
+    record on the cycle answers the cycle's **least fixed point**: the join of what enters the cycle
+    from outside it, the same for every member. That is what a knot's tie gives the record a view
+    stands for (a tied union's cells are its other side's), and so what the eager image reads too:
+    `eager` keeps a cycle as it is, so its cells are this rule's. For `U` above, the cells are the
+    actual's at `π0`, approximately where the actual is a recast. The rule is one walk (Tarjan's, on
+    explicit stacks, its marks a pooled column): each record is entered once, each cycle settled
+    once, memoised in the records it settles, charged per record as an acyclic one is and run in
+    growth (`dagWalk`, §4.1); never a depth cap or a cut-off. A `runtime_safety` build checks each
+    cycle's answer is a fixed point. Readers that keep a seen set by node (`reach`, `eager`, `rank`,
+    `proj`, `leq`, `widen`, the κ machine, the printer) already end on it. Holders' same-path closure
+    is owed the rule (#1335). Widen's image and a block's knots close every cycle through a node or a
+    delta's child map, so no class built from source holds one today; recursive groups (slice 4) may.
 - **Readers.** Every switch on a node's kind handles `view` by forcing it and reading the forced node
   (and the view's own facts, above): `Shape.force` is the one entry. `proj(view, s)` is
   `proj(force(view), s)`. `cellsOf` is the forced node's, and it takes both sides of a `union` or a
