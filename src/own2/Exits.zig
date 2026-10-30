@@ -126,7 +126,7 @@ pub const Memo = struct {
                 if (n != .none and t.shapes.kind(n) == .leaf and t.shapes.cells(n) == .none) continue;
                 const r = try places.foldsUp(gpa, t.charge, p);
                 var i: u32 = 0;
-                while (i < r.len) : (i += 1) try m.add(t, &seen, q, .{ .path = places.foldPath(r.start + i), .node = .none }, false);
+                while (i < r.len) : (i += 1) try m.add(t, &seen, .{ .path = places.foldPath(r.start + i), .node = .none }, false);
                 continue;
             }
             var it = t.shapes.overEntries(t.shapes.get(n).a);
@@ -135,12 +135,12 @@ pub const Memo = struct {
                 if (e.step.kind == .level) {
                     const r = try places.levelsOf(gpa, t.charge, p);
                     var i: u32 = 0;
-                    while (i < r.len) : (i += 1) try m.add(t, &seen, q, .{ .path = places.foldPath(r.start + i), .node = e.node }, true);
+                    while (i < r.len) : (i += 1) try m.add(t, &seen, .{ .path = places.foldPath(r.start + i), .node = e.node }, true);
                     continue;
                 }
                 const y = (try places.extend(gpa, t.charge, p, e.step)) orelse continue;
                 const plain = places.pathParent(y) == p and places.pathStep(y).word() == e.step.word();
-                if (plain) try m.stack.append(gpa, .{ .path = y, .node = e.node }) else try m.add(t, &seen, q, .{ .path = y, .node = e.node }, true);
+                if (plain) try m.stack.append(gpa, .{ .path = y, .node = e.node }) else try m.add(t, &seen, .{ .path = y, .node = e.node }, true);
             }
         }
         const run: Ids.Range = .{ .start = start, .len = @as(u32, @intCast(m.items.items.len)) - start };
@@ -149,15 +149,15 @@ pub const Memo = struct {
         return run;
     }
 
-    /// An exit, once. A callee node read on from it (`walk`) is walked
-    /// on; it is kept only outside `q`'s subtree, where the cursor from
-    /// `q` does not reach it: below `q` the callee's canonical paths are
-    /// the caller's, so its own `⟲` reads there. A deep read's exits are
-    /// kept below `q` too, where its node has no `⟲` to read on.
-    fn add(m: *Memo, t: Tables, seen: *Ids.FixedDict(2), q: PathId, e: Exit, walk: bool) Error!void {
+    /// An exit, once, and a callee node read on from it (`walk`) walked on.
+    /// It is kept below `q` too: the callee's canonical paths there need not
+    /// be the caller's. A same-module callee on a mutual cycle keeps the
+    /// route (`π1⟲#P.0` of a `P`/`Q` cycle) that the caller folds into
+    /// `t⟲`, so the cursor from `q` would not reach it (#1345).
+    fn add(m: *Memo, t: Tables, seen: *Ids.FixedDict(2), e: Exit, walk: bool) Error!void {
         if ((try seen.getOrPut(t.gpa, .{ e.path.int(), e.node.int() })).found_existing) return;
         if (walk) try m.stack.append(t.gpa, e);
-        if (!walk or !t.places.isPrefix(q, e.path)) try m.items.append(t.gpa, e);
+        try m.items.append(t.gpa, e);
     }
 
     /// Whether a node of `n`'s subtree is on a cycle of the place graph:
