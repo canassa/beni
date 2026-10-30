@@ -34,7 +34,8 @@ const layers = [_]Entry{
     // §5 says 600; the lane-charging forms, named limits and charge targets
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 750 },
+    // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 760 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1150 },
@@ -67,7 +68,9 @@ const layers = [_]Entry{
     .{ .file = "Cond.zig", .layer = 4, .max_lines = 4500 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1710 },
+    // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
+    // from Rows), which a group's port joins every round.
+    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1770 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -98,8 +101,10 @@ const layers = [_]Entry{
     // and a block's places re-interned onto the adapter's.
     // 1 410 since #1324: a comparison read through the user-written ones its
     // type reaches (`componentClasses`).
-    // 1 430 since S3b slice 4a: a call of the walk's own group named apart.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1430 },
+    // 1 780 since S3b slice 4a: the recursive group's solver (ports from ⊥,
+    // synchronous rounds, the read vectors, the group built whole or not at
+    // all, its cold re-check, polymorphic recursion named apart).
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1780 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -120,7 +125,8 @@ const layers = [_]Entry{
     // 1 280 since #1399: a projection decoded with its DAG's sides the other
     // way round is the reader's projection (`sameDag`).
     .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1280 },
-    .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
+    // 305 since S3b slice 4a: a recursive group member's walks on its account line.
+    .{ .file = "Ownership.zig", .layer = 13, .max_lines = 305 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
     .{ .file = "Enforce.zig", .layer = 14, .max_lines = 500 },
