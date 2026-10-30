@@ -1255,6 +1255,8 @@ pub const Table = struct {
         const epoch = v.shapes.base_epoch;
         const from = t.pending.items.len;
         const r = try t.machine(gpa, charge, v, ctx, n, at_summary, pairs);
+        // Every read outside a check is checked: memo hits walked whole.
+        if (std.debug.runtime_safety and full_cross_check and !r.crossed and !t.no_memo) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
         if (!r.crossed) return r.k;
         t.crossed_reads += 1;
         if (v.shapes.base_epoch != epoch) {
@@ -1266,7 +1268,7 @@ pub const Table = struct {
             return (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k;
         }
         try t.settle(gpa, from, true);
-        if (std.debug.runtime_safety and full_cross_check) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
+        if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
         return r.k;
     }
 
@@ -2835,7 +2837,11 @@ pub const Table = struct {
         const epoch = v.shapes.base_epoch;
         const from = t.pending.items.len;
         const r = try t.deepWalk(gpa, charge, v, ctx, n, at_summary);
-        if (!r.crossed) return r.k;
+        if (!r.crossed and !(std.debug.runtime_safety and full_cross_check and !t.no_memo)) return r.k;
+        if (!r.crossed) {
+            try t.crossCheckDeep(gpa, charge, v, ctx, n, at_summary, r.k);
+            return r.k;
+        }
         if (v.shapes.base_epoch != epoch) {
             t.crossed_redos += 1;
             try t.settle(gpa, from, false);
@@ -2845,17 +2851,21 @@ pub const Table = struct {
             return (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k;
         }
         try t.settle(gpa, from, true);
-        if (std.debug.runtime_safety and full_cross_check) {
-            const saved = .{ t.no_cross, t.no_memo };
-            t.no_cross = true;
-            t.no_memo = true;
-            defer {
-                t.no_cross = saved[0];
-                t.no_memo = saved[1];
-            }
-            try t.expectSame(gpa, charge, r.k, (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k);
-        }
+        if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheckDeep(gpa, charge, v, ctx, n, at_summary, r.k);
         return r.k;
+    }
+
+    /// `-Downership-full-cross-check`: a `deep` read walked again whole, with
+    /// no memo and no crossing, gives the same kind and atom set.
+    fn crossCheckDeep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
+        const saved = .{ t.no_cross, t.no_memo };
+        t.no_cross = true;
+        t.no_memo = true;
+        defer {
+            t.no_cross = saved[0];
+            t.no_memo = saved[1];
+        }
+        try t.expectSame(gpa, charge, try t.resolved(gpa, charge, k), try t.resolved(gpa, charge, (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k));
     }
 
     fn deepWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!Read {
@@ -3996,6 +4006,17 @@ pub const Table = struct {
         const rs = t.resolver orelse unreachable; // an `inst` atom is made only under one
         const r = try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0));
         if (std.debug.runtime_safety) try t.assertResolved(gpa, charge, r);
+        if (std.debug.runtime_safety and full_cross_check and !t.no_memo) {
+            // Resolved again, with no memo and no crossing (*Cross-check*).
+            const saved = .{ t.no_cross, t.no_memo };
+            t.no_cross = true;
+            t.no_memo = true;
+            defer {
+                t.no_cross = saved[0];
+                t.no_memo = saved[1];
+            }
+            try t.expectSame(gpa, charge, r, try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0)));
+        }
         (try t.memo_resolved.getOrPut(gpa, .{a.int()})).value_ptr.* = r.int();
         return r;
     }
