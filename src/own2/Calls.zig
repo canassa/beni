@@ -457,7 +457,10 @@ const Grafter = struct {
 
     /// Argument `i` at path `p` (a parameter cell's own path): its node
     /// projected along the path. Through `⟲` the levels below are inside
-    /// the value as it stands: the node itself, read approximately.
+    /// the value as it stands: some value inside the node, a recast that
+    /// keeps the whole inner, whose cells are its reach, approximately
+    /// (`Shape.recastWhole`, §2.13.9, #1219). A node at another place is the
+    /// same value there: a place-only recast, its cells exact.
     fn argAt(g: *Grafter, i: u32, p: PathId, at: PlaceId) Error!NodeId {
         if (i >= g.args.len or g.args[i].node == .none) return g.topLeaf(at);
         var steps: std.ArrayList(Step) = .empty;
@@ -465,7 +468,7 @@ const Grafter = struct {
         try g.stepsOf(p, &steps);
         var n = g.args[i].node;
         for (steps.items) |s| {
-            if (s.kind == .level) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
+            if (s.kind == .level) return g.env.shapes.recastWhole(g.gpa(), g.account(), &g.env.cells.sets, at, n);
             n = (try g.env.shapes.proj(g.gpa(), g.account(), g.env.places, g.env.cells, n, s)) orelse return g.topLeaf(at);
         }
         if (g.env.shapes.place(n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
@@ -798,100 +801,15 @@ const Grafter = struct {
             }
         }
     }
+
     /// The cells argument `i` holds at a parameter cell's path `p`, read at
-    /// `at`: through `⟲` the full preimage's (`foldedCells`, #1199). A
-    /// recast (the value at another place, or below a level) stands for some
-    /// value inside its inner node, not for that node, so when one is the
-    /// actual or a side of its unions, choices and positions (a view read at
-    /// its answer), the cells are read approximately with `⊤`, as
-    /// `Pre.expand` reads one (#1219). Otherwise the argument's own cells there.
+    /// `at`: through `⟲` the full preimage's (`foldedCells`, #1199);
+    /// otherwise the argument's there. Below a level that is a whole recast
+    /// (`argAt`), whose cells are its inner's reach, approximately, and a
+    /// delta, union, choice or positions node over one reads them (#1219).
     fn argCells(g: *Grafter, i: u32, p: PathId, at: PlaceId) Error!SetId {
         if (try g.foldedCells(i, p)) |s| return s;
-        const n = try g.argAt(i, p, at);
-        const own = try g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, n);
-        if (!try g.recastAmong(n)) return own;
-        // Approximate per set node, memoised (`approxAll`): a chain of calls
-        // over a growing actual pays each call what it adds.
-        const shapes = g.env.shapes;
-        const all = try g.env.cells.sets.approxAll(g.gpa(), g.env.charge, &shapes.memo_approx_all, own);
-        return g.env.cells.sets.insert(g.gpa(), g.env.charge, all, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
-    }
-
-    /// Whether `n`, or a side of its unions, choices and positions at its
-    /// own path, is a recast, each view read at its answer. Memoised per node
-    /// for the module (`Views.recasts`) until a knot is tied, so a chain of
-    /// calls over a growing union reads each union once (`CallChainShare`).
-    /// A cycle there is walked whole, unmemoised.
-    fn recastAmong(g: *Grafter, n0: NodeId) Error!bool {
-        const shapes = g.env.shapes;
-        const n = try shapes.force(g.gpa(), g.account(), n0);
-        switch (shapes.kind(n)) {
-            .recast => return true,
-            .@"union", .choice, .positions => {},
-            else => return false,
-        }
-        const v = Views.of((shapes.instantiation orelse unreachable).ctx);
-        if (v.recasts_ties != shapes.ties) {
-            v.recasts.clear();
-            v.recasts_ties = shapes.ties;
-        }
-        if (v.recasts.get(n)) |hit| return hit;
-        const walk = try shapes.dagWalk(g.gpa(), g.account(), n);
-        defer if (walk) |k| g.account().leave(k);
-        const Frame = struct { node: NodeId, expanded: bool };
-        var stack: std.ArrayList(Frame) = .empty;
-        defer stack.deinit(g.gpa());
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(g.gpa());
-        try stack.append(g.gpa(), .{ .node = n, .expanded = false });
-        while (stack.pop()) |f| {
-            const x = f.node;
-            if (v.recasts.contains(x)) continue;
-            const d = shapes.get(x);
-            if (f.expanded) {
-                open.remove(x);
-                const sides = [_]NodeId{ try shapes.force(g.gpa(), g.account(), .from(d.a)), try shapes.force(g.gpa(), g.account(), .from(d.b)) };
-                var any = false;
-                for (sides) |s| any = any or shapes.kind(s) == .recast or (v.recasts.get(s) orelse false);
-                try v.recasts.put(g.gpa(), x, any);
-                continue;
-            }
-            if (open.contains(x)) return g.recastAmongCyclic(n);
-            try g.env.charge.reserve(g.gpa(), .inspection, 1);
-            try open.put(g.gpa(), x, {});
-            try stack.append(g.gpa(), .{ .node = x, .expanded = true });
-            for ([_]u32{ d.a, d.b }) |side| {
-                const s = try shapes.force(g.gpa(), g.account(), .from(side));
-                switch (shapes.kind(s)) {
-                    .@"union", .choice, .positions => if (!v.recasts.contains(s)) try stack.append(g.gpa(), .{ .node = s, .expanded = false }),
-                    else => {},
-                }
-            }
-        }
-        return v.recasts.get(n).?;
-    }
-
-    /// `recastAmong` over a cyclic DAG: every node once, nothing memoised.
-    fn recastAmongCyclic(g: *Grafter, n: NodeId) Error!bool {
-        const shapes = g.env.shapes;
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(g.gpa());
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(g.gpa());
-        try stack.append(g.gpa(), n);
-        while (stack.pop()) |x0| {
-            const x = try shapes.force(g.gpa(), g.account(), x0);
-            if (seen.contains(x)) continue;
-            try g.env.charge.reserve(g.gpa(), .inspection, 1);
-            try seen.put(g.gpa(), x, {});
-            const d = shapes.get(x);
-            switch (d.kind) {
-                .recast => return true,
-                .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .from(d.a), .from(d.b) }),
-                else => {},
-            }
-        }
-        return false;
+        return g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(i, p, at));
     }
 
     /// The image of `res` cells at `at`: a parameter cell the argument's
@@ -975,7 +893,7 @@ const Grafter = struct {
     fn cellsOf(g: *Grafter, c: CellId, at: PlaceId) Error!SetId {
         const x = g.env.cells.get(c);
         if (x.origin == .param) {
-            // Through `⟲` the full preimage's, a recast actual's approximately
+            // Through `⟲` the full preimage's, a whole recast's approximately
             // (`argCells`, #1199, #1219).
             return g.argCells(x.a, .from(x.b), at);
         }
@@ -1096,9 +1014,6 @@ pub const Views = struct {
     args: std.ArrayList(Value) = .empty,
     /// A leaf image's parts, a stack: a nested force appends above.
     members: std.ArrayList(NodeId) = .empty,
-    /// `recastAmong`'s answers, valid while the shapes' `ties` is `recasts_ties`.
-    recasts: stamped.Column(NodeId, bool) = .{},
-    recasts_ties: u32 = 0,
     places: *Place.Table,
     cells: *Cell.Table,
     shapes: *Shape.Table,
@@ -1111,7 +1026,6 @@ pub const Views = struct {
         v.envs.deinit(gpa);
         v.args.deinit(gpa);
         v.members.deinit(gpa);
-        v.recasts.deinit(gpa);
     }
 
     /// Set on `v.shapes` once, before the first call.
@@ -2738,53 +2652,65 @@ test "a chain of 400 calls is read and its conditions resolved at its end on a s
     try testing.expect(!Cond.Table.fails(k));
 }
 
-test "#1219: a recast actual stands for a value inside it, so its sep and its image read it approximately" {
+test "#1219: an actual below a level stands for a value inside it, so its sep and its image read its reach" {
     // `f` answers `π0·arg·⟲·arg`; applied to `a = T [ L22 [ T k ] ]` its
-    // result is `recast@L(a)`, standing for `k` (or the list around it).
-    // `g` relies on `sep(π0, π1)` and is applied to `(f a, k)`: the recast's
-    // inner node holds no list cell, so reading its own cells exactly said
-    // `yes`. It stands for a value inside `a`, which may be `k`: refused,
-    // and so when the recast is one side of a union or a choice
-    // (`if c then f a else xs`). A separate list accepts. `h` answers a node
-    // over `π0`; applied to any of the recast actuals, its image holds `⊤`,
-    // approximately. The cyclic union of the eager graft's fixture is #1314
-    // (the cells of a view of a knot do not end).
+    // result is a whole recast of `a` at `L`, standing for `k` (or the list
+    // around it). `g` relies on `sep(π0, π1)` and is applied to `(f a, k)`:
+    // the recast's inner holds no list cell, so reading its own cells said
+    // `yes`. It stands for a value inside `a`, which may be `k`: refused, and
+    // so when the recast is one side of a union or a choice (`if c then f a
+    // else xs`), or the base of a delta (`f a` with an element written), or
+    // that delta a side of a union. A separate list accepts. `h` answers a
+    // node over `π0`; applied to any of the recast actuals, its image holds
+    // `k`, approximately. The cyclic union of the eager graft's fixture is
+    // #1314 (the cells of a view of a knot do not end).
     const gpa = testing.allocator;
-    for (0..4) |kind| {
+    for (0..6) |kind| {
         var x: KnotFixture = .{};
         try x.init();
         defer x.deinit();
         x.account.allowance = std.math.maxInt(u32) - 1;
+        const T = x.t_place;
         const L = x.list;
         const root = try x.places.rootPath(gpa, L);
         const p0 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, root, 0);
         const p1 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 1, root, 0);
         const sep = try x.conds.sepAtom(gpa, x.env().charge, p0, p1);
-        const g = try x.sums.add(x.env(), .{ .params = &.{ .none, .none }, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, sep) });
+        const g = try x.sums.add(x.env(), .{ .params = &.{ .none, .none }, .res = try x.site(90, T), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, sep) });
         const k = try listAt(&x, L, 20, null);
-        const a = try ctorOf(&x, x.t_place, x.arg, try listAt(&x, L, 22, try ctorOf(&x, x.t_place, x.arg, k)));
-        const recast = try x.shapes.recast(gpa, &x.account, L, a);
+        const a = try ctorOf(&x, T, x.arg, try listAt(&x, L, 22, try ctorOf(&x, T, x.arg, k)));
+        // `f`: its result is `π0` at `arg·⟲·arg`.
+        var fp = try x.places.rootPath(gpa, T);
+        for ([_]Step{ x.arg, Place.Step.elem, x.arg }) |st| fp = (try x.places.extend(gpa, .growth(&x.account), fp, st)).?;
+        const fcell = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, fp, 0);
+        const f = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.leaf(gpa, &x.account, L, try x.cells.sets.insert(gpa, x.env().charge, .none, fcell.int(), 0)), .kappas = .none });
+        var sf: Scratch = .{};
+        defer sf.deinit(gpa);
+        const fa = try x.shapes.force(gpa, &x.account, (try apply(x.env(), &x.sums, f, &.{.{ .node = a, .kappa = .none }}, 0, &sf)).result.node);
+        try testing.expect(x.shapes.isWhole(fa));
         const other = try listAt(&x, L, 23, null);
+        const written = try x.shapes.delta(gpa, &x.account, fa, try x.one(Place.Step.elem, try x.site(24, T)));
         const first = switch (kind) {
             0 => other,
-            1 => recast,
-            2 => try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, recast, other),
-            else => try x.shapes.choice(gpa, &x.account, &x.cells.sets, recast, other),
+            1 => fa,
+            2 => try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, fa, other),
+            3 => try x.shapes.choice(gpa, &x.account, &x.cells.sets, fa, other),
+            4 => written,
+            else => try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, written, other),
         };
         var s: Scratch = .{};
         defer s.deinit(gpa);
         const applied = try apply(x.env(), &x.sums, g, &.{ .{ .node = first, .kappa = .none }, .{ .node = k, .kappa = .none } }, 0, &s);
         try testing.expectEqual(kind != 0, Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
-        const top = try x.cells.top(gpa, &x.account);
-        const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
         // `h`'s result is a node at `L` whose object is `π0`.
-        const h = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.node(gpa, &x.account, L, p0_set, try x.one(Place.Step.elem, try listAt(&x, L, 24, null))), .kappas = .none });
-        for ([_]ClassId{h}) |c| {
-            var s2: Scratch = .{};
-            defer s2.deinit(gpa);
-            const image = try apply(x.env(), &x.sums, c, &.{.{ .node = first, .kappa = .none }}, 0, &s2);
-            const cells = try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, image.result.node);
-            try testing.expectEqual(kind != 0, x.cells.sets.member(cells, top.int()));
-        }
+        const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
+        const h = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.node(gpa, &x.account, L, p0_set, try x.one(Place.Step.elem, try listAt(&x, L, 25, null))), .kappas = .none });
+        var s2: Scratch = .{};
+        defer s2.deinit(gpa);
+        const image = try apply(x.env(), &x.sums, h, &.{.{ .node = first, .kappa = .none }}, 0, &s2);
+        const cells = try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, image.result.node);
+        var it = x.cells.sets.iterate(x.shapes.cells(k));
+        const kc = it.next().?.key;
+        try testing.expectEqual(kind != 0, x.cells.sets.member(cells, kc));
     }
 }
