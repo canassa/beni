@@ -1,0 +1,2 @@
+Lib eq: lines 5-9 (not built: local)
+Main bad2: lines 6-7 (not built: method_call)
