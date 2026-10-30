@@ -559,6 +559,7 @@ const Presence = struct {
                     if (it.position) if (shapes.mapSource(x)) |s| if (shapes.memo_map.get(s)) |m| {
                         const c = try p.counted.getOrPut(gpa, .{ it.at.int(), s.int() });
                         if (!c.found_existing) {
+                            c.value_ptr.* = 1;
                             const n = try p.count.getOrPut(gpa, .{ it.at.int(), m.int() });
                             n.value_ptr.* = if (n.found_existing) n.value_ptr.* + 1 else 1;
                         }
@@ -692,9 +693,13 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
                 const answer = shapes.answerOf(x) orelse return null;
                 return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
             }
-            fn source(ctx: *anyopaque, x: NodeId) ?NodeId {
+            /// The source `x` stands for at `pos`: one the walk found there.
+            /// A stale entry, kept for a node a join left elsewhere, counts
+            /// for none, so it cannot make up for a source with no entry.
+            fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.env.shapes.mapSource(x);
+                const s = c.ro.env.shapes.mapSource(x) orelse return null;
+                return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
             }
             fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
