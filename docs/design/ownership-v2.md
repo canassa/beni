@@ -2946,7 +2946,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     The class is composed **at the places the components occur** [2026-10-30, #1331, #1349]: the walk of the argument's
     type stops at a type that has a user-written comparison of its own (its class is the whole of what that type does,
     so its fields are not entered: a read-only `Outer.eq` never calls the `Inner.eq` of its fields). At a component's
-    place the argument is used as the component's class uses its parameters (`π1#Inner.0 W`); everything else is only
+    place the argument is used as the component's class uses its parameters (`π1#Inner.0 W`, at any depth, the two
+    parameters' uses merged path by path: a `Shape.join` of them is a `union` the read-off does not enter); everything else is only
     read, deeply. The use is built **once per place** (Tarjan's walk, a cycle settled when it closes and its places one
     deep leaf with the `E` and `W` of everything below), in growth, so its cost is the type's distinct places and not
     its paths (`EvidenceDagBuildDepth32`, mutually recursive types). A deep demand writes everything its base reaches

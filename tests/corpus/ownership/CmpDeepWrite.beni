@@ -1,0 +1,44 @@
+-- ownership (v2): a component whose comparison writes below its first field
+-- (ownership-v2.md §2.13.13). `Deep.eq` writes the list two fields down, so a
+-- derived comparison over `Deep` writes that deep, in a list, a tuple and a
+-- fresh value around a parameter, and every function that keeps the list it
+-- was handed is refused.
+type Deep
+    = Deep Int (Int × List Int)
+
+
+pub eq : Deep, Deep → Bool
+eq a b =
+    case a of
+        Deep _ ( _, l ) →
+            case b of
+                Deep _ ( _, m ) →
+                    List.length (List.push l 1) > List.length m
+
+
+pub listOf : List Deep → Bool
+listOf ds = ds == []
+
+
+pub callerList : List Deep → Bool × List Deep
+callerList ds = ( listOf ds, ds )
+
+
+pub nestedLeft : List Int → Bool × List Int
+nestedLeft xs = ( ( Deep 1 ( 1, xs ), 0 ) == ( Deep 1 ( 1, [] ), 0 ), xs )
+
+
+pub nestedRight : List Int → Bool × List Int
+nestedRight xs = ( ( Deep 1 ( 1, [] ), 0 ) == ( Deep 1 ( 1, xs ), 0 ), xs )
+
+
+pub nestedParam : Deep → Bool × Deep
+nestedParam d = ( ( d, 0 ) == ( d, 1 ), d )
+
+
+pub viaFn2 : List Int → Bool
+viaFn2 xs = ( Deep 1 ( 1, xs ), 0 ) == ( Deep 1 ( 1, [] ), 0 )
+
+
+pub callerViaFn2 : List Int → Bool × List Int
+callerViaFn2 xs = ( viaFn2 xs, xs )

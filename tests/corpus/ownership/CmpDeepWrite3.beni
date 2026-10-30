@@ -1,0 +1,24 @@
+-- ownership (v2): the same with the write three fields down.
+type Deeper
+    = Deeper Int (Int × (Int × List Int))
+
+
+pub eq : Deeper, Deeper → Bool
+eq a b =
+    case a of
+        Deeper _ ( _, ( _, l ) ) →
+            case b of
+                Deeper _ ( _, ( _, m ) ) →
+                    List.length (List.push l 1) > List.length m
+
+
+pub listOf : List Deeper → Bool
+listOf ds = ds == []
+
+
+pub callerList : List Deeper → Bool × List Deeper
+callerList ds = ( listOf ds, ds )
+
+
+pub nested : List Int → Bool × List Int
+nested xs = ( ( Deeper 1 ( 1, ( 1, xs ) ), 0 ) == ( Deeper 1 ( 1, ( 1, [] ) ), 0 ), xs )

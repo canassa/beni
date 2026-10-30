@@ -777,6 +777,58 @@ pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_p
     return sums.add(env, .{ .params = &.{ use, use }, .res = res, .writes = writes, .origin = .asserted });
 }
 
+/// Two use shapes of one place merged path by path: the marks of both at every
+/// path, a leaf standing for everything below it. `Shape.join` makes a `union`
+/// of two nodes, and a read-off of a use (`Calls.marked`) does not go into a
+/// union, so the writes below it would not be found.
+const UseMerge = struct {
+    env: Env,
+    memo: Ids.FixedDict(2) = .{},
+
+    fn deinit(m: *UseMerge) void {
+        m.memo.deinit(m.env.gpa);
+    }
+
+    fn merge(m: *UseMerge, a: NodeId, b: NodeId) Error!NodeId {
+        const env = m.env;
+        const gpa = env.gpa;
+        if (a == b or b == .none) return a;
+        if (a == .none) return b;
+        try env.charge.reserve(gpa, .shape, 1);
+        if (m.memo.get(.{ a.int(), b.int() })) |hit| return .from(hit);
+        const shapes = env.shapes;
+        const at = shapes.place(a);
+        const ca = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, a);
+        const cb = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, b);
+        const cells = try env.cells.sets.unionWith(gpa, env.charge, ca, cb);
+        const ka = shapes.kind(a);
+        const kb = shapes.kind(b);
+        const out: NodeId = out: {
+            if (ka == .node and kb == .node and shapes.place(b) == at) {
+                var children: u32 = Ids.none_int;
+                var it = shapes.overEntries(shapes.get(a).a);
+                while (it.next()) |e| {
+                    const other = if (shapes.overGet(shapes.get(b).a, e.step)) |o| o else NodeId.none;
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, try m.merge(e.node, other));
+                }
+                var jt = shapes.overEntries(shapes.get(b).a);
+                while (jt.next()) |e| if (shapes.overGet(shapes.get(a).a, e.step) == null) {
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, e.node);
+                };
+                break :out try shapes.node(gpa, env.account(), at, cells, children);
+            }
+            // A leaf stands for everything below it, and so does the merge of
+            // anything else: what both reach, deeply.
+            const ra = try shapes.reach(gpa, env.account(), &env.cells.sets, a);
+            const rb = try shapes.reach(gpa, env.account(), &env.cells.sets, b);
+            const deep = try Summary.Table.marksSet(env, .{ .deep = true }, &.{});
+            break :out try shapes.leaf(gpa, env.account(), at, try env.cells.sets.unionWith(gpa, env.charge, try env.cells.sets.unionWith(gpa, env.charge, ra, rb), deep));
+        };
+        (try m.memo.getOrPut(gpa, .{ a.int(), b.int() })).value_ptr.* = out.int();
+        return out;
+    }
+};
+
 /// The use shape of a derived comparison's argument, built once per place
 /// (a type may share its parts, `EvidenceDagBuildDepth32`, and cycle):
 /// `R` deep on every branch that leads to no component; at a component's
@@ -886,7 +938,10 @@ const UseBuild = struct {
         };
         var node: NodeId = .none;
         if (uses.items.len > 0) {
-            node = if (uses.items.len == 1) uses.items[0] else try env.shapes.join(gpa, env.account(), env.places, env.cells, uses.items);
+            var mg: UseMerge = .{ .env = env };
+            defer mg.deinit();
+            node = uses.items[0];
+            for (uses.items[1..]) |u| node = try mg.merge(node, u);
             if (env.shapes.place(node) != p) node = .none;
         }
         if (node == .none) node = try b.leaf(p, .{ .r = true, .e = e, .w = w, .deep = true });
