@@ -120,6 +120,9 @@ pub const Table = struct {
     memo_force: stamped.Column(NodeId, NodeId) = .{},
     /// A view's one step, when it is a view again: the chain `force` followed.
     memo_step: stamped.Column(NodeId, NodeId) = .{},
+    /// Nodes `holdsView` found view-free, valid while `ties` is `view_free_epoch`.
+    view_free: Ids.FixedDict(1) = .{},
+    view_free_epoch: u32 = 0,
     memo_view_reach: Ids.FixedDict(2) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
@@ -141,6 +144,7 @@ pub const Table = struct {
         t.arrivals_memo.deinit(gpa);
         t.memo_force.deinit(gpa);
         t.memo_step.deinit(gpa);
+        t.view_free.deinit(gpa);
         t.memo_view_reach.deinit(gpa);
     }
 
@@ -454,17 +458,30 @@ pub const Table = struct {
     }
 
     /// Whether `n`'s DAG holds a view: a check of the invariant that a class
-    /// is stored forced (§2.11), uncharged, for `runtime_safety` builds.
-    pub fn holdsView(t: *const Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
+    /// is stored forced (§2.11), uncharged, for `runtime_safety` builds. A
+    /// node found view-free is remembered (`view_free`) until a knot is tied,
+    /// the one change to a made node's record, so each class added checks
+    /// only what it adds: a check over the whole DAG at every class made
+    /// deep snapshots' codec tests quadratic.
+    pub fn holdsView(t: *Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
         if (n == .none) return false;
+        if (t.view_free_epoch != t.ties) {
+            t.view_free.deinit(gpa);
+            t.view_free = .{};
+            t.view_free_epoch = t.ties;
+        }
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
+        var visited: std.ArrayList(NodeId) = .empty;
+        defer visited.deinit(gpa);
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, n);
         while (stack.pop()) |x| {
+            if (t.view_free.get(.{x.int()}) != null) continue;
             const got = try seen.getOrPut(gpa, .{x.int()});
             if (got.found_existing) continue;
+            try visited.append(gpa, x);
             const d = t.get(x);
             switch (d.kind) {
                 .view => return true,
@@ -478,6 +495,8 @@ pub const Table = struct {
                 .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
             }
         }
+        // No view below any node the walk met: each is view-free.
+        for (visited.items) |x| (try t.view_free.getOrPut(gpa, .{x.int()})).value_ptr.* = 1;
         return false;
     }
 

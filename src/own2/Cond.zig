@@ -168,6 +168,10 @@ pub const Table = struct {
     memo_dag: Ids.FixedDict(3) = .{},
     /// A view's chain join by `(ctx, view)` (`chainStored`), `none` for nothing.
     memo_chain: Ids.FixedDict(2) = .{},
+    /// Positions `kappaHoldsView` found view-free, valid while the shape table's
+    /// `ties` is `kview_free_epoch`.
+    kview_free: Ids.FixedDict(1) = .{},
+    kview_free_epoch: u32 = 0,
     /// Node marks for a walk over the node table, one per walk in progress,
     /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
     marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
@@ -218,6 +222,7 @@ pub const Table = struct {
         t.fold_of.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_chain.deinit(gpa);
+        t.kview_free.deinit(gpa);
         t.memo_merge.deinit(gpa);
     }
 
@@ -855,16 +860,27 @@ pub const Table = struct {
 
     /// Whether a snapshot stores an entry under a view or a node whose DAG
     /// holds one: a check of the invariant that a class is stored forced
-    /// (§2.11), uncharged, for `runtime_safety` builds.
-    pub fn kappaHoldsView(t: *const Table, gpa: Allocator, shapes: *const Shape.Table, ctx: Kappas) Allocator.Error!bool {
+    /// (§2.11), uncharged, for `runtime_safety` builds. A position found
+    /// view-free is remembered while no knot is tied, as `holdsView`
+    /// remembers nodes, so a class added checks only the positions it adds.
+    pub fn kappaHoldsView(t: *Table, gpa: Allocator, shapes: *Shape.Table, ctx: Kappas) Allocator.Error!bool {
         if (ctx == .none) return false;
+        if (t.kview_free_epoch != shapes.ties) {
+            t.kview_free.deinit(gpa);
+            t.kview_free = .{};
+            t.kview_free_epoch = shapes.ties;
+        }
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
+        var visited: std.ArrayList(Kappas) = .empty;
+        defer visited.deinit(gpa);
         var stack: std.ArrayList(Kappas) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, ctx);
         while (stack.pop()) |at| {
-            if (at == .none or (try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
+            if (at == .none or t.kview_free.get(.{at.int()}) != null) continue;
+            if ((try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
+            try visited.append(gpa, at);
             const p = t.position(at);
             var it = t.mapEntries(p.here);
             while (it.next()) |e| if (try shapes.holdsView(gpa, .from(e.key))) return true;
@@ -872,6 +888,7 @@ pub const Table = struct {
             var lt = t.mapEntries(p.links);
             while (lt.next()) |e| try stack.append(gpa, .from(e.value));
         }
+        for (visited.items) |at| (try t.kview_free.getOrPut(gpa, .{at.int()})).value_ptr.* = 1;
         return false;
     }
 
