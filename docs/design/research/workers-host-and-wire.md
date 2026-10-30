@@ -1,5 +1,10 @@
 # Workers: measured host access and emitted representations
 
+**Decided by the owner, 2026-10-30:** [C for realms](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+and [shared wire names](https://github.com/canassa/beni/issues/1305#issuecomment-6525031242).
+The source census and emission measurements below remain evidence. Historical
+provenance analysis and universal codecs are compared alternatives, not adopted.
+
 2026-10-30, source revision `ff8e02df3` (compiler code `4215e996f`).
 This supplements the retained [primary-source inventory](workers-api-research.md).
 All commands and probes ran on Dagon in the isolated workers-design-fix lane.
@@ -16,7 +21,7 @@ comments and strings out of code, and counts calls to Js.global/get/set/call/
 apply/construct/at/setAt/method/each (including nested calls separately).
 It includes data-only accesses: this is the complete candidate access surface,
 **not** a claim that every get reaches a browser object. Other Js conversion,
-reflection and foreign paths must propagate/check the same provenance (§2).
+reflection and foreign paths must retain native types under C (§2).
 
 | Source | Operations | Literal global | Dynamic global | Literal member | Dynamic member | Value operation |
 |---|---:|---:|---:|---:|---:|---:|
@@ -26,7 +31,7 @@ reflection and foreign paths must propagate/check the same provenance (§2).
 
 A value operation has no named-member argument (apply, construct, at, setAt,
 each); `method` creates a callback receiving native `this` and is also a
-value operation. Its hidden receiver provenance must flow into that callback. Dynamic member means its name is not one
+value operation. C retains the receiver and callback types; B would have tracked hidden provenance. Dynamic member means its name is not one
 string literal at that syntax site, even if later inference proves a finite
 set. Get/call totals alone are 184, 634 and 807 respectively. These totals
 supersede the brief's approximate counts because the scope is recursive and
@@ -109,35 +114,29 @@ checking cannot establish the promised guarantee.
 
 ## 2. Mechanism, migration and budget
 
-[workers §4](../workers.md#4-a-realm-check-that-covers-beni-over-js) now has an owner-gated [three-way comparison](workers-realm-options.md).
-Its retained option B specifies a pinned table with
-symbolic host provenance and declaration-local checked realm bounds. WebIDL
-Global/Exposed/mixins/partials/member types supply native shapes; ECMAScript
-and host exceptions need a versioned intrinsic supplement. Neither supplement
-may map arbitrary beni qualified function names to trusted realms.
+[Workers §4](../workers.md#4-a-realm-check-that-covers-beni-over-js) specifies C,
+selected by the owner. The [comparison](workers-realm-options.md) retains A and B
+as alternatives not adopted. Native identities are ordinary generated types;
+realm requirements follow ordinary call and evidence summaries, not hidden
+shape provenance through Js.Value.
 
-Migration proceeds by annotating public host wrappers, checking literal paths,
-propagating parameter/result/callback/native-container obligations, replacing
-three dynamic global sites and narrowing actual dynamic host members. Plain
-record/dictionary reflection stays legal. Js.from/to does not erase provenance;
-an unrecognized host root or reflection operation exports an unresolved
-obligation and fails at an entry unless a typed native contract discharges it.
-Foreign siblings retain the existing privileged promise, never a loophole for
-ordinary beni. `$beni` and test globals move to typed bootstrap/module state.
+Migration first measures the Task and renderer callback storage rewrite. The
+census counts 130 erased-callable use sites, including 41 in core/Task.beni;
+it does not count storage declarations or Js.from conversion producers. Audit
+those before estimating the rewrite. Generated operations replace native raw
+access, while HostFree prevents erasure and Host.Raw quarantines unknown intake.
+Plain dynamic data remains supported. The three dynamic globals become typed
+target selection; dynamic native members become cases over typed operations.
 
-The mask/summary and Wire descriptor budgets in §4 are five fixed bytes per
-relevant declaration/type plus interned, variable-length sparse payloads.
-That is a representation target, **not** a total interface-size bound. Reuse
-interned type/path graphs. Measure cold >250k LOC/s/core and 100k-line build
-latency, cached change latency, serialized interface bytes and peak RSS on:
-plain-data code; every audited platform; 100k-line generic/helper chains;
-recursive container/closure flows; 1/10/100 entries sharing large Wire graphs;
-static dispatch and interface-only libraries; adversarial union/path growth.
-A change to the pinned native table, exported summary, entry roles or Wire
-plan invalidates affected reverse dependencies. A same-summary body edit does
-not. Widening must reject unresolved host access, with explicit typed wrapper
-precision recovery; benchmark that recovery rather than silently trusting it.
-These measurements are owed by #1295/#1296 before exposing launching.
+Realm masks use a byte plus ordinary inferred obligations. C has no B-style
+32-bit host-flow graph reference. Wire plans retain a classification byte and
+interned selective-normalization plan reference. Generated binding artifacts
+load by demand; type SCCs memoize HostFree and Wire. Measure >250k LOC/s, the
+100k-line build target, cold and warm latency, interface bytes and peak RSS.
+Cover callbacks, recursive typed containers, 1, 10 and 100 entries, shared wire
+graphs and static dispatch. Native types and identity upcasts must preserve the
+emit/release/ byte goldens. Changed native metadata, exported summaries, entry
+rows or wire plans invalidate reverse users; unchanged summaries do not.
 
 ## 3. Current emitted layouts, inspected rather than assumed
 
@@ -176,10 +175,10 @@ but an escaping payload cannot be eliminated merely because local reads are gone
 
 ## 4. Owner decision: pay where representation actually requires it
 
-**Recommend shared wire-visible names within one build, with selective
+**Decided: shared wire-visible names within one build, with selective
 normalization.** Plain data then pays native serialization/deserialization only.
 Keep explicit schemas/version validation at external or cross-build channels.
-This is a structural recommendation against an unconditional extra traversal,
+This is the selected contract against an unconditional extra traversal,
 not a measured claim of parity with SolidJS 2 or Effect v4.
 
 | Cost | Universal canonical codec | Shared wire-visible names + normalization |
@@ -196,12 +195,12 @@ An O(N) encode/decode pass adds up to two payload graph walks and allocations
 on top of the browser's clone; absolute cost, fusion and compression need a
 real implementation. The current compiler has neither multi-entry alternative,
 so a fake handwritten JS codec benchmark would not answer this decision.
-The beni probe establishes current shapes/bytes only. #1296/#1300 owe both
-prototypes on the same corpus, raw/minified/brotli bytes per entry and unique
+The beni probe establishes current shapes and bytes only. #1296 and #1300
+implement shared names and measure them on the corpus: raw/minified/brotli bytes per entry and unique
 build total, compiler time/RSS, cold/warm ready, p50/p95/p99 send-to-reply,
 allocation/GC, frame stalls against the SolidJS 2 harness and effects overhead
 against pinned Effect v4. Include empty, nested records/unions, arrays/list
 views, tree/ordered Dict, cyclic native graphs, cloned/moved buffers, 1/10/100
 entries and deliberately conflicting short names. Publish browser/machine,
-payload counts and raw samples. No universal-codec decision is made implicitly
-while this owner issue is open.
+payload counts and raw samples. Universal codecs are not adopted. The measurements validate the selected
+shared-name design against budgets; they do not choose a design.

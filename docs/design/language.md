@@ -655,11 +655,6 @@ pub foreign type List a
 | a `foreign` with a `where` clause | a `pub foreign` may carry a `where` clause (§3), and the sibling export's arity is then **evidence count + declared arity** — `core/List.beni`'s `eq` is declared 2-ary and is written `(m0, xs, ys)` in `core/List.js`. **This rule is documented and not enforced**: [`boundary.md`](boundary.md) §4's checks are export coverage and import coverage, and neither looks at arity. → `static-dispatch-spike.md` §5.2. |
 | binding, lowering | each core module that declares foreigns has a sibling JavaScript file exporting one function per foreign value, under the same name, in the emitted calling convention; binding is by name, and a missing export is a build error of the core package, not a user diagnostic. Lowering emits a `foreign` declaration into the interface skeleton like any other `pub` name, and the interface records that it is foreign so M3's printer can key its peephole on the module-qualified name. |
 
-**Proposed, not approved:** [worker callback record contracts](workers-callback-contracts.md)
-requires [owner decision #1319](https://github.com/canassa/beni/issues/1319).
-It specifies a narrow extension for platform record fields and worker entry rows.
-The sync and ownership-word rules above remain the accepted language until that decision.
-
 **Schemas** add a declaration and a schema namespace to this section. The
 normative delta is [`schema.md`](schema.md) §2–§4: the schema is the defined
 thing, its types are `User.Type` and `User.Encoded`, and explicit exposure brings
@@ -1560,22 +1555,14 @@ one spelling to the other.
 
 ## 10. Diagnostics named in this document
 
-*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2/§4
-adds declaration-local `realm` bounds to platform values/native types; ordinary
-values infer availability through checked host provenance. Foreign retains its
-explicit effect rung. No qualified-name realm map is accepted. Generic
-manifest-declared entry kinds let ordinary top-level program references root
-separate execution graphs without adding extra ordinary mains or a coercion.
-The proposed API in [workers-api.md](workers-api.md) retains saturated n-ary
-calls and distinguishes worker-local state from Wire configuration/messages.
-Moved native backing cannot remain live through an alias. Wire lowering is an
-explicit owner decision, not a mandate for a codec on every record.
-
-Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
-realm mechanism: generated native types are recommended; hidden provenance
-remains specified as option B, not adopted. Common EntryHost/realm guarantees
-apply to either. Grouped protocol roles distinguish call and stream inputs.
-
+*Worker integration, decided 2026-10-30; specified, not built.*
+[workers.md](workers.md) §2 and §4 use ordinary native types generated from pinned
+WebIDL and inferred realm summaries. No realm keyword or record-field qualifier
+syntax is added. entryKinds protocol metadata supplies callback obligations;
+ownership checker v2 checks inferred summaries. Top-level program references
+root separate execution graphs without extra ordinary mains or coercions.
+Shared build-wide wire names and selective normalization are decided in #1305;
+there is no universal codec requirement. The language grammar remains unchanged.
 
 Every diagnostic has a stable snake_case code, a severity, a file, a `{line, col}` start and end
 (end exclusive, same line or later), a title in `SHOUTING CASE` in Elm's style, and a message. The

@@ -63,7 +63,7 @@ native results cannot be inferred from the existence of `Worker`. The
 transfer-family issue must include usable typed acquisition/adoption from the
 owning module, rather than unusable opaque type declarations.
 
-### Service Workers: inventoried, owner scope decision pending
+### Service Workers: inventoried, separate design decided
 
 The [Service Worker specification](https://w3c.github.io/ServiceWorker/)
 is an editor's draft with a separate event-driven lifetime model.
@@ -91,7 +91,8 @@ state requirements (`InvalidStateError`) and rejected promises affect lifecycle,
 not an ordinary task Result. Those must receive a separate operation-level
 failure design before implementation; this document does **not** invent a
 shared-worker-style scope for them. BCD records their support independently.
-Recommendation: separate design issue, not omission from the API inventory.
+The [owner decided a separate design](https://github.com/canassa/beni/issues/1301#issuecomment-6525032904).
+Dedicated and Shared workers do not wait for it; the inventory remains complete.
 
 ## 2. Structured values and transfers
 

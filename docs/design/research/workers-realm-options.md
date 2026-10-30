@@ -1,6 +1,11 @@
 # Worker realms: three compiler designs on the same census
 
-## What the owner is deciding
+**Decided C, the owner, 2026-10-30, [#1315](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806).**
+C is the contract in workers.md §4. A and B below record the comparison only.
+The owner selected protocol rows without language changes in #1319 and shared
+wire names in #1305; those are no longer open choices.
+
+## What the owner decided
 
 A realm is a JavaScript execution environment with its own global APIs.
 A page and a worker are different realms: a page has the DOM and localStorage,
@@ -20,19 +25,23 @@ below represent the same exact policy guard; none catches an unknown defect.
 The A and B helper invokes its acquisition callback inside that guard. It handles
 the specified SecurityError from the localStorage getter separately from getItem.
 It never evaluates the getter before entering the guard. Unknown exceptions
-remain defects. The C helper performs the same guarded steps.
+remain defects. The C helper performs the same guarded steps. A passes typed Element to its
+manually maintained wrapper; B directly accesses a Js.Value receiver whose
+origin the hidden analysis must prove. This is the key implementation difference.
 The DOM operation reads textContent. Both snippets require a page realm.
 
-**A: manually maintained typed wrappers.** The platform author writes the raw
-access inside an audited wrapper and declares its realm. An application calls
-the exported wrapper. The wrapper signature is checked; its raw implementation
-still needs review.
+**A: manually maintained typed wrappers.** The platform author writes and audits typed
+wrappers and their realm metadata. ManualNode.textContent is such a wrapper;
+its body performs the raw Node textContent read. An application calls
+the exported wrapper. The manually authored wrapper signature is checked; its raw implementation
+still needs review. Its hypothetical realm contract is privileged metadata,
+not accepted beni syntax. The snippets contain no realm metadata.
 
 ```text
-pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
+pub readTheme : ⊤ → Result StorageError (Maybe String)
 readTheme ⊤ = guardedStorageItem (λ⊤ → Js.global "localStorage") "theme"
-pub realm window text : Element → Maybe String
-text element = nullableString (Js.get (rawElement element) "textContent")
+pub text : Element → Maybe String
+text element = ManualNode.textContent element
 ```
 
 **B: hidden native information follows each value.** The platform keeps raw Js
@@ -40,9 +49,9 @@ expressions. The checker traces the receiver from localStorage and the DOM
 acquisition or caller argument. It infers the page requirement.
 
 ```text
-pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
+pub readTheme : ⊤ → Result StorageError (Maybe String)
 readTheme ⊤ = guardedStorageItem (λ⊤ → Js.global "localStorage") "theme"
-pub realm window text : Js.Value → Maybe String
+pub text : Js.Value → Maybe String
 text element = nullableString (Js.get element "textContent")
 ```
 
@@ -52,9 +61,9 @@ textContent belongs to Node. Storage.localItem is the typed composition of
 Window storage acquisition and getItem, including their exact error adapters.
 
 ```text
-pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
+pub readTheme : ⊤ → Result StorageError (Maybe String)
 readTheme ⊤ = Storage.localItem "theme"
-pub realm window text : Element → Maybe String
+pub text : Element → Maybe String
 text element = Node.textContent (Element.toNode element)
 ```
 
@@ -134,30 +143,23 @@ storage changes remain necessary outside the trusted boundary. Moving more
 runtime code inside that boundary reduces migration only by increasing the
 amount that ordinary checking cannot prove safe.
 
-### Recommendation and next action
+### Decision and next action
 
-I recommend C because native objects stay visible in ordinary types. It catches
-wrong receivers and member names without a second hidden value-flow analysis.
-Its migration cost and generated package size need measurement before adoption.
-No option is approved by this recommendation.
+The owner chose C. Native objects stay visible in ordinary types, so wrong
+receivers and members are caught without a second hidden shape analysis.
+#1295 first measures the Task and renderer callback-typing migration, including
+the 130 erased-callable uses and the 41 Task sites. Then it specifies and measures
+the generated package, HostFree and Host.Raw. No measured rewrite size is claimed.
 
-- If the owner chooses A, #1295 starts the wrapper authority boundary and typed
-  wrapper census. First measure checking throughput and direct wrapper emission.
-- If the owner chooses B, #1295 starts the native table and flow summaries.
-  First measure callback and container precision, graph memory and throughput.
-- If the owner chooses C, #1295 starts the generated binding design, HostFree,
-  Host.Raw and typed callback storage. First generate the full pinned surface,
-  count declarations and bytes, and measure small and full-package indexing.
+The implementation must retain **>250k LOC/s** and the **emit/release/** byte
+goldens for equivalent native operations, callbacks and explicit upcasts.
+No wrapper or registration table may appear merely for static typing.
+#1297 through #1300 implement the runtime on this gate. Callback obligations
+use protocol rows and v2 inferred summaries under the decided #1319 contract.
+#1296 and #1300 implement and measure the shared names selected in #1305.
+A and B do not receive implementation slices.
 
-Every path must retain **>250k LOC/s** on the specified checking benchmark.
-Every path first pins **emit/release/** byte goldens for equivalent native
-operations, callbacks and explicit upcasts. No static type mechanism may add
-runtime wrappers or emitted registration tables. Then #1297 through #1300 build
-the worker runtime, shared ports, transfer support, pools and streams on the
-accepted realm gate. Callback construction also waits for #1319. Wire layout
-still waits for #1305; lifecycle choices remain with their existing owner issues.
-
-2026-10-30. This is an **owner decision**, not adoption of a new checker.
+2026-10-30. The following is the retained comparison; C is now adopted.
 The complete [census](workers-host-and-wire.md#1-host-access-census-before-choosing-a-mechanism)
 counts 556 definite native sites, 170 caller-dependent sites and 2,130 portable
 receiver operations. [realm-options-migration.csv](workers/realm-options-migration.csv)
@@ -176,19 +178,17 @@ options makes an interface exposure proof into a browser-support guarantee.
 **A — manually authored typed wrappers at a privileged boundary.** A small
 platform surface exposes opaque native handles and typed operations. Containers
 and callbacks keep those real beni types outside the boundary. Raw native
-Js.global/get/call is forbidden elsewhere. Each privileged wrapper states a
-realm word. The wrapper implementation and its raw access contract remain a
+Js.global/get/call is forbidden elsewhere. Each privileged wrapper would supply audited realm metadata. The wrapper implementation and its raw access contract remain a
 reviewed promise, like today's foreign sibling: a false promise or misspelled
 raw member inside that wall is not proved correct by ordinary typing. Literal
 root/realm consistency can be checked cheaply, but that is not a proof of an
 arbitrary received object's member. This is stronger than merely scattering
-trusted realm words through ordinary code, and still has a larger trusted base
+trusted realm metadata through ordinary code, and still has a larger trusted base
 than B and C. Dynamic selection must choose typed wrapper operations, not grant
 arbitrary strings authority. Beni-over-Js wrappers need the same operation-level
 failure review as foreign functions; declaring a rung does not wrap exceptions.
 
-**B — native table plus hidden value provenance.** Retain the previously
-specified mechanism in workers §4: each relevant value has a native/plain/union/
+**B — native table plus hidden value provenance.** The compared, unadopted mechanism would give each relevant value a native/plain/union/
 unresolved descriptor alongside its beni type. Symbolic argument/result/capture
 paths survive Js.Value/from/to, generic helpers, containers and closures. Literal
 member access consults the native table; finite typed keys handle dynamic host
@@ -196,7 +196,7 @@ selection. Static-dispatch evidence and initializers export the same obligations
 This proves native member/realm availability through existing raw code, including
 inside wrappers, provided the graph is precise enough. Unknown reflection fails
 closed. The cost is a second shape-flow problem, sparse interface graphs and
-precision diagnostics in addition to ordinary type inference. This option remains a candidate pending the owner's decision.
+precision diagnostics in addition to ordinary type inference. This option was not adopted.
 
 **C — generated real beni native types and ordinary realm summaries.** Generate
 nominal opaque native types and typed operations from the pinned IDL, inside the
@@ -209,17 +209,16 @@ a pinned prose event map and checked native branding; an event-name String
 is not permission to cast an arbitrary Event.
 Native inheritance uses generated explicit identity upcasts (for example to
 EventTarget), rather than adding general subtyping or unsafe downcasts to beni.
-Typed accessors/operations have source-local realm bounds derived from the native
+Typed accessors/operations have binding-local realm bounds derived from the native
 table; ordinary call/evidence summaries intersect those bounds. There is no
 parallel hidden native-shape graph through Js.Value. All expected operation
 failures retain exact typed adapters, which IDL alone cannot generate completely.
 
-I recommend **C**: it places object identity in the existing type system, catches
+The owner selected **C**: it places object identity in the existing type system, catches
 misspelled members and wrong receivers at ordinary call sites, and makes the
 no-Js.Value public-boundary rule in #1277/#1278 apply consistently down to native
 access. It has a larger deliberate source migration than B, including runtime
-callback storage, and needs a generated-binding/lowering design. That is a cost
-to measure, not a reason to pretend B is free or adopt C without the owner.
+callback storage, and needs a generated-binding/lowering design. That remains a cost to measure as an acceptance gate, not an undecided choice.
 
 ## 2. What each proves
 
@@ -358,7 +357,7 @@ B's earlier five-byte fixed summary target excludes its variable graph payload.
 C's extra fixed realm byte excludes ordinary native type schemes and binding
 artifacts. None of these is a measured total memory or speed claim.
 
-All three owe the same >250k LOC/s cold/core and 100k-line build benchmark,
+C must meet the same >250k LOC/s cold/core and 100k-line build benchmark,
 including cold/warm caches, peak RSS, interface/artifact bytes, generic callback
 chains, native containers, static dispatch and 1/10/100 entry graphs. Run C both
 with a tiny binding subset and the entire generated native package indexed.
@@ -387,7 +386,7 @@ required validation; static facts do not add dynamic validation at every access.
 Unreachable generated bindings are not emitted. Dynamic heterogeneous selection
 can need an ordinary case in all options; compare equivalent safe programs.
 
-Release bytes must not grow because of typed handles. Each implementation must
+Release bytes must not grow because of typed handles. The C implementation must
 add emit/release goldens for global acquisition, member get/set/call, native
 return value, callback, typed container round-trip, inheritance upcast and dynamic
 selector specialization. Compare emitted operation/identity and raw/minified/

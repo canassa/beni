@@ -1,9 +1,10 @@
 # Proposed browser worker API
 
 **Normative proposed signatures, 2026-10-30; not implemented or compiled.**
-The callback record signatures require the proposed [language amendment](workers-callback-contracts.md)
-and owner decision [#1319](https://github.com/canassa/beni/issues/1319). They are not legal in the current language.
-[workers.md](workers.md) owns semantics and open decisions. Each code block
+The [callback protocol](workers-callback-contracts.md) is selected by entryKinds
+metadata and checked by ownership checker v2 against inferred user summaries.
+The language has no new field annotations. [workers.md](workers.md) owns semantics.
+Each code block
 lists beni declarations using its real n-ary signature syntax. `-- pure`,
 `-- impure` and `-- suspends` apply to following signatures until the next rung
 comment, and state the required inferred rung; they are not
@@ -128,14 +129,14 @@ pub type alias Protocol call reply streamRequest error event chunk =
 
 pub type alias Definition config state call reply streamRequest error event chunk =
     init : Context event, config → Result error state
-    start : sync (Context event, borrowed state → ⊤)
-    handle : Context event, borrowed state, call → Result error reply
-    stream : Context event, borrowed state, streamRequest, Sink error chunk → Result error ⊤
+    start : Context event, state → ⊤
+    handle : Context event, state, call → Result error reply
+    stream : Context event, state, streamRequest, Sink error chunk → Result error ⊤
 
 -- pure; callbacks are deferred entry roots. Both constructors borrow stable state.
-pub program : entry Definition config state call reply streamRequest error event chunk
+pub program : Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
-pub concurrent : Concurrency, entry Definition config state call reply streamRequest error event chunk
+pub concurrent : Concurrency, Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
 
 -- pure
@@ -209,6 +210,11 @@ to several clients, the application loops over IDs and constructs/copies one
 value per send; ownership rejects reusing a transferred backing. Clone-only
 immutable events may be reused. Before Ready, each selected target has its
 bounded startup queue. A defect during init remains fatal and never becomes that variant.
+
+Definition has ordinary field types. The constructor's handlers protocol row
+requires start to be non-suspending and requires start, handle and stream to
+borrow root state. These obligations are checked against inferred summaries by
+[ownership checker v2](workers-callback-contracts.md).
 
 `start` runs after init and before Ready only until it has installed its
 root-scoped children; it must be non-suspending. Long-running pushes use
@@ -327,15 +333,19 @@ scope-owned reservations and their discard/abandonment paths release resources.
 
 ### Elm-shaped state machine
 
+The machine protocol row requires update, subscriptions, request and stream to
+be non-suspending. Update receives the model owned; subscriptions borrows it.
+These are [protocol obligations](workers-callback-contracts.md), not field syntax.
+
 ```text
 pub type alias Machine config model msg call reply streamRequest error event chunk =
     init : Context event, config → Result error (model × Command msg)
-    update : sync (Context event, msg, model → model × Command msg)
-    subscriptions : sync (model → Subscription msg)
-    request : sync (call, Reply error reply → msg)
-    stream : sync (streamRequest, Sink error chunk → msg)
+    update : Context event, msg, model → model × Command msg
+    subscriptions : model → Subscription msg
+    request : call, Reply error reply → msg
+    stream : streamRequest, Sink error chunk → msg
 -- pure; update, request, stream and subscriptions are sync; init may suspend.
-pub machine : entry Machine config model msg call reply streamRequest error event chunk
+pub machine : Machine config model msg call reply streamRequest error event chunk
     → Program config model (Protocol call reply streamRequest error event chunk)
 -- pure
 pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
@@ -388,11 +398,11 @@ pub type alias Options =
     extendedLifetime : Bool
 -- pure
 pub options : Options
-pub program : entry Worker.Definition config state call reply streamRequest error event chunk
+pub program : Worker.Definition config state call reply streamRequest error event chunk
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
-pub concurrent : Worker.Concurrency, entry Worker.Definition config state call reply streamRequest error event chunk
+pub concurrent : Worker.Concurrency, Worker.Definition config state call reply streamRequest error event chunk
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
-pub machine : entry Worker.Machine config model msg call reply streamRequest error event chunk
+pub machine : Worker.Machine config model msg call reply streamRequest error event chunk
     → Program config model (Worker.Protocol call reply streamRequest error event chunk)
 -- suspends; Window-only launch, same generic program-argument role as Worker.open.
 pub open : Scope, Program config state (Worker.Protocol call reply streamRequest error event chunk), config, Options
@@ -419,7 +429,8 @@ owners move the runtime's protocol port. A view rejects protocol-data injection;
 external shared workers instead use their explicitly declared raw protocol.
 No terminate method exists in the standard, so no shared terminate API is
 invented. The shared runtime's global close closes its instance after all
-client/root scopes settle, under the owner-approved defect/lifetime policy.
+client/root scopes settle, under the decided defect and lifetime policy. A shared defect stops every
+attached beni page; ordinary page shutdown closes only its own connection.
 
 ```text
 import Browser.MessagePort as Port
@@ -591,7 +602,7 @@ pub type alias Navigator =
     onLine : Bool
     hardwareConcurrency : Int
 pub type FrameError = AnimationFrameUnavailable
--- impure; only dedicated/shared expose name; service lifecycle remains owner-gated.
+-- impure; only dedicated/shared expose name; service lifecycle has its own design.
 pub realm : ⊤ → Realm
 pub name : ⊤ → String
 pub location : ⊤ → Location
@@ -602,8 +613,8 @@ pub crossOriginIsolated : ⊤ → Bool
 pub onLanguageChange : Scope, (List String → ⊤) → Listener
 pub onConnectivityChange : Scope, (Bool → ⊤) → Listener
 pub unlisten : Listener → ⊤
-pub realm dedicatedWorker requestAnimationFrame : Scope, (Float → ⊤) → Result FrameError AnimationFrame
-pub realm dedicatedWorker cancelAnimationFrame : AnimationFrame → ⊤
+pub requestAnimationFrame : Scope, (Float → ⊤) → Result FrameError AnimationFrame
+pub cancelAnimationFrame : AnimationFrame → ⊤
 -- impure; request shutdown, return to coordinator; never join the caller's own root.
 pub close : ⊤ → ⊤
 ```
@@ -614,10 +625,10 @@ other root children; the coordinator awaits cleanup and sends Closed before
 native close. The caller cannot await its own root or receive Cleanup. The
 external owner observes the outcome via Worker.close/connection terminal state.
 
-Other WorkerGlobal functions have `realm worker` bounds, except name/close
+Other WorkerGlobal functions have worker-realm bounds, except name/close
 which accept dedicated/shared only (service lifecycle is not yet defined).
-The parser admits explicit finite sets, `realm { dedicatedWorker, sharedWorker }`,
-for this bound. Dedicated-worker animation methods are annotated above.
+These bounds are generated binding metadata and inferred summaries, not
+source-level realm words or new parser syntax. The two animation methods have DedicatedWorker availability in their binding metadata.
 
 WindowOrWorkerGlobalScope's timers/queueMicrotask use existing Task/Clock and
 platform scheduling contracts, base64 belongs to the typed binary codec surface in #1278,
@@ -734,7 +745,7 @@ or a reason it is internal; native type-specific failures remain research §9.
 | Broadcast constructor/name/post/close/message/messageerror | open/name/post/close/receive; preparation has separate clone-only token |
 | EventTarget add/remove/once/abort + Event/MessageEvent payloads | Managed observers are scoped and raw receive exposes typed payload metadata through the Message wrapper specified below; no synthetic event can fabricate a successful request |
 | Event/ErrorEvent/PromiseRejectionEvent constructors | Native-event fabrication has no worker protocol capability; typed synthetic test data, not native dispatch, exercises handlers |
-| ServiceWorker/container/registration/global/clients/cache/fetch/extendable events | Owner decision #1301; inventoried fully, separate event-lifetime API design before implementation |
+| ServiceWorker/container/registration/global/clients/cache/fetch/extendable events | Decided #1301: separate event-lifetime design; Dedicated and Shared do not wait |
 | Every serializable/transferable family including Wasm | Wire/prepare/clone + native owning module contracts; not seven duplicated constructor families |
 | Atomics/SAB | Binary typed atomic/shared APIs, same realm/ownership judgments; no synchronous worker RPC |
 | Pools and streaming | WorkerPool and WorkerStream signatures above, additional managed protocol rather than fake native methods |
@@ -855,3 +866,18 @@ pub nativeOptions : NativeOptions
 NativeOptions defaults match the corresponding managed fields. Shared raw
 openExternal takes Worker.NativeOptions and extendedLifetime as a separate Bool,
 then ScriptKind. It does not take managed SharedWorker.Options.
+
+
+### Fatal shutdown reporting
+
+Normal close remains cooperative and never silently calls terminate. An explicit
+Worker.abort reports Abandoned. During defect shutdown, the fatal deadline may
+abandon unfinished cleanup under the [owner decision](https://github.com/canassa/beni/issues/1302#issuecomment-6525032236).
+The private defect report's abandonedWorkers field names every unfinished worker
+by entry and runtime instance identity, with kind, diagnostic name and termination
+status as specified in workers.md §7. Abandoned is not Confirmed and does not
+claim finalizers ran. CleanupAbandoned remains an abnormal transport outcome;
+a defect remains the fatal control path, never an application error result or
+an extension of Task.Exit. Shared defects stop every attached beni page.
+Proposal-only transfer adapters, including #1303, remain explicitly unsupported
+until their specifications define transfer semantics.

@@ -2,7 +2,8 @@
 
 2026-10-30. **Proposed beni, not compiled:** the seven worker modules and
 entry and realm contracts are specified in [workers-api.md](workers-api.md).
-The platform callback records require owner decision [#1319](https://github.com/canassa/beni/issues/1319).
+The [decided callback protocol](workers-callback-contracts.md) uses entryKinds metadata
+and ownership checker v2, without new language syntax.
 User function summaries are inferred; no user signature needs an ownership word.
 The page uses browser-inline, whose genuinely suspending Cmd.perform kernel
 is a prerequisite tracked in [#1306](https://github.com/canassa/beni/issues/1306).

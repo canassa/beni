@@ -86,16 +86,18 @@ inside that root, driven by the realm-local scheduler. The emitted entry calls
 run(main) synchronously; entry_runtime_suspends rejects a suspending run. Each entry has separate roots,
 initializers, DCE and source maps (§9/§11); sharing chunks requires exposure
 valid in every importing realm. EntryHost proofs replace `host: page`.
-The owner must choose shared wire-visible names with selective normalization
-or universal canonical codecs; independently renamed entries cannot exchange
+The owner selected shared wire-visible names and selective normalization in
+[#1305](https://github.com/canassa/beni/issues/1305#issuecomment-6525031242).
+Universal codecs are not adopted. Independently renamed entries cannot exchange
 raw layouts by accident. §4's intended representations and today's emitted
 representations are compared in [the audit](research/workers-host-and-wire.md).
 This amendment does not change either representation merely to ease transport.
 
-Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
-realm mechanism: generated native types are recommended; hidden provenance
-remains specified as option B, not adopted. Common EntryHost/realm guarantees
-apply to either. Grouped protocol roles distinguish call and stream inputs.
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
 
 
 ```

@@ -1239,19 +1239,19 @@ adds generic platform `entryKinds`, source-discovered static program references
 and the explicit standalone `build --entry=value` root. It removes the proposed
 app `workers` list and qualified `realms` map, and withdraws `host: page` in favor
 of checked entry proofs. `check` discovers and validates the same edges.
-Declaration grammar gains `realm window|dedicatedWorker|sharedWorker|worker|
-browser|any` or `realm { dedicatedWorker, sharedWorker }` before a value/type
-name, after a foreign value's effect rung.
-Preserve the word's source span for mismatch/missing-contract diagnostics;
-format it on the declaration. Parse/format/cache fixtures cover this syntax.
+No realm word or record-field qualifier syntax is added. Generated binding
+metadata supplies native realm bounds; ordinary call summaries infer their
+requirements. Preserve operation and constructor spans for diagnostics.
 Entry metadata resolves symbols and type roles, never hardcoded platform API
 names; sorted package/module/declaration identities determine output IDs.
-Interfaces include host-flow, Wire and entry-role fingerprints (§4 cost model).
+Interfaces include native binding identities, inferred realm summaries,
+HostFree and Wire obligations and entry-role fingerprints (§4 cost model).
 
-Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
-realm mechanism: generated native types are recommended; hidden provenance
-remains specified as option B, not adopted. Common EntryHost/realm guarantees
-apply to either. Grouped protocol roles distinguish call and stream inputs.
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
 
 
 *Added 2026-10-01* — Milestone 1's *developer loop v0* (`plans/status-2026-10.md` §6). Four pieces,

@@ -5534,21 +5534,23 @@ superseded. Where the text left a choice, the smallest reading, and these are th
 ## 26. Amendment of 2026-09-30: effect inference
 
 *Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2/§4/§5
-specifies generic entry-kind roles, declaration-local realm bounds and a
-pinned native table applied to beni-over-Js access. Hidden host-shape provenance
-survives arguments/results, containers, callbacks, static-dispatch evidence,
-closures and module initializers; unresolved library obligations are exported,
-never assumed portable. Wire evidence follows solved type/representation SCCs.
+specifies generic entry-kind roles and generated nominal native types from
+pinned WebIDL. Ordinary types and inferred realm summaries survive calls,
+containers, callbacks, static-dispatch evidence and module initializers.
+HostFree prevents native and callable erasure; Host.Raw quarantines unknown
+foreign intake. No hidden native-shape graph is added. Unresolved generic
+obligations cross interfaces. Wire evidence follows solved representation SCCs.
 The document specifies diagnostics, sparse interface payloads, cache invalidation
 and complexity budgets; the >250k LOC/s cold/core target still applies.
 `check` and `build` discover the same source entry edges. Realm and wire proofs
 must precede public launch support. Native transfer backing demands belong to
 the ownership pass, not an assertion that host state can never change.
 
-Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
-realm mechanism: generated native types are recommended; hidden provenance
-remains specified as option B, not adopted. Common EntryHost/realm guarantees
-apply to either. Grouped protocol roles distinguish call and stream inputs.
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
 
 
 The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14; this

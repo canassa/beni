@@ -1,61 +1,55 @@
 # Web Workers in the browser platform
 
 **Normative design, specified 2026-10-30; not implemented.** Tracking:
-[#1290](https://github.com/canassa/beni/issues/1290). Unsettled owner decisions
-below gate their dependent implementation; recommendations are not decisions.
+[#1290](https://github.com/canassa/beni/issues/1290). The owner decisions of 2026-10-30 below are the implementation contract.
 The [research and inventory](research/workers-api-research.md) establish the
 baseline. This document owns the compiler/runtime contract, not a claim that
 all listed browser features have shipped. No production JavaScript is added:
 runtime logic is beni over privileged platform primitives (including Js for
 raw data); compiler changes are Zig.
 
-## Open decisions for the owner
+## Owner decisions of 2026-10-30
 
-**Host typing versus hidden provenance — [#1315](https://github.com/canassa/beni/issues/1315).**
-I recommend generated real beni native types with ordinary inferred realm
-summaries (option C). The [three-way comparison](research/workers-realm-options.md)
-prices guarantees, exact census migration, diagnostics, compiler/interface costs
-and erased release output against manually authored wrappers (A) and the retained
-hidden-provenance mechanism (B). This is not adopted: #1295 waits for the owner.
-All options preserve the same public API, precise failures and EntryHost guarantee.
+**Realm checking: option C.** The owner [selected generated native types](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+and ordinary inferred realm summaries. §4 is normative. A and B remain only in
+[the comparison](research/workers-realm-options.md), not implementation choices.
+Measure the Task and renderer callback-typing migration first in #1295.
 
-**Wire naming or universal codecs.** This remains open. I recommend shared
-wire-visible names inside a build, direct clone for proven stable shapes, and
-normalization where required. §3 and the host/wire research price both designs;
-#1296 must wait for [owner decision #1305](https://github.com/canassa/beni/issues/1305). No app-manifest registration decision
-remains: source discovery is the specified design (§2).
+**Wire: shared names.** The owner [selected one build-wide wire naming assignment](https://github.com/canassa/beni/issues/1305#issuecomment-6525031242).
+Proven stable shapes use postMessage directly. Normalize only representations
+that cannot cross. Universal per-message codecs are not adopted. Measurements
+in #1296 and #1300 validate budgets; they do not reopen the choice.
 
-**Service Workers.** I recommend a separate design for registration, updates,
-fetch interception, persistent storage and event lifetime, retaining their
-complete inventoried surface here. They are not ordinary long-lived fibers:
-the browser can stop and restart them between events. This recommendation does
-not remove WebGPU's Worker exposure or prohibit sharing headless modules.
-ServiceWorker entry implementation waits for this decision and its lifecycle
-contract; DedicatedWorker and SharedWorker do not.
+**Callback contracts: no language change.** The owner [selected protocol rows](https://github.com/canassa/beni/issues/1319#issuecomment-6525031739).
+The entryKinds constructor's callbackProtocol and parameter index establish
+obligations checked against inferred user summaries by ownership checker v2.
+No sync or ownership word is allowed on a record alias field. The complete
+[callback contract](workers-callback-contracts.md) defines the rows and diagnostics.
 
-**Abrupt loss and shutdown deadlines.** I recommend cooperative cancellation
-and finalizer completion for normal scoped shutdown, without a deadline that
-silently calls `terminate`. An explicit destructive `Worker.abort` reports
-`Abandoned`; it is available for hung/untrusted native work and program
-fatal shutdown, not disguised as a successful scope close. A browser crash,
-page discard or process kill cannot guarantee finalizers. A missing heartbeat
-means `PeerUnresponsive`, not proof of death. Decide whether fatal shutdown's
-existing deadline may abandon worker cleanup; normal scope semantics do not
-change while this remains open.
+**Service Workers: separate design.** The [owner decision](https://github.com/canassa/beni/issues/1301#issuecomment-6525032904)
+assigns registration, update, interception and event lifetime their own design.
+Dedicated and Shared workers do not wait for it. Their complete inventoried
+surface remains recorded; a Service Worker is not a long-lived ordinary fiber.
 
-**Shared-worker defect domain.** I recommend a defect in shared code stop the
-shared instance and every attached beni page, with each page rendering/logging
-its own defect. A page's ordinary shutdown closes only its connection scope;
-it cannot close other pages' scopes. This preserves the fatal-defect guarantee
-without giving an ordinary client the ability to terminate other clients.
+**Fatal shutdown may abandon cleanup.** Under the [owner decision](https://github.com/canassa/beni/issues/1302#issuecomment-6525032236),
+normal close cooperatively waits for cleanup and never silently terminates.
+During defect shutdown, workers still unfinished at the fatal deadline are
+abandoned and terminated where the browser grants termination authority. The
+private abandonedWorkers report names each one and records the termination
+status (§7). This does not claim cleanup ran. Explicit Worker.abort remains the
+destructive operation. Browser crash, page discard or process kill cannot
+promise finalizers; a missing heartbeat means PeerUnresponsive, not proven death.
 
-**Proposal-only transfer types.** The inventory includes every WebRef
-serializable/transferable type, including WICG and editor-only proposals.
-I recommend implementing the standard family adapters first, leaving
-proposal-only adapters explicitly gated by their owning specification and
-availability, rather than claiming universal availability or silently dropping
-them. The coverage issue must account for every inventoried row before any
-claim of complete transfer support.
+**A shared defect stops every attached page.** The same [owner decision](https://github.com/canassa/beni/issues/1302#issuecomment-6525032236)
+requires the shared instance and every attached beni page to enter their fatal
+path, rendering or logging the defect. Ordinary page shutdown closes only its
+own connection; it cannot close another page's scope.
+
+**Proposal transfers remain gated.** The same [owner decision](https://github.com/canassa/beni/issues/1302#issuecomment-6525032236)
+requires standard families first. Proposal-only adapters, including #1303, are
+inventoried and explicitly unsupported until their specifications define transfer
+semantics. Every inventory row remains accounted for; no completeness claim may
+silently omit a gated type.
 
 ## 1. One platform, different places to run
 
@@ -145,10 +139,9 @@ index**, a realm, and a runtime module. For example, the browser's dedicated
 kind names Browser.Worker.Program and Browser.Worker.open; these names are
 resolved symbols from data, never hardcoded in the checker. Type-parameter
 roles identify worker-local state versus cross-entry configuration/protocol
-values. The entry record parameter requires the proposed
-[callback contract amendment](workers-callback-contracts.md), gated by
-[owner decision #1319](https://github.com/canassa/beni/issues/1319).
-The current entry word does not recognize these worker records. Validate arity, generic roles and program argument/result types when
+values. The entry parameter index and callbackProtocol select the
+[decided callback contract](workers-callback-contracts.md). No entry word is
+written on the constructor parameter; alias expansion is ordinary typing. Validate arity, generic roles and program argument/result types when
 loading the platform; no ad-hoc implicit coercion is added.
 
 The entryKinds record has these required fields; indices are zero-based:
@@ -156,7 +149,7 @@ The entryKinds record has these required fields; indices are zero-based:
 | Field | Checked meaning |
 |---|---|
 | `programType` | Resolved nominal type-constructor symbol and arity |
-| `constructors` | Symbols returning that program type; entry argument index and callbackProtocol (handlers or machine), checked by the proposed callback contract amendment |
+| `constructors` | Symbols returning that program type; entry parameter index and callbackProtocol (handlers or machine), checked by ownership checker v2 and the effect checker |
 | `launches` | Pairs of function symbol and program argument index; includes pool launch and shared connect as well as direct open |
 | `parameters` | Indexed type-role paths: index 0 config (Wire); index 1 local (not Wire); index 2 protocol fields call/reply/stream/error/event/chunk (each Wire). Paths and labels are manifest data, validated after ordinary alias expansion. |
 | `realm` | One native execution realm, checked against the host universe |
@@ -166,7 +159,7 @@ The manifest loader validates symbols against their interfaces, including
 constructor result instantiation and launch argument instantiation; inconsistent
 roles are invalid_entry_kind. Different serial/concurrent/machine constructors
 can target the same nominal program type. Their source implementations and
-entry ownership annotations enforce callback contracts; the compiler only
+protocol rows enforce callback contracts against inferred summaries; the compiler only
 knows the generic deferred-entry edge. Runtime `run` receives the descriptor's
 worker-local definition and reads configuration through the platform's typed
 bootstrap, never a user Js.Value. Ordinary page `program`/runtime remains the
@@ -234,192 +227,151 @@ projections. Development maps follow each module; release maps follow each
 entry/chunk under `--source-maps`. Reachable Debug in any emitted entry rejects
 a release build before output.
 
-**Wire representation is an owner decision, not decided by this document.**
-The options and measured current representations are in
-[the new research](research/workers-host-and-wire.md). I recommend a single
-build-wide naming assignment for wire-visible record fields/constructor tags,
-with direct structured clone for proven clone-stable data and specialized
-normalization only where representation requires it. This avoids putting an
-extra encode/decode walk on every simple request, and respects the Solid 2
-UI and Effect v4 effects performance bars. It is a recommendation, not a
-measured performance win.
+**Shared wire names are normative**, by the [owner decision](https://github.com/canassa/beni/issues/1305#issuecomment-6525031242).
+Assign wire-visible record fields and constructor tags once for the whole build,
+including page and workers. Union their interference constraints deterministically
+before per-entry emission. Inlining, DCE and non-wire field naming remain local.
+Stable recursive shapes pass directly to postMessage. A representation plan
+normalizes only paths that cannot cross, then reconstructs the necessary local
+representation at receipt. Do not add a universal encode and decode traversal.
 
-The alternative keeps entry-specific names and canonicalizes every message.
-It simplifies independent entry layouts and cross-version protocols, but
-visits/allocates the payload before and after the browser's own clone. Shared
-naming unions the wire-visible interference constraints and may lengthen names
-in other entries; it need not disable inlining/DCE or constrain non-wire fields.
-Both designs need per-entry/total brotli and send/receive latency measurements
-before adoption. Existing emitted code proves representation facts, not the
-performance of either unimplemented multi-entry optimizer.
-
-Until the owner decides, both alternatives must preserve the same protocol,
-Wire judgment, ownership moves and native failures. Do not implement two public
-APIs or quietly adopt universal codecs by leaving contradictory prose below.
-The open decision gates the wire/optimizer slice, not the native inventory.
+This choice may lengthen names across entries; that cost must be measured against
+per-entry and total unique release-byte budgets. It does not permit incompatible
+independent entry layouts. Build and protocol fingerprints catch mismatched peers.
+The [wire research](research/workers-host-and-wire.md) retains universal canonical
+codecs as the compared alternative, **not adopted**. #1296 and #1300 implement
+shared names and measure compiler time, bytes and transport latency; they do not
+choose between designs after measurement. Existing emission probes establish
+representation facts, not performance of the future multi-entry implementation.
 
 ## 4. A realm check that covers beni over Js
 
-### Evidence and choice
+### Evidence and decision
 
-The measured scan covers **every** selected host-access primitive occurrence
-in browser-inline, browser and core, including nested calls, not just foreign
-declarations. The CSV gives a file, line, operation, receiver and member for
-each site; [research](research/workers-host-and-wire.md) explains its conservative
-value-provenance classifications and exact counts: 556 definite native sites,
-2,130 portable receiver operations, and 170 explicitly caller-dependent
-callable/raw-value sites. The latter retain obligations, never safe defaults.
+The owner selected **C: generated real beni native types with inferred realm
+summaries**, [2026-10-30, #1315](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806).
+The [census](research/workers-host-and-wire.md) records 556 native sites, 2,130
+portable receiver operations and 170 caller-dependent sites. A and B are retained
+only in [the comparison](research/workers-realm-options.md). No hidden native-shape
+graph or manually trusted wrapper boundary replaces the selected mechanism.
 
-| Candidate | What changes | Guarantee and tradeoff |
-|---|---|---|
-| A: manually authored typed wrappers | Redirect 556 native sites; typed bridges for 130 callable and 40 other mixed sites | Real caller types and realm summaries, but privileged raw wrapper bodies remain audited promises. |
-| B: native table plus hidden provenance | Retain 702 native/mixed expressions; explicitly replace 24 dynamic host selectors | Checks raw bodies too, at the cost of a second shape/path inference graph. |
-| C: generated real beni native types | Redirect 556 native sites to typed bindings; retain types through 130 callable and 40 other mixed paths | Uses ordinary types/realm summaries; HostFree prevents native/callable erasure. Generated interface/lowering migration is substantial. |
+First measure the callback-typing migration: 130 erased-callable use sites,
+including 41 in core/Task.beni, 11 in the inline renderer and 12 in browser/Rt.
+These are use counts, not storage rewrite sizes. #1295 must audit producers and
+queues before claiming that migration measured. The inline projection requires
+upcasts at 32 native sites. The full pinned IDL input has 346 files, 2,782 blocks
+and 11,620 member rows; generated output size still needs measurement.
 
-**Recommendation: C; owner decision #1315 gates #1295.** The complete
-[comparison](research/workers-realm-options.md) defines each guarantee, cost,
-interface/cache change, diagnostic, zero-cost lowering and migration row.
-The following subsections retain **option B as a specified alternative**, not
-an adopted requirement. Their hidden descriptors and five-byte fixed summary
-budget apply to B only. Declaration-local checked bounds, per-entry proofs,
-Wire/ownership guarantees and no unchecked public Js.Value apply to every
-option; C uses real native types instead of B's hidden flow paths.
+### Generated bindings and ordinary types
 
-### Source syntax and host table
+A Zig generator consumes pinned WebIDL exposure, inheritance, includes, member
+types, overloads and callback declarations. It emits ordinary nominal opaque beni
+types and typed operations, backed by checked binding artifacts. Each artifact
+records native identity, type, realm set, effect, precise failure adapter and
+direct-lowering recipe. Loading checks these against the pinned native table.
+Ordinary packages cannot manufacture artifacts or native handles. No new realm
+word is written in user or platform source: public summaries are inferred and
+published from ordinary typed calls and the binding metadata.
 
-A value/type declaration may carry `realm window`, `realm dedicatedWorker`,
-`realm sharedWorker`, `realm worker`, `realm browser` or `realm any` before its
-name; a foreign value retains its existing rung immediately after foreign.
-`worker` is the worker-realm set, `browser` its union with window, and `any`
-adds other supported hosts. Sets are encoded in a stable compiler-owned realm
-universe; platform entryKinds select from it but cannot invent Window exposure.
-Explicit finite sets use `realm { dedicatedWorker, sharedWorker }`; aliases
-expand to those same masks. This is proposed grammar, not yet parsed.
+For example, Document.querySelector returns a nullable Element. Node.textContent
+accepts Node; Element.toNode is an explicit identity upcast because beni has no
+subtyping. Generated mixin members belong to implementing interfaces. Native
+callbacks retain their declared types: an Event parameter does not become a
+MouseEvent merely because an event-name String says click. A richer binding
+requires pinned event mapping and checked native validation.
 
-```text
-pub realm window document : Js.Value
-document = Js.global "document"     -- body is checked, not trusted
-
-pub realm window saved : Js.Value → Js.Value
-saved w = Js.get w "localStorage"   -- imposes Window receiver obligation
-
-pub foreign impure realm window focus : Element → ⊤
-```
-
-Ordinary declarations
-still infer their effect rung. Public host-dependent platform/core declarations
-must state their realm bound; pure data declarations may omit it and infer
-all realms. Foreign types carry their exposure word on their own declaration.
-An annotation is checked against inferred requirements, never used to suppress
-a violating operation. This follows the foreign effect-rung precedent.
-
-The compiler's embedded host table is generated in Zig from pinned WebIDL:
-Global/Exposed, inheritance/mixins/partials, members, constructors and return/
-argument shapes. HTML's named globals and WindowProxy/WorkerGlobalScope roots
-are included. A small versioned intrinsic table adds ECMAScript builtins and
-host APIs not described by IDL (such as optional setImmediate), with primary
-source references and conformance fixtures. Unrecognized globals are not
-assumed portable. Platform-private `$beni`/test-hook globals migrate to
-module-local state or explicitly typed bootstrap parameters, not a broad
-allowlist. New native capabilities require a table/type contract update.
+Known operations lower directly to host operations. Native objects are their
+own representation; there is no wrapper allocation, proxy, runtime type dictionary
+or registration table added for typing. Generated packages load by indexed demand.
+A versioned intrinsic table covers ECMAScript operations and non-WebIDL host
+capabilities, with primary references and fixtures. Exact expected native errors
+remain typed adapters; unexpected failures are defects, never broad catches.
 
 ### How access is proved
 
-Each relevant SSA/BIR value carries a hidden shape/provenance descriptor:
-plain data with field paths, a native host interface/union, a function with
-parameter/result flow, or unresolved host provenance. This is not a runtime
-wrapper and is not erased by Js.Value, Js.from, Js.to, a record or a closure.
+The ordinary type checker knows native identity through nominal types. Calls,
+callback effects, static-dispatch evidence, containers, aliases and evaluated
+module initializers retain those types and inferred realm summaries. A summary
+is the intersection of reachable native operation availability. An entry must
+prove its own realm belongs to every reachable operation's allowed set.
+Unresolved generic obligations propagate to interfaces and are discharged at
+instantiation. An unreachable declaration does not reject an entry; an evaluated
+initializer does. Recursive call components use a monotone fixed point.
 
-| Operation | Constraint/check | Why |
-|---|---|---|
-| Js.global literal | Resolve table root; infer allowed realm set and result shape. `document` means Window Document, not anonymous data. | A wrong annotation cannot legalize a DOM global. |
-| Js.get/set/call literal member | Resolve receiver provenance and member's exposure/shape; propagate return values and callback argument shapes. `w.localStorage` restricts even when w was passed in. | Checking global names alone misses indirect access. |
-| Js.apply/construct, bound methods and callbacks | Preserve callee/receiver capability obligations and declared result/argument shapes, including events delivered later. | Passing a host method or event through a helper cannot erase its origin. |
-| Js.from/to, storage, aliases and generic helpers | Preserve symbolic path constraints through parameters/results, native containers and captured values; instantiate them at callers. | Js.Value is not an escape hatch from the new check. |
-| Dynamic member on proven plain data | Permit indexed dictionary/record/array access, propagating the union of possible stored value shapes. | Core's data manipulation is not needlessly forbidden. |
-| Dynamic host global/member | Refuse arbitrary String names. Accept finite literal alternatives or a typed HostKey whose constructor is checked against the table for its receiver. | A runtime string cannot prove a native member exists in this realm. |
-| Reflection/Object helpers | Table summaries preserve referenced host shapes; unknown reflection yields unresolved provenance, not Data. eval/Function-generated host access has no accepted proof. | Reaching a property through reflection must not bypass the check. |
+Js.Value represents plain dynamic data, not erased native handles or callbacks.
+HostFree is a structural type-graph check that excludes native objects and
+callables in reachable fields, containers and opaque representations. Js.from
+and Js.to require it. Unknown type variables retain obligations. Task, renderer
+queues and internal containers must preserve real callback types, including
+callbacks whose captures are plain but whose bodies use the DOM. The selected
+mechanism does not follow a second hidden native-shape graph through Js.Value.
 
-`Js.hostKey` is a privileged compiler intrinsic with a **literal** member name,
-producing `Js.HostKey receiver result`; `Js.getKey/callKey` instantiate its
-member obligations. A platform author can build an ADT/case selecting such
-keys, but cannot coerce a String to HostKey. The declaration still states its
-realm bound and its body is checked. Listen instead receives a typed event
-target: `listenWindow`, `listenDocument` and `listenWorker` choose literal roots
-and call the common helper. Arbitrary event-name strings are method arguments,
-not dynamic host property lookup, so they remain supported.
+Host.Raw is the private opaque type for unknown foreign values and WebIDL any
+or object intake. It cannot pass through Js.Value conversions, raw member
+operations, ordinary data containers or public APIs. Private quarantine queues
+may retain it until a checked adapter runs. Known IDL arguments arrive typed.
+Raw validators return NativeMismatch or RawValidationUnsupported when no sound
+non-invoking native validation is available. Cross-realm validation cannot assume
+instanceof the current realm's constructor. No unchecked cast, property-shape
+heuristic or universal Proxy detector creates a native type.
 
-A helper with an unresolved receiver exports a symbolic obligation, such as
-“parameter 0 must have localStorage; result is Storage”. It need not fail
-before its callers are known. A reachable entry must discharge every such
-obligation. Static-dispatch evidence, higher-order callbacks, aliases, native
-container storage and module initializers participate. SCCs reach a monotone
-fixed point. Unreachable bodies do not reject an entry; evaluated initializers
-do. If an interface hides a native object, its declared native shape/realm must
-still cross the boundary. Foreign sibling promises remain privileged, just as
-their existing types/effects do; beni-over-Js bodies are checked rather than
-accepted as new unchecked promises.
+Plain aggregate acquisition needs a trusted JSON or clone path plus schema and
+native-handle checks. Unknown foreign accessors remain quarantined; adapters
+return UnsupportedRawData if proving plain data would invoke an untrusted trap.
+Typed constructors can create native values from plain data. Platform expandos
+use typed owner storage, and builtin callable namespaces remain typed. These
+rules preserve both the realm proof and exact-error guarantee at raw intake.
+
+Dynamic native selection uses cases over typed operations or a generated typed
+selector. An arbitrary String cannot become a native member capability. Dynamic
+plain-data access remains available. Reflection and eval cannot manufacture a
+native proof; native reflection needs its own generated typed contract.
 
 ### Replacing host:page, diagnostics and cost
 
-The platform-wide `host: page` key is withdrawn for multi-entry emission.
-Each emitter entry receives an `EntryHost` proof produced from its entryKind
-and checked reachable graph. The page's proof says Window; a worker's proof
-says its exact WorkerGlobalScope. The release printer emits bare `window`
-only when the current projection has a Window proof and that native lookup
-has a resolved Window root. Shared chunks require the intersection of their
-entry proofs; if that does not prove Window, specialize or retain a safe
-qualified lookup that is itself valid in every importing realm. Never carry
-the old chain promise into a worker projection. Existing platform manifests
-drop host:page during migration; stale uses get `obsolete_host_promise` with
-that replacement, not silent acceptance.
+EntryHost replaces the platform-wide host:page promise. Each entryKind supplies
+its execution realm and the checked reachable graph proves availability. Only
+a proven Window lookup may print bare window. Shared chunks must be valid in
+every importing realm; otherwise specialize them. Stale host:page manifests
+report obsolete_host_promise instead of silently extending page authority.
 
 | Diagnostic | Site and required explanation |
 |---|---|
-| worker_realm_violation | Offending host operation/type; entry, native member, allowed realms and deterministic shortest call/value-provenance chain. |
-| realm_bound_mismatch | Declaration's realm word; inferred body requirement and offending access. |
-| dynamic_host_name | Dynamic global/member expression; known receiver shape, why String is insufficient, typed selector or literal-wrapper fix. |
-| unresolved_host_provenance | Entry use that cannot discharge a parameter/result obligation; show origin/loss path and required native type annotation. |
-| missing_realm_contract | Public host-dependent privileged declaration lacking its source-local word. |
-| entry_runtime_suspends | Platform runtime run declaration and suspending call chain; start an owned root fiber and return instead. |
-| invalid_entry_kind | Platform manifest; unknown symbol, arity/type-role mismatch, absent runtime or invalid realm. |
-| worker_entry_not_static | Launch's program argument; unresolved factory and example of a finite set of top-level program references. |
-| obsolete_host_promise | Platform manifest host key; show entryKind/EntryHost replacement. |
-| worker_message_not_serializable / worker_transfer_alias_live | Message field/type path or moved backing and every later live alias; explicit conversion/copy guidance. |
+| worker_realm_violation | Native operation or type, entry realm, allowed realms and shortest inferred call or evidence chain |
+| host_value_erasure | Js conversion, offending native or callable type path, and typed-container replacement |
+| type mismatch | Wrong generated receiver or selector; show expected native type and explicit upcast when applicable |
+| unknown symbol | Misspelled generated operation, with the owning interface and suggestion |
+| worker_callback_contract_unresolved | Callback parameter and forwarding path whose entry obligation remains unproved |
+| entry_runtime_suspends | Runtime run and suspending chain; start an owned root fiber and return |
+| invalid_entry_kind | Manifest symbol, parameter index, protocol row or type-role mismatch |
+| worker_entry_not_static | Unresolved launch factory and a finite top-level-reference alternative |
+| obsolete_host_promise | Stale manifest key and EntryHost replacement |
+| worker_message_not_serializable / worker_transfer_alias_live | Message field or moved backing and live aliases; explicit conversion or copy guidance |
 
-For a fixed realm universe, the simple availability summary is a bit mask
-(one byte for the present eight-or-fewer contexts), plus a 32-bit interned
-host-flow-summary reference per relevant declaration. Serialized interfaces
-store the mask and a length-delimited sparse parameter/result/capture-path
-summary; zero-host declarations need no flow payload. Reuse the checker's
-interned type/path graph and call edges. Do not allocate a map per expression.
-The cost is O(V+E) for each finite-mask propagation pass; each bit can be
-removed once per node. Host-shape unions/path summaries are the harder cost:
-sharing and memoization avoid repeated walks; a bounded widening to unresolved
-provenance must emit the diagnostic above and accept an explicit typed wrapper
-as a precision recovery, never invent a safe realm. Measure worst-case
-higher-order chains and recursive native-container flows, not only tiny code.
+Realm summaries use a byte for the fixed native universe and ordinary inferred
+callback and evidence obligations. There is no B-style per-declaration host-flow
+graph reference. HostFree memoizes solved type SCCs in O(T+F), where F counts
+field edges. Realm propagation is O(V+E) for a fixed finite mask, removing each
+bit once per node. Generated overload lookup uses bounded indexed candidates;
+importing one type must not check the entire generated package.
 
-Wire checking memoizes one descriptor per solved type/representation node,
-with SCC processing for recursive types: O(T+F) traversal for T nodes and F
-field/variant edges, plus obligations at generic instantiations. Store one
-classification byte and a 32-bit interned plan reference per relevant type;
-store a canonical fingerprint once per concrete protocol root, not per use.
-Schema conversions add only their reachable directional type/flow edges.
-Interface hashes include realm bounds, host-flow summaries, table revision,
-Wire plan and entry roles. A body change with the same exported summary does
-not invalidate consumers; a changed exposed member/summary invalidates the
-reverse dependency closure. Cache old-version rows are rejected, not guessed.
+Wire memoizes clone-stability and selective normalization plans per solved
+representation node, with one classification byte and interned plan reference.
+Protocol fingerprints belong to concrete roots, not every use. Interfaces hash
+native binding identity and table revision, ordinary types and realm summaries,
+HostFree and Wire obligations, and entry protocol rows. Reverse users invalidate
+when those exported facts change; a body-only change with the same summary does
+not invalidate them. Old interface versions are rejected, not guessed.
 
-These are representation/complexity budgets, **not measured compiler costs**.
-The implementation must retain >250k LOC/s cold per core and the existing
-100k-line build target; report absolute time, interface bytes and peak memory
-with/without these analyses, cold and cached. The benchmark matrix is in the
-research and #1295/#1296; a budget failure is a compiler issue, not permission
-to weaken the check. Existing code migration is part of those slices before
-worker launching becomes public.
+These are complexity budgets, not measured performance. Maintain >250k LOC/s and
+the existing 100k-line build target. Measure cold and warm time, peak memory,
+interface size and generated package indexing, separately from generation time.
+The emit/release/ goldens must show no byte growth caused solely by native types
+or upcasts. #1295 starts with typed Task and renderer storage; #1296 then measures
+shared-name wire plans. A budget failure is a compiler defect to resolve, not
+permission to erase types or reopen the selected design silently.
 
-## 5. Wire types and ownership, independent of the naming decision
+## 5. Wire types and ownership under shared names
 
 `Wire T` is compiler-derived evidence that a value can cross this boundary
 with its meaning intact. Unit, booleans, numeric/string primitives, tuples,
@@ -430,22 +382,21 @@ owning module's native serialization/transfer contract; generic type variables
 retain obligations until instantiated. Worker-local state is excluded from
 this judgment because it never crosses.
 
-The naming decision changes **how** Wire evidence lowers, not this guarantee.
-Under the recommended shared-name design, clone-stable records/unions/tuples/
+Shared names determine how Wire evidence lowers without weakening this guarantee.
+Under the decided shared-name design, clone-stable records/unions/tuples/
 arrays go straight to native structured clone. A recursive shape containing a
 non-clone-stable child normalizes only the necessary paths. Today's emitted
-list view has a function-valued `$plain`, so direct clone fails; a codec must
-materialize/rebuild it. Today's emitted Dict is still a plain tree, whereas
+list view has a function-valued `$plain`, so direct clone fails; a selective normalization plan must
+materialize and rebuild it. Today's emitted Dict is still a plain tree, whereas
 the normative ordered Dict design has `{entries,index: Map}`; a native Map
 itself survives clone. Do not claim every Dict or nominal wrapper always needs
-a codec. The measured representation table and protocol shape evidence decide.
+normalization. The measured representation table and protocol shape evidence decide.
 
-Under the alternative canonical-codec design, every nontrivial payload is
-encoded and decoded independently of internal names. Both choices retain
-same-build/protocol fingerprints and explicit schemas for external channels.
-A schema's Encoded remains a typed beni intermediate; a conversion may suspend
-during prepare, while native send/transfer commit is synchronous. Prepared
-messages and HostKey values are opaque, not application-manufacturable casts.
+Universal canonical codecs are the compared alternative, not adopted. Shared
+names retain same-build and protocol fingerprints and explicit schemas for
+external channels. A schema's Encoded remains a typed beni intermediate; a
+conversion may suspend during prepare, while native commit is synchronous.
+Prepared messages are opaque, not application-manufacturable casts.
 
 A transfer is an ownership move of the native backing identity. All views,
 aliases, model fields, captures and fibers that could later read it must be
@@ -575,8 +526,8 @@ A graceful close whose peer is Lost likewise returns an abnormal cleanup
 outcome, never success. An implicit Task.scope finalizer that observes Unconfirmed enters
 the existing fatal defect shutdown path: its return type remains ⊤, and it
 cannot complete normally or extend Task.Exit. Explicit open/low-level close
-return the typed cleanup status for the caller to inspect. The owner decision governs
-whether the program's explicit fatal-stop policy then aborts those handles.
+return the typed cleanup status for the caller to inspect. At the fatal deadline the decided fatal-stop policy abandons unfinished
+cleanup and records every such worker as specified below.
 Fixtures must cover deadline/error before Ready followed by no Closed at all.
 
 Request captures its caller's serializable Log annotations, minimum level,
@@ -603,6 +554,31 @@ arbitrary thrown host object. Fatal shutdown preserves the first defect and
 logs later cleanup defects separately. In development the page shows its
 crash screen; in release it logs and stops. There is no worker-only console
 error while the page silently continues.
+
+The defect report contains `abandonedWorkers : List AbandonedWorker`. Each
+entry records entryId (stable build entry identity), instanceId (runtime instance
+and generation), kind (Dedicated or Shared), diagnosticName, and termination
+status (NativeTerminated, SharedStopRequested or Unreachable). This is private
+runtime report data, never an application error or a Task.Exit case. Preserve
+the original defect and append shutdown outcomes, deduplicated by instanceId.
+The registry bounds live and orphaned workers, so include every unfinished
+worker rather than silently truncate the list. Nested reports carry the owning
+instance path to avoid conflating workers with the same entry name.
+
+When the existing program fatal-shutdown deadline expires, terminate every unfinished dedicated worker
+for which this runtime holds the native Worker handle; mark NativeTerminated
+without claiming finalizers ran. The shared runtime broadcasts its defect to
+every attached beni page before cancelling its children. Every page stops and
+shows or logs its own defect, even if no request was awaiting a reply.
+
+The browser exposes no terminate method for SharedWorker. Its own runtime
+coordinator requests global close at the fatal deadline, without joining its
+unfinished children, and reports SharedStopRequested. An unreachable or hung
+shared instance cannot be forcibly killed from a page; report Unreachable and
+stop that page rather than assert native termination. This host capability
+limit is tracked in #1302 and #1298. It does not delay the page's fatal shutdown
+or authorize continuing after a shared defect. Ordinary page close affects only
+its connection and never sends this instance-fatal control operation.
 
 ## 8. Cancellation, scopes and lifecycle
 
@@ -795,13 +771,13 @@ measurements must not run concurrently with another full suite on Dagon.
 |---|---|---|
 | Entry runtime contract | This design | #1287 generalized to realm runtime table, precise program/arity/effect diagnostics and no markup dependency; dev/release fixtures. |
 | Multi-entry emission and bootstrap | Runtime contract | Source-discovered generic entry descriptors, stable IDs, staged defect bootstrap, relative URLs, per-entry roots/maps/collisions and jobs 1/8 output fixtures; never user JS. |
-| Realm checking | Multi-entry roots; owner #1315 | Owner-approved realm mechanism, declaration-local bounds, interface/cache contract, exact census migration, initializer/EntryHost proofs, diagnostic and no-byte-growth release fixtures. Worker builds cannot ship without this gate. |
-| Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, owner-selected release-safe representation plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
-| Dedicated runtime and defects | Prior compiler slices | Borrowed worker-local init/state/root scope, distinct call/stream protocol roles, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
+| Realm checking | Multi-entry roots; decided C (#1315) | First measure typed Task and renderer callback storage. Generated native types, inferred realm summaries, HostFree, Host.Raw, interface contracts and EntryHost proofs; >250k LOC/s and no-byte-growth release goldens. |
+| Shared-name wire plans and ownership moves | Realm check; #1278 | Cross-entry type evidence, decided build-wide names and selective normalization plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
+| Dedicated runtime and defects | Prior compiler slices; ownership checker v2 | Borrowed worker-local init/state/root scope, distinct call/stream protocol roles, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
 | Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared initializer election versus configuration-free attach, leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |
-| Native transfer families and atomics | Wire ownership; #1278/#1277 | Every standard type row assigned, implemented and browser-tested or explicit capability refusal; GPU integration, shared memory and typed exact failure coverage. Proposal rows remain visibly gated by owner decision. |
+| Native transfer families and atomics | Wire ownership; #1278/#1277 | Every standard type row assigned, implemented and browser-tested or explicit capability refusal; GPU integration, shared memory and typed exact failure coverage. Proposal rows remain explicitly unsupported until their specifications define transfers (#1302). |
 | Pools, streams and parity measurements | Dedicated/ports | Fixed/elastic bounds, credit/ack/cancel, keep-alive, no implicit retry of moves, size/latency reports and parity-ledger evidence. |
-| Service-worker lifecycle design | Owner decision | Registration/update/event-lifetime/errors and no-DOM realm contract designed separately; this is a research/design slice, not authorization to implement it here. |
+| Service-worker lifecycle design | Separate design, decided #1301 | Registration/update/event-lifetime/errors and no-DOM realm contract designed separately; this is a research/design slice, not authorization to implement it here. |
 
 Compiler-foundation PRs may land without exposing worker launching. No public
 launch path lands before realm and wire checks are present. Each row has its
@@ -815,7 +791,7 @@ teach proposed syntax as shipped syntax.
 - Entry runtime contract: [1293](https://github.com/canassa/beni/issues/1293).
 - Multi-entry emission and bootstrap: [1294](https://github.com/canassa/beni/issues/1294).
 - Realm checking: [1295](https://github.com/canassa/beni/issues/1295).
-- Wire codecs and ownership moves: [1296](https://github.com/canassa/beni/issues/1296).
+- Shared-name wire plans and ownership moves: [1296](https://github.com/canassa/beni/issues/1296).
 - Dedicated runtime and defects: [1297](https://github.com/canassa/beni/issues/1297).
 - Ports, shared workers and broadcast: [1298](https://github.com/canassa/beni/issues/1298).
 - Native transfer families and atomics: [1299](https://github.com/canassa/beni/issues/1299).

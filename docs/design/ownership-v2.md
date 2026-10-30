@@ -1,5 +1,13 @@
 # The ownership checker v2 — design and implementation plan
 
+*Worker dependency, owner decision 2026-10-30; specified, not implemented.*
+[Worker callback protocol rows](workers-callback-contracts.md) are implemented
+by this v2 checker, never frozen v1. entryKinds metadata supplies handler state
+borrows and machine model ownership; user summaries remain inferred. The effect
+checker applies the row's implicit non-suspension obligations. #1297 also depends
+on v2 native backing-identity demands in workers.md §5. No sync or ownership word
+is permitted in a record alias field.
+
 *Normative design and implementation plan. Part of #1006. The WHAT is
 [`ownership-requirements.md`](ownership-requirements.md) (R-n.m below); this document is the HOW. Where they
 disagree, the requirements win. End state: lists and records enforced on every platform; no copy fallback,

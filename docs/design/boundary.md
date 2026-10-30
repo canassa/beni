@@ -852,14 +852,16 @@ inside that root, driven by the realm-local scheduler. The emitted entry calls
 run(main) synchronously; entry_runtime_suspends rejects a suspending run. Bootstrap stages defect
 listeners before user evaluation. Only a checked Window projection permits
 the release printer's bare `window`; stale host promises are diagnostics.
-Declaration-local realm words and checked beni-over-Js provenance extend §4's
-privileged boundary. Fatal defects cross connections through private control
+Generated native types, HostFree and Host.Raw extend §4's privileged boundary.
+Ordinary type checking retains inferred realm summaries through callbacks and
+containers; native objects cannot erase to Js.Value. Fatal defects cross connections through private control
 frames, without changing Task.Exit; ordinary close awaits cleanup (§9.8.14).
 
-Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
-realm mechanism: generated native types are recommended; hidden provenance
-remains specified as option B, not adopted. Common EntryHost/realm guarantees
-apply to either. Grouped protocol roles distinguish call and stream inputs.
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
 
 
 `main`'s type is a platform fact, and so is the shape of the artifact. A browser platform wants a
