@@ -8228,6 +8228,49 @@ test "the checker v2's work grows linearly with a declaration's statements and i
     try testing.expect(lives[1] * 10 <= lives[0] * 25);
 }
 
+test "the checker v2's work on a K-wide recursive type grows linearly with K, plain and through a Maybe" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.1, as amended for #1253: the first return to a
+    // recursive place stays a plain path, so `T = N (List Int) T … T` has K
+    // first returns, each with K recursive steps. A deep read (`t == t`)
+    // beside a write of the root's list asks the type-path walks of §2.7
+    // (`Place.hits`, `levelsOf`), which take a sealed first return whole:
+    // twice K costs about twice the records, not four times. Walking each
+    // first return's steps one by one cost 1 476 / 3 084 / 8 988 records
+    // at K = 8 / 16 / 32, and 2 164 / 5 740 / 19 420 through a `Maybe`.
+    const a = testing.allocator;
+    for ([_]bool{ false, true }) |via_maybe| {
+        var totals: [3]u64 = undefined;
+        for ([_]u32{ 8, 16, 32 }, 0..) |k, run| {
+            var w = try World.init(a, testing.io);
+            defer w.deinit();
+            var src: std.ArrayList(u8) = .empty;
+            defer src.deinit(a);
+            try src.appendSlice(a, "type T\n    = Leaf\n    | N (List Int)");
+            for (0..k) |_| try src.appendSlice(a, if (via_maybe) " (Maybe T)" else " T");
+            try src.appendSlice(a, "\n\n\npub f : T → List Int × Bool\nf t =\n    case t of\n        N xs");
+            for (0..k) |_| try src.appendSlice(a, " _");
+            try src.appendSlice(a, " →\n            ( List.push xs 1, t == t )\n\n        Leaf →\n            ( [], False )\n");
+            try w.write("Main.beni", src.items);
+
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            totals[run] = try accountTotal(dump.stdout, "f");
+        }
+        // Each doubling adds at most a little over what the last one added.
+        try testing.expect(totals[2] - totals[1] <= 3 * (totals[1] - totals[0]));
+        try testing.expect(totals[2] * 10 <= totals[1] * 25);
+    }
+}
+
 test "the checker v2's published blocks are the same bytes at one job and at eight" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -9432,7 +9475,10 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     try testing.expectEqual(@as(u8, 0), held.exit_code);
     try testing.expect(std.mem.indexOf(u8, held.stdout, "  summary basic: π1 RAW, π1[*] RAW, π1[*][*] A; res .0 fresh1 π1[*], .0 fresh2, .0[*] π1[*][*]{excl π1[*][*]}, .1 fresh3, .1 π1, .1[*] fresh1 π1[*]{excl π1[*]}\n") != null);
     try testing.expectEqual(@as(u8, 0), rose.exit_code);
-    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1⟲ RA, π1⟲#Rose.0 RAW; res .0 fresh2, .0 π1⟲#Rose.0, .0[*] π1⟲{excl π1⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
+    // Since #1253 the child, the first return `π1#Rose.0[*]`, is a plain
+    // path, so its own list is written exactly and the levels below it are
+    // `π1#Rose.0[*]⟲`.
+    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RAW, π1#Rose.0[*]⟲ A; res .0 fresh2, .0 π1#Rose.0[*]#Rose.0, .0[*] π1#Rose.0[*]⟲{excl π1#Rose.0[*]⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
 }
 
 test "the checker v2's widen keeps a non-recursive function's choice at a tree's root exact (#1360)" {
@@ -9456,7 +9502,9 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.1 RA, π1⟲ RA, π1⟲#Node.1 RA, π2 RA; res #Node.0 π2, #Node.0#Node.0 π1⟲, #Node.0#Node.1 π1⟲#Node.1, #Node.0#Node.2 π2, #Node.1 π1#Node.1\n") != null);
+    // Since #1253 `l` is `π1#Node.0` and its own list `π1#Node.0#Node.1`,
+    // exact; `a`, a level below `l`, is `π1#Node.0⟲`.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.0 R, π1#Node.0#Node.1 RA, π1#Node.0⟲ RA, π1#Node.1 RA, π2 RA; res #Node.0 π2, #Node.0#Node.0 π1#Node.0⟲, #Node.0#Node.1 π1#Node.0#Node.1, #Node.0#Node.2 π2, #Node.1 π1#Node.1\n") != null);
 }
 
 test "the checker v2's growth is linear in a recursive tower's height: a one-member literal is its member's snapshot" {
@@ -10297,12 +10345,12 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
         \\pub mTree : ⊤ → M
         \\mTree ⊤ =
         \\    k = [ 1 ]
-        \\    M k (Just (M k Nothing))
+        \\    M [] (Just (M k (Just (M k Nothing))))
         \\
         \\
         \\pub mPlain : ⊤ → M
         \\mPlain ⊤ =
-        \\    M [ 1 ] (Just (M [ 2 ] Nothing))
+        \\    M [] (Just (M [ 1 ] (Just (M [ 2 ] Nothing))))
         \\
     );
 
@@ -10323,6 +10371,9 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
         const head = try std.fmt.bufPrint(&buf, "  summary {s}: res {s} ", .{ name, field });
         const at = std.mem.indexOf(u8, dump.stdout, head) orelse return error.TestUnexpectedResult;
         const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
+        // Since #1253 a Maybe tree's depth-1 child is a first return, a
+        // plain path, so `mTree` holds `k` at depths 1 and 2, where the
+        // levels below the first return fold into its class.
         const repeat = std.mem.indexOf(u8, line, "{lost}") != null or std.mem.indexOf(u8, line, "{shared}") != null;
         try testing.expectEqual(!std.mem.eql(u8, name, "plainPush") and !std.mem.eql(u8, name, "mPlain"), repeat);
     }
