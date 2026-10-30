@@ -1387,20 +1387,24 @@ pub const Frame = struct {
     /// (§2.11 item 3 (c)). Any other cell is kept when its alias key is one
     /// of the base's (`want`), read from `v`'s reach by key (`Beside.keyed`),
     /// never cell by cell.
-    /// For a value the class answers, lets escape or reads deeply (a leaf
-    /// use, or `D`): the approximation bit of a parameter cell of `reach` that the base's
-    /// parameter cell `c` is strictly below (`Cell.below`: a trie ancestor,
-    /// or levels through `⟲`), null for none. What a callee relied on when
-    /// it found two paths of one parameter apart, discharged here (§2.11
-    /// item 3, rule (c), #1383).
-    fn heldAbove(f: *Frame, reach: SetId, c: CellId) Error!?u1 {
+    /// The approximation bit of a cell of `reach` that holds the base's
+    /// canonical cell `cu`, null for none, each read at its own canonical
+    /// cell: a pattern refines what it binds (`x` of `Pair _ x`), and a
+    /// refinement is its canonical cell's object (#1385). It is `cu` itself,
+    /// or, for a value the class answers, lets escape or reads deeply (a leaf
+    /// use, or `D`), a parameter cell that `cu` is strictly below
+    /// (`Cell.below`: a trie ancestor, or levels through `⟲`). What a callee
+    /// relied on when it found two paths of one parameter apart, discharged
+    /// here (§2.11 item 3, rule (c), #1383).
+    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool) Error!?u1 {
         const cells = f.env.cells;
         var it = cells.sets.iterate(reach);
         while (it.next()) |e| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             const d: CellId = .from(e.key);
-            if (cells.origin(d) != .param) continue;
-            if (cells.below(f.env.places, c, d)) return @intCast(e.value);
+            if (cells.origin(cells.base(d)) != .param) continue;
+            const du = (try cells.unrefined(f.gpa, f.account(), f.env.places, d)) orelse continue;
+            if (du == cu or (held and cells.below(f.env.places, cu, du))) return @intCast(e.value);
         }
         return null;
     }
@@ -1415,7 +1419,7 @@ pub const Frame = struct {
             // above the base's holds it, a symbolic leaf's reach being its own
             // cell (#1383).
             const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
-            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse (if (held) try f.heldAbove(reach, cu) else null) orelse continue;
+            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held) orelse continue;
             if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
                 excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
                 continue;

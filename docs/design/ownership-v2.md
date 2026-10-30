@@ -1727,6 +1727,16 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        `case t of Br _ ys _`, §2.13.3), and the walk compared cells by identity, so `t`'s own list read
        below `l` at the same path was not the base. The base's cell matches its `unrefined` cell as well
        as itself: `rootVsSub (Br t ys Leaf)` (`callerT`) is refused.
+     - **A refined holder is its canonical cell too** (#1385). The held value may be a refinement as
+       well: `x` of `case p of Pair _ x`, bound on the caller's own parameter, is a refinement of
+       `π1#Pair.1`, and over `rightLeft (Pair x x)` its reach held no cell of origin `param`, so neither
+       reading found the written `π1#Pair.1#Box.0` below it. Each cell of the held value's reach is read
+       at its `unrefined` cell: `g`, `b7 t = case t of Br _ _ r → rightLeft (Br r [] r)` and `a7` are
+       refused (`ApartPathsBound`, `ApartPathsBoundImported`). The cells are not confused across the
+       caller and the callee: a symbolic cell is keyed by `(origin, index, path)`, which a call maps
+       through its actuals, never by identity. The refinement was what hid the hold; it was seen only
+       when the caller's parameter has the callee's parameter's type, and from a `Maybe Box` or a tuple
+       the value was refused already.
      Each call checks only its actual. A caller passing its own parameter's two paths (`Pair a b` from
      `case p of Pair a b`) finds them apart in turn (this rule), and its class marks both, so its callers
      check them: transitive through the marks, as for every reliance this item reads. Pinned:
