@@ -1456,8 +1456,11 @@ const Index = struct {
         const shapes = ix.env.shapes;
         if (shapes.kind(n) == .leaf) return if (shapes.cells(n) != .none) .free else .dead;
         // A node marked `D` reads every path below it, as a leaf does
-        // (§2.10, *A deep read across a call*).
-        if (try Summary.Table.deepRead(ix.env, n)) return .free;
+        // (§2.10, *A deep read across a call*), and so, for this frame's
+        // liveness, does a node marked `A`: the call's result holds the
+        // object there, and its later reads are not uses of the argument's
+        // local (§2.7, *A part a callee answers*).
+        if (ix.env.cells.readsBelow(try shapes.cellsOf(ix.gpa, ix.env.account(), &ix.env.cells.sets, n))) return .free;
         const p = (try shapes.proj(ix.gpa, ix.env.account(), ix.env.places, ix.env.cells, n, st)) orelse return .free;
         return .{ .node = p };
     }

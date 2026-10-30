@@ -1,0 +1,35 @@
+-- ownership (project): see Main.beni. The callees, whose classes answer a
+-- part of their argument (`A`, #1370).
+pub type Outer
+    = Outer { v : List Int, kids : List Inner }
+
+
+pub type Inner
+    = Inner { w : List Int }
+
+
+pub type Tree
+    = Tree { v : List Int, kids : List Tree }
+
+
+pub idl : List (List Int) → List (List Int)
+idl x = x
+
+
+pub wkids : Outer → List Inner
+wkids t =
+    case t of
+        Outer r →
+            r.kids
+
+
+pub rkids : { v : List Int, kids : List (List Int) } → List (List Int)
+rkids r = r.kids
+
+
+pub show : List (List Int) → String
+show x = Debug.toString x
+
+
+pub idl2 : List Tree → List Tree
+idl2 x = x
