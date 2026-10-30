@@ -1795,9 +1795,16 @@ of the same handle still add multiplicity through the path-multiset primitive.
     once, memoised in the records it settles, charged per record as an acyclic one is and run in
     growth (`dagWalk`, §4.1); never a depth cap or a cut-off. A `runtime_safety` build checks each
     cycle's answer is a fixed point. Readers that keep a seen set by node (`reach`, `eager`, `rank`,
-    `proj`, `leq`, `widen`, the κ machine, the printer) already end on it. Holders' same-path closure
-    is owed the rule (#1335). Widen's image and a block's knots close every cycle through a node or a
-    delta's child map, so no class built from source holds one today; recursive groups (slice 4) may.
+    `proj`, `leq`, `widen`, the κ machine, the printer) already end on it. Two more readers take
+    the same walk (#1335). Holders' same-path closure gives each member the least fixed point of its
+    own hold and children joined with its sides' closures under their route flags: `under` only sets
+    flags, so a member's states and bits only grow within the cycle's reach, and passes over the
+    cycle, each charged per state read, end when none grows. Each member may answer differently, by
+    its flags. `foldCondOf` gives every member the conjunction of every member's own certificate and
+    of what enters the cycle. The block codec writes such a cycle, and reads it back as the same
+    cycle (§3.6 *A cycle with no node on it*). Widen's image and a block's knots close every cycle
+    through a node or a delta's child map, so no class built from source holds one today; recursive
+    groups (slice 4) may.
 - **Readers.** Every switch on a node's kind handles `view` by forcing it and reading the forced node
   (and the view's own facts, above): `Shape.force` is the one entry. `proj(view, s)` is
   `proj(force(view), s)`. `cellsOf` is the forced node's, and it takes both sides of a `union` or a
@@ -3360,7 +3367,8 @@ worker, session or intern ids. Local `Summary.normalize` words are not this form
 
 A knot group reserves all its members before edges are tied. Cycles may cross typed child/projection
 edges and class/environment backreferences; unions, recasts and other constructors may not point to
-unfinished non-child inputs unless a corresponding constructor explicitly supports that knot. Readers
+unfinished non-child inputs unless a corresponding constructor explicitly supports that knot (`Shape.knot`
+for a cycle with no node on it, *As built, #1335* below). Readers
 check this grammar, node/child/base/cell places, tag/range/arity, supplied projection correspondence and
 mark/value separation before invoking operations that assume them. Recompute place SCCs after decoding.
 A source cell is interned with its place as part of its interpretation (#1055); type variables of a block
@@ -3499,6 +3507,22 @@ only the commit re-interns.
 **The deep-read mark (#1328).** A use shape's mark cells gain `D` (§2.10, *A deep read across a call*), a
 `Cell.Mark` value of its own, written and read as the other marks are. A block of version 12 holds no `D`,
 and a version-12 reader would refuse the value as a malformed mark, so the version is 13.
+
+**As built, #1335 (a cycle with no node on it).** §2.11 reads a cycle of unions, choices, positions
+nodes, deltas' bases and recasts' inners with no node on it at its least fixed point, so a class may
+hold one (#1314's `U = union(leaf{π0}, delta(U, {[*]: s}))`, or a call's view of it forced at
+publish). The codec writes it as it is. It does not close it through a node first: a node is a built
+value with its own cells, so the result would be another value, and a block serializes the meaning the
+class has. A knot's member order is still the post-order of the parts that are not child steps. A
+member that the walk meets again while it is open is named before it is written, as a child step may
+be. The reader ties the member that names a member not yet read, and each member that names such a
+member, as a record that no constructor interns (`Shape.knot`). When every member is read, it sets
+their sides, bases and inners, checks them as their constructors do (sides and a base at the
+member's place, no base a delta), and reads their cells by `cellsOf`, the cycle's least fixed point.
+Every member must be reached from outside by what it is read from (`Block.entered`): a cycle that
+nothing enters, `recast(x)` of `x` itself, is no value that a constructor makes, so the writer
+refuses it loudly and the reader reads no block. This changes the format, so the version is 13. The
+order is the keys' order, so bisimilar knots write the same bytes, and write ∘ read ∘ write is write.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
@@ -4153,13 +4177,13 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 220 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 220 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 200 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 220 (#1335: `foldCondOf` by the cycle walk) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 1 900 (as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*) |
+| `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 010 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk) |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 500 |
 | `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 800 |
@@ -4168,8 +4192,8 @@ L0  Ids
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 330 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places) |
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 10 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 690 |
-| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 050 (S3b slice 3: a block's places re-interned onto the reader's) |
+| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
+| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 125 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw) |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
