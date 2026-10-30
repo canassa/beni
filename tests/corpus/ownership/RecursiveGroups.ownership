@@ -1,0 +1,45 @@
+module RecursiveGroups
+  14:9 call RecursiveGroups.pushAll <call List.push>: accepted param (RecursiveGroups.pushAll writes π1)
+  14:18 List.push acc: accepted param
+  18:31 call RecursiveGroups.pushAll xs: rejected later-use: xs is read again at 18:47 (RecursiveGroups.pushAll writes π1)
+  22:32 call RecursiveGroups.pushAll xs: accepted param (RecursiveGroups.pushAll writes π1)
+  30:9 call RecursiveGroups.oddPush <call List.push>: accepted param (RecursiveGroups.oddPush writes π1)
+  30:18 List.push acc: accepted param
+  38:9 call RecursiveGroups.evenPush acc: accepted param (RecursiveGroups.evenPush writes π1)
+  42:31 call RecursiveGroups.oddPush xs: rejected later-use: xs is read again at 42:47 (RecursiveGroups.oddPush writes π1)
+  46:32 call RecursiveGroups.oddPush xs: accepted param (RecursiveGroups.oddPush writes π1)
+  54:9 call RecursiveGroups.ring2 acc: accepted param (RecursiveGroups.ring2 writes π1)
+  58:15 call RecursiveGroups.ring3 acc: accepted param (RecursiveGroups.ring3 writes π1)
+  62:15 call RecursiveGroups.ring1 <call List.push>: accepted param (RecursiveGroups.ring1 writes π1)
+  62:22 List.push acc: accepted param
+  66:18 call RecursiveGroups.ring1 xs: rejected later-use: xs is read again at 66:31 (RecursiveGroups.ring1 writes π1)
+  70:19 call RecursiveGroups.ring1 xs: accepted param (RecursiveGroups.ring1 writes π1)
+  80:5 call RecursiveGroups.localB <call List.push>: accepted param (RecursiveGroups.localB writes π1)
+  80:13 List.push acc: accepted param
+  88:9 call RecursiveGroups.localA acc: accepted param (RecursiveGroups.localA writes π1)
+  94:22 List.push a: accepted param
+  96:13 call RecursiveGroups.rot a: accepted param (RecursiveGroups.rot writes π2)
+  96:13 call RecursiveGroups.rot b: rejected later-use: b is read again at 97:13 (RecursiveGroups.rot writes π1)
+  103:22 List.push a: accepted param
+  105:13 call RecursiveGroups.rotDead a: accepted param (RecursiveGroups.rotDead writes π2)
+  105:13 call RecursiveGroups.rotDead b: accepted param (RecursiveGroups.rotDead writes π1)
+  summary pushAll: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary selfRefused: π1 RW[storage], π1[*] R
+  summary selfAccepted: π1 RW[storage], π1[*] R
+  summary evenPush: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary oddPush: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  summary pairRefused: π1 RW[storage], π1[*] R
+  summary pairAccepted: π1 RW[storage], π1[*] R
+  summary ring1: π1 RW[storage]
+  summary ring2: π1 RW[storage]
+  summary ring3: π1 RW[storage]
+  summary ringRefused: π1 RW[storage]
+  summary ringAccepted: π1 RW[storage]
+  summary forever: unused
+  summary localA: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary localB: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  summary rot: π1 RW[storage], π2 RW[storage]
+  summary rotDead: π1 RW[storage], π2 RW[storage]
+  demands 24: accepted 20 (fresh 0, call 0, param 20, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 24: accepted 20 (fresh 0, call 0, param 20, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause later-use 4
