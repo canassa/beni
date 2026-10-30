@@ -1839,6 +1839,18 @@ of the same handle still add multiplicity through the path-multiset primitive.
   (`argAt`, through the preimage across `⟲`, a recast read approximately, #1219). Its origins,
   captures, loan regions, κ snapshot and completed aggregates are unchanged: nothing of the argument
   is relabelled or re-keyed. A new invocation never re-scans an old argument.
+  - *At a type variable's place* [#1350]. A `var` place has no steps (§2.1), but the call
+    instantiates the variable to the actual's type. So there the actual stands at its own place,
+    with no recast: `(pick g.x).c` with `pick r = r` is `g.x.c`, exact. A place-only recast at a
+    `var` place made the step into it `recastWhole` (§2.13.9), `~π1.x`, and lost the callee's
+    reads below it; v1 reads them. At any other place the actual of another place is a place-only
+    recast, as before.
+  - *A leaf of several parameter cells* there (`choose b l r = if b then l else r`) stands at the
+    place its exact parts' actuals share, when every cell is a parameter cell and they share one;
+    otherwise at the template's place.
+  - *A view projects as its answer does*, whatever its own place: `proj(view(T, E), s)` is
+    `proj(force(view), s)` even where `T`'s `var` place has no step `s` (`(ans { b = g.x }).c`
+    with `ans r = r.b`).
 - **Identity towers.** A class whose `res` root is one exact parameter cell at its root (`id x = x`)
   answers the actual itself at `apply`: no view is made, so `y_k = id y_{k-1}` makes no tower. In
   general, `force` memoises the first answer that is not a view. A chain of views (a view whose
