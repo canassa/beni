@@ -27,3 +27,13 @@ accepted demands' reliances join it), while v1's refused `same` still
 carries `xreq excl π1` to its callers; the fixtures leave such callers out.
 The gates ran 1 770 of 3 097 programs under Node for want of a recorded
 hash, which made them take two minutes.
+
+**After rebasing onto #1382.** #1382's `holdsCanonical` reads each held cell
+at its canonical cell, so it read `a` as `π1[*]` and refused `t8` itself
+`disjoint` (v1 accepts it with `xreq excl π1`). `holdsCanonical` now skips a
+refinement on another side of a split the write's path met (`otherSide`),
+and `splitBeside` publishes that split's κ for it. Over the 1 992 roots, master
+with #1382 and this branch differ only in the new fixtures: `t8`, `t3` and
+`pass` are accepted with `xreq excl π1[*]`, and their shared callers are
+refused. `ApartPaths*` and `ApartPathsBound*` hold. Transfer's line target is
+now 1 940.
