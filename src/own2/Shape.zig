@@ -23,9 +23,10 @@
 //! persistent map (`Over`): a hash-consed big-endian patricia tree from a
 //! step's word to a node, path-copied, O(log F) insert and lookup, so a
 //! chain of k updates costs O(k log F) and shares its structure (#716).
-//! `widen` alone makes nodes that are not interned: a widened recursive
-//! value is a `node` whose child names an ancestor — "the knot is in the
-//! table" — and such a node is unique by construction.
+//! `widen`, and `map` on a knot, make nodes that are not interned: a
+//! widened recursive value is a `node` whose child names an ancestor —
+//! "the knot is in the table" — and such a node is unique by construction.
+//! `map` interns every image on no knot (#1372).
 //!
 //! Every allocation here is a growth record reserved before it is made;
 //! the caller's lanes (§4.1) are its business, this file charges growth.
@@ -97,6 +98,14 @@ pub const Table = struct {
     leq_provisional: std.ArrayList([2]u32) = .empty,
     leq_depth: u32 = 0,
     memo_map: stamped.Column(NodeId, NodeId) = .{},
+    /// `map`'s knot test (§2.3 *map*, #1372): a node or delta whose image
+    /// is open (entered, its parts not all mapped) → its entry index; a
+    /// mapped node → the earliest open node its image reaches (`MapLow`).
+    /// An image that reaches no open node is on no knot and is interned.
+    map_open: stamped.Column(NodeId, u32) = .{},
+    map_low: stamped.Column(NodeId, MapLow) = .{},
+    /// `armCount`'s memo: a choice DAG's arms, by node.
+    arm_count: stamped.Column(NodeId, u32) = .{},
     /// `arrivals`' memo: the cells of a node's reach that are not apart
     /// by construction (#1115's review).
     arrivals_memo: stamped.Column(NodeId, SetId) = .{},
@@ -190,6 +199,9 @@ pub const Table = struct {
         t.leq_provisional.deinit(gpa);
         t.union_seen.deinit(gpa);
         t.memo_map.deinit(gpa);
+        t.map_open.deinit(gpa);
+        t.map_low.deinit(gpa);
+        t.arm_count.deinit(gpa);
         t.arrivals_memo.deinit(gpa);
         t.memo_force.deinit(gpa);
         t.memo_step.deinit(gpa);
@@ -1442,6 +1454,36 @@ pub const Table = struct {
         return t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
     }
 
+    /// How many arms `n`'s choice DAG has, an arm counted once per route,
+    /// saturating: the size a flattening join keeps whole (`joinAlternatives`).
+    /// Memoised per node on an explicit stack; a node is immutable, and a
+    /// node met again before it is counted (no choice lies on a cycle,
+    /// §2.3) counts one.
+    fn armCount(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!u32 {
+        if (t.kind(n) != .choice) return 1;
+        try account.reserve(.memo, 1);
+        if (t.arm_count.get(n)) |c| return c;
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            const d = t.get(f.node);
+            if (!f.expanded) {
+                if (t.arm_count.get(f.node) != null) continue;
+                try account.reserve(.inspection, 1);
+                try t.arm_count.put(gpa, f.node, 1);
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                for ([_]u32{ d.a, d.b }) |s| if (t.kind(.from(s)) == .choice and t.arm_count.get(.from(s)) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
+                continue;
+            }
+            var c: u32 = 0;
+            for ([_]u32{ d.a, d.b }) |s| c +|= if (t.kind(.from(s)) == .choice) t.arm_count.get(.from(s)).? else 1;
+            try t.arm_count.put(gpa, f.node, c);
+        }
+        return t.arm_count.get(n).?;
+    }
+
     /// Whether `x` is a member of the union DAG `u` (its sides, through
     /// nested unions only): a walk with a visited stamp, every union node
     /// once, one record reserved per node read. Never a silent `false`.
@@ -2063,7 +2105,7 @@ pub const Table = struct {
     /// into one leaf; what is left into a balanced union DAG. `members` is
     /// scratch and is reordered.
     pub fn join(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
-        return t.joinAs(gpa, account, places, cellt, members, .@"union");
+        return t.joinAs(gpa, account, places, cellt, members, .@"union", false);
     }
 
     /// `join` of exclusive alternatives (§2.3, #1128): a branch's or a
@@ -2071,13 +2113,24 @@ pub const Table = struct {
     /// child join made of `choice`; leaves still merge into one leaf (a cell
     /// in two arms is one, the maximum).
     pub fn joinChoice(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
-        return t.joinAs(gpa, account, places, cellt, members, .choice);
+        return t.joinAs(gpa, account, places, cellt, members, .choice, false);
     }
 
-    fn joinAs(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId, mode: Kind) Error!NodeId {
+    /// `joinChoice` for a caller that sets κ on the result from the members
+    /// read whole (`Cond.propagate`: a branch's join, a class join's rounds):
+    /// a member that is a choice is flattened into its arms, so the result
+    /// is one choice of distinct alternatives (§2.3, #1372). Nothing is
+    /// keyed by the nested choice the result no longer holds: its entry is
+    /// read through the member it was. `eager`'s rebuild keeps `joinChoice`,
+    /// since a published value's κ is carried by node (`kappaRelabel`).
+    pub fn joinAlternatives(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        return t.joinAs(gpa, account, places, cellt, members, .choice, true);
+    }
+
+    fn joinAs(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId, mode: Kind, flat: bool) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
-        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode, .before = t.nodes.len };
+        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode, .flat = flat, .before = t.nodes.len };
         defer w.deinit();
         return w.run(members);
     }
@@ -2105,6 +2158,8 @@ pub const Table = struct {
         cellt: *Cell.Table,
         /// `union` or `choice`: what the outer DAG and the child joins are made of.
         mode: Kind = .@"union",
+        /// A choice member flattened into its arms (`joinAlternatives`).
+        flat: bool = false,
         /// The table's size before the join: a node made by it is fresh.
         before: usize = 0,
         pool: std.ArrayList(NodeId) = .empty,
@@ -2113,7 +2168,10 @@ pub const Table = struct {
         steps: std.ArrayList(StepChild) = .empty,
         stack: std.ArrayList(u32) = .empty,
 
-        const Req = struct { first: u32, len: u32, key: ?[3]u32 = null, result: NodeId = .none, parts_first: u32 = 0, parts_len: u32 = 0, expanded: bool = false };
+        /// `first`, `len`: the members asked for (a join's bases); `run_first`,
+        /// `run_len`: what is grouped, the same run unless a choice member
+        /// was flattened into its arms (`flatten`).
+        const Req = struct { first: u32, len: u32, key: ?[3]u32 = null, result: NodeId = .none, parts_first: u32 = 0, parts_len: u32 = 0, expanded: bool = false, run_first: u32 = 0, run_len: u32 = 0 };
         /// A group of the request: a node as it is, the leaves joined, or a
         /// delta group's base with its steps' child requests.
         const Part = struct { kind: enum { node, leaf, delta }, node: NodeId = .none, place: PlaceId = .none, cells: SetId = .none, steps_first: u32 = 0, steps_len: u32 = 0 };
@@ -2167,15 +2225,23 @@ pub const Table = struct {
                     return;
                 }
                 try w.account.reserve(.memo, 1); // before the memo, a hit charged too
-                if (t.memo_join.get(.{ @backingInt(w.mode), x, y })) |hit| {
+                if (t.memo_join.get(.{ w.memoMode(), x, y })) |hit| {
                     w.reqs.items[id].result = .from(hit);
                     return;
                 }
-                w.reqs.items[id].key = .{ @backingInt(w.mode), x, y };
+                w.reqs.items[id].key = .{ w.memoMode(), x, y };
             }
             try w.account.reserve(.memo, 1);
+            // A choice member's arms are alternatives of this choice too (§2.3
+            // *`choice` and `union`*, #1372): flattened, so a nested choice and
+            // its repeated arms are one set of distinct alternatives.
+            const flat = if (w.flat) try w.flatten(r.first, r.len) else null;
+            const run_first: u32 = if (flat) |fl| fl[0] else r.first;
+            const run_len: u32 = if (flat) |fl| fl[1] else r.len;
+            w.reqs.items[id].run_first = run_first;
+            w.reqs.items[id].run_len = run_len;
             // Sort by (base, id): one pass groups and deduplicates.
-            const members = w.pool.items[r.first..][0..r.len];
+            const members = w.pool.items[run_first..][0..run_len];
             std.mem.sort(NodeId, members, t, struct {
                 fn lessThan(tt: *Table, a: NodeId, b: NodeId) bool {
                     // Groups in the order the eager join met them (`birth`).
@@ -2195,8 +2261,8 @@ pub const Table = struct {
             var children: std.ArrayList(u32) = .empty;
             defer children.deinit(w.gpa);
             var i: usize = 0;
-            while (i < r.len) {
-                const run_now = w.pool.items[r.first..][0..r.len];
+            while (i < run_len) {
+                const run_now = w.pool.items[run_first..][0..run_len];
                 var j = i + 1;
                 while (j < run_now.len and t.groupBase(run_now[j]) == t.groupBase(run_now[i])) j += 1;
                 const grp = run_now[i..j];
@@ -2240,6 +2306,67 @@ pub const Table = struct {
             try w.stack.append(w.gpa, id);
             // The children were pushed as they were made; move them above.
             for (children.items) |c| try w.stack.append(w.gpa, c);
+        }
+
+        /// The run `first..first+len` as one set of distinct alternatives,
+        /// appended to the pool: `(first, len)` of the new run, or null when
+        /// no member is a choice. The choice member with the most arms
+        /// (`armCount`) is kept whole, and every other member that is a
+        /// choice is replaced by its arms, its choice DAG walked through;
+        /// an arm, or a member, the kept choice's DAG holds already is
+        /// dropped (`choice(x, choice(x, y)) = choice(x, y)`, §2.3). So a
+        /// join pays for the smaller members, never again for the DAG a
+        /// tower of joins built. A view, or a node `eager` made again, is
+        /// kept whole: its read joins the class's entry under it (§2.11 *κ
+        /// at a view*). Only a choice is opened, so a union's or a positions
+        /// node's sides never become alternatives.
+        fn flatten(w: *JoinWalk, first: u32, len: u32) Error!?[2]u32 {
+            const t = w.t;
+            var keep: ?NodeId = null;
+            var most: u32 = 0;
+            for (w.pool.items[first..][0..len]) |m| {
+                if (!w.opens(m)) continue;
+                const arms = try t.armCount(w.gpa, w.account, m);
+                if (keep == null or arms > most) {
+                    keep = m;
+                    most = arms;
+                }
+            }
+            const kept = keep orelse return null;
+            const seen = try t.marks.take(w.gpa);
+            defer t.marks.give(seen);
+            var todo: std.ArrayList(NodeId) = .empty;
+            defer todo.deinit(w.gpa);
+            const out: u32 = @intCast(w.pool.items.len);
+            try w.pool.append(w.gpa, kept);
+            try seen.put(w.gpa, kept, {});
+            var k: u32 = len;
+            while (k > 0) {
+                k -= 1;
+                try todo.append(w.gpa, w.pool.items[first + k]);
+            }
+            while (todo.pop()) |m| {
+                if (seen.contains(m)) continue;
+                try seen.put(w.gpa, m, {});
+                try w.account.reserve(.inspection, 1);
+                if (try t.dagHas(w.gpa, w.account, .choice, kept, m)) continue;
+                if (!w.opens(m)) {
+                    try w.pool.append(w.gpa, m);
+                    continue;
+                }
+                const sides = t.sidesInOrder(m);
+                try todo.appendSlice(w.gpa, &.{ sides[1], sides[0] });
+            }
+            return .{ out, @intCast(w.pool.items.len - out) };
+        }
+
+        /// The memo's mode word: a flattening join never shares an entry.
+        fn memoMode(w: *const JoinWalk) u32 {
+            return @as(u32, @backingInt(w.mode)) | @as(u32, @intFromBool(w.flat)) << 8;
+        }
+
+        fn opens(w: *const JoinWalk, m: NodeId) bool {
+            return w.t.kind(m) == .choice and w.t.eagerOf(m) == m;
         }
 
         /// Deltas over one base (a bare node among them is the base itself):
@@ -2306,6 +2433,7 @@ pub const Table = struct {
             const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items, w.mode);
             // Each member a base of the join made of them (*Bases*), once,
             // where the join is computed: a memo hit records nothing more.
+            // Of the members asked for: a flattened choice member is itself a base.
             try t.addConstruction(w.gpa, w.account, out, w.pool.items[r.first..][0..r.len], out.int() >= w.before);
             w.reqs.items[id].result = out;
             if (r.key) |k| (try t.memo_join.getOrPut(w.gpa, k)).value_ptr.* = out.int();
@@ -2324,9 +2452,50 @@ pub const Table = struct {
     /// The functor relabelling cells: `f(ctx, set) → set` applied to every
     /// node's `ε` cells, memoised per node within one call so a DAG stays
     /// a DAG (#856). A cyclic node is mapped to a node of the same shape.
+    /// An image on no knot is interned (#1372): a value relabelled to what
+    /// an earlier relabelling made is that node, so a round's unchanged
+    /// value keeps its id and every memo keyed by it hits. Interning is by
+    /// the record, never by absorption: a union, choice or positions image
+    /// keeps both its sides, so no occurrence is dropped (§2.9).
     pub fn map(t: *Table, gpa: Allocator, account: *Account, n: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
         t.memo_map.clear();
+        t.map_open.clear();
+        t.map_low.clear();
         return t.mapWalk(gpa, account, n, ctx, f);
+    }
+
+    /// The earliest open node an image reaches: its entry index, and the
+    /// node, so an entry made while it was open is ignored once it closes.
+    pub const MapLow = struct { node: NodeId, index: u32 };
+    const map_closed: u32 = std.math.maxInt(u32);
+
+    /// The earliest of `low` and what `child`'s image reaches that is
+    /// still open (a child open itself is a back edge, the knot).
+    fn mapLowWith(t: *const Table, low: ?MapLow, child: NodeId) ?MapLow {
+        const got: ?MapLow = if (t.map_open.get(child)) |i| (if (i != map_closed) MapLow{ .node = child, .index = i } else t.map_low.get(child)) else t.map_low.get(child);
+        const live: ?MapLow = if (got) |g| (if (t.map_open.get(g.node) == g.index) g else null) else null;
+        if (live == null) return low;
+        if (low == null or live.?.index < low.?.index) return live;
+        return low;
+    }
+
+    fn mapLowPut(t: *Table, gpa: Allocator, n: NodeId, low: ?MapLow) Allocator.Error!void {
+        if (low) |l| try t.map_low.put(gpa, n, l);
+    }
+
+    /// The record at `slot`, made raw by `mapWalk`, interned: an equal
+    /// record already interned is the image, and `slot` is left inert (no
+    /// node names it); otherwise `slot` is interned as itself. `make`'s key.
+    fn mapAdopt(t: *Table, gpa: Allocator, slot: NodeId) Allocator.Error!NodeId {
+        const n = t.get(slot);
+        const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
+        const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });
+        if (got.found_existing) {
+            t.nodes.set(slot.int(), .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
+            return .from(got.value_ptr.*);
+        }
+        got.value_ptr.* = slot.int();
+        return slot;
     }
 
     fn mapWalk(t: *Table, gpa: Allocator, account: *Account, root: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
@@ -2336,11 +2505,15 @@ pub const Table = struct {
         // after its parts.
         // `f` runs on entry, as the recursion ran it, and parts in the
         // recursion's order, so what `f` interns is interned as before.
+        // Each node or delta entered is open until its parts are mapped; an
+        // image that reaches no open node is on no knot and is interned
+        // (`mapAdopt`), one that does stays the record it was made as.
         const Frame = struct { node: NodeId, expanded: bool, cells: SetId = .none, eager: NodeId = .none };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         var kids: std.ArrayList(NodeId) = .empty;
         defer kids.deinit(gpa);
+        var entered: u32 = 0;
         try stack.append(gpa, .{ .node = root, .expanded = false });
         while (stack.pop()) |fr| {
             const n = fr.node;
@@ -2379,6 +2552,8 @@ pub const Table = struct {
                         const out: NodeId = .from(t.count());
                         try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
                         try t.memo_map.put(gpa, n, out);
+                        try t.map_open.put(gpa, n, entered);
+                        entered += 1;
                         try stack.append(gpa, .{ .node = n, .expanded = true });
                         // The children in order, then a delta's base: pushed in reverse.
                         if (d.kind == .delta) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
@@ -2397,10 +2572,12 @@ pub const Table = struct {
             if (fr.eager != .none) {
                 if (t.memo_map.get(n) != null) continue;
                 const image = t.memo_map.get(fr.eager).?;
+                const low = t.mapLowWith(null, fr.eager);
                 var id: ?NodeId = n;
                 while (id) |x| : (id = if (t.kind(x) == .view) t.chainNext(x) else null) {
                     if (t.memo_map.get(x) != null) break;
                     try t.memo_map.put(gpa, x, image);
+                    try t.mapLowPut(gpa, x, low);
                 }
                 continue;
             }
@@ -2411,11 +2588,14 @@ pub const Table = struct {
                     // Every view on the chain `force` followed takes the
                     // answer's image: κ stored under a middle view is carried
                     // over the relabelling too (§2.11 *κ at a view*).
-                    const image = t.memo_map.get(t.memo_force.get(n).?).?;
+                    const answer = t.memo_force.get(n).?;
+                    const image = t.memo_map.get(answer).?;
+                    const low = t.mapLowWith(null, answer);
                     var id: ?NodeId = n;
                     while (id) |x| : (id = t.chainNext(x)) {
                         if (t.memo_map.get(x) != null) break;
                         try t.memo_map.put(gpa, x, image);
+                        try t.mapLowPut(gpa, x, low);
                     }
                 },
                 .recast => {
@@ -2423,6 +2603,7 @@ pub const Table = struct {
                     const in = t.memo_map.get(.from(d.a)).?;
                     // A whole recast stays whole, its reach relabelled (#1311).
                     try t.memo_map.put(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
+                    try t.mapLowPut(gpa, n, t.mapLowWith(null, .from(d.a)));
                 },
                 .@"union", .choice, .positions => {
                     if (t.memo_map.get(n) != null) continue;
@@ -2430,19 +2611,33 @@ pub const Table = struct {
                     const sides = t.sidesInOrder(n);
                     const l = t.memo_map.get(sides[0]).?;
                     const r = t.memo_map.get(sides[1]).?;
-                    try account.reserve(.shape, 1);
-                    const out: NodeId = .from(t.count());
-                    try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none });
+                    const low = t.mapLowWith(t.mapLowWith(null, sides[0]), sides[1]);
+                    const rec: Node = .{ .kind = d.kind, .place = d.place, .cells = c, .a = l.int(), .b = r.int(), .reach = .none };
+                    // On a knot: the record raw, as the knot's parts are.
+                    // Otherwise interned as it is, both sides kept.
+                    const out: NodeId = if (low != null) blk: {
+                        try account.reserve(.shape, 1);
+                        const id: NodeId = .from(t.count());
+                        try t.nodes.append(gpa, rec);
+                        break :blk id;
+                    } else try t.make(gpa, account, rec);
                     try t.memo_map.put(gpa, n, out);
+                    try t.mapLowPut(gpa, n, low);
                 },
                 .node, .delta => {
                     const out = t.memo_map.get(n).?;
+                    const index = t.map_open.get(n).?;
+                    var low: ?MapLow = null;
                     var mapped: u32 = over_none;
                     var it = t.overEntries(if (d.kind == .node) d.a else d.b);
-                    while (it.next()) |e| mapped = try t.overPut(gpa, account, mapped, e.step, t.memo_map.get(e.node).?);
+                    while (it.next()) |e| {
+                        mapped = try t.overPut(gpa, account, mapped, e.step, t.memo_map.get(e.node).?);
+                        low = t.mapLowWith(low, e.node);
+                    }
                     if (d.kind == .node) {
                         t.nodes.items(.a)[out.int()] = mapped;
                     } else {
+                        low = t.mapLowWith(low, .from(d.a));
                         var base = t.memo_map.get(.from(d.a)).?;
                         // A view base may answer a delta: the image composes
                         // over that delta's base, as `put` does, so no delta
@@ -2458,6 +2653,13 @@ pub const Table = struct {
                         t.nodes.items(.a)[out.int()] = base.int();
                         t.nodes.items(.b)[out.int()] = mapped;
                     }
+                    // Closed: a part that named it named the knot's own
+                    // record; one that reaches an earlier open node is on
+                    // that node's knot. Neither is interned.
+                    t.map_open.put(gpa, n, map_closed) catch unreachable;
+                    if (low) |l| {
+                        if (l.index < index) try t.map_low.put(gpa, n, l);
+                    } else try t.memo_map.put(gpa, n, try t.mapAdopt(gpa, out));
                 },
             }
         }
@@ -4221,6 +4423,159 @@ test "collect keeps positions: a repeated member stays two, proj and map keep th
     try testing.expect(!try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, xy, xx));
     // reach sees through both kinds.
     try testing.expectEqual(@as(u32, 2), f.cells.sets.count(try f.shapes.reach(gpa, &f.account, &f.cells.sets, j)));
+}
+
+/// `{ a = xs, b = [] }` with its storage cell made at site `site`.
+fn record2(f: *Fixture, site: u32) !NodeId {
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const list = try f.placeOf(1);
+    const xs = try f.shapes.leaf(gpa, &f.account, list, try f.param(2, list));
+    const empty = try f.shapes.leaf(gpa, &f.account, list, try f.site(7, list, .list));
+    var children = try f.one(try Place.Step.field(&f.account, 10), xs);
+    children = try f.shapes.overPut(gpa, &f.account, children, try Place.Step.field(&f.account, 11), empty);
+    return f.shapes.node(gpa, &f.account, rec, try f.site(site, rec, .record), children);
+}
+
+const OneCell = struct {
+    fn relabel(fx: *Fixture, s: SetId) Error!SetId {
+        if (s == .none) return .none;
+        return fx.cells.sets.insert(testing.allocator, .growth(&fx.account), .none, 1_000, 0);
+    }
+};
+
+test "#1372: map interns an image on no knot: a value relabelled again is the node it was" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const r = try record2(&f, 8);
+    // A round's unchanged value: relabelled twice, one node; relabelled by
+    // the identity, the node itself, a choice of it included.
+    const once = try f.shapes.map(gpa, &f.account, r, &f, OneCell.relabel);
+    try testing.expectEqual(once, try f.shapes.map(gpa, &f.account, r, &f, OneCell.relabel));
+    const Same = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    try testing.expectEqual(r, try f.shapes.map(gpa, &f.account, r, {}, Same.same));
+    const c = try f.shapes.choice(gpa, &f.account, &f.cells.sets, r, try record2(&f, 9));
+    try testing.expectEqual(c, try f.shapes.map(gpa, &f.account, c, {}, Same.same));
+    // Two records of two sites that relabel alike are one image.
+    try testing.expectEqual(once, try f.shapes.map(gpa, &f.account, try record2(&f, 9), &f, OneCell.relabel));
+}
+
+test "#1372: a positions node whose sides map to one node keeps both edges" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // `[ r₁, r₂ ]`, two built records that relabel alike: their images are
+    // one node, and the element positions stay two (§2.9: κ counts edges).
+    const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ try record2(&f, 8), try record2(&f, 9) });
+    const mapped = try f.shapes.map(gpa, &f.account, xy, &f, OneCell.relabel);
+    try testing.expectEqual(Kind.positions, f.shapes.kind(mapped));
+    const d = f.shapes.get(mapped);
+    try testing.expectEqual(d.a, d.b);
+    try testing.expectEqual(Kind.node, f.shapes.kind(.from(d.a)));
+    // Below it too: `[*].a` is a positions node of two.
+    const pa = try f.proj(mapped, try Place.Step.field(&f.account, 10));
+    try testing.expectEqual(Kind.positions, f.shapes.kind(pa));
+    // A union of them is two alternatives of one value, and a choice the
+    // same: the record kept as each made it, never absorbed.
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, try record2(&f, 8), try record2(&f, 9));
+    const mu = try f.shapes.map(gpa, &f.account, u, &f, OneCell.relabel);
+    try testing.expectEqual(Kind.@"union", f.shapes.kind(mu));
+}
+
+test "#1372: an image on a knot is not interned: each map of a widened value ties its own knot" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    const t_param = try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree));
+    var inner_children = try f.one(s0, t_param);
+    inner_children = try f.shapes.overPut(gpa, &f.account, inner_children, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list)));
+    inner_children = try f.shapes.overPut(gpa, &f.account, inner_children, s2, t_param);
+    const inner = try f.shapes.node(gpa, &f.account, tree, .none, inner_children);
+    var outer_children = try f.one(s0, inner);
+    outer_children = try f.shapes.overPut(gpa, &f.account, outer_children, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(2, list, .list)));
+    outer_children = try f.shapes.overPut(gpa, &f.account, outer_children, s2, inner);
+    const outer = try f.shapes.node(gpa, &f.account, tree, .none, outer_children);
+    const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, outer);
+    const Same = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    const m1 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    const m2 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    try testing.expect(m1 != w and m2 != w);
+    try testing.expect(m1 != m2);
+    // Each a knot of its own: the recursive child names its own image.
+    for ([_]NodeId{ m1, m2 }) |m| {
+        const child = try f.proj(m, s0);
+        try testing.expect(child == m or (f.shapes.kind(child) == .@"union" and f.shapes.nodes.items(.a)[child.int()] == m.int()));
+    }
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m2));
+}
+
+test "#1372: joinAlternatives flattens a choice member into one set of distinct alternatives; joinChoice keeps it" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const a = try record2(&f, 8);
+    const b = try record2(&f, 9);
+    const c = try record2(&f, 10);
+    // `port₂ = port₁ ⊔ F₁` with `port₁ = choice(a, b)` and `F₁ ∋ b, c`: three
+    // alternatives, b once.
+    const ab = try f.shapes.choice(gpa, &f.account, &f.cells.sets, a, b);
+    const bc = try f.shapes.choice(gpa, &f.account, &f.cells.sets, b, c);
+    var m1 = [_]NodeId{ ab, bc };
+    const flat = try f.shapes.joinAlternatives(gpa, &f.account, &f.places, &f.cells, &m1);
+    var arms: std.ArrayList(NodeId) = .empty;
+    defer arms.deinit(gpa);
+    var todo: std.ArrayList(NodeId) = .empty;
+    defer todo.deinit(gpa);
+    try todo.append(gpa, flat);
+    while (todo.pop()) |n| {
+        if (f.shapes.kind(n) == .choice) {
+            try todo.appendSlice(gpa, &.{ .from(f.shapes.get(n).a), .from(f.shapes.get(n).b) });
+        } else try arms.append(gpa, n);
+    }
+    std.mem.sort(NodeId, arms.items, {}, struct {
+        fn lt(_: void, x: NodeId, y: NodeId) bool {
+            return x.int() < y.int();
+        }
+    }.lt);
+    try testing.expectEqualSlices(NodeId, &.{ a, b, c }, arms.items);
+    // Again: the memo, and γ is the nested join's.
+    var m2 = [_]NodeId{ ab, bc };
+    try testing.expectEqual(flat, try f.shapes.joinAlternatives(gpa, &f.account, &f.places, &f.cells, &m2));
+    var m3 = [_]NodeId{ ab, bc };
+    const nested = try f.shapes.joinChoice(gpa, &f.account, &f.places, &f.cells, &m3);
+    try testing.expect(nested != flat);
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, nested, flat));
+    // The member with the most arms is kept whole, so a tower of joins adds
+    // one arm to it, never rebuilds it.
+    var m5 = [_]NodeId{ c, ab };
+    const tw = try f.shapes.joinAlternatives(gpa, &f.account, &f.places, &f.cells, &m5);
+    const ts = [_]u32{ f.shapes.get(tw).a, f.shapes.get(tw).b };
+    try testing.expect(std.mem.indexOfScalar(u32, &ts, ab.int()) != null);
+    // A union or positions member is never opened into alternatives.
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, a, b);
+    var m4 = [_]NodeId{ u, c };
+    const ju = try f.shapes.joinAlternatives(gpa, &f.account, &f.places, &f.cells, &m4);
+    try testing.expectEqual(Kind.choice, f.shapes.kind(ju));
+    const sides = [_]u32{ f.shapes.get(ju).a, f.shapes.get(ju).b };
+    try testing.expect(std.mem.indexOfScalar(u32, &sides, u.int()) != null);
 }
 
 test "map of a delta keeps its base when mapping the base grows the table" {
