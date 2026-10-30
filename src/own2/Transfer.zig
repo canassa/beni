@@ -1074,7 +1074,7 @@ pub const Frame = struct {
         for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse break;
         return p;
     }
-    /// How many steps of `steps` read `v` before a leaf, when the path meets
+    /// How many exact steps of `steps` read `v` before a leaf, when the path meets
     /// one (null when it does not): every position below is then a symbolic
     /// cell's projection, not a cell a built value holds.
     fn leafDepth(f: *Frame, v: Value, steps: []const Step) Error!?usize {
@@ -1083,7 +1083,9 @@ pub const Frame = struct {
         for (steps, 0..) |s, i| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             if (shapes.kind(at) == .leaf) return i;
-            if (s.kind == .level) return null;
+            // A `[*]` or `⟲` before the leaf stands for many positions: the
+            // shared prefix does not prove both paths reach the same one.
+            if (s.kind == .level or s.kind == .elem) return null;
             at = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, at, s)) orelse return null;
         }
         return null;

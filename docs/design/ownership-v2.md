@@ -1464,7 +1464,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      { … x = xs, y = xs }` is refused. At a path through `[*]` or `⟲` it may stand for several
      positions, and then the write owes their distinctness, `excl c`, upward (the fold's reliance,
      §8 S3b), but **only with evidence that the two paths are distinct positions**: both meet the
-     same leaf of the actual through the same prefix, so they part below it, each a projection of one
+     same leaf of the actual through the same exact prefix (no `[*]` or `⟲` in it), so they part below it, each a projection of one
      symbolic value, and the class's two paths fold there (`Transfer.foldBelowLeaf`). Two paths that
      meet one leaf through different prefixes (`g l = f { x = l, y = l }`, `CallOtherPathsSharedLeaf`)
      are one value held twice: a conflict. `two l`, with `l` a subtree of the caller's `t`, is accepted
