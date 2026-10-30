@@ -11314,7 +11314,7 @@ pub const Lowerer = struct {
             // `callExpr` wrote these as a short circuit before asking.
             .@"and" => l.binary(.logical_and, v[0], v[1], p),
             .@"or" => l.binary(.logical_or, v[0], v[1], p),
-            .negate => l.binary(.sub, try zero.node(l, p), v[0], p),
+            .negate => l.unary(.neg, v[0], p),
             .int32_fromInt => l.binary(.bit_or, v[0], try zero.node(l, p), p),
             .int32_toInt => v[0],
             .int32_toUnsignedInt => l.binary(.shr, v[0], try zero.node(l, p), p),
