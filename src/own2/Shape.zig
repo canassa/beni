@@ -109,6 +109,8 @@ pub const Table = struct {
     /// Node marks for a walk over the node table, one per walk in progress,
     /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
     marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
+    /// `cycleWalk`'s (index, low link) per record entered, likewise.
+    cycle_marks: stamped.Pool(stamped.Column(NodeId, [2]u32)) = .{},
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
@@ -168,6 +170,7 @@ pub const Table = struct {
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
         t.marks.deinit(gpa);
+        t.cycle_marks.deinit(gpa);
         t.rank_memo.deinit(gpa);
         t.named_memo.deinit(gpa);
         t.named_pool.deinit(gpa);
@@ -256,56 +259,130 @@ pub const Table = struct {
         };
     }
 
+    /// Tarjan's walk, on explicit stacks, over a lazy reader's relation
+    /// (§2.11 *Cycles, links and folds*): `r.from(x)` is what `x`'s answer is
+    /// read from, `r.settled(x)` whether its answer is kept already, and
+    /// `r.settle(members)` keeps the answer of one record alone or of one
+    /// cycle of them, all they read from outside it settled. Each record is
+    /// entered once, so a cycle with no `node` on it (`U = union(leaf,
+    /// delta(U, o))` under a view, #1314) ends at its least fixed point.
+    fn cycleWalk(t: *Table, gpa: Allocator, start: NodeId, r: anytype) Error!void {
+        const Frame = struct { node: NodeId, from: [2]NodeId, next: u8 = 0 };
+        var frames: std.ArrayList(Frame) = .empty;
+        defer frames.deinit(gpa);
+        // Records entered and not in a settled cycle, in entry order, and
+        // each entered record's (index, low link).
+        var open: std.ArrayList(NodeId) = .empty;
+        defer open.deinit(gpa);
+        const marks = try t.cycle_marks.take(gpa);
+        defer t.cycle_marks.give(marks);
+        var y = start;
+        var entered: u32 = 0;
+        while (true) {
+            if (y != .none) {
+                const at = entered;
+                entered += 1;
+                try marks.put(gpa, y, .{ at, at });
+                try open.append(gpa, y);
+                try frames.append(gpa, .{ .node = y, .from = try r.from(y) });
+            }
+            const f = &frames.items[frames.items.len - 1];
+            if (f.next < 2) {
+                y = f.from[f.next];
+                f.next += 1;
+                if (y == .none or r.settled(y)) {
+                    y = .none;
+                } else if (marks.get(y)) |m| {
+                    // Unsettled and entered: open, on the cycle being walked.
+                    const mx = marks.getPtr(f.node).?;
+                    mx[1] = @min(mx[1], m[0]);
+                    y = .none;
+                }
+                continue;
+            }
+            y = .none;
+            const done = frames.pop().?;
+            const mx = marks.get(done.node).?;
+            if (frames.items.len > 0) {
+                const p = marks.getPtr(frames.items[frames.items.len - 1].node).?;
+                p[1] = @min(p[1], mx[1]);
+            }
+            if (mx[1] == mx[0]) {
+                // `done` heads a cycle, or is alone: the open records from it on.
+                var first = open.items.len - 1;
+                while (open.items[first] != done.node) first -= 1;
+                try r.settle(open.items[first..]);
+                open.shrinkRetainingCapacity(first);
+            }
+            if (frames.items.len == 0) return;
+        }
+    }
+
+    /// `n`'s cells. A lazy node's are the join of what it reads them from:
+    /// a view's answer's, a recast's inner's, a delta's base's, a join's two
+    /// sides'; a whole recast's its inner's reach, approximately
+    /// (`recastWhole`). Each is read first, and kept in the record: a record
+    /// per node built, its unions charged as any. A cycle of lazy records
+    /// reads its cells as their least fixed point, the join of what enters it
+    /// from outside (§2.11 *Cycles, links and folds*, `cycleWalk`).
     pub fn cellsOf(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
         if (!t.isLazy(n)) return t.cells(n);
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, n);
-        while (stack.items.len > 0) {
-            const x = stack.items[stack.items.len - 1];
-            if (!t.isLazy(x)) {
-                _ = stack.pop();
-                continue;
-            }
-            const d = t.get(x);
-            // A view's cells are its answer's.
-            if (d.kind == .view) {
-                const answer = try t.force(gpa, account, x);
-                if (t.isLazy(answer)) {
-                    try stack.append(gpa, answer);
-                    continue;
-                }
-                try account.reserve(.shape, 1);
-                t.nodes.items(.cells)[x.int()] = t.cells(answer);
-                _ = stack.pop();
-                continue;
-            }
-            // A whole recast's are its inner's reach (`recastWhole`).
-            if (t.isWhole(x)) {
-                const c = try t.approxReach(gpa, account, cellsets, .from(d.a));
-                try account.reserve(.shape, 1);
-                t.nodes.items(.cells)[x.int()] = c;
-                _ = stack.pop();
-                continue;
-            }
-            // A recast's or a delta's cells are its inner's or base's, lazy
-            // with them; a positions node's, a union's or a choice's its sides' (a raw one
-            // a view made, §2.11).
-            const l: NodeId = .from(d.a);
-            const r: NodeId = if (d.kind == .positions or d.kind == .@"union" or d.kind == .choice) .from(d.b) else l;
-            if (t.isLazy(l) or t.isLazy(r)) {
-                if (t.isLazy(l)) try stack.append(gpa, l);
-                if (r != l and t.isLazy(r)) try stack.append(gpa, r);
-                continue;
-            }
-            try account.reserve(.shape, 1);
-            t.nodes.items(.cells)[x.int()] = if (r == l) t.cells(l) else try cellsets.unionWith(gpa, .growth(account), t.cells(l), t.cells(r));
-            _ = stack.pop();
-        }
+        var r: CellsWalk = .{ .t = t, .gpa = gpa, .account = account, .cellsets = cellsets };
+        try t.cycleWalk(gpa, n, &r);
         return t.cells(n);
     }
+
+    const CellsWalk = struct {
+        t: *Table,
+        gpa: Allocator,
+        account: *Account,
+        cellsets: *Cell.Radix,
+
+        /// A view's answer (forced, unless `settling`), a recast's inner or a
+        /// delta's base, a join's two sides, the right one first; a whole
+        /// recast reads its own.
+        fn reads(w: *CellsWalk, x: NodeId, settling: bool) Error![2]NodeId {
+            const d = w.t.get(x);
+            if (d.kind == .view) return .{ if (settling) w.t.forced(x) else try w.t.force(w.gpa, w.account, x), .none };
+            if (w.t.isWhole(x)) return .{ .none, .none };
+            const l: NodeId = .from(d.a);
+            if (d.kind != .positions and d.kind != .@"union" and d.kind != .choice) return .{ l, .none };
+            return .{ .from(d.b), if (d.b == d.a) .none else l };
+        }
+
+        fn from(w: *CellsWalk, x: NodeId) Error![2]NodeId {
+            return w.reads(x, false);
+        }
+
+        fn settled(w: *CellsWalk, x: NodeId) bool {
+            return !w.t.isLazy(x);
+        }
+
+        fn settle(w: *CellsWalk, members: []const NodeId) Error!void {
+            const t = w.t;
+            try w.account.reserve(.shape, @intCast(members.len));
+            // What a member reads from outside the cycle is settled; from
+            // another member, still lazy, it reads nothing new. A join's left
+            // side first.
+            var c: SetId = .none;
+            if (members.len == 1 and t.isWhole(members[0])) {
+                c = try t.approxReach(w.gpa, w.account, w.cellsets, .from(t.get(members[0]).a));
+            } else for (members) |m| {
+                const two = try w.reads(m, true);
+                for ([_]NodeId{ two[1], two[0] }) |y| if (y != .none and !t.isLazy(y)) {
+                    c = try w.cellsets.unionWith(w.gpa, .growth(w.account), c, t.cells(y));
+                };
+            }
+            for (members) |m| t.nodes.items(.cells)[m.int()] = c;
+            // A cycle's fixed point: each member holds what it reads.
+            if (std.debug.runtime_safety and members.len > 1) for (members) |m| for (try w.reads(m, true)) |y| if (y != .none) {
+                var it = w.cellsets.iterate(t.cells(y));
+                while (it.next()) |e| std.debug.assert(w.cellsets.member(c, e.key));
+            };
+        }
+    };
 
     // ---- the persistent step map ------------------------------------------------
 
@@ -1736,68 +1813,81 @@ pub const Table = struct {
 
     /// The steps `n`'s structure names, sorted and distinct: a node's
     /// children, a delta's overrides and its base's, a union's or a
-    /// positions node's sides'; a leaf or a recast names none. Memoised per
-    /// node, a side's list merged into its union's, so a union DAG costs
-    /// each node its own steps once. The slice is valid until the next call.
+    /// positions node's sides', a view's answer's; a leaf or a recast names
+    /// none. Memoised per node, a side's list merged into its union's, so a
+    /// union DAG costs each node its own steps once; a cycle of them (#1314)
+    /// names what every record on it names, its least fixed point
+    /// (`cycleWalk`). The slice is valid until the next call.
     pub fn namedSteps(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![]const u32 {
         try account.reserve(.memo, 1);
         if (t.named_memo.get(n)) |r| return t.named_pool.items[r[0]..][0..r[1]];
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
-        const Frame = struct { node: NodeId, expanded: bool };
-        var stack: std.ArrayList(Frame) = .empty;
-        defer stack.deinit(gpa);
-        var buf: std.ArrayList(u32) = .empty;
-        defer buf.deinit(gpa);
-        try stack.append(gpa, .{ .node = n, .expanded = false });
-        while (stack.pop()) |f| {
-            const x = f.node;
-            if (t.named_memo.contains(x)) continue;
-            const d = t.get(x);
-            // A union's sides and a delta's base first; nothing below them
-            // names `x` (a side is made before its union).
-            if (!f.expanded) switch (d.kind) {
-                .@"union", .choice, .positions => {
-                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
-                    continue;
-                },
-                .delta => {
-                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = .from(d.a), .expanded = false } });
-                    continue;
-                },
-                // A view names its answer's steps.
-                .view => {
-                    try stack.appendSlice(gpa, &.{ .{ .node = x, .expanded = true }, .{ .node = try t.force(gpa, account, x), .expanded = false } });
-                    continue;
-                },
-                else => {},
-            };
-            try account.reserve(.inspection, 1);
-            buf.clearRetainingCapacity();
-            switch (d.kind) {
-                .leaf, .recast => {},
-                .view => try t.mergeNamed(gpa, account, &buf, t.named_memo.get(t.memo_force.get(x).?).?),
-                .node, .delta => {
-                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
-                    while (it.next()) |e| {
-                        try account.reserve(.inspection, 1);
-                        try buf.append(gpa, e.step.word());
-                    }
-                    std.mem.sort(u32, buf.items, {}, std.sort.asc(u32));
-                    if (d.kind == .delta) try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
-                },
-                .@"union", .choice, .positions => {
-                    try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.a)).?);
-                    try t.mergeNamed(gpa, account, &buf, t.named_memo.get(.from(d.b)).?);
-                },
-            }
-            const at: u32 = @intCast(t.named_pool.items.len);
-            try t.named_pool.appendSlice(gpa, buf.items);
-            try t.named_memo.put(gpa, x, .{ at, @intCast(buf.items.len) });
-        }
+        var w: NamedWalk = .{ .t = t, .gpa = gpa, .account = account };
+        defer w.buf.deinit(gpa);
+        try t.cycleWalk(gpa, n, &w);
         const r = t.named_memo.get(n).?;
         return t.named_pool.items[r[0]..][0..r[1]];
     }
+
+    const NamedWalk = struct {
+        t: *Table,
+        gpa: Allocator,
+        account: *Account,
+        buf: std.ArrayList(u32) = .empty,
+
+        /// A union's sides (the right one first), a delta's base, a view's
+        /// answer (forced, unless `settling`).
+        fn reads(w: *NamedWalk, x: NodeId, settling: bool) Error![2]NodeId {
+            const d = w.t.get(x);
+            return switch (d.kind) {
+                .@"union", .choice, .positions => .{ .from(d.b), .from(d.a) },
+                .delta => .{ .from(d.a), .none },
+                .view => .{ if (settling) w.t.forced(x) else try w.t.force(w.gpa, w.account, x), .none },
+                .leaf, .node, .recast => .{ .none, .none },
+            };
+        }
+
+        fn from(w: *NamedWalk, x: NodeId) Error![2]NodeId {
+            return w.reads(x, false);
+        }
+
+        fn settled(w: *NamedWalk, x: NodeId) bool {
+            return w.t.named_memo.contains(x);
+        }
+
+        fn settle(w: *NamedWalk, members: []const NodeId) Error!void {
+            const t = w.t;
+            w.buf.clearRetainingCapacity();
+            for (members) |x| {
+                try w.account.reserve(.inspection, 1);
+                const d = t.get(x);
+                if (d.kind == .node or d.kind == .delta) {
+                    // Its own steps, sorted in `buf` when it is empty (a
+                    // record alone), else merged in from the pool's tail.
+                    const at: u32 = @intCast(t.named_pool.items.len);
+                    const list = if (w.buf.items.len > 0) &t.named_pool else &w.buf;
+                    const lo = list.items.len;
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |e| {
+                        try w.account.reserve(.inspection, 1);
+                        try list.append(w.gpa, e.step.word());
+                    }
+                    std.mem.sort(u32, list.items[lo..], {}, std.sort.asc(u32));
+                    if (list == &t.named_pool) {
+                        try t.mergeNamed(w.gpa, w.account, &w.buf, .{ at, @intCast(t.named_pool.items.len - at) });
+                        t.named_pool.shrinkRetainingCapacity(at);
+                    }
+                }
+                // What it reads that is kept: a member still open adds nothing.
+                const two = try w.reads(x, true);
+                for ([_]NodeId{ two[1], two[0] }) |y| if (y != .none) if (t.named_memo.get(y)) |got| try t.mergeNamed(w.gpa, w.account, &w.buf, got);
+            }
+            const at: u32 = @intCast(t.named_pool.items.len);
+            try t.named_pool.appendSlice(w.gpa, w.buf.items);
+            for (members) |m| try t.named_memo.put(w.gpa, m, .{ at, @intCast(w.buf.items.len) });
+        }
+    };
 
     /// `buf` (sorted, distinct) merged with a memoised list, a record per
     /// step read.
