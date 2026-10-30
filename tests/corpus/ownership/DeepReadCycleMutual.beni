@@ -1,0 +1,129 @@
+-- ownership: a callee's read on a cycle through two or more types, called
+-- at the root (ownership-v2.md §2.7, *A read that leaves its path on a
+-- cycle*, #1345). The callee's node keeps the route the caller folds into
+-- `t⟲`, so an exit of a callee node is kept below the argument's path as
+-- well. `two` reads `π1⟲#P.0` of a `P`/`Q` cycle; `ringOne` and `ringTwo`
+-- read one and two rounds down an `A`/`B`/`C` ring; `viaMaybe` steps
+-- through `Maybe` on an `N`/`O` cycle; `sndHelper` reads deeply under a
+-- tuple below `⟲`. Each holds the pushed list at the path read, and is
+-- refused, as v1 refuses it.
+type P
+    = P (List Int) Q
+
+
+type Q
+    = Q (List P)
+
+
+h1 : P → Int
+h1 a =
+    case a of
+        P _ (Q [ P v _ ]) →
+            List.length v
+
+        _ →
+            0
+
+
+pub two : Int → Int
+two n =
+    l = [ n ]
+    t = P [] (Q [ P l (Q []) ])
+    p = List.push l 5
+    h1 t + List.length p
+
+
+type A
+    = A (List Int) B
+
+
+type B
+    = B C
+
+
+type C
+    = C (List A)
+
+
+g1 : A → Int
+g1 a =
+    case a of
+        A _ (B (C [ A v _ ])) →
+            List.length v
+
+        _ →
+            0
+
+
+pub ringOne : Int → Int
+ringOne n =
+    l = [ n ]
+    t = A [] (B (C [ A l (B (C [])) ]))
+    p = List.push l 5
+    g1 t + List.length p
+
+
+grandA : A → Int
+grandA a =
+    case a of
+        A _ (B (C [ A _ (B (C [ A v _ ])) ])) →
+            List.length v
+
+        _ →
+            0
+
+
+pub ringTwo : Int → Int
+ringTwo n =
+    l = [ n ]
+    t = A [] (B (C [ A [] (B (C [ A l (B (C [])) ])) ]))
+    p = List.push l 5
+    grandA t + List.length p
+
+
+type N
+    = N (List Int) (Maybe O)
+
+
+type O
+    = O (Maybe N)
+
+
+grandMa : N → Int
+grandMa m =
+    case m of
+        N _ (Just (O (Just (N v _)))) →
+            List.length v
+
+        _ →
+            0
+
+
+pub viaMaybe : Int → Int
+viaMaybe n =
+    l = [ n ]
+    t = N [] (Just (O (Just (N l Nothing))))
+    p = List.push l 5
+    grandMa t + List.length p
+
+
+type U
+    = U (List Int) (List (Int × U))
+
+
+showSnd : U → String
+showSnd u =
+    case u of
+        U _ [ ( _, w ) ] →
+            Debug.toString w
+
+        _ →
+            ""
+
+
+pub sndHelper : Int → Int
+sndHelper n =
+    l = [ n ]
+    t = U [] [ ( 1, U [] [ ( 2, U l [] ) ] ) ]
+    p = List.push l 5
+    String.length (showSnd t) + List.length p

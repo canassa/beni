@@ -785,7 +785,9 @@ subtree has no place on a cycle has none. The descent of §2.8 step 3 does not f
 group that has one falls back to listing the holds (`hold listings`), as a folded step does. Fixtures:
 `ownership/DeepReadCycle`, `ownership/DeepReadCycleImported` (v1's refusals: inline, through a helper, of
 mutually recursive types, two levels below the cycle's entry, a whole use, a callee's `⟲` read; and a hold at
-the root's own field, outside the read, accepted).
+the root's own field, outside the read, accepted), `ownership/DeepReadCycleMutual` (a callee's read on a cycle of
+two or three types, through `Maybe` and under a tuple, called at the root: an exit below `q` is kept, since a
+callee on a mutual cycle keeps the route the caller folds into `t⟲`).
 
 ### 2.8 Demands and the check
 
