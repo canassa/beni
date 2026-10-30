@@ -111,6 +111,20 @@ tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 111:8 #0 :: ApartPaths.
 tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 116:10 #0 :: ApartPaths.rightLeft <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 123:10 #0 :: ApartPaths.rightLeft <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 150:10 #0 :: ApartPaths.rightLeft <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 44:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 56:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 68:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBoundImported [node] Parts 61:15 #0 :: Parts.kids r#Br.1 :: accepted :: rejected  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 44:18 #0 :: Parts.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 56:18 #0 :: Parts.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 68:18 #0 :: Parts.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 135:15 #0 :: ApartPathsBound.kids r#Br.1 :: accepted :: rejected  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 145:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 157:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 169:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 145:18 #0 :: ApartPathsBound.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 157:18 #0 :: ApartPathsBound.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 169:18 #0 :: ApartPathsBound.rightLeftT <Br …>⟨Tree⟩#Br.1 :: absent :: rejected  #1253 item 1: a node's subtrees are one `π1⟲` before its fix
 tests/corpus/ownership/Split.beni [node] Split 22:27 #0 :: Split.bumpHead <literal>[*] :: accepted :: rejected  bumpHead answers ~π1 approximately; a possible hold above a write counts (§2.11 item 3 (a), #1253)
 
 # v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a

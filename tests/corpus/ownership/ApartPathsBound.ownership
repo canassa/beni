@@ -1,0 +1,36 @@
+module ApartPathsBound
+  24:13 List.push xs: accepted param
+  38:15 call ApartPathsBound.kidsBox r#Box.0: accepted param (ApartPathsBound.kidsBox writes π1#Box.0)
+  45:18 call ApartPathsBound.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  51:8 call ApartPathsBound.g <Pair …>#Pair.1#Box.0: accepted fresh (ApartPathsBound.g writes π1#Pair.1#Box.0)
+  58:18 call ApartPathsBound.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  67:18 call ApartPathsBound.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  79:18 call ApartPathsBound.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  88:18 call ApartPathsBound.rightLeft <Pair …>#Pair.1#Box.0: accepted param (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  94:9 call ApartPathsBound.rightLeft q#Pair.1#Box.0: accepted param (ApartPathsBound.rightLeft writes π1#Pair.1#Box.0)
+  101:18 call ApartPathsBound.mid <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.mid writes π1#Pair.1#Box.0)
+  115:13 List.push xs: accepted param
+  135:15 call ApartPathsBound.kids r#Br.1: accepted param (ApartPathsBound.kids writes π1#Br.1)
+  145:18 call ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeftT writes π1#Br.2⟨Tree⟩#Br.1)
+  157:18 call ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPathsBound.rightLeftT writes π1#Br.2⟨Tree⟩#Br.1)
+  169:18 call ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1: accepted param (ApartPathsBound.rightLeftT writes π1#Br.2⟨Tree⟩#Br.1)
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary g: π1 R, π1#Pair.1 R, π1#Pair.1#Box.0 RW[storage], π1#Pair.1#Box.0[*] R
+  summary g0: unused
+  summary gLeft: π1 R, π1#Pair.0 R, π1#Pair.0#Box.0 RW[storage], π1#Pair.0#Box.0[*] R
+  summary fromMaybe: π1 R, π1#Just.0 R, π1#Just.0#Box.0 RW[storage], π1#Just.0#Box.0[*] R
+  summary fromTuple: π1 R, π1.0 R, π1.0#Box.0 RW[storage], π1.0#Box.0[*] R
+  summary gDistinct: π1 R, π1#Pair.0 R, π1#Pair.0#Box.0 R, π1#Pair.1 R, π1#Pair.1#Box.0 RW[storage], π1#Pair.1#Box.0[*] R
+  summary mid: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary gMid: π1 R, π1#Pair.1 R, π1#Pair.1#Box.0 RW[storage], π1#Pair.1#Box.0[*] R
+  summary kids: π1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res [*] ~π1#Br.1[*], fresh1 π1#Br.1
+  summary size: π1 R, π1#Br.1 R
+  summary rightLeftT: π1 R, π1#Br.0 RA, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RAW[storage], π1#Br.2⟨Tree⟩#Br.1[*] RA; res .0 fresh5 ~condition(fresh1) ~fresh1 ~π1#Br.2⟨Tree⟩#Br.1, .0[*] ~condition(fresh3) ~π1#Br.2⟨Tree⟩#Br.1[*], .1 ~condition(fresh4) π1#Br.0, condition(fresh2){sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}r{sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}
+  summary b7: π1 R, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RW[storage], π1#Br.2⟨Tree⟩#Br.1[*] R; xreq excl π1#Br.2
+  summary a7: π1 R, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RW[storage], π1#Br.2⟨Tree⟩#Br.1[*] R; xreq excl π1#Br.2
+  summary b7Distinct: π1 R, π1#Br.0 R, π1#Br.0⟨Tree⟩#Br.1 R, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RW[storage], π1#Br.2⟨Tree⟩#Br.1[*] R; xreq excl π1#Br.2
+  demands 15: accepted 8 (fresh 1, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 15: accepted 8 (fresh 1, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause disjoint 7
