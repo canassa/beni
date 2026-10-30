@@ -2748,6 +2748,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     ban on an `A`/`E` label instead of computing the class.
     **A comparison written in beni outside core is never derived** [2026-10-30, #1320]: when its walk is not built, or a
     limit stopped it, a call of it is unbuilt and the caller unchecked; it is not given the derived, read-only class.
+    A derived or core container comparison (`List.compare`, a derived row over a field) is built from the classes of the
+    user-written comparisons its argument's type reaches; one with no class leaves the call unbuilt, and one that writes
+    makes the comparison write. Core is the core package (`--core-root` included), not every embedded module.
 14. **`?`** (R-5.1.6): §2.6; an error type holding no cell adds nothing.
 15. **Index exchange** (R-4.8.17, #869, `p/RecordIndexExchange`): a callback of `List.indexedMap` (its index
     supplied as a scalar) keeps the source's κ when it is an **exact permutation**, which is a *flat decision chain* on the index

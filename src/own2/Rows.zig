@@ -743,19 +743,24 @@ fn usesMark(env: Env, use: NodeId, m: Cell.Mark) Error!bool {
 /// calls the components' own `eq`/`compare` (`components`, the classes of
 /// the user-written ones), so it is what they are: a component that lets
 /// its argument escape (`E` anywhere in its use) makes the derived
-/// argument `E` deep, and a component that writes makes it `writes`
+/// argument `E` deep, and a component that writes (`W` anywhere in its
+/// use) makes it `W` deep; one that is `writes` (unknown) stays so
 /// (R-5.13.1's `comparison_changes_value` then fires through it). A
 /// comparison cannot keep its argument in its result (`Bool`/`Order`
 /// cross), so `A` never arises.
 pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const ClassId) Error!ClassId {
     var escapes = false;
     var writes = false;
+    var written = false;
     for (components) |c| {
         try env.charge.reserve(env.gpa, .inspection, 1);
         writes = writes or sums.get(c).writes;
-        for (sums.paramUses(c)) |u| escapes = escapes or try usesMark(env, u, .e);
+        for (sums.paramUses(c)) |u| {
+            escapes = escapes or try usesMark(env, u, .e);
+            written = written or try usesMark(env, u, .w);
+        }
     }
-    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .e = escapes, .deep = true }, &.{});
+    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .e = escapes, .w = written, .deep = true }, &.{});
     const res = try env.shapes.nothing(env.gpa, env.account(), result_place);
     return sums.add(env, .{ .params = &.{ use, use }, .res = res, .writes = writes, .origin = .asserted });
 }
@@ -1008,14 +1013,15 @@ test "a constructor's class and a derived method's class" {
     try testing.expect(try Summary.Table.usedAt(env, f.sums.paramUses(eq)[0], &.{Step.elem}));
     try testing.expect(!f.sums.get(eq).writes);
     // A user-written component `eq` that lets its argument escape (through
-    // a wordless foreign) or writes it: the derived class says so.
+    // a wordless foreign) or writes it: the derived class says so (`S`, a
+    // write through the argument).
     const escaper = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
     const eq2 = try derivedClass(env, &f.sums, list, int, &.{ reader, escaper });
     try testing.expectEqualStrings("summary eq2: π1 RE, π2 RE (asserted)", try f.text(eq2, "eq2"));
     const writer = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.consumed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
     const eq3 = try derivedClass(env, &f.sums, list, int, &.{writer});
     try testing.expect(f.sums.get(eq3).writes);
-    try testing.expectEqualStrings("summary eq3: π1 R, π2 R (asserted)", try f.text(eq3, "eq3"));
+    try testing.expectEqualStrings("summary eq3: π1 RS, π2 RS (asserted)", try f.text(eq3, "eq3"));
 }
 
 // ---------------------------------------------------------------------------
