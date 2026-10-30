@@ -194,9 +194,10 @@ pub const Memo = struct {
 };
 
 /// A callee node that reads every path below it: a non-empty leaf (a leaf
-/// of marks, §2.13.6), or a node marked `D` (§2.10).
+/// of marks, §2.13.6), a node marked `D` (§2.10), or a node marked `A`,
+/// whose object the call's result holds (§2.7, *A part a callee answers*).
 fn deep(t: Tables, n: NodeId) Error!bool {
     if (t.shapes.kind(n) == .leaf) return t.shapes.cells(n) != .none;
-    if (t.cells.mark_d == .none) return false;
-    return t.cells.hasDeepRead(try t.shapes.cellsOf(t.gpa, t.charge.account, &t.cells.sets, n));
+    if (t.cells.mark_d == .none and t.cells.mark_a == .none) return false;
+    return t.cells.readsBelow(try t.shapes.cellsOf(t.gpa, t.charge.account, &t.cells.sets, n));
 }

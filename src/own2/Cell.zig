@@ -191,9 +191,10 @@ pub const Table = struct {
     /// `(container, label)` → split.
     split_intern: Ids.FixedDict(2) = .{},
     sets: Radix = .{},
-    /// `R`, `D` once made: `D`'s readers never intern, so no `D` costs nothing.
+    /// `R`, `D`, `A` once made: their readers never intern, so no `D` costs nothing.
     mark_r: CellId = .none,
     mark_d: CellId = .none,
+    mark_a: CellId = .none,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.cells.deinit(gpa);
@@ -313,12 +314,19 @@ pub const Table = struct {
         const id = try t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
         if (m == .r) t.mark_r = id;
         if (m == .deep_read) t.mark_d = id;
+        if (m == .a) t.mark_a = id;
         return id;
     }
 
     /// Whether `s` holds `D` (§2.10); `D` without `R` (no use shape's).
     pub fn hasDeepRead(t: *const Table, s: SetId) bool {
         return t.mark_d != .none and t.sets.member(s, t.mark_d.int());
+    }
+    /// Whether a caller's liveness reads every path below a use node of cells
+    /// `s`: `D` (§2.10), or `A`, an object the result holds (§2.7, *A part a
+    /// callee answers*). Read-off composes a callee's `use` as it is.
+    pub fn readsBelow(t: *const Table, s: SetId) bool {
+        return t.hasDeepRead(s) or (t.mark_a != .none and t.sets.member(s, t.mark_a.int()));
     }
     pub fn deepWithoutRead(t: *const Table, s: SetId) bool {
         return t.hasDeepRead(s) and !(t.mark_r != .none and t.sets.member(s, t.mark_r.int()));

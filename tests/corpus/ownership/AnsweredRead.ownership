@@ -1,0 +1,29 @@
+module AnsweredRead
+  50:9 List.push l: rejected alias: k[*] holds it and is read at 51:36
+  58:9 List.push l: rejected alias: t#Outer.0.kids[*]#Inner.0.w holds it and is read at 59:36
+  66:9 List.push l: rejected alias: t.kids[*] holds it and is read at 67:36
+  74:9 List.push l: rejected alias: t#Outer.0.kids[*]#Inner.0.w holds it and is read at 75:9
+  83:9 List.push l: rejected alias: k[*] holds it and is read at 84:37
+  91:9 List.push l: rejected alias: k[*] holds it and is read at 92:24
+  99:9 List.push l: rejected alias: k[*] holds it and is read at 100:26
+  107:9 List.push l: rejected alias: k[*] holds it and is read at 108:10
+  122:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 123:44
+  134:9 List.push l: accepted fresh
+  summary idl: π1 RA; res π1
+  summary wkids: π1 R, π1#Outer.0.kids RA; res π1#Outer.0.kids
+  summary rkids: π1.kids RA; res π1.kids
+  summary show: π1 R
+  summary idlRead: unused
+  summary wkidsRead: unused
+  summary rkidsRead: unused
+  summary bound: unused
+  summary inTuple: unused
+  summary piped: unused
+  summary viaShow: unused
+  summary pattern: unused
+  summary onCycle: unused
+  summary idl2: π1 RA; res π1
+  summary sibling: unused
+  demands 10: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 10: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause alias 9
