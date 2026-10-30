@@ -334,6 +334,8 @@ pub const Table = struct {
             std.debug.assert(!try env.shapes.holdsView(env.gpa, d.res));
             for (d.params) |u| std.debug.assert(!try env.shapes.holdsView(env.gpa, u));
             std.debug.assert(!try env.conds.kappaHoldsView(env.gpa, env.shapes, d.kappas));
+            // And resolved: a published κ holds no `inst` atom (§2.11, part 3).
+            std.debug.assert(!try env.conds.kappaHoldsInst(env.gpa, d.kappas));
         }
         var n: u32 = 1 + @as(u32, @intCast(d.params.len + d.funs.len + d.slots.len + d.classes.len + d.once.len));
         for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len + f.backs.len);
@@ -1150,6 +1152,7 @@ pub const Table = struct {
                 .within => try n.label(.from(a.a)),
                 .apart => try n.cellSet(.from(a.a)),
                 .keep, .writes => try n.put(a.a),
+                .inst => unreachable, // a summary is resolved
             }
         }
     };

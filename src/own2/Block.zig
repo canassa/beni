@@ -964,6 +964,7 @@ const Writer = struct {
                     .within => try w.ref(.label, a.a),
                     .apart => try w.ref(.set, a.a),
                     .keep, .writes => try w.word(a.a),
+                    .inst => unreachable, // a published κ is resolved (`Summary.Table.add` checks it)
                 }
             },
             .node => try w.position(w.positions.items[id]),

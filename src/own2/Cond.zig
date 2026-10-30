@@ -61,7 +61,7 @@ pub const Step = Shape.Step;
 
 pub const Kind = enum(u8) { yes, @"and", atom, shared, lost };
 
-pub const AtomKind = enum(u8) { excl, sep, within, apart, keep, writes };
+pub const AtomKind = enum(u8) { excl, sep, within, apart, keep, writes, inst };
 
 /// One condition (§3.4). `a`, `b` by kind: `and`: two conditions; `atom`:
 /// `excl`: a cell; `sep`: two cells (the smaller id first); `within`: a
@@ -202,6 +202,12 @@ pub const Table = struct {
     /// The shape table whose nodes key this table's entries, told of each new
     /// key (`keyed`); null: it tracks no relevance, and every node is relevant.
     shapes_hook: ?*Shape.Table = null,
+    /// Lazy conditions: the resolver, the `inst` atoms in creation order and
+    /// how far they are resolved, and the resolutions by condition.
+    resolver: ?Resolver = null,
+    inst_queue: std.ArrayList(CondId) = .empty,
+    inst_next: u32 = 0,
+    memo_resolved: Ids.FixedDict(1) = .{},
     no_cross: bool = false,
     no_memo: bool = false,
     crossed_reads: u32 = 0,
@@ -265,6 +271,8 @@ pub const Table = struct {
         t.memo_nodes_part.deinit(gpa);
         t.memo_per_cell.deinit(gpa);
         t.memo_set_agg.deinit(gpa);
+        t.inst_queue.deinit(gpa);
+        t.memo_resolved.deinit(gpa);
         t.memo_cell_part.deinit(gpa);
     }
 
@@ -446,7 +454,11 @@ pub const Table = struct {
     }
 
     /// `a ⊑ b` in the lattice `yes ⊑ and{A} ⊑ and{A ∪ B} ⊑ lost ⊑ shared`.
-    pub fn leq(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!bool {
+    pub fn leq(t: *Table, gpa: Allocator, charge: Charge, a0: CondId, b0: CondId) Error!bool {
+        // A fixpoint compares resolved conditions: an `inst` atom made at one
+        // round need not repeat at the next.
+        const a = try t.resolved(gpa, charge, a0);
+        const b = try t.resolved(gpa, charge, b0);
         if (a == b or a == yes or b == shared) return true;
         if (a == shared) return false;
         if (b == lost) return true;
@@ -918,6 +930,37 @@ pub const Table = struct {
         cond: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId,
     };
 
+    /// Whether a snapshot stores an unresolved condition (an `inst` atom in an
+    /// entry): a check that a published κ is resolved (§2.11), uncharged, for
+    /// `runtime_safety` builds.
+    pub fn kappaHoldsInst(t: *const Table, gpa: Allocator, ctx: Kappas) Allocator.Error!bool {
+        if (ctx == .none) return false;
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(Kappas) = .empty;
+        defer stack.deinit(gpa);
+        var conds: std.ArrayList(CondId) = .empty;
+        defer conds.deinit(gpa);
+        try stack.append(gpa, ctx);
+        while (stack.pop()) |at| {
+            if (at == .none or (try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
+            const p = t.position(at);
+            var it = t.mapEntries(p.here);
+            while (it.next()) |e| try conds.append(gpa, .from(e.value));
+            while (conds.pop()) |k| {
+                if (k == yes or fails(k)) continue;
+                const c = t.get(k);
+                if (c.kind == .@"and") {
+                    try conds.appendSlice(gpa, &.{ .from(c.a), .from(c.b) });
+                } else if (c.atom == .inst) return true;
+            }
+            if (p.fold != 0) continue;
+            var lt = t.mapEntries(p.links);
+            while (lt.next()) |e| try stack.append(gpa, .from(e.value));
+        }
+        return false;
+    }
+
     /// Whether a snapshot stores an entry under a view or a node whose DAG
     /// holds one: a check of the invariant that a class is stored forced
     /// (§2.11), uncharged, for `runtime_safety` builds. A position found
@@ -1196,6 +1239,10 @@ pub const Table = struct {
     /// A crossed read notes `base_epoch`; if it moved, the read is made again
     /// at `ctx`, exact, its memo entries dropped (*A read in flight*).
     fn readAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
+        return t.resolved(gpa, charge, try t.readAtRaw(gpa, charge, v, ctx, n, at_summary, pairs));
+    }
+
+    fn readAtRaw(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
         // A union's, a positions node's or a view's read is a DAG walk (§4.1, #1098).
         const walk = try v.shapes.dagWalk(gpa, charge.account, n);
         defer if (walk) |k| charge.account.leave(k);
@@ -1414,9 +1461,9 @@ pub const Table = struct {
     /// `kappaRead` of a node that is no view: a DAG node's read through the
     /// machine, any other kind's at once.
     fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
-        if (!isDag(v.shapes.kind(n))) return t.kappaReadOne(gpa, charge, v, ctx, n, at_summary, extra);
+        if (!isDag(v.shapes.kind(n))) return t.resolved(gpa, charge, try t.kappaReadOne(gpa, charge, v, ctx, n, at_summary, extra));
         const k = try t.readAt(gpa, charge, v, ctx, n, at_summary, &.{});
-        return if (extra) |e| t.join(gpa, charge, e, k) else k;
+        return t.resolved(gpa, charge, if (extra) |e| try t.join(gpa, charge, e, k) else k);
     }
 
     /// The read of a node of a kind that walks nothing below it (no view, no
@@ -2715,6 +2762,10 @@ pub const Table = struct {
     /// (*Carried along the walk*): a node wholly of the actual's region is
     /// read at `R_Q`, where earlier reads met it.
     pub fn deep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+        return t.resolved(gpa, charge, try t.deepRaw(gpa, charge, v, ctx, n, at_summary));
+    }
+
+    fn deepRaw(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
         const epoch = v.shapes.base_epoch;
         const from = t.pending.items.len;
         const r = try t.deepWalk(gpa, charge, v, ctx, n, at_summary);
@@ -3023,7 +3074,9 @@ pub const Table = struct {
     /// `shared` (one set lookup); the arrivals group (the `apart` atom at the
     /// top of κ) grows by insertion, the base scanned only while it has no
     /// group; plus the stored value's κ as a position. W fresh stores O(W log W).
-    pub fn lower(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, base_kappa: CondId, base_cells: SetId, stored: NodeId, at_summary: bool, traversal: ?Traversal) Error!CondId {
+    pub fn lower(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, base_kappa0: CondId, base_cells: SetId, stored: NodeId, at_summary: bool, traversal: ?Traversal) Error!CondId {
+        // `splitGroup` tests the base's condition's shape: resolved first.
+        const base_kappa = try t.resolved(gpa, charge, base_kappa0);
         if (base_kappa == shared) return shared;
         const split = t.splitGroup(base_kappa);
         var acc = split.rest;
@@ -3702,12 +3755,126 @@ pub const Table = struct {
         return true;
     }
 
+    // ---- lazy conditions (§2.11 *κ across a call*, part 3) -------------------------
+
+    /// What resolves an `inst` atom: condition `k` of a class under a call's
+    /// environment `env`, instantiated there (`Calls.Views`).
+    pub const Resolver = struct {
+        ctx: *anyopaque,
+        /// `k` a condition id, or with `set` an atom set (`instSet`).
+        resolve: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, k: u32, env: u32, set: bool) Error!CondId,
+    };
+
+    /// The atom `inst(k, env)`: a class's condition `k` under a call's
+    /// environment, instantiated only when a reader tests it (`resolved`).
+    /// `join`, `and`, `flat` and `kind` treat it as an opaque atom: resolving
+    /// distributes over `and`. A new atom is queued in creation order.
+    pub fn instAtom(t: *Table, gpa: Allocator, charge: Charge, k: CondId, env: u32) Error!CondId {
+        if (k == yes or fails(k)) return k;
+        const before = t.conds.len;
+        const a = try t.make(gpa, charge, .{ .kind = .atom, .atom = .inst, .a = k.int(), .b = env });
+        if (a.int() >= before) try t.inst_queue.append(gpa, a);
+        return a;
+    }
+
+    /// `inst` of an atom set (a class's `xreq`): the set itself, flagged in
+    /// the environment word (`inst_set_bit`), resolved atom by atom.
+    pub fn instSet(t: *Table, gpa: Allocator, charge: Charge, s: SetId, env: u32) Error!CondId {
+        if (s == .none) return yes;
+        std.debug.assert(env & inst_set_bit == 0);
+        const before = t.conds.len;
+        const a = try t.make(gpa, charge, .{ .kind = .atom, .atom = .inst, .a = s.int(), .b = env | inst_set_bit });
+        if (a.int() >= before) try t.inst_queue.append(gpa, a);
+        return a;
+    }
+
+    pub const inst_set_bit: u32 = 1 << 31;
+
+    /// The atoms queued before now are not this walk's to resolve: a frame
+    /// holds only atoms made in its own walk (a class is published resolved).
+    pub fn instFloor(t: *Table) void {
+        t.inst_next = @intCast(t.inst_queue.items.len);
+    }
+
+    /// `k` with every `inst` atom resolved (`Cond.resolved`, the one entry):
+    /// memoised per condition, canonical (*Canonical partials*). Before it
+    /// resolves anything it resolves, in creation order, every queued atom up
+    /// to the latest environment `k` names: an atom's resolution reads only
+    /// its environment's actuals, made before it, so the atoms that read
+    /// meets are resolved already and no resolution waits on another on the
+    /// native stack (#1130).
+    pub fn resolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId {
+        if (k == yes or fails(k) or t.inst_queue.items.len == 0) return k;
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_resolved.get(.{k.int()})) |hit| return .from(hit);
+        // Resolving is the reader's growth: never a lane's share (§4.1).
+        const task = try charge.account.enter(gpa, null);
+        defer charge.account.leave(task);
+        const g: Charge = .growth(charge.account);
+        var latest: ?u32 = null;
+        var it = t.atoms.iterate(try t.flat(gpa, g, k));
+        while (it.next()) |e| {
+            const a = t.get(.from(e.key));
+            if (a.atom == .inst) latest = if (latest) |l| @max(l, a.b & ~inst_set_bit) else a.b & ~inst_set_bit;
+        }
+        const out: CondId = if (latest) |env| blk: {
+            try t.drainTo(gpa, g, env);
+            // One `inst` atom: its resolution, canonical already.
+            if (t.get(k).kind == .atom) break :blk try t.resolveAtom(gpa, g, k);
+            var acc: CondId = yes;
+            var at = t.atoms.iterate(try t.flat(gpa, g, k));
+            while (at.next()) |e| {
+                try g.reserve(gpa, .inspection, 1);
+                const atom: CondId = .from(e.key);
+                const r: CondId = if (t.get(atom).atom == .inst) try t.resolveAtom(gpa, g, atom) else atom;
+                acc = try t.@"and"(gpa, g, acc, r);
+                if (acc == shared) break;
+            }
+            break :blk try t.canonical(gpa, g, acc);
+        } else k;
+        (try t.memo_resolved.getOrPut(gpa, .{k.int()})).value_ptr.* = out.int();
+        return out;
+    }
+
+    /// The queued atoms up to environment `env`, resolved in creation order.
+    fn drainTo(t: *Table, gpa: Allocator, charge: Charge, env: u32) Error!void {
+        while (t.inst_next < t.inst_queue.items.len) {
+            const a = t.inst_queue.items[t.inst_next];
+            if (t.get(a).b & ~inst_set_bit > env) break;
+            t.inst_next += 1;
+            _ = try t.resolveAtom(gpa, charge, a);
+        }
+    }
+
+    /// One `inst` atom resolved, memoised: `instantiate` of its condition
+    /// under its environment, canonical. A resolved condition holds no
+    /// `inst` atom.
+    fn resolveAtom(t: *Table, gpa: Allocator, charge: Charge, a: CondId) Error!CondId {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_resolved.get(.{a.int()})) |hit| return .from(hit);
+        const d = t.get(a);
+        const rs = t.resolver orelse unreachable; // an `inst` atom is made only under one
+        const r = try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0));
+        if (std.debug.runtime_safety) try t.assertResolved(gpa, charge, r);
+        (try t.memo_resolved.getOrPut(gpa, .{a.int()})).value_ptr.* = r.int();
+        return r;
+    }
+
+    /// A `runtime_safety` check at a resolving reader: `k` holds no `inst`.
+    pub fn assertResolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!void {
+        if (!std.debug.runtime_safety or k == yes or fails(k)) return;
+        var it = t.atoms.iterate(try t.flat(gpa, charge, k));
+        while (it.next()) |e| if (t.get(.from(e.key)).atom == .inst) std.debug.panic("ownership v2: an unresolved inst atom reached a reader that tests it", .{});
+    }
+
     // ---- at a call, and relying ----------------------------------------------
 
     /// κ instantiated at a call (§2.9, *a call*): a failure stays, every
     /// atom is answered by the caller's interpreter and the answers are
     /// conjoined. One record per atom.
-    pub fn instantiate(t: *Table, gpa: Allocator, charge: Charge, k: CondId, interp: Interp) Error!CondId {
+    pub fn instantiate(t: *Table, gpa: Allocator, charge: Charge, k0: CondId, interp: Interp) Error!CondId {
+        // A reader of a condition's atoms: its `inst` atoms resolved first.
+        const k = try t.resolved(gpa, charge, k0);
         if (k == yes or fails(k)) return k;
         var acc: CondId = yes;
         var it = t.atoms.iterate(try t.flat(gpa, charge, k));
@@ -3721,7 +3888,9 @@ pub const Table = struct {
 
     /// Relying on κ (§2.9): `yes` records nothing, atoms become the frame's
     /// `xreq`, a failure is the refusal `exclusive`, exact for `shared`.
-    pub fn rely(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!Rely {
+    pub fn rely(t: *Table, gpa: Allocator, charge: Charge, k0: CondId) Error!Rely {
+        const k = try t.resolved(gpa, charge, k0);
+        try t.assertResolved(gpa, charge, k);
         if (k == yes) return .ok;
         if (k == shared) return .{ .refused = .exact };
         if (k == lost) return .{ .refused = .approximate };
@@ -3794,6 +3963,8 @@ pub const Table = struct {
             },
             .keep => try w.print("keep cb{d}", .{a.a + 1}),
             .writes => try w.print("writes cb{d}", .{a.a + 1}),
+            // Unresolved: only a frame's value, never a summary, holds one.
+            .inst => try w.print("inst {d}@{d}", .{ a.a, a.b }),
         }
     }
 };

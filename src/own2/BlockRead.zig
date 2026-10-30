@@ -688,6 +688,8 @@ const Reader = struct {
                     .apart => try conds.apartAtom(gpa, charge, try r.opt(SetId, .set)),
                     .keep => try conds.keep(gpa, charge, try r.get()),
                     .writes => try conds.writes(gpa, charge, try r.get()),
+                    // A block holds resolved conditions only.
+                    .inst => return error.Malformed,
                 };
                 return a.int();
             },

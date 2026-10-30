@@ -950,6 +950,8 @@ fn mentions(conds: *const Cond.Table, cells: *const Cell.Table, b: CondId, incom
             break :blk false;
         },
         .within, .keep, .writes => false,
+        // `sep`'s answers, never an unresolved condition.
+        .inst => unreachable,
     };
 }
 
