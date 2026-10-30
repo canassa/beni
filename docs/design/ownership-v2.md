@@ -1933,6 +1933,18 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    instantiates `cb f@ι_in` through that env as `cb f′@(ι_c·ι_in)` or `result (ι_c·ι_in)·k` — never eagerly at
    the call that returned the closure, which would mint one cell for every later call; a closure node in `res` carries its class from `S.classes`
    instantiated the same way. Crossing → `∅`.
+   **A taken result** (*amended 2026-10-31, #1393*). A row's `taken` result `elem(πᵢ·q·ρ)` (§2.13.6,
+   `traverseAt`) maps to the element the call materialises out of `proj(aᵢ, q)`, as a list pattern does
+   (§2.13.3): `elem(c·ι)` for each symbolic container cell `c` of the actual there, under the split of `c`
+   at ι whose κ is the actual's contents' at `q[*]`; the actual's other contents at `q[*]` (a literal's
+   elements, a stored value, `⊤`) as they are. A refinement a class made at a call of its own is not
+   mapped and stays `⊤`; a summary's read-off forgets its splits (§2.2), so only a row's `ρ` meets this
+   rule. Before the amendment the element was `⊤`, and storing it into another list,
+   `put b i (traverseAt a k)`, was refused `disjoint`: `⊤` reaches every cell. v1 accepts that store and
+   relies on `sep π1[*] π5[*]` and `excl π1`. v2 relies on the same thing in the stored list's κ, which
+   §2.9's construction rule builds from the element and `b`'s contents (`apart`, `excl`), and every
+   caller discharges it where it reads that κ. A caller that passes one list as both arguments is refused
+   at the call under item 3 (`TakenStored`, `TakenStoredImported`).
 7. **Conditions**: κ(res) instantiated; `S.xreq` discharged on the arguments, reported on that call's line (R-4.6.6).
 
 **Instantiation boundary (S3b).** Instantiate a **value interpretation**, never a shape followed by
@@ -4511,7 +4523,7 @@ L0  Ids
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 010 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk) |
-| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 630 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor) |
+| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 680 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
 | `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 940 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write) |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
