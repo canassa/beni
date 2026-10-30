@@ -1,0 +1,42 @@
+module ApartPaths
+  26:13 List.push xs: accepted param
+  40:15 call ApartPaths.kidsBox r#Box.0: accepted param (ApartPaths.kidsBox writes π1#Box.0)
+  45:10 call ApartPaths.rightLeftBox <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPaths.rightLeftBox writes π1#Pair.1#Box.0)
+  54:15 call ApartPaths.kidsBox r#Box.0: accepted param (ApartPaths.kidsBox writes π1#Box.0)
+  58:11 call ApartPaths.readAfter <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPaths.readAfter writes π1#Pair.1#Box.0)
+  63:10 call ApartPaths.rightLeftBox <Pair …>#Pair.1#Box.0: accepted fresh (ApartPaths.rightLeftBox writes π1#Pair.1#Box.0)
+  77:13 List.push xs: accepted param
+  87:15 call ApartPaths.kids r#Br.1: accepted param (ApartPaths.kids writes π1#Br.1)
+  105:10 call ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPaths.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  111:8 call ApartPaths.b8 <Br …>⟨Tree⟩#Br.1: accepted fresh (ApartPaths.b8 writes π1⟨Tree⟩#Br.1)
+  116:10 call ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPaths.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  123:10 call ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPaths.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  132:15 List.push xs: accepted param
+  142:13 call ApartPaths.rootVsSub <Br …>#Br.1: rejected disjoint: another operand of the same operation reaches it (ApartPaths.rootVsSub writes π1#Br.1)
+  150:10 call ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1: accepted fresh (ApartPaths.rightLeft writes π1#Br.2⟨Tree⟩#Br.1)
+  159:15 call ApartPaths.kidsBox r#Box.0: accepted param (ApartPaths.kidsBox writes π1#Box.0)
+  163:11 call ApartPaths.readDeep <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (ApartPaths.readDeep writes π1#Pair.1#Box.0)
+  167:19 call ApartPaths.readDeep <Pair …>#Pair.1#Box.0: accepted fresh (ApartPaths.readDeep writes π1#Pair.1#Box.0)
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary rightLeftBox: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary g: π1 R, π1#Box.0 RW[storage], π1#Box.0[*] R
+  summary readAfter: π1 R, π1#Pair.0 R, π1#Pair.0#Box.0 R, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 π1#Pair.1#Box.0, .0[*] ~π1#Pair.1#Box.0[*]
+  summary gRead: π1 R, π1#Box.0 AW[storage], π1#Box.0[*] A; res .0 condition(fresh1) π1#Box.0, .0[*] ~condition(fresh2) ~π1#Box.0[*]
+  summary gDistinct: unused
+  summary kids: π1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res [*] ~π1#Br.1[*], fresh1 π1#Br.1
+  summary rightLeft: π1 R, π1#Br.0 RA, π1#Br.2 R, π1#Br.2⟨Tree⟩#Br.1 RAW[storage], π1#Br.2⟨Tree⟩#Br.1[*] RA; res .0 fresh5 ~condition(fresh1) ~fresh1 ~π1#Br.2⟨Tree⟩#Br.1, .0[*] ~condition(fresh3) ~π1#Br.2⟨Tree⟩#Br.1[*], .1 ~condition(fresh4) π1#Br.0, condition(fresh2){sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}r{sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1, sep π1#Br.0 π1#Br.2⟨Tree⟩#Br.1[*]}
+  summary size: π1 R, π1#Br.1 R
+  summary b8: π1 R, π1⟨Tree⟩#Br.1 RW[storage], π1⟨Tree⟩#Br.1[*] R; xreq excl π1
+  summary c8: unused
+  summary twoRoutes: π1 R, π1⟨Tree⟩#Br.1 RW[storage], π1⟨Tree⟩#Br.1[*] R; xreq excl π1
+  summary twoRoutesShared: π1 R, π1⟨Tree⟩#Br.1 RW[storage], π1⟨Tree⟩#Br.1[*] R, π2 R; xreq excl π1
+  summary rootVsSub: π1 R, π1#Br.0 R, π1#Br.0⟨Tree⟩#Br.1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res .0 fresh1 π1#Br.1, .0[*] ~π1#Br.1[*]
+  summary callerT: π1 R, π1#Br.1 RAW[storage], π1#Br.1[*] A; res .0 fresh3 ~condition(fresh1) ~fresh1 ~π1#Br.1, .0[*] ~condition(fresh2) ~π1#Br.1[*]
+  summary distinctTree: unused
+  summary readDeep: π1 R, π1#Pair.0 R, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 π1#Pair.1#Box.0, .0[*] ~π1#Pair.1#Box.0[*]
+  summary gDeep: π1 R, π1#Box.0 AW[storage], π1#Box.0[*] A; res .0 condition(fresh1) π1#Box.0, .0[*] ~condition(fresh2) ~π1#Box.0[*]
+  summary gDeepDistinct: res .0 fresh1
+  demands 18: accepted 11 (fresh 4, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 18: accepted 11 (fresh 4, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause disjoint 7
