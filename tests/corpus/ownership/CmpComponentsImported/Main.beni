@@ -1,0 +1,40 @@
+-- ownership (project): a derived comparison calls the components' own and stops
+-- there (ownership-v2.md §2.13.13). `Outer.eq` reads only an Int and never calls
+-- `Inner.eq`, which writes, so `viaTuple` is accepted as v1 accepts it, and
+-- `keepOther` keeps a list `Inner.eq` does not write. The `keep…` functions
+-- below them keep a list that is written and are refused.
+import Inner
+import Outer
+
+
+pub direct : List Int → Bool × List Int
+direct xs = ( Outer.Outer 1 (Inner.Inner xs) == Outer.Outer 1 (Inner.Inner []), xs )
+
+
+pub viaTuple : List Int → Bool × List Int
+viaTuple xs = ( ( Outer.Outer 1 (Inner.Inner xs), 0 ) == ( Outer.Outer 1 (Inner.Inner []), 0 ), xs )
+
+
+pub keepOther : List Int, List Int → Bool × List Int
+keepOther xs ys = ( ( Inner.Inner xs, ys ) == ( Inner.Inner [], [] ), ys )
+
+
+pub keepWritten : List Int, List Int → Bool × List Int
+keepWritten xs ys = ( ( Inner.Inner xs, ys ) == ( Inner.Inner [], [] ), xs )
+
+
+pub keepSecond : List Int, List Int → Bool × List Int
+keepSecond xs ys = ( ( Inner.Inner xs, Inner.Inner ys ) == ( Inner.Inner [], Inner.Inner [] ), ys )
+
+
+pub keepInList : List Int → Bool × List Int
+keepInList xs = ( ( [ Inner.Inner xs ], 0 ) == ( [], 0 ), xs )
+
+
+type Tree
+    = Node Tree Inner.Inner
+    | Leaf
+
+
+pub keepInTree : List Int → Bool × List Int
+keepInTree xs = ( ( Node (Node Leaf (Inner.Inner xs)) (Inner.Inner []), 0 ) == ( Leaf, 0 ), xs )

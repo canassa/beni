@@ -1,12 +1,12 @@
 module PrivateEqThroughShapes
   13:26 List.push l: accepted param
   17:22 PrivateEqThroughShapes.eq <Key …>#Key.0: rejected alias: xs holds it and is read at 17:13
-  21:31 call <expression>: rejected alias: xs holds it and is read at 21:15
-  21:31 call <expression>: accepted fresh
-  25:31 call <Just …>: rejected alias: xs holds it and is read at 25:15
-  25:31 call <expression>: accepted fresh
-  29:27 List.eq <literal>: rejected alias: xs holds it and is read at 29:14
-  29:27 List.eq <literal>: accepted fresh
+  21:31 call <expression>.0: rejected alias: xs holds it and is read at 21:15
+  21:31 call <expression>.0: accepted fresh
+  25:31 call <Just …>#Just.0: rejected alias: xs holds it and is read at 25:15
+  25:31 call <expression>#Just.0: accepted fresh
+  29:27 List.eq <literal>[*]: rejected alias: xs holds it and is read at 29:14
+  29:27 List.eq <literal>[*]: accepted fresh
   account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 158 of 20480, demands 72, direct_data lanes 2, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
   crossing: reads 0, redone 0, base moves 0
   summary eq: π1 R, π1#Key.0 RW

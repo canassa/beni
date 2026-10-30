@@ -9,10 +9,10 @@ module Key
   block: 496 bytes, hash 257d3acc82a09bfb
   demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Main
-  8:33 List.compare <literal>: rejected alias: xs holds it and is read at 8:16
-  8:33 List.compare <literal>: accepted fresh
-  12:33 List.eq <literal>: rejected alias: xs holds it and is read at 12:16
-  12:33 List.eq <literal>: accepted fresh
+  8:33 List.compare <literal>[*]: rejected alias: xs holds it and is read at 8:16
+  8:33 List.compare <literal>[*]: accepted fresh
+  12:33 List.eq <literal>[*]: rejected alias: xs holds it and is read at 12:16
+  12:33 List.eq <literal>[*]: accepted fresh
   account viaListLt: source 18, baseline 248, growth 0 of 65536, total 248, continuation 129 of 18432, demands 65, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 2, call_view lanes 2, transfer_settlement lanes 19
   crossing: reads 0, redone 0, base moves 0
   summary viaListLt: π1 RA; res .1 π1

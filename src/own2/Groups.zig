@@ -868,7 +868,7 @@ pub const Module = struct {
             composed = false;
         };
         if (composed and args.items.len == 2) {
-            var comps: std.ArrayList(ClassId) = .empty;
+            var comps: std.ArrayList(Rows.Component) = .empty;
             defer comps.deinit(mod.gpa);
             // A user-written comparison reached through the type with no class
             // leaves the call unbuilt: nothing is known of what it writes.
@@ -925,10 +925,12 @@ pub const Module = struct {
     }
 
     /// The classes of the user-written `eq`/`compare` the comparison at
-    /// `inst` reaches through its first argument's type (§2.13.13): its
-    /// derived row calls each nominal component's own. False when one has no
-    /// class an importer or this module may apply.
-    fn componentClasses(mod: *Module, root: PlaceId, inst: u32, out: *std.ArrayList(ClassId)) Error!bool {
+    /// `inst` reaches through its first argument's type (§2.13.13), each
+    /// with the place of the type that declares it: its derived row calls
+    /// each nominal component's own, and a component's own is the whole of
+    /// what that type does, so the walk does not go inside it. False when one
+    /// has no class an importer or this module may apply.
+    fn componentClasses(mod: *Module, root: PlaceId, inst: u32, out: *std.ArrayList(Rows.Component)) Error!bool {
         const interner = mod.in.interner orelse return false;
         const bir = mod.in.bir;
         const name: []const u8 = blk: {
@@ -954,7 +956,8 @@ pub const Module = struct {
                 const m = mod.in.types.entries[mod.places.head(p)].module.int();
                 if (!mod.in.isCore(m)) if (try mod.userComparison(interner, m, name)) |di| {
                     const c = (if (m == mod.in.module) mod.walkedClass(di) else try mod.importedClass(m, di)) orelse return false;
-                    try out.append(mod.gpa, c);
+                    try out.append(mod.gpa, .{ .place = p, .class = c });
+                    continue;
                 };
             }
             try stack.appendSlice(mod.gpa, mod.places.steps(p).children);

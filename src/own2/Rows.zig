@@ -73,6 +73,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const stamped = @import("../stamped.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
@@ -738,32 +739,112 @@ fn usesMark(env: Env, use: NodeId, m: Cell.Mark) Error!bool {
     return env.cells.sets.member(r, (try env.cells.mark(env.gpa, env.account(), m, 0)).int());
 }
 
+/// One user-written comparison a derived `eq`/`compare` calls: its class,
+/// and the place of the type that declares it, inside the derived
+/// argument's place (that place itself when the whole argument is of it).
+pub const Component = struct { place: PlaceId, class: ClassId };
+
 /// A derived `eq`/`compare`'s class (§2.13.6, §2.13.13): both arguments
 /// read deeply, a crossing result; origin `asserted`. The derived method
-/// calls the components' own `eq`/`compare` (`components`, the classes of
-/// the user-written ones), so it is what they are: a component that lets
-/// its argument escape (`E` anywhere in its use) makes the derived
-/// argument `E` deep, and a component that writes (`W` anywhere in its
-/// use) makes it `W` deep; one that is `writes` (unknown) stays so
-/// (R-5.13.1's `comparison_changes_value` then fires through it). A
-/// comparison cannot keep its argument in its result (`Bool`/`Order`
+/// calls the components' own `eq`/`compare`, so it is what they are: a
+/// component that lets its argument escape (`E` anywhere in its use) makes
+/// the derived argument `E`, and one that writes (`W`) makes it `W`, **at
+/// the places of that component's type** and deeply below them; the rest of
+/// the argument is only read. A component that is `writes` (unknown) makes
+/// the class so (R-5.13.1's `comparison_changes_value` then fires through
+/// it). A comparison cannot keep its argument in its result (`Bool`/`Order`
 /// cross), so `A` never arises.
-pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const ClassId) Error!ClassId {
-    var escapes = false;
+pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const Component) Error!ClassId {
     var writes = false;
-    var written = false;
     for (components) |c| {
         try env.charge.reserve(env.gpa, .inspection, 1);
-        writes = writes or sums.get(c).writes;
-        for (sums.paramUses(c)) |u| {
-            escapes = escapes or try usesMark(env, u, .e);
-            written = written or try usesMark(env, u, .w);
+        writes = writes or sums.get(c.class).writes;
+    }
+    var use = NodeId.none;
+    if (!crosses(env, arg_place)) {
+        if (components.len == 0) {
+            use = try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .deep = true }, &.{});
+        } else {
+            var b: UseBuild = .{ .env = env, .sums = sums, .components = components };
+            defer b.deinit();
+            use = (try b.build(arg_place, 0)).node;
         }
     }
-    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .e = escapes, .w = written, .deep = true }, &.{});
     const res = try env.shapes.nothing(env.gpa, env.account(), result_place);
     return sums.add(env, .{ .params = &.{ use, use }, .res = res, .writes = writes, .origin = .asserted });
 }
+
+/// The use shape of a derived comparison's argument, built once per place
+/// (a type may share its parts, `EvidenceDagBuildDepth32`): `R` at the
+/// places on the way to a component and deep on every other branch, and at
+/// a component's place `R`, `E` and `W` as its class has them, deep.
+const UseBuild = struct {
+    env: Env,
+    sums: *Summary.Table,
+    components: []const Component,
+    memo: stamped.Column(u32, Res) = .{},
+    stack: stamped.Column(u32, u32) = .{},
+
+    /// `low` is the shallowest place on the stack the subtree returned to
+    /// (a cycle), `no_low` for none: with one open the result is tentative.
+    const Res = struct { node: NodeId, e: bool, w: bool, any: bool, low: u32 };
+    const no_low = std.math.maxInt(u32);
+
+    fn deinit(b: *UseBuild) void {
+        b.memo.deinit(b.env.gpa);
+        b.stack.deinit(b.env.gpa);
+    }
+
+    fn leaf(b: *UseBuild, p: PlaceId, m: Summary.Marks) Error!NodeId {
+        return b.env.shapes.leaf(b.env.gpa, b.env.account(), p, try Summary.Table.marksSet(b.env, m, &.{}));
+    }
+
+    fn build(b: *UseBuild, p: PlaceId, depth: u32) Error!Res {
+        const env = b.env;
+        try env.charge.reserve(env.gpa, .shape, 1);
+        if (b.memo.get(p.int())) |r| return r;
+        var here = false;
+        var ce = false;
+        var cw = false;
+        for (b.components) |c| if (c.place == p) {
+            here = true;
+            for (b.sums.paramUses(c.class)) |u| {
+                ce = ce or try usesMark(env, u, .e);
+                cw = cw or try usesMark(env, u, .w);
+            }
+        };
+        if (here) {
+            const r: Res = .{ .node = try b.leaf(p, .{ .r = true, .e = ce, .w = cw, .deep = true }), .e = ce, .w = cw, .any = true, .low = no_low };
+            try b.memo.put(env.gpa, p.int(), r);
+            return r;
+        }
+        // A cycle: a lap back to a place being built is read deeply, and the
+        // place it returns to takes everything below it.
+        if (b.stack.get(p.int())) |d| return .{ .node = try b.leaf(p, .{ .r = true, .deep = true }), .e = false, .w = false, .any = false, .low = d };
+        try b.stack.put(env.gpa, p.int(), depth);
+        defer b.stack.remove(p.int());
+        var children: u32 = Ids.none_int;
+        var r: Res = .{ .node = .none, .e = false, .w = false, .any = false, .low = no_low };
+        const kids = env.places.steps(p);
+        for (kids.steps, kids.children) |s, c| {
+            if (crosses(env, c)) continue;
+            const k = try b.build(c, depth + 1);
+            children = try env.shapes.overPut(env.gpa, env.account(), children, s, k.node);
+            r.e = r.e or k.e;
+            r.w = r.w or k.w;
+            r.any = r.any or k.any;
+            r.low = @min(r.low, k.low);
+        }
+        if (r.low == depth or !r.any) {
+            r.node = try b.leaf(p, .{ .r = true, .e = r.e, .w = r.w, .deep = true });
+            if (r.low == depth) r.low = no_low;
+        } else {
+            r.node = try env.shapes.node(env.gpa, env.account(), p, try Summary.Table.marksSet(env, .{ .r = true }, &.{}), children);
+        }
+        if (r.low == no_low) try b.memo.put(env.gpa, p.int(), r);
+        return r;
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -1008,7 +1089,7 @@ test "a constructor's class and a derived method's class" {
     // eq/compare over components whose `eq` only reads: both arguments
     // read deeply, a crossing result.
     const reader = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.borrowed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq = try derivedClass(env, &f.sums, list, int, &.{reader});
+    const eq = try derivedClass(env, &f.sums, list, int, &.{.{ .place = list, .class = reader }});
     try testing.expectEqualStrings("summary eq: π1 R, π2 R (asserted)", try f.text(eq, "eq"));
     try testing.expect(try Summary.Table.usedAt(env, f.sums.paramUses(eq)[0], &.{Step.elem}));
     try testing.expect(!f.sums.get(eq).writes);
@@ -1016,10 +1097,10 @@ test "a constructor's class and a derived method's class" {
     // a wordless foreign) or writes it: the derived class says so (`S`, a
     // write through the argument).
     const escaper = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq2 = try derivedClass(env, &f.sums, list, int, &.{ reader, escaper });
+    const eq2 = try derivedClass(env, &f.sums, list, int, &.{ .{ .place = list, .class = reader }, .{ .place = list, .class = escaper } });
     try testing.expectEqualStrings("summary eq2: π1 RE, π2 RE (asserted)", try f.text(eq2, "eq2"));
     const writer = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.consumed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq3 = try derivedClass(env, &f.sums, list, int, &.{writer});
+    const eq3 = try derivedClass(env, &f.sums, list, int, &.{.{ .place = list, .class = writer }});
     try testing.expect(f.sums.get(eq3).writes);
     try testing.expectEqualStrings("summary eq3: π1 RS, π2 RS (asserted)", try f.text(eq3, "eq3"));
 }

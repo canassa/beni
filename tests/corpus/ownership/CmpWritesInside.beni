@@ -1,0 +1,26 @@
+-- ownership (v2): a derived comparison writes only where the component's
+-- type occurs (ownership-v2.md §2.13.13). `Inner.eq` writes inside `Inner`,
+-- so the tuple's `==` writes `xs` and nothing of `ys`: `keepOther` keeps `ys`
+-- and is accepted, as v1 accepts it; `keepWritten` keeps the list that was
+-- written and is refused.
+type Inner
+    = Inner (List Int)
+
+
+pub eq : Inner, Inner → Bool
+eq a b =
+    case a of
+        Inner l →
+            List.length (List.push l 1) > 0
+
+
+pub keepOther : List Int, List Int → Bool × List Int
+keepOther xs ys = ( ( Inner xs, ys ) == ( Inner [], [] ), ys )
+
+
+pub keepWritten : List Int, List Int → Bool × List Int
+keepWritten xs ys = ( ( Inner xs, ys ) == ( Inner [], [] ), xs )
+
+
+pub keepSecond : List Int, List Int → Bool × List Int
+keepSecond xs ys = ( ( Inner xs, Inner ys ) == ( Inner [], Inner [] ), ys )
