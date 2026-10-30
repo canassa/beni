@@ -235,6 +235,13 @@ pub const Table = struct {
         return t.nodes.items(.place)[n.int()];
     }
 
+    /// The place `n` stands at: a view's is its answer's, where a call
+    /// instantiated a type variable's place to its actual's (§2.11
+    /// *Re-rooting at a parameter*, #1350); any other node's own.
+    pub fn standsAt(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!PlaceId {
+        return t.place(try t.force(gpa, account, n));
+    }
+
     /// The cells at `ε`.
     pub fn cells(t: *const Table, n: NodeId) SetId {
         return t.nodes.items(.cells)[n.int()];

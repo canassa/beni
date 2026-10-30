@@ -794,7 +794,8 @@ pub const Frame = struct {
     /// `v` read at place `at`: itself, or a recast when its place differs.
     fn fit(f: *Frame, v: Value, at: PlaceId) Error!Value {
         if (v.node == .none) return f.topValue(at);
-        if (f.env.shapes.place(v.node) == at) return v;
+        // A view at a type variable's place stands at its answer's (#1350).
+        if (try f.env.shapes.standsAt(f.gpa, f.account(), v.node) == at) return v;
         return .{ .node = try f.env.shapes.recast(f.gpa, f.account(), at, v.node), .kappa = v.kappa };
     }
 

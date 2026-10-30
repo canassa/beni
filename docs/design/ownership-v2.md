@@ -1851,6 +1851,11 @@ of the same handle still add multiplicity through the path-multiset primitive.
   - *A view projects as its answer does*, whatever its own place: `proj(view(T, E), s)` is
     `proj(force(view), s)` even where `T`'s `var` place has no step `s` (`(ans { b = g.x }).c`
     with `ans r = r.b`).
+  - *A view stands at its answer's place* wherever a place is compared (`Shape.standsAt`): an
+    actual that is a view, its place compared by `argAt` and by a leaf of several parameter cells,
+    and a value fitted to a container's child place (a record literal's field). Comparing the
+    view's own `var` place recast it there, `recastWhole` again a step later:
+    `(choose True (ans { b = g.x }) g.y).c` and `{ b = ans { b = g.x } }.b.c` lost `g.x.c`.
 - **Identity towers.** A class whose `res` root is one exact parameter cell at its root (`id x = x`)
   answers the actual itself at `apply`: no view is made, so `y_k = id y_{k-1}` makes no tower. In
   general, `force` memoises the first answer that is not a view. A chain of views (a view whose

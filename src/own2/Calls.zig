@@ -451,7 +451,7 @@ const Grafter = struct {
         }
         // At a type variable's place the call instantiates the variable to
         // the actual's type: the actual stands at its own place (#1350).
-        if (g.env.shapes.place(n) != at and g.env.places.kind(at) != .@"var") return g.env.shapes.recast(g.gpa(), g.account(), at, n);
+        if (g.env.places.kind(at) != .@"var" and try g.env.shapes.standsAt(g.gpa(), g.account(), n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
         return n;
     }
 
@@ -885,7 +885,7 @@ const Grafter = struct {
             if (g.env.cells.origin(cell) != .param) return at;
             if (e.value == 1) continue;
             const x = g.env.cells.get(cell);
-            const p = g.env.shapes.place(try g.argAt(x.a, .from(x.b), at));
+            const p = try g.env.shapes.standsAt(g.gpa(), g.account(), try g.argAt(x.a, .from(x.b), at));
             if (got != .none and got != p) return at;
             got = p;
         }
