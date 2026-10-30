@@ -947,8 +947,10 @@ pub const Frame = struct {
     }
 
     /// `[ x₁…xₖ, …xs ]` (§2.13.2): a fresh list unless it may answer the
-    /// base (a re-cons), elements the fronts' and the base's, κ lost —
-    /// except when every front is a fresh object by construction.
+    /// base (a re-cons), elements the fronts' and the base's, their κ the
+    /// positional collection's (the construction rule, #1386); the
+    /// storage's κ lost except when every front is a fresh object by
+    /// construction.
     fn prepend(f: *Frame, root: u32, at: PlaceId, fronts: []const [2]u32, base: Value, base_atom: u32) Error!Value {
         // The fronts' and the base's work (the base's reach and cells, each
         // put in the root's set when a front is not fresh) is as large as
@@ -1003,7 +1005,6 @@ pub const Frame = struct {
             while (bt.next()) |e| c = try cells.sets.insert(f.gpa, f.env.charge, c, e.key, 1);
         }
         const node = try shapes.node(f.gpa, f.account(), at, c, try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, elems));
-        elem_k = try f.kappaSet(elem_k, elems, Cond.lost);
         var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, .none, Step.elem, elem_k);
         kappa = try f.kappaSet(kappa, node, if (fresh) Cond.yes else Cond.lost);
         return .{ .node = node, .kappa = kappa };

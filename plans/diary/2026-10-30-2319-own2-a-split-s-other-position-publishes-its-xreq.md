@@ -37,3 +37,17 @@ with #1382 and this branch differ only in the new fixtures: `t8`, `t3` and
 `pass` are accepted with `xreq excl π1[*]`, and their shared callers are
 refused. `ApartPaths*` and `ApartPathsBound*` hold. Transfer's line target is
 now 1 940.
+
+**After the review.** There were two defects that the new `xreq` makes
+reachable.
+- `t8 (List.push [ b ] b)` and its `List.set` and push-onto-push twins were
+  accepted as fresh. The `apart` of the push row was discharged over the
+  cells at `[*]`, and a `Box` has none there: its list at `#Box.0` is the
+  repeat. A side that stands at a place with no object of its own is now its
+  actual's reach (`Calls.sideCells`).
+- Every `[ x, …xs ]` handed to `t8` was refused `(approx)`, because
+  `Transfer.prepend` set the elements' κ to `lost`. They are now the
+  positional collection's, as the `prepended` row is (§2.13.2 amended).
+Across the 1 992 roots no verdict moves. Thirteen summaries gain exact
+conditions where they had `lost`. Projections inside a list pattern and
+nested matches of `rest` are #1390.

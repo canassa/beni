@@ -1438,7 +1438,11 @@ once), `keep cb_j` (the callback puts back what it was handed, at the same path,
 → `lost` — unless the pair arose from a fold of two different labels, which is the self-atom `within(ι⋆)` (§2.10)
 (§2.2's one rule); two *different* `cb j` labels → the atom `sep(cb j@λ₁, cb j@λ₂)`, discharged by
 instantiation (§2.2); `⊤`/approximate → `lost`; two other arrivals not aliasing → the atom `sep a b`.
-Here folded includes a symbolic path containing `[*]` or `⟲`, as well as a folded invocation. A literal
+Here folded includes a symbolic path containing `[*]` or `⟲`, as well as a folded invocation. At a call, a
+`sep`/`apart` side whose actual stands at a place that holds no object of its own (a constructor, a tuple)
+is that actual's reach, whose objects are below it: `List.push [ b ] b` with `b = Box [ 0 ]` stores one box
+twice, and the repeat is the list at `#Box.0`, not a cell at `[*]` (#1386). The cost is a precision loss
+where two such actuals share a part the callee does not write. A literal
 forms one ordered arrival group; a sequence of stores persistently inserts only its new arrivals. Never
 re-sort or re-enumerate the accumulated group at every store. An exact unfolded duplicate at distinct positions decides
 `shared`; a folded/summary duplicate gives `lost` under the `sep` rule above; the arrivals among them form one `apart` group;
@@ -2854,7 +2858,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    is_spread) in source order }` in `extra` (`Decl.spreads_start/end`), with no change to the instructions the type
    checker and the emitter read. `Transfer` evaluates the chain as one instruction at its root: `[ x₁…xₖ, …xs ]`
    (one spread, last) is a **prepend**: cells `{site ι}` ∪ `cellsAt(xs, ε)` approximate (re-cons may answer the
-   base, R-4.4.2), `[*] ↦ join(x₁…xₖ, proj(xs, [*]))`, κ `lost` — **except** when every front item is a `List` whose
+   base, R-4.4.2), `[*] ↦ join(x₁…xₖ, proj(xs, [*]))`, a positional collection whose κ is the construction
+   rule's, as the `prepended` row's (`excl` of each front, `excl xs[*]`, `apart` of the fronts and `xs[*]`; #1386:
+   it was `lost`, which refused every `[ x, …xs ]` handed to a callee owing `excl π1[*]`); the storage's κ `lost`
+   — **except** when every front item is a `List` whose
    `ε` cells are a non-empty set of `site`/`result` cells not escaped and not in `reach(xs)`, or whose *instruction*
    is a record literal, a constructor application or a tuple (fresh objects by construction, whatever their cells —
    a tuple's and constructor's cells are `∅`): then `{site ι}` alone (R-4.4.3, `p/PrependFreshRecord`); a scalar, parameter,
@@ -4444,7 +4451,7 @@ L0  Ids
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 010 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk) |
-| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 600 (#1350: a view's instantiated place) |
+| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 630 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor) |
 | `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 940 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write) |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |

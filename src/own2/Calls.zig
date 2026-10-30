@@ -937,6 +937,25 @@ const Grafter = struct {
     /// The cells at every position of argument `i` that a template path `p`
     /// through `⟲` stands for (the preimage's occurrences at `p`), null for a
     /// path that does not cross `⟲`.
+    /// A `sep` or `apart` side's cells at this call (`cellsOf`). An actual
+    /// at a place that holds no object of its own (a constructor, a tuple)
+    /// has its objects below it, so the side is its reach: `List.push [ b ] b`
+    /// with `b = Box [ 0 ]` stores one box twice, and the repeat is its
+    /// list at `#Box.0`, not a cell at `[*]` (#1386).
+    fn sideCells(g: *Grafter, c: CellId) Error!SetId {
+        const x = g.env.cells.get(c);
+        const at = g.placeOfCell(c);
+        if (x.origin != .param) return g.cellsOf(c, at);
+        // Through `⟲` the side is the fold's preimage (`argCells`).
+        var p: PathId = .from(x.b);
+        while (p != .none and g.env.places.pathParent(p) != .none) : (p = g.env.places.pathParent(p)) {
+            if (g.env.places.pathStep(p).kind == .level) return g.cellsOf(c, at);
+        }
+        const n = try g.argAt(x.a, .from(x.b), at);
+        if (Cell.Kind.ofPlace(g.env.places.kind(g.env.shapes.place(n))) != .none) return g.cellsOf(c, at);
+        return g.env.shapes.reach(g.gpa(), g.account(), &g.env.cells.sets, n);
+    }
+
     fn foldedCells(g: *Grafter, i: u32, p: PathId) Error!?SetId {
         const places = g.env.places;
         var lv: PathId = .none;
@@ -994,13 +1013,13 @@ const Grafter = struct {
                 if (a.atom == .sep) {
                     for ([_]u32{ a.a, a.b }) |side| {
                         const c: CellId = .from(side);
-                        try sides.append(gpa_, try g.cellsOf(c, g.placeOfCell(c)));
+                        try sides.append(gpa_, try g.sideCells(c));
                     }
                 } else {
                     var it = g.env.cells.sets.iterate(.from(a.a));
                     while (it.next()) |e| {
                         const c: CellId = .from(e.key);
-                        try sides.append(gpa_, try g.cellsOf(c, g.placeOfCell(c)));
+                        try sides.append(gpa_, try g.sideCells(c));
                     }
                 }
                 // Two sides (a `sep`, or an `apart` of two): merged along their

@@ -114,3 +114,56 @@ same bs =
 
         _ →
             ( 0, 0 )
+
+
+-- A list built by a store holds what it stores: `List.push [ b ] b`,
+-- `List.set … 1 b` and a push onto a pushed list store one box twice, and
+-- the repeat is the box's list, below the element (`a1`, `a4`, `a7`,
+-- refused). A spread keeps each element's position (`sd`, `sp2`, `sp3`,
+-- accepted; `sp2` and `sp3` owe the elements' conditions upward), and a box
+-- in front of a list that holds it is refused (`spShared`).
+pub a1 : ⊤ → Int × Int
+a1 ⊤ =
+    b = Box [ 0 ]
+    t8 (List.push [ b ] b)
+
+
+pub a4 : ⊤ → Int × Int
+a4 ⊤ =
+    b = Box [ 0 ]
+    t8 (List.set [ b, Box [ 1 ] ] 1 b)
+
+
+pub a7 : ⊤ → Int × Int
+a7 ⊤ =
+    b = Box [ 0 ]
+    xs = List.push [] b
+    t8 (List.push xs b)
+
+
+pub sd : ⊤ → Int × Int
+sd ⊤ =
+    xs = [ Box [ 2 ] ]
+    ys = [ Box [ 1 ], …xs ]
+    t8 ys
+
+
+pub sp2 : Box, Box → Int × Int
+sp2 a b =
+    xs = [ b ]
+    ys = [ a, …xs ]
+    t8 ys
+
+
+pub sp3 : List Box → Int × Int
+sp3 xs =
+    ys = [ Box [ 1 ], …xs ]
+    t8 ys
+
+
+pub spShared : ⊤ → Int × Int
+spShared ⊤ =
+    b = Box [ 0 ]
+    xs = [ b ]
+    ys = [ b, …xs ]
+    t8 ys
