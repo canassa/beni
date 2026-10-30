@@ -194,6 +194,8 @@ const ReadOff = struct {
             .within => return t.within(gpa, charge, .from(a.a)),
             .keep => return t.keep(gpa, charge, a.a),
             .writes => return t.writes(gpa, charge, a.a),
+            // `instantiate` resolves its condition first: no `inst` reaches here.
+            .inst => unreachable,
         }
     }
 
