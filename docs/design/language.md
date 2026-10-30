@@ -1555,6 +1555,18 @@ one spelling to the other.
 
 ## 10. Diagnostics named in this document
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2/§4
+adds declaration-local `realm` bounds to platform values/native types; ordinary
+values infer availability through checked host provenance. Foreign retains its
+explicit effect rung. No qualified-name realm map is accepted. Generic
+manifest-declared entry kinds let ordinary top-level program references root
+separate execution graphs without adding extra ordinary mains or a coercion.
+The proposed API in [workers-api.md](workers-api.md) retains saturated n-ary
+calls and distinguishes worker-local state from Wire configuration/messages.
+Moved native backing cannot remain live through an alias. Wire lowering is an
+explicit owner decision, not a mandate for a codec on every record.
+
+
 Every diagnostic has a stable snake_case code, a severity, a file, a `{line, col}` start and end
 (end exclusive, same line or later), a title in `SHOUTING CASE` in Elm's style, and a message. The
 codes named above are the M1 catalogue; each has at least one fixture under
@@ -3520,20 +3532,3 @@ an `Int` would, a constructor with a tag prints with its arguments, but a tuple 
 record `{ a = 1, b = 2 }`, a `Char` as a one-character `String`, an all-nullary constructor as a
 quoted string, and a `()` argument is dropped with the padding. The positions a type leaves open
 — `List a`'s elements — are read the same way while the rest of the value prints by its type.
-
-## Amendment of 2026-10-30: browser worker program values
-
-Specified, not built; [workers.md](workers.md) is the contract. §10's unique
-ordinary `main` remains. A selected browser platform may additionally register
-top-level worker `program` values in the app manifest, each with its own realm
-and typed request/reply/error endpoints. This is one program/platform build,
-not a worker platform or application FFI. The program constructor is ordinary
-platform API; no new application declaration syntax or automatic currying.
-
-Workers §4–§5 specify inferred realm/wire obligations and resource ownership
-moves. A serialized value is not necessarily its generated JavaScript
-representation; codecs preserve its typed meaning across entries. A moved
-native resource cannot be read through any surviving alias. Explicit shared
-binary storage is a distinct mutable capability, never ordinary immutable
-beni data. API sketches in workers.md are proposed signatures, not shipped
-examples to be copied into the language skill before implementation.

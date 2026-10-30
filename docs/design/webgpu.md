@@ -45,6 +45,23 @@ meaning or substitutes another rendering API.
 
 ## 2. Placement and layers
 
+*Amended 2026-10-30; specified, not built.*
+
+[workers.md](workers.md) specifies §2's previously undesigned worker entry and
+transfer integration. It uses additional entries in the same browser platform,
+per-entry realm checks, module workers and typed ownership moves. #1278's
+Binary.Buffer/SharedBuffer/View/Source and Browser.Image/Video/Canvas handles
+remain the reusable inputs; no parallel worker-only binary representation.
+
+OffscreenCanvas moves before context acquisition; VideoFrame transfer closes
+the sender resource; all backing aliases are invalidated. Native GPU resource
+handles are not serializable/transferable; standard serializable diagnostic
+objects remain supported. Window/DedicatedWorker exposure differences follow
+the native type. SharedWorker uses the same headless capability modules where
+the host exposes them; ServiceWorker lifecycle integration awaits the explicit
+owner decision/design, not a claim that GPU is intrinsically page-only.
+
+
 Implement `Gpu.*` in the shipped browser platform and reexport through its
 browser/TEA/direct page layers where applicable. Core stays platform-independent.
 GPU objects are opaque platform-owned handles; ordinary modules never import
@@ -781,19 +798,3 @@ canvas/media helpers. No performance claim is made before those measurements.
 These are recommendations, not recorded owner decisions. This research PR
 closes the research task only; it neither authorizes implementation nor claims
 that any of the proposed WebGPU API is already usable.
-
-## Amendment of 2026-10-30: browser worker integration contract
-
-[workers.md](workers.md) specifies §2's previously undesigned worker entry and
-transfer integration. It uses additional entries in the same browser platform,
-per-entry realm checks, module workers and typed ownership moves. #1278's
-Binary.Buffer/SharedBuffer/View/Source and Browser.Image/Video/Canvas handles
-remain the reusable inputs; no parallel worker-only binary representation.
-
-OffscreenCanvas moves before context acquisition; VideoFrame transfer closes
-the sender resource; all backing aliases are invalidated. Native GPU resource
-handles are not serializable/transferable; standard serializable diagnostic
-objects remain supported. Window/DedicatedWorker exposure differences follow
-the native type. SharedWorker uses the same headless capability modules where
-the host exposes them; ServiceWorker lifecycle integration awaits the explicit
-owner decision/design, not a claim that GPU is intrinsically page-only.

@@ -6,7 +6,8 @@ coverage. Specifications are living documents: anchors below identify the
 algorithms reviewed, and [sources.json](workers/sources.json) pins the exact
 WebRef IDL and MDN BCD package versions and SHA-256 digests used for inventory.
 IDL is an index into primary specifications, not a substitute for their prose.
-No browser probe was needed or performed for this design; measurements remain
+The later [host/layout audit](workers-host-and-wire.md) adds a beni compiler
+probe and complete candidate host-access census. No browser probe was performed for this design; measurements remain
 explicit implementation gates. Tooling fetched sources on Dagon only.
 
 ## 1. Inventory method and scope
@@ -376,3 +377,24 @@ not inferred from constructor availability; the browser conformance matrix
 must test it. [Primary-source hashes](workers/spec-sources.json) record the
 pages consulted and their retrieval date; generated ReSpec anchors may require
 client rendering, as identified in that receipt.
+
+## 10. Owned Trusted Types policy adapter
+
+Trusted Types policy callbacks run outside the constructor exception guard.
+The platform accepts an explicit branded script URL produced by a beni policy
+that returns typed refusal before entering the host callback. If a host default
+policy exists, resolve it before the constructor guard; any callback exception
+is a defect, including TypeError. Pass the resulting TrustedScriptURL to the
+constructor, so that call cannot execute arbitrary policy code under the
+TrustedScriptUrlRejected classifier. With no policy, a validated string's
+sink rejection is classified at the native constructor. The native trustedTypes.createPolicy call has a separate guard: its
+TypeError becomes TrustedPolicyDenied (duplicate/disallowed name cannot be
+distinguished unless independently known); missing trustedTypes becomes
+TrustedTypesUnavailable for explicitly requested policies. Its platform-owned
+callback is total and returns an already validated string. Explicit foreign
+TrustedScriptURL intake requires trustedTypes.isScriptURL validation; failed
+validation is NotTrustedScriptUrl. No policy is silently
+created to bypass deployment CSP; the platform's typed policy configuration
+must work under the site's allowed policy names. The implementation slice
+includes typed policy refusal, a policy-thrown TypeError defect and denied
+policy creation fixtures.

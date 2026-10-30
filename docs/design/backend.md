@@ -76,6 +76,19 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
 
 ## 2. CLI surface
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§5
+adds source-discovered entries, `_workers/<stable-entry-id>/_main.mjs`, staged
+runtime bootstrap and relative descriptor URLs. IDs precede parallel work;
+all output paths share collision preflight. Each entry has separate roots,
+initializers, DCE and source maps (§9/§11); sharing chunks requires exposure
+valid in every importing realm. EntryHost proofs replace `host: page`.
+The owner must choose shared wire-visible names with selective normalization
+or universal canonical codecs; independently renamed entries cannot exchange
+raw layouts by accident. §4's intended representations and today's emitted
+representations are compared in [the audit](research/workers-host-and-wire.md).
+This amendment does not change either representation merely to ease transport.
+
+
 ```
 beni build [options] <entry>...      compile to JavaScript
 ```
@@ -13049,23 +13062,3 @@ to choose a live row's patch versus restate protocol. A clock call passed to
 a pure helper inside a helper-owned `For` must therefore update on every
 render on both browser platforms. Enabling grouped rows only on direct must
 not leave the ordinary lowering with an all-false effect table for those rows.
-
-## Amendment of 2026-10-30: browser worker output and per-entry roots
-
-Specified, not built. [workers.md](workers.md) §2–§3 extends §2's output tree,
-§9's Roots and §11's maps without changing their existing section numbers.
-Registered worker programs and their realm runtime hooks are roots **of their
-own entry**; an entry descriptor does not pull worker implementation into the
-page. `_workers/<logical-name>/_main.mjs` follows the reserved `_` rule, with
-one preflight collision check across the whole build. IDs/names/fingerprints
-are assigned deterministically before parallel work.
-
-Development and release eliminate declarations per entry, include evaluated
-initializers in realm checks, and share `_core/` or chunks only when their
-initialization/exposure is safe in every importing realm. Separate realm
-projections are required for mixed modules. Release wire field/tag IDs are
-canonical codec IDs, not independently minified representation names. Maps
-cover each entry and chunk under the existing development/release flags.
-The platform runtime entry is staged before user program evaluation; compiler
-emitted module-relative worker URLs work below a base path. No handwritten
-JavaScript runtime or user bundler loader is introduced.

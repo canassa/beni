@@ -1234,6 +1234,21 @@ itself, where this section left a choice:
 
 ## 10. The developer loop: `new`, `build --watch`, `serve`
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§4
+adds generic platform `entryKinds`, source-discovered static program references
+and the explicit standalone `build --entry=value` root. It removes the proposed
+app `workers` list and qualified `realms` map, and withdraws `host: page` in favor
+of checked entry proofs. `check` discovers and validates the same edges.
+Declaration grammar gains `realm window|dedicatedWorker|sharedWorker|worker|
+browser|any` or `realm { dedicatedWorker, sharedWorker }` before a value/type
+name, after a foreign value's effect rung.
+Preserve the word's source span for mismatch/missing-contract diagnostics;
+format it on the declaration. Parse/format/cache fixtures cover this syntax.
+Entry metadata resolves symbols and type roles, never hardcoded platform API
+names; sorted package/module/declaration identities determine output IDs.
+Interfaces include host-flow, Wire and entry-role fingerprints (§4 cost model).
+
+
 *Added 2026-10-01* — Milestone 1's *developer loop v0* (`plans/status-2026-10.md` §6). Four pieces,
 each small, and none of them the daemon: `fast-compiler.md` §4's resident process, its socket, its
 `inotify`/`FSEvents` watching and its cancellation are still M4's, and the daemon's open decisions
@@ -2263,15 +2278,3 @@ Each test now has the same 120-second hang guard; performance is checked outside
 `.agents/skills/beni/` is a later decision. There is no `beni skill uninstall`: the installed
 copy is one directory, and `rm -r <dir>/beni` removes it. The command writes nothing under a
 home directory on its own.
-
-## Amendment of 2026-10-30: worker manifest entries and exposure metadata
-
-Specified, not built. [workers.md](workers.md) §2–§4 extends the package/build
-manifest contract with app `workers`, platform `entryRuntimes` and privileged
-`realms` maps. Preserve source manifest keys for diagnostics at 1:1 and resolve
-registered module/value references through existing package/module identity.
-No new application keyword or declaration grammar is introduced. Ordinary
-`main` discovery is unchanged; registered `program` values are separate roots.
-Sort entry identities before parallel work; include these maps in package,
-interface and cache invalidation. `check` must validate the same registrations
-and obligations as `build` even when it writes no output.

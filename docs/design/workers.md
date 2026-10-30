@@ -10,6 +10,12 @@ runtime logic is beni over privileged `Js`; compiler changes are Zig.
 
 ## Open decisions for the owner
 
+**Wire naming or universal codecs.** This remains open. I recommend shared
+wire-visible names inside a build, direct clone for proven stable shapes, and
+normalization where required. §3 and the host/wire research price both designs;
+#1296 must wait for [owner decision #1305](https://github.com/canassa/beni/issues/1305). No app-manifest registration decision
+remains: source discovery is the specified design (§2).
+
 **Service Workers.** I recommend a separate design for registration, updates,
 fetch interception, persistent storage and event lifetime, retaining their
 complete inventoried surface here. They are not ordinary long-lived fibers:
@@ -21,7 +27,7 @@ contract; DedicatedWorker and SharedWorker do not.
 **Abrupt loss and shutdown deadlines.** I recommend cooperative cancellation
 and finalizer completion for normal scoped shutdown, without a deadline that
 silently calls `terminate`. An explicit destructive `Worker.abort` reports
-`CleanupAbandoned`; it is available for hung/untrusted native work and program
+`Abandoned`; it is available for hung/untrusted native work and program
 fatal shutdown, not disguised as a successful scope close. A browser crash,
 page discard or process kill cannot guarantee finalizers. A missing heartbeat
 means `PeerUnresponsive`, not proof of death. Decide whether fatal shutdown's
@@ -42,258 +48,371 @@ availability, rather than claiming universal availability or silently dropping
 them. The coverage issue must account for every inventoried row before any
 claim of complete transfer support.
 
-## 1. One platform, multiple realms
+## 1. One platform, different places to run
 
-The owner's one-platform rule is binding. A build selects exactly one platform
-chain. The browser chain currently named `browser-inline` is the target;
-[#966](https://github.com/canassa/beni/issues/966) retires the older `browser-tea`
-and `dom` lowering. Capabilities belong in the browser base that decision
-specifies, not in either old renderer. The platform ultimately takes the name
-`browser`; do not add a `web-worker` platform or reuse Cloudflare's `Worker`.
-Public worker modules are `Browser.Worker`, `Browser.SharedWorker`,
-`Browser.MessagePort`, `Browser.BroadcastChannel`, `Browser.WorkerGlobal`,
-`Browser.WorkerPool` and `Browser.WorkerStream`. Shared binary/source handles
-are `Binary.Buffer`, `Binary.SharedBuffer`, `Binary.View`, `Binary.Source`,
-`Browser.Image`, `Browser.Video`, `Browser.Canvas` as coordinated with #1278.
-The contracts use qualified `Worker` as shorthand for `Browser.Worker`.
+A **realm** is a place in which JavaScript runs, with its own global objects
+and module state. A page has `document` and `window`. A dedicated worker has
+neither, even when its code was compiled with the same browser platform.
+Each worker also gets its own fiber scheduler and module-level values.
 
-Entry realms are `window`, `dedicated-worker`, `shared-worker`, with
-`service-worker` reserved for the separate lifecycle decision. `WorkerLocation`
-is read-only URL information, not navigation. Workers have `self`, no `window`
-or `document`; no DOM nodes, local/session storage, history or page navigation.
-Worker-only availability is not the same as browser feature availability:
-realm checking is static; feature/isolation/permission checks remain dynamic.
+The platform boundary still answers **which libraries this program may use**.
+The realm check answers **where a reachable operation can run**. We need both
+now: resolving a DOM module under the browser platform does not make a DOM
+operation safe inside a worker. `boundary.md` §5.3's one-platform rule stays;
+we replace the unchecked platform-wide `host: page` promise with checked facts
+for each entry (§4).
 
-## 2. Program shape and entry discovery
+The current target is `browser-inline`, the replacement selected in #966;
+capabilities move into its browser base, rather than the old dom/TEA renderer.
+The proposed modules and every public signature are in
+[workers-api.md](workers-api.md). The existing-module audit remains in
+[research §8](research/workers-api-research.md#8-existing-browser-modules-by-realm-source-audit-2026-10-30).
+That audit distinguishes today's code from needed migration: for example,
+Http and WebSocket currently read `document.baseURI` while preparing URLs.
 
-Worker programs are ordinary top-level values constructed by platform code.
-No new general language declaration or application `foreign` is introduced.
-The following is a proposed API sketch, not currently compilable beni:
+## 2. Programs and discovering their entries
+
+**There is no app `workers` manifest list and no Program-to-Entry coercion.**
+A worker is an ordinary top-level program value, used directly at its launch
+call. The generic entry contract below makes that reference an entry edge
+instead of pulling the handler implementation into the page's bundle.
+
+The primary program has an `init`, a stateful request handler, a streaming
+handler and a root-scoped startup hook. `init` runs inside the worker, once
+per worker instance, before Ready. Its `Result` returns the worker-local
+state or a typed initialization failure. State may contain a GPU device,
+loaded model or WASM instance: **state has no Wire requirement and never
+crosses to the page**. Configuration does cross and therefore has one.
+
+The worker root scope owns state and resources registered during init. Serial
+handlers receive the current state and return its replacement alongside their
+result. A stream keeps that state until its handler finishes. This prevents
+two requests from simultaneously consuming an owned state record. The separate
+concurrent constructor borrows stable state; the checker rejects a handler
+that consumes it. Mutable coordination then uses explicit worker-local Ref/
+Semaphore resources, not an unchecked shared record update.
+
+The context gives init/handlers the worker scope and a typed event emitter.
+Events are worker-initiated progress or pushed results, independent of a call.
+`events handle` is a bounded stream on the page; `emit` is impure and reports
+QueueFull instead of blocking init before the page can receive Ready. Streams
+requested by `stream handle request` are separate, credit-controlled response
+streams. Neither facility requires raw MessageEvent handling by the app.
+
+Request/response is primary because a GPU/WASM operation usually returns a
+result or a stream and its caller owns cancellation. `Worker.machine` is a
+full Elm-shaped adapter with init/update/subscriptions and no view. It exposes
+the same request/reply/event/stream capabilities. Its typed Reply/Sink tokens
+let asynchronous commands answer their particular caller without untyped
+message IDs. Both shapes and a complete page/worker example are in the API
+contract; the [complete examples](workers-example.md) exercise both against
+the same loaded model. Choosing one does not change protocol or error guarantees.
+
+### Generic entry edges, not compiler knowledge of Browser.Worker
+
+The platform declares `entryKinds`, extending the existing manifest-declared
+`program` type contract. Each kind names a program type constructor, its
+constructor functions, its launch functions and their **program-argument
+index**, a realm, and a runtime module. For example, the browser's dedicated
+kind names Browser.Worker.Program and Browser.Worker.open; these names are
+resolved symbols from data, never hardcoded in the checker. Type-parameter
+roles identify worker-local state versus cross-entry configuration/protocol
+values, and the entry record parameter uses the existing `entry` ownership
+contract. Validate arity, generic roles and program argument/result types when
+loading the platform; no ad-hoc implicit coercion is added.
+
+The entryKinds record has these required fields; indices are zero-based:
+
+| Field | Checked meaning |
+|---|---|
+| `programType` | Resolved nominal type-constructor symbol and arity |
+| `constructors` | Symbols returning that program type; exactly one `entry` argument with deferred callbacks |
+| `launches` | Pairs of function symbol and program argument index; includes pool launch as well as direct open |
+| `parameters` | One role per type parameter: `local`, `config`, `request`, `reply`, `error`, `event`, `chunk`; Wire required for every role except local |
+| `realm` | One native execution realm, checked against the host universe |
+| `runtime` | Resolved beni module with `run : Program … → ⊤`; may suspend; deferred initialization owns a root scope and installs handlers before Ready |
+
+The manifest loader validates symbols against their interfaces, including
+constructor result instantiation and launch argument instantiation; inconsistent
+roles are invalid_entry_kind. Different serial/concurrent/machine constructors
+can target the same nominal program type. Their source implementations and
+entry ownership annotations enforce callback contracts; the compiler only
+knows the generic deferred-entry edge. Runtime `run` receives the descriptor's
+worker-local definition and reads configuration through the platform's typed
+bootstrap, never a user Js.Value. Ordinary page `program`/runtime remains the
+existing contract and supplies the Window entry proof. `--entry` selects a
+worker kind by its program type; ambiguity is invalid_entry_kind. Library
+interfaces preserve deferred bodies/roots as well as descriptor references;
+a URL alone is insufficient to emit a consuming build's worker.
+
+A launch argument must be a top-level declaration of the declared program
+type, or a finite selection of such references through aliases, containers or
+ordinary conditional code. Discover that finite set at reachable launch sites.
+Opaque runtime factories whose entry set cannot be determined are refused;
+a factory may select among known descriptors but cannot synthesize code.
+Program construction is non-suspending and captures only static declarations;
+per-instance dynamic data travels in the explicit configuration argument.
+
+The discovered declarations root **their own** execution graphs. Their body
+and init are not evaluated in the referring realm; its descriptor contains
+only a compiler-produced identity/URL and protocol metadata. The compiler
+checks those deferred bodies in the entry's realm using the manifest roles.
+This permits a page to hold a descriptor mentioning worker-local state types
+without constructing or reading such a value on the page.
+
+The graph worklist discovers nested launches until no new entry declaration
+appears. Runtime paths come from canonical package/module/declaration identity,
+not discovery order. A cycle of entries does not recurse the build forever.
+No launch means no emitted worker: unused program declarations are eliminated.
+External code can be served by compiling the worker declaration as a generic
+explicit root with `beni build Module.beni --entry=value`; the selected type
+must match one entryKind. This handles standalone deployments without a
+second app registration list. `--library` preserves typed descriptor edges in
+its interface and defers executable-entry emission to the consuming build.
+A second ordinary page main remains `duplicate_main`.
+
+## 3. Output, representations and the open wire-format choice
+
+Development emits `_main.mjs` for the page and
+`_workers/<stable-entry-id>/_main.mjs` for each discovered worker. The stable
+ID is a collision-checked encoding/digest of package/module/declaration
+identity, assigned before parallel work. Every generated pathname, including
+maps, participates in the ASCII-folded output collision preflight.
+
+The runtime resolves worker URLs relative to the generated descriptor module,
+so nested routes and a hashed base do not change what starts. Each worker is a
+module worker. Name and credentials remain options; no classic fallback can
+silently try to run ES-module output. The runtime bootstrap installs defect
+listeners before evaluating user entry code, using compiler-emitted module
+loading. It needs no handwritten loader or markup-runtime export union.
+
+DCE, runtime roots and initialization are checked per entry. Sharing `_core/`
+bytes does not share mutable module state between realms, and must not make a
+worker evaluate page-only initializers. Mixed modules require entry-specific
+projections. Development maps follow each module; release maps follow each
+entry/chunk under `--source-maps`. Reachable Debug in any emitted entry rejects
+a release build before output.
+
+**Wire representation is an owner decision, not decided by this document.**
+The options and measured current representations are in
+[the new research](research/workers-host-and-wire.md). I recommend a single
+build-wide naming assignment for wire-visible record fields/constructor tags,
+with direct structured clone for proven clone-stable data and specialized
+normalization only where representation requires it. This avoids putting an
+extra encode/decode walk on every simple request, and respects the Solid 2
+UI and Effect v4 effects performance bars. It is a recommendation, not a
+measured performance win.
+
+The alternative keeps entry-specific names and canonicalizes every message.
+It simplifies independent entry layouts and cross-version protocols, but
+visits/allocates the payload before and after the browser's own clone. Shared
+naming unions the wire-visible interference constraints and may lengthen names
+in other entries; it need not disable inlining/DCE or constrain non-wire fields.
+Both designs need per-entry/total brotli and send/receive latency measurements
+before adoption. Existing emitted code proves representation facts, not the
+performance of either unimplemented multi-entry optimizer.
+
+Until the owner decides, both alternatives must preserve the same protocol,
+Wire judgment, ownership moves and native failures. Do not implement two public
+APIs or quietly adopt universal codecs by leaving contradictory prose below.
+The open decision gates the wire/optimizer slice, not the native inventory.
+
+## 4. A realm check that covers beni over Js
+
+### Evidence and choice
+
+The measured scan covers **every** selected host-access primitive occurrence
+in browser-inline, browser and core, including nested calls, not just foreign
+declarations. The CSV gives a file, line, operation, receiver and member for
+each site; [research](research/workers-host-and-wire.md) explains its conservative
+value-provenance classifications and the exact counts.
+
+| Candidate | Effect on the measured code | Guarantee and cost |
+|---|---|---|
+| Typed boundary wrappers only | Move literal accesses and value-based helpers behind a small wrapper surface; replace the three dynamic Listen global lookups | A realm word alone can lie about a wrapper body. Typed host bindings plus checked body access still need a host-shape source; otherwise Window-only access inside a worker-labelled wrapper slips through. Large mechanical migration before any checking. |
+| Compiler host table plus provenance | Check existing literal Js.global/get/call directly; infer requirements of helpers that receive host objects; replace dynamic host names with finite typed selection | Requires a compact pinned WebIDL/ECMAScript shape table and value-flow summaries, but catches the dominant existing beni code without turning it into foreign declarations. Unknown host paths fail closed. |
+
+**Choose the second**, with declaration-local realm words as checked bounds
+and typed selectors for the genuinely dynamic sites. The table describes
+native objects, not beni function names; there is no qualified-name JSON map
+that can drift from a renamed wrapper. The realm word cannot grant permission
+to use a host member that the table says is absent.
+
+### Source syntax and host table
+
+A value/type declaration may carry `realm window`, `realm dedicatedWorker`,
+`realm sharedWorker`, `realm worker`, `realm browser` or `realm any` before its
+name; a foreign value retains its existing rung immediately after foreign.
+`worker` is the worker-realm set, `browser` its union with window, and `any`
+adds other supported hosts. Sets are encoded in a stable compiler-owned realm
+universe; platform entryKinds select from it but cannot invent Window exposure.
+Explicit finite sets use `realm { dedicatedWorker, sharedWorker }`; aliases
+expand to those same masks. This is proposed grammar, not yet parsed.
 
 ```text
--- Jobs.beni
-pub program : Worker.Program Request Reply Failure
-program = Worker.program { handle = handle }
+pub realm window document : Js.Value
+document = Js.global "document"     -- body is checked, not trusted
 
-handle : Request → Result Failure Reply
--- The body may suspend; program construction may not.
+pub realm window saved : Js.Value → Js.Value
+saved w = Js.get w "localStorage"   -- imposes Window receiver obligation
 
--- page code, after importing Jobs
-worker = Worker.open scope Jobs.program options
-reply = Worker.call worker request
+pub foreign impure realm window focus : Element → ⊤
 ```
 
-`Worker.program` accepts an `entry` record whose handler is called once per
-request in its own scoped fiber. Its three type parameters are closed input,
-success and application-error types. Its constructor returns an opaque entry
-descriptor, not a runtime closure that the page serializes. `Worker.open`
-accepts that descriptor as a typed `Worker.Entry request reply failure` view;
-the coercion is compiler-owned and only applies to a statically resolved
-program declaration. `Worker.open` suspends through readiness and returns
-`Result OpenError (Worker.Handle request reply failure)` owned by `scope`.
-`Worker.call` suspends and returns `Result (CallError failure) reply`.
-`CallError failure = Application failure | Transport TransportError` separates
-application errors from channel failures. Neither contains a defect variant.
+Ordinary declarations
+still infer their effect rung. Public host-dependent platform/core declarations
+must state their realm bound; pure data declarations may omit it and infer
+all realms. Foreign types carry their exposure word on their own declaration.
+An annotation is checked against inferred requirements, never used to suppress
+a violating operation. This follows the foreign effect-rung precedent.
 
-The app manifest gains `workers`, an object from logical entry name to
-`{ "module": "Jobs", "value": "program", "kind": "dedicated" }`; shared
-entries use `"kind": "shared"` and `SharedWorker.program`. This explicit list
-is the complete emitted worker set, even when a page reference is unreachable.
-Keys are nonempty ASCII letters/digits/underscore/hyphen, case-insensitively
-unique. Module/value resolution follows normal package identity; duplicate
-references to the same declaration share one entry, with duplicate manifest
-aliases refused to keep public identity unambiguous. A page may select among
-typed entry descriptors at runtime, but cannot turn an arbitrary URL/closure
-into a compiler-checked entry. The native URL constructor remains available
-through a separate external endpoint API with a schema-validated protocol;
-its code is not asserted to be beni or same-build typed.
+The compiler's embedded host table is generated in Zig from pinned WebIDL:
+Global/Exposed, inheritance/mixins/partials, members, constructors and return/
+argument shapes. HTML's named globals and WindowProxy/WorkerGlobalScope roots
+are included. A small versioned intrinsic table adds ECMAScript builtins and
+host APIs not described by IDL (such as optional setImmediate), with primary
+source references and conformance fixtures. Unrecognized globals are not
+assumed portable. Platform-private `$beni`/test-hook globals migrate to
+module-local state or explicitly typed bootstrap parameters, not a broad
+allowlist. New native capabilities require a table/type contract update.
 
-A worker's code is reachable from its manifest declaration, not by following
-that descriptor's handlers while compiling the page. `main` remains unique
-for the page. Worker modules use `program`, so their declarations never count
-as additional `main`s. A second ordinary `main` is still `duplicate_main`.
-`--library` emits no launchable entries. `check` validates registered workers,
-contracts and realm reachability as `build` does; a standalone library check
-exports its unresolved realm/codec obligations to consumers.
+### How access is proved
 
-The optional headless state-machine constructor follows Elm's useful shape:
-`init`, `update`, `subscriptions`, without `view`, implemented over the same
-scopes and mailbox. It is a library adapter, not Elm ports or a second wire
-protocol. No finalizer or handler closes over state in another realm.
+Each relevant SSA/BIR value carries a hidden shape/provenance descriptor:
+plain data with field paths, a native host interface/union, a function with
+parameter/result flow, or unresolved host provenance. This is not a runtime
+wrapper and is not erased by Js.Value, Js.from, Js.to, a record or a closure.
 
-## 3. Output, runtime entry and determinism
+| Operation | Constraint/check | Why |
+|---|---|---|
+| Js.global literal | Resolve table root; infer allowed realm set and result shape. `document` means Window Document, not anonymous data. | A wrong annotation cannot legalize a DOM global. |
+| Js.get/set/call literal member | Resolve receiver provenance and member's exposure/shape; propagate return values and callback argument shapes. `w.localStorage` restricts even when w was passed in. | Checking global names alone misses indirect access. |
+| Js.apply/construct, bound methods and callbacks | Preserve callee/receiver capability obligations and declared result/argument shapes, including events delivered later. | Passing a host method or event through a helper cannot erase its origin. |
+| Js.from/to, storage, aliases and generic helpers | Preserve symbolic path constraints through parameters/results, native containers and captured values; instantiate them at callers. | Js.Value is not an escape hatch from the new check. |
+| Dynamic member on proven plain data | Permit indexed dictionary/record/array access, propagating the union of possible stored value shapes. | Core's data manipulation is not needlessly forbidden. |
+| Dynamic host global/member | Refuse arbitrary String names. Accept finite literal alternatives or a typed HostKey whose constructor is checked against the table for its receiver. | A runtime string cannot prove a native member exists in this realm. |
+| Reflection/Object helpers | Table summaries preserve referenced host shapes; unknown reflection yields unresolved provenance, not Data. eval/Function-generated host access has no accepted proof. | Reaching a property through reflection must not bypass the check. |
 
-Development writes the page `_main.mjs`, workers
-`_workers/<logical-name>/_main.mjs`, each entry's reachable app modules and
-platform wrappers, and `_core/` where a realm-independent emitted module can
-be shared safely. Each entry URL is resolved relative to the generated module
-that owns the descriptor, using compiler-generated module-relative URL code;
-it must work below a hashed `<base>`, nested routes and a relocated output
-directory. There is no user-written loader or bundler configuration.
-`WorkerOptions.type` is always `module` for beni entries; `name` and
-`credentials` (`omit`, `same-origin`, `include`) are exposed. External endpoints
-can describe classic scripts; the compiler never emits classic beni workers.
-Shared options also retain `extendedLifetime` (default false) and the legacy
-string-name overload through a convenience constructor.
+`Js.hostKey` is a privileged compiler intrinsic with a **literal** member name,
+producing `Js.HostKey receiver result`; `Js.getKey/callKey` instantiate its
+member obligations. A platform author can build an ADT/case selecting such
+keys, but cannot coerce a String to HostKey. The declaration still states its
+realm bound and its body is checked. Listen instead receives a typed event
+target: `listenWindow`, `listenDocument` and `listenWorker` choose literal roots
+and call the common helper. Arbitrary event-name strings are method arguments,
+not dynamic host property lookup, so they remain supported.
 
-A runtime contract independent of `markup.module` is still required by #1287.
-The platform declares an `entryRuntimes` table keyed by realm, containing a
-program type and a beni module with a `pub run` body. Its checked signature is
-`Program … → ⊤`, impure but non-suspending: it creates the root scope, installs
-listeners and starts fibers, then returns. Validation uses the instantiated
-program type, arity, effect and ownership summaries; the runtime and its
-required hooks are DCE roots. The worker runtime needs no markup union,
-`start` template table, DOM flush or HTML shell. A page keeps its existing
-markup runtime and lifecycle hooks. Missing/ambiguous realm runtimes are
-manifest diagnostics before output. Existing file-runtime contracts remain
-unchanged; workers never use a hand-written `runtime.js`.
+A helper with an unresolved receiver exports a symbolic obligation, such as
+“parameter 0 must have localStorage; result is Storage”. It need not fail
+before its callers are known. A reachable entry must discharge every such
+obligation. Static-dispatch evidence, higher-order callbacks, aliases, native
+container storage and module initializers participate. SCCs reach a monotone
+fixed point. Unreachable bodies do not reject an entry; evaluated initializers
+do. If an interface hides a native object, its declared native shape/realm must
+still cross the boundary. Foreign sibling promises remain privileged, just as
+their existing types/effects do; beni-over-Js bodies are checked rather than
+accepted as new unchecked promises.
 
-Realm checking includes the runtime root and every module initializer.
-Reachability is per entry, including callback/evidence/derived-code edges and
-foreign sibling dependencies. Identical bytes may be stored once, but module
-state is instantiated separately by each JavaScript realm. Sharing output
-paths must not cause an entry to evaluate page-only top-level code. If a source
-module mixes such code, emit realm-specific projections under the entry's
-reserved subtree; do not ship a union of side-effecting initializers.
+### Replacing host:page, diagnostics and cost
 
-Release optimizes each entry's reachable graph independently. Within an entry,
-record/tag renaming remains legal; across messages use the canonical codec in
-§5, never independent minifiers' field/tag integers. Shared chunks are optional
-only when their initialization and realm requirements are identical. No page
-bundle contains worker implementation merely to obtain its descriptor. A
-release build rejects reachable `Debug` in any entry before writing anything.
-Development maps each generated module to its source; release
-`--source-maps` maps each entry/chunk and includes worker origin in diagnostics.
+The platform-wide `host: page` key is withdrawn for multi-entry emission.
+Each emitter entry receives an `EntryHost` proof produced from its entryKind
+and checked reachable graph. The page's proof says Window; a worker's proof
+says its exact WorkerGlobalScope. The release printer emits bare `window`
+only when the current projection has a Window proof and that native lookup
+has a resolved Window root. Shared chunks require the intersection of their
+entry proofs; if that does not prove Window, specialize or retain a safe
+qualified lookup that is itself valid in every importing realm. Never carry
+the old chain promise into a worker projection. Existing platform manifests
+drop host:page during migration; stale uses get `obsolete_host_promise` with
+that replacement, not silent acceptance.
 
-Assign entry IDs before parallel work from package identity, sorted logical
-name and module/declaration identity. Paths, protocol fingerprints, field
-orders and diagnostics must not depend on checkout path, timestamp, process
-ID or completion order. Apply the existing ASCII-folded collision check to
-**all** entries, modules, chunks and maps before writing. Runtime instance and
-request IDs are separate from reproducible build IDs. Determinism fixtures
-compare jobs 1/8, twice, across different absolute checkout paths.
-
-## 4. Realm checking and privileged declarations
-
-Realm summaries are a separate constraint from impurity/suspension and
-ownership. Each callable/value has the set of realms in which it can run;
-composition intersects requirements. A pure helper begins at all realms;
-reaching a window-only primitive narrows it. Nominal opaque types carry realm
-exposure too, so storing, constructing or invoking a DOM handle in worker code
-is rejected even through generic callbacks, static-dispatch evidence, aliases,
-closures, records and reexports. Unreachable declaration bodies do not reject
-an entry, but an evaluated module initializer does.
-
-Core and platform packages declare boundary exposure in a `realms` manifest
-map keyed by fully qualified foreign declaration. Values are explicit realm
-sets; `all` means no host realm restriction, not permission to access any
-host global. This avoids an unreviewed language syntax extension. Every
-host-dependent foreign needs a row; opaque types need both exposure and
-clone/transfer metadata. Core math/data primitives are `all`; host dispatch
-primitives are privileged implementation machinery. A `Js.global`/`get`/call
-chain must inherit a checked platform wrapper declaration's exposure. Dynamic
-host-name calls need an explicit audited exposure contract, never default
-`all`. A leaf manifest cannot widen a dependency's declared exposure.
-
-For beni platform wrappers, realm declarations in the same map are checked
-upper bounds on inferred summaries, not assertions that hide their calls.
-Privileged host-dispatch internals are audited against their declared host
-operations. Ordinary application modules cannot write this map to grant new
-capabilities. Host feature tests do not authorize DOM use in a worker;
-compile-time realm-specialized platform branches may narrow a guarded branch
-only if the compiler proves the realm predicate. The existing platform-wide
-`host: page` optimization becomes entry-specific: no worker projection can
-emit bare `window` because it inherited a page platform manifest.
-
-Persist summaries, foreign metadata, descriptor types and codec fingerprints
-in interfaces/cache keys; invalidate consumers when any changes. Recursive
-call SCCs reach a fixed point, deterministic in module order. Generic
-instantiations retain obligations; higher-order callbacks contribute their
-requirements at each call. A library cannot erase a restriction by exporting
-an unannotated wrapper. `dump` displays entry roots and inferred realm sets.
-
-| Code and reporting site | Required diagnostic content |
+| Diagnostic | Site and required explanation |
 |---|---|
-| `worker_realm_violation`, first illegal use reachable from the entry | “This worker reaches a Window-only operation.” Name the entry, unavailable operation/type, allowed realms and shortest deterministic call/import-initializer chain; point to the platform boundary declaration. Suggest moving the operation to the page and sending data. |
-| `worker_entry_not_static`, offending descriptor expression | “A worker entry must name a registered top-level program.” Name the value and registration fix. |
-| `worker_entry_type_mismatch`, registered value | Expected realm program type and actual type, including input/reply/error disagreement. |
-| `invalid_worker_entry`, app manifest at 1:1 | Missing module/value, invalid/duplicate name, unsupported kind or duplicate declaration; show exact manifest key. |
-| `invalid_entry_runtime`, platform manifest at 1:1 | Realm, module, required export/type/rung and actual value or missing declaration. |
-| `missing_realm_contract`, privileged declaration | Name host-dependent primitive/type and missing exposure row. |
-| `worker_message_not_serializable`, message/entry type use | Show the shortest field/type path to a function, DOM value, fiber or unregistered opaque resource; name a schema conversion where possible. |
-| `worker_transfer_alias_live`, move site | Show moved backing resource, every live alias/view/captured path and later use. Request an explicit copy or moving all ownership, never silently copy. |
-| `worker_transfer_not_supported`, transfer/schema annotation | Name the type, required realm or transfer-only/clone-only mismatch. |
+| worker_realm_violation | Offending host operation/type; entry, native member, allowed realms and deterministic shortest call/value-provenance chain. |
+| realm_bound_mismatch | Declaration's realm word; inferred body requirement and offending access. |
+| dynamic_host_name | Dynamic global/member expression; known receiver shape, why String is insufficient, typed selector or literal-wrapper fix. |
+| unresolved_host_provenance | Entry use that cannot discharge a parameter/result obligation; show origin/loss path and required native type annotation. |
+| missing_realm_contract | Public host-dependent privileged declaration lacking its source-local word. |
+| invalid_entry_kind | Platform manifest; unknown symbol, arity/type-role mismatch, absent runtime or invalid realm. |
+| worker_entry_not_static | Launch's program argument; unresolved factory and example of a finite set of top-level program references. |
+| obsolete_host_promise | Platform manifest host key; show entryKind/EntryHost replacement. |
+| worker_message_not_serializable / worker_transfer_alias_live | Message field/type path or moved backing and every later live alias; explicit conversion/copy guidance. |
 
-## 5. Messages, schemas and ownership
+For a fixed realm universe, the simple availability summary is a bit mask
+(one byte for the present eight-or-fewer contexts), plus a 32-bit interned
+host-flow-summary reference per relevant declaration. Serialized interfaces
+store the mask and a length-delimited sparse parameter/result/capture-path
+summary; zero-host declarations need no flow payload. Reuse the checker's
+interned type/path graph and call edges. Do not allocate a map per expression.
+The cost is O(V+E) for each finite-mask propagation pass; each bit can be
+removed once per node. Host-shape unions/path summaries are the harder cost:
+sharing and memoization avoid repeated walks; a bounded widening to unresolved
+provenance must emit the diagnostic above and accept an explicit typed wrapper
+as a precision recovery, never invent a safe realm. Measure worst-case
+higher-order chains and recursive native-container flows, not only tiny code.
 
-The type-level judgment `Wire T` is derived structurally for unit, booleans,
-strings, numeric primitives, tuples, records, finite lists and tagged unions
-whose fields satisfy it; recursive definitions use a memoized fixed point.
-Functions, fibers, scopes, resume handles, DOM nodes and raw `Js.Value` do not.
-Opaque types require the owning privileged module's codec and exposure row.
-Unconstrained type variables retain `Wire` obligations in interfaces; they
-are not assumed serializable. This is compiler evidence, not a user-defined
-method that can claim a closure is safe. A closed program's request, reply
-and failure types are checked together at registration and every handle use.
+Wire checking memoizes one descriptor per solved type/representation node,
+with SCC processing for recursive types: O(T+F) traversal for T nodes and F
+field/variant edges, plus obligations at generic instantiations. Store one
+classification byte and a 32-bit interned plan reference per relevant type;
+store a canonical fingerprint once per concrete protocol root, not per use.
+Schema conversions add only their reachable directional type/flow edges.
+Interface hashes include realm bounds, host-flow summaries, table revision,
+Wire plan and entry roles. A body change with the same exported summary does
+not invalidate consumers; a changed exposed member/summary invalidates the
+reverse dependency closure. Cache old-version rows are rejected, not guessed.
 
-Beni representations are not structured-clone representations. In particular
-list views, dictionaries, hidden nominal machinery and release field/tag
-renaming require codecs. Encode to a canonical host envelope with ordered
-field/tag IDs derived from the type graph, explicit integer/float conventions
-and builtin native payload slots. Preserve negative zero, NaN/infinities and
-exact binary words; no JSON stringification as a transport. Decode produces
-the receiving build's ordinary representation. Same-build endpoints exchange
-build/protocol/type fingerprints before admitting messages. External channels
-use schema validation and explicit protocol versions; no native `any` escapes.
+These are representation/complexity budgets, **not measured compiler costs**.
+The implementation must retain >250k LOC/s cold per core and the existing
+100k-line build target; report absolute time, interface bytes and peak memory
+with/without these analyses, cold and cached. The benchmark matrix is in the
+research and #1295/#1296; a budget failure is a compiler issue, not permission
+to weaken the check. Existing code migration is part of those slices before
+worker launching becomes public.
 
-A schema's `Type` is the application endpoint, `Encoded` its typed beni
-intermediate, not the host representation (`schema.md` §1). A wire schema
-composes directional conversions with the canonical codec; both success and
-failure conversions remain checked. A request carrying a closure can be
-accepted only if an explicit conversion removes it and its receiver type
-matches the reconstructed type. Arbitrary `Schema` callbacks that suspend run
-in a preparation fiber; `postMessage` and the final native encoding/transfer
-commit remain synchronous. `send` is impure and accepts an already prepared
-wire value, or a codec proven `sync`; `call` may prepare asynchronously.
+## 5. Wire types and ownership, independent of the naming decision
 
-A transfer annotation on a native-resource field supplies a collector during
-encoding. It records the native object and backing identity, never an
-arbitrary application-provided host array. Repeated references to one resource
-are encoded with one transfer-list entry, preserving alias identity on the
-receiver; a transfer-only object omitted from the message graph is refused.
-A buffer view transfers its backing buffer and invalidates **all** aliases
-and views, not just the selected byte range. An explicit slice/copy is required
-to retain bytes locally. `SharedBuffer` is shared, never transferred or
-represented as ordinary immutable owned storage.
+`Wire T` is compiler-derived evidence that a value can cross this boundary
+with its meaning intact. Unit, booleans, numeric/string primitives, tuples,
+records, arrays and tagged unions inherit the judgment from their fields.
+Recursive types use a memoized graph. Functions, fibers, scopes, resume tokens,
+DOM nodes and raw Js.Value do not acquire it. Opaque native types need their
+owning module's native serialization/transfer contract; generic type variables
+retain obligations until instantiated. Worker-local state is excluded from
+this judgment because it never crosses.
 
-Transfer is a resource demand in the ownership checker, distinct from a
-record edit. It consumes the resource at the native commit attempt and
-rejects any live alias in a later expression, branch, callback, fiber, model
-or exported value. Preparation holds exclusive ownership until commit or
-cancellation. Preparation failures before native commit can return the owned
-value explicitly; after commit begins, no error arm promises the original
-resources back. A reservation retains privileged cleanup references until
-commit settles: on failure it releases/closes every still-local resource using
-its owning module's exact native-state predicate, without attempting to close
-successfully transferred receiver resources. Cleanup faults follow the defect
-path; closed/moved states are idempotent cleanup cases, not broadly swallowed
-exceptions. Application aliases remain consumed even if some native resources
-never detached. Native transfer steps can partially detach a transfer list
-before a later entry fails: conservatively consume the whole attempted list
-and mark all wrapper generations invalid, even on `Err`. Dynamic imported
-resources still get exact state checks; a static proof does not make a
-closed native handle usable. Resource state lives in shared backing metadata,
-not per-wrapper copied booleans. A send that transfers succeeds at serialization,
-not at delivery; cancellation cannot retract it or restore ownership.
+The naming decision changes **how** Wire evidence lowers, not this guarantee.
+Under the recommended shared-name design, clone-stable records/unions/tuples/
+arrays go straight to native structured clone. A recursive shape containing a
+non-clone-stable child normalizes only the necessary paths. Today's emitted
+list view has a function-valued `$plain`, so direct clone fails; a codec must
+materialize/rebuild it. Today's emitted Dict is still a plain tree, whereas
+the normative ordered Dict design has `{entries,index: Map}`; a native Map
+itself survives clone. Do not claim every Dict or nominal wrapper always needs
+a codec. The measured representation table and protocol shape evidence decide.
 
-`Binary` owns buffer/view/atomic state; `Browser.Image` owns ImageBitmap and
-ImageData; `Browser.Video` owns VideoFrame; `Browser.Canvas` owns offscreen
-canvas state. These are #1278's types, not worker-specific replacements.
-GPU device/queue/buffer/texture handles have no wire instance. Standard
-serializable GPU diagnostics do; OffscreenCanvas must be transferred before
-creating its rendering context. All other native wire types are accounted for
-in the research's type matrix and transfer-family slice, including transfer
-streams, ports and same-agent-cluster restrictions.
+Under the alternative canonical-codec design, every nontrivial payload is
+encoded and decoded independently of internal names. Both choices retain
+same-build/protocol fingerprints and explicit schemas for external channels.
+A schema's Encoded remains a typed beni intermediate; a conversion may suspend
+during prepare, while native send/transfer commit is synchronous. Prepared
+messages and HostKey values are opaque, not application-manufacturable casts.
+
+A transfer is an ownership move of the native backing identity. All views,
+aliases, model fields, captures and fibers that could later read it must be
+absent. A schema annotation fills an identity-deduplicated collector; a view
+moves the whole backing buffer, not only its byte range. Explicit copy is the
+way to keep bytes locally; shared memory is never silently substituted.
+
+Preparation owns a reservation. Before native commit, cancellation/failure
+returns or disposes still-owned inputs by the documented API. Once native
+commit starts, the entire attempted list is consumed even on failure, because
+an earlier native step may already have detached a resource. Privileged cleanup
+references release what remains local; they never revive application aliases
+or close receiver-owned resources. This rule protects against partial native
+failure, not merely the happy path. Binary/Image/Video/Canvas remain the shared
+owning modules from #1278; worker wrappers do not duplicate those handles.
 
 ## 6. Native API adapters and precise failures
 
@@ -337,24 +456,10 @@ a JavaScript helper. Native algorithms and failure anchors are in the research.
 | Shared memory/Atomics | Isolation/constructor availability → `SharedMemoryUnavailable`; invalid integer view kind → `AtomicViewKind`; invalid index → `AtomicIndexOutOfBounds`; non-shared wait view → `WaitRequiresShared`; unavailable host blocking permission → `BlockingWaitForbidden`; native wait outcomes map to `Woken`, `NotEqual`, `TimedOut`. Checked wrappers consume documented TypeError/RangeError only at the corresponding validated operation. |
 | Protocol liveness | Caller-visible closed connection → `ChannelClosed`; lease deadline → `PeerUnresponsive`; bounded queue refusal → `QueueFull`; externally received schema mismatch → `ProtocolRejected issues`; same-build fingerprint mismatch → `ProtocolVersionMismatch` at handshake, before work runs. |
 
-Trusted Types policy callbacks run outside the constructor exception guard.
-The platform accepts an explicit branded script URL produced by a beni policy
-that returns typed refusal before entering the host callback. If a host default
-policy exists, resolve it before the constructor guard; any callback exception
-is a defect, including TypeError. Pass the resulting TrustedScriptURL to the
-constructor, so that call cannot execute arbitrary policy code under the
-TrustedScriptUrlRejected classifier. With no policy, a validated string's
-sink rejection is classified at the native constructor. The native trustedTypes.createPolicy call has a separate guard: its
-TypeError becomes TrustedPolicyDenied (duplicate/disallowed name cannot be
-distinguished unless independently known); missing trustedTypes becomes
-TrustedTypesUnavailable for explicitly requested policies. Its platform-owned
-callback is total and returns an already validated string. Explicit foreign
-TrustedScriptURL intake requires trustedTypes.isScriptURL validation; failed
-validation is NotTrustedScriptUrl. No policy is silently
-created to bypass deployment CSP; the platform's typed policy configuration
-must work under the site's allowed policy names. The implementation slice
-includes typed policy refusal, a policy-thrown TypeError defect and denied
-policy creation fixtures.
+The owned-policy adapter resolves callbacks before the native constructor guard.
+This prevents a user callback TypeError from being mistaken for sink rejection.
+[Research §10](research/workers-api-research.md#10-owned-trusted-types-policy-adapter)
+retains the precise creation/validation/default-policy algorithm and fixtures.
 
 `SecurityError` at shared construction has the operation-specific shared name;
 there is no fabricated distinction between indistinguishable security causes.
@@ -364,7 +469,7 @@ label those as possible causes. Any native ErrorEvent, including one with `error
 defect before or after Ready; HTML clears the error object when forwarding
 worker exceptions to owners. Test the event interface, never error-object
 presence. A generic native Event named error before Ready is WorkerLoadFailed;
-unhandled rejection, Defect frame or any error after Ready is fatal. Muted
+unhandled rejection, Defect frame or generic load errors after managed Ready are fatal. Muted
 ErrorEvent metadata remains a defect with limited diagnostics. A host that
 does not preserve these standard event distinctions needs an explicit
 compatibility finding, not a payload-presence heuristic.
@@ -377,6 +482,15 @@ security and browser support. A raw host getter or proxy is never accepted as
 a beni wire record. External validation must not invoke untrusted accessors.
 
 ## 7. Handshake, requests, exits and defect routing
+
+| Rule | Guarantee protected |
+|---|---|
+| Install listeners before user evaluation | Startup defects reach the owning page |
+| Ready only after init, schema identity and scopes | A successful open is usable |
+| Bounded ready/cleanup observation; Lost is not Closed | Failed startup cannot hang or falsely promise cleanup |
+| Generations and terminal IDs | Late messages cannot settle a different request |
+| Full exits, separate fatal control | Cancellation and defects cannot be disguised as success |
+| Bounded diagnostic metadata | Reporting a defect does not serialize an arbitrary thrown object |
 
 Each spawned instance installs the parent error/message/messageerror listeners
 immediately, before awaiting readiness. A small compiler-generated worker
@@ -391,7 +505,7 @@ A failed bootstrap fetch remains `WorkerLoadFailed`, honestly opaque.
 The transport envelope has protocol/build fingerprint, instance generation,
 connection ID, request ID and a discriminated body. Control messages are
 Hello, Ready, Request, Reply, Interrupt, Interrupted, Close, Closed, Defect,
-Ping, Pong, Chunk, Ack End and TransportFailure. IDs are monotonically allocated within an
+Ping, Pong, Chunk, Ack, End and TransportFailure. IDs are monotonically allocated within an
 instance/connection and never reused while a reply/tombstone can exist;
 rollover creates a new generation. Decoder limits cover depth, frame bytes,
 queued requests and chunk credits. No unbounded pre-ready buffer.
@@ -403,13 +517,13 @@ startup deadline. It never waits only on a latch when the worker may already
 have failed. Failure or interruption before Ready transitions Starting → Closing. If no
 runtime acknowledgment arrives by the finite cleanup-observation deadline,
 it transitions to Lost, not Closed. `open`'s failure contains the original
-OpenError and `CleanupUnconfirmed` (or `CleanupConfirmed` after Closed), and
+OpenReason and `Unconfirmed loss` (or `Confirmed` after Closed), and
 returns without waiting forever for an impossible acknowledgment. The runtime
 keeps any still-live native handle in a bounded orphan registry owned by the
 program, stops admission and requests close; it does not claim finalizers ran
 or automatically terminate it. Reaching the orphan bound refuses new opens.
 A graceful close whose peer is Lost likewise returns an abnormal cleanup
-outcome, never success. An implicit Task.scope finalizer that observes CleanupUnconfirmed enters
+outcome, never success. An implicit Task.scope finalizer that observes Unconfirmed enters
 the existing fatal defect shutdown path: its return type remains ⊤, and it
 cannot complete normally or extend Task.Exit. Explicit open/low-level close
 return the typed cleanup status for the caller to inspect. The owner decision governs
@@ -442,6 +556,15 @@ crash screen; in release it logs and stops. There is no worker-only console
 error while the page silently continues.
 
 ## 8. Cancellation, scopes and lifecycle
+
+| Rule | Guarantee protected |
+|---|---|
+| Cancel waits for terminal cleanup, reserved control lane | Back-pressure cannot deadlock cancellation |
+| Close stops admission before cancelling children/root | No accepted work outlives its owner |
+| Native abort is explicitly Abandoned | Destruction never claims finalizers ran |
+| Heartbeats report unresponsive; navigation is best effort | Absence of a signal is not false proof of cleanup |
+| Shared clients have separate scopes and leases | One ordinary client cannot close another's work |
+| Scheduler/fibers are realm-local | A handle never pretends to be a joinable remote fiber |
 
 `send` performs synchronous serialization and returns, impure. Native delivery
 is a later message task, FIFO for a channel; scheduling between channels is
@@ -488,6 +611,15 @@ A worker-local fiber cannot be joined in another realm. `Handle` represents
 a protocol peer, never a cross-thread Fiber.
 
 ## 9. Ports, broadcasts, shared memory, pools and streams
+
+| Rule | Guarantee protected |
+|---|---|
+| Move port cleanup registration with the endpoint | Sender finalization cannot close receiver-owned resources |
+| Validate broadcast messages; never transfer | A shared name cannot forge typed data or move bytes |
+| Shared memory uses explicit Binary capabilities | Ordinary immutable values do not acquire data races |
+| Bounded pools; no implicit replay of moved requests | Failure cannot duplicate side effects or reuse detached input |
+| Ack only after chunk release; separate control budget | Slow consumers bound memory without blocking cancellation |
+| TransportFailure after handler cleanup | A failed result send cannot leave its caller parked |
 
 MessageChannel creates two dual typed endpoints (`send A / receive B` and
 `send B / receive A`) inside a scope. The managed observer attaches listeners
@@ -552,11 +684,14 @@ Readable/Writable/TransformStream transfers use their standard transfer steps,
 including locked-state failures; the beni streaming protocol is not falsely
 presented as the same native object operation.
 
+See [workers-api.md](workers-api.md) for every public signature and
+[workers-example.md](workers-example.md) for complete page/worker lifecycles.
+
 ## 10. Verification and measurements owed
 
 No implementation or browser performance claim is made by this document.
 Every slice lands with black-box fixtures and its diagnostic transcripts.
-`zig build gates` proves compiler checks, canonical codec round trips,
+`zig build gates` proves compiler checks, chosen wire-layout round trips,
 ownership rejections, interface invalidation, output shape and deterministic
 jobs 1/8 builds, and the Node-executable protocol state machine. Node workers
 are not a substitute for browser workers. happy-dom can drive UI/observer
@@ -604,10 +739,10 @@ measurements must not run concurrently with another full suite on Dagon.
 | Slice | Depends on | Done |
 |---|---|---|
 | Entry runtime contract | This design | #1287 generalized to realm runtime table, precise program/arity/effect diagnostics and no markup dependency; dev/release fixtures. |
-| Multi-entry emission and bootstrap | Runtime contract | Manifest descriptors, canonical IDs, staged defect bootstrap, relative URLs, per-entry roots/maps/collisions and jobs 1/8 output fixtures; never user JS. |
-| Realm checking | Multi-entry roots | Exposure metadata, transitive summaries/cache invalidation, initializer and host:page handling, every §4 realm fixture. Worker builds cannot ship without this gate. |
-| Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, canonical release-safe schema codecs, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
-| Dedicated runtime and defects | Prior compiler slices | Precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
+| Multi-entry emission and bootstrap | Runtime contract | Source-discovered generic entry descriptors, stable IDs, staged defect bootstrap, relative URLs, per-entry roots/maps/collisions and jobs 1/8 output fixtures; never user JS. |
+| Realm checking | Multi-entry roots | Pinned native table, declaration-local bounds, value-flow summaries/cache invalidation, initializer and host:page handling, every §4 realm fixture. Worker builds cannot ship without this gate. |
+| Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, owner-selected release-safe representation plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
+| Dedicated runtime and defects | Prior compiler slices | Worker-local init/state/root scope, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
 | Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |
 | Native transfer families and atomics | Wire ownership; #1278/#1277 | Every standard type row assigned, implemented and browser-tested or explicit capability refusal; GPU integration, shared memory and typed exact failure coverage. Proposal rows remain visibly gated by owner decision. |
 | Pools, streams and parity measurements | Dedicated/ports | Fixed/elastic bounds, credit/ack/cancel, keep-alive, no implicit retry of moves, size/latency reports and parity-ledger evidence. |
@@ -631,4 +766,6 @@ teach proposed syntax as shipped syntax.
 - Native transfer families and atomics: [1299](https://github.com/canassa/beni/issues/1299).
 - Pools, streams and parity measurements: [1300](https://github.com/canassa/beni/issues/1300).
 - Service-worker lifecycle design: [1301](https://github.com/canassa/beni/issues/1301).
-- Owner decisions: [1302](https://github.com/canassa/beni/issues/1302).
+- Owner lifecycle decisions: [1302](https://github.com/canassa/beni/issues/1302).
+- Owner wire-layout decision: [1305](https://github.com/canassa/beni/issues/1305).
+- Suspending browser commands prerequisite: [1306](https://github.com/canassa/beni/issues/1306).

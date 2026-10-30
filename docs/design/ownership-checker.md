@@ -3786,6 +3786,18 @@ failures as its tag), `browser/direct/InitThrows` (one golden on both platforms)
 
 ## 23. Slice 3d — owned sends, and navigation as commands (normative from 2026-10-12)
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §5/§9
+extends owned sends to native backing identity: views, aliases, models,
+closures and in-flight fibers all participate. Preparation reserves ownership;
+commit consumes the whole attempted list on success or failure because native
+steps can partially detach it. Privileged cleanup releases still-local remnants,
+never resurrects aliases. Port moves rehome cleanup registration. Worker init
+state belongs to its root; serial handlers return it, concurrent handlers must
+borrow stable state. Chunk/Reply/Sink/Message tokens enforce one owner and one
+terminal outcome. SharedArrayBuffer is explicitly shared storage, not a move.
+Negative corpus/oracle fixtures must cover these demands before launching ships.
+
+
 *Amends §16.2, §16.11, §18.8, §20.2–§20.9 and §22.3. Sections 1–22 keep their numbers and text; where this
 section changes a rule, it wins. Research 80 measures it.*
 
@@ -8141,21 +8153,3 @@ callback, a replaced slot, a fiber, a record accumulator, `map`,
 `indexedMap` and a kept grandchild. `FoldKeepsInnerRefused` pins the
 twins. Its three writes after the traversal were accepted at `rows[*]`
 before this amendment. Summary blocks advance to version 38.
-
-## Amendment of 2026-10-30: native worker transfers consume backing resources
-
-Specified, not built. [workers.md](workers.md) §5 extends §23's owned sends and
-§30–§31's resource demands to native transfer. A move demands exclusive
-ownership of the **backing identity**, including every view, alias, capture,
-model and in-flight fiber that can reach it. Native resource summaries must
-carry backing identity through opaque wrappers; nominal type equality alone
-is insufficient. Diagnostics name the move and the later live paths.
-
-Preparation retains ownership until its native synchronous commit. Before
-commit, an explicit failure result may return owned inputs. Once native
-transfer starts, every attempted input is consumed, on success and failure:
-the native algorithm can detach earlier entries before a later transfer fails.
-No error branch silently resurrects them; wrapper generations invalidate all
-aliases. No copying fallback. SharedArrayBuffer is explicitly shared storage,
-not a transfer or uniqueness demand. These rules require corpus/oracle coverage
-for the new resource demand before public transfers ship.
