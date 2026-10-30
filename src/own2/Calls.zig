@@ -1181,21 +1181,33 @@ const Grafter = struct {
                 return t.deep(gpa_, g.env.charge, g.env.view(), kappa, n, g.env.places.isSummary(.from(x.b)));
             },
             .sep, .apart => {
-                var items: std.ArrayList(Cond.Item) = .empty;
-                defer items.deinit(gpa_);
+                // `apart [A] [B]` over the sides' cells as a multiset: each side's
+                // set aggregate, memoised per radix node, merged into the larger
+                // (*The derivation*), never a sorted list of them all.
+                var sides: std.ArrayList(SetId) = .empty;
+                defer sides.deinit(gpa_);
                 if (a.atom == .sep) {
                     for ([_]u32{ a.a, a.b }) |side| {
                         const c: CellId = .from(side);
-                        try g.addItems(try g.cellsOf(c, g.placeOfCell(c)), &items);
+                        try sides.append(gpa_, try g.cellsOf(c, g.placeOfCell(c)));
                     }
                 } else {
                     var it = g.env.cells.sets.iterate(.from(a.a));
                     while (it.next()) |e| {
                         const c: CellId = .from(e.key);
-                        try g.addItems(try g.cellsOf(c, g.placeOfCell(c)), &items);
+                        try sides.append(gpa_, try g.cellsOf(c, g.placeOfCell(c)));
                     }
                 }
-                return t.apart(gpa_, g.env.charge, g.env.cells, g.env.places, items.items, null);
+                var acc: Cond.Table.Agg = .{};
+                for (sides.items) |s| acc = try t.aggMergeMulti(gpa_, g.env.charge, g.env.cells, g.env.places, acc, try t.setAgg(gpa_, g.env.charge, g.env.cells, g.env.places, s));
+                const k = try t.aggCond(gpa_, g.env.charge, g.env.cells, g.env.places, acc);
+                if (std.debug.runtime_safety and Cond.full_cross_check) {
+                    var items: std.ArrayList(Cond.Item) = .empty;
+                    defer items.deinit(gpa_);
+                    for (sides.items) |s| try g.addItems(s, &items);
+                    try t.expectSame(gpa_, g.env.charge, k, try t.apart(gpa_, g.env.charge, g.env.cells, g.env.places, items.items, null));
+                }
+                return k;
             },
             .within, .keep, .writes => return Cond.lost,
         }

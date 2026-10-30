@@ -47,7 +47,7 @@ const Facts = @import("Facts.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const stamped = @import("../stamped.zig");
-const full_cross_check = @import("ownership_options").full_cross_check;
+pub const full_cross_check = @import("ownership_options").full_cross_check;
 
 pub const CondId = Ids.CondId;
 pub const CellId = Ids.CellId;
@@ -189,12 +189,14 @@ pub const Table = struct {
     facts: std.ArrayList(DagFacts) = .empty,
     pending: std.ArrayList(Pending) = .empty,
     memo_eq: Ids.FixedDict(4) = .{},
-    memo_map_eq: Ids.FixedDict(4) = .{},
     memo_fold_below: Ids.FixedDict(1) = .{},
     memo_map_union: Ids.FixedDict(3) = .{},
-    memo_map_reach: Ids.FixedDict(2) = .{},
+    memo_diff: Ids.FixedDict(2) = .{},
+    memo_map_keys: Ids.FixedDict(1) = .{},
+    memo_nodes_part: Ids.FixedDict(3) = .{},
     memo_per_cell: Ids.FixedDict(2) = .{},
     memo_set_agg: Ids.FixedDict(1) = .{},
+    memo_cell_part: Ids.FixedDict(2) = .{},
     /// A read made with no crossing (a redo, the cross-check) and with no
     /// memo (the cross-check); and how many reads crossed, and were redone.
     /// The shape table whose nodes key this table's entries, told of each new
@@ -256,12 +258,14 @@ pub const Table = struct {
         t.facts.deinit(gpa);
         t.pending.deinit(gpa);
         t.memo_eq.deinit(gpa);
-        t.memo_map_eq.deinit(gpa);
         t.memo_fold_below.deinit(gpa);
         t.memo_map_union.deinit(gpa);
-        t.memo_map_reach.deinit(gpa);
+        t.memo_diff.deinit(gpa);
+        t.memo_map_keys.deinit(gpa);
+        t.memo_nodes_part.deinit(gpa);
         t.memo_per_cell.deinit(gpa);
         t.memo_set_agg.deinit(gpa);
+        t.memo_cell_part.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -539,6 +543,18 @@ pub const Table = struct {
     fn mapUnion(t: *Table, gpa: Allocator, charge: Charge, how: Combine, a: u32, b: u32) Error!u32 {
         if (a == Ids.none_int) return b;
         if (b == Ids.none_int or a == b) return a;
+        // Memoised per pair of map nodes and `Combine` (*Argument 2*): the union
+        // of two maps that both grew meets, below their changed spines, the
+        // pairs an earlier union met.
+        const key: [3]u32 = .{ @backingInt(how), a, b };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_map_union.get(key)) |hit| return hit;
+        const out = try t.mapUnionUncached(gpa, charge, how, a, b);
+        (try t.memo_map_union.getOrPut(gpa, key)).value_ptr.* = out;
+        return out;
+    }
+
+    fn mapUnionUncached(t: *Table, gpa: Allocator, charge: Charge, how: Combine, a: u32, b: u32) Error!u32 {
         try charge.reserve(gpa, .inspection, 1);
         const na = t.mapNode(a);
         const nb = t.mapNode(b);
@@ -1102,12 +1118,11 @@ pub const Table = struct {
                 .dups_approx = try v.cells.sets.unionWith(gpa, charge, fa.dups_approx, fb.dups_approx),
             };
             if (d.kind == .positions) {
-                var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.a)), try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.b))));
-                while (it.next()) |e| {
-                    try charge.reserve(gpa, .inspection, 1);
-                    out.dups = try v.cells.sets.insert(gpa, charge, out.dups, e.key, 0);
-                    if (out.approx or e.value == 1) out.dups_approx = try v.cells.sets.insert(gpa, charge, out.dups_approx, e.key, 0);
-                }
+                // The cells both sides hold, as sets: one approximate where the
+                // node is (a recast below) or either occurrence is.
+                const both = try v.cells.sets.intersection(gpa, charge, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.a)), try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.b)));
+                out.dups = try v.cells.sets.unionWith(gpa, charge, out.dups, both);
+                out.dups_approx = try v.cells.sets.unionWith(gpa, charge, out.dups_approx, if (out.approx) both else try t.cellPart(gpa, charge, v.cells, v.places, .approx, both));
             }
             try local.put(gpa, n, out);
             if (!cyclic) {
@@ -1125,14 +1140,7 @@ pub const Table = struct {
     fn dagRoot(t: *Table, gpa: Allocator, charge: Charge, v: View, root: NodeId, at_summary: bool, inner: CondId) Error!CondId {
         const facts = try t.dagFacts(gpa, charge, v, root);
         if (!at_summary and !facts.positions) return inner;
-        var dups: std.ArrayList(Item) = .empty;
-        defer dups.deinit(gpa);
-        var it = v.cells.sets.iterate(facts.dups);
-        while (it.next()) |e| {
-            try charge.reserve(gpa, .inspection, 1);
-            try dups.append(gpa, .{ .cell = .from(e.key), .approx = v.cells.sets.member(facts.dups_approx, e.key) });
-        }
-        return t.@"and"(gpa, charge, inner, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, dups.items));
+        return t.@"and"(gpa, charge, inner, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, facts.dups, facts.dups_approx));
     }
 
     /// What is stored for view `n` along its chain (§2.11 *κ at a view*):
@@ -1225,7 +1233,7 @@ pub const Table = struct {
     }
 
     /// Two conditions of one kind and one atom set, or a defect.
-    fn expectSame(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!void {
+    pub fn expectSame(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!void {
         const same = blk: {
             if (fails(a) or fails(b) or a == yes or b == yes) break :blk a == b;
             break :blk try t.flat(gpa, charge, a) == try t.flat(gpa, charge, b);
@@ -1418,7 +1426,7 @@ pub const Table = struct {
         const stored: ?CondId = if (extra) |e| (if (own) |s| try t.join(gpa, charge, s, e) else e) else own;
         // THE RULE (header): stored ⊔ derived at the read's position.
         const derived: CondId = switch (v.shapes.kind(n)) {
-            .leaf => try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), at_summary, &.{}),
+            .leaf => try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), at_summary, .none, .none),
             // A built node's κ is the walk's (O13): `lost` until set; in a
             // collapsed fold `lost` (§2.9). At a summary position its storage
             // arrivals that stand for many positions owe `excl` as a leaf's do
@@ -1427,7 +1435,7 @@ pub const Table = struct {
                 if (t.isCollapsed(ctx)) return lost;
                 const s = stored orelse return lost;
                 if (!at_summary or s == shared) return s;
-                return t.@"and"(gpa, charge, s, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, &.{}));
+                return t.@"and"(gpa, charge, s, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, .none, .none));
             },
             // A recast and its inner are one position: what is stored at
             // either counts (§2.9, §2.13.9).
@@ -1442,7 +1450,7 @@ pub const Table = struct {
                     d = try t.join(gpa, charge, s, d);
                 };
                 // At a summary position its cells owe what a leaf's do (#1115).
-                if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, &.{}));
+                if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, .none, .none));
                 break :blk d;
             },
             .@"union", .choice, .positions, .view => unreachable, // the machine's
@@ -1534,77 +1542,104 @@ pub const Table = struct {
         return true;
     }
 
-    /// Two entry maps equal on the keys based on `region`: walked together,
-    /// a shared node equal at once, memoised per pair of map nodes within one
-    /// `base_epoch`; a key one side binds alone, or with another kind or atom
-    /// set, fails only if it is tested. The recursion is the key width.
+    /// Two entry maps equal on the keys based on `region` (*The comparison
+    /// and its cost*): the keys the two bind differently (`diffKeys`, with no
+    /// region in it, so a pair of subtrees an earlier call compared is met
+    /// again whatever the region) must hold no tested key: not the empty
+    /// value, which is tested for every region, and none whose `bases*`
+    /// meets the region (`diffReach`, memoised per radix node).
     fn mapsEqOn(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
         if (a == b) return true;
-        const key: [4]u32 = .{ a, b, region.int(), v.shapes.base_epoch };
+        const d = try t.diffKeys(gpa, charge, v, a, b);
+        if (d == .none) return true;
+        if (try t.nodesPart(gpa, charge, v, .empty, d) != .none) return false;
+        return !try v.shapes.node_sets.intersectsMemo(gpa, charge, &v.shapes.memo_node_meet, try t.nodesPart(gpa, charge, v, .reach, d), region);
+    }
+
+    /// The keys two entry maps bind differently, as a node set: bound by one
+    /// side only, or by both with another kind or atom set (`sameCond`).
+    /// Memoised per unordered pair of map nodes, for good (maps and their
+    /// entries never change); the recursion is the key width.
+    fn diffKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32) Error!SetId {
+        if (a == b) return .none;
+        if (a == Ids.none_int) return t.mapKeys(gpa, charge, v, b);
+        if (b == Ids.none_int) return t.mapKeys(gpa, charge, v, a);
+        const key: [2]u32 = .{ @min(a, b), @max(a, b) };
         try charge.reserve(gpa, .memo, 1);
-        if (t.memo_map_eq.get(key)) |hit| return hit == 1;
-        const out = try t.mapsEqOnUncached(gpa, charge, v, a, b, region);
-        (try t.memo_map_eq.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        if (t.memo_diff.get(key)) |hit| return .from(hit);
+        const sets = &v.shapes.node_sets;
+        const memo = &v.shapes.memo_node_union;
+        const na = t.mapNode(a);
+        const nb = t.mapNode(b);
+        const out: SetId = blk: {
+            if (na.mask == 0 and nb.mask == 0) {
+                if (na.prefix == nb.prefix) {
+                    if (na.left == nb.left or try t.sameCond(gpa, charge, .from(na.left), .from(nb.left))) break :blk .none;
+                    break :blk try sets.insert(gpa, charge, .none, na.prefix, 0);
+                }
+                break :blk try sets.unionMemo(gpa, charge, memo, try t.mapKeys(gpa, charge, v, a), try t.mapKeys(gpa, charge, v, b));
+            }
+            if (na.mask == 0 or nb.mask == 0) {
+                const leaf_a = na.mask == 0;
+                const leaf_id = if (leaf_a) a else b;
+                const leaf = if (leaf_a) na else nb;
+                const br = if (leaf_a) nb else na;
+                if (!matches(leaf.prefix, br.prefix, br.mask)) break :blk try sets.unionMemo(gpa, charge, memo, try t.mapKeys(gpa, charge, v, a), try t.mapKeys(gpa, charge, v, b));
+                const zero = leaf.prefix & br.mask == 0;
+                break :blk try sets.unionMemo(gpa, charge, memo, try t.diffKeys(gpa, charge, v, leaf_id, if (zero) br.left else br.right), try t.mapKeys(gpa, charge, v, if (zero) br.right else br.left));
+            }
+            if (na.mask == nb.mask and na.prefix == nb.prefix) break :blk try sets.unionMemo(gpa, charge, memo, try t.diffKeys(gpa, charge, v, na.left, nb.left), try t.diffKeys(gpa, charge, v, na.right, nb.right));
+            if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
+                const zero = nb.prefix & na.mask == 0;
+                break :blk try sets.unionMemo(gpa, charge, memo, try t.diffKeys(gpa, charge, v, if (zero) na.left else na.right, b), try t.mapKeys(gpa, charge, v, if (zero) na.right else na.left));
+            }
+            if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+                const zero = na.prefix & nb.mask == 0;
+                break :blk try sets.unionMemo(gpa, charge, memo, try t.diffKeys(gpa, charge, v, a, if (zero) nb.left else nb.right), try t.mapKeys(gpa, charge, v, if (zero) nb.right else nb.left));
+            }
+            break :blk try sets.unionMemo(gpa, charge, memo, try t.mapKeys(gpa, charge, v, a), try t.mapKeys(gpa, charge, v, b));
+        };
+        (try t.memo_diff.getOrPut(gpa, key)).value_ptr.* = out.int();
         return out;
     }
 
-    fn mapsEqOnUncached(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
-        try charge.reserve(gpa, .inspection, 1);
-        if (a == Ids.none_int or b == Ids.none_int) {
-            // Every key of the other side is bound on one side alone: none may
-            // be tested, one query over the subtree's keys and their `bases*`.
-            const sub = try t.mapReach(gpa, charge, v, if (a == Ids.none_int) b else a);
-            return !try v.shapes.node_sets.intersects(gpa, charge, sub, region);
-        }
-        const na = t.mapNode(a);
-        const nb = t.mapNode(b);
-        if (na.mask == 0 and nb.mask == 0 and na.prefix == nb.prefix) {
-            if (na.left == nb.left) return true;
-            if (!try v.shapes.tested(gpa, charge.account, .from(na.prefix), region)) return true;
-            return t.sameCond(gpa, charge, .from(na.left), .from(nb.left));
-        }
-        if (na.mask == 0 and nb.mask == 0) return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
-        if (na.mask == 0 or nb.mask == 0) {
-            // A leaf against a branch: the leaf against the side its key would
-            // be in, the other side bound alone.
-            const leaf_a = na.mask == 0;
-            const leaf = if (leaf_a) na else nb;
-            const br = if (leaf_a) nb else na;
-            if (!matches(leaf.prefix, br.prefix, br.mask)) return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
-            const zero = leaf.prefix & br.mask == 0;
-            const near = if (zero) br.left else br.right;
-            const far = if (zero) br.right else br.left;
-            if (leaf_a) return try t.mapsEqOn(gpa, charge, v, a, near, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, far, region);
-            return try t.mapsEqOn(gpa, charge, v, near, b, region) and try t.mapsEqOn(gpa, charge, v, far, Ids.none_int, region);
-        }
-        if (na.mask == nb.mask and na.prefix == nb.prefix) return try t.mapsEqOn(gpa, charge, v, na.left, nb.left, region) and try t.mapsEqOn(gpa, charge, v, na.right, nb.right, region);
-        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
-            const zero = nb.prefix & na.mask == 0;
-            return try t.mapsEqOn(gpa, charge, v, if (zero) na.left else na.right, b, region) and try t.mapsEqOn(gpa, charge, v, if (zero) na.right else na.left, Ids.none_int, region);
-        }
-        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
-            const zero = na.prefix & nb.mask == 0;
-            return try t.mapsEqOn(gpa, charge, v, a, if (zero) nb.left else nb.right, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, if (zero) nb.right else nb.left, region);
-        }
-        return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
+    /// The keys of an entry map, as a node set: memoised per map node, for
+    /// good, made from its two halves' sets; the recursion is the key width.
+    fn mapKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, m: u32) Error!SetId {
+        if (m == Ids.none_int) return .none;
+        const n = t.mapNode(m);
+        if (n.mask == 0) return v.shapes.node_sets.insert(gpa, charge, .none, n.prefix, 0);
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_map_keys.get(.{m})) |hit| return .from(hit);
+        const out = try v.shapes.node_sets.unionMemo(gpa, charge, &v.shapes.memo_node_union, try t.mapKeys(gpa, charge, v, n.left), try t.mapKeys(gpa, charge, v, n.right));
+        (try t.memo_map_keys.getOrPut(gpa, .{m})).value_ptr.* = out.int();
+        return out;
     }
 
-    /// The keys of an entry map's subtree and their `bases*`, as one node set
-    /// (*The comparison and its cost*): what a one-sided subtree is tested
-    /// against. Memoised per map node within one `base_epoch`, made from its
-    /// two halves' sets by `unionMemo`, so a map built over an earlier one
-    /// costs its new spine. The recursion is the key width.
-    fn mapReach(t: *Table, gpa: Allocator, charge: Charge, v: View, m: u32) Error!SetId {
-        if (m == Ids.none_int) return .none;
-        const key: [2]u32 = .{ m, v.shapes.base_epoch };
+    /// What a node set of keys tells the comparison (`mapsEqOn`): `empty`,
+    /// the empty values among them (memoised for good); `reach`, their
+    /// `bases*` with themselves (memoised within one `base_epoch`). Per radix
+    /// node, a node's the union of its halves'; the recursion is the key width.
+    const NodesPart = enum(u8) { empty, reach };
+
+    fn nodesPart(t: *Table, gpa: Allocator, charge: Charge, v: View, which: NodesPart, s: SetId) Error!SetId {
+        if (s == .none) return .none;
+        const sets = &v.shapes.node_sets;
+        const epoch: u32 = if (which == .reach) v.shapes.base_epoch else 0;
+        const key: [3]u32 = .{ @backingInt(which), s.int(), epoch };
         try charge.reserve(gpa, .memo, 1);
-        if (t.memo_map_reach.get(key)) |hit| return .from(hit);
-        const n = t.mapNode(m);
-        const out: SetId = if (n.mask == 0)
-            try v.shapes.basesClosure(gpa, charge.account, .from(n.prefix))
-        else
-            try v.shapes.node_sets.unionMemo(gpa, charge, &v.shapes.memo_node_union, try t.mapReach(gpa, charge, v, n.left), try t.mapReach(gpa, charge, v, n.right));
-        (try t.memo_map_reach.getOrPut(gpa, key)).value_ptr.* = out.int();
+        if (t.memo_nodes_part.get(key)) |hit| return .from(hit);
+        const out: SetId = if (sets.branches(s)) |kids|
+            try sets.unionMemo(gpa, charge, &v.shapes.memo_node_union, try t.nodesPart(gpa, charge, v, which, kids[0]), try t.nodesPart(gpa, charge, v, which, kids[1]))
+        else blk: {
+            var it = sets.iterate(s);
+            const n: NodeId = .from(it.next().?.key);
+            break :blk switch (which) {
+                .empty => if (v.shapes.kind(n) == .leaf and v.shapes.cells(n) == .none) s else .none,
+                .reach => try v.shapes.basesClosure(gpa, charge.account, n),
+            };
+        };
+        (try t.memo_nodes_part.getOrPut(gpa, key)).value_ptr.* = out.int();
         return out;
     }
 
@@ -1634,29 +1669,88 @@ pub const Table = struct {
 
     /// κ from the cells at the read's position (header), `extra` arrivals
     /// counted besides them at a summary position; charged per read.
-    fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, extra: []const Item) Error!CondId {
+    fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, dups: SetId, dups_approx: SetId) Error!CondId {
         // At a plain path: `lost` for an approximate cell or `⊤` (`anyLost`,
         // memoised per radix node).
         if (!at_summary) return if (try t.anyLost(gpa, charge, v.cells, cells)) lost else yes;
-        // `summaryExcl(cells) ∧ apart(cells ⊎ extra)` (*The derivation*): the
-        // set's aggregate, memoised per radix node, the repeats added to it as
-        // second occurrences.
+        // `summaryExcl(cells) ∧ apart(cells ⊎ dups)` (*The derivation*): the
+        // set's aggregate, memoised per radix node, with the repeats added as
+        // second occurrences. Every repeat is a cell of `cells`, one exact
+        // where both its occurrences are, and then `cells` holds it exact: so
+        // `all` is unchanged, and the repeats join `dups` as sets, approximate
+        // where either occurrence is (`dups_approx`, or `cells` holds it so).
         var a = try t.setAgg(gpa, charge, v.cells, v.places, cells);
-        for (extra) |x| a = try t.aggAdd(gpa, charge, v.cells, v.places, a, x.cell, x.approx, true);
+        if (dups != .none) {
+            a.dups = try v.cells.sets.unionWith(gpa, charge, a.dups, dups);
+            const old = try v.cells.sets.intersection(gpa, charge, dups, try t.cellPart(gpa, charge, v.cells, v.places, .approx, a.all));
+            a.dups_approx = try v.cells.sets.unionWith(gpa, charge, a.dups_approx, try v.cells.sets.unionWith(gpa, charge, dups_approx, old));
+        }
         const k = try t.@"and"(gpa, charge, try t.summaryExcl(gpa, charge, v.cells, v.places, cells), try t.aggCond(gpa, charge, v.cells, v.places, a));
-        if (std.debug.runtime_safety and full_cross_check) try t.expectSame(gpa, charge, k, try t.derivedCellsFlat(gpa, charge, v, cells, extra));
+        if (std.debug.runtime_safety and full_cross_check) try t.expectSame(gpa, charge, k, try t.derivedCellsFlat(gpa, charge, v, cells, dups, dups_approx));
         return k;
     }
 
     /// `derivedCells` the old way, a list sorted once (the cross-check's).
-    fn derivedCellsFlat(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, extra: []const Item) Error!CondId {
+    fn derivedCellsFlat(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, dups: SetId, dups_approx: SetId) Error!CondId {
         var items: std.ArrayList(Item) = .empty;
         defer items.deinit(gpa);
-        try items.appendSlice(gpa, extra);
+        var dt = v.cells.sets.iterate(dups);
+        while (dt.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = v.cells.sets.member(dups_approx, e.key) });
         var it = v.cells.sets.iterate(cells);
         while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
         const k = try t.summaryExclFlat(gpa, charge, v.cells, v.places, cells);
         return t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, null));
+    }
+
+    /// The part of a cell set a property picks (*The derivation*): `approx`,
+    /// the cells held approximately; `unfolded`, the cells a repeat of makes
+    /// `shared` (not `⊤`, not standing for many positions). Memoised per radix
+    /// node, a node's the union of its halves'. Post-order on an explicit stack.
+    const Part = enum(u8) { approx, unfolded };
+
+    fn cellPart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, which: Part, cells: SetId) Error!SetId {
+        if (cells == .none) return .none;
+        if (cellt.sets.branches(cells) == null) {
+            try charge.reserve(gpa, .inspection, 1);
+            var it = cellt.sets.iterate(cells);
+            const e = it.next().?;
+            const kept = switch (which) {
+                .approx => e.value == 1,
+                .unfolded => cellt.origin(.from(e.key)) != .top and !isFolded(cellt, places, .from(e.key)),
+            };
+            return if (kept) cells else .none;
+        }
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_cell_part.get(.{ @backingInt(which), cells.int() })) |hit| return .from(hit);
+        var stack: std.ArrayList(SetId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, cells);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.memo_cell_part.get(.{ @backingInt(which), x.int() }) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            const kids = cellt.sets.branches(x).?;
+            var halves: [2]SetId = .{ .none, .none };
+            var missing = false;
+            for (kids, 0..) |kid, i| {
+                if (kid == .none) continue;
+                if (cellt.sets.branches(kid) == null) {
+                    halves[i] = try t.cellPart(gpa, charge, cellt, places, which, kid);
+                } else if (t.memo_cell_part.get(.{ @backingInt(which), kid.int() })) |h| {
+                    halves[i] = .from(h);
+                } else {
+                    missing = true;
+                    try stack.append(gpa, kid);
+                }
+            }
+            if (missing) continue;
+            try charge.reserve(gpa, .memo, 1);
+            (try t.memo_cell_part.getOrPut(gpa, .{ @backingInt(which), x.int() })).value_ptr.* = (try cellt.sets.unionWith(gpa, charge, halves[0], halves[1])).int();
+            _ = stack.pop();
+        }
+        return .from(t.memo_cell_part.get(.{ @backingInt(which), cells.int() }).?);
     }
 
     /// The aggregate of a cell set (`Agg`), a use mark left out: memoised per
@@ -1963,13 +2057,23 @@ pub const Table = struct {
         return a;
     }
 
+    /// `aggMerge` of two multisets (an atom's sides): an empty side is the
+    /// other, as it is.
+    pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        if (x.all == .none) return y;
+        if (y.all == .none) return x;
+        return t.aggMerge(gpa, charge, cellt, places, x, y, true);
+    }
+
     /// §2.9's apart condition of an aggregate: `apart`'s over its cells.
     pub fn aggCond(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: Agg) Error!CondId {
+        // A cell met twice: `sep(c, c)` (§2.9), `shared` for one exact, not `⊤`
+        // and standing for one position, `lost` otherwise. Decided over the
+        // repeats' set: memoised per radix node, never cell by cell.
         var acc: CondId = yes;
-        var dt = cellt.sets.iterate(a.dups);
-        while (dt.next()) |e| {
-            acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, .from(e.key), .from(e.key), cellt.sets.member(a.dups_approx, e.key), null));
-            if (acc == shared) return shared;
+        if (a.dups != .none) {
+            if (!try cellt.sets.keysWithin(gpa, charge, try t.cellPart(gpa, charge, cellt, places, .unfolded, a.dups), a.dups_approx)) return shared;
+            acc = lost;
         }
         if (a.lost_extra or try t.anyLost(gpa, charge, cellt, a.all)) acc = try t.@"and"(gpa, charge, acc, lost);
         if (a.group_len >= 2) {
