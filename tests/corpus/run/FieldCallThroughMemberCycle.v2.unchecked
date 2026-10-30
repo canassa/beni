@@ -1,3 +1,3 @@
-FieldCallThroughMemberCycle mb: lines 24-29 (not built: method_call)
+FieldCallThroughMemberCycle mb: lines 24-29 (not built: recursion)
 FieldCallThroughMemberCycle mc: lines 32-34 (not built: local)
-FieldCallThroughMemberCycle ma: lines 37-39 (not built: method_call)
+FieldCallThroughMemberCycle ma: lines 37-39 (not built: recursion)

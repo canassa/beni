@@ -1,2 +1,2 @@
-PolyRecDestructured wt: lines 11-16 (not built: call)
-PolyRecDestructured wrec: lines 19-24 (not built: call)
+PolyRecDestructured wt: lines 11-16 (not built: recursion)
+PolyRecDestructured wrec: lines 19-24 (not built: recursion)

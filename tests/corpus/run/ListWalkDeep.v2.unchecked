@@ -1,5 +1,5 @@
-ListWalkDeep walk: lines 31-38 (not built: call)
-ListWalkDeep walkPairs: lines 41-48 (not built: call)
+ListWalkDeep walk: lines 31-38 (not built: recursion)
+ListWalkDeep walkPairs: lines 41-48 (not built: recursion)
 ListWalkDeep pushed: lines 51-52 (not built: call)
 ListWalkDeep show: lines 65-77 (not built: call)
 ListWalkDeep main: lines 80-85 (not built: call)

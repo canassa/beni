@@ -1,2 +1,2 @@
-GrowingFunctionSlot loop: lines 4-11 (not built: call)
-GrowingFunctionSlot constant: lines 15-20 (not built: call)
+GrowingFunctionSlot loop: lines 4-11 (not built: recursion)
+GrowingFunctionSlot constant: lines 15-20 (not built: recursion)

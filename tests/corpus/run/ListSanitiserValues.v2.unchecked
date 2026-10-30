@@ -1,4 +1,4 @@
 ListSanitiserValues show: lines 17-18 (not built: ext_value)
-ListSanitiserValues grown: lines 21-26 (not built: call)
+ListSanitiserValues grown: lines 21-26 (not built: recursion)
 ListSanitiserValues apply: lines 37-38 (not built: call)
 ListSanitiserValues main: lines 51-78 (not built: call)

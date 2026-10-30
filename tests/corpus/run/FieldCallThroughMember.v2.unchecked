@@ -1,2 +1,2 @@
 FieldCallThroughMember mb: lines 22-27 (not built: local)
-FieldCallThroughMember ma: lines 30-32 (not built: method_call)
+FieldCallThroughMember ma: lines 30-32 (not built: recursion)

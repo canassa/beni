@@ -1,3 +1,3 @@
-OwnMethodValueBackEdge use: lines 19-24 (not built: method_call)
-OwnMethodValueBackEdge m: lines 27-29 (not built: call)
+OwnMethodValueBackEdge use: lines 19-24 (not built: recursion)
+OwnMethodValueBackEdge m: lines 27-29 (not built: recursion)
 OwnMethodValueBackEdge main: lines 32-37 (not built: call)

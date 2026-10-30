@@ -1,3 +1,3 @@
 Int32Hash fnv1a: lines 49-50 (not built: top)
-Int32Hash xorshiftRun: lines 64-70 (not built: call)
+Int32Hash xorshiftRun: lines 64-70 (not built: recursion)
 Int32Hash main: lines 82-87 (not built: local)

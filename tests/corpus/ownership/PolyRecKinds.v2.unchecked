@@ -1,5 +1,5 @@
 PolyRecKinds wf: lines 14-19 (not built: lambda)
 PolyRecKinds wd: lines 27-32 (not built: call)
-PolyRecKinds wm: lines 40-45 (not built: call)
-PolyRecKinds wr: lines 53-58 (not built: call)
-PolyRecKinds wu: lines 66-71 (not built: call)
+PolyRecKinds wm: lines 40-45 (not built: recursion)
+PolyRecKinds wr: lines 53-58 (not built: recursion)
+PolyRecKinds wu: lines 66-71 (not built: recursion)

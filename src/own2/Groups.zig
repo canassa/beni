@@ -582,6 +582,9 @@ pub const DeclResult = struct {
     decl: u32,
     class: ClassId = .none,
     unbuilt: u32 = none,
+    /// `unbuilt` calls a member of the declaration's own group (recursion,
+    /// §8 S3b slice 4): its own reason in a dump.
+    recursion: bool = false,
     lines: []Walk.Line = &.{},
     /// The account's failure, when it stopped the walk.
     failure: ?Ids.Failure = null,
@@ -734,6 +737,18 @@ pub const Module = struct {
             .method_call => mod.methodTarget(inst),
             else => null,
         };
+    }
+
+    /// Whether `inst`, a `call` or `method_call`, names a member of
+    /// declaration `di`'s own group.
+    fn groupCall(mod: *const Module, prepass: *const Facts.Prepass, di: u32, inst: u32) bool {
+        const bir = mod.in.bir;
+        const t = switch (bir.instTag(@fromBackingInt(inst))) {
+            .call => mod.declOf(bir.instData(@fromBackingInt(inst)).lhs),
+            .method_call => mod.methodTarget(inst),
+            else => null,
+        } orelse return false;
+        return t[0] == mod.in.module and t[1] < prepass.group_of.len and prepass.group_of[t[1]] == prepass.group_of[di];
     }
 
     /// The declaration a method call dispatches to, when it is one.
@@ -1232,6 +1247,7 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
     });
     r.class = res.class;
     r.unbuilt = res.unbuilt;
+    r.recursion = res.unbuilt != none and mod.groupCall(prepass, di, res.unbuilt);
     r.lines = res.lines;
     res.lines = &.{};
 }
