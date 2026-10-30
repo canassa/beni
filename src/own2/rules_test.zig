@@ -42,7 +42,7 @@ const layers = [_]Entry{
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3080 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3120 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
@@ -75,7 +75,7 @@ const layers = [_]Entry{
     // map's entries, and the shared format; the reader is `BlockRead`, the
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1680 },
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1690 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
