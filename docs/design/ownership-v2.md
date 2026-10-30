@@ -1648,9 +1648,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   - Every reader of a frame value forces: each `kind` test, not only each switch. The empty-value
     test is `isNothing`.
 - **κ by reference at a call (S3b slice 2b, #1265, #1121).** Specified; not yet built. Three parts,
-  built in this order. Each one keeps every verdict and every block byte for byte. A
-  `-Downership-full-cross-check` build recomputes each read the old way and compares (*Cross-check*,
-  below).
+  built in this order. Each one keeps every verdict, and every block byte for byte: a block holds a
+  condition as its atom set (*Canonical partials*, below). A `-Downership-full-cross-check` build
+  recomputes each read the old way and compares (*Cross-check*, below).
 
   **Why.** Each call relabels the class's κ and instantiates its conditions on the arguments when
   the call is made. `linkArgs` then merges each argument's snapshot into the result's snapshot. The
@@ -1688,6 +1688,12 @@ of the same handle still add multiplicity through the path-multiset primitive.
       is a charged operation: the readers of a position with `refs` call `kappaChildAt(gpa,
       charge, …)`, interned, so it is made once per `(P, s)`. The pure `kappaChild` stays for
       positions without refs.
+    - *Nested refs.* A ref may itself have refs, so a chain of k calls nests k levels. Two rules
+      keep a lookup from descending all of them:
+      - `kappaGet(P, n)` skips a ref whose `bound` set (below) does not hold `n`;
+      - each position memoises its step set and its entry keys (`kappaLinks`, `kappaHere`), made
+        once from its own part and its refs' memoised sets.
+      A lookup then reads only the refs that bind `n`: one ref, for a node of one actual's region.
   - *The caller cannot change or hide the argument's snapshot through a link.* Positions are
     immutable and interned. A ref names the argument's own position, never a copy of it.
     - Every write on the caller's side (`kappaSet`, `kappaSetAt`, `kappaLink`, `kappaMerge`,
@@ -1703,40 +1709,71 @@ of the same handle still add multiplicity through the path-multiset primitive.
     - A re-root view is the view of a leaf whose only cell is one exact parameter cell `πᵢ·q`. A
       leaf image with several parts, made by `Views`, makes each parameter part such a view over an
       interned one-cell leaf, so that every re-rooted actual is reached through one.
-    - The crossing is exact when no other source binds a node of the actual's region at that
-      position, and then it equals the read of `flatten(P)` there:
-      - `κ(m)` at a node `m` of the region is `own(m) ⊔ refs(m) ⊔ derived(m)`. When no other
-        source binds `m`, that is `R(m) ⊔ derived(m)`, the read at `R`, at every node.
-      - So a whole walk at `P` (`deep`, `dagKappa`) equals the walk at `R`.
-    - The test is: no key of `P`'s own part, and no node another ref binds, is a node `R` binds.
-      `bound(R)`, the nodes a position binds anywhere below it, is a persistent cell-free node set,
-      memoised per position and built from its children's sets. The test is a set intersection,
-      memoised per `(P, R)`. Positions are immutable, so the answer cannot go stale.
-    - The class's own part binds only view ids made at this call, and a view is never a node of
-      an argument. So the test fails only when two actuals share a node, or when the caller bound
-      one itself.
-    - When the test fails, the read at that crossing is made at `flatten(P)`, the old merged
-      position (memoised per pair as `kappaMerge` is). It is exact and value-sized, once per
-      crossing.
+    - The crossing keeps the read's own `at_summary`: only the position changes.
+    - *No crossing at a fold.* There is no crossing at or below a position whose own part or any
+      ref is a fold, exact or collapsed. There the read is made at `flatten(P)`. A collapsed
+      context reads a built node `lost` (§2.9), and a fold is its own position at every step
+      below, so reading the ref alone could answer more than the merged read. The test looks at
+      every position the crossing's walk would read: `P` and each position below it on the
+      actual's region. `foldBelow(P)`, whether any position at or below `P` (own part or ref) is
+      a fold, is memoised per position like `bound`.
+    - *When the crossing is exact.* `κ(m)` at a node `m` of the region is
+      `own(m) ⊔ refs(m) ⊔ derived(m)`. The crossing reads `R(m) ⊔ derived(m)`. The two are equal
+      at every node where each other source's entry `e` for `m` is absorbed:
+      `join(R(m), e) = R(m)`. `join` is canonical, so this is one id comparison. A source that does
+      not bind `m` is absorbed trivially. When every node is absorbed and no fold is met, a whole
+      walk at `P` (`deep`, `dagKappa`) equals the walk at `R`, at the same `at_summary`.
+    - *The test.*
+      - `bound(Q)`, the nodes a position binds at every depth below it (own part and refs), is a
+        persistent node set, memoised per position and made from its children's sets.
+      - The shared nodes are `bound(R) ∩ (bound(own(P)) ∪ ⋃ bound(other refs))`, where `own(P)`
+        means the own part at every depth.
+      - For each shared node `m`, the test compares `join(R(m), e)` with `R(m)` for each other
+        source's entry `e`.
+      - The intersection is memoised per pair of radix nodes. When one set grew from the other, the
+        unchanged subtrees meet memo entries, and only the changed spines are compared.
+      - The whole test is memoised per `(P, R)`. Positions are immutable, so the answer cannot go
+        stale.
+    - *Where it fails.* The class's own part binds only view ids made at this call, and a view is
+      never a node of an argument. So the test fails only when an actual's node is also bound,
+      with an entry `R` does not absorb, by another actual or by the caller. There the read at that
+      crossing is made at `flatten(P)`, the old merged position (memoised per pair as
+      `kappaMerge` is), exact and value-sized once.
+    - *A shared actual stays incremental.* In `x_k = step x_{k-1} l`, with one `l` at every call,
+      `l`'s node is bound by `x_{k-1}`'s snapshot (from the earlier call) and by `l`'s own, with the
+      same entry. So `R` absorbs it, the crossing holds, and the chain costs the new layer per call.
+      The counted tests below include this family.
+    - *Two growing actuals.* `merge x y` with both `x` and `y` grown by earlier calls compares
+      `bound(x)` with `bound(y)` at each call. The radix-pair memo makes that the changed spines,
+      O(log² n) per call. The counted tests include `merge` over two chains.
     - *The shared-cell twin.* `l = [ 1 ]`, `x1 = step x0 l`, `x2 = step x1 l`, then a push on an
       element of `x2` must be refused, and the twin with two distinct lists must be accepted
-      (`CallChainSharedElement`). The class's `apart [π1[*]] [π2]` at the second call meets `l`'s
-      cell on both sides: the concrete cell repeats, and `apart` decides that repeat by `sep`, as
-      today. At that crossing, `l`'s node is bound by two refs (`x1`'s position at `[*]` and
-      `l`'s), so it is read flattened.
+      (`CallChainSharedElement`). It works because `l` is a built node with an entry of its own. The
+      class's `apart [π1[*]] [π2]` at the second call meets `l`'s cell on both sides: the concrete
+      cell repeats, and `apart` decides that repeat by `sep`, as today.
+    - *Knots.* No κ read happens between a `knot` and its `tie`: a knot is pending until it is tied
+      (#1143), and nothing reads a pending node. So a memo entry is never made over a node whose
+      record changes later.
 
   **Part 2: incremental reads at a summary position (#1121).** With part 1, a read below an earlier
   call's result meets the same keys every time. The memos below are then reused at inner nodes as
   well as at the root.
-  - *`deep` (key: κ position, node, summary).* A state of the walk is `(at, node, summary)`, with
-    `explicit` true. What the walk adds for the state is `κ(at, node, summary)`, the cells' `excl`,
-    and the states of `frontier(node, summary, at)`. Each is a function of the key alone: positions
-    and node records are immutable once made, and lazy cells are filled the same way whenever they
-    are filled. The answer is the `and` over every state reachable from the state. `and` is
-    commutative, associative and idempotent, and `shared` absorbs, so the order of the walk, its
-    `seen` set and its early stop on `shared` change nothing. So a state with a `memo_deep` entry
-    contributes that entry, and the walk does not go below it. A state reached with `explicit`
-    false contributes only its stored entry, and is neither taken from the memo nor stored in it.
+  - *`deep` (key: κ position, node, summary, explicit).* A state of the walk is
+    `(at, node, summary, explicit)`, and the walk's `seen` set and `memo_deep` both use that key.
+    - An explicit state adds `κ(at, node, summary)`, the cells' `excl`, and the states of
+      `frontier(node, summary, at)`.
+    - A state with `explicit` false adds only its stored entry.
+    - The explicit visit takes precedence. An explicit state is processed even when the same
+      state was met non-explicitly, and a non-explicit visit of a state already met explicitly adds
+      nothing. Its stored entry is part of the explicit state's κ read already.
+    - Each part is a function of the key alone. Positions and node records are immutable once
+      made, and lazy cells are filled the same way whenever they are filled.
+    - The answer at a state is the `and` over every state reachable from it. `and` is commutative,
+      associative and idempotent, and `shared` absorbs, so with this key the walk's order and its
+      early stop on `shared` change no atom of the answer. Its tree may differ, so partials are
+      canonical (*Canonical partials*, below).
+    - So an explicit state with a `memo_deep` entry contributes that entry, and the walk does not
+      go below it. Non-explicit states are neither taken from the memo nor stored in it.
   - *`dagKappa` (key: κ position, node, summary of the read).* The walk keeps, per node of one union
     DAG, four things: the join of its sides' κ with its stored entry, whether a recast is below it
     (`approx`, a view of a recast included), whether a `positions` node is below it, and the
@@ -1772,11 +1809,21 @@ of the same handle still add multiplicity through the path-multiset primitive.
   **Part 3: lazy conditions.** The class's κ is relabelled onto the call's views, which is the
   callee's size, as today. Its conditions are no longer instantiated at the call. An entry stores
   the atom `inst(k, E)`: condition `k` of the class, under environment `E`.
-  - Interning: `E` is interned by `(class, invocation, actuals' nodes and snapshots)`, so a fixpoint
-    round that calls with the same actuals makes the same atoms, and `kappaLeq` settles.
-  - A read that decides or publishes resolves an `inst` atom: `kappaOf`, `deep`'s stored-only
-    branch, the chain join, read-off's `cond`, and a demand's `relies`. Resolving is `instantiate`
-    with `Grafter.atom` under `E`, memoised per atom.
+  - Interning: `E` is interned by `(class, invocation, actuals' nodes and snapshots)`, so a round
+    that calls with the same actuals makes the same atoms. A fixpoint still compares resolved
+    conditions (the rule below).
+  - *The rule:* every reader that tests a condition's value or shape resolves its `inst` atoms first.
+    Only code that carries a condition along untested may hold one unresolved: `kappaSet`'s join,
+    `kappaMerge`, `kappaRelabel` and `propagate`'s stores. The readers that resolve:
+    - κ reads: `kappaOf`, `deep`'s stored-only branch, and the chain join's result;
+    - the lattice: `fails`, `leq`, and `kappaLeq`. An `inst` atom interned by snapshot need not
+      repeat across fixpoint rounds, so a fixpoint compares resolved conditions or it might never
+      settle;
+    - `lower`, `splitGroup`, and every reader of a split's `cond`;
+    - publishing: read-off's `cond` and a demand's `relies`.
+  - Resolving is `instantiate` with `Grafter.atom` under `E`, memoised per atom, its result
+    canonical (*Canonical partials*). `Cond.resolved(k)` is the one entry; a `runtime_safety` build
+    asserts that the readers above never see an `inst` atom.
   - The entry stored under `(position, view)` is that atom, so the memo is per `(view, κ position)`.
   - `xreq` is instantiated the same way, as an `inst` atom on the first write's `relies`.
   - *With the chain join.* `chainStored` joins the stored entries of a view's chain as they are.
@@ -1789,8 +1836,19 @@ of the same handle still add multiplicity through the path-multiset primitive.
   - Resolving walks down the chain of environments on an explicit stack, the deepest `E` first, so
     its depth is never native-stack depth (#1130).
 
+  **Canonical partials.** Condition ids are canonical for one atom set only when they are built
+  from it, not for nested `and` trees: `and(a, and(b, c))` and `and(and(a, b), c)` are two ids.
+  - So every memo entry of parts 1–3 (a `deep` or `dagKappa` partial, a set aggregate's
+    condition, a resolved `inst` atom) is stored as `ofSet(flat(k))`: the condition rebuilt from
+    its atom set, one id per set. A read that combines entries then gives one id whatever order
+    it met them in.
+  - No condition tree reaches a block or a message. Block's `cond` record writes the kind and
+    `flat(k)` (§3.6), and the summary printer and `Normalizer` spell `flat(k)` too. So a block
+    and a diagnostic depend on the atom set only, and "no block changes" means the same atom
+    sets.
+
   **Cross-check.** Under `-Downership-full-cross-check` (safety builds), each read is computed
-  twice and the two answers must be the same condition id:
+  twice, and the two answers must have the same kind and the same atom set (`flat`):
   - a read at a position with `refs` is also made at `flatten(P)`;
   - a `deep` or `dagKappa` read taken from an inner memo entry is also walked whole;
   - `derivedCells` and an instantiated `apart` are also computed by the old list-based `apart`;
@@ -1801,7 +1859,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   by category for `apply`, read-off and publish, without Demands' resolve (#1214's), at 10, 100 and
   1 000 calls:
   - the `step` chain and the `pick` chain, each followed by a read of an element;
-  - `x_k = List.push x_{k-1} k`, published.
+  - `x_k = List.push x_{k-1} k`, published;
+  - the shared-actual chain `x_k = step x_{k-1} l`, one `l` at every call;
+  - `merge x y` over two chains that both grow.
 
   **Done for 2b.** The `apply` + read-off + publish share is flat per call at 10, 100 and 1 000
   calls. The 2a guards stay green. No verdict and no block changes across the corpus.
