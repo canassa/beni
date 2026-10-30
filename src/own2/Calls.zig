@@ -798,179 +798,8 @@ const Grafter = struct {
             }
         }
     }
-    /// Node `t` of the class's `res`, grafted onto the arguments.
-    fn graft(g: *Grafter, root: NodeId) Error!NodeId {
-        if (g.s.memo.get(root)) |m| return m;
-        // Post-order on an explicit stack (#1130): `res`'s depth is the
-        // source's, never native-stack depth. A node's parts are grafted
-        // before it, each once (`memo`).
-        // A cyclic `res` (a widened class's knot, #1138): a part met again
-        // while it is being grafted gets a knot as its image, which the part
-        // ties when it is done, so the walk ends and the image is cyclic too.
-        // A knot is PENDING until it is tied, and a pending knot is never
-        // read (#1143): `join`, `put` and `collect` read their members'
-        // records as deep as they go, so a part on a cycle of `res` (its
-        // strongly connected component, Tarjan's lowlinks on the same walk)
-        // is built as `map` builds a cyclic image: a record that names its
-        // parts' images and reads only those already built (`graftRaw`).
-        // Off a cycle nothing pending is reachable, and the image is built
-        // as before.
-        const shapes = g.env.shapes;
-        const Frame = struct { node: NodeId, parent: NodeId, expanded: bool };
-        var stack: std.ArrayList(Frame) = .empty;
-        defer stack.deinit(g.gpa());
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(g.gpa());
-        var knots: stamped.Column(NodeId, NodeId) = .{};
-        defer knots.deinit(g.gpa());
-        var pending: stamped.Column(NodeId, void) = .{};
-        defer pending.deinit(g.gpa());
-        // Tarjan: each part's visit number and lowlink, and the parts of
-        // components not yet closed.
-        var index: stamped.Column(NodeId, [2]u32) = .{};
-        defer index.deinit(g.gpa());
-        var component: std.ArrayList(NodeId) = .empty;
-        defer component.deinit(g.gpa());
-        var visits: u32 = 0;
-        try stack.append(g.gpa(), .{ .node = root, .parent = .none, .expanded = false });
-        while (stack.pop()) |f| {
-            if (f.expanded) {
-                open.remove(f.node);
-                const il = index.get(f.node).?;
-                if (g.s.memo.get(f.node) == null or knots.get(f.node) != null) {
-                    if (il[1] < il[0] or knots.get(f.node) != null)
-                        try g.graftRaw(f.node, &knots, &pending)
-                    else
-                        try g.graftTied(f.node, &knots, &pending);
-                }
-                if (f.parent != .none) lower(&index, f.parent, il[1]);
-                if (il[1] == il[0]) while (component.pop()) |x| {
-                    index.getPtr(x).?[0] = closed;
-                    if (x == f.node) break;
-                };
-                continue;
-            }
-            if (open.contains(f.node)) {
-                // A back edge: the part's knot, once.
-                if (knots.get(f.node) == null) {
-                    const k = try shapes.knot(g.gpa(), g.account());
-                    try knots.put(g.gpa(), f.node, k);
-                    try pending.put(g.gpa(), k, {});
-                    try g.s.memo.put(g.gpa(), f.node, k);
-                }
-                lower(&index, f.parent, index.get(f.node).?[0]);
-                continue;
-            }
-            if (g.s.memo.get(f.node) != null) {
-                // Built: in a component not yet closed, the same cycle.
-                if (index.get(f.node)) |il| if (il[0] != closed) lower(&index, f.parent, il[0]);
-                continue;
-            }
-            try index.put(g.gpa(), f.node, .{ visits, visits });
-            visits += 1;
-            try component.append(g.gpa(), f.node);
-            try open.put(g.gpa(), f.node, {});
-            try stack.append(g.gpa(), .{ .node = f.node, .parent = f.parent, .expanded = true });
-            const d = shapes.get(f.node);
-            const me = f.node;
-            switch (d.kind) {
-                .leaf => {},
-                .node, .delta => {
-                    if (d.kind == .delta) try stack.append(g.gpa(), .{ .node = .from(d.a), .parent = me, .expanded = false });
-                    var kt = shapes.overEntries(if (d.kind == .node) d.a else d.b);
-                    while (kt.next()) |e| try stack.append(g.gpa(), .{ .node = e.node, .parent = me, .expanded = false });
-                },
-                .recast => try stack.append(g.gpa(), .{ .node = .from(d.a), .parent = me, .expanded = false }),
-                .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .{ .node = .from(d.a), .parent = me, .expanded = false }, .{ .node = .from(d.b), .parent = me, .expanded = false } }),
-                .view => unreachable, // a callee's template: summaries are published forced (§2.11)
-            }
-        }
-        return g.s.memo.get(root).?;
-    }
-
-    /// A closed component's visit number: no lowlink reads it.
-    const closed = std.math.maxInt(u32);
-
-    fn lower(index: *stamped.Column(NodeId, [2]u32), n: NodeId, to: u32) void {
-        const il = index.getPtr(n).?;
-        il[1] = @min(il[1], to);
-    }
-
-    /// `t` grafted, and tied when a knot stands for it.
-    fn graftTied(g: *Grafter, t: NodeId, knots: *stamped.Column(NodeId, NodeId), pending: *stamped.Column(NodeId, void)) Error!void {
-        const shapes = g.env.shapes;
-        try g.graftOne(t);
-        if (knots.get(t)) |k| {
-            // The knot's record is the part's image, built as any.
-            const built = g.s.memo.get(t).?;
-            shapes.tie(k, shapes.nodes.get(built.int()));
-            try g.s.memo.put(g.gpa(), t, k);
-            pending.remove(k);
-        }
-    }
-
-    /// `t`, a part on a cycle of `res`, grafted as a record over its parts'
-    /// images, read only where none is pending: a node as any (it names its
-    /// parts), a delta over its base's image with the overrides' images (a
-    /// built delta base's map composed, so no delta is over a delta), a
-    /// recast of its inner's image (composed likewise), a union or a
-    /// positions node over its sides' images. A pending image's kind is
-    /// its part's (it is a record of this kind or a node), so the
-    /// composition never needs one. Its `ε` cells are the image of `t`'s
-    /// (`imageCells`), what the constructors would compute from the parts.
-    /// No join, `put` or `collect`: they would read a pending knot below.
-    fn graftRaw(g: *Grafter, t: NodeId, knots: *stamped.Column(NodeId, NodeId), pending: *stamped.Column(NodeId, void)) Error!void {
-        const shapes = g.env.shapes;
-        const d = shapes.get(t);
-        if (d.kind == .node or d.kind == .leaf) return g.graftTied(t, knots, pending);
-        const built = struct {
-            fn of(p: *const stamped.Column(NodeId, void), n: NodeId) bool {
-                return !p.contains(n);
-            }
-        }.of;
-        var rec: Shape.Node = .{ .kind = d.kind, .place = d.place, .cells = .none, .a = 0, .b = 0, .reach = .none };
-        switch (d.kind) {
-            .delta => {
-                var base = g.s.memo.get(.from(d.a)).?;
-                var over: u32 = Ids.none_int;
-                if (built(pending, base) and shapes.kind(base) == .delta) {
-                    over = shapes.get(base).b;
-                    base = .from(shapes.get(base).a);
-                }
-                var kt = shapes.overEntries(d.b);
-                while (kt.next()) |e| over = try shapes.overPut(g.gpa(), g.account(), over, e.step, g.s.memo.get(e.node).?);
-                rec.a = base.int();
-                rec.b = over;
-                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
-            },
-            .recast => {
-                const image = g.s.memo.get(.from(d.a)).?;
-                // A cast of an image that is a whole recast stays whole,
-                // its cells that image's, as `Shape.recast` makes it (#1311).
-                const whole_image = built(pending, image) and shapes.isWhole(image);
-                var in = image;
-                if (built(pending, in) and shapes.kind(in) == .recast) in = .from(shapes.get(in).a);
-                rec.a = in.int();
-                rec.b = if (whole_image) 1 else d.b;
-                // A whole recast's cells are a reach: a parameter cell there
-                // stands for what the argument reaches (#1311).
-                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else if (whole_image and d.b == 0) shapes.cells(image) else if (d.b == 1) try g.imageReach(d.cells, shapes.place(.from(d.a))) else try g.imageCells(d.cells, shapes.place(.from(d.a)));
-            },
-            .@"union", .choice, .positions => {
-                rec.a = g.s.memo.get(.from(d.a)).?.int();
-                rec.b = g.s.memo.get(.from(d.b)).?.int();
-                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
-            },
-            .leaf, .node, .view => unreachable,
-        }
-        const k = knots.get(t) orelse try shapes.knot(g.gpa(), g.account());
-        shapes.tie(k, rec);
-        try g.s.memo.put(g.gpa(), t, k);
-        pending.remove(k);
-    }
-
     /// The image of `res` cells at `at`: a parameter cell the argument's
-    /// cells there, any other its mapped self (`graftOne`'s node arm, with
+    /// cells there, any other its mapped self (a view's node image, with
     /// no escape recorded: the parts that hold the cells record theirs).
     fn imageCells(g: *Grafter, cells: SetId, at: PlaceId) Error!SetId {
         var c: SetId = .none;
@@ -985,105 +814,6 @@ const Grafter = struct {
             c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, (try g.mapCell(cell, at)).int(), e.value);
         }
         return c;
-    }
-
-    /// The image of a whole recast's cells, a reach (`Shape.recastWhole`):
-    /// a parameter cell the argument's reach there, any other its mapped
-    /// self, every one approximate.
-    fn imageReach(g: *Grafter, cells: SetId, at: PlaceId) Error!SetId {
-        var c: SetId = .none;
-        var it = g.env.cells.sets.iterate(cells);
-        while (it.next()) |e| {
-            const cell: CellId = .from(e.key);
-            const one: SetId = if (g.env.cells.origin(cell) == .param) blk: {
-                const x = g.env.cells.get(cell);
-                break :blk try g.env.shapes.reach(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
-            } else try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(cell, at)).int(), 1);
-            var ot = g.env.cells.sets.iterate(one);
-            while (ot.next()) |o| {
-                try g.env.charge.reserve(g.gpa(), .inspection, 1);
-                c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, o.key, 1);
-            }
-        }
-        return c;
-    }
-
-    /// Node `t` grafted, its parts' images in `memo` already.
-    fn graftOne(g: *Grafter, t: NodeId) Error!void {
-        const shapes = g.env.shapes;
-        const d = shapes.get(t);
-        const out: NodeId = switch (d.kind) {
-            .leaf => try g.graftLeaf(d.place, d.cells),
-            .node => blk: {
-                var c: SetId = .none;
-                var it = g.env.cells.sets.iterate(d.cells);
-                while (it.next()) |e| {
-                    const cell: CellId = .from(e.key);
-                    if (g.env.cells.origin(cell) == .param) {
-                        const x = g.env.cells.get(cell);
-                        const arg = try g.argAt(x.a, .from(x.b), d.place);
-                        c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, (try shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, arg)));
-                        continue;
-                    }
-                    const m = try g.mapCell(cell, d.place);
-                    if (g.env.cells.origin(m) == .esc) try g.s.escaped.append(g.gpa(), try shapes.leaf(g.gpa(), g.account(), d.place, try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, m.int(), 0)));
-                    c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, m.int(), e.value);
-                }
-                var kids: u32 = Ids.none_int;
-                var kt = shapes.overEntries(d.a);
-                while (kt.next()) |e| kids = try shapes.overPut(g.gpa(), g.account(), kids, e.step, g.s.memo.get(e.node).?);
-                break :blk try shapes.node(g.gpa(), g.account(), d.place, c, kids);
-            },
-            .delta => blk: {
-                var n = g.s.memo.get(.from(d.a)).?;
-                var kt = shapes.overEntries(d.b);
-                while (kt.next()) |e| n = try shapes.put(g.gpa(), g.account(), g.env.places, g.env.cells, n, e.step, g.s.memo.get(e.node).?, true, .none);
-                break :blk n;
-            },
-            // A whole recast is some value inside its inner: the image's
-            // reach, never its root's cells (#1311).
-            .recast => try shapes.recastAs(g.gpa(), g.account(), &g.env.cells.sets, t, g.s.memo.get(.from(d.a)).?),
-            .@"union" => blk: {
-                var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
-                break :blk try shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
-            },
-            .positions => try shapes.collect(g.gpa(), g.account(), &g.env.cells.sets, &.{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? }),
-            // A choice's arms stay exclusive at the call (§2.3).
-            .choice => blk: {
-                var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
-                break :blk try shapes.joinChoice(g.gpa(), g.account(), g.env.places, g.env.cells, &two);
-            },
-            .view => unreachable, // a callee's template: summaries are published forced (§2.11)
-        };
-        try g.s.memo.put(g.gpa(), t, out);
-    }
-
-    /// A leaf: each parameter cell the argument there, the rest one leaf of
-    /// mapped cells, all of it joined (they are alternatives at one path).
-    fn graftLeaf(g: *Grafter, at: PlaceId, cells: SetId) Error!NodeId {
-        const first = g.s.members.items.len;
-        defer g.s.members.shrinkRetainingCapacity(first);
-        var rest: SetId = .none;
-        var it = g.env.cells.sets.iterate(cells);
-        while (it.next()) |e| {
-            const cell: CellId = .from(e.key);
-            if (g.env.cells.origin(cell) == .param) {
-                const x = g.env.cells.get(cell);
-                var n = try g.argAt(x.a, .from(x.b), at);
-                if (e.value == 1) n = try g.env.shapes.recast(g.gpa(), g.account(), at, n);
-                try g.s.members.append(g.gpa(), n);
-                continue;
-            }
-            const m = try g.mapCell(cell, at);
-            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, m.int(), e.value);
-            if (g.env.cells.origin(m) == .esc) try g.s.escaped.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, m.int(), 0)));
-        }
-        if (rest != .none or g.s.members.items.len == first) try g.s.members.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, rest));
-        const ms = g.s.members.items[first..];
-        if (ms.len == 1) return ms[0];
-        const copy = try g.gpa().dupe(NodeId, ms);
-        defer g.gpa().free(copy);
-        return g.env.shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, copy);
     }
 
     /// A view's leaf image (§2.11): a re-root template (one exact parameter
@@ -1105,10 +835,16 @@ const Grafter = struct {
             try g.env.charge.reserve(g.gpa(), .inspection, 1);
             const cell: CellId = .from(e.key);
             if (g.env.cells.origin(cell) == .param) {
+                // An approximate part is the actual's recast, read through its
+                // inner, as the eager image was: one value with the recasts of the
+                // same actual elsewhere, so a join absorbs it.
+                if (e.value == 1) {
+                    const x = g.env.cells.get(cell);
+                    try members.append(g.gpa(), try g.env.shapes.recast(g.gpa(), g.account(), at, try g.argAt(x.a, .from(x.b), at)));
+                    continue;
+                }
                 const one = try g.env.shapes.leaf(g.gpa(), g.account(), at, try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, cell.int(), 0));
-                var n = try g.env.shapes.view(g.gpa(), g.account(), one, g.view_env);
-                if (e.value == 1) n = try g.env.shapes.recast(g.gpa(), g.account(), at, n);
-                try members.append(g.gpa(), n);
+                try members.append(g.gpa(), try g.env.shapes.view(g.gpa(), g.account(), one, g.view_env));
                 continue;
             }
             rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
@@ -1816,43 +1552,6 @@ test "#1143: a back edge under a delta's override inside a union's side is never
     const sides = x.shapes.get(at);
     try testing.expect(sides.a == lr.int() or sides.b == lr.int());
     try testing.expect(x.cells.sets.member(x.shapes.cells(at), (try x.cells.site(gpa, &x.account, 5, x.list, .list)).int()));
-}
-
-/// `X_k = union(N_k, X_{k+1})`, `X_n = union(N_n, leaf)`, `N_k{arg: L_k}`,
-/// `L_k{[*]: X_{k-1}}`: each union's side a back edge to the one around
-/// it. What grafting `X_n` costs, in records (the graft alone: linking
-/// the arguments' snapshots is #1146's).
-fn unionChainCost(n: usize) !u64 {
-    const gpa = testing.allocator;
-    var x: KnotFixture = .{};
-    try x.init();
-    defer x.deinit();
-    const xs = try gpa.alloc(NodeId, n + 1);
-    defer gpa.free(xs);
-    for (xs) |*k| k.* = try x.shapes.knot(gpa, &x.account);
-    const lf = try x.site(7, x.t_place);
-    for (1..n + 1) |k| {
-        const lsite = try x.site(@intCast(100_000 + k), x.list);
-        const lk = if (k == 1) lsite else try x.shapes.node(gpa, &x.account, x.list, x.shapes.cells(lsite), try x.one(Place.Step.elem, xs[k - 1]));
-        const nk = try x.shapes.node(gpa, &x.account, x.t_place, x.shapes.cells(try x.site(@intCast(10 + k), x.t_place)), try x.one(x.arg, lk));
-        try x.tieUnion(xs[k], nk, if (k == n) lf else xs[k + 1]);
-    }
-    var s: Scratch = .{};
-    defer s.deinit(gpa);
-    x.account.allowance = std.math.maxInt(u32) - 1;
-    const label = try x.cells.label(gpa, &x.account, 0, .none, false);
-    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = .none }}, .label = label, .s = &s };
-    const before = x.account.total();
-    const img = try g.graft(xs[n]);
-    try testing.expectEqual(Shape.Kind.@"union", x.shapes.kind(img));
-    return x.account.total() - before;
-}
-
-test "#1143: grafting a chain of unions on a cycle costs each union its own records" {
-    var cost: [5]u64 = undefined;
-    for ([_]usize{ 4, 16, 64, 256, 1_024 }, 0..) |n, i| cost[i] = try unionChainCost(n);
-    // Four times the unions, about four times the records, never sixteen.
-    for (1..5) |i| try testing.expect(cost[i] <= 6 * cost[i - 1]);
 }
 
 test "#1143: a cycle with no node on it, a delta over the union it sits in, is grafted" {

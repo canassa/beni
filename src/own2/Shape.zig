@@ -152,6 +152,8 @@ pub const Table = struct {
     relevant: stamped.Column(NodeId, void) = .{},
     /// `inners` by forced node.
     memo_inners: stamped.Column(NodeId, SetId) = .{},
+    /// `reintern`'s images of one mapped value.
+    memo_reintern: stamped.Column(NodeId, NodeId) = .{},
     /// `dagHas`'s node sets: what a union's or a choice's DAG reaches, by
     /// `(kind, node)`, until a knot is tied.
     memo_dag_members: Ids.FixedDict(2) = .{},
@@ -196,6 +198,7 @@ pub const Table = struct {
         t.cons_single.deinit(gpa);
         t.relevant.deinit(gpa);
         t.memo_inners.deinit(gpa);
+        t.memo_reintern.deinit(gpa);
         t.memo_dag_members.deinit(gpa);
         t.dag_members_ties.deinit(gpa);
     }
@@ -1119,6 +1122,23 @@ pub const Table = struct {
         return out;
     }
 
+    /// Two alternatives that are one value (§2.11): a view and its answer, or
+    /// a view and another node with that answer. The view is kept: its read
+    /// joins the class's entry under it with its answer's (*κ at a view*).
+    /// Two distinct views stay two: each holds its own call's entry.
+    fn sameAnswer(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error!?NodeId {
+        // Two recasts at one place of one value are one value.
+        if (t.kind(l) == .recast and t.kind(r) == .recast and t.place(l) == t.place(r)) {
+            const one = (try t.sameAnswer(gpa, account, .from(t.get(l).a), .from(t.get(r).a))) orelse return null;
+            return if (one.int() == t.get(l).a) l else r;
+        }
+        const lv = t.kind(l) == .view;
+        const rv = t.kind(r) == .view;
+        if (!lv and !rv or lv and rv) return null;
+        if (try t.force(gpa, account, l) != try t.force(gpa, account, r)) return null;
+        return if (lv) l else r;
+    }
+
     /// Each member a base of the join `out` made of them (*Bases*); `before`
     /// the table's size before it, so a node made by the join is fresh.
     fn joinBases(t: *Table, gpa: Allocator, account: *Account, out: NodeId, members: []const NodeId, before: usize) Error!void {
@@ -1131,6 +1151,7 @@ pub const Table = struct {
 
     fn unionMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         if (l == r) return l;
+        if (try t.sameAnswer(gpa, account, l, r)) |one| return one;
         // A union absorbs a member it already has, so projecting a cyclic
         // union reaches a fixpoint instead of nesting forever.
         if (try t.unionHas(gpa, account, l, r)) return l;
@@ -1153,6 +1174,7 @@ pub const Table = struct {
 
     fn choiceMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         if (l == r) return l;
+        if (try t.sameAnswer(gpa, account, l, r)) |one| return one;
         if (try t.dagHas(gpa, account, .choice, l, r)) return l;
         if (try t.dagHas(gpa, account, .choice, r, l)) return r;
         const c = try cellsets.unionWith(gpa, .growth(account), try t.cellsOf(gpa, account, cellsets, l), try t.cellsOf(gpa, account, cellsets, r));
@@ -1901,6 +1923,13 @@ pub const Table = struct {
         return if (t.kind(n) == .delta) .from(t.nodes.items(.a)[n.int()]) else n;
     }
 
+    /// What a join groups a member by (§2.11): its answer's base, a view base
+    /// read at its answer, as the eager image put it.
+    fn groupBase(t: *const Table, n: NodeId) NodeId {
+        const b = t.baseOf(t.forced(n));
+        return t.answerOf(b) orelse b;
+    }
+
     /// `join` on an explicit stack (#1138: deltas nest as deep as the
     /// source). A request is a run of members; a group of deltas over one
     /// base asks, per override step, for the join of the values there, a
@@ -1938,8 +1967,15 @@ pub const Table = struct {
 
         fn request(w: *JoinWalk, members: []const NodeId) Error!u32 {
             const first: u32 = @intCast(w.pool.items.len);
-            // A view joins as its answer (§2.11): grouped by what it is.
-            for (members) |m| try w.pool.append(w.gpa, try w.t.force(w.gpa, w.account, m));
+            // A view is grouped by its answer (§2.11) and kept itself: a member
+            // taken whole is a side of the join, where its own κ is read
+            // (*κ at a view*); a forced node is never read alone.
+            for (members) |m| {
+                const f = try w.t.force(w.gpa, w.account, m);
+                // A delta's base is grouped by its answer too.
+                if (w.t.kind(f) == .delta) _ = try w.t.force(w.gpa, w.account, w.t.baseOf(f));
+                try w.pool.append(w.gpa, m);
+            }
             const id: u32 = @intCast(w.reqs.items.len);
             try w.reqs.append(w.gpa, .{ .first = first, .len = @intCast(members.len) });
             try w.stack.append(w.gpa, id);
@@ -1982,9 +2018,13 @@ pub const Table = struct {
             const members = w.pool.items[r.first..][0..r.len];
             std.mem.sort(NodeId, members, t, struct {
                 fn lessThan(tt: *Table, a: NodeId, b: NodeId) bool {
-                    const ba = tt.baseOf(a).int();
-                    const bb = tt.baseOf(b).int();
-                    return if (ba != bb) ba < bb else a.int() < b.int();
+                    const ba = tt.groupBase(a).int();
+                    const bb = tt.groupBase(b).int();
+                    if (ba != bb) return ba < bb;
+                    // One answer's members next to each other.
+                    const fa = tt.forced(a).int();
+                    const fb = tt.forced(b).int();
+                    return if (fa != fb) fa < fb else a.int() < b.int();
                 }
             }.lessThan);
             const parts_first: u32 = @intCast(w.parts.items.len);
@@ -1996,27 +2036,38 @@ pub const Table = struct {
             while (i < r.len) {
                 const run_now = w.pool.items[r.first..][0..r.len];
                 var j = i + 1;
-                while (j < run_now.len and t.baseOf(run_now[j]) == t.baseOf(run_now[i])) j += 1;
+                while (j < run_now.len and t.groupBase(run_now[j]) == t.groupBase(run_now[i])) j += 1;
                 const grp = run_now[i..j];
                 i = j;
-                // One group: deduplicate, then join the deltas over one base.
+                // One group: deduplicate by answer, then join the deltas over one
+                // base. Of members with one answer a view is kept: its read joins
+                // the class's entry under it with its answer's (*κ at a view*).
                 var distinct: usize = 1;
-                for (grp[1..]) |m| if (m != grp[distinct - 1]) {
+                for (grp[1..]) |m| {
+                    const prev = &grp[distinct - 1];
+                    const views = @as(u2, @intFromBool(t.kind(prev.*) == .view)) + @intFromBool(t.kind(m) == .view);
+                    if (m == prev.* or (t.forced(m) == t.forced(prev.*) and views < 2)) {
+                        if (t.kind(m) == .view) prev.* = m;
+                        continue;
+                    }
                     grp[distinct] = m;
                     distinct += 1;
-                };
+                }
                 if (distinct == 1) {
-                    if (t.kind(grp[0]) == .leaf) {
-                        leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, t.cells(grp[0]));
-                        leaf_place = t.place(grp[0]);
+                    const one = t.forced(grp[0]);
+                    if (t.kind(one) == .leaf) {
+                        leaf_cells = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), leaf_cells, t.cells(one));
+                        leaf_place = t.place(one);
                     } else {
                         try w.parts.append(w.gpa, .{ .kind = .node, .node = grp[0] });
                     }
                     continue;
                 }
-                // Copy the group out: requests below append to the pool.
+                // Copy the group out, at their answers: requests below append
+                // to the pool.
                 const copy = try w.gpa.dupe(NodeId, grp[0..distinct]);
                 defer w.gpa.free(copy);
+                for (copy) |*c| c.* = t.forced(c.*);
                 try w.deltaGroup(copy, &children);
             }
             if (leaf_place != .none) try w.parts.append(w.gpa, .{ .kind = .leaf, .place = leaf_place, .cells = leaf_cells });
@@ -2229,6 +2280,88 @@ pub const Table = struct {
             }
         }
         return t.memo_map.get(root).?;
+    }
+
+    /// A mapped image rebuilt with the constructors (§2.11 *Blocks force a
+    /// view at publish*): a view's expansion joins its sides raw, so a value
+    /// built of views holds unions no constructor would keep and nodes no
+    /// interning met. Bottom-up on an explicit stack, each node of the image
+    /// once (`memo_reintern`): a node, a delta (composed over a delta base), a
+    /// recast, a union, a choice and a positions node made again, absorbing
+    /// and interning as an eager image did. A cyclic image (a widened knot)
+    /// stays as it is. `reinternOf` answers what a mapped node became.
+    pub fn reintern(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, root: NodeId) Error!NodeId {
+        t.memo_reintern.clear();
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
+        var kids: std.ArrayList(NodeId) = .empty;
+        defer kids.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .expanded = false });
+        while (stack.pop()) |f| {
+            const n = f.node;
+            if (t.memo_reintern.contains(n)) continue;
+            const d = t.get(n);
+            if (!f.expanded) {
+                if (open.contains(n)) {
+                    // A cycle: the image is kept as the map made it.
+                    t.memo_reintern.clear();
+                    return root;
+                }
+                try account.reserve(.inspection, 1);
+                try open.put(gpa, n, {});
+                try stack.append(gpa, .{ .node = n, .expanded = true });
+                kids.clearRetainingCapacity();
+                switch (d.kind) {
+                    .leaf => {},
+                    .node, .delta => {
+                        if (d.kind == .delta) try kids.append(gpa, .from(d.a));
+                        var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                        while (it.next()) |e| try kids.append(gpa, e.node);
+                    },
+                    .recast => try kids.append(gpa, .from(d.a)),
+                    .@"union", .choice, .positions => try kids.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                    .view => unreachable, // a mapped image holds no view
+                }
+                for (kids.items) |k| if (!t.memo_reintern.contains(k)) try stack.append(gpa, .{ .node = k, .expanded = false });
+                continue;
+            }
+            open.remove(n);
+            const out: NodeId = switch (d.kind) {
+                .leaf => n,
+                .node => blk: {
+                    var over: u32 = over_none;
+                    var it = t.overEntries(d.a);
+                    while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.reinternOf(e.node));
+                    break :blk try t.node(gpa, account, d.place, d.cells, over);
+                },
+                .delta => blk: {
+                    var base = t.reinternOf(.from(d.a));
+                    var over: u32 = over_none;
+                    if (t.kind(base) == .delta) {
+                        over = t.nodes.items(.b)[base.int()];
+                        base = .from(t.nodes.items(.a)[base.int()]);
+                    }
+                    var it = t.overEntries(d.b);
+                    while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.reinternOf(e.node));
+                    break :blk try t.delta(gpa, account, base, over);
+                },
+                .recast => try t.recast(gpa, account, d.place, t.reinternOf(.from(d.a))),
+                .@"union" => try t.@"union"(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
+                .choice => try t.choice(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
+                .positions => try t.positions(gpa, account, cellsets, t.reinternOf(.from(d.a)), t.reinternOf(.from(d.b))),
+                .view => unreachable,
+            };
+            try t.memo_reintern.put(gpa, n, out);
+        }
+        return t.reinternOf(root);
+    }
+
+    /// What `reintern` made of mapped node `n`, `n` itself when it met none.
+    pub fn reinternOf(t: *const Table, n: NodeId) NodeId {
+        return t.memo_reintern.get(n) orelse n;
     }
 
     // ---- order --------------------------------------------------------------------------------
