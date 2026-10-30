@@ -1,0 +1,34 @@
+module Inner
+  9:26 List.push l: accepted param
+  account eq: source 20, baseline 241, growth 0 of 65536, total 241, continuation 160 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Inner.0 RW
+  block: 472 bytes, hash 00cf5419220d02dd
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  8:41 call <expression>.0#Inner.0: accepted param
+  8:41 call <expression>.0#Inner.0: accepted fresh
+  12:20 Main.viaTuple xs: rejected later-use: xs is read again at 12:18
+  16:33 List.eq <literal>[*]#Inner.0: accepted param
+  16:33 List.eq <literal>[*]#Inner.0: accepted fresh
+  20:19 Main.viaList xs: rejected later-use: xs is read again at 20:17
+  24:54 call <record>.left#Inner.0: accepted param
+  24:54 call <record>.left#Inner.0: accepted fresh
+  28:21 Main.viaRecord xs: rejected later-use: xs is read again at 28:19
+  account viaTuple: source 21, baseline 272, growth 0 of 65536, total 272, continuation 179 of 21504, demands 52, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 22
+  crossing: reads 0, redone 0, base moves 0
+  summary viaTuple: π1 RW, π2 R
+  account callerTuple: source 16, baseline 128, growth 0 of 65536, total 128, continuation 108 of 16384, demands 25, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 17
+  summary callerTuple: π1 RAW; res .1 π1
+  account viaList: source 12, baseline 204, growth 0 of 65536, total 204, continuation 144 of 12288, demands 28, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 2, transfer_settlement lanes 13
+  summary viaList: π1 RW
+  account callerList: source 15, baseline 117, growth 0 of 65536, total 117, continuation 102 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerList: π1 RAW; res .1 π1
+  account viaRecord: source 17, baseline 303, growth 0 of 65536, total 303, continuation 204 of 17408, demands 71, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 18
+  summary viaRecord: π1 RW
+  account callerRecord: source 15, baseline 115, growth 0 of 65536, total 115, continuation 100 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerRecord: π1 RAW; res .1 π1
+  block: 952 bytes, hash fb04597f625e50bf
+  demands 9: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 3

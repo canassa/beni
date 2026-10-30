@@ -2936,11 +2936,18 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     A derived or core container comparison (`List.compare`, a derived row over a field) is built from the classes of the
     user-written comparisons its argument's type reaches; one with no class leaves the call unbuilt, and one that writes
     makes the comparison write. Core is the core package (`--core-root` included), not every embedded module.
-    The class is composed **at the places the components occur** [2026-10-30, #1331]: the walk of the argument's type stops
-    at a type that has a user-written comparison of its own (its class is the whole of what that type does, so its fields
-    are not entered: a read-only `Outer.eq` never calls the `Inner.eq` of its fields), and a component's `W` and `E` mark
-    the places of its type, deeply below them, never the whole argument; everything else is only read. A type that
-    occurs at two paths is marked at both, and one that recurs through a cycle at the place the cycle returns to.
+    The class is composed **at the places the components occur** [2026-10-30, #1331, #1349]: the walk of the argument's
+    type stops at a type that has a user-written comparison of its own (its class is the whole of what that type does,
+    so its fields are not entered: a read-only `Outer.eq` never calls the `Inner.eq` of its fields). At a component's
+    place the argument is used as the component's class uses its parameters (`π1#Inner.0 W`), not as a deep `W` over the
+    constructor: a deep write does not reach what a fresh value there holds, so `( Inner xs, ys ) == …` writes `xs`.
+    Everything else is only read, deeply. The use is built **once per place** (Tarjan's walk, a cycle settled when it
+    closes and its places one deep leaf with the `E` and `W` of everything below), in growth, so its cost is the type's
+    distinct places and not its paths (`EvidenceDagBuildDepth32`, mutually recursive types). A place with more than 8
+    (`Rows.UseBuild.max_write_paths`) paths that escape or write below it is one deep leaf too: each such path is a
+    demand of its own in a caller, checked against every other, so n of them cost n², and a wide type must not be
+    refused for it. The bound is on the size of the use, and the composition there is what it was for every width
+    before #1331.
 14. **`?`** (R-5.1.6): §2.6; an error type holding no cell adds nothing.
 15. **Index exchange** (R-4.8.17, #869, `p/RecordIndexExchange`): a callback of `List.indexedMap` (its index
     supplied as a scalar) keeps the source's κ when it is an **exact permutation**, which is a *flat decision chain* on the index
