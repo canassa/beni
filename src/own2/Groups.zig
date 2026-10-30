@@ -73,6 +73,17 @@ pub const Input = struct {
     dispatch: ?*const Dispatch,
     /// Per global symbol, its rank in text order (§3.8).
     ranks: []const u32,
+    /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
+    imports: ?Imports = null,
+};
+
+/// How a module reads another's classes (§3.6): module `m`'s block decoded
+/// into `mod`'s tables, per declaration of `m` its class an importer may
+/// apply or `.none`; null when `m` publishes no block, or one that does not
+/// decode (R-5.7.4: an unknown summary). Only a module `mod` imports is read.
+pub const Imports = struct {
+    ctx: *anyopaque,
+    read: *const fn (ctx: *anyopaque, mod: *Module, m: u32) Error!?[]ClassId,
 };
 
 // ---------------------------------------------------------------------------
@@ -130,7 +141,8 @@ pub const Adapter = struct {
     }
 
     fn leaf(a: *Adapter, slot: *u32, k: Place.Kind) Allocator.Error!u32 {
-        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = 0, .a = 0, .b = 0 });
+        // `⊤`'s head is no type's, so it is told from a crossing type's.
+        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = if (k == .cross) none else 0, .a = 0, .b = 0 });
         return slot.*;
     }
 
@@ -462,7 +474,8 @@ pub const Adapter = struct {
         }
         switch (e.kind) {
             .foreign => {
-                if (a.isPrimitive(t) or crossingWord(bir, decl)) return .{ .kind = .cross };
+                // Its head, so a block names which type crosses (§2.1).
+                if (a.isPrimitive(t) or crossingWord(bir, decl)) return .{ .kind = .cross, .head = n.head };
                 return .{ .kind = .@"opaque", .head = n.head };
             },
             .alias => return .{ .kind = .@"var" },
@@ -485,6 +498,68 @@ pub const Adapter = struct {
     pub fn placeOfVar(a: *Adapter, v: Var.Optional) Error!PlaceId {
         const id = if (v.unwrap()) |x| try a.ofVar(x) else try a.leaf(&a.var_id, .@"var");
         return a.places.of(a.gpa, a.account, a.source(), id);
+    }
+
+    /// The module's own place equal to `p`, a block's (§2.1: a block's
+    /// place re-interned onto the reader's graph, which is the same graph
+    /// because both were built from one definition), when its structure
+    /// names this adapter's node: a nominal type of no parameters, a
+    /// sequence or a cell of a named element, a record or a tuple of named
+    /// fields, a leaf. A parameterised constructor type's arguments are not
+    /// in a block, so its place stays the block's (S6, #1317). Checked by
+    /// `Place.equals`, so a node that differs is never taken for `p`.
+    pub fn ownPlace(a: *Adapter, p: PlaceId) Error!?PlaceId {
+        const places = a.places;
+        const pending = none - 1;
+        var memo: stamped.Column(PlaceId, u32) = .{};
+        defer memo.deinit(a.gpa);
+        var stack: std.ArrayList(struct { p: PlaceId, expanded: bool }) = .empty;
+        defer stack.deinit(a.gpa);
+        var kids: std.ArrayList(Kid) = .empty;
+        defer kids.deinit(a.gpa);
+        try stack.append(a.gpa, .{ .p = p, .expanded = false });
+        while (stack.pop()) |f| {
+            // A place met again while its parts are read (a cycle no nominal
+            // type closes) names nothing.
+            if (memo.get(f.p)) |m| if (m != pending or !f.expanded) continue;
+            const k = places.kind(f.p);
+            const h = places.head(f.p);
+            const st = places.steps(f.p);
+            // A crossing type by its head; `⊤`, whose head is none, a leaf.
+            const nominal_kind = k == .ctor or k == .list or k == .ref or k == .@"opaque" or (k == .cross and h != none);
+            const arity: u32 = if (nominal_kind and h < a.in.types.entries.len) a.in.types.entries[h].arity else 0;
+            // What the node needs first: a sequence's or a cell's element,
+            // a record's or a tuple's fields.
+            const needs = (k == .record or k == .tuple) or ((k == .list or k == .ref) and arity == 1 and st.steps.len == 1);
+            if (needs and !f.expanded) {
+                try memo.put(a.gpa, f.p, pending);
+                try stack.append(a.gpa, .{ .p = f.p, .expanded = true });
+                for (st.children) |c| if (!memo.contains(c)) try stack.append(a.gpa, .{ .p = c, .expanded = false });
+                continue;
+            }
+            const node: u32 = if (needs) blk: {
+                kids.clearRetainingCapacity();
+                for (st.steps, st.children) |s, c| {
+                    const id = memo.get(c) orelse none;
+                    if (id == none or id == pending) break :blk none;
+                    try kids.append(a.gpa, .{ .step = s, .id = id });
+                }
+                break :blk if (k == .record or k == .tuple) try a.structural(k, h, kids.items) else try a.nominal(@fromBackingInt(h), &.{kids.items[0].id}, none);
+            } else if (nominal_kind and h < a.in.types.entries.len and arity == 0)
+                try a.nominal(@fromBackingInt(h), &.{}, none)
+            else if (st.steps.len == 0) switch (k) {
+                .@"var" => try a.leaf(&a.var_id, .@"var"),
+                .cross => try a.leaf(&a.cross_id, .cross),
+                .closure => try a.leaf(&a.closure_id, .closure),
+                else => none,
+            } else none;
+            try memo.put(a.gpa, f.p, node);
+        }
+        const node = memo.get(p).?;
+        if (node == none) return null;
+        const q = try places.of(a.gpa, a.account, a.source(), node);
+        if (q != p and !try Place.Table.equals(places, p, places, q, a.gpa, .growth(a.account))) return null;
+        return q;
     }
 };
 
@@ -527,6 +602,14 @@ pub const Module = struct {
     cur_locals: u32 = 0,
     /// What the module itself is charged: the condition table's constants.
     base_account: Ids.Account = .{},
+    /// Per imported module read, its classes by declaration (`Imports`);
+    /// null for one with no block that decodes. Read at its first call.
+    imported: stamped.Column(u32, ?[]ClassId) = .{},
+    imported_owned: std.ArrayList([]ClassId) = .empty,
+    /// A block's instruction `(module, inst)` → this module's id for it, past
+    /// its own instructions: a namespace no instruction of the module or of
+    /// another import meets (`Block.Remap.inst`).
+    import_insts: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -547,6 +630,44 @@ pub const Module = struct {
         gpa.free(mod.result_of);
         mod.prepass_arena.deinit();
         mod.base_account.deinit(gpa);
+        for (mod.imported_owned.items) |cs| gpa.free(cs);
+        mod.imported_owned.deinit(gpa);
+        mod.imported.deinit(gpa);
+        mod.import_insts.deinit(gpa);
+    }
+
+    /// The `shared` index of declaration `md` (a block's shared cell).
+    pub fn sharedOf(mod: *Module, md: [2]u32) Allocator.Error!u32 {
+        const got = try mod.shared.getOrPut(mod.gpa, md);
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(mod.shared_of.items.len);
+            try mod.shared_of.append(mod.gpa, md);
+        }
+        return got.value_ptr.*;
+    }
+
+    /// Block instruction `inst` of module `m` in this module's namespace.
+    pub fn importInst(mod: *Module, m: u32, inst: u32) Allocator.Error!u32 {
+        const got = try mod.import_insts.getOrPut(mod.gpa, .{ m, inst });
+        if (!got.found_existing) got.value_ptr.* = @intCast(mod.in.bir.insts.len + mod.import_insts.count() - 1);
+        return got.value_ptr.*;
+    }
+
+    /// The class declaration `di` of module `m` publishes for its importers,
+    /// read from `m`'s block at the first call (§2.11: an imported call is a
+    /// same-module one); null when it publishes none they may apply.
+    fn importedClass(mod: *Module, m: u32, di: u32) Error!?ClassId {
+        const imports = mod.in.imports orelse return null;
+        if (!mod.imported.contains(m)) {
+            const cs = try imports.read(imports.ctx, mod, m);
+            if (cs) |c| mod.imported_owned.append(mod.gpa, c) catch |err| {
+                mod.gpa.free(c);
+                return err;
+            };
+            try mod.imported.put(mod.gpa, m, cs);
+        }
+        const cs = mod.imported.get(m).? orelse return null;
+        return if (di < cs.len and cs[di] != .none) cs[di] else null;
     }
 
     pub fn env(mod: *Module) Summary.Env {
@@ -654,12 +775,7 @@ pub const Module = struct {
         if (decl.kind != .value or decl.params != 0) return null;
         const at = placeOfInst(ctx, ref) catch return null;
         if (mod.places.kind(at) == .closure) return null;
-        const got = mod.shared.getOrPut(mod.gpa, md) catch return null;
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(mod.shared_of.items.len);
-            mod.shared_of.append(mod.gpa, md) catch return null;
-        }
-        return got.value_ptr.*;
+        return mod.sharedOf(md) catch null;
     }
 
     fn isListAppend(ctx: *anyopaque, inst: u32) bool {
@@ -713,6 +829,9 @@ pub const Module = struct {
             // of this group (recursion) or one past its limit is not built
             // here.
             if (t[0] == mod.in.module and words.len == 0) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
+            // One of another module (S3b slice 3): the class its block
+            // publishes, applied the same way.
+            if (t[0] != mod.in.module and words.len == 0) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
             // A container's `eq`/`compare` with no words (`List.eq`, written
             // in JavaScript over its element evidence): the derived class when
             // no evidence it is handed is written by hand (§2.13.13).
@@ -732,7 +851,7 @@ pub const Module = struct {
 
     /// The class of declaration `di`'s walk when it is done, built and within its
     /// limits; null before its walk, or when a limit stopped it.
-    fn walkedClass(mod: *const Module, di: u32) ?ClassId {
+    pub fn walkedClass(mod: *const Module, di: u32) ?ClassId {
         if (di >= mod.result_of.len or mod.result_of[di] == none) return null;
         const r = mod.results.items[mod.result_of[di]];
         // An unbuilt walk's class is the pessimistic one: applying it would
