@@ -9631,8 +9631,8 @@ test "the checker v2 says why a summary is not printed" {
     // └─────────────────────────────────────────┘
     // #1182: the summary print reads the class on the declaration's account,
     // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing. A 179-field
-    // record of 11-field records re-read 15 times checks at growth 65 353,
+    // that error, and the `summary` line was simply missing. A 156-field
+    // record of 11-field records re-read 16 times checks at growth 65 373,
     // and its print passes 65 536: the dump says so.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
@@ -9642,13 +9642,13 @@ test "the checker v2 says why a summary is not printed" {
     try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
     for (1..11) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
     try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..179) |i| try src.print(a, "\n    , r{d} : S", .{i});
+    for (1..156) |i| try src.print(a, "\n    , r{d} : S", .{i});
     try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
     for (1..11) |i| try src.print(a, ", s{d} = xs", .{i});
     try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..179) |i| try src.print(a, ", r{d} = s", .{i});
+    for (1..156) |i| try src.print(a, ", r{d} = s", .{i});
     try src.appendSlice(a, " }\n    [ r");
-    for (1..15) |_| try src.appendSlice(a, ", r");
+    for (1..16) |_| try src.appendSlice(a, ", r");
     try src.appendSlice(a, " ]\n");
     try w.write("Main.beni", src.items);
 
