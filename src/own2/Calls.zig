@@ -798,6 +798,60 @@ const Grafter = struct {
             }
         }
     }
+    /// The cells argument `i` holds at a parameter cell's path `p`, read at
+    /// `at`: through `⟲` the full preimage's (`foldedCells`, #1199). A
+    /// recast (the value at another place, or below a level) stands for some
+    /// value inside its inner node, not for that node, so when one is the
+    /// actual or a side of its unions, choices and positions (a view read at
+    /// its answer), the cells are read approximately with `⊤`, as
+    /// `Pre.expand` reads one (#1219). Otherwise the argument's own cells there.
+    fn argCells(g: *Grafter, i: u32, p: PathId, at: PlaceId) Error!SetId {
+        if (try g.foldedCells(i, p)) |s| return s;
+        const n = try g.argAt(i, p, at);
+        const own = try g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, n);
+        if (!try g.recastAmong(n)) return own;
+        var s = try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
+        var it = g.env.cells.sets.iterate(own);
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            s = try g.env.cells.sets.insert(g.gpa(), g.env.charge, s, e.key, 1);
+        }
+        return s;
+    }
+
+    /// Whether `n`, or a side of its unions, choices and positions at its
+    /// own path, is a recast, each view read at its answer: a walk of that
+    /// DAG, growth chosen before it (`Shape.dagWalk`, §4.1).
+    fn recastAmong(g: *Grafter, n0: NodeId) Error!bool {
+        const shapes = g.env.shapes;
+        const n = try shapes.force(g.gpa(), g.account(), n0);
+        switch (shapes.kind(n)) {
+            .recast => return true,
+            .@"union", .choice, .positions => {},
+            else => return false,
+        }
+        const walk = try shapes.dagWalk(g.gpa(), g.account(), n);
+        defer if (walk) |k| g.account().leave(k);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(g.gpa());
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(g.gpa());
+        try stack.append(g.gpa(), n);
+        while (stack.pop()) |x0| {
+            const x = try shapes.force(g.gpa(), g.account(), x0);
+            if (seen.contains(x)) continue;
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            try seen.put(g.gpa(), x, {});
+            const d = shapes.get(x);
+            switch (d.kind) {
+                .recast => return true,
+                .@"union", .choice, .positions => try stack.appendSlice(g.gpa(), &.{ .from(d.a), .from(d.b) }),
+                else => {},
+            }
+        }
+        return false;
+    }
+
     /// The image of `res` cells at `at`: a parameter cell the argument's
     /// cells there, any other its mapped self (a view's node image, with
     /// no escape recorded: the parts that hold the cells record theirs).
@@ -808,7 +862,7 @@ const Grafter = struct {
             const cell: CellId = .from(e.key);
             if (g.env.cells.origin(cell) == .param) {
                 const x = g.env.cells.get(cell);
-                c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, try g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at)));
+                c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, try g.argCells(x.a, .from(x.b), at));
                 continue;
             }
             c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, (try g.mapCell(cell, at)).int(), e.value);
@@ -879,11 +933,9 @@ const Grafter = struct {
     fn cellsOf(g: *Grafter, c: CellId, at: PlaceId) Error!SetId {
         const x = g.env.cells.get(c);
         if (x.origin == .param) {
-            // Through `⟲` the path stands for every position of the argument
-            // the fold maps to it: their cells, from the full preimage, never
-            // a recast's own shallow cells (#1199).
-            if (try g.foldedCells(x.a, .from(x.b))) |s| return s;
-            return g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
+            // Through `⟲` the full preimage's, a recast actual's approximately
+            // (`argCells`, #1199, #1219).
+            return g.argCells(x.a, .from(x.b), at);
         }
         if (x.origin.isSymbolic() and x.origin != .top) return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
         return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c, at)).int(), 0);
@@ -2638,4 +2690,55 @@ test "a chain of 400 calls is read and its conditions resolved at its end on a s
     // Resolved: what a reader tests holds no `inst` atom.
     try x.conds.assertResolved(gpa, x.env().charge, k);
     try testing.expect(!Cond.Table.fails(k));
+}
+
+test "#1219: a recast actual stands for a value inside it, so its sep and its image read it approximately" {
+    // `f` answers `π0·arg·⟲·arg`; applied to `a = T [ L22 [ T k ] ]` its
+    // result is `recast@L(a)`, standing for `k` (or the list around it).
+    // `g` relies on `sep(π0, π1)` and is applied to `(f a, k)`: the recast's
+    // inner node holds no list cell, so reading its own cells exactly said
+    // `yes`. It stands for a value inside `a`, which may be `k`: refused,
+    // and so when the recast is one side of a union or a choice
+    // (`if c then f a else xs`). A separate list accepts. `h` answers a node
+    // over `π0`; applied to any of the recast actuals, its image holds `⊤`,
+    // approximately. The cyclic union of the eager graft's fixture is #1314
+    // (the cells of a view of a knot do not end).
+    const gpa = testing.allocator;
+    for (0..4) |kind| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const L = x.list;
+        const root = try x.places.rootPath(gpa, L);
+        const p0 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, root, 0);
+        const p1 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 1, root, 0);
+        const sep = try x.conds.sepAtom(gpa, x.env().charge, p0, p1);
+        const g = try x.sums.add(x.env(), .{ .params = &.{ .none, .none }, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, sep) });
+        const k = try listAt(&x, L, 20, null);
+        const a = try ctorOf(&x, x.t_place, x.arg, try listAt(&x, L, 22, try ctorOf(&x, x.t_place, x.arg, k)));
+        const recast = try x.shapes.recast(gpa, &x.account, L, a);
+        const other = try listAt(&x, L, 23, null);
+        const first = switch (kind) {
+            0 => other,
+            1 => recast,
+            2 => try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, recast, other),
+            else => try x.shapes.choice(gpa, &x.account, &x.cells.sets, recast, other),
+        };
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, g, &.{ .{ .node = first, .kappa = .none }, .{ .node = k, .kappa = .none } }, 0, &s);
+        try testing.expectEqual(kind != 0, Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
+        const top = try x.cells.top(gpa, &x.account);
+        const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
+        // `h`'s result is a node at `L` whose object is `π0`.
+        const h = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.node(gpa, &x.account, L, p0_set, try x.one(Place.Step.elem, try listAt(&x, L, 24, null))), .kappas = .none });
+        for ([_]ClassId{h}) |c| {
+            var s2: Scratch = .{};
+            defer s2.deinit(gpa);
+            const image = try apply(x.env(), &x.sums, c, &.{.{ .node = first, .kappa = .none }}, 0, &s2);
+            const cells = try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, image.result.node);
+            try testing.expectEqual(kind != 0, x.cells.sets.member(cells, top.int()));
+        }
+    }
 }
