@@ -9071,8 +9071,8 @@ fn recordsPerWrittenField(n: u32) !u64 {
 // n demands on one argument, the call's product with its callee's routes,
 // so their queries are growth, never the argument's one lane (it was
 // `ownership_accounting_invariant` at 320 fields). Linear: at most 100
-// records a field at 320 and at 640 fields (both about 85), with no limit.
-// Two tests, since 640 fields alone take about 0.9 s.
+// records a field at 320 and at 480 fields (both about 83), with no limit.
+// Two tests, so each stays well under a second.
 test "the checker v2's call writing 320 fields of one parameter stays in its lanes" {
     const per = try recordsPerWrittenField(320);
     if (per > 100) {
@@ -9081,10 +9081,45 @@ test "the checker v2's call writing 320 fields of one parameter stays in its lan
     }
 }
 
-test "the checker v2's call writing 640 fields of one parameter stays in its lanes" {
-    const per = try recordsPerWrittenField(640);
+test "the checker v2's call writing 480 fields of one parameter stays in its lanes" {
+    const per = try recordsPerWrittenField(480);
     if (per > 100) {
-        std.debug.print("640 fields: {d} records a field\n", .{per});
+        std.debug.print("480 fields: {d} records a field\n", .{per});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's walk of a callee's wide use is growth, not the call's lane" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 (#1369's review): `wall` pushes `r.l` and reads
+    // `n` fields of distinct types, so its use of `π1` has about n distinct
+    // nodes. Finding which hold a write is the use's size: growth, never the
+    // call's `call_view` lane (`ownership_accounting_invariant` at 600).
+    // 600 types cost `caller` at most 2.2 times what 300 do, with no limit
+    // (9 681 and 4 662 records; 1 200 cost 19 740, but take 1 s alone).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 300, 600 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for (0..n) |i| try src.print(a, "type T{d:0>4}\n    = T{d:0>4} (List Int)\n\n\n", .{ i, i });
+        try src.appendSlice(a, "type alias W =\n    { l : List Int\n");
+        for (0..n) |i| try src.print(a, "    , f{d:0>4} : T{d:0>4}\n", .{ i, i });
+        try src.appendSlice(a, "    }\n\n\nwall : W → Int\nwall r =\n    List.length (List.push r.l 1)\n");
+        for (0..n) |i| try src.print(a, "        + (case r.f{d:0>4} of\n            T{d:0>4} x →\n                List.length x\n          )\n", .{ i, i });
+        try src.appendSlice(a, "\n\npub caller : W → Int\ncaller w =\n    wall w\n");
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 22) {
+        std.debug.print("300 types: {d} records, 600: {d}\n", .{ totals[0], totals[1] });
         return error.TestUnexpectedResult;
     }
 }

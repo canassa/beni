@@ -1187,9 +1187,16 @@ pub const Routes = struct {
 
     /// Walk `use`'s routes of `want` over the argument's value `arg`
     /// (`.none`: no argument).
+    /// `below` is a node's own and stays: one memo for every walk of the call.
     pub fn start(r: *Routes, use: NodeId, arg: NodeId, want: Want) Error!void {
+        const below = r.below;
+        r.below = .{};
         r.deinit();
-        r.* = .{ .env = r.env, .want = @backingInt(want) };
+        r.* = .{ .env = r.env, .below = below, .want = @backingInt(want) };
+        // The use's size: growth chosen before the walk, never the call's
+        // lane (§4.1; #1369's review: a use of 600 nodes passed it).
+        const walk = try r.env.account().enter(r.env.gpa, null);
+        defer r.env.account().leave(walk);
         if (use == .none or try marksBelow(r.env, use, &r.below) & r.want == 0) return;
         try r.stack.append(r.env.gpa, .{ .node = use, .entry = Ids.none_int, .value = arg, .stuck = false, .free = arg == .none });
     }
