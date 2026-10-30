@@ -820,7 +820,7 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 
 | Query | Lists | Answer |
 |---|---|---|
-| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it); a use whose *exit* (below) is a prefix of `q` counts as one at `q`; a `call` use non-empty only at untouched fields is no use |
+| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` or `A` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it; *A part a callee answers*, below); a use whose *exit* (below) is a prefix of `q` counts as one at `q`; a `call` use non-empty only at untouched fields is no use |
 | a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**; kind `call`/`whole` → a whole use, refused |
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
@@ -873,6 +873,27 @@ mutually recursive types, two levels below the cycle's entry, a whole use, a cal
 the root's own field, outside the read, accepted), `ownership/DeepReadCycleMutual` (a callee's read on a cycle of
 two or three types, through `Maybe` and under a tuple, called at the root: an exit below `q` is kept, since a
 callee on a mutual cycle keeps the route the caller folds into `t⟲`).
+
+**A part a callee answers** [M 2026-10-31, #1370]. A `call` use reads its argument where the callee's `use`
+names it, and the frame records no use for what it does with the call's result: the result is a temporary or
+a new local, and neither is the argument's local. But the result holds every object the callee answers. So
+the call is the last use of the argument's local, and the reads of the result that come after it must count
+there. **A node of `U` marked `A` therefore reads every path below it, for the caller's liveness, as a
+node marked `D` does.** That is the rule of a store or a binding (`x = k` is a whole use of `k`), applied at
+the answered path. A path that the callee does not answer is not covered: `rkids r = r.kids` answers
+`π1.kids`, and a hold at `π1.v` stays free. Before, `Debug.toString (idl k)` with a monomorphic
+`idl : List (List Int) → List (List Int)` was accepted after a push of a list that `k[*]` holds, and so was
+`case idl k of [ y ] → List.length y`, which reads the pushed list itself. v1 refuses both. A polymorphic `idl`
+was refused only because its `π1` has a type variable's place, where the cursor finds no step and is free.
+
+The rule is the liveness readers' only: the holder index's cursor (`Holders.stepCursor`) and the exits
+(`Exits.deep`, so an answered path on a cycle exits at `Up(p)` too). Read-off composes the callee's `use` as
+it is, and a parameter part that the result holds is read where the result is consumed, by `readsOf` (#1352),
+so no class changes. The precision lost is that of the binding: `List.length (idl k)` reads `k` deeply
+after the push, as `x = k; List.length x` does. Fixtures: `ownership/AnsweredRead`,
+`ownership/AnsweredReadImported` (v1's refusals: read deeply, through a constructor's record and a field,
+bound first, in a construction, through `▷`, by a deep-reading callee, through a pattern, and on a cycle; a
+hold at a path the callee does not answer, accepted).
 
 ### 2.8 Demands and the check
 
@@ -1703,7 +1724,8 @@ each reader takes from `D`:
   a node of `U` at a prefix of `r` is marked `D`. So every demand at or below the path sees the read. The
   holder index's cursor is free below a `D` node, as it is below a non-empty leaf. Where the node's path is
   on a cycle of the place graph, the read also covers the `⟲` paths its levels fold into, above it (§2.7,
-  *A read that leaves its path on a cycle*, #1345).
+  *A read that leaves its path on a cycle*, #1345). A node marked `A` counts the same way, for liveness
+  only (§2.7, *A part a callee answers*, #1370).
 - Callsite demands (§2.11 items 3–4): `D` makes no demand. A `W` beside it is a shallow write's demand, and
   `S` alone is `consumed`. Item 3 reads a `D` node as it reads any marked node: the actual's whole value
   there is beside the write when the path is beside it. A `D` above the write, on the write's own path, is
@@ -4418,7 +4440,7 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 750 |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 150 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole) |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 110 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 350 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place) |
