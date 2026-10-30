@@ -8216,3 +8216,29 @@ the part of the section it settles keeps its text.
   failure class it admits is the one nothing can catch.
 - **A synchronous escape hatch "just for core".** Core is where the bugs in §4.1 were.
 - **Settling for opaque-JSON-only ports.** That is the status quo, and it is the *unchecked* path.
+
+## Amendment of 2026-10-30: one browser platform, worker entry realms
+
+Specified, not built; [workers.md](workers.md) owns this extension. In §5.3,
+“per entry point and per platform” means a program selects **one** platform
+chain; that build may have one page entry and explicitly registered worker
+entries in that chain. It does not mean each worker is a separate platform.
+Worker `program` declarations are manifest roots, not extra `main`s;
+`duplicate_main` still refuses multiple ordinary mains. Separate server/data
+programs remain separate builds, including prerender's build-time Node pair.
+
+§5.2 gains the realm-keyed `entryRuntimes` contract in workers §3, independent
+of §9.2's markup runtime union. Each worker runtime is beni, with checked
+program type/`run` signature/effects, and no DOM `start`/`flush` requirement.
+The existing `host: page` assumption applies to the window entry only, never
+an entire multi-realm platform chain. Worker bootstrap staging precedes user
+module evaluation so defects can reach the owning page.
+
+§4's privileged boundary gains exposure metadata, per-entry reachability
+checking and native wire/transfer evidence (workers §4–§6). Ordinary modules
+cannot grant themselves realm privileges or write `foreign`. §9.8.14's fatal
+defect rule extends across worker connections: defects stop the owning page
+program, with development crash screen and release logging/stopping. The wire
+Defect frame is private control data, not a new public `Task.Exit` variant.
+Normal shutdown awaits remote finalizers; abrupt-loss limits and the remaining
+owner decisions are explicit in workers §8, never a silent terminate fallback.

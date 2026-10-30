@@ -1,0 +1,729 @@
+// Extracted from @webref/idl 3.86.0; source pins in sources.json.
+
+// background-fetch.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onbackgroundfetchsuccess;
+  attribute EventHandler onbackgroundfetchfail;
+  attribute EventHandler onbackgroundfetchabort;
+  attribute EventHandler onbackgroundfetchclick;
+};
+
+// background-fetch.idl
+partial interface ServiceWorkerRegistration {
+  readonly attribute BackgroundFetchManager backgroundFetch;
+};
+
+// background-sync.idl
+partial interface ServiceWorkerRegistration {
+  readonly attribute SyncManager sync;
+};
+
+// background-sync.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onsync;
+};
+
+// badging.idl
+WorkerNavigator includes NavigatorBadge;
+
+// content-index.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler oncontentdelete;
+};
+
+// content-index.idl
+partial interface ServiceWorkerRegistration {
+  [SameObject] readonly attribute ContentIndex index;
+};
+
+// cookiestore.idl
+[Exposed=(ServiceWorker,Window)]
+partial interface ServiceWorkerRegistration {
+  [SameObject] readonly attribute CookieStoreManager cookies;
+};
+
+// cookiestore.idl
+partial interface ServiceWorkerGlobalScope {
+  [SameObject] readonly attribute CookieStore cookieStore;
+
+  attribute EventHandler oncookiechange;
+};
+
+// cross-origin-storage.idl
+WorkerNavigator includes NavigatorCrossOriginStorage;
+
+// css-font-loading.idl
+WorkerGlobalScope includes FontFaceSource;
+
+// dom.idl
+[Exposed=*]
+interface Event {
+  constructor(DOMString type, optional EventInit eventInitDict = {});
+
+  readonly attribute DOMString type;
+  readonly attribute EventTarget? target;
+  readonly attribute EventTarget? srcElement; // legacy
+  readonly attribute EventTarget? currentTarget;
+  sequence<EventTarget> composedPath();
+
+  const unsigned short NONE = 0;
+  const unsigned short CAPTURING_PHASE = 1;
+  const unsigned short AT_TARGET = 2;
+  const unsigned short BUBBLING_PHASE = 3;
+  readonly attribute unsigned short eventPhase;
+
+  undefined stopPropagation();
+           attribute boolean cancelBubble; // legacy alias of .stopPropagation()
+  undefined stopImmediatePropagation();
+
+  readonly attribute boolean bubbles;
+  readonly attribute boolean cancelable;
+           attribute boolean returnValue;  // legacy
+  undefined preventDefault();
+  readonly attribute boolean defaultPrevented;
+  readonly attribute boolean composed;
+
+  [LegacyUnforgeable] readonly attribute boolean isTrusted;
+  readonly attribute DOMHighResTimeStamp timeStamp;
+
+  undefined initEvent(DOMString type, optional boolean bubbles = false, optional boolean cancelable = false); // legacy
+};
+
+// dom.idl
+[Exposed=*]
+interface EventTarget {
+  constructor();
+
+  undefined addEventListener(DOMString type, EventListener? callback, optional (AddEventListenerOptions or boolean) options = {});
+  undefined removeEventListener(DOMString type, EventListener? callback, optional (EventListenerOptions or boolean) options = {});
+  boolean dispatchEvent(Event event);
+};
+
+// fetch.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [NewObject] Promise<Response> fetch(RequestInfo input, optional RequestInit init = {});
+};
+
+// gpc.idl
+WorkerNavigator includes GlobalPrivacyControl;
+
+// hid.idl
+[Exposed=(DedicatedWorker,ServiceWorker), SecureContext]
+partial interface WorkerNavigator {
+    [SameObject] readonly attribute HID hid;
+};
+
+// hr-time.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [Replaceable] readonly attribute Performance performance;
+};
+
+// html.idl
+[Exposed=*]
+interface ErrorEvent : Event {
+  constructor(DOMString type, optional ErrorEventInit eventInitDict = {});
+
+  readonly attribute DOMString message;
+  readonly attribute USVString filename;
+  readonly attribute unsigned long lineno;
+  readonly attribute unsigned long colno;
+  readonly attribute any error;
+};
+
+// html.idl
+dictionary ErrorEventInit : EventInit {
+  DOMString message = "";
+  USVString filename = "";
+  unsigned long lineno = 0;
+  unsigned long colno = 0;
+  any error;
+};
+
+// html.idl
+[Exposed=*]
+interface PromiseRejectionEvent : Event {
+  constructor(DOMString type, PromiseRejectionEventInit eventInitDict);
+
+  readonly attribute object promise;
+  readonly attribute any reason;
+};
+
+// html.idl
+dictionary PromiseRejectionEventInit : EventInit {
+  required object promise;
+  any reason;
+};
+
+// html.idl
+interface mixin WindowOrWorkerGlobalScope {
+  [Replaceable] readonly attribute USVString origin;
+  readonly attribute boolean isSecureContext;
+  readonly attribute boolean crossOriginIsolated;
+
+  undefined reportError(any e);
+
+  // base64 utility methods
+  DOMString btoa(DOMString data);
+  ByteString atob(DOMString data);
+
+  // timers
+  long setTimeout(TimerHandler handler, optional long timeout = 0, any... arguments);
+  undefined clearTimeout(optional long id = 0);
+  long setInterval(TimerHandler handler, optional long timeout = 0, any... arguments);
+  undefined clearInterval(optional long id = 0);
+
+  // microtask queuing
+  undefined queueMicrotask(VoidFunction callback);
+
+  // ImageBitmap
+  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource image, optional ImageBitmapOptions options = {});
+  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource image, long sx, long sy, long sw, long sh, optional ImageBitmapOptions options = {});
+
+  // structured cloning
+  any structuredClone(any value, optional StructuredSerializeOptions options = {});
+};
+
+// html.idl
+interface mixin NavigatorID {
+  readonly attribute DOMString appCodeName; // constant "Mozilla"
+  readonly attribute DOMString appName; // constant "Netscape"
+  readonly attribute DOMString appVersion;
+  readonly attribute DOMString platform;
+  readonly attribute DOMString product; // constant "Gecko"
+  [Exposed=Window] readonly attribute DOMString productSub;
+  readonly attribute DOMString userAgent;
+  [Exposed=Window] readonly attribute DOMString vendor;
+  [Exposed=Window] readonly attribute DOMString vendorSub; // constant ""
+};
+
+// html.idl
+partial interface mixin NavigatorID {
+  [Exposed=Window] boolean taintEnabled(); // constant false
+  [Exposed=Window] readonly attribute DOMString oscpu;
+};
+
+// html.idl
+interface mixin NavigatorLanguage {
+  readonly attribute DOMString language;
+  readonly attribute FrozenArray<DOMString> languages;
+};
+
+// html.idl
+interface mixin NavigatorOnLine {
+  readonly attribute boolean onLine;
+};
+
+// html.idl
+interface mixin AnimationFrameProvider {
+  unsigned long requestAnimationFrame(FrameRequestCallback callback);
+  undefined cancelAnimationFrame(unsigned long handle);
+};
+
+// html.idl
+[Exposed=(Window,Worker,AudioWorklet)]
+interface MessageEvent : Event {
+  constructor(DOMString type, optional MessageEventInit eventInitDict = {});
+
+  readonly attribute any data;
+  readonly attribute USVString origin;
+  readonly attribute DOMString lastEventId;
+  readonly attribute MessageEventSource? source;
+  readonly attribute FrozenArray<MessagePort> ports;
+
+  undefined initMessageEvent(DOMString type, optional boolean bubbles = false, optional boolean cancelable = false, optional any data = null, optional USVString origin = "", optional DOMString lastEventId = "", optional MessageEventSource? source = null, optional sequence<MessagePort> ports = []);
+};
+
+// html.idl
+dictionary MessageEventInit : EventInit {
+  any data = null;
+  USVString origin = "";
+  DOMString lastEventId = "";
+  MessageEventSource? source = null;
+  sequence<MessagePort> ports = [];
+};
+
+// html.idl
+[Exposed=(Window,Worker)]
+interface MessageChannel {
+  constructor();
+
+  readonly attribute MessagePort port1;
+  readonly attribute MessagePort port2;
+};
+
+// html.idl
+interface mixin MessageEventTarget {
+  attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
+};
+
+// html.idl
+[Exposed=(Window,Worker,AudioWorklet), Transferable]
+interface MessagePort : EventTarget {
+  undefined postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
+  undefined start();
+  undefined close();
+};
+
+// html.idl
+dictionary StructuredSerializeOptions {
+  sequence<object> transfer = [];
+};
+
+// html.idl
+[Exposed=(Window,Worker)]
+interface BroadcastChannel : EventTarget {
+  constructor(DOMString name);
+
+  readonly attribute DOMString name;
+  undefined postMessage(any message);
+  undefined close();
+  attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
+};
+
+// html.idl
+[Exposed=Worker]
+interface WorkerGlobalScope : EventTarget {
+  readonly attribute WorkerGlobalScope self;
+  readonly attribute WorkerLocation location;
+  readonly attribute WorkerNavigator navigator;
+  undefined importScripts((TrustedScriptURL or USVString)... urls);
+
+  attribute OnErrorEventHandler onerror;
+  attribute EventHandler onlanguagechange;
+  attribute EventHandler onoffline;
+  attribute EventHandler ononline;
+  attribute EventHandler onrejectionhandled;
+  attribute EventHandler onunhandledrejection;
+};
+
+// html.idl
+[Global=(Worker,DedicatedWorker),Exposed=DedicatedWorker]
+interface DedicatedWorkerGlobalScope : WorkerGlobalScope {
+  [Replaceable] readonly attribute DOMString name;
+
+  undefined postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
+
+  undefined close();
+};
+
+// html.idl
+[Global=(Worker,SharedWorker),Exposed=SharedWorker]
+interface SharedWorkerGlobalScope : WorkerGlobalScope {
+  [Replaceable] readonly attribute DOMString name;
+
+  undefined close();
+
+  attribute EventHandler onconnect;
+};
+
+// html.idl
+interface mixin AbstractWorker {
+  attribute EventHandler onerror;
+};
+
+// html.idl
+[Exposed=(Window,DedicatedWorker,SharedWorker)]
+interface Worker : EventTarget {
+  constructor((TrustedScriptURL or USVString) scriptURL, optional WorkerOptions options = {});
+
+  undefined terminate();
+
+  undefined postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
+};
+
+// html.idl
+dictionary WorkerOptions {
+  DOMString name = "";
+  WorkerType type = "classic";
+  RequestCredentials credentials = "same-origin"; // credentials is only used if type is "module"
+};
+
+// html.idl
+enum WorkerType { "classic", "module" };
+
+// html.idl
+[Exposed=Window]
+interface SharedWorker : EventTarget {
+  constructor((TrustedScriptURL or USVString) scriptURL, optional (DOMString or SharedWorkerOptions) options = {});
+
+  readonly attribute MessagePort port;
+};
+
+// html.idl
+dictionary SharedWorkerOptions : WorkerOptions {
+  boolean extendedLifetime = false;
+};
+
+// html.idl
+interface mixin NavigatorConcurrentHardware {
+  readonly attribute unsigned long long hardwareConcurrency;
+};
+
+// html.idl
+[Exposed=Worker]
+interface WorkerNavigator {};
+
+// html.idl
+[Exposed=Worker]
+interface WorkerLocation {
+  stringifier readonly attribute USVString href;
+  readonly attribute USVString origin;
+  readonly attribute USVString protocol;
+  readonly attribute USVString host;
+  readonly attribute USVString hostname;
+  readonly attribute USVString port;
+  readonly attribute USVString pathname;
+  readonly attribute USVString search;
+  readonly attribute USVString hash;
+};
+
+// html.idl
+WorkerGlobalScope includes WindowOrWorkerGlobalScope;
+
+// html.idl
+DedicatedWorkerGlobalScope includes AnimationFrameProvider;
+
+// html.idl
+MessagePort includes MessageEventTarget;
+
+// html.idl
+DedicatedWorkerGlobalScope includes MessageEventTarget;
+
+// html.idl
+Worker includes AbstractWorker;
+
+// html.idl
+Worker includes MessageEventTarget;
+
+// html.idl
+SharedWorker includes AbstractWorker;
+
+// html.idl
+WorkerNavigator includes NavigatorID;
+
+// html.idl
+WorkerNavigator includes NavigatorLanguage;
+
+// html.idl
+WorkerNavigator includes NavigatorOnLine;
+
+// html.idl
+WorkerNavigator includes NavigatorConcurrentHardware;
+
+// IndexedDB.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [SameObject] readonly attribute IDBFactory indexedDB;
+};
+
+// media-capabilities.idl
+[Exposed=Worker]
+partial interface WorkerNavigator {
+  [SameObject] readonly attribute MediaCapabilities mediaCapabilities;
+};
+
+// netinfo.idl
+WorkerNavigator includes NavigatorNetworkInformation;
+
+// notifications.idl
+partial interface ServiceWorkerRegistration {
+  Promise<undefined> showNotification(DOMString title, optional NotificationOptions options = {});
+  Promise<sequence<Notification>> getNotifications(optional GetNotificationOptions filter = {});
+};
+
+// notifications.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onnotificationclick;
+  attribute EventHandler onnotificationclose;
+};
+
+// observable.idl
+partial interface EventTarget {
+  Observable when(DOMString type, optional ObservableEventListenerOptions options = {});
+};
+
+// page-lifecycle.idl
+partial interface Client {
+    readonly attribute ClientLifecycleState lifecycleState;
+};
+
+// periodic-background-sync.idl
+partial interface ServiceWorkerGlobalScope {
+    attribute EventHandler onperiodicsync;
+};
+
+// periodic-background-sync.idl
+[Exposed=(Window,Worker)]
+partial interface ServiceWorkerRegistration {
+  readonly attribute PeriodicSyncManager periodicSync;
+};
+
+// permissions.idl
+[Exposed=(Worker)]
+partial interface WorkerNavigator {
+  [SameObject] readonly attribute Permissions permissions;
+};
+
+// push-api.idl
+[Exposed=ServiceWorker, SecureContext]
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onpush;
+  attribute EventHandler onpushsubscriptionchange;
+};
+
+// push-api.idl
+ServiceWorkerRegistration includes PushManagerAttribute;
+
+// saa-non-cookie-storage.idl
+dictionary SharedWorkerOptions {
+  SameSiteCookiesType sameSiteCookies;
+};
+
+// scheduling-apis.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [Replaceable] readonly attribute Scheduler scheduler;
+};
+
+// serial.idl
+[Exposed=DedicatedWorker, SecureContext]
+partial interface WorkerNavigator {
+  [SameObject] readonly attribute Serial serial;
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface ServiceWorker : EventTarget {
+  readonly attribute USVString scriptURL;
+  readonly attribute ServiceWorkerState state;
+  undefined postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
+
+  // event
+  attribute EventHandler onstatechange;
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface ServiceWorkerRegistration : EventTarget {
+  readonly attribute ServiceWorker? installing;
+  readonly attribute ServiceWorker? waiting;
+  readonly attribute ServiceWorker? active;
+  [SameObject] readonly attribute NavigationPreloadManager navigationPreload;
+
+  readonly attribute USVString scope;
+  readonly attribute ServiceWorkerUpdateViaCache updateViaCache;
+
+  [NewObject] Promise<ServiceWorkerRegistration> update();
+  [NewObject] Promise<boolean> unregister();
+
+  // event
+  attribute EventHandler onupdatefound;
+};
+
+// service-workers.idl
+partial interface WorkerNavigator {
+  [SecureContext, SameObject] readonly attribute ServiceWorkerContainer serviceWorker;
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface ServiceWorkerContainer : EventTarget {
+  readonly attribute ServiceWorker? controller;
+  readonly attribute Promise<ServiceWorkerRegistration> ready;
+
+  [NewObject] Promise<ServiceWorkerRegistration> register((TrustedScriptURL or USVString) scriptURL, optional RegistrationOptions options = {});
+
+  [NewObject] Promise<(ServiceWorkerRegistration or undefined)> getRegistration(optional USVString clientURL = "");
+  [NewObject] Promise<FrozenArray<ServiceWorkerRegistration>> getRegistrations();
+
+  undefined startMessages();
+
+  // events
+  attribute EventHandler oncontrollerchange;
+  attribute EventHandler onmessage; // event.source of message events is ServiceWorker object
+  attribute EventHandler onmessageerror;
+};
+
+// service-workers.idl
+dictionary RegistrationOptions {
+  USVString scope;
+  WorkerType type = "classic";
+  ServiceWorkerUpdateViaCache updateViaCache = "imports";
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface NavigationPreloadManager {
+  Promise<undefined> enable();
+  Promise<undefined> disable();
+  Promise<undefined> setHeaderValue(ByteString value);
+  Promise<NavigationPreloadState> getState();
+};
+
+// service-workers.idl
+[Global=(Worker,ServiceWorker), Exposed=ServiceWorker, SecureContext]
+interface ServiceWorkerGlobalScope : WorkerGlobalScope {
+  [SameObject] readonly attribute Clients clients;
+  [SameObject] readonly attribute ServiceWorkerRegistration registration;
+  [SameObject] readonly attribute ServiceWorker serviceWorker;
+
+  [NewObject] Promise<undefined> skipWaiting();
+
+  attribute EventHandler oninstall;
+  attribute EventHandler onactivate;
+  attribute EventHandler onfetch;
+
+  attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface Client {
+  readonly attribute USVString url;
+  readonly attribute FrameType frameType;
+  readonly attribute DOMString id;
+  readonly attribute ClientType type;
+  undefined postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface WindowClient : Client {
+  readonly attribute DocumentVisibilityState visibilityState;
+  readonly attribute boolean focused;
+  [SameObject] readonly attribute FrozenArray<USVString> ancestorOrigins;
+  [NewObject] Promise<WindowClient> focus();
+  [NewObject] Promise<WindowClient?> navigate(USVString url);
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface Clients {
+  // The objects returned will be new instances every time
+  [NewObject] Promise<(Client or undefined)> get(DOMString id);
+  [NewObject] Promise<FrozenArray<Client>> matchAll(optional ClientQueryOptions options = {});
+  [NewObject] Promise<WindowClient?> openWindow(USVString url);
+  [NewObject] Promise<undefined> claim();
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface ExtendableEvent : Event {
+  constructor(DOMString type, optional ExtendableEventInit eventInitDict = {});
+  undefined waitUntil(Promise<any> f);
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface FetchEvent : ExtendableEvent {
+  constructor(DOMString type, FetchEventInit eventInitDict);
+  [SameObject] readonly attribute Request request;
+  readonly attribute Promise<any> preloadResponse;
+  readonly attribute DOMString clientId;
+  readonly attribute DOMString resultingClientId;
+  readonly attribute DOMString replacesClientId;
+  readonly attribute Promise<undefined> handled;
+
+  undefined respondWith(Promise<Response> r);
+};
+
+// service-workers.idl
+[Exposed=ServiceWorker]
+interface ExtendableMessageEvent : ExtendableEvent {
+  constructor(DOMString type, optional ExtendableMessageEventInit eventInitDict = {});
+  readonly attribute any data;
+  readonly attribute USVString origin;
+  readonly attribute DOMString lastEventId;
+  [SameObject] readonly attribute (Client or ServiceWorker or MessagePort)? source;
+  readonly attribute FrozenArray<MessagePort> ports;
+};
+
+// service-workers.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [SecureContext, SameObject] readonly attribute CacheStorage caches;
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface Cache {
+  [NewObject] Promise<(Response or undefined)> match(RequestInfo request, optional CacheQueryOptions options = {});
+  [NewObject] Promise<FrozenArray<Response>> matchAll(optional RequestInfo request, optional CacheQueryOptions options = {});
+  [NewObject] Promise<undefined> add(RequestInfo request);
+  [NewObject] Promise<undefined> addAll(sequence<RequestInfo> requests);
+  [NewObject] Promise<undefined> put(RequestInfo request, Response response);
+  [NewObject] Promise<boolean> delete(RequestInfo request, optional CacheQueryOptions options = {});
+  [NewObject] Promise<FrozenArray<Request>> keys(optional RequestInfo request, optional CacheQueryOptions options = {});
+};
+
+// service-workers.idl
+[SecureContext, Exposed=(Window,Worker)]
+interface CacheStorage {
+  [NewObject] Promise<(Response or undefined)> match(RequestInfo request, optional MultiCacheQueryOptions options = {});
+  [NewObject] Promise<boolean> has(DOMString cacheName);
+  [NewObject] Promise<Cache> open(DOMString cacheName);
+  [NewObject] Promise<boolean> delete(DOMString cacheName);
+  [NewObject] Promise<sequence<DOMString>> keys();
+};
+
+// service-workers.idl
+ServiceWorker includes AbstractWorker;
+
+// storage-buckets.idl
+WorkerNavigator includes NavigatorStorageBuckets;
+
+// storage.idl
+WorkerNavigator includes NavigatorStorage;
+
+// trusted-types.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  readonly attribute TrustedTypePolicyFactory trustedTypes;
+};
+
+// ua-client-hints.idl
+WorkerNavigator includes NavigatorUA;
+
+// usb.idl
+[Exposed=Worker, SecureContext]
+partial interface WorkerNavigator {
+  [SameObject] readonly attribute USB usb;
+};
+
+// web-based-payment-handler.idl
+partial interface ServiceWorkerRegistration {
+  [SameObject] readonly attribute PaymentManager paymentManager;
+};
+
+// web-based-payment-handler.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler oncanmakepayment;
+};
+
+// web-based-payment-handler.idl
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onpaymentrequest;
+};
+
+// web-locks.idl
+WorkerNavigator includes NavigatorLocks;
+
+// webcrypto.idl
+partial interface mixin WindowOrWorkerGlobalScope {
+  [SameObject] readonly attribute Crypto crypto;
+};
+
+// webgpu.idl
+WorkerNavigator includes NavigatorGPU;
+
+// webnn.idl
+WorkerNavigator includes NavigatorML;
+
+// webrtc-encoded-transform.idl
+partial interface DedicatedWorkerGlobalScope {
+    attribute EventHandler onrtctransform;
+};

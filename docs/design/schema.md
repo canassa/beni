@@ -3758,3 +3758,15 @@ another value for the same program. This amendment replaces the wording of §5's
   must read the text, not the engine's wording.
 - **The `catch` stays narrow (rule 9).** It tests `instanceof SyntaxError` and re-throws all else;
   the caught error's message is dropped, not parsed.
+
+## Amendment of 2026-10-30: worker wire codecs and transfer collection
+
+Specified, not built. [workers.md](workers.md) §5 composes schema directional
+conversion with compiler-derived wire evidence. `Encoded` keeps §1's meaning
+as a typed beni endpoint; it is not relabeled raw structured-clone data.
+A native-resource transfer annotation feeds a privileged identity-deduplicated
+collector whose moves the ownership checker proves. Suspendable conversions
+run during preparation, before synchronous encoding/transfer commit. Success,
+error and cancellation paths preserve the stated ownership rules; no promise
+handler broadly converts defects into schema failures. Compiled/library codecs
+must be differentially tested under per-entry release renaming.

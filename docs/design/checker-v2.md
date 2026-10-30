@@ -6464,3 +6464,20 @@ in place so the published schemes retain the domain. This is a formation check,
 not recursive membership in a key kind. Each membership check still inspects
 only the scalar head. A schema used with Bool outside a Dict remains valid when
 only a separate wrapper's use of that endpoint requires a scalar key.
+
+## Amendment of 2026-10-30: worker realms and wire obligations
+
+Specified, not built. [workers.md](workers.md) §2, §4 and §5 add entry-specific
+realm requirements, closed protocol matching and `Wire` evidence beside the
+existing effect/ownership checks. Realm summaries include callbacks, static
+dispatch evidence, opaque type exposure, recursive call SCCs and evaluated
+module initializers. Privileged metadata cannot be widened by ordinary code.
+Interfaces/cache keys carry these summaries and codec identities; independent
+library checking exports unresolved obligations rather than assuming `all`.
+
+`check` and `build` validate manifest-registered workers consistently. The
+worker diagnostic table defines codes, reporting sites, deterministic witness
+paths and fixes; no late runtime DOM failure substitutes for a compile error.
+Realm and wire analysis must precede public worker launch support. Transfer
+backing/alias demands belong to the ownership pass; this type check neither
+copies resources nor asserts that native resource state cannot change.

@@ -13049,3 +13049,23 @@ to choose a live row's patch versus restate protocol. A clock call passed to
 a pure helper inside a helper-owned `For` must therefore update on every
 render on both browser platforms. Enabling grouped rows only on direct must
 not leave the ordinary lowering with an all-false effect table for those rows.
+
+## Amendment of 2026-10-30: browser worker output and per-entry roots
+
+Specified, not built. [workers.md](workers.md) §2–§3 extends §2's output tree,
+§9's Roots and §11's maps without changing their existing section numbers.
+Registered worker programs and their realm runtime hooks are roots **of their
+own entry**; an entry descriptor does not pull worker implementation into the
+page. `_workers/<logical-name>/_main.mjs` follows the reserved `_` rule, with
+one preflight collision check across the whole build. IDs/names/fingerprints
+are assigned deterministically before parallel work.
+
+Development and release eliminate declarations per entry, include evaluated
+initializers in realm checks, and share `_core/` or chunks only when their
+initialization/exposure is safe in every importing realm. Separate realm
+projections are required for mixed modules. Release wire field/tag IDs are
+canonical codec IDs, not independently minified representation names. Maps
+cover each entry and chunk under the existing development/release flags.
+The platform runtime entry is staged before user program evaluation; compiler
+emitted module-relative worker URLs work below a base path. No handwritten
+JavaScript runtime or user bundler loader is introduced.

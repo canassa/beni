@@ -1,0 +1,339 @@
+[
+  {
+    "url": "https://dom.spec.whatwg.org/",
+    "sha256": "9b797e186fca784bce79a6d627e4e7827c3d9dd1aadf529265c61768b43a2153",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "interface-eventtarget"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://drafts.csswg.org/geometry-1/",
+    "sha256": "2c5af57eeddfb1ba4eb693bfdd0bf33cf80cb688bd066ab6c7b0d22a64e372bc",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "structured-serialization"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://fs.spec.whatwg.org/",
+    "sha256": "0bf200adc73a7546db5a79222206a897c018ed2063fe0ab549dea1ec90883e3a",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "filesystemhandle"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://gpuweb.github.io/gpuweb/",
+    "sha256": "ef95285f3c8b64d13c66a9818fd994ebe95104aa556646c1deff2a760fa44dce",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "errors-and-debugging"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/canvas.html",
+    "sha256": "3e799d8c8b2db95e9e8a6642a4b2795e02832dad2d751d2a47af889b670eb36c",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "pixel-manipulation",
+      "the-offscreencanvas-interface"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/comms.html",
+    "sha256": "d32e814a2119fdb804adb68195071e62148dc31ad662b47a906e192ba41d0c48",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "the-messageevent-interface"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html",
+    "sha256": "a92a0cac1b8d9bed725db89fd4bd0d15c0e880d8092c7d1099f0d907e7711904",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "animation-frames",
+      "imagebitmap",
+      "dom-animationframeprovider-requestanimationframe",
+      "dom-createimagebitmap"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/structured-data.html",
+    "sha256": "4810c12f836deee2a4f7e3e1187d0ea44b4aaaee941f2fceb87ca68c31a4d4a0",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "serializable-objects",
+      "structuredserializeinternal",
+      "restricting-to-the-same-agent-cluster",
+      "structureddeserializewithtransfer",
+      "structuredserializewithtransfer"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html",
+    "sha256": "ad3947893400ca9980338d757b440ce51c174209f3632840f71644bf2b9efc25",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "timers"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/web-messaging.html",
+    "sha256": "936ee09f2b83a8fe850e0a0629fb38090cef9914a13e6265b72710286ca16f32",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "message-ports",
+      "message-channels",
+      "dom-messageport-postmessage",
+      "broadcasting-to-other-browsing-contexts",
+      "dom-broadcastchannel-postmessage",
+      "dom-broadcastchannel"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/webappapis.html",
+    "sha256": "f38db4228dcc75202a52101b327922d18a29bd165a09b47e4623e8a93ebdf210",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "windoworworkerglobalscope",
+      "fetch-a-module-worker-script-tree",
+      "concept-settings-object-cross-origin-isolated-capability"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://html.spec.whatwg.org/multipage/workers.html",
+    "sha256": "ffe55d3697c20e2a4979e30ced4a80ef9579d98b78a74f22ea1591d5db83b6d7",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "dom-sharedworker",
+      "dom-worker",
+      "dedicated-workers-and-the-dedicatedworkerglobalscope-interface",
+      "dedicated-workers-and-the-worker-interface",
+      "worker-locations",
+      "runtime-script-errors-2",
+      "shared-workers-and-the-sharedworkerglobalscope-interface",
+      "the-workernavigator-object",
+      "importing-scripts-and-libraries",
+      "shared-workers-and-the-sharedworker-interface",
+      "the-workerglobalscope-common-interface",
+      "navigatorconcurrenthardware",
+      "run-a-worker"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://screen-share.github.io/element-capture/",
+    "sha256": "496e23204c08e1bea1273b8f488436aac02d13593b42b4ab3ccf3cdcfe61367f",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "restriction-target"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://streams.spec.whatwg.org/",
+    "sha256": "68701548fd1e79fd307c5820eff6b4bd2740fcfb9669f8f433e909754e63cad4",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "transferrable-streams"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://tc39.es/ecma262/multipage/structured-data.html",
+    "sha256": "90683188abaf6810ff92056f8e5cd2a53fc5ff347772ed6c35b75c322aec2c81",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "sec-arraybuffer-objects",
+      "sec-sharedarraybuffer-objects",
+      "sec-atomics-object"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/FileAPI/",
+    "sha256": "0034ebf4303187cfe4f93eaf7a6b4cf389ea4fa743bf73c95d01a6606798b67b",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "filelist-section",
+      "file-section",
+      "blob-section"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/ServiceWorker/",
+    "sha256": "5f81f8baeeef98781aaf14ccd96ef5ab81c4a7e9bbe8d2de74b07ce26cd59b62",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "serviceworker-interface",
+      "serviceworkercontainer-interface",
+      "serviceworkerregistration-interface",
+      "serviceworkerglobalscope-interface",
+      ""
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/media-source/",
+    "sha256": "befec0e14efb0ec2ddacf7ed8a8433e454050b710f695e3b6001e18d531db057",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "mediasourcehandle"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/mediacapture-extensions/",
+    "sha256": "44dd3cce762f3d33dc3bc714e9dcb98357ccc4169f2265ac30b94b5287162ced",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "mediastreamtrack-extensions"
+    ],
+    "anchor_note": "ReSpec generates section anchor from MediaStreamTrack extensions heading; not present in unrendered source."
+  },
+  {
+    "url": "https://w3c.github.io/mediacapture-region/",
+    "sha256": "e431db9587b4c5f98e18fe57be8de1b08571e21c15669c75789837f8964592ac",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "crop-target"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/mediacapture-transform/",
+    "sha256": "94ca5550e88cca37cae0bb1cece91377f707add2b0ed642efc0b6d54db3f6366",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "mediastreamtrackhandle"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/trusted-types/dist/spec/",
+    "sha256": "d85003cff21b7ccad9c9d6d4d8d7917eb41bfb4e680cb20afb18e5b70e85f4b4",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "get-trusted-type-compliant-string"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webappsec-csp/",
+    "sha256": "9ead9618704d41d2bed13150d86c6d1eb58aa674a5098ddb91ffcd3b49e1cec6",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "directive-worker-src"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webcodecs/",
+    "sha256": "e2b1ff0a32567da4c27604c4a51d104fa34503943fade084e05f1fafbd630228",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "audiodata-interface",
+      "encodedaudiochunk",
+      "videoframe-interface"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webcrypto/",
+    "sha256": "7f1955103c4b96eceb8c731b92ae7443bb2913b99c951e625297c12cb6634557",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "cryptokey-interface"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webrtc-encoded-transform/",
+    "sha256": "4781e693eb27a0b38b14a18ba316ac34d0a78db9ad73593d64aa3727518eddba",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "rtcencodedvideoframe"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webrtc-pc/",
+    "sha256": "9606a12f9d60e98c00a83f65831ea18502531b0acf54d0c531774568261e4535",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "transfering-a-data-channel",
+      "rtccertificate-interface"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://w3c.github.io/webtransport/",
+    "sha256": "b558f5a7e082516505cf2f378f1c6c8cf6d784fe57abe9a4fce2ab813a2514a5",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "webtransportsendstream",
+      "webtransporterror"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://webassembly.github.io/spec/web-api/",
+    "sha256": "1c8d3dff60d756974a4d5f26ceb70347a9ebfa2d700f5efeae309481dbc99316",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "serialization"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://webaudio.github.io/web-midi-api/",
+    "sha256": "60e18e61a0ab5401bea7bccccc357c5204785bfa911b74e678be0cf1607e26aa",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "MIDIAccess"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://webidl.spec.whatwg.org/",
+    "sha256": "100586425cbed182c4cac1b7dc7166eeaaadd62c81f35b6991537812c92b7ca6",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "quotaexceedederror",
+      "idl-DOMException"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://wicg.github.io/fenced-frame/",
+    "sha256": "098e6ccf4a34a0c1094ef7db5e08dfebb64d351e55abb2cc6d53f10b542e6558",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "fencedframeconfig"
+    ],
+    "missing": []
+  },
+  {
+    "url": "https://wicg.github.io/file-system-access/",
+    "sha256": "2a63aa5d871ed20a8b604e2a5983aa94fb7e4df2168ae5060cb846c549eb911f",
+    "retrieved": "2026-10-30",
+    "anchors": [
+      "api-filesystemhandle"
+    ],
+    "missing": []
+  }
+]

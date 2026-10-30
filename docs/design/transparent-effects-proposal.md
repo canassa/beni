@@ -3557,3 +3557,19 @@ Each was taken here so the slices can proceed, and each is reversible until its 
   `RateLimiter`, `Ref.Locked`, `Result.combine`/`partition`, `Random.withSeed` — are specified when
   P9 starts; §17.5's seed slot and §17.8's draw are what `Random.withSeed` will write and read.
 - **`Stream`, STM, `Metric`, `Layer`** (P10) are not in v1.
+
+## Amendment of 2026-10-30: effects across browser worker entries
+
+Specified, not built. [workers.md](workers.md) §7–§9 extends §16–§17 with
+message-based scoped worker calls. A native send is impure; waiting for ready,
+a reply, stream credits or remote finalizers suspends. Scheduler/fiber state
+is local to each realm; no fiber handle crosses a thread. Interrupt is a
+protocol message and completion waits for the remote handler's cleanup.
+
+Wire exits encode success, typed failure, interrupt and private fatal defect
+control; public `Task.Exit a = Done a | Cancelled` does not change. Log/trace
+metadata crosses, sink functions do not. Normal close is cooperative; explicit
+abort and browser process loss cannot claim finalizer completion. Pools,
+stream back-pressure, acknowledgments and leases have bounded policies in
+workers.md. Research 48 records these as specified/missing, not implemented
+Effect parity. The worker design's owner decisions gate affected lifecycle work.

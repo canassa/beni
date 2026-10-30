@@ -3520,3 +3520,20 @@ an `Int` would, a constructor with a tag prints with its arguments, but a tuple 
 record `{ a = 1, b = 2 }`, a `Char` as a one-character `String`, an all-nullary constructor as a
 quoted string, and a `()` argument is dropped with the padding. The positions a type leaves open
 — `List a`'s elements — are read the same way while the rest of the value prints by its type.
+
+## Amendment of 2026-10-30: browser worker program values
+
+Specified, not built; [workers.md](workers.md) is the contract. §10's unique
+ordinary `main` remains. A selected browser platform may additionally register
+top-level worker `program` values in the app manifest, each with its own realm
+and typed request/reply/error endpoints. This is one program/platform build,
+not a worker platform or application FFI. The program constructor is ordinary
+platform API; no new application declaration syntax or automatic currying.
+
+Workers §4–§5 specify inferred realm/wire obligations and resource ownership
+moves. A serialized value is not necessarily its generated JavaScript
+representation; codecs preserve its typed meaning across entries. A moved
+native resource cannot be read through any surviving alias. Explicit shared
+binary storage is a distinct mutable capability, never ordinary immutable
+beni data. API sketches in workers.md are proposed signatures, not shipped
+examples to be copied into the language skill before implementation.
