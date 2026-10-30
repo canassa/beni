@@ -57,6 +57,7 @@ pub const Error = Ids.ChargeError;
 const Var = TypeStore.Var;
 const Step = Place.Step;
 const none = Ids.none_int;
+const cmp_unseen = none - 1;
 
 pub const Input = struct {
     gpa: Allocator,
@@ -619,6 +620,9 @@ pub const Module = struct {
     /// its own instructions: a namespace no instruction of the module or of
     /// another import meets (`Block.Remap.inst`).
     import_insts: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+    /// Per (module, `eq` or `compare`): the module's value of that name,
+    /// `none` for no such value, `cmp_unseen` before the first look.
+    cmp_decl: []u32 = &.{},
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -643,6 +647,7 @@ pub const Module = struct {
         mod.imported_owned.deinit(gpa);
         mod.imported.deinit(gpa);
         mod.import_insts.deinit(gpa);
+        gpa.free(mod.cmp_decl);
     }
 
     /// The `shared` index of declaration `md` (a block's shared cell).
@@ -935,6 +940,8 @@ pub const Module = struct {
                 .none => interner.slice(bir.symbol(m.name)),
             };
         };
+        // Another name (a field call, say) names no comparison of a type.
+        if (!std.mem.eql(u8, name, "eq") and !std.mem.eql(u8, name, "compare")) return true;
         var seen: stamped.Column(u32, void) = .{};
         defer seen.deinit(mod.gpa);
         var stack: std.ArrayList(PlaceId) = .empty;
@@ -945,7 +952,7 @@ pub const Module = struct {
             try seen.put(mod.gpa, p.int(), {});
             if (mod.places.kind(p) == .ctor and mod.places.head(p) < mod.in.types.entries.len) {
                 const m = mod.in.types.entries[mod.places.head(p)].module.int();
-                if (!mod.in.isCore(m)) if (userComparison(mod.in, interner, m, name)) |di| {
+                if (!mod.in.isCore(m)) if (try mod.userComparison(interner, m, name)) |di| {
                     const c = (if (m == mod.in.module) mod.walkedClass(di) else try mod.importedClass(m, di)) orelse return false;
                     try out.append(mod.gpa, c);
                 };
@@ -955,15 +962,30 @@ pub const Module = struct {
         return true;
     }
 
-    /// The `pub` value `name` of module `m`, a type's method by the rule of
-    /// §2.13.13 ("the `pub` values of the module declaring it").
-    fn userComparison(in: *const Input, interner: *const InternPool.Global, m: u32, name: []const u8) ?u32 {
-        const bir = in.birs[m];
-        for (bir.decls, 0..) |d, di| {
-            if (d.kind != .value or !d.is_pub) continue;
-            if (std.mem.eql(u8, interner.slice(bir.symbol(d.name)), name)) return @intCast(di);
+    /// The value `name` (`eq` or `compare`) of module `m`, pub or not: a type's
+    /// method is a value of the module that declares it, and a private one still
+    /// answers dispatch inside that module, through a derived row too (§2.13.13).
+    /// Found once per module and name, then remembered.
+    fn userComparison(mod: *Module, interner: *const InternPool.Global, m: u32, name: []const u8) Allocator.Error!?u32 {
+        const slot: usize = if (std.mem.eql(u8, name, "eq")) 0 else if (std.mem.eql(u8, name, "compare")) 1 else 1;
+        if (mod.cmp_decl.len == 0) {
+            mod.cmp_decl = try mod.gpa.alloc(u32, mod.in.birs.len * 2);
+            @memset(mod.cmp_decl, cmp_unseen);
         }
-        return null;
+        const at = m * 2 + slot;
+        if (mod.cmp_decl[at] == cmp_unseen) {
+            const bir = mod.in.birs[m];
+            mod.cmp_decl[at] = none;
+            for (bir.decls, 0..) |d, di| {
+                if (d.kind != .value) continue;
+                if (std.mem.eql(u8, interner.slice(bir.symbol(d.name)), name)) {
+                    mod.cmp_decl[at] = @intCast(di);
+                    break;
+                }
+            }
+        }
+        const got = mod.cmp_decl[at];
+        return if (got == none) null else got;
     }
 
     /// A worded declaration's class at this call (§5's signature adapter):
