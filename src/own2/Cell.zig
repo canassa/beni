@@ -863,6 +863,60 @@ pub const Radix = struct {
         return false;
     }
 
+    /// `intersects`, memoised per unordered pair of set nodes: two sets built
+    /// over earlier ones meet, below their changed spines, the pairs an
+    /// earlier test met. The recursion is the key width.
+    pub fn intersectsMemo(r: *const Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(2), a: SetId, b: SetId) Error!bool {
+        if (a == .none or b == .none) return false;
+        if (a == b) return true;
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return r.member(a, nb.prefix);
+        const key: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(key)) |hit| return hit == 1;
+        const out = blk: {
+            if (na.mask == nb.mask and na.prefix == nb.prefix) break :blk try r.intersectsMemo(gpa, charge, memo, na.left, nb.left) or try r.intersectsMemo(gpa, charge, memo, na.right, nb.right);
+            if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) break :blk try r.intersectsMemo(gpa, charge, memo, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b);
+            if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) break :blk try r.intersectsMemo(gpa, charge, memo, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+            break :blk false;
+        };
+        (try memo.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        return out;
+    }
+
+    /// `s` with every bit approximate: memoised per set node in `memo`, a
+    /// branch rebuilt over its halves' images. The recursion is the key width.
+    pub fn approxAll(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(1), s: SetId) Error!SetId {
+        if (s == .none) return .none;
+        const n = r.node(s);
+        if (n.mask == 0) return if (n.left.int() == 1) s else r.make(gpa, charge, .{ .prefix = n.prefix, .mask = 0, .left = .from(1), .right = .none });
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(.{s.int()})) |hit| return .from(hit);
+        const l = try r.approxAll(gpa, charge, memo, n.left);
+        const rt = try r.approxAll(gpa, charge, memo, n.right);
+        const out = if (l == n.left and rt == n.right) s else try r.make(gpa, charge, .{ .prefix = n.prefix, .mask = n.mask, .left = l, .right = rt });
+        (try memo.getOrPut(gpa, .{s.int()})).value_ptr.* = out.int();
+        return out;
+    }
+
+    /// Whether every key of `a` is a key of `b`, the bits aside: a walk of
+    /// the structure they share, a record per node pair; the recursion is
+    /// the key width.
+    pub fn keysWithin(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!bool {
+        if (a == .none or a == b) return true;
+        if (b == .none) return false;
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return false;
+        if (na.mask == nb.mask and na.prefix == nb.prefix) return try r.keysWithin(gpa, charge, na.left, nb.left) and try r.keysWithin(gpa, charge, na.right, nb.right);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) return r.keysWithin(gpa, charge, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+        return false;
+    }
+
     /// `a ⊑ b`: every key of `a` is in `b` with a bit no larger (exact is
     /// above approximate, as the join says). Every node inspected is one
     /// record reserved first.

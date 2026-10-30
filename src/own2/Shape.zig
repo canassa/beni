@@ -130,6 +130,10 @@ pub const Table = struct {
     /// an existing node gains a base.
     node_sets: Cell.Radix = .{ .category = .memo },
     memo_node_union: Ids.FixedDict(2) = .{},
+    /// `intersectsMemo`'s pairs over `node_sets`; `approxAll`'s images of cell
+    /// sets (`recastWhole`).
+    memo_node_meet: Ids.FixedDict(2) = .{},
+    memo_approx_all: Ids.FixedDict(1) = .{},
     bases: Ids.FixedDict(1) = .{},
     base_epoch: u32 = 0,
     memo_region: Ids.FixedDict(1) = .{},
@@ -173,6 +177,8 @@ pub const Table = struct {
         t.memo_view_reach.deinit(gpa);
         t.node_sets.deinit(gpa);
         t.memo_node_union.deinit(gpa);
+        t.memo_node_meet.deinit(gpa);
+        t.memo_approx_all.deinit(gpa);
         t.bases.deinit(gpa);
         t.memo_region.deinit(gpa);
         t.region_ties.deinit(gpa);
@@ -557,6 +563,8 @@ pub const Table = struct {
     /// about what is based on a region may change: `base_epoch` moves, and the
     /// new bases are relevant too. `fresh`: `m` was made by this operation.
     fn addConstruction(t: *Table, gpa: Allocator, account: *Account, m: NodeId, members: []const NodeId, fresh: bool) Error!void {
+        // The empty value is tested for every region (`tested`): it needs no base.
+        if (t.isEmptyLeaf(m)) return;
         for (members) |b| {
             if (b != m) break;
         } else return;
@@ -587,6 +595,11 @@ pub const Table = struct {
         if (!t.isRelevant(m)) return;
         if (!fresh) t.base_epoch += 1;
         for (members) |b| try t.markRelevant(gpa, account, b);
+    }
+
+    /// The empty value at its place (`nothing`): a leaf with no cell.
+    fn isEmptyLeaf(t: *const Table, m: NodeId) bool {
+        return t.kind(m) == .leaf and t.cells(m) == .none;
     }
 
     /// Whether a base gained by `m` can change a `tested` answer: `m` is a κ
@@ -641,11 +654,13 @@ pub const Table = struct {
     pub fn tested(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
         try account.reserve(.inspection, 1);
         if (t.node_sets.member(reg, m.int())) return true;
+        // The empty value, met past every missing child: always compared.
+        if (t.isEmptyLeaf(m)) return true;
         if (t.basesOf(m) == .none) return false;
         try account.reserve(.memo, 1);
         const key: [3]u32 = .{ m.int(), reg.int(), t.base_epoch };
         if (t.memo_tested.get(key)) |hit| return hit == 1;
-        const out = try t.node_sets.intersects(gpa, .growth(account), try t.closure(gpa, account, .bases, m), reg);
+        const out = try t.node_sets.intersectsMemo(gpa, .growth(account), &t.memo_node_meet, try t.closure(gpa, account, .bases, m), reg);
         (try t.memo_tested.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
         return out;
     }
@@ -1072,13 +1087,8 @@ pub const Table = struct {
 
     /// `reach(n)`, every cell approximate.
     fn approxReach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
-        var c: SetId = .none;
-        var it = cellsets.iterate(try t.reach(gpa, account, cellsets, n));
-        while (it.next()) |e| {
-            try account.reserve(.inspection, 1);
-            c = try cellsets.insert(gpa, .growth(account), c, e.key, 1);
-        }
-        return c;
+        // Every cell of the reach, approximate: memoised per set node.
+        return cellsets.approxAll(gpa, .growth(account), &t.memo_approx_all, try t.reach(gpa, account, cellsets, n));
     }
 
     /// The lazy join of two nodes at one place (a binary DAG).
