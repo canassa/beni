@@ -2930,9 +2930,6 @@ const Case = struct {
         const steps_name = std.fs.path.basename(steps_path);
         try c.w.write(steps_name, steps);
         const script: Script = .{ .name = steps_name, .bytes = steps };
-        const record_path = try c.goldenPath(run_hash.ext);
-        const recording = c.cfg.run_hashes == .record;
-        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
         const page_goldens = try std.fs.path.join(c.arena, &.{ dir_path, "_expected" });
 
         const Build = struct { pass: RunPass, out: []const u8, prerender: bool };
@@ -3053,7 +3050,7 @@ const Case = struct {
                 .out = b.out,
                 .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{b.out}),
                 .skip = false,
-            }, h, scripts[i], record);
+            }, h, scripts[i]);
         }
         // The pages of one script run in one driver; a build with steps of
         // its own runs in a driver of its own.
@@ -3081,15 +3078,10 @@ const Case = struct {
                 runs[j] = got.run;
             }
         }
-        var verified: [4]?[]const u8 = @splat(null);
-        for (plans, &verified, 0..) |p, *line, j| {
-            if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
+        for (plans, 0..) |p, j| {
+            if (p.digest != null) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
-            line.* = try c.pageVerdict(p, runs[j], shown[j], h, scripts[j]);
-        }
-        if (recording) {
-            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
-            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
+            try c.pageVerdict(p, runs[j], shown[j]);
         }
     }
 
