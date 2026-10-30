@@ -5321,9 +5321,14 @@ test "the Rose fold: widen folds a collection on the cycle into its class, its `
     // The children re-enter `Rose`: widening ties `[*]` back to the root's
     // class. The collection is on the cycle, so its two children are
     // members of that class too (§2.3, #1120): one knot, no side kept
-    // beside it, and its repeat is κ's business (`many`, below).
-    const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, root);
-    try testing.expect(w != root);
+    // beside it, and its repeat is κ's business (`many`, below). Since
+    // #1253 the first return to `Rose` is a plain path, so the value is
+    // that return below a root `Rose [ root ]`, and `w` is its class.
+    const outer_lit = try f.shapes.node(gpa, &f.account, kids, try f.set(&.{try f.cells.site(gpa, &f.account, 6, kids, lk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, root));
+    const outer = try f.shapes.node(gpa, &f.account, rose, try f.set(&.{try f.cells.site(gpa, &f.account, 5, rose, rk)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, arg, outer_lit));
+    const ww = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, outer);
+    try testing.expect(ww != outer);
+    const w = try f.projOf(try f.projOf(ww, arg), Place.Step.elem);
     try testing.expectEqual(Shape.Kind.node, f.shapes.kind(w));
     // `[*]` leads back to the knot (joined with the empty list's nothing).
     const back = try f.projOf(try f.projOf(w, arg), Place.Step.elem);
@@ -5752,7 +5757,10 @@ fn crossDepth(f: *Fixture, alias: bool) !struct { root: NodeId, k: Kappas, kids:
     ok = (try f.conds.kappaSet(gpa, f.charge(), ok, outer, yes)).ctx;
     const root = try roseOver(f, 10, outer, ok);
     _ = arg;
-    return .{ .root = root.node, .k = root.k, .kids = .{ k1.node, k2.node } };
+    // As the first return below a root `Rose [ … ]`, a plain path since #1253.
+    const wl = try listOver(f, 7, 11, root.node, root.k);
+    const top = try roseOver(f, 12, wl.node, wl.k);
+    return .{ .root = top.node, .k = top.k, .kids = .{ k1.node, k2.node } };
 }
 
 test "#1125 review: widen opening two depths into one class reads a cell both hold as `lost`, never stronger than a member" {
@@ -5766,8 +5774,8 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
         const v = try crossDepth(&f, alias);
         // Unwidened, each kids list reads `yes` at its own path: no single
         // path holds `k` twice.
-        const depth2 = [_]Place.Step{ arg, e, arg, e, arg };
-        const depth1 = [_]Place.Step{ arg, e, arg };
+        const depth2 = [_]Place.Step{ arg, e, arg, e, arg, e, arg };
+        const depth1 = [_]Place.Step{ arg, e, arg, e, arg };
         const r2 = try f.kappaPath(v.k, &depth2, v.kids[0], true);
         const r1 = try f.kappaPath(v.k, &depth1, v.kids[1], true);
         try testing.expectEqual(yes, r2);
@@ -5778,8 +5786,9 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
         const w = widened.node;
         try testing.expect(w != v.root);
         const wk = widened.kappas;
-        const kids = try f.projOf(w, arg);
-        const read = try f.kappa(f.conds.kappaChild(wk, arg), kids, false);
+        // The value's class is the root's first return, `[arg, [*]]` (#1253).
+        const kids = try f.projOf(try f.projOf(try f.projOf(w, arg), e), arg);
+        const read = try f.kappa(f.conds.kappaAlong(wk, &.{ arg, e, arg }), kids, false);
         // Never stronger than a member it covers.
         try testing.expect(try f.conds.leq(gpa, f.charge(), try f.conds.join(gpa, f.charge(), r1, r2), read));
         // `k` at two depths is two positions of the class: a repeat, `lost`

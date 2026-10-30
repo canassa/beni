@@ -446,33 +446,17 @@ const Graft = struct {
     /// place's strongly connected component, each once.
     fn levels(g: *Graft, path: PathId) Error![2]u32 {
         const e = g.env;
-        const gpa = e.gpa;
-        try e.charge.reserve(gpa, .memo, 1);
+        try e.charge.reserve(e.gpa, .memo, 1);
         if (g.level_memo.get(.{path.int()})) |i| return g.level_runs.items[i];
-        const target = e.places.pathPlace(path);
+        // `Place.levelsOf` is the one walk of a path's levels (sealed first
+        // returns taken whole, #1253).
+        const r = try e.places.levelsOf(e.gpa, e.charge, path);
         const start: u32 = @intCast(g.level_paths.items.len);
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(gpa);
-        var queue: std.ArrayList(PathId) = .empty;
-        defer queue.deinit(gpa);
-        try queue.append(gpa, path);
-        _ = try seen.getOrPut(gpa, .{path.int()});
-        var found: Ids.FixedDict(1) = .{};
-        defer found.deinit(gpa);
-        while (queue.pop()) |x| {
-            const st = e.places.steps(e.places.pathPlace(x));
-            for (st.steps, st.children) |s, child| {
-                try e.charge.reserve(gpa, .inspection, 1);
-                if (child != target and !e.places.sameCycle(target, child)) continue;
-                const np = (try e.places.extend(gpa, e.charge, x, s)) orelse continue;
-                if (e.places.pathPlace(np) == target and !(try found.getOrPut(gpa, .{np.int()})).found_existing)
-                    try g.level_paths.append(gpa, np);
-                if (!(try seen.getOrPut(gpa, .{np.int()})).found_existing) try queue.append(gpa, np);
-            }
-        }
-        const run: [2]u32 = .{ start, @as(u32, @intCast(g.level_paths.items.len)) - start };
-        (try g.level_memo.getOrPut(gpa, .{path.int()})).value_ptr.* = @intCast(g.level_runs.items.len);
-        try g.level_runs.append(gpa, run);
+        var i: u32 = 0;
+        while (i < r.len) : (i += 1) try g.level_paths.append(e.gpa, e.places.foldPath(r.start + i));
+        const run: [2]u32 = .{ start, r.len };
+        (try g.level_memo.getOrPut(e.gpa, .{path.int()})).value_ptr.* = @intCast(g.level_runs.items.len);
+        try g.level_runs.append(e.gpa, run);
         return run;
     }
 

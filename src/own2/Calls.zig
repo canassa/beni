@@ -407,10 +407,11 @@ const Grafter = struct {
     args: []const Value,
     label: LabelId,
     s: *Scratch,
-    /// `foldedArg` by `(argument, template path)`, however many atoms read
-    /// it; the deep read at the prefix by `(argument, prefix)`.
+    /// `foldedArg` by `(argument, template path)`; the deep read at the
+    /// prefix, and the argument there, by `(argument, prefix)` (#1159).
     folded: Ids.FixedDict(2) = .{},
     deeps: Ids.FixedDict(2) = .{},
+    prefix_args: Ids.FixedDict(2) = .{},
     /// The environment of the call's view, and at an identity class its
     /// root and the actual it answers (`relabelNode`).
     view_env: u32 = Ids.none_int,
@@ -479,9 +480,17 @@ const Grafter = struct {
         return k;
     }
 
+    /// `argAt` at a `⟲`'s prefix, once per `(argument, prefix)`.
+    fn prefixArg(g: *Grafter, i: u32, prefix: PathId) Error!NodeId {
+        try g.env.charge.reserve(g.gpa(), .memo, 1);
+        if (g.prefix_args.get(.{ i, prefix.int() })) |hit| return .from(hit);
+        const n = try g.argAt(i, prefix, g.env.places.pathPlace(prefix));
+        (try g.prefix_args.getOrPut(g.gpa(), .{ i, prefix.int() })).value_ptr.* = n.int();
+        return n;
+    }
+
     fn foldedArgOnce(g: *Grafter, i: u32, p: PathId, prefix: PathId) Error!CondId {
-        const places = g.env.places;
-        const n = try g.argAt(i, prefix, places.pathPlace(prefix));
+        const n = try g.prefixArg(i, prefix);
         try g.env.charge.reserve(g.gpa(), .memo, 1);
         const k: CondId = if (g.deeps.get(.{ i, prefix.int() })) |hit| .from(hit) else blk: {
             const d = try g.env.conds.deep(g.gpa(), g.env.charge, g.env.view(), try g.argKappa(i, prefix), n, true);
@@ -938,7 +947,7 @@ const Grafter = struct {
         if (lv == .none) return null;
         const prefix = places.pathParent(lv);
         if (i >= g.args.len or g.args[i].node == .none) return try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
-        const n = try g.argAt(i, prefix, places.pathPlace(prefix));
+        const n = try g.prefixArg(i, prefix);
         return g.env.conds.classesCells(try preimage(g.env, n, prefix), p.int());
     }
 
@@ -1189,6 +1198,7 @@ pub const Views = struct {
         var g = v.grafter(gpa_, charge.account, e, &none);
         defer g.folded.deinit(gpa_);
         defer g.deeps.deinit(gpa_);
+        defer g.prefix_args.deinit(gpa_);
         if (!set) return t.instantiate(gpa_, charge, .from(k), .{ .ctx = &g, .atom = Grafter.atom });
         // An atom set (a class's `xreq`): each atom answered here, conjoined.
         var acc: CondId = Cond.yes;
@@ -1385,6 +1395,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     var g: Grafter = .{ .env = env, .sums = sums, .args = args, .label = label, .s = s };
     defer g.folded.deinit(gpa);
     defer g.deeps.deinit(gpa);
+    defer g.prefix_args.deinit(gpa);
     // 4: the result, by reference (§2.11 *Representation of a view*): the
     // view of `res` under this call's environment, or at an identity class
     // the actual itself. Nothing of the arguments is read or copied.
@@ -2294,6 +2305,7 @@ test "#1146: a chain of knots as deep as the source is linked on a small stack" 
     var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(x, lf) }}, .label = label, .s = &s };
     defer g.folded.deinit(gpa);
     defer g.deeps.deinit(gpa);
+    defer g.prefix_args.deinit(gpa);
     var result: anyerror!Cond.Kappas = .none;
     const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
         fn run(gr: *Grafter, r: NodeId, out: *anyerror!Cond.Kappas) void {
@@ -2540,12 +2552,16 @@ test "#1128: a template path through ⟲ compares the argument's arrivals across
         try x.init();
         defer x.deinit();
         x.account.allowance = std.math.maxInt(u32) - 1;
-        // The class relies on `excl π1·⟲.arg`: every kids list below the root
-        // exclusive. The actual: `T{arg: L0}`, `L0[*] = [ T{arg: K}, T{arg:
+        // The class relies on `excl π1·.arg[*]⟲.arg`: every kids list below the
+        // root's first return exclusive. That return's value: `T{arg: L0}`, `L0[*] = [ T{arg: K}, T{arg:
         // L2} ]`, `L2[*] = T{arg: K or K′}` — one kids list at two depths, or
         // two distinct ones. No single path of the actual holds K twice.
         const root = try x.places.rootPath(gpa, x.t_place);
-        const down = (try x.places.extend(gpa, .growth(&x.account), (try x.places.extend(gpa, .growth(&x.account), root, x.arg)).?, Place.Step.elem)).?;
+        // Below the root's first return, a plain path since #1253 (the
+        // actual below is the old one as that return's value).
+        const first = (try x.places.extend(gpa, .growth(&x.account), (try x.places.extend(gpa, .growth(&x.account), root, x.arg)).?, Place.Step.elem)).?;
+        try testing.expect(x.places.pathStep(first).kind != .level);
+        const down = (try x.places.extend(gpa, .growth(&x.account), (try x.places.extend(gpa, .growth(&x.account), first, x.arg)).?, Place.Step.elem)).?;
         try testing.expectEqual(Place.StepKind.level, x.places.pathStep(down).kind);
         const kids = (try x.places.extend(gpa, .growth(&x.account), down, x.arg)).?;
         const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, kids, 0);
@@ -2568,14 +2584,17 @@ test "#1128: a template path through ⟲ compares the argument's arrivals across
         const t1 = try tOf(&x, k);
         const t2 = try tOf(&x, l2);
         const l0 = try listOf(&x, 4, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ t1, t2 }));
-        const arg = try tOf(&x, l0);
+        const value = try tOf(&x, l0);
+        const lw = try listOf(&x, 5, value);
+        const arg = try tOf(&x, lw);
         // The actual's own snapshot: every built node `yes` where it stands.
         const e = Place.Step.elem;
         const at = [_]struct { n: NodeId, p: []const Step }{
-            .{ .n = arg, .p = &.{} },                    .{ .n = l0, .p = &.{x.arg} },
-            .{ .n = t1, .p = &.{ x.arg, e } },           .{ .n = t2, .p = &.{ x.arg, e } },
-            .{ .n = k, .p = &.{ x.arg, e, x.arg } },     .{ .n = l2, .p = &.{ x.arg, e, x.arg } },
-            .{ .n = t3, .p = &.{ x.arg, e, x.arg, e } }, .{ .n = k2, .p = &.{ x.arg, e, x.arg, e, x.arg } },
+            .{ .n = arg, .p = &.{} },                              .{ .n = lw, .p = &.{x.arg} },
+            .{ .n = value, .p = &.{ x.arg, e } },                  .{ .n = l0, .p = &.{ x.arg, e, x.arg } },
+            .{ .n = t1, .p = &.{ x.arg, e, x.arg, e } },           .{ .n = t2, .p = &.{ x.arg, e, x.arg, e } },
+            .{ .n = k, .p = &.{ x.arg, e, x.arg, e, x.arg } },     .{ .n = l2, .p = &.{ x.arg, e, x.arg, e, x.arg } },
+            .{ .n = t3, .p = &.{ x.arg, e, x.arg, e, x.arg, e } }, .{ .n = k2, .p = &.{ x.arg, e, x.arg, e, x.arg, e, x.arg } },
         };
         var ak: Cond.Kappas = .none;
         for (at) |q| ak = try x.conds.kappaSetAt(gpa, x.env().charge, ak, q.p, q.n, Cond.yes);
@@ -2652,6 +2671,9 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
         const T = x.t_place;
         const L = x.list;
         const k = try listAt(&x, L, 1, null);
+        // Each probe's value is the root's first return, a plain path since
+        // #1253: every template takes one more trip around the cycle, so it
+        // folds below that value as it folded below the root before.
         const got: CondId = switch (probe) {
             // A choice (0) or a union (1) in a field, `k` inside one arm and
             // beside it: `T [ T (if c then [T k] else []), T k ]`.
@@ -2660,7 +2682,7 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
                 const none_arm = try listAt(&x, L, 3, null);
                 const field = if (probe == 0) try x.shapes.choice(gpa, &x.account, &x.cells.sets, arm, none_arm) else try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, arm, none_arm);
                 const l0 = try listAt(&x, L, 4, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ try ctorOf(&x, T, x.arg, field), try ctorOf(&x, T, x.arg, k) }));
-                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, l0));
+                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, try listAt(&x, L, 90, try ctorOf(&x, T, x.arg, l0))));
             },
             // Mutual `A = A (List C)`, `C = C (List A)`: `A [C [A k], C [A [C [A k]]]]`.
             2 => blk: {
@@ -2674,7 +2696,7 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
                 const c1 = try ctorOf(&x, C, c0, try listAt(&x, LA, 2, try ctorOf(&x, A, a0, km)));
                 const deep = try ctorOf(&x, C, c0, try listAt(&x, LA, 3, try ctorOf(&x, A, a0, try listAt(&x, LC, 4, try ctorOf(&x, C, c0, try listAt(&x, LA, 5, try ctorOf(&x, A, a0, km)))))));
                 const root = try ctorOf(&x, A, a0, try listAt(&x, LC, 6, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ c1, deep })));
-                break :blk try foldProbe(&x, A, &.{ a0, e, c0, e, a0 }, root);
+                break :blk try foldProbe(&x, A, &.{ a0, e, c0, e, a0, e, c0, e, a0 }, try ctorOf(&x, A, a0, try listAt(&x, LC, 91, try ctorOf(&x, C, c0, try listAt(&x, LA, 92, root)))));
             },
             // A prefix through `[*]`: `R2 [ T k, T [T k] ]`, q = `0·[*]·⟲·arg`.
             3 => blk: {
@@ -2682,8 +2704,10 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
                 const LT = try x.places.of(gpa, &x.account, src, 7);
                 const r0 = try x.places.ctorStep(gpa, &x.account, 3, 0);
                 const t2 = try ctorOf(&x, T, x.arg, try listAt(&x, L, 2, try ctorOf(&x, T, x.arg, k)));
-                const root = try ctorOf(&x, R2, r0, try listAt(&x, LT, 3, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ try ctorOf(&x, T, x.arg, k), t2 })));
-                break :blk try foldProbe(&x, R2, &.{ r0, e, x.arg, e, x.arg }, root);
+                const w1 = try ctorOf(&x, T, x.arg, try listAt(&x, L, 90, try ctorOf(&x, T, x.arg, k)));
+                const w2 = try ctorOf(&x, T, x.arg, try listAt(&x, L, 91, t2));
+                const root = try ctorOf(&x, R2, r0, try listAt(&x, LT, 3, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ w1, w2 })));
+                break :blk try foldProbe(&x, R2, &.{ r0, e, x.arg, e, x.arg, e, x.arg }, root);
             },
             // A symbolic leaf: the caller's own parameter as a kids list, its
             // projections below it out of the walk's sight.
@@ -2691,12 +2715,12 @@ test "#1157 review, #1159: a template path through ⟲ reads its full preimage: 
                 const q = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 7, try x.places.rootPath(gpa, L), 0);
                 const ql = try x.shapes.leaf(gpa, &x.account, L, try x.cells.sets.insert(gpa, x.env().charge, .none, q.int(), 0));
                 const l0 = try listAt(&x, L, 2, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ try ctorOf(&x, T, x.arg, ql), try ctorOf(&x, T, x.arg, k) }));
-                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, l0));
+                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, try listAt(&x, L, 90, try ctorOf(&x, T, x.arg, l0))));
             },
             // Control: an opened choice at the re-entry, `k` in one arm alone.
             else => blk: {
                 const l0 = try listAt(&x, L, 2, try x.shapes.choice(gpa, &x.account, &x.cells.sets, try ctorOf(&x, T, x.arg, k), try ctorOf(&x, T, x.arg, try listAt(&x, L, 3, null))));
-                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, l0));
+                break :blk try foldProbe(&x, T, &.{ x.arg, e, x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, try listAt(&x, L, 90, try ctorOf(&x, T, x.arg, l0))));
             },
         };
         switch (probe) {
@@ -2789,6 +2813,13 @@ fn bList(x: *KnotFixture, i: u32, elems: []const NodeId) !NodeId {
     return listAt(x, LB, i, if (elems.len == 1) elems[0] else try x.shapes.collect(gpa, &x.account, &x.cells.sets, elems));
 }
 
+/// `B [ arg ] []`: `arg` as the first return to `B` below a root, so a
+/// template `.0[*]·t` reads `t` below `arg` as `t` read below a root did
+/// before the first return stayed a plain path (#1253).
+fn wrapB(x: *KnotFixture, arg: NodeId, ids: *u32) !NodeId {
+    return bOf(x, try bList(x, nextId(ids), &.{arg}), try bList(x, nextId(ids), &.{}));
+}
+
 test "#1159: the full preimage over nested, shared, chosen and cyclic records of lists" {
     const gpa = testing.allocator;
     const e = Place.Step.elem;
@@ -2804,8 +2835,10 @@ test "#1159: the full preimage over nested, shared, chosen and cyclic records of
         const k = try bList(&x, 1, &.{});
         const k2 = try bList(&x, 2, &.{});
         var ids: u32 = 40;
-        // Template `π0·⟲·.0` (B's `.0` lists at depth ≥ 1), from `.0[*]·.0`.
-        const steps = [_]Step{ b0, e, b0 };
+        // Template `π0·.0[*]⟲·.0` (B's `.0` lists at depth ≥ 1 below the
+        // probe's value `arg`, which `wrapB` makes the root's first return,
+        // a plain path since #1253), from `.0[*]·.0[*]·.0`.
+        const steps = [_]Step{ b0, e, b0, e, b0 };
         const arg: NodeId, const want: Want = switch (probe) {
             // FoldedBCall's actual: `B [B k []] [B k []]`, k at `.0[*].0` and
             // `.1[*].0`; the distinct twin.
@@ -2853,7 +2886,7 @@ test "#1159: the full preimage over nested, shared, chosen and cyclic records of
             },
             else => unreachable,
         };
-        const got = try foldProbe(&x, B, &steps, arg);
+        const got = try foldProbe(&x, B, &steps, try wrapB(&x, arg, &ids));
         switch (want) {
             .lost => try testing.expectEqual(Cond.lost, got),
             .yes => try testing.expectEqual(Cond.yes, got),
@@ -2885,12 +2918,16 @@ test "#1159: many template paths under one prefix walk the argument once, kept a
         }
         const inner = try x.shapes.node(gpa, &x.account, W, .none, inner_over);
         outer_over = try x.shapes.overPut(gpa, &x.account, outer_over, w0, try listAt(&x, LW, 300, inner));
-        const arg = try x.shapes.node(gpa, &x.account, W, .none, outer_over);
-        // A class relying on `excl π1·⟲·fₖ` for `paths` fields under one prefix.
+        const value = try x.shapes.node(gpa, &x.account, W, .none, outer_over);
+        // Below the root's first return, a plain path since #1253: `W [value] …`.
+        var root_over = try x.shapes.overPut(gpa, &x.account, Ids.none_int, w0, try listAt(&x, LW, 400, value));
+        for (1..65) |i| root_over = try x.shapes.overPut(gpa, &x.account, root_over, try x.places.ctorStep(gpa, &x.account, 5, @intCast(i)), try listAt(&x, LI, @intCast(500 + i), null));
+        const arg = try x.shapes.node(gpa, &x.account, W, .none, root_over);
+        // A class relying on `excl π1·#W.0[*]⟲·fₖ` for `paths` fields under one prefix.
         var xreq: CondId = Cond.yes;
         for (1..paths + 1) |i| {
             var p = try x.places.rootPath(gpa, W);
-            for ([_]Step{ w0, e, try x.places.ctorStep(gpa, &x.account, 5, @intCast(i)) }) |s| p = (try x.places.extend(gpa, .growth(&x.account), p, s)).?;
+            for ([_]Step{ w0, e, w0, e, try x.places.ctorStep(gpa, &x.account, 5, @intCast(i)) }) |s| p = (try x.places.extend(gpa, .growth(&x.account), p, s)).?;
             xreq = try x.conds.@"and"(gpa, x.env().charge, xreq, try x.conds.excl(gpa, x.env().charge, try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, p, 0)));
         }
         const c = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, xreq) });
@@ -2945,17 +2982,18 @@ test "#1159: a cyclic source settles once, every occurrence below the cycle repe
     x.shapes.tie(knot, x.shapes.get(try bOf(&x, try bList(&x, 10, &.{knot}), try bList(&x, nextId(&ids), &.{}))));
     const k = try bList(&x, 1, &.{});
     const arg = try bOf(&x, try bList(&x, 4, &.{knot}), try bList(&x, 5, &.{try bOf(&x, k, try bList(&x, nextId(&ids), &.{}))}));
+    // Read below the root's first return (`wrapB`, #1253): `.0[*]` is `arg`.
     const root = try x.places.rootPath(gpa, B);
     var q = root;
-    for ([_]Step{ b0, e, b0 }) |s| q = (try x.places.extend(gpa, .growth(&x.account), q, s)).?;
+    for ([_]Step{ b0, e, b0, e, b0 }) |s| q = (try x.places.extend(gpa, .growth(&x.account), q, s)).?;
     var r = root;
-    for ([_]Step{ b1, e, b0 }) |s| r = (try x.places.extend(gpa, .growth(&x.account), r, s)).?;
-    try testing.expect(q == r); // both depth-1 `.0` lists: one key, `⟲·.0`
-    const pre = try preimage(x.env(), arg, root);
+    for ([_]Step{ b0, e, b1, e, b0 }) |s| r = (try x.places.extend(gpa, .growth(&x.account), r, s)).?;
+    try testing.expect(q == r); // both depth-1 `.0` lists below `arg`: one key, `.0[*]⟲·.0`
+    const pre = try preimage(x.env(), try wrapB(&x, arg, &ids), root);
     try testing.expectEqual(Cond.lost, try x.conds.classesRead(gpa, x.env().charge, &x.cells, &x.places, pre, q.int()));
-    // Above the cycle: the root's own `.1` list once.
+    // Above the cycle: `arg`'s own `.1` list once.
     var top = root;
-    top = (try x.places.extend(gpa, .growth(&x.account), top, b1)).?;
+    for ([_]Step{ b0, e, b1 }) |s| top = (try x.places.extend(gpa, .growth(&x.account), top, s)).?;
     try testing.expectEqual(Cond.yes, try x.conds.classesRead(gpa, x.env().charge, &x.cells, &x.places, pre, top.int()));
 }
 
@@ -2978,7 +3016,8 @@ test "#1196 review, #1199: a symbolic leaf below the prefix — Repro A and Repr
         const p = try x.param(3);
         const second = if (repro == 0) try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 1, null)) else try x.param(4);
         const middle_arg = try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 2, try x.shapes.collect(gpa, &x.account, &x.cells.sets, &.{ p, second })));
-        const middle = try foldProbe(&x, T, &.{ x.arg, e, x.arg }, middle_arg);
+        // Below the root's first return, a plain path since #1253.
+        const middle = try foldProbe(&x, T, &.{ x.arg, e, x.arg, e, x.arg }, try ctorOf(&x, T, x.arg, try listAt(&x, x.list, 3, middle_arg)));
         try testing.expect(!Cond.Table.fails(middle));
         // The caller: a class owing the middle's reliance, applied to actuals.
         const c = try x.sums.add(x.env(), .{ .params = &.{ .none, .none, .none, .none, .none }, .res = try x.site(90, x.t_place), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, middle) });
@@ -3073,10 +3112,12 @@ test "a call's argument that is a view folds its preimage as its eager image doe
         const template = try bOf(&x, p, if (probe == 0) p else empty);
         const eager = try bOf(&x, xs, if (probe == 0) xs else empty);
         const v = try x.shapes.view(gpa, &x.account, template, env_id);
-        const steps = [_]Step{ b0, e, b0 };
-        const want = try foldProbe(&x, B, &steps, eager);
+        // Below the root's first return (`wrapB`, #1253).
+        var ids: u32 = 40;
+        const steps = [_]Step{ b0, e, b0, e, b0 };
+        const want = try foldProbe(&x, B, &steps, try wrapB(&x, eager, &ids));
         try testing.expectEqual(if (probe == 0) Cond.lost else Cond.yes, want);
-        try testing.expectEqual(want, try foldProbe(&x, B, &steps, v));
+        try testing.expectEqual(want, try foldProbe(&x, B, &steps, try wrapB(&x, v, &ids)));
     }
 }
 
@@ -3125,7 +3166,7 @@ test "a chain of 400 calls is read and its conditions resolved at its end on a s
 }
 
 test "#1219: an actual below a level stands for a value inside it, so its sep and its image read its reach" {
-    // `f` answers `π0·arg·⟲·arg`; applied to `a = T [ L22 [ T k ] ]` its
+    // `f` answers `π0·arg·[*]·arg·⟲·arg`; applied to `a = T [ T [ L22 [ T k ] ] ]` its
     // result is a whole recast of `a` at `L`, standing for `k` (or the list
     // around it). `g` relies on `sep(π0, π1)` and is applied to `(f a, k)`:
     // the recast's inner holds no list cell, so reading its own cells said
@@ -3151,10 +3192,11 @@ test "#1219: an actual below a level stands for a value inside it, so its sep an
         const sep = try x.conds.sepAtom(gpa, x.env().charge, p0, p1);
         const g = try x.sums.add(x.env(), .{ .params = &.{ .none, .none }, .res = try x.site(90, T), .kappas = .none, .xreq = try x.conds.flat(gpa, x.env().charge, sep) });
         const k = try listAt(&x, L, 20, null);
-        const a = try ctorOf(&x, T, x.arg, try listAt(&x, L, 22, try ctorOf(&x, T, x.arg, k)));
-        // `f`: its result is `π0` at `arg·⟲·arg`.
+        // `a`'s value below the root's first return, a plain path since #1253.
+        const a = try ctorOf(&x, T, x.arg, try listAt(&x, L, 21, try ctorOf(&x, T, x.arg, try listAt(&x, L, 22, try ctorOf(&x, T, x.arg, k)))));
+        // `f`: its result is `π0` at `arg·[*]·arg·⟲·arg`.
         var fp = try x.places.rootPath(gpa, T);
-        for ([_]Step{ x.arg, Place.Step.elem, x.arg }) |st| fp = (try x.places.extend(gpa, .growth(&x.account), fp, st)).?;
+        for ([_]Step{ x.arg, Place.Step.elem, x.arg, Place.Step.elem, x.arg }) |st| fp = (try x.places.extend(gpa, .growth(&x.account), fp, st)).?;
         const fcell = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, fp, 0);
         const f = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = try x.shapes.leaf(gpa, &x.account, L, try x.cells.sets.insert(gpa, x.env().charge, .none, fcell.int(), 0)), .kappas = .none });
         var sf: Scratch = .{};

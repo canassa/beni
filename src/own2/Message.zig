@@ -184,10 +184,12 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .later_use, .alias, .element => blk: {
                 const h = l.holder.?;
                 w.writeAll(localName(f, h.who)) catch return error.OutOfMemory;
-                // A hold at some level below the holder (a path ending in `⟲`)
-                // names the holder: it holds every level (v1's text).
+                // A hold at some level below the holder (a path that ends
+                // in a return to a place of the holder: `⟲`, or the first
+                // return, #1253) names the holder: it holds every level
+                // (v1's text).
                 var hp = o.holder_path;
-                if (hp != .none and f.places.pathParent(hp) != .none and f.places.pathStep(hp).kind == .level) hp = f.places.pathParent(hp);
+                while (hp != .none and f.places.isReturn(hp)) hp = f.places.returnedTo(hp);
                 if (o.cause != .later_use) pathText(f, a, w, hp) catch return error.OutOfMemory;
                 break :blk if (o.cause == .later_use)
                     w.print(" is read again at {d}:{d}", .{ up.line, up.col })

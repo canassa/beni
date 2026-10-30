@@ -2040,14 +2040,21 @@ test "a recursive class's widened knot is written once and read back as a knot" 
     defer round.deinit(testing.allocator);
     try write(b.env(), &b.sums, back.items, .identity, &round);
     try testing.expectEqualSlices(u32, words.items, round.items);
-    // The knot is in the reader's table: a child at `#Node.0` leads back to
-    // the root (through the union with the parameter's leaf, if any).
+    // The knot is in the reader's table: below the root's `#Node.0` (the
+    // left subtrees, a class of their own since #1253), a child at
+    // `#Node.0` leads back to that class (through the union with the
+    // parameter's leaf, if any).
     const res = b.sums.get(back.items[0]).res;
     const s0 = try b.places.ctorStep(testing.allocator, &b.account, 0, 0);
-    var at = res;
-    if (b.shapes.kind(at) == .@"union") at = .from(b.shapes.nodes.items(.a)[at.int()]);
+    const core = struct {
+        fn of(t: *Tables, n: NodeId) NodeId {
+            return if (t.shapes.kind(n) == .@"union") .from(t.shapes.nodes.items(.a)[n.int()]) else n;
+        }
+    }.of;
+    const sub = b.shapes.overGet(b.shapes.nodes.items(.a)[core(&b, res).int()], s0).?;
+    const at = core(&b, sub);
     const child = b.shapes.overGet(b.shapes.nodes.items(.a)[at.int()], s0).?;
-    try testing.expect(child == res or b.shapes.nodes.items(.a)[child.int()] == at.int() or child == at);
+    try testing.expect(child == sub or child == at or b.shapes.nodes.items(.a)[child.int()] == at.int());
     // Its stored κ came back with it.
     try testing.expect(b.conds.kappaGet(b.sums.get(back.items[0]).kappas, res) != null);
 }
@@ -3395,11 +3402,19 @@ test "#1073: a folded snapshot round-trips: its fold, and every read at and belo
     a.account.allowance = std.math.maxInt(u32) - 1;
     const env = a.env();
     const s0 = try a.places.ctorStep(gpa, &a.account, 0, 0);
-    // The widened tree's snapshot, `shared` stored at `.0` before the
-    // widen: `propagate` folds it where the shape cycles.
+    // The widened tree's snapshot, `shared` stored at `.0.0.0` before the
+    // widen: `propagate` folds it where the shape cycles. Since #1253 the
+    // root is a class of its own, and the subtrees' class (a union with the
+    // parameter's leaf) cycles from where that leaf's projection stops
+    // moving: `π2`, `π2#Node.0` (the first return), `π2#Node.0⟲`.
     const w = try widenedTree(&a);
     var unfolded = (try a.conds.kappaSet(gpa, env.charge, .none, w, Cond.yes)).ctx;
-    unfolded = try a.conds.kappaSetAt(gpa, env.charge, unfolded, &.{s0}, try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, w, s0) orelse return error.NoChild, Cond.shared);
+    var at = w;
+    for (0..3) |d| {
+        at = try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, at, s0) orelse return error.NoChild;
+        const deep: [3]Step = @splat(s0);
+        unfolded = try a.conds.kappaSetAt(gpa, env.charge, unfolded, deep[0 .. d + 1], at, if (d == 2) Cond.shared else Cond.yes);
+    }
     const km = try a.conds.propagate(gpa, env.charge, env.view(), .none, w, &.{ w, w }, &.{ unfolded, .none }, .alternatives, false, null);
     const c = try a.sums.add(env, .{ .params = &.{.none}, .res = w, .kappas = km });
     var b: Tables = .{};
@@ -3413,12 +3428,12 @@ test "#1073: a folded snapshot round-trips: its fold, and every read at and belo
             const g = testing.allocator;
             const x0 = try t.places.ctorStep(g, &t.account, 0, 0);
             const x2 = try t.places.ctorStep(g, &t.account, 0, 2);
-            const all = [_][]const Step{ &.{}, &.{x0}, &.{x2}, &.{ x0, x0 }, &.{ x0, x2 }, &.{ x2, x0, x0 } };
+            const all = [_][]const Step{ &.{}, &.{x0}, &.{x2}, &.{ x0, x0 }, &.{ x0, x2 }, &.{ x2, x0, x0 }, &.{ x0, x0, x0 }, &.{ x0, x2, x0, x0 } };
             return g.dupe(Step, all[i]);
         }
     };
     var any = false;
-    for (0..6) |i| {
+    for (0..8) |i| {
         const pa = try Paths.of(&a, i);
         defer gpa.free(pa);
         const pb = try Paths.of(&b, i);
@@ -3846,12 +3861,14 @@ test "#1128: a folded class's path-multiset obligation crosses the block" {
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
     const env = a.env();
-    // `T (T _ π2 _) π1 _` over place 8 (`C 8 0 8`): the lists `π1` at depth 0
-    // and `π2` at depth 1 fold into one class, which owes `apart [π1] [π2]`.
+    // `T (T (T _ π2 _) π1 _) π3 _` over place 8 (`C 8 0 8`): the lists `π1`
+    // at depth 1 and `π2` at depth 2 fold into one class, the left subtrees
+    // (the first return `#…0` and the levels below it, #1253: the root
+    // keeps `π3`), which owes `apart [π1] [π2]`.
     const tree = try a.place(8);
     const list = try a.place(0);
     const s = [_]Step{ try a.places.ctorStep(gpa, &a.account, 0, 0), try a.places.ctorStep(gpa, &a.account, 0, 1), try a.places.ctorStep(gpa, &a.account, 0, 2) };
-    var lists: [2]NodeId = undefined;
+    var lists: [3]NodeId = undefined;
     for (&lists, 0..) |*l, i| {
         const p = try a.cells.symbolic(gpa, &a.account, &a.places, .param, @intCast(i), try a.places.rootPath(gpa, list), 0);
         l.* = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, p.int(), 0));
@@ -3865,13 +3882,15 @@ test "#1128: a folded class's path-multiset obligation crosses the block" {
             return t.shapes.node(testing.allocator, &t.account, try t.place(8), .none, m);
         }
     }.of;
-    const inner = try node(&a, s, lists[1], empty, empty);
-    const outer = try node(&a, s, lists[0], empty, inner);
+    const deeper = try node(&a, s, lists[1], empty, empty);
+    const inner = try node(&a, s, lists[0], empty, deeper);
+    const outer = try node(&a, s, lists[2], empty, inner);
     var k = (try a.conds.kappaSet(gpa, env.charge, .none, outer, Cond.yes)).ctx;
     k = try a.conds.kappaSetAt(gpa, env.charge, k, &.{s[0]}, inner, Cond.yes);
+    k = try a.conds.kappaSetAt(gpa, env.charge, k, &.{ s[0], s[0] }, deeper, Cond.yes);
     const w = try a.conds.widenValue(gpa, env.charge, env.view(), outer, k);
     try testing.expect(w.node != outer);
-    const c = try a.sums.add(env, .{ .params = &.{ .none, .none }, .res = w.node, .kappas = w.kappas });
+    const c = try a.sums.add(env, .{ .params = &.{ .none, .none, .none }, .res = w.node, .kappas = w.kappas });
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();

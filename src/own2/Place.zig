@@ -26,8 +26,9 @@
 //! caller's `Names`/`Remap`, so a block holds no interned address.
 //!
 //! **Canonical paths** (§2.1) are a trie (`paths`): a step that re-enters a
-//! place already on the path pops back to it and appends `⟲`, so a path
-//! names a place at most once and is at most 2·|places| long. `extend` is
+//! place the path has returned to once pops back to that return and appends
+//! `⟲` (#1253: the first return stays a plain step), so a path
+//! names a place at most twice and is at most 3·|places| long. `extend` is
 //! memoised per `(path, step)`; a first extension reads the ancestors and
 //! charges one record per ancestor read (§3.1: "charged … per step").
 //!
@@ -243,6 +244,10 @@ pub const PathNode = struct {
     /// step of a long path (#1236). Set when the node is made: SCCs are
     /// settled before any path reaches their places.
     anchor_up: PathId = .none,
+    /// The step re-entered a place on the path: the first return, a plain
+    /// step (#1253), or a `⟲`. What widen opens a union, choice or
+    /// positions node at (§2.3).
+    ret: bool = false,
 };
 
 pub const Error = Ids.ChargeError;
@@ -680,8 +685,8 @@ pub const Table = struct {
     }
 
     /// `path · step`, canonical (§2.1): null when the place has no such
-    /// step; a step onto a place already on the path pops back to its node
-    /// and appends `⟲` (once). Memoised per `(path, step)`; a miss reads the
+    /// step; a step onto a place the path has returned to once already pops
+    /// back to that return and appends `⟲` (once). Memoised per `(path, step)`; a miss reads the
     /// ancestors and charges one record per ancestor read.
     pub fn extend(t: *Table, gpa: Allocator, charge: Charge, path: PathId, step: Step) Error!?PathId {
         // One record per request, a memo hit included (§4.1: a cache hit is
@@ -697,22 +702,39 @@ pub const Table = struct {
         // `here` (a place above on the path that `here` steps back to closes
         // one), and then among the path's last places on that cycle: they are
         // a suffix of it, so the walk stops at the first one off the cycle.
-        // As long as the cycle, never the path (#1236).
+        // As long as the cycle, never the path (#1236). The first return to
+        // `target` stays a plain step, so each subtree is a path of its own
+        // (`#Node.0`, `#Node.2`, v1's `P s₀`); a return below it folds onto
+        // it as `⟲`, one or more levels below that subtree (#1253).
         var out: ?PathId = null;
-        if (t.sameCycle(here, target)) {
+        var deepest: PathId = .none;
+        if (step.kind == .level) {
+            // A `⟲` given directly (a use's or a hold's route): inside a
+            // level already it folds onto it, else it is the next step.
+            if (t.pathParent(path) != .none and t.pathStep(path).kind == .level) out = path;
+        } else if (t.sameCycle(here, target)) {
             var at = path;
             while (at != .none) : (at = t.pathParent(at)) {
                 try charge.reserve(gpa, .path, 1);
                 const there = t.pathPlace(at);
                 if (there == target) {
                     // Already `⟲` here (the root's placeholder step is not one).
-                    out = if (t.pathParent(at) != .none and t.pathStep(at).kind == .level) at else try t.node(gpa, charge.account, at, Step.level, target);
-                    break;
-                }
-                if (!t.sameCycle(there, target)) break;
+                    if (deepest == .none and t.pathParent(at) != .none and t.pathStep(at).kind == .level) {
+                        out = at;
+                        break;
+                    }
+                    // `deepest` is the first return: fold onto it.
+                    if (deepest != .none) {
+                        out = try t.node(gpa, charge.account, deepest, Step.level, target);
+                        break;
+                    }
+                    deepest = at;
+                } else if (!t.sameCycle(there, target)) break;
             }
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
+        // A first return: a plain step back onto a place of the path.
+        if (out == null and deepest != .none) t.paths.items(.ret)[result.int()] = true;
         (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
         return result;
     }
@@ -726,7 +748,7 @@ pub const Table = struct {
             const summary = t.paths.items(.summary)[parent.int()] or step.kind == .elem or step.kind == .level;
             const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
             const up: PathId = if (anchor) .from(@intCast(t.paths.len)) else t.paths.items(.anchor_up)[parent.int()];
-            try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up });
+            try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
         }
         return .from(got.value_ptr.*);
     }
@@ -774,6 +796,12 @@ pub const Table = struct {
         defer queue.deinit(gpa);
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
+        var found: Ids.FixedDict(1) = .{};
+        defer found.deinit(gpa);
+        if (try t.sealed(charge, gpa, p)) {
+            const lv = (try t.extend(gpa, charge, p, Step.level)).?;
+            return t.memoRun(gpa, &t.level_memo, p, &.{lv});
+        }
         try queue.append(gpa, p);
         _ = try seen.getOrPut(gpa, .{p.int()});
         while (queue.pop()) |x| {
@@ -784,7 +812,16 @@ pub const Table = struct {
                 try charge.reserve(gpa, .inspection, 1);
                 if (st.children[j] != target and !t.sameCycle(target, st.children[j])) continue;
                 const np = (try t.extend(gpa, charge, x, st.steps[j])) orelse continue;
-                if (t.pathPlace(np) == target and std.mem.indexOfScalar(PathId, acc.items, np) == null) try acc.append(gpa, np);
+                if (t.pathPlace(np) == target and !(try found.getOrPut(gpa, .{np.int()})).found_existing) try acc.append(gpa, np);
+                // A sealed first return at `target` is taken whole: below it
+                // every return to `target` is its one `⟲` (#1253), so its
+                // recursive steps are never walked one by one.
+                if (t.pathPlace(np) == target and try t.sealed(charge, gpa, np)) {
+                    const lv = (try t.extend(gpa, charge, np, Step.level)).?;
+                    if (!(try found.getOrPut(gpa, .{lv.int()})).found_existing) try acc.append(gpa, lv);
+                    _ = try seen.getOrPut(gpa, .{np.int()});
+                    continue;
+                }
                 if (!(try seen.getOrPut(gpa, .{np.int()})).found_existing) try queue.append(gpa, np);
             }
         }
@@ -814,7 +851,8 @@ pub const Table = struct {
         while (k < r[1]) : (k += 1) {
             try charge.reserve(gpa, .inspection, 1);
             const e = t.fold_paths.items[r[0] + k];
-            if (e == p or t.pathParent(e) == p) continue;
+            try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(p));
+            if (t.isPrefix(p, e)) continue;
             for (acc.items) |a| {
                 if (a == e) break;
             } else try acc.append(gpa, e);
@@ -822,14 +860,18 @@ pub const Table = struct {
     }
 
     /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle
-    /// folds into, outside `x`'s subtree. A fold lands at the deepest place
-    /// of the path it re-enters (`extend`), so a target is `a⟲` for a
-    /// prefix `a`, or `a` when that is a `⟲` already; below `x` exactly
-    /// when `a` is `x`. Made from the plain children's, so each canonical
+    /// folds into, outside `x`'s subtree. A fold lands at the first return
+    /// it re-enters below (`extend`), so a target is `a⟲ₛ` for a prefix `a`
+    /// of the path, below `x` exactly when `x` is a prefix of it (#1253:
+    /// `a` may be below `x`). Made from the plain children's, so each canonical
     /// path of a cycle is visited once, on an explicit stack (#1138).
     fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
         try charge.reserve(gpa, .memo, 1);
         if (t.hit_memo.get(.{x0.int()})) |i| return t.fold_runs.items[i];
+        if (try t.sealed(charge, gpa, x0)) {
+            const r = try t.memoRun(gpa, &t.hit_memo, x0, &.{});
+            return .{ r.start, r.len };
+        }
         const Fr = struct { path: PathId, expanded: bool };
         var stack: std.ArrayList(Fr) = .empty;
         defer stack.deinit(gpa);
@@ -853,7 +895,10 @@ pub const Table = struct {
                 const y = (try t.extend(gpa, charge, x, s)) orelse continue;
                 const plain = t.pathParent(y) == x and t.pathStep(y).word() == s.word();
                 if (!f.expanded) {
-                    if (plain and t.hit_memo.get(.{y.int()}) == null) try stack.append(gpa, .{ .path = y, .expanded = false });
+                    if (plain and t.hit_memo.get(.{y.int()}) == null) {
+                        // A sealed first return folds nothing outside itself (#1253).
+                        if (try t.sealed(charge, gpa, y)) _ = try t.memoRun(gpa, &t.hit_memo, y, &.{}) else try stack.append(gpa, .{ .path = y, .expanded = false });
+                    }
                     continue;
                 }
                 if (plain) {
@@ -861,9 +906,9 @@ pub const Table = struct {
                     var k: u32 = 0;
                     while (k < r[1]) : (k += 1) {
                         try charge.reserve(gpa, .inspection, 1);
-                        try addOutside(&acc, gpa, x, t.fold_paths.items[r[0] + k], t);
+                        try addOutside(&acc, gpa, charge, x, t.fold_paths.items[r[0] + k], t);
                     }
-                } else try addOutside(&acc, gpa, x, y, t);
+                } else try addOutside(&acc, gpa, charge, x, y, t);
             }
             if (!f.expanded) continue;
             _ = try t.memoRun(gpa, &t.hit_memo, x, acc.items);
@@ -871,8 +916,9 @@ pub const Table = struct {
         return t.fold_runs.items[t.hit_memo.get(.{x0.int()}).?];
     }
 
-    fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, x: PathId, e: PathId, t: *const Table) Allocator.Error!void {
-        if (e == x or t.pathParent(e) == x) return;
+    fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, charge: Charge, x: PathId, e: PathId, t: *const Table) Error!void {
+        try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(x));
+        if (t.isPrefix(x, e)) return;
         for (acc.items) |a| if (a == e) return;
         try acc.append(gpa, e);
     }
@@ -881,6 +927,41 @@ pub const Table = struct {
     /// `[*]` or a `⟲` (§2.2's occurrence rule). O(1): a column.
     pub fn isSummary(t: *const Table, path: PathId) bool {
         return t.paths.items(.summary)[path.int()];
+    }
+
+    /// Whether `y` is a sealed first return (#1253): a plain step back onto
+    /// its place below which no place of its cycle has returned yet. Below
+    /// it every fold lands inside its own subtree and every return to its
+    /// place on its one `⟲`, so a type-path walk (`hits`, `levelsOf`) takes it
+    /// whole instead of walking its recursive steps: a K-wide type's
+    /// closure stays linear. O(the cycle suffix above `y`), charged.
+    fn sealed(t: *const Table, charge: Charge, gpa: Allocator, y: PathId) Error!bool {
+        if (!t.isReturn(y) or t.pathStep(y).kind == .level) return false;
+        const p = t.pathPlace(y);
+        var at = t.pathParent(y);
+        while (at != .none and t.pathParent(at) != .none) : (at = t.pathParent(at)) {
+            try charge.reserve(gpa, .path, 1);
+            if (t.isReturn(at)) return false;
+            const there = t.pathPlace(at);
+            if (there != p and !t.sameCycle(there, p)) break;
+        }
+        return true;
+    }
+    /// Whether `path`'s last step re-entered a place on it: a first return
+    /// or a `⟲` (`PathNode.ret`). O(1): a column.
+    pub fn isReturn(t: *const Table, path: PathId) bool {
+        return t.paths.items(.ret)[path.int()];
+    }
+
+    /// The node a return `path` came back to (`isReturn`): a `⟲`'s parent,
+    /// or the nearest ancestor at the first return's place. O(depth).
+    pub fn returnedTo(t: *const Table, path: PathId) PathId {
+        const parent = t.pathParent(path);
+        if (t.pathStep(path).kind == .level) return parent;
+        var at = parent;
+        while (at != .none and t.pathPlace(at) != t.pathPlace(path)) at = t.pathParent(at);
+        std.debug.assert(at != .none);
+        return at;
     }
 
     // ---- structural identity --------------------------------------------
@@ -1132,26 +1213,40 @@ test "a recursive type is one place and its canonical paths fold with ⟲" {
     const list = t.child(tree, s1).?;
     try testing.expectEqual(Kind.list, t.kind(list));
     try testing.expectEqual(@as(?PlaceId, null), t.child(list, s0));
-    // Paths: `#Node.1` is exact; `#Node.0` re-enters the root and is `⟲`.
+    // Paths: `#Node.1` is exact; `#Node.0` and `#Node.2`, the first return
+    // to the root's place, are exact too, two subtrees (#1253); a return
+    // below one folds onto it: `#Node.0⟲`, one or more levels below `l`.
     const root = try t.rootPath(testing.allocator, tree);
     const p1 = (try f.extend(root, s1)).?;
     try testing.expectEqual(list, t.pathPlace(p1));
     try testing.expect(!t.isSummary(p1));
-    const below = (try f.extend(root, s0)).?;
+    const left = (try f.extend(root, s0)).?;
+    const right = (try f.extend(root, s2)).?;
+    try testing.expect(left != right);
+    try testing.expectEqual(s0, t.pathStep(left));
+    try testing.expect(!t.isSummary(left));
+    const below = (try f.extend(left, s0)).?;
     try testing.expectEqual(StepKind.level, t.pathStep(below).kind);
+    try testing.expectEqual(left, t.pathParent(below));
     try testing.expectEqual(tree, t.pathPlace(below));
-    try testing.expectEqual(@as(u32, 1), t.pathDepth(below));
-    // Further levels stay at the one ⟲; a list below is `⟲#Node.1`.
+    try testing.expectEqual(@as(u32, 2), t.pathDepth(below));
+    // Further levels stay at the one ⟲, whichever child; a list below is
+    // `#Node.0⟲#Node.1`, apart from `l`'s own `#Node.0#Node.1`.
+    try testing.expectEqual(below, (try f.extend(left, s2)).?);
+    try testing.expectEqual(below, (try f.extend(below, s0)).?);
     try testing.expectEqual(below, (try f.extend(below, s2)).?);
-    try testing.expectEqual(below, (try f.extend(root, s2)).?);
+    try testing.expectEqual(below, (try f.extend(left, Step.level)).?);
+    try testing.expectEqual(below, (try f.extend(below, Step.level)).?);
+    const own_list = (try f.extend(left, s1)).?;
+    try testing.expect(!t.isSummary(own_list));
     const deep_list = (try f.extend(below, s1)).?;
-    try testing.expect(deep_list != p1);
+    try testing.expect(deep_list != p1 and deep_list != own_list);
     try testing.expect(t.isSummary(deep_list));
     try testing.expect(t.isPrefix(below, deep_list) and !t.isPrefix(p1, deep_list));
     // The list's elements: `[*]` is a summary position.
     const elems = (try f.extend(p1, Step.elem)).?;
     try testing.expect(t.isSummary(elems));
-    try testing.expectEqual(@as(usize, 5), t.paths.len);
+    try testing.expectEqual(@as(usize, 8), t.paths.len);
     // The walk's memo answers a second ask with one read and no new place.
     try testing.expectEqual(tree, try f.of(0));
     try testing.expectEqual(@as(u32, 3), t.count());
@@ -1159,7 +1254,7 @@ test "a recursive type is one place and its canonical paths fold with ⟲" {
     // per request and no more (no ancestor walk, no new node).
     const before = f.account.growth;
     try testing.expectEqual(deep_list, (try f.extend(below, s1)).?);
-    try testing.expectEqual(below, (try f.extend(root, s0)).?);
+    try testing.expectEqual(below, (try f.extend(left, s0)).?);
     try testing.expectEqual(before + 2, f.account.growth);
 }
 
