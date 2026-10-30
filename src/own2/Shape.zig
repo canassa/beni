@@ -186,7 +186,8 @@ pub const Table = struct {
     /// A walk from a `positions`, `union` or `choice` node, a DAG as large as
     /// the run or the joins that built it: a growth task chosen before it,
     /// never the asking kernel's lane, until read-off continuations charge it
-    /// by its producers (§4.1, #1098). From any other node, the kernel's.
+    /// by its producers (§4.1, #1098). A view's answer may be one, or a
+    /// chain (§2.11). From any other node, the kernel's.
     pub fn dagWalk(t: *const Table, gpa: Allocator, account: *Account, n: NodeId) Error!?Account.Kernel {
         return switch (t.kind(n)) {
             .positions, .@"union", .choice, .view => try account.enter(gpa, null),
@@ -442,6 +443,16 @@ pub const Table = struct {
     pub fn answerOf(t: *const Table, n: NodeId) ?NodeId {
         if (t.kind(n) != .view) return null;
         return t.memo_force.get(n);
+    }
+
+    /// The members over `at` as one value, joined raw (§2.11): unions with
+    /// lazy cells and no absorption test, so making it reads no member. A
+    /// view's leaf image is built so; `join` would read its members' cells
+    /// and cascade through the views below them.
+    pub fn joinRaw(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, members: []const NodeId) Error!NodeId {
+        var out = members[0];
+        for (members[1..]) |m| out = try t.make(gpa, account, .{ .kind = .@"union", .place = at, .cells = lazy_cells, .a = out.int(), .b = m.int(), .reach = .none });
+        return out;
     }
 
     /// `n`, or a view's answer: expanded one step (its children views
@@ -791,6 +802,8 @@ pub const Table = struct {
     fn dagHas(t: *Table, gpa: Allocator, account: *Account, dag: Kind, u: NodeId, x: NodeId) Error!bool {
         if (u == x) return true;
         if (t.kind(u) != dag) return false;
+        const walk = try t.dagWalk(gpa, account, u);
+        defer if (walk) |k| account.leave(k);
         t.union_seen.clear();
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);

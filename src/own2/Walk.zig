@@ -297,9 +297,14 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         // relabelled, its path unchanged (§2.9).
         const Carry = struct {
             ro: *ReadOff,
-            fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
+            fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.env.shapes.memo_map.get(x);
+                const shapes = c.ro.env.shapes;
+                if (shapes.memo_map.get(x)) |m| return m;
+                // A view the map did not meet, on a chain it forced: its
+                // entries join the answer's (§2.11 *κ at a view*).
+                const answer = shapes.answerOf(x) orelse return null;
+                return shapes.memo_map.get(answer);
             }
             fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));

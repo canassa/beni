@@ -3058,7 +3058,7 @@ test "#1129: a relabelled fold round-trips with the steps it saw: deep reaches b
     // identity, as a read-off relabels it.
     const folded = try a.conds.kappaFold(gpa, env.charge, try a.conds.kappaSetAt(gpa, env.charge, .none, &.{ Step.elem, fa }, e2, Cond.shared));
     const Identity = struct {
-        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+        fn node(_: *anyopaque, n: NodeId) Error!?NodeId {
             return n;
         }
         fn cond(_: *anyopaque, _: *Cond.Table, _: Allocator, _: Ids.Charge, k: CondId) Error!CondId {
