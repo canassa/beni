@@ -2802,9 +2802,9 @@ pub const Table = struct {
         by_path: stamped.Column(PathId, u32) = .{},
         visited: stamped.Column(NodeId, void) = .{},
         /// The unions, choices and positions nodes met on the cycle (at a
-        /// `⟲`, or at a place on a cycle), whose sides are walked as members
-        /// of their class (§2.3): their meaning is their sides', so they
-        /// ride beside no image.
+        /// `⟲`, or at a place on a cycle a knot returns to), whose sides are
+        /// walked as members of their class (§2.3): their meaning is their
+        /// sides', so they ride beside no image.
         opened: stamped.Column(NodeId, void) = .{},
         /// How many times the walk reached each node: a node reached twice
         /// stands at two positions of its class.
@@ -2813,9 +2813,12 @@ pub const Table = struct {
         image: stamped.Column(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
         any_merge: bool = false,
-        /// Whether the walk met a `⟲` step: without one nothing is on a
-        /// cycle, and the merges of opened sides are no quotient.
-        any_reentry: bool = false,
+        /// The knots' targets (§2.3 *On the cycle*, #1360): the class path a
+        /// built node at a `⟲` returns to, the value's own structure
+        /// re-entering. A leaf there (a parameter's deeper levels, `π1⟲`)
+        /// names no knot. Computed once, on the first node it is asked for.
+        knots: stamped.Column(PathId, void) = .{},
+        knots_done: bool = false,
         /// The source nodes in the order first visited, and where `widenFold`
         /// wants the path map.
         seen_order: std.ArrayList(NodeId) = .empty,
@@ -2845,6 +2848,7 @@ pub const Table = struct {
             w.image.deinit(w.gpa);
             w.kids.deinit(w.gpa);
             w.seen_order.deinit(w.gpa);
+            w.knots.deinit(w.gpa);
         }
 
         fn touch(w: *Widen, n: NodeId) Allocator.Error!void {
@@ -2948,6 +2952,61 @@ pub const Table = struct {
             }
         }
 
+        /// Whether a knot returns to `p` or above it: a built node of the
+        /// value at a `⟲` whose class path is `p` or an ancestor of `p`. A
+        /// union, choice or positions node at a place on a cycle is opened
+        /// only then (§2.3 *On the cycle*): a value whose arms re-enter
+        /// only through leaves keeps its join exact.
+        fn knotAtOrAbove(w: *Widen, root: NodeId, p: PathId) Error!bool {
+            if (!w.knots_done) {
+                w.knots_done = true;
+                try w.findKnots(root);
+            }
+            var at = p;
+            while (true) {
+                try w.account.reserve(.path, 1);
+                if (w.knots.contains(at)) return true;
+                if (at == .none or w.places.pathParent(at) == .none) return false;
+                at = w.places.pathParent(at);
+            }
+        }
+
+        /// The probe: the value's explicit edges, every union's, choice's
+        /// and positions node's sides at its path, each node once, as the
+        /// walk proper reads them.
+        fn findKnots(w: *Widen, root: NodeId) Error!void {
+            const Frame = struct { node: NodeId, path: PathId };
+            var stack: std.ArrayList(Frame) = .empty;
+            defer stack.deinit(w.gpa);
+            var seen: stamped.Column(NodeId, void) = .{};
+            defer seen.deinit(w.gpa);
+            try stack.append(w.gpa, .{ .node = root, .path = try w.places.rootPath(w.gpa, w.t.place(root)) });
+            while (stack.pop()) |f| {
+                try w.account.reserve(.edge, 1);
+                const n = try w.t.force(w.gpa, w.account, f.node);
+                const nk = w.t.kind(n);
+                const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
+                if (reentry and (nk == .node or nk == .delta)) try w.knots.put(w.gpa, w.places.pathParent(f.path), {});
+                if (seen.contains(n)) continue;
+                try seen.put(w.gpa, n, {});
+                switch (nk) {
+                    .@"union", .choice, .positions => {
+                        const d = w.t.get(n);
+                        try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
+                        continue;
+                    },
+                    else => {},
+                }
+                try w.explicitEdges(n);
+                var i: usize = 0;
+                while (i < w.kids.items.len) : (i += 2) {
+                    const step = Step.fromWord(w.kids.items[i].int());
+                    const cp = (try w.places.extend(w.gpa, .growth(w.account), f.path, step)) orelse continue;
+                    try stack.append(w.gpa, .{ .node = w.kids.items[i + 1], .path = cp });
+                }
+            }
+        }
+
         fn run(w: *Widen, root: NodeId) Error!NodeId {
             // Phase 1: the walk with canonical paths.
             const Frame = struct { node: NodeId, path: PathId };
@@ -2972,15 +3031,14 @@ pub const Table = struct {
                 if (w.visited.contains(fnode)) continue;
                 try w.visited.put(w.gpa, fnode, {});
                 try w.seen_order.append(w.gpa, fnode);
-                if (reentry) w.any_reentry = true;
                 // A union, choice or positions node on the cycle being folded:
                 // its sides are at its path, so they are members of its class
-                // (§2.3). On the cycle is at a re-entry, or at a place a
-                // re-entry can come back to (a branch join at the root of a
-                // tree): kept whole there, its arms' re-entries would never
-                // be walked and the knot would tie back to a choice.
+                // (§2.3). On the cycle is at a re-entry, or at a place on a
+                // cycle a knot returns to (a branch join at the root of a
+                // tree whose arm builds a re-entering node): kept whole
+                // there, its arms' re-entries would never be walked.
                 switch (w.t.kind(fnode)) {
-                    .@"union", .choice, .positions => if (reentry or w.places.onCycle(w.t.place(fnode))) {
+                    .@"union", .choice, .positions => if (reentry or (w.places.onCycle(w.t.place(fnode)) and try w.knotAtOrAbove(root, f.path))) {
                         try w.opened.put(w.gpa, fnode, {});
                         const d = w.t.get(fnode);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
@@ -3004,7 +3062,7 @@ pub const Table = struct {
             }
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
-            if (!w.any_merge or !w.any_reentry) return root; // the identity
+            if (!w.any_merge) return root; // the identity
             // The classes are of the answers `run` visited (a view root's too).
             const out = try w.emit(try w.t.force(w.gpa, w.account, root));
             if (w.out) |fo| {
@@ -3695,6 +3753,28 @@ test "#1360: widen is idempotent on a widened choice root" {
         try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, x1, x2));
         try oneNodePerPath(&f, x2);
     }
+}
+
+test "#1360 review: a choice at the root whose arms re-enter only through leaves is no knot: widen keeps it" {
+    // `case t of Node a xs b → Node a (List.push xs 1) b; Leaf → Leaf`:
+    // `a` and `b` are `π1⟲` leaves at `⟲` steps, a parameter's own deeper
+    // levels, not the value's structure coming back.
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    const p = try f.shapes.leaf(gpa, &f.account, tree, try f.param(1, tree));
+    var kids = try f.one(s0, try f.proj(p, s0));
+    kids = try f.shapes.overPut(gpa, &f.account, kids, s1, try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list)));
+    kids = try f.shapes.overPut(gpa, &f.account, kids, s2, try f.proj(p, s2));
+    const n = try f.shapes.node(gpa, &f.account, tree, try f.site(2, tree, .none), kids);
+    const c = try f.shapes.choice(gpa, &f.account, &f.cells.sets, n, try f.shapes.leaf(gpa, &f.account, tree, .none));
+    try testing.expectEqual(c, try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, c));
 }
 
 test "#1360: a choice at the root with no re-entry below is kept: widen stays the identity" {

@@ -1,0 +1,42 @@
+-- ownership (v2): a branch join at a tree's root whose arms re-enter `Tree`
+-- only through a parameter's own levels (`π1⟲` leaves) holds no knot, so
+-- widen keeps it (ownership-v2.md §2.3, *On the cycle*). `w1` rebuilds a
+-- node with its list pushed, and its result stays exact: `gp` pushes the
+-- list of `w1 t`'s root, which is `t`'s root list, so `h`, which reads `t`'s
+-- left child's list after it, is accepted, as v1 accepts it. Folding the
+-- root merged every level's list into one class and refused them.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub w1 : Tree → Tree
+w1 t =
+    case t of
+        Node a xs b →
+            Node a (List.push xs 1) b
+
+        Leaf →
+            Leaf
+
+
+pub gp : Tree → List Int
+gp t =
+    case w1 t of
+        Node _ ys _ →
+            List.push ys 2
+
+        Leaf →
+            []
+
+
+pub h : ⊤ → Int
+h ⊤ =
+    t = Node (Node Leaf [ 1 ] Leaf) [ 2 ] Leaf
+    case t of
+        Node (Node _ zs _) _ _ →
+            n = List.length (gp t)
+            n + List.length zs
+
+        _ →
+            0

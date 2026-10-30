@@ -1,0 +1,10 @@
+module WidenChoiceLeafReentry
+  17:21 List.push xs: accepted param
+  25:10 call WidenChoiceLeafReentry.w1 t#Node.1: accepted param (WidenChoiceLeafReentry.w1 writes π1#Node.1)
+  27:13 List.push ys: accepted param
+  38:30 call WidenChoiceLeafReentry.gp t#Node.1: accepted fresh (WidenChoiceLeafReentry.gp writes π1#Node.1)
+  summary w1: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A, π1#Node.2 RA; res #Node.0 ~condition(fresh2) π1#Node.0, #Node.1 condition(fresh3) π1#Node.1, #Node.1[*] ~condition(fresh5) ~π1#Node.1[*], #Node.2 ~condition(fresh4) π1#Node.2, condition(fresh1){apart [π1#Node.0] [π1#Node.1 π1#Node.1[*]] [π1#Node.2]}r{sep π1#Node.0 π1#Node.1[*], sep π1#Node.0 π1#Node.2, sep π1#Node.2 π1#Node.1[*]}
+  summary gp: π1 R, π1#Node.0 R, π1#Node.1 RAW[storage], π1#Node.1[*] RA, π1#Node.2 R; res [*] ~condition(fresh2) ~π1#Node.1[*], condition(fresh1) fresh1 π1#Node.1
+  summary h: unused
+  demands 4: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
