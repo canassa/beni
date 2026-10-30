@@ -1124,11 +1124,61 @@ pub const Views = struct {
     }
 };
 
+/// Per node of a use shape, what is at or below it: 1 a `W`, 2 an `E`.
+/// Memoised per node, on an explicit stack (#1138), so a use shape that is
+/// a DAG costs its nodes.
+fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
+    const Frame = struct { node: NodeId, expanded: bool };
+    var stack: std.ArrayList(Frame) = .empty;
+    defer stack.deinit(env.gpa);
+    try stack.append(env.gpa, .{ .node = use, .expanded = false });
+    while (stack.pop()) |f| {
+        if (memo.get(.{f.node.int()}) != null) continue;
+        const kids = env.shapes.kind(f.node) == .node;
+        if (!f.expanded) {
+            try env.charge.reserve(env.gpa, .inspection, 1);
+            try stack.append(env.gpa, .{ .node = f.node, .expanded = true });
+            if (kids) {
+                var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
+                while (kt.next()) |k| if (memo.get(.{k.node.int()}) == null) try stack.append(env.gpa, .{ .node = k.node, .expanded = false });
+            }
+            continue;
+        }
+        var bits: u32 = 0;
+        var it = env.cells.sets.iterate((try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, f.node)));
+        while (it.next()) |x| {
+            const c: CellId = .from(x.key);
+            if (env.cells.origin(c) != .mark) continue;
+            switch (env.cells.markOf(c)) {
+                .w => bits |= 1,
+                .e => bits |= 2,
+                else => {},
+            }
+        }
+        if (kids) {
+            var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
+            // A child not settled is on a cycle: everything, to be safe.
+            while (kt.next()) |k| bits |= memo.get(.{k.node.int()}) orelse 3;
+        }
+        (try memo.getOrPut(env.gpa, .{f.node.int()})).value_ptr.* = bits;
+    }
+    return memo.get(.{use.int()}).?;
+}
+
 /// The writes and escapes a use shape marks, with their paths: a walk of
 /// its explicit structure (a leaf's marks hold below it, so a leaf ends a
-/// path). Every node visited is a record.
+/// path). Every node visited is a record. The touched paths are read only
+/// beside a write of the same parameter (§2.11 item 3), so a use with no
+/// `W` walks only the subtrees that hold an `E`: a read-only use shape that
+/// is a DAG (a callee's reads composed by the read-off, #1325) is never
+/// walked path by path.
 fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
     if (use == .none) return;
+    var below: Ids.FixedDict(1) = .{};
+    defer below.deinit(env.gpa);
+    const bits = try marksBelow(env, use, &below);
+    const all = bits & 1 != 0;
+    if (!all and bits & 2 == 0) return;
     // Paths as parent chains: a node's path is its entry's.
     const Entry = struct { step: Step, parent: u32 };
     var entries: std.ArrayList(Entry) = .empty;
@@ -1177,6 +1227,7 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
         if (env.shapes.kind(f.node) != .node) continue;
         var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
         while (kt.next()) |k| {
+            if (!all and (below.get(.{k.node.int()}) orelse 3) & 2 == 0) continue;
             const id: u32 = @intCast(entries.items.len);
             try entries.append(env.gpa, .{ .step = k.step, .parent = f.entry });
             try stack.append(env.gpa, .{ .node = k.node, .entry = id });

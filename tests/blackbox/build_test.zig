@@ -8793,6 +8793,112 @@ test "the checker v2's call costs are flat per call through chains of calls and 
     try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
 }
 
+/// The `total` of `owner`'s account in a v2 dump of `src` as `Main.beni`,
+/// growth 0 and no declaration past a limit.
+fn ownTotalFor(w: *World, src: []const u8, owner: []const u8) !u64 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    // No declaration past a limit: a limit leaves a small, unbuilt class.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, owner, "growth"));
+    return accountTotal(dump.stdout, owner);
+}
+
+test "the checker v2's read-off of a call's reads is linear in a chain of field wrappers" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `f_i g = f_{i-1}
+    // g.x` reads `π1.x`, `π1.x.x`, … below its argument, i paths. The
+    // callee's use is grafted once, never rebuilt from the root per path, so
+    // the last wrapper's records grow with its use's width: at 100 wrappers
+    // at most 11 times those at 10, not 100 times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 100 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "f1 g = List.length g.x\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nf{d} g = f{d} g.x\n", .{ i, i - 1 });
+        var owner: [8]u8 = undefined;
+        totals[run] = try ownTotalFor(&w, src.items, try std.fmt.bufPrint(&owner, "f{d}", .{n}));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 11) {
+        std.debug.print("f10: {d} records, f100: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's read-off of a call's reads keeps a use shape that is a DAG a DAG" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `d_i ( a, b ) =
+    // d_{i-1} a + d_{i-1} b` reads both halves the same way, so its use
+    // shape is a DAG of depth i with 2^i paths. The graft is memoised per
+    // node pair and a call walks a read-only use per node, so depth 12 costs
+    // at most twice depth 6, never 64 times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 6, 12 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "d1 ( a, b ) = List.length a + List.length b\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nd{d} ( a, b ) = d{d} a + d{d} b\n", .{ i, i - 1, i - 1 });
+        var owner: [8]u8 = undefined;
+        totals[run] = try ownTotalFor(&w, src.items, try std.fmt.bufPrint(&owner, "d{d}", .{n}));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("d6: {d} records, d12: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's read-off of a call's reads costs a wrapper of a wide record what a narrow one costs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.7, §2.10's read-off (#1325): `w1 g = w0 g.x`,
+    // where `w0` reads every field of a record. A read-only use at the
+    // argument's own place is taken over whole, its children shared, so a
+    // record of 160 fields costs the wrapper at most twice one of 10.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 160 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nw0 : W → Int\nw0 r =\n    0");
+        for (1..n + 1) |i| try src.print(a, " + List.length r.f{d:0>3}", .{i});
+        try src.appendSlice(a, "\n\n\nw1 : { x : W } → Int\nw1 g = w0 g.x\n");
+        totals[run] = try ownTotalFor(&w, src.items, "w1");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("10 fields: {d} records, 160: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 /// The crossing's counts from a dump: reads crossed, redone at `C`, and
 /// `base_epoch`'s moves (`ownership-v2.md` §2.11 *κ across a call*).
 fn crossingOf(dump: []const u8) ![3]u64 {
