@@ -9831,6 +9831,47 @@ test "the checker v2 walks a list of bound lists in time linear in their count" 
     try testing.expect(t200 * 10 <= t100 * 23);
 }
 
+/// `main`'s records for a tree `depth` levels deep, ten fields a level, the
+/// pushed list held at the bottom (`t⟲#Tree.0.a1`), read deeply `depth`
+/// times through `showKids` and once inline, all after the push.
+fn deepReadCycleTotal(depth: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const nine = "a2 = [], a3 = [], a4 = [], a5 = [], a6 = [], a7 = [], a8 = [], a9 = []";
+    try src.appendSlice(a, "type Tree\n    = Tree { a1 : List Int, a2 : List Int, a3 : List Int, a4 : List Int, a5 : List Int, a6 : List Int, a7 : List Int, a8 : List Int, a9 : List Int, kids : List Tree }\n\n\n" ++
+        "showKids : Tree → String\nshowKids t =\n    case t of\n        Tree r →\n            Debug.toString r.kids\n\n\n" ++
+        "pub main : Int → Int\nmain n =\n    l = [ n ]\n    t = ");
+    for (0..depth) |_| try src.appendSlice(a, "Tree { a1 = [], " ++ nine ++ ", kids = [ ");
+    try src.appendSlice(a, "Tree { a1 = l, " ++ nine ++ ", kids = [] }");
+    for (0..depth) |_| try src.appendSlice(a, " ] }");
+    try src.appendSlice(a, "\n    case t of\n        Tree r →\n            p = List.push l 5\n            String.length (Debug.toString r.kids) + List.length p");
+    for (0..depth) |_| try src.appendSlice(a, " + String.length (showKids t)");
+    try src.appendSlice(a, "\n");
+    const dump = try ownDumpNoLimit(&w, src.items);
+    // v1's refusal: every tree below the root is read, and its path is `t⟲`.
+    try testing.expect(std.mem.indexOf(u8, dump, "List.push l: rejected") != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump, "main", "growth"));
+    return accountTotal(dump, "main");
+}
+
+test "the checker v2's deep reads on a cycle are linear in the depth of the value they read" {
+    // `ownership-v2.md` §2.7, *A read that leaves its path on a cycle*
+    // (#1345): a deep read at `t#Tree.0.kids` exits at `t⟲`, where the
+    // pushed list's levels fold. The fold targets are made once per path
+    // (`Place.foldsUp`) and the exits once per path and use node, so
+    // twice the levels, each ten fields wide, costs about twice the records.
+    const t50 = try deepReadCycleTotal(50);
+    const t100 = try deepReadCycleTotal(100);
+    // Linear, with headroom: at most 2.3× (measured 2.0×).
+    if (t100 * 10 > t50 * 23) {
+        std.debug.print("depth 50: {d} records, 100: {d}\n", .{ t50, t100 });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2 stores a joined position's κ under each inner's own node" {
     // #1273 (§4.1): one run per place below a recast's inners, but the κ
     // each inner's child carries stays under that child's node, the id a

@@ -35,7 +35,9 @@ const layers = [_]Entry{
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 750 },
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
+    // §5 says 1 100 since #1345: the fold targets and levels of a read on a
+    // cycle, memoised per path.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1100 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
     .{ .file = "Cell.zig", .layer = 2, .max_lines = 1100 },
@@ -59,6 +61,7 @@ const layers = [_]Entry{
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
+    .{ .file = "Exits.zig", .layer = 5, .max_lines = 250 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
@@ -370,7 +373,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 27), layers.len);
+    try testing.expectEqual(@as(usize, 28), layers.len);
     try testing.expectEqual(@as(usize, 19), causes.len);
 }
 

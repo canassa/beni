@@ -42,6 +42,7 @@ const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
+const Exits = @import("Exits.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const CellId = Ids.CellId;
@@ -277,6 +278,7 @@ const Index = struct {
     clos: std.ArrayList(Clo) = .empty,
     pool: std.ArrayList(St) = .empty,
     desc: Descent = .{},
+    exits: Exits.Memo = .{},
     kid_cache: std.ArrayList([2]u32) = .empty,
 
     fn deinit(ix: *Index) void {
@@ -1388,7 +1390,10 @@ const Index = struct {
             const a = at_q.start + at_q.len;
             while (j < a) {
                 const e = index.groupEnd(j, a);
-                const cur: Cursor = if (!index.filtered(j)) .free else .{ .node = index.get(.from(j)).use_node };
+                const u = index.get(.from(j));
+                // Exits are outside this walk's order (§2.7): list the holds.
+                if ((try ix.exits.exits(ix.tables(), q, if (u.kind == .call) u.use_node else .none)).len > 0) return error.Fallback;
+                const cur: Cursor = if (!index.filtered(j)) .free else .{ .node = u.use_node };
                 try d.open.append(gpa, .{ .lo = j, .hi = e, .any = route_any, .need_exact = true, .need_any = route_any == .none, .cur = cur });
                 j = e;
             }
@@ -1519,20 +1524,14 @@ const Index = struct {
         }
     }
 
-    /// Whether a use of group `key` at `q` covers a hold at `f` (§2.7): at
-    /// or under it always, above it where its callee reads the rest.
+    /// Whether a use covers a hold at `f` (§2.7): above it always, under it
+    /// where its callee reads the rest, and at its exits on a cycle.
     fn covers(ix: *Index, use: Facts.Use, f: PathId) Error!bool {
-        const places = ix.env.places;
-        if (places.isPrefix(f, use.path)) return true;
-        if (!places.isPrefix(use.path, f)) return false;
-        if (use.kind != .call or use.use_node == .none) return true;
-        ix.steps.clearRetainingCapacity();
-        var at = f;
-        while (at != use.path) : (at = places.pathParent(at)) try ix.steps.append(ix.gpa, places.pathStep(at));
-        std.mem.reverse(Step, ix.steps.items);
-        var cur: Cursor = .{ .node = use.use_node };
-        for (ix.steps.items) |st| cur = try ix.stepCursor(cur, st);
-        return ix.accepts(cur);
+        return ix.exits.covers(ix.tables(), use, f);
+    }
+
+    fn tables(ix: *Index) Exits.Tables {
+        return .{ .gpa = ix.gpa, .charge = ix.env.charge, .places = ix.env.places, .shapes = ix.env.shapes, .cells = ix.env.cells };
     }
 
     /// The cover from every hold listed, against every group of the
