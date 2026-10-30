@@ -1271,7 +1271,7 @@ pub const Frame = struct {
                     .below, .off => .{ true, it.folded },
                 };
                 if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
-                    try f.keepBeside(bs, &want, it.v, folded, &kept, &excl);
+                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), &kept, &excl);
             }
             if (d.kind != .node) continue;
             if (it.mode == .spine and it.depth < ws.len) {
@@ -1387,12 +1387,35 @@ pub const Frame = struct {
     /// (§2.11 item 3 (c)). Any other cell is kept when its alias key is one
     /// of the base's (`want`), read from `v`'s reach by key (`Beside.keyed`),
     /// never cell by cell.
-    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, kept: *SetId, excl: *SetId) Error!void {
+    /// For a value the class answers, lets escape or reads deeply (a leaf
+    /// use, or `D`): the approximation bit of a parameter cell of `reach` that the base's
+    /// parameter cell `c` is strictly below (`Cell.below`: a trie ancestor,
+    /// or levels through `⟲`), null for none. What a callee relied on when
+    /// it found two paths of one parameter apart, discharged here (§2.11
+    /// item 3, rule (c), #1383).
+    fn heldAbove(f: *Frame, reach: SetId, c: CellId) Error!?u1 {
+        const cells = f.env.cells;
+        var it = cells.sets.iterate(reach);
+        while (it.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const d: CellId = .from(e.key);
+            if (cells.origin(d) != .param) continue;
+            if (cells.below(f.env.places, c, d)) return @intCast(e.value);
+        }
+        return null;
+    }
+
+    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, kept: *SetId, excl: *SetId) Error!void {
         const cells = f.env.cells;
         const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
         for (want.params.items) |c| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
-            const value = cells.sets.get(reach, c.int()) orelse continue;
+            // The base's cell, or its canonical cell when a pattern refined it
+            // (`ys` of `Br _ ys _`); and a held value whose parameter cell is
+            // above the base's holds it, a symbolic leaf's reach being its own
+            // cell (#1383).
+            const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
+            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse (if (held) try f.heldAbove(reach, cu) else null) orelse continue;
             if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
                 excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
                 continue;
