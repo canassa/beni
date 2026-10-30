@@ -65,14 +65,41 @@ batches until no queued work remains. A callback that stops the page prevents
 all subsequent callbacks from running. The existing finally guard restores the
 running flag and records a defect when program code throws.
 
-The initial storage is Ref (List (⊤ → ⊤)), with Ref.update and Ref.modify
-providing the existing ownership-aware cell contract. A generic Js.Ref read
-cannot establish exclusive list ownership, so it is not used for this queue. Appending uses List.push, whose
-existing contract is bounded copying below 32 elements and amortized constant
-append above that threshold. It must never use repeated whole-list append or
-prepend. Draining detaches the current batch before invoking it, so sends made
-while that batch runs form the next FIFO batch. Dropping or replacing a queue
-must release all its retained closures.
+The queue uses a typed portable mutable buffer, exposed only to core and
+platform code as Js.Buffer.Buffer a. Its four operations are:
+
+```text
+pub foreign impure make : ⊤ → Buffer a
+pub foreign impure push : Buffer a, a → ⊤
+pub foreign pure length : Buffer a → Int
+pub foreign impure forEach : Buffer a, sync (a → ⊤) → ⊤
+```
+
+The buffer's native representation is the array itself. Zig lowers these calls
+to an empty array, native push, length and for-of, preserving the element type.
+The callback is synchronous and invoked in FIFO order; callback defects propagate.
+Only private mutable buffers are accepted, so indexing an arbitrary native array
+or accessing an unchecked element is not exposed. A detached batch is walked
+before newly queued work. Queue admission and resource exhaustion retain their
+own existing runtime policy; this primitive adds no recoverable native failure
+that the queue previously hid.
+
+A Zig build tool constructs the complete fallback sibling with JsIr and Print.
+It contains actual exports and arities, so existing foreign sibling coverage,
+arity and import validation remain unchanged, including first-class uses. The
+generated asset is included in coreDirectory, coreCopy and embedCore, hence in
+the checked core, compiler build identity and variant-core inputs. No handwritten
+JavaScript file or compiler-only foreign exemption is introduced. A Js.Buffer
+import receives the same core and platform privilege check as core Js, keyed
+on its actual core module identity. Ordinary application modules named Js.Buffer
+remain ordinary application modules.
+
+This buffer avoids two measured proof failures: List.push after Js.Ref.read
+reports list_shared because the read cannot establish exclusive list ownership;
+Ref.update under the current core-pack pass reports the callback argument
+borrowed. Copying the growing queue would weaken the required complexity, so
+neither a List.copy workaround nor a frozen-v1 exception is used. Native push
+retains amortized constant append, and the typed buffer adds no node wrapper.
 
 The direct and via distinction propagates to on, onArm, onTaken and onArmTaken;
 each gets a separate Via entry point. The inline lowering selects it using the
