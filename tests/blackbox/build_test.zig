@@ -9018,7 +9018,8 @@ fn manyWrites(a: std.mem.Allocator, n: u32, literal: bool) ![]u8 {
     try src.appendSlice(a, "type alias W =\n");
     for (0..n) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
     try src.appendSlice(a, "\n\nwall : W → Int\nwall r =\n    0");
-    for (0..n) |i| try src.print(a, " + List.length (List.push r.f{d:0>3} 1)", .{i});
+    // One term a line: a line of 640 terms takes 0.45 s more to check.
+    for (0..n) |i| try src.print(a, "\n        + List.length (List.push r.f{d:0>3} 1)", .{i});
     try src.appendSlice(a, "\n\n\npub caller : W → Int\ncaller w =\n    wall w\n");
     if (literal) {
         try src.appendSlice(a, "\n\npub fresh : Int → Int\nfresh k =\n    wall\n");
@@ -9053,6 +9054,37 @@ test "the checker v2's call writing many fields of one parameter costs its calle
     // └─────────────────────────────────────────┘
     if (totals[1] * 10 > totals[0] * 45) {
         std.debug.print("64 fields: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+/// `caller`'s records per written field of `manyWrites(n)`, with no limit.
+fn recordsPerWrittenField(n: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const src = try manyWrites(testing.allocator, n, false);
+    defer testing.allocator.free(src);
+    return try accountTotal(try ownDumpNoLimit(&w, src), "caller") / n;
+}
+
+// `ownership-v2.md` §4.1 *direct demand query* (#1358): `wall`'s writes are
+// n demands on one argument, the call's product with its callee's routes,
+// so their queries are growth, never the argument's one lane (it was
+// `ownership_accounting_invariant` at 320 fields). Linear: at most 100
+// records a field at 320 and at 640 fields (both about 85), with no limit.
+// Two tests, since 640 fields alone take about 0.9 s.
+test "the checker v2's call writing 320 fields of one parameter stays in its lanes" {
+    const per = try recordsPerWrittenField(320);
+    if (per > 100) {
+        std.debug.print("320 fields: {d} records a field\n", .{per});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing 640 fields of one parameter stays in its lanes" {
+    const per = try recordsPerWrittenField(640);
+    if (per > 100) {
+        std.debug.print("640 fields: {d} records a field\n", .{per});
         return error.TestUnexpectedResult;
     }
 }
@@ -10928,3 +10960,4 @@ test "a derived comparison over a wide type costs its fields, not their square" 
     try testing.expect(costs[0] > 0);
     try testing.expect(costs[1] * 10 <= costs[0] * 22);
 }
+

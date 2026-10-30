@@ -349,10 +349,14 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
     defer gpa.free(relied);
     const accepted = try gpa.alloc(Facts.Verdict.Accepted, n);
     defer gpa.free(accepted);
+    // §4.1: a written demand's query is its own kernel, keyed by the
+    // demand's base: two demands at one call are two lanes. Several demands
+    // on one base are one argument's product with its callee's routes
+    // (#1358), growth, chosen from their count before the work.
+    const shared = try sharedBases(env, frame.demands);
+    defer gpa.free(shared);
     for (frame.demands, 0..) |dm, d| {
-        // §4.1: a written demand's query is its own kernel, keyed by the
-        // demand's base: two demands at one call are two lanes.
-        const kernel = try env.account().enter(gpa, .{ .atom = dm.base_inst, .role = .direct_demand_query });
+        const kernel = try env.account().enter(gpa, if (shared[d]) null else .{ .atom = dm.base_inst, .role = .direct_demand_query });
         defer env.account().leave(kernel);
         const got = try r.before(dm, &accepted[d], &relied[d]);
         want[d] = got == null;
@@ -366,10 +370,30 @@ pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
     try Holders.answer(env, frame, want, answers, &splits);
     for (frame.demands, 0..) |dm, d| {
         if (!want[d]) continue;
-        const kernel = try env.account().enter(gpa, .{ .atom = dm.base_inst, .role = .direct_demand_query });
+        const kernel = try env.account().enter(gpa, if (shared[d]) null else .{ .atom = dm.base_inst, .role = .direct_demand_query });
         defer env.account().leave(kernel);
         out[d] = try r.after(dm, accepted[d], relied[d], answers[d], splits.items);
     }
+}
+
+/// Per demand, whether another has its base instruction: one sort of
+/// `(base, index)` words, reserved before it as growth.
+fn sharedBases(env: Env, demands: []const Demand) Error![]bool {
+    const gpa = env.gpa;
+    const task = try env.account().enter(gpa, null);
+    defer env.account().leave(task);
+    try env.charge.reserve(gpa, .inspection, @intCast(demands.len * (std.math.log2_int_ceil(usize, demands.len + 1) + 1)));
+    const keys = try gpa.alloc(u64, demands.len);
+    defer gpa.free(keys);
+    for (demands, keys, 0..) |dm, *k, d| k.* = @as(u64, dm.base_inst) << 32 | d;
+    std.mem.sort(u64, keys, {}, std.sort.asc(u64));
+    const out = try gpa.alloc(bool, demands.len);
+    @memset(out, false);
+    if (keys.len > 1) for (keys[0 .. keys.len - 1], keys[1..]) |a, b| if (a >> 32 == b >> 32) {
+        out[@as(u32, @truncate(a))] = true;
+        out[@as(u32, @truncate(b))] = true;
+    };
+    return out;
 }
 
 comptime {
