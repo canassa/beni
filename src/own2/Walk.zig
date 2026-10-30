@@ -54,6 +54,28 @@ pub const Input = struct {
     /// The places of the parameters and the result, for a pessimistic class.
     param_places: []const PlaceId,
     result_place: PlaceId,
+    /// A recursive group member's stable labels (§8 S3b slice 4), or null.
+    labels: ?Labels = null,
+};
+
+/// The stable labels of a recursive group member's read-off (§8 S3b slice
+/// 4, *Stable labels*): its own fresh objects numbered by key, not by the
+/// order a walk meets them, in a dictionary kept across its walks, so its
+/// label inventory is bounded by the group's instructions however many
+/// rounds run. A cell a group call ι answers fresh (`result ι·k`, any k) is
+/// one folded label `ι⋆` per place and kind; any other is its own cell.
+pub const Labels = struct {
+    fresh: *Ids.FixedDict(3),
+    ctx: *anyopaque,
+    /// Whether instruction `inst` is a call of the walk's own group.
+    group_call: *const fn (ctx: *anyopaque, inst: u32) bool,
+
+    fn key(l: Labels, cells: *const Cell.Table, c: CellId) [3]u32 {
+        const x = cells.get(c);
+        if (x.origin == .result and x.a != none and l.group_call(l.ctx, cells.labelInst(.from(x.a))))
+            return .{ 1 | (@as(u32, @backingInt(x.kind)) << 1), cells.labelInst(.from(x.a)), x.place.int() };
+        return .{ 0, c.int(), 0 };
+    }
 };
 
 /// One reported demand: what a line names (§6, R-7.15).
@@ -136,6 +158,8 @@ const ReadOff = struct {
     env: Env,
     /// A frame cell → its `fresh k` (k from 1, first-sight order).
     fresh: Ids.FixedDict(1) = .{},
+    /// A group member's stable labels instead, when given.
+    labels: ?Labels = null,
     /// Each `apart` group → its image's aggregate (`Cond.apartImage`).
     apart_images: Ids.FixedDict(1) = .{},
 
@@ -160,6 +184,11 @@ const ReadOff = struct {
             const m: CellId = switch (x.origin) {
                 .site, .result => blk: {
                     try r.env.charge.reserve(r.env.gpa, .inspection, 1);
+                    if (r.labels) |l| {
+                        const got = try l.fresh.getOrPut(r.env.gpa, l.key(cells, src));
+                        if (!got.found_existing) got.value_ptr.* = l.fresh.count();
+                        break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
+                    }
                     const got = try r.fresh.getOrPut(r.env.gpa, .{src.int()});
                     if (!got.found_existing) got.value_ptr.* = r.fresh.count();
                     break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
@@ -653,7 +682,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .e = true }, &steps);
         };
     }
-    var ro: ReadOff = .{ .env = env };
+    var ro: ReadOff = .{ .env = env, .labels = in.labels };
     defer ro.fresh.deinit(gpa);
     defer ro.apart_images.deinit(gpa);
     // The frame's reliance in the class's cells; one that fails there
@@ -679,37 +708,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
         const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
         // The value's κ, carried over the relabelling: each entry's node
-        // relabelled, its path unchanged (§2.9). A view's entries, and its
-        // raw answer's, join its image's.
-        const Carry = struct {
-            ro: *ReadOff,
-            presence: *Presence,
-            fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                const shapes = c.ro.env.shapes;
-                if (shapes.memo_map.get(x) orelse shapes.memo_map.get(shapes.eagerOf(x))) |m| return m;
-                // A view the map did not meet, on a chain it forced: its
-                // entries join the answer's (§2.11 *κ at a view*).
-                const answer = shapes.answerOf(x) orelse return null;
-                return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
-            }
-            /// The source `x` stands for at `pos`: one the walk found there.
-            /// A stale entry, kept for a node a join left elsewhere, counts
-            /// for none, so it cannot make up for a source with no entry.
-            fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                const s = c.ro.env.shapes.mapSource(x) orelse return null;
-                return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
-            }
-            fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
-            }
-            fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.cond(k);
-            }
-        };
+        // relabelled, its path unchanged (§2.9).
         var presence: Presence = .{};
         defer presence.deinit(gpa);
         if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
@@ -722,4 +721,60 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         kappa = widened.kappas;
     }
     return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = class_xreq, .origin = .inferred });
+}
+
+/// A κ carried over a relabelling (`ReadOff`): each entry's node the map's
+/// image, its path unchanged (§2.9). A view's entries, and its raw
+/// answer's, join its image's.
+const Carry = struct {
+    ro: *ReadOff,
+    presence: *Presence,
+    fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const shapes = c.ro.env.shapes;
+        if (shapes.memo_map.get(x) orelse shapes.memo_map.get(shapes.eagerOf(x))) |m| return m;
+        // A view the map did not meet, on a chain it forced: its entries
+        // join the answer's (§2.11 *κ at a view*).
+        const answer = shapes.answerOf(x) orelse return null;
+        return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
+    }
+    /// The source `x` stands for at `pos`: one the walk found there. A
+    /// stale entry, kept for a node a join left elsewhere, counts for none,
+    /// so it cannot make up for a source with no entry.
+    fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const s = c.ro.env.shapes.mapSource(x) orelse return null;
+        return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
+    }
+    fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
+    }
+    fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        return c.ro.cond(k);
+    }
+};
+
+/// Class `c` with its fresh labels renumbered in the order its `res` meets
+/// them, its κ and `xreq` carried over: a recursive group member's class at
+/// publication (§8 S3b slice 4, *Stable labels*), canonical whatever its
+/// rounds numbered.
+pub fn renumber(env: Env, sums: *Summary.Table, c: ClassId) Error!ClassId {
+    const gpa = env.gpa;
+    const cls = sums.get(c);
+    var ro: ReadOff = .{ .env = env };
+    defer ro.fresh.deinit(gpa);
+    defer ro.apart_images.deinit(gpa);
+    const res = try env.shapes.map(gpa, env.account(), cls.res, &ro, ReadOff.relabel);
+    // Two built sources sharing an image count as #1384's read-off counts them.
+    var presence: Presence = .{};
+    defer presence.deinit(gpa);
+    if (env.shapes.map_shared) try presence.run(env, cls.res, cls.kappas);
+    var carry: Carry = .{ .ro = &ro, .presence = &presence };
+    const kappa = try env.conds.kappaRelabel(gpa, env.charge, cls.kappas, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
+    const xreq: SetId = if (cls.xreq == .none) .none else try env.conds.flat(gpa, env.charge, try ro.cond(try env.conds.ofSet(gpa, env.charge, cls.xreq)));
+    const uses = try gpa.dupe(NodeId, sums.paramUses(c));
+    defer gpa.free(uses);
+    return sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = xreq, .origin = cls.origin });
 }

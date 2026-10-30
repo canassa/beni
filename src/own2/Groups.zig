@@ -582,9 +582,12 @@ pub const DeclResult = struct {
     decl: u32,
     class: ClassId = .none,
     unbuilt: u32 = none,
-    /// `unbuilt` calls a member of the declaration's own group (recursion,
-    /// §8 S3b slice 4): its own reason in a dump.
-    recursion: bool = false,
+    /// `unbuilt` calls a member of the declaration's own group at another
+    /// instantiation than its own (polymorphic recursion, S4): its own
+    /// reason in a dump.
+    polymorphic: bool = false,
+    /// A recursive group member's walks, 0 for one walked alone.
+    walks: u32 = 0,
     lines: []Walk.Line = &.{},
     /// The account's failure, when it stopped the walk.
     failure: ?Ids.Failure = null,
@@ -623,6 +626,8 @@ pub const Module = struct {
     /// its own instructions: a namespace no instruction of the module or of
     /// another import meets (`Block.Remap.inst`).
     import_insts: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+    /// The recursive group being solved (§8 S3b slice 4), or null.
+    group: ?*Group = null,
     /// Per (module, `eq` or `compare`): the module's value of that name,
     /// `none` for no such value, `cmp_unseen` before the first look.
     cmp_decl: []u32 = &.{},
@@ -739,16 +744,44 @@ pub const Module = struct {
         };
     }
 
-    /// Whether `inst`, a `call` or `method_call`, names a member of
-    /// declaration `di`'s own group.
-    fn groupCall(mod: *const Module, prepass: *const Facts.Prepass, di: u32, inst: u32) bool {
+    /// The member of the group being solved that `inst`, a `call` or
+    /// `method_call`, names, or null.
+    fn groupMember(mod: *const Module, inst: u32) ?u32 {
+        const g = mod.group orelse return null;
         const bir = mod.in.bir;
         const t = switch (bir.instTag(@fromBackingInt(inst))) {
             .call => mod.declOf(bir.instData(@fromBackingInt(inst)).lhs),
             .method_call => mod.methodTarget(inst),
             else => null,
-        } orelse return false;
-        return t[0] == mod.in.module and t[1] < prepass.group_of.len and prepass.group_of[t[1]] == prepass.group_of[di];
+        } orelse return null;
+        return if (t[0] == mod.in.module) g.index.get(.{t[1]}) else null;
+    }
+
+    fn isGroupCall(ctx: *anyopaque, inst: u32) bool {
+        return self(ctx).groupMember(inst) != null;
+    }
+
+    /// A call of group member `k` (§8 S3b slice 4): its port's class at the
+    /// round's generation, read by reference (`Calls.apply`'s view, whose
+    /// environment names the class, so views of two generations share no
+    /// memo entry), the port's version kept in the walk's read vector: every
+    /// part of the class at once, `apply`'s eager reads included (*Ports*,
+    /// the coarse rule). Null at another instantiation than the member's own
+    /// (polymorphic recursion, S4): the call stays unbuilt, and its group.
+    fn groupClass(mod: *Module, g: *Group, k: u32, inst: u32, args: []const u32) Error!?ClassId {
+        const own = g.param_places.items[g.param_runs.items[k].start..][0..g.param_runs.items[k].len];
+        var same = own.len == args.len and try placeOfInst(mod, inst) == g.result_places.items[k];
+        if (same) for (own, args) |p, a| {
+            if (try placeOfInst(mod, a) != p) same = false;
+        };
+        if (!same) {
+            if (g.poly == none) g.poly = inst;
+            return null;
+        }
+        const p = g.ports.items[k];
+        for (g.reads.items) |x| if (x[0] == k and x[1] == p.version) return p.class;
+        try g.reads.append(mod.gpa, .{ k, p.version });
+        return p.class;
     }
 
     /// The declaration a method call dispatches to, when it is one.
@@ -867,10 +900,13 @@ pub const Module = struct {
                 if (m.origin != .none) composed = true;
             }
             if (!composed) {
+                // A member of the group being solved: its port (§8 S3b slice 4).
+                if (t[0] == mod.in.module) if (mod.group) |g| if (g.index.get(.{t[1]})) |k| {
+                    return if (try mod.groupClass(g, k, inst, args.items)) |c| .{ .class = c } else .unbuilt;
+                };
                 // A declaration of this module walked before this one (an
                 // earlier group, §8 S3b): its class, applied at this call. One
-                // of this group (recursion) or one past its limit is not built
-                // here.
+                // past its limit is not built here.
                 if (t[0] == mod.in.module) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
                 // One of another module (S3b slice 3): the class its block
                 // publishes, applied the same way.
@@ -1042,12 +1078,13 @@ pub const Module = struct {
 };
 
 /// Check every declaration of a module (§8 S3a): a worded one is its row,
-/// any other value with a body is walked, in the pre-pass's group order.
-/// The module owns its answer. A declaration the summary-size limit stops
+/// any other value with a body is walked, in the pre-pass's group order; a
+/// recursive group is solved whole (§8 S3b slice 4, `solveGroup`).
+/// The module owns its answer. A group the summary-size limit stops
 /// is checked again alone, in fresh tables, and refused only if that cold
 /// run is stopped too (§4.4, #1104): the module's shared tables charge a
 /// first miss to whoever meets it, so a warm account depends on where the
-/// declaration sits, a cold one never. Its account is then the cold run's;
+/// declaration sits, a cold one never. Its accounts are then the cold run's;
 /// `cold_accounts` (the dump's) makes every declaration's so.
 pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocator.Error!void {
     const gpa = in.gpa;
@@ -1055,36 +1092,89 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     const prepass = try Prepass.run(gpa, mod.prepass_arena.allocator(), .{ .bir = in.bir, .dispatch = in.dispatch });
     var pool: ColdPool = .{};
     defer pool.deinit(gpa);
-    for (prepass.order) |di| {
-        const d = in.bir.decls[di];
-        if (d.kind != .value or d.body == .none) continue;
-        if (in.bir.ownSlotsV2(d).len != 0) continue; // a row: its class is its words'
-        // R_f (§4.4): the declaration's `@ownership_summary_size`, else the
-        // module's, else the default.
-        const allowance = if (d.summary_size != 0) d.summary_size else if (in.bir.summary_size != 0) in.bir.summary_size else Ids.Account.default_allowance;
-        try mod.results.append(gpa, .{ .decl = di, .account = .{ .allowance = allowance } });
-        mod.result_of[di] = @intCast(mod.results.items.len - 1);
-        const r = &mod.results.items[mod.results.items.len - 1];
-        try walkIn(mod, d, &prepass, r);
-        const stopped = r.failure != null and r.failure.? == .exhausted;
-        if (!stopped and !cold_accounts) continue;
-        var cold: DeclResult = .{ .decl = di, .account = .{ .allowance = allowance } };
-        errdefer cold.account.deinit(gpa);
-        try coldRun(mod, &pool, di, &prepass, &cold);
-        if (stopped and cold.failure == null) {
-            // Within the limit alone: walked again here, unbounded, for its
-            // class and lines in this module's tables.
-            gpa.free(r.lines);
-            r.account.deinit(gpa);
-            r.* = .{ .decl = di, .account = .{ .allowance = std.math.maxInt(u32) - 1 } };
-            try walkIn(mod, d, &prepass, r);
+    var members: std.ArrayList(u32) = .empty;
+    defer members.deinit(gpa);
+    for (0..prepass.starts.len - 1) |gi| {
+        try groupMembers(gpa, in.bir, &prepass, gi, null, &members);
+        if (members.items.len == 0) continue;
+        const start = mod.results.items.len;
+        for (members.items) |di| {
+            try mod.results.append(gpa, .{ .decl = di, .account = .{ .allowance = allowanceOf(in.bir, di) } });
+            mod.result_of[di] = @intCast(mod.results.items.len - 1);
         }
-        r.account.deinit(gpa);
-        r.account = cold.account;
-        if (stopped) r.failure = cold.failure;
+        const rs = mod.results.items[start..];
+        try solve(mod, members.items, prepass.recursive[gi], &prepass, rs);
+        var stopped = false;
+        for (rs) |r| stopped = stopped or (r.failure != null and r.failure.? == .exhausted);
+        if (!stopped and !cold_accounts) continue;
+        const colds = try gpa.alloc(DeclResult, rs.len);
+        for (colds, members.items) |*c, di| c.* = .{ .decl = di, .account = .{ .allowance = allowanceOf(in.bir, di) } };
+        defer {
+            for (colds) |*c| c.account.deinit(gpa);
+            gpa.free(colds);
+        }
+        try coldRun(mod, &pool, members.items, prepass.recursive[gi], &prepass, colds);
+        var cold_failed = false;
+        for (colds) |c| cold_failed = cold_failed or c.failure != null;
+        if (stopped and !cold_failed) {
+            // Within the limit alone: solved again here, unbounded, for its
+            // classes and lines in this module's tables.
+            for (rs, members.items) |*r, di| {
+                gpa.free(r.lines);
+                r.account.deinit(gpa);
+                r.* = .{ .decl = di, .account = .{ .allowance = std.math.maxInt(u32) - 1 } };
+            }
+            try solve(mod, members.items, prepass.recursive[gi], &prepass, rs);
+        }
+        for (rs, colds) |*r, *c| {
+            r.account.deinit(gpa);
+            r.account = c.account;
+            c.account = .{};
+            if (!stopped) continue;
+            // Refused cold too: the cold run's answer, whole (a group fails whole).
+            r.failure = c.failure;
+            if (!cold_failed) continue;
+            r.unbuilt = c.unbuilt;
+            r.polymorphic = c.polymorphic;
+            r.class = .none;
+            gpa.free(r.lines);
+            r.lines = &.{};
+        }
     }
     mod.account = &mod.base_account;
     mod.adapter.account = &mod.base_account;
+}
+
+/// Whether declaration `di` is walked: a value with a body and no words.
+fn isWalked(bir: *const Bir, di: u32) bool {
+    const d = bir.decls[di];
+    return d.kind == .value and d.body != .none and bir.ownSlotsV2(d).len == 0;
+}
+
+/// R_f (§4.4): the declaration's `@ownership_summary_size`, else the
+/// module's, else the default.
+fn allowanceOf(bir: *const Bir, di: u32) u32 {
+    const d = bir.decls[di];
+    return if (d.summary_size != 0) d.summary_size else if (bir.summary_size != 0) bir.summary_size else Ids.Account.default_allowance;
+}
+
+/// Group `gi`'s walked declarations not yet in `skip`, in text order (§3.8).
+fn groupMembers(gpa: Allocator, bir: *const Bir, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
+    out.clearRetainingCapacity();
+    for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |di| {
+        if (isWalked(bir, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+}
+
+/// A group's declarations walked into `rs`: one walk, or a recursive group
+/// solved whole.
+fn solve(mod: *Module, members: []const u32, recursive: bool, prepass: *const Facts.Prepass, rs: []DeclResult) Allocator.Error!void {
+    if (!recursive) {
+        for (members, rs) |di, *r| try walkIn(mod, mod.in.bir.decls[di], prepass, r);
+        return;
+    }
+    try solveGroup(mod, members, prepass, rs);
 }
 
 /// The cold run's tables (§4.4, #1104): a module holding exactly the walks
@@ -1106,31 +1196,37 @@ const ColdPool = struct {
     }
 };
 
-/// `di` walked cold on `cold`'s account, after every declaration of an
-/// earlier group it reaches by calls (`.top` references and dispatched
-/// method calls). A callee the warm run stopped at a limit, or left
-/// unbuilt, is not walked: the cold run applies no class for it either.
-fn coldRun(mod: *Module, pool: *ColdPool, di: u32, prepass: *const Facts.Prepass, cold: *DeclResult) Allocator.Error!void {
+/// Group `ds` solved cold on `colds`' accounts, after every group earlier
+/// than it that it reaches by calls (`.top` references and dispatched
+/// method calls), each solved whole. A callee group the warm run stopped at
+/// a limit, or left unbuilt, is not walked: the cold run applies no class
+/// for it either.
+fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prepass: *const Facts.Prepass, colds: []DeclResult) Allocator.Error!void {
     const gpa = mod.gpa;
     const in = mod.in;
     const bir = in.bir;
+    const g0 = prepass.group_of[ds[0]];
     const reached = try gpa.alloc(bool, bir.decls.len);
     defer gpa.free(reached);
     @memset(reached, false);
     var stack: std.ArrayList(u32) = .empty;
     defer stack.deinit(gpa);
-    try stack.append(gpa, di);
+    try stack.appendSlice(gpa, ds);
     while (stack.pop()) |x| {
         const d = bir.decls[x];
         for (d.inst_start.int()..d.inst_end.int()) |i| {
             const md = mod.declOf(@intCast(i)) orelse continue;
             const t = md[1];
-            if (md[0] != in.module or t >= bir.decls.len or reached[t] or prepass.group_of[t] >= prepass.group_of[di]) continue;
-            reached[t] = true;
-            try stack.append(gpa, t);
+            if (md[0] != in.module or t >= bir.decls.len or reached[t] or prepass.group_of[t] >= g0) continue;
+            // A member of a recursive group reaches the whole group.
+            const gt = prepass.group_of[t];
+            for (prepass.order[prepass.starts[gt]..prepass.starts[gt + 1]]) |y| if (!reached[y]) {
+                reached[y] = true;
+                try stack.append(gpa, y);
+            };
         }
     }
-    // Reuse the pool only when everything it holds is a callee of `di`.
+    // Reuse the pool only when everything it holds is a callee of `ds`.
     if (pool.mod != null) for (pool.walked, 0..) |w, x| if (w and !reached[x]) {
         pool.deinit(gpa);
         break;
@@ -1144,29 +1240,43 @@ fn coldRun(mod: *Module, pool: *ColdPool, di: u32, prepass: *const Facts.Prepass
         @memset(pool.walked, false);
     }
     const alone = pool.mod.?;
-    for (prepass.order) |x| {
-        if (!reached[x] or pool.walked[x]) continue;
-        pool.walked[x] = true;
-        const d = bir.decls[x];
-        if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) continue;
-        const warm = mod.results.items[mod.result_of[x]];
-        try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
-        alone.result_of[x] = @intCast(alone.results.items.len - 1);
-        const r = &alone.results.items[alone.results.items.len - 1];
-        if (warm.failure != null or warm.unbuilt != none) {
-            r.failure = warm.failure;
-            r.unbuilt = warm.unbuilt;
+    var ms: std.ArrayList(u32) = .empty;
+    defer ms.deinit(gpa);
+    for (0..g0) |gi| {
+        const first = prepass.order[prepass.starts[gi]];
+        if (!reached[first]) continue;
+        try groupMembers(gpa, bir, prepass, gi, pool.walked, &ms);
+        for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |x| pool.walked[x] = true;
+        if (ms.items.len == 0) continue;
+        const start = alone.results.items.len;
+        var copied = false;
+        for (ms.items) |x| {
+            const warm = mod.results.items[mod.result_of[x]];
+            copied = copied or warm.failure != null or warm.unbuilt != none;
+            try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
+            alone.result_of[x] = @intCast(alone.results.items.len - 1);
+        }
+        const rs = alone.results.items[start..];
+        if (copied) {
+            for (ms.items, rs) |x, *r| {
+                const warm = mod.results.items[mod.result_of[x]];
+                r.failure = warm.failure;
+                r.unbuilt = warm.unbuilt;
+                r.polymorphic = warm.polymorphic;
+            }
             continue;
         }
-        try walkIn(alone, d, prepass, r);
+        try solve(alone, ms.items, prepass.recursive[gi], prepass, rs);
     }
-    try walkIn(alone, bir.decls[di], prepass, cold);
-    gpa.free(cold.lines);
-    cold.lines = &.{};
-    // `di` itself, for the next cold run that calls it.
-    pool.walked[di] = true;
-    try alone.results.append(gpa, .{ .decl = di, .class = cold.class, .unbuilt = cold.unbuilt, .failure = cold.failure });
-    alone.result_of[di] = @intCast(alone.results.items.len - 1);
+    try solve(alone, ds, recursive, prepass, colds);
+    // `ds` itself, for the next cold run that calls it.
+    for (ds, colds) |di, *c| {
+        gpa.free(c.lines);
+        c.lines = &.{};
+        pool.walked[di] = true;
+        try alone.results.append(gpa, .{ .decl = di, .class = c.class, .unbuilt = c.unbuilt, .polymorphic = c.polymorphic, .failure = c.failure });
+        alone.result_of[di] = @intCast(alone.results.items.len - 1);
+    }
     alone.account = &alone.base_account;
     alone.adapter.account = &alone.base_account;
 }
@@ -1196,15 +1306,46 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     @memset(mod.result_of, none);
 }
 
+/// `mod` charging `account` from here on.
+fn charging(mod: *Module, account: *Ids.Account) void {
+    mod.account = account;
+    mod.adapter.account = account;
+}
+
 /// Walk `d` in `mod`'s tables on `r`'s account; a limit is `r`'s failure.
 fn walkIn(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Allocator.Error!void {
-    mod.account = &r.account;
-    mod.adapter.account = &r.account;
+    charging(mod, &r.account);
     mod.cur_locals = d.locals_start;
     walkOne(mod, d, prepass, r) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.OwnershipLimit, error.AccountingInvariant => r.failure = r.account.failed,
     };
+}
+
+/// The places of `d`'s parameters, appended to `out`, and of its result.
+/// The parameters' places are the scheme's: a pattern parameter (a tuple,
+/// a record, a constructor) has no type of its own.
+fn declPlaces(mod: *Module, d: Bir.Decl, di: u32, out: *std.ArrayList(PlaceId)) Error!PlaceId {
+    const gpa = mod.gpa;
+    const start = out.items.len;
+    const params = mod.in.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
+    const scheme: Var.Optional = if (di < mod.in.decl_scheme.len) mod.in.decl_scheme[di] else .none;
+    if (scheme.unwrap()) |v| switch (mod.in.store.resolvedContent(v)) {
+        .structure => |s| switch (s) {
+            .func => |f| if (mod.in.store.vars(f.params).len == params.len) for (mod.in.store.vars(f.params)) |p| try out.append(gpa, try mod.adapter.placeOfVar(p.toOptional())),
+            else => {},
+        },
+        else => {},
+    };
+    if (out.items.len - start != params.len) {
+        out.shrinkRetainingCapacity(start);
+        for (params) |p| {
+            const b = mod.in.bir;
+            const at = if (b.instTag(p) == .pat_var) try Module.placeOfLocal(mod, b.instData(p).lhs) else try Module.placeOfInst(mod, p.int());
+            try out.append(gpa, at);
+        }
+    }
+    return Module.placeOfInst(mod, d.body.unwrap().?.int());
 }
 
 fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Error!void {
@@ -1214,27 +1355,7 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
     r.account.source = d.inst_end.int() - d.inst_start.int();
     var param_places: std.ArrayList(PlaceId) = .empty;
     defer param_places.deinit(gpa);
-    const params = mod.in.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
-    // The parameters' places are the scheme's: a pattern parameter (a
-    // tuple, a record, a constructor) has no type of its own.
-    const di = r.decl;
-    const scheme: Var.Optional = if (di < mod.in.decl_scheme.len) mod.in.decl_scheme[di] else .none;
-    if (scheme.unwrap()) |v| switch (mod.in.store.resolvedContent(v)) {
-        .structure => |s| switch (s) {
-            .func => |f| if (mod.in.store.vars(f.params).len == params.len) for (mod.in.store.vars(f.params)) |p| try param_places.append(gpa, try mod.adapter.placeOfVar(p.toOptional())),
-            else => {},
-        },
-        else => {},
-    };
-    if (param_places.items.len != params.len) {
-        param_places.clearRetainingCapacity();
-        for (params) |p| {
-            const b = mod.in.bir;
-            const at = if (b.instTag(p) == .pat_var) try Module.placeOfLocal(mod, b.instData(p).lhs) else try Module.placeOfInst(mod, p.int());
-            try param_places.append(gpa, at);
-        }
-    }
-    const result_place = try Module.placeOfInst(mod, d.body.unwrap().?.int());
+    const result_place = try declPlaces(mod, d, r.decl, &param_places);
     var res = try Walk.walk(.{
         .env = mod.env(),
         .sums = &mod.sums,
@@ -1247,9 +1368,230 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
     });
     r.class = res.class;
     r.unbuilt = res.unbuilt;
-    r.recursion = res.unbuilt != none and mod.groupCall(prepass, di, res.unbuilt);
     r.lines = res.lines;
     res.lines = &.{};
+}
+
+// ---------------------------------------------------------------------------
+// Recursive groups (§8 S3b slice 4)
+// ---------------------------------------------------------------------------
+
+/// A port (§2.12 *Settled generation*): a member's class for the current
+/// round, immutable, and its version, which moves only when the class does.
+const Port = struct { class: ClassId, version: u32 };
+
+/// The recursive group being solved: its ports, and per member its places,
+/// stable labels, walk count, and its last walk's lines, class and read
+/// vector. It is the group's scratch: nothing here reaches `results` until
+/// the group settles.
+const Group = struct {
+    members: []const u32,
+    /// Declaration → member.
+    index: Ids.FixedDict(1) = .{},
+    ports: std.ArrayList(Port) = .empty,
+    param_runs: std.ArrayList(Ids.Range) = .empty,
+    param_places: std.ArrayList(PlaceId) = .empty,
+    result_places: std.ArrayList(PlaceId) = .empty,
+    fresh: []Ids.FixedDict(3) = &.{},
+    walks: []u32 = &.{},
+    lines: [][]Walk.Line = &.{},
+    out: []ClassId = &.{},
+    /// Per member, its last walk's read vector: a run of `vec_store`.
+    vectors: []Ids.Range = &.{},
+    vec_store: std.ArrayList([2]u32) = .empty,
+    /// The read vector of the walk under way: `(member, version)` pairs.
+    reads: std.ArrayList([2]u32) = .empty,
+    /// The first group call at another instantiation than its member's own.
+    poly: u32 = none,
+
+    fn deinit(g: *Group, gpa: Allocator) void {
+        g.index.deinit(gpa);
+        g.ports.deinit(gpa);
+        g.param_runs.deinit(gpa);
+        g.param_places.deinit(gpa);
+        g.result_places.deinit(gpa);
+        for (g.fresh) |*f| f.deinit(gpa);
+        gpa.free(g.fresh);
+        gpa.free(g.walks);
+        for (g.lines) |l| gpa.free(l);
+        gpa.free(g.lines);
+        gpa.free(g.out);
+        gpa.free(g.vectors);
+        g.vec_store.deinit(gpa);
+        g.reads.deinit(gpa);
+    }
+
+    /// Whether member `k`'s last walk read a version that has moved.
+    fn stale(g: *const Group, k: usize) bool {
+        const v = g.vectors[k];
+        for (g.vec_store.items[v.start..][0..v.len]) |x| if (g.ports.items[x[0]].version != x[1]) return true;
+        return false;
+    }
+};
+
+/// Solve a recursive group (§8 S3b slice 4, 4a): every port from ⊥, then
+/// synchronous rounds. A round walks every member whose read vector is
+/// stale (round 1: all), each against the ports as the round began, in
+/// text order, which fixes ids only; then each walked member's port takes
+/// `widen(x ⊔ F(x))` where its read-off is not below it (`Summary.leq`,
+/// coinductive), and its version moves. Any change wakes every walk that
+/// read the port (4a's interim rule). The rounds stop at the joint
+/// fixpoint: every member's last walk read the ports as they stand, and
+/// its read-off is below its port. That walk is its validation: its lines
+/// are the ones reported, and every member publishes at once, renumbered
+/// canonically. A group is built whole or not at all: a member's walk
+/// unbuilt, or a limit anywhere, publishes nothing for any member.
+fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass, rs: []DeclResult) Allocator.Error!void {
+    const gpa = mod.gpa;
+    var g: Group = .{ .members = members };
+    defer g.deinit(gpa);
+    mod.group = &g;
+    defer {
+        mod.group = null;
+        charging(mod, &mod.base_account);
+    }
+    const settled = runGroup(mod, &g, prepass, rs) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.OwnershipLimit, error.AccountingInvariant => false,
+    };
+    if (settled) return;
+    // No member publishes a class it earned: an unbuilt one has the
+    // pessimistic class, as an unbuilt walk does, on the module's account.
+    charging(mod, &mod.base_account);
+    var places: std.ArrayList(PlaceId) = .empty;
+    defer places.deinit(gpa);
+    for (rs, members) |*r, di| {
+        if (r.account.failed) |f| r.failure = f;
+        gpa.free(r.lines);
+        r.lines = &.{};
+        r.class = .none;
+        if (r.failure != null) continue;
+        // Every other member is unbuilt at its first group call.
+        const d = mod.in.bir.decls[di];
+        if (r.unbuilt == none) r.unbuilt = firstGroupCall(mod, d);
+        places.clearRetainingCapacity();
+        mod.cur_locals = d.locals_start;
+        r.class = pessimisticOf(mod, d, di, &places) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.OwnershipLimit, error.AccountingInvariant => blk: {
+                r.failure = mod.base_account.failed;
+                break :blk .none;
+            },
+        };
+    }
+}
+
+fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclResult) Error!bool {
+    const gpa = mod.gpa;
+    const n = g.members.len;
+    g.fresh = try gpa.alloc(Ids.FixedDict(3), n);
+    @memset(g.fresh, .{});
+    g.walks = try gpa.alloc(u32, n);
+    @memset(g.walks, 0);
+    g.lines = try gpa.alloc([]Walk.Line, n);
+    @memset(g.lines, &.{});
+    g.out = try gpa.alloc(ClassId, n);
+    g.vectors = try gpa.alloc(Ids.Range, n);
+    @memset(g.vectors, .{ .start = 0, .len = 0 });
+    const woken = try gpa.alloc(bool, n);
+    defer gpa.free(woken);
+    @memset(woken, true);
+    // ⊥: no marks, `res` nothing, no κ, `xreq` yes (§2.12 *Recursive proofs*).
+    for (g.members, 0..) |di, k| {
+        (try g.index.getOrPut(gpa, .{di})).value_ptr.* = @intCast(k);
+        const d = mod.in.bir.decls[di];
+        charging(mod, &rs[k].account);
+        rs[k].account.source = d.inst_end.int() - d.inst_start.int();
+        mod.cur_locals = d.locals_start;
+        const start: u32 = @intCast(g.param_places.items.len);
+        const res = try declPlaces(mod, d, di, &g.param_places);
+        try g.param_runs.append(gpa, .{ .start = start, .len = @intCast(g.param_places.items.len - start) });
+        try g.result_places.append(gpa, res);
+        const uses = try gpa.alloc(Ids.NodeId, g.param_places.items.len - start);
+        defer gpa.free(uses);
+        @memset(uses, .none);
+        try g.ports.append(gpa, .{ .class = try mod.sums.add(mod.env(), .{ .params = uses, .res = try mod.shapes.nothing(gpa, mod.account, res) }), .version = 0 });
+    }
+    while (std.mem.indexOfScalar(bool, woken, true) != null) {
+        for (g.members, 0..) |_, k| if (woken[k]) {
+            var res = try walkMember(mod, g, @intCast(k), prepass, &rs[k]);
+            if (res.unbuilt != none) {
+                res.deinit(gpa);
+                rs[k].unbuilt = res.unbuilt;
+                rs[k].polymorphic = res.unbuilt == g.poly;
+                return false;
+            }
+            gpa.free(g.lines[k]);
+            g.lines[k] = res.lines;
+            g.out[k] = res.class;
+            g.vectors[k] = .{ .start = @intCast(g.vec_store.items.len), .len = @intCast(g.reads.items.len) };
+            try g.vec_store.appendSlice(gpa, g.reads.items);
+        };
+        // The round's joins, each charged to the member that receives it (Q2).
+        for (g.members, 0..) |_, k| if (woken[k]) {
+            charging(mod, &rs[k].account);
+            const p = &g.ports.items[k];
+            if (try mod.sums.leq(mod.env(), g.out[k], p.class)) continue;
+            p.class = try mod.sums.join(mod.env(), p.class, g.out[k], .choice);
+            p.version += 1;
+        };
+        for (woken, 0..) |*w, k| w.* = g.stale(k);
+    }
+    for (rs, 0..) |*r, k| {
+        charging(mod, &r.account);
+        r.class = try Walk.renumber(mod.env(), &mod.sums, g.ports.items[k].class);
+        r.walks = g.walks[k];
+        r.lines = g.lines[k];
+        g.lines[k] = &.{};
+    }
+    return true;
+}
+
+/// One walk of member `k` against the ports as they stand, its read
+/// vector in `g.reads`. Its first walk takes the source lanes' initial
+/// copy, its second the validation copy, and every later one is growth,
+/// reserved per instruction before it starts (*Charging*).
+fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r: *DeclResult) Error!Walk.Result {
+    const d = mod.in.bir.decls[g.members[k]];
+    charging(mod, &r.account);
+    mod.cur_locals = d.locals_start;
+    r.account.source = d.inst_end.int() - d.inst_start.int();
+    const copy: @TypeOf(r.account.walk) = switch (g.walks[k]) {
+        0 => .inference,
+        1 => .validation,
+        else => .growth,
+    };
+    g.walks[k] += 1;
+    if (copy == .growth) try r.account.reserveGrowth(.task, @intCast(r.account.source));
+    r.account.walk = copy;
+    defer r.account.walk = .inference;
+    g.reads.clearRetainingCapacity();
+    const run = g.param_runs.items[k];
+    return Walk.walk(.{
+        .env = mod.env(),
+        .sums = &mod.sums,
+        .ctx = mod.context(),
+        .bir = mod.in.bir,
+        .decl = d,
+        .prepass = prepass,
+        .phase = if (copy == .validation) .validation else .inference,
+        .param_places = g.param_places.items[run.start..][0..run.len],
+        .result_place = g.result_places.items[k],
+        .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+    });
+}
+
+/// `⊤call` over `d`'s places (O10).
+fn pessimisticOf(mod: *Module, d: Bir.Decl, di: u32, places: *std.ArrayList(PlaceId)) Error!ClassId {
+    const res = try declPlaces(mod, d, di, places);
+    return mod.sums.unknown(mod.env(), places.items, &.{}, res);
+}
+
+/// The first call of `d` of a member of the group being solved: where a
+/// member of a group that does not settle is unbuilt.
+fn firstGroupCall(mod: *const Module, d: Bir.Decl) u32 {
+    for (d.inst_start.int()..d.inst_end.int()) |i| if (mod.groupMember(@intCast(i)) != null) return @intCast(i);
+    return d.body.unwrap().?.int();
 }
 
 /// The class a declaration of this module publishes (§3.6): its walk's,
