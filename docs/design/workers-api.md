@@ -30,6 +30,7 @@ import Browser.WorkerStream exposing (Stream, Sink)
 -- Opaque: Ticket error reply; Prepared a; Context event; ConnectionId
 -- Opaque: Reply error reply; Command msg; Subscription msg; ScriptUrl
 -- Opaque: Protocol input output; Policy; PolicyName
+-- Opaque: ExternalPrepared input output
 
 pub type UrlError = InvalidUrl
 pub type Credentials = Omit | SameOrigin | Include
@@ -71,6 +72,7 @@ pub type SendError
     | CanvasTransferInvalidState
     | ChannelClosed
     | QueueFull
+    | PreparedForAnotherEndpoint
 pub type TransportError
     = SendFailed SendError
     | MessageDeserializationFailed
@@ -78,6 +80,7 @@ pub type TransportError
     | ProtocolRejected (List Issue)
     | PeerUnresponsive
     | PeerClosed
+    | WorkerStateLost
     | CleanupAbandoned
 pub type OpenReason error
     = UnsupportedWorkerKind
@@ -98,7 +101,8 @@ pub type CallError error
     = Application error
     | PreparationFailed PrepareError
     | Transport TransportError
-pub type EmitError = EventQueueFull | EventChannelClosed | EventCloneRejected CloneFailure | EventCanvasTransferInvalidState
+pub type EmitError = EventQueueFull | EventChannelClosed | EventTargetRequired | EventCloneRejected CloneFailure | EventCanvasTransferInvalidState
+pub type TerminalError = TerminalClosed | TerminalPreparationFailed PrepareError
 
 pub type alias Options =
     name : String
@@ -114,7 +118,7 @@ pub type alias Options =
 
 pub type alias Definition config state request reply error event chunk =
     init : Context event, config → Result error state
-    start : sync (Context event, state → ⊤)
+    start : sync (Context event, borrowed state → ⊤)
     handle : Context event, state, request → state × Result error reply
     stream : Context event, state, request, Sink error chunk → state × Result error ⊤
 
@@ -124,9 +128,9 @@ pub program : entry Definition config state request reply error event chunk
 
 pub type alias ConcurrentDefinition config state request reply error event chunk =
     init : Context event, config → Result error state
-    start : sync (Context event, state → ⊤)
-    handle : Context event, state, request → Result error reply
-    stream : Context event, state, request, Sink error chunk → Result error ⊤
+    start : sync (Context event, borrowed state → ⊤)
+    handle : Context event, borrowed state, request → Result error reply
+    stream : Context event, borrowed state, request, Sink error chunk → Result error ⊤
 
 -- pure; entry ownership checks require start/handlers to borrow stable state.
 pub concurrent : entry ConcurrentDefinition config state request reply error event chunk
@@ -158,8 +162,8 @@ pub abort : Handle request reply error event chunk → Cleanup
 
 -- impure; preparation without a suspending conversion, takes ownership reservation.
 pub prepare : a → Result PrepareError (Prepared a)
--- suspends; schema conversion before native commit, Type is a, Encoded is encoded.
-pub prepareWith : Schema encoded a, a → Result PrepareError (Prepared a)
+-- suspends; explicitly convert a to Encoded, then prepare that typed value.
+pub prepareWith : Schema encoded a, a → Result PrepareError (Prepared encoded)
 -- impure; cancel a reservation and dispose its resources, idempotent.
 pub discard : Prepared a → ⊤
 pub type CloneError = CloneRejected CloneFailure | CloneCanvasInvalidState
@@ -172,6 +176,9 @@ pub scope : Context event → Scope
 pub connection : Context event → Maybe ConnectionId
 -- impure; bounded event queue, never waits for a pre-ready subscriber.
 pub emit : Context event, event → Result EmitError ⊤
+-- impure; snapshot IDs; explicit single-target send consumes transfers once.
+pub connections : Context event → List ConnectionId
+pub emitTo : Context event, ConnectionId, event → Result EmitError ⊤
 
 -- pure, protocol's typed directional schemas validate external peers.
 pub protocol : Schema encodedIn input, Schema encodedOut output → Protocol input output
@@ -191,12 +198,14 @@ pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError Scr
 not performance claims. Open validates positivity, finite values and lease ≥
 heartbeat before acquiring a native worker. No successful close is inferred
 from a deadline. A failed init returns InitializationFailed with cleanup status.
-For shared root context, emit broadcasts independently to each connection
-queue; before the first Ready it uses that connection's bounded startup queue.
-A handler context targets its own connection. Partial fan-out never retries
-already accepted events; EventQueueFull identifies a refused emission and the
-application must not assume all clients received it.
-A defect during init remains fatal and never becomes that variant.
+For a dedicated root, emit targets its owning connection. A handler context
+targets its own connection. Shared root emit returns EventTargetRequired;
+connections/emitTo let it select one live client (a closed target returns
+EventChannelClosed). There is no implicit fan-out of an owned event. To publish
+to several clients, the application loops over IDs and constructs/copies one
+value per send; ownership rejects reusing a transferred backing. Clone-only
+immutable events may be reused. Before Ready, each selected target has its
+bounded startup queue. A defect during init remains fatal and never becomes that variant.
 
 `start` runs after init and before Ready only until it has installed its
 root-scoped children; it must be non-suspending. Long-running pushes use
@@ -215,30 +224,50 @@ options, including classic for external scripts, remain expressible.
 
 ```text
 -- Opaque: External input output
+pub type ExternalCleanup = LocalReleased | NativeTerminated
+pub type ExternalShutdown = TerminateOnScopeExit
 pub type ExternalError = ExternalLoadFailed | ExternalTransport TransportError
 pub type alias ExternalOptions =
     worker : Options
     kind : ScriptKind
+    shutdown : ExternalShutdown
 -- suspends; native construction/load observation, no invented Ready for raw scripts.
 pub openExternal : Scope, ScriptUrl, Protocol input output, ExternalOptions
     → Result (OpenError ⊥) (External input output)
--- impure; no implicit request id or response expected; native send succeeds at serialization.
-pub post : External input output, Prepared input → Result SendError ⊤
+-- suspends; endpoint input schema runs here, binding plan and generation to token.
+pub preparePost : External input output, input
+    → Result PrepareError (ExternalPrepared input output)
+-- impure; token must belong to this endpoint; no implicit RPC request id.
+pub post : External input output, ExternalPrepared input output → Result SendError ⊤
+pub discardPost : ExternalPrepared input output → ⊤
 -- suspends; validates every received message with the protocol's output schema.
 pub receive : External input output → Result ExternalError output
 pub receiveMessage : External input output → Result ExternalError (Message output)
--- suspends; managed graceful close is unavailable without negotiated peer support.
-pub closeExternal : External input output → Cleanup
--- impure; explicitly destructive, same semantics as native terminate.
-pub abortExternal : External input output → Cleanup
+-- impure; explicit raw ownership policy: terminate native worker, release listeners.
+pub closeExternal : External input output → ExternalCleanup
+pub abortExternal : External input output → ExternalCleanup
 ```
 
 `openExternal` returns after construction/listener attachment; the `suspends`
 bound accommodates policy preparation but never promises module evaluation
 completed without a peer handshake. Load errors observed later appear on
-receive as ExternalLoadFailed. Raw close closes local admission and returns
-Unconfirmed ConnectionLost unless a documented external close protocol
-acknowledges it. It does not synthesize a successful cleanup acknowledgment.
+receive as ExternalLoadFailed. Raw APIs promise native/local ownership only. Dedicated ExternalOptions must
+explicitly select TerminateOnScopeExit: closing this raw owner terminates its
+native worker and returns NativeTerminated, with no remote-finalizer promise.
+This is distinct from managed scope cleanup and its Unconfirmed fatal rule.
+The same action runs at raw scope exit; it is not a hidden fallback from managed
+close. Shared raw owners close their local port/listeners and return LocalReleased,
+without affecting other clients. Managed graceful guarantees require a managed
+program/handshake and use the separate Handle API.
+
+ExternalPrepared holds the endpoint generation, input schema identity and its
+already encoded wire value. A wrong endpoint consumes/disposes the reservation
+and returns PreparedForAnotherEndpoint before native commit. post never reruns
+a suspending conversion. receive validates with that endpoint's output schema.
+prepareWith is a different, explicit value conversion: its result is Prepared
+encoded and can be sent only where encoded is the managed request type; it does
+not install an undisclosed decoder in the peer. All preparation tokens are
+scope-owned reservations and their discard/abandonment paths release resources.
 
 ### Elm-shaped state machine
 
@@ -256,26 +285,30 @@ pub machine : entry Machine config model msg request reply error event chunk
 pub none : Command msg
 pub batch : List (Command msg) → Command msg
 pub noSubscriptions : Subscription msg
+-- pure; init/subscription updates can launch async work in the worker root scope.
+pub perform : ((msg → ⊤) → ⊤) → Command msg
 -- pure; callback is deferred and may suspend in its owning request scope.
 pub performFor : Reply error reply, ((msg → ⊤) → ⊤) → Command msg
 pub performStream : Sink error chunk, ((msg → ⊤) → ⊤) → Command msg
 -- pure; installs a root-scoped producer, cancelled/replaced by stable subscription key.
 pub subscription : String, (Scope, (msg → ⊤) → ⊤) → Subscription msg
 pub subscriptions : List (Subscription msg) → Subscription msg
--- impure; exactly one reply, terminal reuse is a typed failure.
-pub respond : Reply error reply, Result error reply → Result SendError ⊤
--- impure; terminal reused Reply yields ChannelClosed; duplicate ids never reach peer.
-pub finish : Sink error chunk, Result error ⊤ → Result SendError ⊤
+-- impure; reserve/prepare terminal result; coordinator sends only after cleanup.
+pub respond : Reply error reply, Result error reply → Result TerminalError ⊤
+pub finish : Sink error chunk, Result error ⊤ → Result TerminalError ⊤
 ```
 
 ## 2. Browser.SharedWorker
 
-Shared state is initialized once per native shared instance. A connection
-gets its own request scopes, event queue and IDs. The same program configuration
-fingerprint must match the first client; a different configuration returns
-ConfigurationMismatch, not an unnoticed reuse of another client's state.
-Init is deferred until the first Hello, so a module cannot accidentally use
-page data during evaluation. Disconnect never closes another client's scope.
+Shared state is initialized once per native shared instance. `open` elects
+its initializer and supplies configuration; once initialization is claimed,
+a further open returns AlreadyInitialized without consuming its configuration
+at native commit. `connect` attaches to the same program/name identity without
+providing configuration; it waits for claimed init/Ready within readyWithin,
+or returns NotInitialized if no initializer has claimed the instance. There is
+no generic fingerprint/equality promise for arbitrary Wire/native resources.
+Concurrent opens are elected before any configuration transfer is committed.
+Disconnect never closes another client's scope.
 
 ```text
 import Browser.Worker as Worker
@@ -286,7 +319,8 @@ import Task exposing (Scope)
 pub type OpenReason error
     = WorkerOpen (Worker.OpenReason error)
     | SharedStorageDenied
-    | ConfigurationMismatch
+    | AlreadyInitialized
+    | NotInitialized
 pub type alias OpenError error =
     reason : OpenReason error
     cleanup : Worker.Cleanup
@@ -295,7 +329,7 @@ pub type alias Options =
     extendedLifetime : Bool
 -- pure
 pub options : Options
-pub program : entry Worker.Definition config state request reply error event chunk
+pub program : entry Worker.ConcurrentDefinition config state request reply error event chunk
     → Program config state request reply error event chunk
 pub concurrent : entry Worker.ConcurrentDefinition config state request reply error event chunk
     → Program config state request reply error event chunk
@@ -303,6 +337,9 @@ pub machine : entry Worker.Machine config model msg request reply error event ch
     → Program config model request reply error event chunk
 -- suspends; Window-only launch, same generic program-argument role as Worker.open.
 pub open : Scope, Program config state request reply error event chunk, config, Options
+    → Result (OpenError error) (Handle request reply error event chunk)
+-- suspends; attach without a configuration payload; same generic program edge.
+pub connect : Scope, Program config state request reply error event chunk, Options
     → Result (OpenError error) (Handle request reply error event chunk)
 -- pure; legacy string-name constructor form, defaults all other fields.
 pub named : String → Options
@@ -338,9 +375,19 @@ pub externalPort : External input output → Port.Port input output
 -- suspends; receive late generic load errors from the shared constructor as well.
 pub receive : External input output → Result Worker.ExternalError output
 pub receiveMessage : External input output → Result Worker.ExternalError (Worker.Message output)
--- suspends; disconnect only this client; returns Unconfirmed without peer acknowledgment.
-pub closeExternal : External input output → Worker.Cleanup
+-- impure; raw ownership covers this port/listeners, no remote scope promise.
+pub closeExternal : External input output → Worker.ExternalCleanup
 ```
+
+Shared program handlers **borrow stable root state**, even with serial
+admission; concurrent changes only admission parallelism. They cannot consume
+that shared root state across a suspension. Use explicit root-owned Ref or
+Semaphore resources for mutable state, or machine's non-suspending update to
+replace a model before async commands run. This preserves isolation: cancelling
+one client cannot lose a consuming state lease and retire other clients.
+The consuming Worker.Definition constructor is dedicated-only. Shared init is
+instance-owned after election; losing its initiating client does not cancel it
+while another connection remains. With no clients, ordinary root cleanup applies.
 
 ## 3. Browser.MessagePort
 
@@ -351,11 +398,14 @@ owner. `prepareMove` moves cleanup registration as well as native ownership.
 ```text
 import Browser.Worker as Worker
 import Task exposing (Scope)
+import Schema
 -- Opaque: Port input output; MovedPort input output; ManagedView
+-- Opaque: Prepared input output
 pub type PortError
     = PortClosed
     | PortMoved
     | PortBusy
+    | PreparedForDifferentPort
     | SendingPortTransferred
     | PortCloneRejected Worker.CloneFailure
     | CanvasTransferInvalidState
@@ -363,24 +413,26 @@ pub type PortError
 pub type ReceiveError
     = ReceiveClosed
     | ExternalWorkerLoadFailed
-    | ReceiveDeadlineExceeded
     | MessageDeserializationFailed
     | ProtocolRejected (List Schema.Issue)
 -- impure
 pub channel : Scope, Worker.Protocol a b
     → Result PortError (Port a b × Port b a)
 pub start : Port input output → Result PortError ⊤
-pub post : Port input output, Worker.Prepared input → Result PortError ⊤
+pub post : Port input output, Prepared input output → Result PortError ⊤
+pub discard : Prepared input output → ⊤
 pub close : Port input output → ⊤
 pub prepareMove : Port input output → Result PortError (MovedPort input output)
 -- impure; receiver adopts delivered native endpoint into its own scope before start.
 pub adopt : Scope, MovedPort input output → Result PortError (Port input output)
+-- suspends; run the endpoint input schema before creating a generation-bound token.
+pub prepare : Port input output, input → Result Worker.PrepareError (Prepared input output)
 -- suspends, no native transport ACK implied.
 pub receive : Port input output → Result ReceiveError output
 pub receiveMessage : Port input output → Result ReceiveError (Worker.Message output)
--- suspends; validate protocol handshake before exposing a typed endpoint.
+-- impure; adopt raw endpoint with declared schemas, no invented peer handshake.
 pub receivePort : Scope, Worker.ReceivedPort, Worker.Protocol a b
-    → Result ReceiveError (Port a b)
+    → Result PortError (Port a b)
 -- impure; enables managed observer delivery; closing view delegates to managed close request.
 pub startManaged : ManagedView → ⊤
 -- suspends, cooperatively closes owning managed connection, not arbitrary native terminate.
@@ -408,10 +460,13 @@ The native API cannot transfer resources or acknowledge delivery.
 ```text
 import Browser.Worker as Worker
 import Task exposing (Scope)
+import Schema
 -- Opaque: Channel a
 pub type OpenError = UnsupportedBroadcast | BroadcastStorageDenied
+pub type PostError = PreparationFailed Worker.PrepareError | SendFailed SendError
 pub type SendError
     = BroadcastClosed
+    | PreparedForDifferentChannel
     | BroadcastCloneRejected Worker.CloneFailure
 pub type ReceiveError
     = BroadcastReceiveClosed
@@ -420,16 +475,17 @@ pub type ReceiveError
 -- impure
 pub open : Scope, String, Schema.Schema encoded a → Result OpenError (Channel a)
 pub name : Channel a → String
-pub post : Channel a, a → Result SendError ⊤
 pub close : Channel a → ⊤
+-- suspends; includes arbitrary schema conversion before native commit.
+pub post : Channel a, a → Result PostError ⊤
 -- suspends
 pub receive : Channel a → Result ReceiveError a
 pub receiveMessage : Channel a → Result ReceiveError (Worker.Message a)
 ```
 
-Broadcast post requires a synchronous schema direction and clone-only Wire
-evidence. A suspending schema uses a separate `prepareBroadcast`/`postPrepared`
-pair, preserving the no-transfer restriction as its own opaque type:
+Broadcast requires clone-only Wire evidence. The convenience post runs schema
+preparation and reports its Issues separately from native send errors. Callers
+that need an impure synchronous send use prepareBroadcast/postPrepared:
 
 ```text
 -- Opaque: PreparedBroadcast a
@@ -489,9 +545,15 @@ pub onConnectivityChange : Scope, (Bool → ⊤) → Listener
 pub unlisten : Listener → ⊤
 pub realm dedicatedWorker requestAnimationFrame : Scope, (Float → ⊤) → Result FrameError AnimationFrame
 pub realm dedicatedWorker cancelAnimationFrame : AnimationFrame → ⊤
--- suspends; stops admission and cleans all owned root work before native close.
-pub close : ⊤ → Worker.Cleanup
+-- impure; request shutdown, return to coordinator; never join the caller's own root.
+pub close : ⊤ → ⊤
 ```
+
+WorkerGlobal.close closes admission and signals the outer runtime coordinator.
+The invoking fiber returns to its next checkpoint, then is cancelled with the
+other root children; the coordinator awaits cleanup and sends Closed before
+native close. The caller cannot await its own root or receive Cleanup. The
+external owner observes the outcome via Worker.close/connection terminal state.
 
 Other WorkerGlobal functions have `realm worker` bounds, except name/close
 which accept dedicated/shared only (service lifecycle is not yet defined).
@@ -640,8 +702,11 @@ pub releaseMessage : Message a → ⊤
 
 A Message is an owned token registered in its receiver's scope. Its fields are
 borrowed until release; receivePort consumes a ReceivedPort and rehomes its
-cleanup after schema/protocol negotiation (a bounded handshake returning
-ReceiveDeadlineExceeded at the default ready deadline, ReceiveClosed on closed peer). Merely casting a port cannot establish its role.
+cleanup with the caller's explicit input/output schemas. This is raw external
+interop: every received message is validated, but no claim about the peer's
+expected outgoing type or remote cleanup is made. A standard raw peer needs no
+beni handshake. Typed MovedPort adoption, in contrast, preserves a role already
+proved at its sender. No cast silently manufactures either proof.
 SourceId grants no DOM authority. releaseMessage closes unadopted ports;
 receive is the data-only projection, which adopts data-owned resources and
 closes ancillary ports before returning. MessageSource/ports aliases share one
@@ -652,5 +717,19 @@ so dropping a consumer cannot leak native endpoints.
 
 The [complete examples](workers-example.md) include the direct and Elm-shaped
 programs and the same page lifecycle. Machine command completion settles an
-unanswered token as channel-close after cleanup; token send failure is reported
-through the existing TransportFailure/lost-peer path, not silently dropped.
+unanswered token as channel-close after cleanup. respond/finish reserve a
+terminal result and transfer its resources to the coordinator; they report
+TerminalClosed or TerminalPreparationFailed only, not a later native send
+failure. After the command, its child scopes and finalizers complete, the
+coordinator commits the reserved send. A preparation/native-send failure uses
+TransportFailure/lost-peer settlement; no self-join or early success reply.
+Root perform commands belong to init/subscription scope, while performFor and
+performStream remain request-scoped. Dispatched command messages retain their
+owning context; the serial request completes after its command queue drains.
+
+Port.Prepared and PreparedBroadcast also bind their exact endpoint generation
+and schema identity. post/postPrepared reject a token from another endpoint
+before native commit with PreparedForDifferentPort/PreparedForDifferentChannel,
+consume the attempted token and dispose still-local resources. A same payload
+type is not evidence of matching schema encodings. Port.discard and broadcast
+discard cancel uncommitted reservations; endpoint scope cleanup owns leftovers.

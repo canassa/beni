@@ -91,6 +91,10 @@ it cannot publish. An application can choose another typed overflow policy.
 
 ## Page: Main.beni
 
+Cancelling a serial stream before its state lease returns retires the worker
+with WorkerStateLost; this example closes it immediately afterwards. An app
+that must reuse stable borrowed state selects the concurrent constructor.
+
 Run opens one worker, consumes pushed events concurrently, calls Predict,
 starts Frames, consumes/releases one chunk, cancels the stream, stops its local
 event reader and closes the worker. All paths stay in Task.scope; failure does
@@ -107,6 +111,7 @@ import Html exposing (Html)
 import Jobs
 import Duration
 import Sub
+import String
 import Task
 import Tea
 
@@ -260,10 +265,11 @@ program =
         }
 ```
 
-The terminal methods settle or fail their runtime-owned token; returning Err
-already closes that token and informs its peer (or the lost-peer path). This
-example chooses no local retry for those typed terminal-send failures; it does
-not suppress a defect. The adapter serializes update dispatch. Request-scoped
+The terminal methods reserve or refuse their runtime-owned token. Preparation
+failures are remembered for TransportFailure after command cleanup; an Ok
+reservation is also sent only after cleanup. No native send occurs inside the
+impure respond/finish call. This example does not retry terminal reservations
+or suppress defects. The adapter serializes update dispatch. Request-scoped
 commands finish before a serial program admits another request, while root
 subscription messages can still run; they may borrow only stable state captured
 by an active command. Consuming/replacing that state while a command borrows it

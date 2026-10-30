@@ -87,13 +87,26 @@ crosses to the page**. Configuration does cross and therefore has one.
 The worker root scope owns state and resources registered during init. Serial
 handlers receive the current state and return its replacement alongside their
 result. A stream keeps that state until its handler finishes. This prevents
-two requests from simultaneously consuming an owned state record. The separate
+two requests from simultaneously consuming an owned state record. Until the
+handler returns its replacement, it holds a state lease. If interrupted before
+return, the original state must not be resurrected: close admission, cancel
+queued work with Transport WorkerStateLost, clean the instance root and close
+it. A defect takes the existing fatal route. Only a successful tuple return
+restores the lease; an ordinary typed Err returned alongside state is safe.
+Shared programs expose only borrowed stable-state handlers (or synchronous
+machine updates), so one client's cancellation cannot retire other clients.
+Concurrent borrowed-state programs avoid this retirement because their state
+was never consumed. Test cancellation after moving a state field, not only
+before the handler starts. A machine update restores its model synchronously;
+its async commands may only borrow stable retained state. The separate
 concurrent constructor borrows stable state; the checker rejects a handler
 that consumes it. Mutable coordination then uses explicit worker-local Ref/
 Semaphore resources, not an unchecked shared record update.
 
 The context gives init/handlers the worker scope and a typed event emitter.
 Events are worker-initiated progress or pushed results, independent of a call.
+Shared root sends name one connection with emitTo; there is no implicit fan-out
+of an owned transferable event. Clone-only values can be sent separately.
 `events handle` is a bounded stream on the page; `emit` is impure and reports
 QueueFull instead of blocking init before the page can receive Ready. Streams
 requested by `stream handle request` are separate, credit-controlled response
@@ -127,7 +140,7 @@ The entryKinds record has these required fields; indices are zero-based:
 |---|---|
 | `programType` | Resolved nominal type-constructor symbol and arity |
 | `constructors` | Symbols returning that program type; exactly one `entry` argument with deferred callbacks |
-| `launches` | Pairs of function symbol and program argument index; includes pool launch as well as direct open |
+| `launches` | Pairs of function symbol and program argument index; includes pool launch and shared connect as well as direct open |
 | `parameters` | One role per type parameter: `local`, `config`, `request`, `reply`, `error`, `event`, `chunk`; Wire required for every role except local |
 | `realm` | One native execution realm, checked against the host universe |
 | `runtime` | Resolved beni module with `run : Program … → ⊤`; may suspend; deferred initialization owns a root scope and installs handlers before Ready |
@@ -225,7 +238,9 @@ The measured scan covers **every** selected host-access primitive occurrence
 in browser-inline, browser and core, including nested calls, not just foreign
 declarations. The CSV gives a file, line, operation, receiver and member for
 each site; [research](research/workers-host-and-wire.md) explains its conservative
-value-provenance classifications and the exact counts.
+value-provenance classifications and exact counts: 556 definite native sites,
+2,130 portable receiver operations, and 170 explicitly caller-dependent
+callable/raw-value sites. The latter retain obligations, never safe defaults.
 
 | Candidate | Effect on the measured code | Guarantee and cost |
 |---|---|---|
@@ -510,6 +525,10 @@ instance/connection and never reused while a reply/tombstone can exist;
 rollover creates a new generation. Decoder limits cover depth, frame bytes,
 queued requests and chunk credits. No unbounded pre-ready buffer.
 
+Reply/finish reservations are committed by the outer coordinator only after
+their command/request finalizers finish. WorkerGlobal.close similarly signals
+that coordinator and returns; a worker fiber never joins its own root.
+
 Ready means error/close/messageerror listeners and handler scopes exist,
 protocol/type identities match, and init has completed successfully. `open`
 races this event against explicit failure, cancellation and a finite configured
@@ -566,9 +585,11 @@ error while the page silently continues.
 | Shared clients have separate scopes and leases | One ordinary client cannot close another's work |
 | Scheduler/fibers are realm-local | A handle never pretends to be a joinable remote fiber |
 
-`send` performs synchronous serialization and returns, impure. Native delivery
+`send` commits a prepared typed message with synchronous serialization and returns, impure. Native delivery
 is a later message task, FIFO for a channel; scheduling between channels is
-unspecified. `receive`, `call`, `open`, stream pull and graceful close suspend.
+unspecified. `receive`, `call`, `open`, stream pull and managed graceful close suspend.
+Raw external ports/worker owners expose native/local shutdown separately; their
+explicit raw lifecycle makes no remote-finalizer promise (API §1–§3).
 No synchronous RPC, busy waiting, or main-thread `Atomics.wait`.
 
 Each request is a child of its connection scope. Interrupting the waiting
@@ -592,7 +613,7 @@ crash may supply no exit event: configured heartbeats/deadlines end waits as
 unresponsive without asserting that cleanup completed. A timeout cannot force
 a synchronous infinite handler to process Interrupt.
 
-When a page stops normally, it executes this shutdown for dedicated workers
+When a page stops normally, it executes this shutdown for managed dedicated workers
 and closes its shared connections. Page discard/navigation/OS kill cannot
 promise asynchronous finalizers; pagehide/visibility signals are best-effort
 notifications, not acknowledgment. Shared connections use renewable leases;
@@ -636,7 +657,9 @@ listeners if the source scope is open, otherwise closes the endpoint. Once
 commit starts the source registration is consumed; the move reservation owns
 cleanup of any still-local native endpoint until outcome is known. Queued native messages stay subject to native semantics,
 not a fabricated empty queue claim. The receiver adopts the new endpoint into
-its own scope before starting it. Transferring a port to itself is refused;
+its own scope before starting it. Raw external ReceivedPort adoption attaches
+explicit schemas and validates each message without a mandatory beni handshake;
+only managed endpoints promise managed peer cleanup/type negotiation. Transferring a port to itself is refused;
 transferring an entangled peer cannot be described as guaranteed delivery.
 
 BroadcastChannel is named and storage-partition scoped. It does not send to
@@ -743,7 +766,7 @@ measurements must not run concurrently with another full suite on Dagon.
 | Realm checking | Multi-entry roots | Pinned native table, declaration-local bounds, value-flow summaries/cache invalidation, initializer and host:page handling, every §4 realm fixture. Worker builds cannot ship without this gate. |
 | Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, owner-selected release-safe representation plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
 | Dedicated runtime and defects | Prior compiler slices | Worker-local init/state/root scope, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
-| Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |
+| Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared initializer election versus configuration-free attach, leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |
 | Native transfer families and atomics | Wire ownership; #1278/#1277 | Every standard type row assigned, implemented and browser-tested or explicit capability refusal; GPU integration, shared memory and typed exact failure coverage. Proposal rows remain visibly gated by owner decision. |
 | Pools, streams and parity measurements | Dedicated/ports | Fixed/elastic bounds, credit/ack/cancel, keep-alive, no implicit retry of moves, size/latency reports and parity-ledger evidence. |
 | Service-worker lifecycle design | Owner decision | Registration/update/event-lifetime/errors and no-DOM realm contract designed separately; this is a research/design slice, not authorization to implement it here. |

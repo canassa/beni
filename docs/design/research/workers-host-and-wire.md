@@ -25,7 +25,8 @@ reflection and foreign paths must propagate/check the same provenance (§2).
 | core | 1,435 | 137 | 0 | 969 | 21 | 308 |
 
 A value operation has no named-member argument (apply, construct, at, setAt,
-each); `method` retains its member. Dynamic member means its name is not one
+each); `method` creates a callback receiving native `this` and is also a
+value operation. Its hidden receiver provenance must flow into that callback. Dynamic member means its name is not one
 string literal at that syntax site, even if later inference proves a finite
 set. Get/call totals alone are 184, 634 and 807 respectively. These totals
 supersede the brief's approximate counts because the scope is recursive and
@@ -39,13 +40,59 @@ native type declarations; those counts are not all foreign functions.
 | Direct declaration parameter | 109 | 450 | 558 |
 | Local/computed value | 120 | 482 | 607 |
 
-Thus at least 109/450/558 sites access a value they were given. The last row
-also includes aliases of parameters and globals, callback parameters, derived
-values and plain data. It must **not** be counted as a semantic “non-host” row:
-resolving it requires the proposed value-flow analysis. Every site has a row;
-these are reproducible lexical classifications, not invented results of an
-unimplemented whole-program analysis. A future semantic census must subdivide
-this last row and compare every classified site with this baseline.
+The lexical parameter row includes plain data; it is not a native-host count.
+A second source review classifies every row's receiver and records its containing
+declaration, source line and reason in
+[host-access-classified.csv](workers/host-access-classified.csv), with totals in
+[host-access-classified-counts.json](workers/host-access-classified-counts.json).
+It follows local allocation/return shapes and helper contracts: for example,
+Rt's slot records are plain data but their node fields hold native objects;
+Inline's tableOf uses Array.from on DOM queries; Http's reader result is a plain
+iterator-result record and its value is Uint8Array; Log.console binds `out`
+to the console root before selecting its method from Level. Native URL.parse,
+Headers.has/get/set/iteration, Response.text and Node.compareDocumentPosition
+are classified by receiver provenance, not by familiar method names. Form.elements
+and select.options are native collections; composedPath and Array.from results
+are plain arrays. Inline.adopt/madeOf retain querySelectorAll NodeLists through
+page/made/push; only tableOf materializes its array. The $a anchor expando
+belongs to native Elements. roots accepts a caller-supplied element collection
+and is mixed, rather than falsely assuming every renderer collection is Array. This is a reviewed
+source census, not output from the proposed checker.
+
+| Receiver/operation class | inline | browser | core |
+|---|---:|---:|---:|
+| Native host receiver/root | 180 | 329 | 47 |
+| Portable data/ECMAScript/beni runtime record | 127 | 715 | 1,288 |
+| Caller-dependent callable or generic raw-value helper | 14 | 56 | 100 |
+| Total sites | 321 | 1,100 | 1,435 |
+
+The 170 mixed sites are classified, not unreviewed: stored/passed callables
+need their callee/capture effects; generic Schema/Debug inspection needs the
+input's host provenance; a guarded Error/DOMException or Promise callback can
+have different native/data origins. There is no single context-independent
+native count for these polymorphic definitions. They are not marked safe.
+The classification provides **556 definite native sites**, 2,130 portable
+receiver operations and 170 input-dependent sites. Portable receiver does not
+mean a whole expression is realm-free: Object helpers and plain container
+fields can carry a native value or invoke a callback, whose obligations must
+still propagate. Each nested host operation has its own row.
+
+| Native sites by source of receiver | inline | browser | core |
+|---|---:|---:|---:|
+| Global lookup (literal / dynamic) | 34 / 1 | 63 / 2 | 15 / 0 |
+| Immediate global result | 23 | 47 | 12 |
+| Given declaration parameter | 52 | 93 | 6 |
+| Traced local/computed native value | 70 | 124 | 14 |
+| Native sites with dynamic global/member names (overlaps rows above) | 8 | 14 | 2 |
+
+Thus 151 definite native sites receive their object directly as a parameter;
+another 208 reach a traced native local/computed value, often returned from a
+helper or callback. The JSON also splits every mixed/data site by those origins,
+so none of the original 1,209 local/computed sites disappears into a remainder.
+For example, the 15/15/21 dynamic-member sites divide between native controls,
+history and console versus generated record fields and generic schema input;
+only the former need finite native member keys. This is why a literal-global
+check or blanket ban on dynamic record names would be wrong.
 
 The three dynamic globals are inline/Listen.beni:17 and browser/Listen.beni:24,
 34, all selecting `target`. Dynamic members are Navigation (one per platform),
@@ -56,8 +103,8 @@ Listen takes typed Window/Document/worker targets instead of a global-name
 String. Event-name strings remain ordinary method arguments and are supported.
 
 The existing-module audit in research §8 identifies URL preparation's hidden
-`document.baseURI` dependency and DOM-bearing event values. All 1,117 direct
-parameter sites plus aliases explain why foreign tags or literal-global-only
+`document.baseURI` dependency and DOM-bearing event values. The 151 definite native
+parameter sites plus traced locals and mixed callbacks explain why foreign tags or literal-global-only
 checking cannot establish the promised guarantee.
 
 ## 2. Mechanism, migration and budget
