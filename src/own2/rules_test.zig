@@ -44,8 +44,10 @@ const layers = [_]Entry{
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    // §5 says 3 350 since #1350: a view's instantiated place and a join's place (3 290 since #1360).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3350 },
+    // §5 says 3 600 since #1372: map's knot test and the flattening choice
+    // join (§2.3); 3 350 since #1350, a view's instantiated place and a
+    // join's place.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3600 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its

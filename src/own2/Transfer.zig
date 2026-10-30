@@ -1749,7 +1749,7 @@ pub const Frame = struct {
                 const copy = try f.gpa.dupe(NodeId, members.items);
                 defer f.gpa.free(copy);
                 // One arm runs: its arms are exclusive alternatives (§2.3).
-                const joined = try f.env.shapes.joinChoice(f.gpa, f.account(), f.env.places, f.env.cells, copy);
+                const joined = try f.env.shapes.joinAlternatives(f.gpa, f.account(), f.env.places, f.env.cells, copy);
                 var kappa: Cond.Kappas = .none;
                 for (ctxs.items) |k| kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, k);
                 kappa = try f.env.conds.propagate(f.gpa, f.env.charge, f.env.view(), kappa, joined, members.items, ctxs.items, .alternatives, false, null);

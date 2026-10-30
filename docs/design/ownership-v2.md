@@ -503,6 +503,30 @@ derived reads use the kind through the primitive, so a stored `choice` never sta
 `F(x)`. `memo_join` is keyed by `(mode, x, y)`, so `join` and `joinChoice` of one pair never share an
 entry.
 
+**A choice member is flattened** [M 2026-10-30, #1372]. A join of exclusive alternatives whose caller sets κ
+on the result from the members read whole (`Cond.propagate`: `Transfer`'s branch join and `Summary.joinRes`'s
+choice mode) is `Shape.joinAlternatives`: before the grouping, the choice member with the most arms is kept
+whole, and every other member that is a `choice` is replaced by its arms, walked through its choice DAG; an
+arm or a member that the kept choice's DAG holds already is dropped. So the result is one choice of the
+distinct alternatives. Without it a group's port `port_{i+1} = port_i ⊔ F_i` nests the last round's choice in
+every round, its choice DAG grows as about r³/6 nodes in r rounds, and the deduplication by id never sees the
+arms it would merge. Keeping the largest member whole is what keeps a tower of joins linear: K's
+`r_k = if c then Rose [r_{k−1}] else r_{k−1}` keeps `r_{k−1}` and adds one arm, where opening every member
+rebuilt k arms at level k (25 250 / 154 430 records at 10 / 20 levels, and the limit at 40, against
+9 081 / 23 905 / 67 126 kept). This is the
+absorption rule above applied to the whole member set, and it keeps every meaning: choice is associative
+and idempotent, the maximum per key is too, and arms that become one group (deltas over one base, leaves into
+one set leaf) are grouped exactly as `joinChoice` groups direct members (`max(b + x, b + y) = b + max(x, y)`
+for the saturating sum). Only a `choice` is opened: a `union` or `positions` member stays a member, so
+coexistence never becomes a choice. A view, or a node `eager` made again, is kept whole, since its read joins
+the class's entry under it (§2.11 *κ at a view*). κ per alternative is the members' own: `propagate` reads
+each member whole under its own snapshot, so a nested choice's entry is read through the member it was,
+never through the node the result no longer holds. `eager`'s rebuild of a choice stays `joinChoice`, not
+flattened: a published value's κ is carried node by node (`kappaRelabel`), so an entry keyed by a nested
+choice that a flattened rebuild drops would be lost. That is not a precision limit but a soundness
+boundary: flattened there, `CallOtherPathsSharedLeaf`'s `chosen` lost its `excl π2[*]` at `.1`.
+`memo_join` keys a flattening join apart from `joinChoice`.
+
 **What this slice replaces.** The #1125 check (`Widen`'s `occurs` count, `fold_dups`, `lost`) counts a
 node reached through both arms of an opened choice as repeated, so K and JoinFoldChoice could never read
 `yes` beside it. This slice **replaces** it with the primitive: `fold_dups` and `occurs` go, and a folded
@@ -655,6 +679,22 @@ Operations, memoised on their node arguments:
   (`w5`: 17 steps, #856). Its correspondence hook reports old/new node and child edges, including backedges;
   `Cond` transports the associated κ snapshot through that mapping in S3b. Shape sharing alone never selects
   or overwrites a condition.
+  **An image on no knot is interned** [M 2026-10-30, #1372]. A node or delta image is made before its parts
+  so that a cyclic part can name it, and it is open until its parts are mapped. An image that reaches no
+  open node (Tarjan's low link: no part named it or an open ancestor) is on no knot, and is interned: an
+  equal record made before is the image, so a value a round leaves unchanged keeps its `NodeId`, and
+  `memo_join`, the node-set unions, `view` interning and the choice deduplication hit across rounds. Before
+  this, read-off made a copy of every node each round: at GroupFieldShift n = 4 the port held `R 3 4 5 6` six
+  times. An image on a knot stays a record of its own, as a widened knot is unique by construction. A union,
+  choice or positions image is interned as the record it was made as, never through `union`'s or `choice`'s
+  absorption, so both sides stay and no occurrence is dropped: `positions(x₁, x₂)` whose sides relabel
+  alike is `positions(x, x)`, two edges, which every multiplicity reader counts as two (§2.9's aggregates
+  compose by edge: `Cond.arrivalAggs`, `Calls.preimage` and `dagKappa`'s intersection of the sides). Two
+  source nodes that become one image at one position carry their κ entries joined (`kappaRelabel`), which
+  only weakens. The summary printer's provenance list is a set per distinct node (#1182), so a node that
+  a round copied once per round now prints once: TailModConsMerge's `mergeSort` (4a) prints `fresh1` at
+  `res`'s root instead of `fresh1 fresh1 fresh1`, the same `{lost}`; those copies were arms of the round
+  choice, not coexisting positions.
 - `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality (the kind-blind γ-inclusion above), memoised per immutable-version pair with a **shape-only** coinductive assumption on
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
@@ -3403,6 +3443,11 @@ memo_force : stamped column NodeId → NodeId, a view's one-step expansion (§2.
 `join` with its outer DAG and every per-step child join built of `choice` (leaves still merge into one leaf: a cell
 in two arms is one, the maximum). Every switch on the kind handles `choice` with `union`'s set reading; the
 multiplicity reader (§2.9's primitive) is the only one that tells them apart.
+`joinAlternatives(members)` is `joinChoice` with its choice members flattened into one set of arms (the
+largest kept whole, `armCount`), for a caller that sets κ from the members read whole; `memo_join` keys it
+apart (§2.3 *A choice member is flattened*, #1372).
+`map` interns an image on no knot (`map_open`, `map_low`: a node's entry index while open, the earliest open
+node an image reaches) and keeps a knot's images records of their own (§2.3 *map*, #1372).
 
 *As built (#1098, first part):* a `positions` node's `cells` is the marker `lazy_cells` until a reader asks
 (`cellsOf`, which builds it from its sides on an explicit stack and keeps it in the record); a recast or a
@@ -4421,7 +4466,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 350 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 220 (#1335: `foldCondOf` by the cycle walk) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |

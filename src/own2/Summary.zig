@@ -717,7 +717,7 @@ pub const Table = struct {
     pub fn joinRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas, mode: Shape.Kind) Error!Joined {
         if (a == b and ka == kb) return .{ .node = a, .kappas = ka };
         var members = [_]NodeId{ a, b };
-        const j = if (mode == .choice) try env.shapes.joinChoice(env.gpa, env.account(), env.places, env.cells, &members) else try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
+        const j = if (mode == .choice) try env.shapes.joinAlternatives(env.gpa, env.account(), env.places, env.cells, &members) else try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
         const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
         return .{ .node = w.node, .kappas = w.kappas };
