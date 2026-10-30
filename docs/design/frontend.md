@@ -2263,3 +2263,15 @@ Each test now has the same 120-second hang guard; performance is checked outside
 `.agents/skills/beni/` is a later decision. There is no `beni skill uninstall`: the installed
 copy is one directory, and `rm -r <dir>/beni` removes it. The command writes nothing under a
 home directory on its own.
+
+## Amendment of 2026-10-30: worker manifest entries and exposure metadata
+
+Specified, not built. [workers.md](workers.md) §2–§4 extends the package/build
+manifest contract with app `workers`, platform `entryRuntimes` and privileged
+`realms` maps. Preserve source manifest keys for diagnostics at 1:1 and resolve
+registered module/value references through existing package/module identity.
+No new application keyword or declaration grammar is introduced. Ordinary
+`main` discovery is unchanged; registered `program` values are separate roots.
+Sort entry identities before parallel work; include these maps in package,
+interface and cache invalidation. `check` must validate the same registrations
+and obligations as `build` even when it writes no output.
