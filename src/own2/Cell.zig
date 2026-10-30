@@ -191,6 +191,9 @@ pub const Table = struct {
     /// `(container, label)` → split.
     split_intern: Ids.FixedDict(2) = .{},
     sets: Radix = .{},
+    /// `R`, `D` once made: `D`'s readers never intern, so no `D` costs nothing.
+    mark_r: CellId = .none,
+    mark_d: CellId = .none,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.cells.deinit(gpa);
@@ -307,7 +310,15 @@ pub const Table = struct {
     /// A use mark (`Mark`), with the field's rank for `field`; one cell per
     /// distinct mark, at no place.
     pub fn mark(t: *Table, gpa: Allocator, account: *Account, m: Mark, rank: u32) Error!CellId {
-        return t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
+        const id = try t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
+        if (m == .r) t.mark_r = id;
+        if (m == .deep_read) t.mark_d = id;
+        return id;
+    }
+
+    /// Whether `s` holds `D` (§2.10).
+    pub fn hasDeepRead(t: *const Table, s: SetId) bool {
+        return t.mark_d != .none and t.sets.member(s, t.mark_d.int());
     }
 
     /// The mark a `mark` cell carries.

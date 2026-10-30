@@ -519,14 +519,14 @@ pub const Table = struct {
     /// (§2.7's lazy `call` use): `cellsAt` non-empty, or a `D` on the way.
     pub fn usedAt(env: Env, use: NodeId, steps: []const Step) Error!bool {
         if (use == .none) return false;
-        if ((try marksAt(env, use, steps)).deep_read) return true;
+        if (env.cells.mark_d != .none and (try marksAt(env, use, steps)).deep_read) return true;
         return (try env.shapes.cellsAt(env.gpa, env.account(), env.places, env.cells, use, steps)) != .none;
     }
 
     /// Whether a use shape's node is marked `D` (§2.10).
     pub fn deepRead(env: Env, n: NodeId) Error!bool {
-        const d = try env.cells.mark(env.gpa, env.account(), .deep_read, 0);
-        return env.cells.sets.member(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n), d.int());
+        if (env.cells.mark_d == .none) return false;
+        return env.cells.hasDeepRead(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n));
     }
 
     // ---- the lattice -------------------------------------------------------------
