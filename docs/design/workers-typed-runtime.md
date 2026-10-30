@@ -71,7 +71,7 @@ platform code as Js.Buffer.Buffer a. Its four operations are:
 ```text
 pub foreign impure make : ⊤ → Buffer a
 pub foreign impure push : Buffer a, a → ⊤
-pub foreign pure length : Buffer a → Int
+pub foreign impure length : Buffer a → Int
 pub foreign impure forEach : Buffer a, sync (a → ⊤) → ⊤
 ```
 
