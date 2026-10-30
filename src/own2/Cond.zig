@@ -853,6 +853,28 @@ pub const Table = struct {
         cond: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId,
     };
 
+    /// Whether a snapshot stores an entry under a view or a node whose DAG
+    /// holds one: a check of the invariant that a class is stored forced
+    /// (§2.11), uncharged, for `runtime_safety` builds.
+    pub fn kappaHoldsView(t: *const Table, gpa: Allocator, shapes: *const Shape.Table, ctx: Kappas) Allocator.Error!bool {
+        if (ctx == .none) return false;
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(Kappas) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, ctx);
+        while (stack.pop()) |at| {
+            if (at == .none or (try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
+            const p = t.position(at);
+            var it = t.mapEntries(p.here);
+            while (it.next()) |e| if (try shapes.holdsView(gpa, .from(e.key))) return true;
+            if (p.fold != 0) continue;
+            var lt = t.mapEntries(p.links);
+            while (lt.next()) |e| try stack.append(gpa, .from(e.value));
+        }
+        return false;
+    }
+
     /// `ctx` with every stored entry's node and condition mapped, the
     /// positions' paths and folds unchanged (§2.9: `Shape.map` relabels
     /// each binding's node, its paths relative to the value's root). A
@@ -5383,4 +5405,74 @@ test "a view's reach aggregate and its widened fold are its eager image's" {
     try testing.expectEqual(try f.kappa(we.kappas, we.node, false), try f.kappa(wv.kappas, wv.node, false));
     const arg_step = try f.places.ctorStep(gpa, &f.account, 6, 0);
     try testing.expectEqual(try f.kappaPath(we.kappas, &.{ arg_step, Place.Step.elem }, try f.projOf(try f.projOf(we.node, arg_step), Place.Step.elem), true), try f.kappaPath(wv.kappas, &.{ arg_step, Place.Step.elem }, try f.projOf(try f.projOf(wv.node, arg_step), Place.Step.elem), true));
+}
+
+test "#1279 review: κ stored under a chain's middle view survives a read-off's relabelling, and a recast's inner view reads its chain" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lol = try f.placeOf(3);
+    const lk = Cell.Kind.ofPlace(f.places.kind(lol));
+    const arg = try f.leaf(3, &.{try f.cells.site(gpa, &f.account, 1, lol, lk)});
+    const p1 = try f.leaf(3, &.{try f.param(1, 3, &.{})});
+    var ti: Shape.TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const k1 = try f.sep(try f.param(2, 1, &.{}), try f.param(3, 1, &.{}));
+    const mid = try f.shapes.view(gpa, &f.account, p1, 0);
+    try testing.expectEqual(arg, try f.shapes.force(gpa, &f.account, mid));
+    ti.arg = mid;
+    const outer = try f.shapes.view(gpa, &f.account, p1, 1);
+    try testing.expectEqual(arg, try f.shapes.force(gpa, &f.account, outer));
+    const at_mid = try f.setK(.none, mid, k1);
+    const want = try f.kappa(at_mid, outer, false);
+    try testing.expect(want != try f.kappa(.none, outer, false)); // the entry matters
+    // Read-off: `map` the value, then carry its κ over the map's images.
+    const Carry = struct {
+        shapes: *Shape.Table,
+        fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            return c.shapes.memo_map.get(x);
+        }
+        fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
+            return k;
+        }
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    const mapped = try f.shapes.map(gpa, &f.account, outer, {}, Carry.same);
+    var carry: Carry = .{ .shapes = &f.shapes };
+    const relabelled = try f.conds.kappaRelabel(gpa, f.charge(), at_mid, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
+    try testing.expectEqual(want, try f.kappa(relabelled, mapped, false));
+    // A recast is one position with its inner, and a recast has no finite
+    // rank, so `innersOf` lists the inner view: its chain's entry counts.
+    const rec_v = try f.shapes.recast(gpa, &f.account, list, outer);
+    const rec_e = try f.shapes.recast(gpa, &f.account, list, arg);
+    const at_arg = try f.setK(.none, arg, k1);
+    const via_arg = try f.kappa(at_arg, rec_e, false);
+    try testing.expect(via_arg != try f.kappa(.none, rec_e, false));
+    try testing.expectEqual(via_arg, try f.kappa(at_mid, rec_v, false));
+}
+
+test "#1279 review: a union's view side owes its answer's fold certificate" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lk = Cell.Kind.ofPlace(f.places.kind(list));
+    // A widened class image's certificate (`widenValue` stores one; set here).
+    const image = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 9, list, lk)});
+    try f.conds.fold_cond.put(gpa, image, lost);
+    f.conds.fold_cond_n += 1;
+    var ti: Shape.TestInstantiation = .{ .cellt = &f.cells, .arg = image };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, try f.leaf(1, &.{try f.param(1, 1, &.{})}), 0);
+    const other = try f.leaf(1, &.{try f.cells.site(gpa, &f.account, 11, list, lk)});
+    const u_v = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, v, other);
+    const u_e = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, image, other);
+    try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u_e));
+    try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u_v));
 }

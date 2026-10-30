@@ -457,14 +457,14 @@ pub const Table = struct {
     /// is stored forced (§2.11), uncharged, for `runtime_safety` builds.
     pub fn holdsView(t: *const Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
         if (n == .none) return false;
-        var seen: stamped.Column(NodeId, void) = .{};
+        var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, n);
         while (stack.pop()) |x| {
-            if (seen.contains(x)) continue;
-            try seen.put(gpa, x, {});
+            const got = try seen.getOrPut(gpa, .{x.int()});
+            if (got.found_existing) continue;
             const d = t.get(x);
             switch (d.kind) {
                 .view => return true,
@@ -503,7 +503,19 @@ pub const Table = struct {
                 var over: u32 = over_none;
                 var it = t.overEntries(d.b);
                 while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, try t.view(gpa, account, e.node, env));
-                const base = try t.view(gpa, account, .from(d.a), env);
+                var base = try t.view(gpa, account, .from(d.a), env);
+                // The base's image may be a delta (a parameter leaf whose
+                // actual is one): compose over its base, as `put` does, so no
+                // delta is over a delta. A base is a template leaf or node, so
+                // this force is one step.
+                const fb = try t.force(gpa, account, base);
+                if (t.kind(fb) == .delta) {
+                    var composed = t.nodes.items(.b)[fb.int()];
+                    var ot = t.overEntries(over);
+                    while (ot.next()) |e| composed = try t.overPut(gpa, account, composed, e.step, e.node);
+                    over = composed;
+                    base = .from(t.nodes.items(.a)[fb.int()]);
+                }
                 break :blk t.make(gpa, account, .{ .kind = .delta, .place = d.place, .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
             },
             .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = 0, .reach = .none }),
@@ -1587,7 +1599,15 @@ pub const Table = struct {
                 .leaf => unreachable,
                 .view => {
                     if (t.memo_map.get(n) != null) continue;
-                    try t.memo_map.put(gpa, n, t.memo_map.get(t.memo_force.get(n).?).?);
+                    // Every view on the chain `force` followed takes the
+                    // answer's image: κ stored under a middle view is carried
+                    // over the relabelling too (§2.11 *κ at a view*).
+                    const image = t.memo_map.get(t.memo_force.get(n).?).?;
+                    var id: ?NodeId = n;
+                    while (id) |x| : (id = t.chainNext(x)) {
+                        if (t.memo_map.get(x) != null) break;
+                        try t.memo_map.put(gpa, x, image);
+                    }
                 },
                 .recast => {
                     if (t.memo_map.get(n) != null) continue;
@@ -1611,7 +1631,19 @@ pub const Table = struct {
                     if (d.kind == .node) {
                         t.nodes.items(.a)[out.int()] = mapped;
                     } else {
-                        t.nodes.items(.a)[out.int()] = t.memo_map.get(.from(d.a)).?.int();
+                        var base = t.memo_map.get(.from(d.a)).?;
+                        // A view base may answer a delta: the image composes
+                        // over that delta's base, as `put` does, so no delta
+                        // is ever over a delta. Its image is finished here: a
+                        // view's answer is mapped before the view.
+                        if (t.kind(.from(d.a)) == .view and t.kind(base) == .delta) {
+                            var over = t.nodes.items(.b)[base.int()];
+                            var mt = t.overEntries(mapped);
+                            while (mt.next()) |e| over = try t.overPut(gpa, account, over, e.step, e.node);
+                            mapped = over;
+                            base = .from(t.nodes.items(.a)[base.int()]);
+                        }
+                        t.nodes.items(.a)[out.int()] = base.int();
                         t.nodes.items(.b)[out.int()] = mapped;
                     }
                 },
@@ -3262,4 +3294,37 @@ test "widen folds a view's levels as it folds its eager image's" {
     try testing.expect(!try f.shapes.holdsView(gpa, wv));
     try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, v, wv));
     try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, wv, try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, eager)));
+}
+
+test "#1279 review: a view's delta over a parameter whose actual is a delta composes, as `put` does" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const list = try f.placeOf(1);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const base = try f.shapes.leaf(gpa, &f.account, rec, try f.site(5, rec, .record));
+    const xb = try f.shapes.leaf(gpa, &f.account, list, try f.site(6, list, .list));
+    const arg = try f.shapes.delta(gpa, &f.account, base, try f.one(fb, xb));
+    const p = try f.shapes.leaf(gpa, &f.account, rec, try f.param(1, rec));
+    const xa = try f.shapes.leaf(gpa, &f.account, list, try f.site(7, list, .list));
+    const template = try f.shapes.delta(gpa, &f.account, p, try f.one(fa, xa));
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    f.shapes.instantiation = ti.inst();
+    const v = try f.shapes.view(gpa, &f.account, template, 0);
+    const answer = try f.shapes.force(gpa, &f.account, v);
+    try testing.expectEqual(Kind.delta, f.shapes.kind(answer));
+    try testing.expect(f.shapes.kind(try f.shapes.force(gpa, &f.account, .from(f.shapes.get(answer).a))) != .delta);
+    const Id = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    const m = try f.shapes.map(gpa, &f.account, v, {}, Id.same);
+    try testing.expectEqual(Kind.delta, f.shapes.kind(m));
+    try testing.expect(f.shapes.kind(.from(f.shapes.get(m).a)) != .delta);
+    const eager = try f.shapes.delta(gpa, &f.account, base, try f.shapes.overPut(gpa, &f.account, try f.one(fb, xb), fa, xa));
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m, eager));
 }
