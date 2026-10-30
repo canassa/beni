@@ -1123,6 +1123,19 @@ nothing to the recast's derived read; §2.13.9's restoration reads the same entr
 position: a built node's read is the walk's certificate, so a constraint stored for the base alone is observable
 nowhere. `Cond.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
 else.
+*As built (#1273):* `propagate` groups a frame's transitions by what the members are projected along: the
+step, the place of the recast's inner it leaves from (none for the node's own), and the class. A member's
+side for an inner is the join of its own inners at that inner's place, never the inner itself, so every
+transition in a group projects the run to the same members: one run per group, read once, and its cursors'
+links read once per frame. The group's frame keeps every transition's node, each with its own output path,
+route and memo state, and handles each as its own frame did: the states, links, memo hits, fold
+obligations, redundancy tests and stored entries are those of the frames they replace, so nothing is
+approximated. A list of n bound lists has n inners at its element's place: n transitions that each
+projected all n members, n² work, are one run of n. **The nodes stay per inner.** A κ is stored under its
+node, and a read that projects the value (`Shape.proj`, a union's sides in `dagKappa`) reaches each inner's
+own child, never a join of them: storing under a joined child loses the entries those reads look up
+(two `shared` ones in a list of three spreads, its block 1 756 → 1 624 bytes). `build_test.zig` pins
+both: the work at 100 and 200 bound lists, and that block byte for byte.
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
 at the same node remain separate states; revisiting a completed identical state reuses its answer.
@@ -3335,7 +3348,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps` | Ids, Place, Cell | ≤ 1 960 |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 700 |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 2 800 |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse` | Ids, Facts, Place, Regions, Shape | ≤ 700 |
 | `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |

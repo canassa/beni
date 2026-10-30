@@ -583,6 +583,14 @@ pub fn FixedDict(comptime k: usize) type {
             return @intCast(d.values.items.len);
         }
 
+        /// Empty, the room kept.
+        pub fn clearRetainingCapacity(d: *Self) void {
+            d.nodes.clearRetainingCapacity();
+            d.keys.clearRetainingCapacity();
+            d.values.clearRetainingCapacity();
+            d.root = none_int;
+        }
+
         inline fn bitOf(key: Key, crit: u32) u1 {
             return @intCast((key[crit / 32] >> @intCast(31 - crit % 32)) & 1);
         }
