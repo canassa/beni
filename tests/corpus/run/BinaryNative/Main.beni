@@ -1,0 +1,11 @@
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main =
+    Node.printLines
+        [ if Probe.detachedAlias ⊤ then "detached" else "FAIL"
+        , if Probe.fixedRequirement ⊤ then "fixed" else "FAIL"
+        , if Probe.unknownDefects ⊤ then "defect" else "FAIL"
+        ]

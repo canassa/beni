@@ -1,0 +1,119 @@
+import Binary exposing (Big, Little, I8, U8, U8Clamped, I16, U16, I32, U32, I64, U64, F16, F32, F64, Data)
+import List
+import Node exposing (Program)
+import String
+
+
+main : Program
+main = Node.printLines [ report (roundtrip ⊤), report (boundaries ⊤), report (kinds ⊤) ]
+
+
+report : Result Binary.Error Bool → String
+report outcome =
+    case outcome of
+        Ok True →
+            "pass"
+        Ok False →
+            "FAIL"
+        Err _ →
+            "ERROR"
+
+
+roundtrip : ⊤ → Result Binary.Error Bool
+roundtrip ⊤ =
+    buffer = Binary.allocate 40?
+    view = Binary.view (Binary.Local buffer) Data 0 Nothing?
+    exact = Binary.word64 4294967295 4294967295?
+    Binary.writeWord64 view 1 Little exact?
+    actual = Binary.readWord64 view 1 Little?
+    Binary.writeWord64 view 9 Big exact?
+    second = Binary.readWord64 view 9 Big?
+    Binary.writeI32 view 17 Little (-2147483648)?
+    integer = Binary.readI32 view 17 Little?
+    negativeZeroBits = Binary.word64 2147483648 0?
+    Binary.writeWord64 view 21 Big negativeZeroBits?
+    negativeZero = Binary.readF64 view 21 Big?
+    Binary.writeF64 view 21 Big negativeZero?
+    zeroBits = Binary.readWord64 view 21 Big?
+    Binary.writeU32 view 29 Little 2143289345?
+    nanBits = Binary.readWord64 view 29 Little?
+    source = Binary.viewSource view?
+    bytes = Binary.toList source?
+    Ok
+        (Binary.words actual == Binary.words exact
+            && Binary.words second == Binary.words exact
+            && integer == -2147483648
+            && Binary.words zeroBits == { high = 2147483648, low = 0 }
+            && (Binary.words nanBits).low == 2143289345
+            && List.length bytes == 40
+        )
+
+
+boundaries : ⊤ → Result Binary.Error Bool
+boundaries ⊤ =
+    buffer = Binary.fromList [ 0, 127, 255, 2, 3, 4 ]?
+    part = Binary.view (Binary.Local buffer) U8 2 (Just 3)?
+    source = Binary.viewSource part?
+    before = Binary.toList source?
+    Ok
+        (before == [ 255, 2, 3 ]
+            && isBounds (Binary.readU32 part 0 Little)
+            && isAlignment (Binary.view (Binary.Local buffer) U32 1 (Just 1))
+            && isPrecision (Binary.word64 4294967295 4294967295 ▷ Result.andThen Binary.word64ToInt)
+            && isInvalid (Binary.allocate (-1))
+        )
+
+
+isBounds : Result Binary.Error a → Bool
+isBounds result =
+    case result of
+        Err (Binary.InvalidRange _ _ _) →
+            True
+        _ →
+            False
+
+
+isAlignment : Result Binary.Error a → Bool
+isAlignment result =
+    case result of
+        Err (Binary.Misaligned _ _) →
+            True
+        _ →
+            False
+
+
+isPrecision : Result Binary.Error a → Bool
+isPrecision result =
+    case result of
+        Err Binary.PrecisionLost →
+            True
+        _ →
+            False
+
+
+isInvalid : Result Binary.Error a → Bool
+isInvalid result =
+    case result of
+        Err (Binary.InvalidSize _) →
+            True
+        _ →
+            False
+
+
+kinds : ⊤ → Result Binary.Error Bool
+kinds ⊤ =
+    buffer = Binary.allocate 16?
+    outcomes =
+        List.map [ I8, U8, U8Clamped, I16, U16, I32, U32, I64, U64, F16, F32, F64, Data ] λkind →
+            case Binary.view (Binary.Local buffer) kind 0 Nothing of
+                Err (Binary.Unsupported "Float16Array") →
+                    True
+                Err _ →
+                    False
+                Ok view →
+                    case Binary.viewSource view ▷ Result.andThen Binary.sourceInfo of
+                        Ok info →
+                            info.byteLength == 16 && info.bytesPerElement == Binary.elementSize kind
+                        Err _ →
+                            False
+    Ok (List.all outcomes identity)

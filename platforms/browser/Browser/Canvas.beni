@@ -1,0 +1,139 @@
+--! Typed canvas acquisition and offscreen ownership. GPU context creation lives
+--! in Gpu.Canvas; these native handles preserve the context's browser identity.
+
+import Browser.Source as Source
+import Js
+
+
+pub type alias Canvas =
+    Source.CanvasElement
+
+
+pub type alias OffscreenCanvas =
+    Source.OffscreenCanvas
+
+
+pub type Error
+    = Unsupported
+    | NotFound String
+    | WrongElement String
+    | InvalidDimension Int
+    | AlreadyControlled
+    | Detached
+
+
+--| Find a canvas in the current document, without changing its context mode.
+pub byId : String → Result Error Canvas
+byId id =
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err Unsupported
+    else
+        value = Js.call document "getElementById" [ Js.from id ]
+        if Js.isNull value then
+            Err (NotFound id)
+        else if not (Js.instanceOf value (Js.global "HTMLCanvasElement")) then
+            Err (WrongElement id)
+        else
+            Ok (Js.to value)
+
+
+--| Create an unattached HTML canvas. Zero dimensions are permitted by HTML.
+pub create : Int, Int → Result Error Canvas
+create width height =
+    dimension 4294967295 width?
+    dimension 4294967295 height?
+    document = Js.global "document"
+    if Js.isUndefined document then
+        Err Unsupported
+    else
+        value = Js.call document "createElement" [ Js.from "canvas" ]
+        Js.set value "width" (Js.from width)
+        Js.set value "height" (Js.from height)
+        Ok (Js.to value)
+
+
+--| Create an offscreen canvas in a Window or browser Worker realm.
+pub offscreen : Int, Int → Result Error OffscreenCanvas
+offscreen width height =
+    dimension 9007199254740991 width?
+    dimension 9007199254740991 height?
+    constructor = Js.global "OffscreenCanvas"
+    if not (Js.typeIs constructor "function") then
+        Err Unsupported
+    else
+        Ok (Js.to (Js.construct constructor [ Js.from width, Js.from height ]))
+
+
+--| Transfer an HTML canvas to offscreen control. A previously acquired rendering
+--| context or previous transfer is an explicit AlreadyControlled failure.
+pub transfer : Canvas → Result Error OffscreenCanvas
+transfer canvas =
+    value = Js.from canvas
+    if not (Js.typeIs (Js.get value "transferControlToOffscreen") "function") then
+        Err Unsupported
+    else
+        Js.catchIf
+            (λ⊤ → Ok (Js.to (Js.call value "transferControlToOffscreen" [])))
+            (domError "InvalidStateError" _)
+            λ_ → Err AlreadyControlled
+
+
+pub size : Canvas → { width : Int, height : Int }
+size canvas = dimensions (Js.from canvas)
+
+
+pub offscreenSize : OffscreenCanvas → { width : Int, height : Int }
+offscreenSize canvas = dimensions (Js.from canvas)
+
+
+pub resize : Canvas, Int, Int → Result Error ⊤
+resize canvas width height =
+    dimension 4294967295 width?
+    dimension 4294967295 height?
+    value = Js.from canvas
+    -- A placeholder canvas rejects width/height mutation with InvalidStateError.
+    Js.catchIf
+        (λ⊤ →
+            Js.set value "width" (Js.from width)
+            Js.set value "height" (Js.from height)
+            Ok ⊤
+        )
+        (domError "InvalidStateError" _)
+        λ_ → Err AlreadyControlled
+
+
+pub resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤
+resizeOffscreen canvas width height =
+    dimension 9007199254740991 width?
+    dimension 9007199254740991 height?
+    value = Js.from canvas
+    Js.catchIf
+        (λ⊤ →
+            Js.set value "width" (Js.from width)
+            Js.set value "height" (Js.from height)
+            Ok ⊤
+        )
+        (domError "InvalidStateError" _)
+        λ_ → Err Detached
+
+
+dimension : Int, Int → Result Error ⊤
+dimension maximum value =
+    if
+        value < 0
+            || value > maximum
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidDimension value)
+    else
+        Ok ⊤
+
+
+dimensions : Js.Value → { width : Int, height : Int }
+dimensions value = { width = Js.to (Js.get value "width"), height = Js.to (Js.get value "height") }
+
+
+domError : String, Js.Value → Bool
+domError name error =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

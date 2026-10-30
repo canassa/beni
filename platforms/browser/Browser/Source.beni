@@ -1,0 +1,34 @@
+--! Native image-source identities shared by Image, Video, Canvas and GPU.
+--! These handles never box or copy the browser object. Readiness is a snapshot;
+--! host operations must still classify their own origin and lifetime errors.
+
+pub foreign type ImageElement
+
+
+pub foreign type Bitmap
+
+
+pub foreign type Pixels
+
+
+pub foreign type VideoElement
+
+
+pub foreign type VideoFrame
+
+
+pub foreign type CanvasElement
+
+
+pub foreign type OffscreenCanvas
+
+
+--| All seven GPU external-image source alternatives, without an unchecked escape.
+pub type Input
+    = FromImage ImageElement
+    | FromBitmap Bitmap
+    | FromPixels Pixels
+    | FromVideo VideoElement
+    | FromFrame VideoFrame
+    | FromCanvas CanvasElement
+    | FromOffscreen OffscreenCanvas

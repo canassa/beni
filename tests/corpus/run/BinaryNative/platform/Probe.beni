@@ -1,0 +1,66 @@
+--! Native invalidation/conversion probes; no production implementation is hidden here.
+
+import Binary
+import Js
+
+
+pub detachedAlias : ⊤ → Bool
+detachedAlias ⊤ =
+    case Binary.allocate 8 of
+        Err _ →
+            False
+        Ok buffer →
+            case Binary.view (Binary.Local buffer) Binary.Data 0 Nothing of
+                Err _ →
+                    False
+                Ok view →
+                    source = Binary.viewSource view
+                    native = Js.from buffer
+                    options = Js.object []
+                    Js.set options "transfer" (Js.array [ native ])
+                    _ = Js.apply (Js.global "structuredClone") [ native, options ]
+                    case source ▷ Result.andThen Binary.sourceInfo of
+                        Err Binary.Detached →
+                            Binary.detached buffer
+                        _ →
+                            False
+
+
+pub fixedRequirement : ⊤ → Bool
+fixedRequirement ⊤ =
+    options = Js.object []
+    Js.set options "maxByteLength" (Js.from 16)
+    buffer = Js.construct (Js.global "ArrayBuffer") [ Js.from 8, options ]
+    view = Js.construct (Js.global "Uint8Array") [ buffer, Js.from 0, Js.from 4 ]
+    whole = Binary.bufferSource (Js.to buffer)
+    sliced = Binary.viewSource (Js.to view)
+    sharedConstructor = Js.global "SharedArrayBuffer"
+    shared = Js.construct sharedConstructor [ Js.from 8, options ]
+    sharedResult = Binary.sharedSource (Js.to shared)
+    rejected whole && rejected sliced && rejected sharedResult
+
+
+rejected : Result Binary.Error a → Bool
+rejected result =
+    case result of
+        Err Binary.ResizableBacking →
+            True
+        _ →
+            False
+
+
+pub unknownDefects : ⊤ → Bool
+unknownDefects ⊤ =
+    original = Js.global "ArrayBuffer"
+    Js.set (Js.global "globalThis") "ArrayBuffer" Js.null
+    Js.finally
+        (λ⊤ →
+            Js.catchIf
+                (λ⊤ →
+                    _ = Binary.allocate 8
+                    False
+                )
+                (λerror → Js.instanceOf error (Js.global "TypeError"))
+                λ_ → True
+        )
+        λ⊤ → Js.set (Js.global "globalThis") "ArrayBuffer" original
