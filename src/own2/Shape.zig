@@ -855,7 +855,7 @@ pub const Table = struct {
     /// part: a built inner (a word's recast of a leaf may hold its cell
     /// anywhere) whose place has the step to the same place.
     fn recastPart(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, n: NodeId, s: Step) Error!?NodeId {
-        // A view's raw recast (`expandView`) wraps a view: its answer'"'"'s part.
+        // A view's raw recast (`expandView`) wraps a view: its answer's part.
         const inner = try t.force(gpa, account, .from(t.get(n).a));
         if (t.kind(inner) != .node and t.kind(inner) != .delta) return null;
         const child = places.child(t.place(n), s) orelse return null;
