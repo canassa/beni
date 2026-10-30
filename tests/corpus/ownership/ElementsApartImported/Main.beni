@@ -49,3 +49,51 @@ relayShared ⊤ =
 
 pub relayDistinct : ⊤ → Int × Int
 relayDistinct ⊤ = relay [ Box [ 1 ], Box [ 2 ] ]
+
+
+-- Stores and spreads: see ElementsApart.beni.
+pub a1 : ⊤ → Int × Int
+a1 ⊤ =
+    b = Box [ 0 ]
+    Elements.t8 (List.push [ b ] b)
+
+
+pub a4 : ⊤ → Int × Int
+a4 ⊤ =
+    b = Box [ 0 ]
+    Elements.t8 (List.set [ b, Box [ 1 ] ] 1 b)
+
+
+pub a7 : ⊤ → Int × Int
+a7 ⊤ =
+    b = Box [ 0 ]
+    xs = List.push [] b
+    Elements.t8 (List.push xs b)
+
+
+pub sd : ⊤ → Int × Int
+sd ⊤ =
+    xs = [ Box [ 2 ] ]
+    ys = [ Box [ 1 ], …xs ]
+    Elements.t8 ys
+
+
+pub sp2 : Box, Box → Int × Int
+sp2 a b =
+    xs = [ b ]
+    ys = [ a, …xs ]
+    Elements.t8 ys
+
+
+pub sp3 : List Box → Int × Int
+sp3 xs =
+    ys = [ Box [ 1 ], …xs ]
+    Elements.t8 ys
+
+
+pub spShared : ⊤ → Int × Int
+spShared ⊤ =
+    b = Box [ 0 ]
+    xs = [ b ]
+    ys = [ b, …xs ]
+    Elements.t8 ys

@@ -73,8 +73,9 @@ const layers = [_]Entry{
     .{ .file = "Holders.zig", .layer = 6, .max_lines = 2010 },
     // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
-    // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`).
-    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1600 },
+    // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
+    // 1 630 since #1386: a `sep` side below a constructor.
+    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1630 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write.
     .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1940 },
