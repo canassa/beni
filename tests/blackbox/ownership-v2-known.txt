@@ -86,29 +86,51 @@ tests/corpus/ownership/Split.beni [node] Split 22:27 #0 :: Split.bumpHead <liter
 
 # v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a
 # derived or container comparison, and holds the user-written one pending.
-tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: List.compare <literal> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: List.compare <literal>[*] :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
 tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: value ContainerOverWriterLocal.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
-tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #1 :: List.compare <literal> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: List.eq <literal> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #1 :: List.compare <literal>[*] :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: List.eq <literal>[*] :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
 tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: value Key.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
-tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #1 :: List.eq <literal> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: List.compare <literal> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #1 :: List.eq <literal>[*] :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: List.compare <literal>[*] :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
 tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: value Key.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
-tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #1 :: List.compare <literal> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #0 :: <Wrap …> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
-tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #0 :: <Wrap …> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
-tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #0 :: <Wrap …> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
-tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #0 :: <Wrap …> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
-tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #1 :: List.compare <literal>[*] :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #0 :: <Wrap …>#Wrap.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #1 :: <Wrap …>#Wrap.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #0 :: <Wrap …>#Wrap.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #1 :: <Wrap …>#Wrap.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #0 :: <Wrap …>#Wrap.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #1 :: <Wrap …>#Wrap.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #0 :: <Wrap …>#Wrap.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #1 :: <Wrap …>#Wrap.0 :: absent :: accepted  the fresh result of the same comparison
 
 # v2 reads a private comparison through a derived or container one (ownership-v2.md §2.13.13).
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #0 :: <expression> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #1 :: <expression> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <expression> :: absent :: accepted  the fresh result of the same comparison
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <Just …> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: List.eq <literal> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #0 :: <expression>.0 :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <expression>#Just.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <Just …>#Just.0 :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: List.eq <literal>[*] :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
 tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: value PrivateEqThroughShapes.eq :: pending :: absent  v1 holds the private comparison pending; v2 applies its class at the comparison that reaches it
-tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #1 :: List.eq <literal> :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #1 :: List.eq <literal>[*] :: absent :: accepted  the fresh result of the same comparison
+
+# v2 composes a derived comparison from the user-written ones its type reaches, at the places they occur (ownership-v2.md §2.13.13).
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 18:38 #0 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 18:38 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 22:40 #0 :: <expression>.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 22:40 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #0 :: <expression>.1 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #0 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #1 :: <expression>.1 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 19:44 #0 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 19:44 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 23:46 #0 :: <expression>.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 23:46 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #0 :: <expression>.1 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #0 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #1 :: <expression>.1 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 31:45 #0 :: <expression>.0[*] :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 31:45 #1 :: <expression>.0[*] :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 40:77 #0 :: <expression>.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 40:77 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps

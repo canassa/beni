@@ -1,0 +1,1 @@
+v2 composes a derived comparison from the user-written ones its type reaches, at the places they occur (ownership-v2.md §2.13.13); v1 has no row for it.

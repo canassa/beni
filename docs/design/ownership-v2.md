@@ -2936,6 +2936,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     A derived or core container comparison (`List.compare`, a derived row over a field) is built from the classes of the
     user-written comparisons its argument's type reaches; one with no class leaves the call unbuilt, and one that writes
     makes the comparison write. Core is the core package (`--core-root` included), not every embedded module.
+    The class is composed **at the places the components occur** [2026-10-30, #1331]: the walk of the argument's type stops
+    at a type that has a user-written comparison of its own (its class is the whole of what that type does, so its fields
+    are not entered: a read-only `Outer.eq` never calls the `Inner.eq` of its fields), and a component's `W` and `E` mark
+    the places of its type, deeply below them, never the whole argument; everything else is only read. A type that
+    occurs at two paths is marked at both, and one that recurs through a cycle at the place the cycle returns to.
 14. **`?`** (R-5.1.6): §2.6; an error type holding no cell adds nothing.
 15. **Index exchange** (R-4.8.17, #869, `p/RecordIndexExchange`): a callback of `List.indexedMap` (its index
     supplied as a scalar) keeps the source's κ when it is an **exact permutation**, which is a *flat decision chain* on the index
