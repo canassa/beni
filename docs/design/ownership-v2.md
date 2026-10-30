@@ -1686,7 +1686,10 @@ of the same handle still add multiplicity through the path-multiset primitive.
       the read is made at `C`, as today.
   - *What the crossing reads: the region.* From the re-rooted actual `a`, a walk meets `a`'s DAG and
     every node a reader makes from it on the way. `region(a)` is closed under what the walk reads:
-    - `a`'s DAG, a persistent node set memoised per node and made from its parts' sets;
+    - `a`'s DAG, a persistent node set memoised per node and made from its parts' sets by
+      `Cell.Radix.unionWith`, memoised per pair of set nodes (new in 2b). By `mapUnion`'s argument
+      (*Argument 2*), a node built over an earlier one costs the nodes it adds: O(Δ log n). Without
+      the memo, the region of `merge x_{k-1} y_k` would cost O(k) per call;
     - for a view in it, its chain (`chainNext`) and its forced answer, with their DAGs;
     - every node made from a node of the region by `proj`, or by a join or union of such nodes. A
       node so made is not in `a`'s DAG: `proj` makes a content-interned leaf or a union, and the
@@ -1694,11 +1697,12 @@ of the same handle still add multiplicity through the path-multiset primitive.
       is no node of `p`. What `force` makes is covered by the view rule: a forced answer and its
       DAG are in the region with the view.
     - *Bases.* So that the last rule is decidable, a node made by `proj(n, s)` or by a join of
-      members records what it was made from (`n`, the members) in `bases(m)`, a persistent node set
-      per node. An interned node made again from another base gains that base too. `force` records
-      no base, so a call, which forces its views, never adds one. A key `m` is **tested** when
-      `m ∈ region(a)` or its base chain reaches `region(a)`: `bases*(m) ∩ region(a) ≠ ∅`, with
-      `bases*` the transitive closure, memoised per node.
+      members records what it was made from (`n`, the members) in `bases(m)`. A `proj` of a view
+      records the view's answer as its base, not the view: the answer is the node of the region.
+      `bases(m)` is a persistent node set per node. An interned node made again from another base
+      gains that base too. `force` records no base, so a call, which forces its views, never adds
+      one. A key `m` is **tested** when `m ∈ region(a)` or its base chain reaches `region(a)`:
+      `bases*(m) ∩ region(a) ≠ ∅`, with `bases*` the transitive closure, memoised per node.
       - An answer about `bases*` can change only when an existing node gains a base. The table
         keeps a counter, `base_epoch`, bumped then. The comparison memo below is valid only within
         one epoch, as `reach` is within one `ties` epoch. A node made fresh never changes the epoch.
@@ -1708,6 +1712,11 @@ of the same handle still add multiplicity through the path-multiset primitive.
         the walk makes later is either a fresh node, which no position stores and no key tests, or
         an interned node gaining a base, which bumps `base_epoch` and drops every `eqOn` answer
         made before it. So `eqOn` never answers from a region that has since grown under a key.
+      - *A read in flight.* A `proj` below the crossing can also bump `base_epoch` while a crossed
+        read is under way, after its `eqOn` passed: a key of `C` may become tested mid-walk. So a
+        crossed read notes `base_epoch` when it crosses. If the epoch has moved when it ends, the
+        read is discarded, with no memo entry kept, and made again at `C`, exact. The counted tests
+        count these redos.
     - A key that is neither in `region(a)` nor based on it is never read by the walk. The views made
       at this call are such keys: they are made from this call's templates, not from any actual. A
       view an earlier call made can be a node of an actual, and then it is in `region(a)` by the
@@ -1915,6 +1924,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   - `x_k = List.push x_{k-1} k`, published;
   - the shared-actual chain `x_k = step x_{k-1} l`, one `l` at every call;
   - `merge x y` over two chains that both grow.
+
+  Each also reports the `base_epoch` bumps and the crossed reads redone at `C`. If either is per
+  call, that is a finding to report before any work-around.
 
   **Done for 2b.** The `apply` + read-off + publish share is flat per call at 10, 100 and 1 000
   calls. The 2a guards stay green. No verdict and no block changes across the corpus.
