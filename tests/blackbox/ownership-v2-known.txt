@@ -66,6 +66,12 @@ tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 123:5 #0 :: Cal
 tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 123:5 #0 :: CallOtherPaths.viaLeft <Node …>⟨Tree⟩#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 127:20 #0 :: CallOtherPaths.viaLeft <Node …>#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 127:20 #0 :: CallOtherPaths.viaLeft <Node …>⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Paths 55:13 #0 :: Deep.twoDepths l#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Paths 55:13 #0 :: Deep.twoDepths l⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Main 54:5 #0 :: Paths.viaLeft <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Main 54:5 #0 :: Paths.viaLeft <Node …>⟨Tree⟩#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Main 58:20 #0 :: Paths.viaLeft <Node …>#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Main 58:20 #0 :: Paths.viaLeft <Node …>⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
 # v2 accepts where v1 refused (S3b).
 tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 98:21 #0 :: LevelLimit.pushLen xs :: rejected :: accepted  v1's documented `level` limit; `xs` and `ys` are the caller's `a` and `b`
 tests/corpus/ownership/PatternWideCall.beni [node] PatternWideCall 1187:13 #0 :: List.push x :: rejected :: accepted  the shared list is a temporary no one reads after the push, as in-frame `case [ r, r ] of`, which v1 accepts too; v1 refuses on the callee's κ

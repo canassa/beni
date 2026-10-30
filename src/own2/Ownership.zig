@@ -225,7 +225,8 @@ const Strings = struct {
 
     fn head(ctx: *anyopaque, h: u32) u32 {
         const s: *Strings = @ptrCast(@alignCast(ctx));
-        return s.intern(s.names.type_qualified(s.names.ctx, h));
+        // No type's head (`⊤`'s) is the empty name.
+        return s.intern(if (h == Ids.none_int) "" else s.names.type_qualified(s.names.ctx, h));
     }
 
     fn field(ctx: *anyopaque, rank: u32) u32 {
@@ -251,11 +252,16 @@ const Strings = struct {
 
 /// The module's block (§3.6, §8 S3a): every public value's class in
 /// declaration order, the string table first — `[count, (byte length,
-/// bytes in words)…]` — then `Block.write`'s words. Bytes in `arena`; null
-/// when a class could not be written (an owner past its limits).
+/// bytes in words)…]` — then the directory, `[count, (name, applies)…]`,
+/// one per class: its declaration's name (a string) and whether an importer
+/// may apply it, which a walk past a limit or left unbuilt may not (§2.11,
+/// S3b slice 3) — then `Block.write`'s words. Bytes in `arena`; null when a
+/// class could not be written (an owner past its limits).
 pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Module) Allocator.Error!?[]const u8 {
     var classes: std.ArrayList(Ids.ClassId) = .empty;
     defer classes.deinit(gpa);
+    var decls: std.ArrayList(u32) = .empty;
+    defer decls.deinit(gpa);
     mod.account = &mod.base_account;
     for (mod.in.bir.decls, 0..) |d, di| {
         if (!d.is_pub or !d.kind.isValue()) continue;
@@ -264,9 +270,13 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
             else => return null,
         }) orelse continue;
         try classes.append(gpa, c);
+        try decls.append(gpa, @intCast(di));
     }
     var s: Strings = .{ .gpa = gpa, .arena = arena, .names = names, .shared = mod.shared_of.items };
     defer s.deinit();
+    var dir: std.ArrayList(u32) = .empty;
+    try dir.append(arena, @intCast(decls.items.len));
+    for (decls.items) |di| try dir.appendSlice(arena, &.{ s.intern(names.declName(mod.in.module, di)), @intFromBool(mod.walkedClass(di) != null) });
     const block_names: Block.Names = .{ .place = .{ .ctx = &s, .head = Strings.head, .field = Strings.field }, .ctx = &s, .decl = Strings.decl };
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(gpa);
@@ -283,6 +293,7 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
         try out.appendNTimes(arena, 0, (t.len + 3) / 4);
         @memcpy(std.mem.sliceAsBytes(out.items[at..])[0..t.len], t);
     }
+    try out.appendSlice(arena, dir.items);
     try out.appendSlice(arena, words.items);
     return std.mem.sliceAsBytes(out.items);
 }

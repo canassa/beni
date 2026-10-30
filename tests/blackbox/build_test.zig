@@ -8608,19 +8608,33 @@ fn shareProgram(a: std.mem.Allocator, family: []const u8, n: u32) ![]const u8 {
 /// (at most a quarter more, a log factor's room); and the crossing's redos
 /// and `base_epoch` moves not per call.
 fn callChainShare(family: []const u8) !void {
+    return callChainShareIn(family, false);
+}
+
+/// `callChainShare` with the callee in another module, `Lib`, so each call
+/// applies the class `Lib`'s block publishes (§8 S3b slice 3), read once.
+fn callChainShareIn(family: []const u8, imported: bool) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
     var per: [2]u64 = undefined;
     var counts: [2][3]u64 = undefined;
     for ([_]u32{ 10, 40 }, 0..) |n, run| {
-        try w.write("Main.beni", try shareProgram(a, family, n));
-        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        const program = try shareProgram(a, family, n);
+        if (imported) {
+            const at = std.mem.indexOf(u8, program, "pub chain").?;
+            try w.write("Lib.beni", try std.mem.concat(a, u8, &.{ "pub ", program[0..at] }));
+            try w.write("Main.beni", try std.mem.concat(a, u8, &.{ "import Lib\n\n\n", try std.mem.replaceOwned(u8, a, program[at..], " = step ", " = Lib.step ") }));
+        } else try w.write("Main.beni", program);
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (imported) "." else "Main.beni" });
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
-        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
-        const total = try accountField(dump.stdout, "chain", "total");
-        per[run] = (total - try accountField(dump.stdout, "chain", "demands")) / n;
-        counts[run] = try crossingOf(dump.stdout);
+        const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+        // Every call checked: the callee's class applied, never unbuilt.
+        try testing.expect(std.mem.indexOf(u8, main, "unchecked") == null);
+        try testing.expectEqual(@as(u64, 0), try accountField(main, "chain", "growth"));
+        const total = try accountField(main, "chain", "total");
+        per[run] = (total - try accountField(main, "chain", "demands")) / n;
+        counts[run] = try crossingOf(main);
     }
     if (per[1] * 4 > per[0] * 5) {
         std.debug.print("{s}: {d} records a call at 10, {d} at 40\n", .{ family, per[0], per[1] });
@@ -8635,6 +8649,17 @@ test "the checker v2's call share is flat per call: a step chain read at its ele
     // step x_{k-1} [ k ]`. Each call's read below its argument crosses into
     // the argument's own snapshot and meets the reads the earlier call made.
     try callChainShare("step");
+}
+
+test "the checker v2's call share is flat per call: an imported step chain (CallChainShare)" {
+    // The same chain with `step` in `Lib` (§8 S3b slice 3): an imported
+    // call is a same-module one, so the share stays flat; the block is read
+    // once, at the first call.
+    try callChainShareIn("step", true);
+}
+
+test "the checker v2's call share is flat per call: an imported shared actual (CallChainShare)" {
+    try callChainShareIn("shared", true);
 }
 
 test "the checker v2's call share is flat per call: a push chain, published (CallChainShare)" {
@@ -9182,7 +9207,9 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // keeps the inner's own cells exact outside a region fold is #1291.
     // That recast is marked whole and interned apart from the plain recast
     // of the same inner, so its cells are always the reach (`~fresh3` too)
-    // and the block writes the mark (1 756 → 1 776 bytes, #1310, #1311).
+    // and the block writes the mark (1 756 → 1 776 bytes, #1310, #1311). The
+    // directory names `w2` and whether an importer may apply its class
+    // (1 776 → 1 796 bytes, #1316).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9197,7 +9224,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1776 bytes, hash 73b48a57aa97b39c\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 037eaff68cf4041f\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {

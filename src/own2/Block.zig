@@ -101,7 +101,9 @@ pub const magic: u32 = 0x324e574f;
 /// 7: a position's κ is what is stored there, never the read (#1069).
 /// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
 /// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
-pub const version: u32 = 11;
+/// 12: the published block's directory names each class's declaration and
+/// whether an importer may apply it (`Ownership.publish`, S3b slice 3).
+pub const version: u32 = 12;
 
 pub const none: u32 = Ids.none_int;
 
@@ -135,6 +137,10 @@ pub const Remap = struct {
     /// The block's instruction id in the reader's namespace for it, so a
     /// label or a site of another module never meets one of the reader's.
     inst: *const fn (ctx: *anyopaque, inst: u32) u32,
+    /// The reader's own place equal to a block's place (§2.1: re-interned
+    /// onto its own graph), or null to keep the block's; asked once the
+    /// trial decoded, of places in the reader's tables.
+    own: ?*const fn (ctx: *anyopaque, p: PlaceId) Error!?PlaceId = null,
 
     pub const identity: Remap = .{ .place = .identity, .ctx = undefined, .decl = sameDecl, .inst = sameInst };
     fn sameDecl(_: *anyopaque, name: u32, ordinal: u32) ?u32 {

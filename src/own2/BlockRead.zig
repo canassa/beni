@@ -30,6 +30,7 @@ const Calls = @import("Calls.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
 const Block = @import("Block.zig");
+const stamped = @import("../stamped.zig");
 
 const ClassId = Ids.ClassId;
 const NodeId = Ids.NodeId;
@@ -88,7 +89,7 @@ pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, ou
     var paid: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
     defer paid.deinit(gpa);
     const mark = out.items.len;
-    var r: Reader = .{ .env = .{ .gpa = gpa, .charge = .growth(&paid), .places = env.places, .cells = env.cells, .shapes = env.shapes, .conds = env.conds }, .sums = sums, .words = words, .remap = remap };
+    var r: Reader = .{ .env = .{ .gpa = gpa, .charge = .growth(&paid), .places = env.places, .cells = env.cells, .shapes = env.shapes, .conds = env.conds }, .sums = sums, .words = words, .remap = remap, .reintern = true };
     defer r.deinit();
     r.all(out) catch |err| {
         out.shrinkRetainingCapacity(mark);
@@ -139,6 +140,9 @@ const Reader = struct {
     sums: *Summary.Table,
     words: []const u32,
     remap: Remap,
+    /// The commit's: the block's places re-interned onto the reader's own
+    /// (`Remap.own`); the trial keeps them in their namespace.
+    reintern: bool = false,
     at: usize = 0,
     /// The block's places, in local order, once each is in `env.places`.
     places: std.ArrayList(PlaceId) = .empty,
@@ -290,6 +294,11 @@ const Reader = struct {
             try r.places.append(gpa, try r.env.places.ofBlock(gpa, r.env.account(), .{ .ctx = &source, .describe = Describe.describe }, i));
             if (failed) |e| return e;
         }
+        // §2.1: a place the reader names as its own is that place, and so is
+        // everything below it, step for step; the rest are built again over
+        // them, so a place of the block meets the reader's where they are one
+        // type (`reintern`).
+        if (r.reintern) if (r.remap.own) |own| try r.reinternPlaces(own, &source);
         const units = try r.count();
         i = 0;
         while (i < units) : (i += 1) try r.unit();
@@ -301,6 +310,69 @@ const Reader = struct {
             try out.append(gpa, .from(try r.need(.class)));
         }
         if (r.at != r.words.len) return error.Malformed;
+    }
+
+    /// The block's places re-interned onto the reader's own (§2.1). Each
+    /// place the reader names (`Remap.own`, checked equal) takes the
+    /// reader's place, and its parts the reader's parts at the same steps, a
+    /// walk of the pair of graphs; a walk that would give one place two of
+    /// the reader's (two reader places of one structure) is not taken, so
+    /// every child step still reaches its child. The places no walk took are
+    /// built again in the block's namespace over the ones taken.
+    fn reinternPlaces(r: *Reader, own: *const fn (ctx: *anyopaque, p: PlaceId) Error!?PlaceId, source: *Describe) Failure!void {
+        const gpa = r.env.gpa;
+        const places = r.env.places;
+        const n = r.places.items.len;
+        const to = try gpa.alloc(PlaceId, n);
+        defer gpa.free(to);
+        @memset(to, .none);
+        var index: stamped.Column(PlaceId, u32) = .{};
+        defer index.deinit(gpa);
+        for (r.places.items, 0..) |p, k| try index.put(gpa, p, @intCast(k));
+        var walk: stamped.Column(u32, PlaceId) = .{};
+        defer walk.deinit(gpa);
+        var walked: std.ArrayList(u32) = .empty;
+        defer walked.deinit(gpa);
+        var stack: std.ArrayList([2]PlaceId) = .empty;
+        defer stack.deinit(gpa);
+        var taken = false;
+        // Constructor types first: their parts are the reader's parts at
+        // their steps, which a part named alone need not be.
+        for ([_]bool{ true, false }) |ctors| for (r.places.items, 0..) |p, k| {
+            if (to[k] != .none or (places.kind(p) == .ctor or places.kind(p) == .@"opaque") != ctors) continue;
+            const q = (try own(r.remap.ctx, p)) orelse continue;
+            walk.clear();
+            walked.clearRetainingCapacity();
+            stack.clearRetainingCapacity();
+            try stack.append(gpa, .{ p, q });
+            const ok = while (stack.pop()) |pair| {
+                try r.env.charge.reserve(gpa, .inspection, 1);
+                const x = index.get(pair[0]) orelse break false;
+                const known = if (to[x] != .none) to[x] else walk.get(x);
+                if (known) |y| {
+                    if (y != pair[1]) break false;
+                    continue;
+                }
+                try walk.put(gpa, x, pair[1]);
+                try walked.append(gpa, x);
+                const a = places.steps(pair[0]);
+                const b = places.steps(pair[1]);
+                if (a.children.len != b.children.len) break false;
+                for (a.children, b.children) |cx, cy| try stack.append(gpa, .{ cx, cy });
+            } else true;
+            if (!ok) continue;
+            for (walked.items) |x| to[x] = walk.get(x).?;
+            taken = true;
+        };
+        if (!taken) return;
+        places.beginBlock();
+        for (to, 0..) |y, k| if (y != .none) {
+            r.places.items[k] = y;
+            try places.block_var.put(gpa, @intCast(k), y);
+        };
+        for (to, 0..) |y, k| if (y == .none) {
+            r.places.items[k] = try places.ofBlock(gpa, r.env.account(), .{ .ctx = source, .describe = Describe.describe }, @intCast(k));
+        };
     }
 
     const Describe = struct {

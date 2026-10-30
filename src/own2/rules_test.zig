@@ -65,8 +65,9 @@ const layers = [_]Entry{
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
     // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
-    // calls of walked declarations.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1250 },
+    // calls of walked declarations; 1 330 since slice 3: imported classes,
+    // and a block's places re-interned onto the adapter's.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1330 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -80,7 +81,8 @@ const layers = [_]Entry{
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
     // §5 says 950 since #1073: a snapshot rebuilt from its positions.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 980 },
+    // 1 050 since S3b slice 3: the commit re-interns the block's places.
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1050 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
     .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
 };
