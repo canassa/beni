@@ -1870,16 +1870,20 @@ fn linkArgKappa(x: *KnotFixture, lf: NodeId) !Cond.Kappas {
 /// alone (the graft is counted above).
 fn linkChainCost(n: usize, params: bool) !u64 {
     const gpa = testing.allocator;
-    var x: KnotFixture = .{};
+    // The tables on the heap: the small-stack test pins `linkArgs`' depth,
+    // not the fixture's size.
+    const x = try gpa.create(KnotFixture);
+    defer gpa.destroy(x);
+    x.* = .{};
     try x.init();
     defer x.deinit();
     x.account.allowance = std.math.maxInt(u32) - 1;
     const lf = try x.site(7, x.t_place);
-    const root = try linkChain(&x, n, params, lf);
+    const root = try linkChain(x, n, params, lf);
     var s: Scratch = .{};
     defer s.deinit(gpa);
     const label = try x.cells.label(gpa, &x.account, 0, .none, false);
-    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(&x, lf) }}, .label = label, .s = &s };
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(x, lf) }}, .label = label, .s = &s };
     const before = x.account.total();
     try testing.expect(try g.linkArgs(.none, root) != .none);
     return x.account.total() - before;

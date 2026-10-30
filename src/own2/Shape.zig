@@ -629,6 +629,13 @@ pub const Table = struct {
         return t.closure(gpa, account, .region, n);
     }
 
+    /// `bases*(m)` with `m` itself (*Bases*), memoised within one `base_epoch`.
+    pub fn basesClosure(t: *Table, gpa: Allocator, account: *Account, m: NodeId) Error!SetId {
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        return t.closure(gpa, account, .bases, m);
+    }
+
     /// Whether key `m` is based on `reg` at all (*tested*): in it, or a base
     /// chain from `m` reaches it. Memoised within one `base_epoch`.
     pub fn tested(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
