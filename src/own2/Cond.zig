@@ -849,7 +849,7 @@ pub const Table = struct {
     /// condition.
     pub const Relabel = struct {
         ctx: *anyopaque,
-        node: *const fn (ctx: *anyopaque, n: NodeId) ?NodeId,
+        node: *const fn (ctx: *anyopaque, n: NodeId) Error!?NodeId,
         cond: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId,
     };
 
@@ -915,7 +915,7 @@ pub const Table = struct {
         var it = t.mapEntries(p.here);
         while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
-            const m = r.node(r.ctx, .from(e.key)) orelse continue;
+            const m = (try r.node(r.ctx, .from(e.key))) orelse continue;
             const k = try r.cond(r.ctx, t, gpa, charge, .from(e.value));
             const old = t.mapGet(here, m.int());
             const v = if (old) |o| try t.join(gpa, charge, .from(o), k) else k;
@@ -4685,7 +4685,7 @@ test "#1129: relabelling a fold keeps the steps it saw, so deep, kappaLeq and th
     const root = try f.leaf(9, &.{try f.param(0, 9, &.{})});
     const at = try f.projOf(try f.projOf(root, f0), Place.Step.elem);
     const Identity = struct {
-        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+        fn node(_: *anyopaque, n: NodeId) Error!?NodeId {
             return n;
         }
         fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
@@ -4751,7 +4751,7 @@ fn deepSnapshot() !void {
     try testing.expectEqual(shared, f.conds.kappaGet(f.conds.kappaAlong(ka, steps), a).?);
     // Relabelled by the identity: the same position.
     const Identity = struct {
-        fn node(_: *anyopaque, n: NodeId) ?NodeId {
+        fn node(_: *anyopaque, n: NodeId) Error!?NodeId {
             return n;
         }
         fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {

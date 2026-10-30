@@ -37,6 +37,7 @@ const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
 const Demands = @import("Demands.zig");
+const Place = @import("Place.zig");
 const stamped = @import("../stamped.zig");
 
 pub const NodeId = Ids.NodeId;
@@ -429,6 +430,11 @@ const Grafter = struct {
     /// it; the deep read at the prefix by `(argument, prefix)`.
     folded: Ids.FixedDict(2) = .{},
     deeps: Ids.FixedDict(2) = .{},
+    /// The environment of the call's view, and at an identity class its
+    /// root and the actual it answers (`relabelNode`).
+    view_env: u32 = Ids.none_int,
+    root: NodeId = .none,
+    answer: NodeId = .none,
 
     fn gpa(g: *Grafter) Allocator {
         return g.env.gpa;
@@ -534,9 +540,25 @@ const Grafter = struct {
         return at;
     }
 
-    fn relabelNode(ctx: *anyopaque, n: NodeId) ?NodeId {
+    /// A class position's image at this call: the view of it under the
+    /// call's environment, the actual itself at an identity root.
+    fn relabelNode(ctx: *anyopaque, n: NodeId) Error!?NodeId {
         const g: *Grafter = @ptrCast(@alignCast(ctx));
-        return g.s.memo.get(n);
+        if (n == g.root) return g.answer;
+        return try g.env.shapes.view(g.gpa(), g.account(), n, g.view_env);
+    }
+
+    /// The actual a class whose `res` is one exact parameter cell at its
+    /// root answers (`id x = x`, §2.11 *Identity towers*), null otherwise.
+    fn identity(g: *Grafter, res: NodeId) Error!?NodeId {
+        const shapes = g.env.shapes;
+        if (shapes.kind(res) != .leaf) return null;
+        var it = g.env.cells.sets.iterate(shapes.cells(res));
+        const e = it.next() orelse return null;
+        if (it.next() != null or e.value != 0) return null;
+        const x = g.env.cells.get(.from(e.key));
+        if (x.origin != .param or g.env.places.pathParent(.from(x.b)) != .none) return null;
+        return try g.argAt(x.a, .from(x.b), shapes.place(res));
     }
 
     fn instantiated(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: CondId) Error!CondId {
@@ -1031,6 +1053,31 @@ const Grafter = struct {
         return g.env.shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, copy);
     }
 
+    /// A view's leaf image (§2.11): each parameter cell re-rooted at the
+    /// actual there (`argAt`, a recast when approximate), the other cells
+    /// mapped into one leaf, the parts joined raw. Escapes are `apply`'s, made
+    /// once per call from the class.
+    fn viewLeaf(g: *Grafter, members: *std.ArrayList(NodeId), at: PlaceId, cells: SetId) Error!NodeId {
+        const first = members.items.len;
+        defer members.shrinkRetainingCapacity(first);
+        var rest: SetId = .none;
+        var it = g.env.cells.sets.iterate(cells);
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const cell: CellId = .from(e.key);
+            if (g.env.cells.origin(cell) == .param) {
+                const x = g.env.cells.get(cell);
+                var n = try g.argAt(x.a, .from(x.b), at);
+                if (e.value == 1) n = try g.env.shapes.recast(g.gpa(), g.account(), at, n);
+                try members.append(g.gpa(), n);
+                continue;
+            }
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
+        }
+        if (rest != .none or members.items.len == first) try members.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, rest));
+        return g.env.shapes.joinRaw(g.gpa(), g.account(), at, members.items[first..]);
+    }
+
     /// The cells a class cell stands for at this call: a parameter's, the
     /// argument's at that path; anything else its mapped self.
     fn cellsOf(g: *Grafter, c: CellId, at: PlaceId) Error!SetId {
@@ -1119,6 +1166,81 @@ const Grafter = struct {
     }
 };
 
+/// The environments of the views calls answer (§2.11 *Representation of a
+/// view*): per call its class, its actuals and its invocation label, kept
+/// as long as the module's tables, which hold the views. The table's
+/// `Shape.Table.Instantiation` reads them.
+pub const Views = struct {
+    envs: std.ArrayList(ViewEnv) = .empty,
+    args: std.ArrayList(Value) = .empty,
+    /// A leaf image's parts, a stack: a nested force appends above.
+    members: std.ArrayList(NodeId) = .empty,
+    places: *Place.Table,
+    cells: *Cell.Table,
+    shapes: *Shape.Table,
+    conds: *Cond.Table,
+    sums: *const Summary.Table,
+
+    const ViewEnv = struct { class: ClassId, args: Ids.Range, label: LabelId };
+
+    pub fn deinit(v: *Views, gpa: Allocator) void {
+        v.envs.deinit(gpa);
+        v.args.deinit(gpa);
+        v.members.deinit(gpa);
+    }
+
+    /// Set on `v.shapes` once, before the first call.
+    pub fn instantiation(v: *Views) Shape.Table.Instantiation {
+        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage };
+    }
+
+    /// One call's environment.
+    fn add(v: *Views, env: Env, class: ClassId, args: []const Value, label: LabelId) Error!u32 {
+        try env.charge.reserve(env.gpa, .memo, @intCast(1 + args.len));
+        const r: Ids.Range = .{ .start = @intCast(v.args.items.len), .len = @intCast(args.len) };
+        try v.args.appendSlice(env.gpa, args);
+        try v.envs.append(env.gpa, .{ .class = class, .args = r, .label = label });
+        return @intCast(v.envs.items.len - 1);
+    }
+
+    fn of(ctx: *anyopaque) *Views {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    /// A grafter over environment `e`, charging the reader's kernel.
+    fn grafter(v: *Views, gpa_: Allocator, account_: *Ids.Account, e: u32, s: *Scratch) Grafter {
+        const x = v.envs.items[e];
+        const env: Env = .{ .gpa = gpa_, .charge = .growth(account_), .places = v.places, .cells = v.cells, .shapes = v.shapes, .conds = v.conds };
+        return .{ .env = env, .sums = v.sums, .args = v.args.items[x.args.start..][0..x.args.len], .label = x.label, .s = s };
+    }
+
+    fn leafImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!NodeId {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, account_, e, &none);
+        return g.viewLeaf(&v.members, t.place(template), t.cells(template));
+    }
+
+    fn cellsImage(ctx: *anyopaque, _: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, s: SetId, at: PlaceId) Error!SetId {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, account_, e, &none);
+        return g.imageCells(s, at);
+    }
+
+    fn reachImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, c: CellId, approx: u1) Error!SetId {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, account_, e, &none);
+        const x = v.cells.get(c);
+        if (x.origin == .param) return t.reach(gpa_, account_, &v.cells.sets, try g.argAt(x.a, .from(x.b), g.placeOfCell(c)));
+        // What the call does not interpret is `⊤`, approximately, as a
+        // grafted atom reads it (`Grafter.cellsOf`).
+        if (x.origin.isSymbolic() and x.origin != .top) return v.cells.sets.insert(gpa_, .growth(account_), .none, (try v.cells.top(gpa_, account_)).int(), 1);
+        return v.cells.sets.insert(gpa_, .growth(account_), .none, (try g.mapCell(c, g.placeOfCell(c))).int(), approx);
+    }
+};
+
 /// The writes and escapes a use shape marks, with their paths: a walk of
 /// its explicit structure (a leaf's marks hold below it, so a leaf ends a
 /// path). Every node visited is a record.
@@ -1196,11 +1318,29 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     defer g.deeps.deinit(gpa);
     // 2, 3: the writes and escapes the use shapes mark.
     for (sums.paramUses(class), 0..) |u, i| try marked(env, u, @intCast(i), s);
-    // 4: the result.
-    const res = try g.graft(cls.res);
-    // 5: the class's κ relabelled onto the result, each entry's path
-    // unchanged and its condition instantiated, then each argument's
-    // snapshot linked where the argument stands in the result (§2.9).
+    // 4: the result, by reference (§2.11 *Representation of a view*): the
+    // view of `res` under this call's environment, or at an identity class
+    // the actual itself. Nothing of the arguments is read or copied.
+    const views = Views.of((env.shapes.instantiation orelse unreachable).ctx); // every table that applies a class has one
+    g.view_env = try views.add(env, class, args, label);
+    const res = if (try g.identity(cls.res)) |actual| blk: {
+        g.root = cls.res;
+        g.answer = actual;
+        break :blk actual;
+    } else try env.shapes.view(gpa, env.account(), cls.res, g.view_env);
+    // The values the result lets escape: its `esc k`, each an `esc ι·k`.
+    var rt = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, cls.res));
+    while (rt.next()) |e| {
+        try env.charge.reserve(gpa, .inspection, 1);
+        const c: CellId = .from(e.key);
+        if (env.cells.origin(c) != .esc) continue;
+        const at = g.placeOfCell(c);
+        try s.escaped.append(gpa, try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, (try g.mapCell(c, at)).int(), 0)));
+    }
+    // 5: the class's κ relabelled onto the result's views, each entry's
+    // path unchanged and its condition instantiated, then each argument's
+    // snapshot linked where the argument stands in the result (§2.9). Eager,
+    // the callee's κ size per call (#1265).
     var kappa = try env.conds.kappaRelabel(gpa, env.charge, cls.kappas, .{ .ctx = &g, .node = Grafter.relabelNode, .cond = Grafter.instantiated });
     kappa = try g.linkArgs(kappa, cls.res);
     var xreq: CondId = Cond.yes;
@@ -1231,7 +1371,6 @@ comptime {
 // ---- tests ---------------------------------------------------------------------------------------
 
 const testing = std.testing;
-const Place = @import("Place.zig");
 
 /// `type T = T (List T)`: 0 the constructor, 1 its list.
 const TestGraph = struct {

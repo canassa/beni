@@ -36,6 +36,7 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
+const Calls = @import("Calls.zig");
 const Rows = @import("Rows.zig");
 const Prepass = @import("Prepass.zig");
 const Transfer = @import("Transfer.zig");
@@ -510,6 +511,8 @@ pub const Module = struct {
     shapes: Shape.Table = .{},
     conds: Cond.Table,
     sums: Summary.Table = .{},
+    /// The environments of the views calls answer (§2.11), read by `shapes`.
+    views: Calls.Views = undefined,
     adapter: Adapter,
     /// The account of the declaration being walked.
     account: *Ids.Account,
@@ -532,6 +535,7 @@ pub const Module = struct {
         mod.shapes.deinit(gpa);
         mod.conds.deinit(gpa);
         mod.sums.deinit(gpa);
+        mod.views.deinit(gpa);
         mod.adapter.deinit();
         mod.shared.deinit(gpa);
         mod.shared_of.deinit(gpa);
@@ -959,6 +963,8 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
         else => unreachable,
     };
     mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
+    mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
+    mod.shapes.instantiation = mod.views.instantiation();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
 }
