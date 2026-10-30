@@ -1123,19 +1123,21 @@ nothing to the recast's derived read; §2.13.9's restoration reads the same entr
 position: a built node's read is the walk's certificate, so a constraint stored for the base alone is observable
 nowhere. `Cond.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
 else.
-*As built (#1273):* `propagate` groups a frame's transitions by what the members are projected along: the
-step, the place of the recast's inner it leaves from (none for the node's own), and the class. A member's
-side for an inner is the join of its own inners at that inner's place, never the inner itself, so every
-transition in a group projects the run to the same members: one run per group, read once, and its cursors'
-links read once per frame. The group's frame keeps every transition's node, each with its own output path,
-route and memo state, and handles each as its own frame did: the states, links, memo hits, fold
-obligations, redundancy tests and stored entries are those of the frames they replace, so nothing is
-approximated. A list of n bound lists has n inners at its element's place: n transitions that each
-projected all n members, n² work, are one run of n. **The nodes stay per inner.** A κ is stored under its
-node, and a read that projects the value (`Shape.proj`, a union's sides in `dagKappa`) reaches each inner's
-own child, never a join of them: storing under a joined child loses the entries those reads look up
-(two `shared` ones in a list of three spreads, its block 1 756 → 1 624 bytes). `build_test.zig` pins
-both: the work at 100 and 200 bound lists, and that block byte for byte.
+*As built (#1273):* `propagate` keeps one frame per transition, in the order it always walked them. It
+shares only what a frame reads of its run alone, once per run: the run's interned id, its one-member link
+test, κ from the members (per root bit and class), the cursors' link steps, and the run one step below
+along each (step, inner place, class). A member's side for a transition out of a recast's inner is the
+join of its own inners at that inner's place, never the inner itself, so every transition with one step,
+inner place and class projects a run to the same members. A list of n bound lists has n inners at its
+element's place: n frames that each projected all n members, n² work, now share one run of n. Each frame
+is still its own state. Its node, path, route, visited state, memo hit, fold obligation, redundancy test
+and stored entry are what they were, and so is the order in which duplicate states meet (a state's key
+leaves out its route, so the first arrival decides where a knot below it folds). So the snapshot is the
+one the old walk made, byte for byte. **The nodes stay per inner.** A κ is stored under its node, and a
+read that projects the value (`Shape.proj`, a union's sides in `dagKappa`) reaches each inner's own child,
+never a join of them: storing under a joined child loses the entries those reads look up (two `shared`
+ones in a list of three spreads, its block 1 756 → 1 624 bytes). `build_test.zig` pins both: the work at
+100 and 200 bound lists, and that block byte for byte.
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
 at the same node remain separate states; revisiting a completed identical state reuses its answer.
