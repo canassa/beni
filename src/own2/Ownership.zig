@@ -89,7 +89,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             // did not check from one it missed (`bench/ownership-everywhere.mjs`).
             if (in.format_summaries and (dr.failure != null or dr.unbuilt != Ids.none_int)) {
                 const span = declLines(in.names, mi, d);
-                const why = if (dr.failure != null) "limit" else if (dr.recursion) "not built: recursion" else try std.fmt.allocPrint(arena, "not built: {t}", .{mi.bir.instTag(@fromBackingInt(dr.unbuilt))});
+                const why = if (dr.failure != null) "limit" else if (dr.polymorphic) "not built: polymorphic recursion" else try std.fmt.allocPrint(arena, "not built: {t}", .{mi.bir.instTag(@fromBackingInt(dr.unbuilt))});
                 try others.append(arena, try std.fmt.allocPrint(arena, "unchecked {s}: lines {d}-{d} ({s})", .{ name, span[0], span[1], why }));
             }
             if (dr.failure) |f| {
@@ -115,6 +115,8 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 // Demands' resolve apart: a call's share is the rest (§2.11).
                 line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
                 if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
+                // A recursive group member's walks (§8 S3b slice 4, *Charging*).
+                if (dr.walks != 0) line.writer.print(", walks {d}", .{dr.walks}) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
