@@ -87,6 +87,9 @@ pub foreign impure forEachWhile : Buffer a, sync (a → Bool) → ⊤
 
 The buffer's native representation is the array itself. Zig lowers these calls
 to an empty array, native push, length and for-of, preserving the element type.
+The unit argument to make is evaluated exactly once before allocation, including
+its effects, defects and suspension. Ignoring its result does not permit dropping
+the expression; intrinsic and first-class calls follow the same evaluation rule.
 The callbacks are synchronous and invoked in FIFO order; callback defects propagate.
 forEachWhile stops immediately when its callback returns False; no unvisited
 element is passed to the callback. The dispatch drain uses this

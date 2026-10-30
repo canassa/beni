@@ -11090,6 +11090,13 @@ pub const Lowerer = struct {
             try l.report(.internal, args[0], "a `Js.Ref` written as a `let` was lowered as something other than its name.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
+        if (which == .makeBuffer) {
+            // The ignored unit argument still runs before allocation, including
+            // its side effects, failures and suspension protocol.
+            for (args) |arg| try l.discard(out, arg, l.pos(arg));
+            const range = try l.b.addRange(&.{});
+            return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+        }
         if ((which == .each or which == .eachBuffer) and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
         if (which == .eachBufferWhile and args.len == 2) return l.eachWhileLoop(out, args[0], args[1], p);
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
@@ -11218,10 +11225,7 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            W.makeBuffer => blk: {
-                const range = try l.b.addRange(&.{});
-                break :blk l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
-            },
+            W.makeBuffer => unreachable, // Handled before operand materialisation.
             W.pushBuffer => blk: {
                 const pushed = try l.call(try l.member(v[0], try l.interner.getOrPut(l.gpa, "push"), p), &.{v[1]}, p);
                 try out.append(l.scratch, try l.add(.expr_stmt, p, pushed.int(), Node.Data.unused));

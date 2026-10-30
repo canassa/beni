@@ -1,0 +1,7 @@
+import Io
+import Node
+import Probe
+
+
+main : Node.Program
+main = Io.run λ⊤ → Node.printLines [ Probe.exercise ⊤, Probe.paused ⊤ ]
