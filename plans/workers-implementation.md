@@ -30,21 +30,28 @@ remain explicitly gated. The same PR stays open throughout implementation.
 
 ## Session status
 
-The independently landable foundation checkpoint implements generic runtime
-metadata with strict six-key tables, the Session-owned validated entry plan,
-the pinned native binding catalogue, and the typed Buffer primitive with its
-generated sibling, core-override checks and ordinary type/effect tests. The
-prerender export-root correction remains paired with its regression and keeps
-the call-graph guard enabled. Manager source review, full run-hash recording and full unfiltered gates passed
-on Dagon for foundation code commit d61f2d338. CI validates the pushed head next.
+The compiler foundation checkpoint d61f2d338 implements strict generic runtime
+metadata, the Session-owned validated entry plan, pinned native binding catalogue,
+typed Buffer primitive and prerender root correction. Full forced run-hash
+recording and full unfiltered gates passed on Dagon; CI passed at f24952283.
 
-The typed Inline queue and its coordinated callback ABI are deliberately held
-out of this checkpoint. The candidate has passed source review, focused corpus
-and real Chromium behavior validation, but remains under performance validation.
-The existing Inline implementation and inline run hashes stay unchanged here;
-the candidate mixed-type fixture will accompany the eventual accepted queue
-migration. No budget is waived.
+Correctness follow-up e9dc0c179 preserves Buffer.make unit-argument evaluation,
+including effects, exact defects and suspension, in development and release.
+Its before/after regression, full forced run hashes and full gates pass.
+Checkpoint ec03f09fc adds internal dynamic-import IR and a Zig-generated static
+UI measurement driver. Full gates pass, including unchanged small-stack tests
+and new deep-import coverage. This is internal IR, not new Beni syntax.
 
-Task continuation storage, remaining callback consumers, per-entry realm and Wire
-proofs, and public worker launching remain pending. This checkpoint does not
-complete C or enable worker launch. All further accepted work stays on PR #1304.
+The typed Inline queue remains unlanded pending performance acceptance. The
+frozen candidate passes individual release-byte limits, browser behavior and
+focused compiler checks. The complete UI validation requirements and the existing
+keyed-renderer prerequisites are recorded in [workers-ui-validation.md](workers-ui-validation.md).
+No byte or performance budget is waived. Scalar String-class lowering follows
+the existing Html contract and is under independent review and validation.
+
+Symbolic continuation metadata and diagnostic-only static entry discovery are
+being implemented in isolated agent lanes. The former preserves checker evidence
+before stores expire; the latter plans finite entry graphs and initializers.
+Neither changes production Task or authorizes worker execution. Remaining native
+callback consumers, per-entry realm and Wire proofs, and public launching stay
+gated. Every further accepted checkpoint stays on PR #1304.
