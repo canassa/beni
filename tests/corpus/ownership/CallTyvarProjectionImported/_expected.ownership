@@ -1,0 +1,35 @@
+module Main
+  21:9 List.push xs: rejected alias: g.x.c holds it and is read at 22:5
+  32:9 List.push xs: rejected alias: g.x.c holds it and is read at 33:5
+  43:9 List.push xs: rejected alias: g.x.c holds it and is read at 44:5
+  54:9 List.push xs: rejected alias: g.x.c holds it and is read at 55:5
+  65:9 List.push xs: rejected alias: g.x.c holds it and is read at 66:5
+  71:5 List.push t: accepted param
+  78:9 call Main.wp g.x.c: rejected alias: xs holds it and is read at 79:5 (Main.wp writes π1.x.c)
+  86:9 List.push xs: rejected alias: g.x.c holds it and is read at 87:5
+  98:9 List.push xs: accepted param
+  summary n2: π1.x R
+  summary inlineField: π1 RW[storage], π1[*] R
+  summary n3: π1.x R
+  summary selector: π1 RW[storage], π1[*] R
+  summary n4: π1 R
+  summary selectorDeep: π1 RW[storage], π1[*] R
+  summary n5: π1.x R
+  summary twoCalls: π1 RW[storage], π1[*] R
+  summary n6: π1.x R, π1.y R
+  summary chosen: π1 RW[storage], π1[*] R
+  summary wp: π1.x R, π1.x.c RAW[storage], π1.x.c[*] A; res [*] ~π1.x.c[*], π1.x.c
+  summary written: π1 RW[storage], π1[*] R
+  summary innerCall: π1 RW[storage], π1[*] R
+  summary nd: π1.y R
+  summary otherField: π1 RW[storage], π1[*] R
+  demands 9: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+module Picks
+  summary pick: π1 RA; res π1
+  summary ans: π1.b RA; res π1.b
+  summary ansU: π1.b RA; res π1.b
+  summary choose: π2 RA, π3 RA; res π2 π3
+  summary inner: π1.x R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 9: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause alias 7

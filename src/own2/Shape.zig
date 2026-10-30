@@ -1554,6 +1554,14 @@ pub const Table = struct {
     fn projOne(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
         const before = t.nodes.len;
+        // A view projects as its answer does, whose place may have a step
+        // the template's has not: the actual at a type variable's place
+        // (§2.11 *Re-rooting at a parameter*, #1350).
+        if (d.kind == .view) {
+            const hit = t.memo_proj.get(.{ t.memo_force.get(n).?.int(), s.word() }).?;
+            (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = hit;
+            return;
+        }
         const child_place = places.child(d.place, s) orelse {
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = Ids.none_int;
             return;
@@ -1574,7 +1582,7 @@ pub const Table = struct {
             .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
-            .view => got(t, t.memo_force.get(n).?.int(), s),
+            .view => unreachable, // answered above
         };
         // A node the projection makes records `n` (*Bases*): a leaf's, a
         // recast's, a join's image, and the empty value past a missing

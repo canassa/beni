@@ -1,0 +1,36 @@
+module CallTyvarProjection
+  24:9 List.push xs: rejected alias: g.x.c holds it and is read at 25:5
+  37:9 List.push xs: rejected alias: g.x.c holds it and is read at 38:5
+  54:9 List.push xs: rejected alias: g.x.c holds it and is read at 55:5
+  68:9 List.push xs: rejected alias: g.x.c holds it and is read at 69:5
+  82:9 List.push xs: rejected alias: g.x.c holds it and is read at 83:5
+  93:9 List.push xs: rejected alias: g.x.c holds it and is read at 94:5
+  111:9 List.push xs: rejected alias: g.x.c holds it and is read at 112:5
+  117:5 List.push t: accepted param
+  124:9 call CallTyvarProjection.wp g.x.c: rejected alias: xs holds it and is read at 125:5 (CallTyvarProjection.wp writes π1.x.c)
+  136:9 List.push xs: accepted param
+  summary pick: π1 RA; res π1
+  summary n2: π1.x R
+  summary inlineField: π1 RW[storage], π1[*] R
+  summary nb: π1.x R, π1.x.c R
+  summary bound: π1 RW[storage], π1[*] R
+  summary nc: π1.x R
+  summary scrutinee: π1 RW[storage], π1[*] R
+  summary ans: π1.b RA; res π1.b
+  summary n3: π1.x R
+  summary selector: π1 RW[storage], π1[*] R
+  summary ansU: π1.b RA; res π1.b
+  summary n4: π1 R
+  summary selectorDeep: π1 RW[storage], π1[*] R
+  summary n5: π1.x R
+  summary twoCalls: π1 RW[storage], π1[*] R
+  summary choose: π2 RA, π3 RA; res π2 π3
+  summary n6: π1.x R, π1.y R
+  summary chosen: π1 RW[storage], π1[*] R
+  summary wp: π1.x R, π1.x.c RAW[storage], π1.x.c[*] A; res [*] ~π1.x.c[*], π1.x.c
+  summary written: π1 RW[storage], π1[*] R
+  summary nd: π1.y R
+  summary otherField: π1 RW[storage], π1[*] R
+  demands 10: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 10: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause alias 8

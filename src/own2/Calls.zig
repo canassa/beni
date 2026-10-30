@@ -449,7 +449,9 @@ const Grafter = struct {
             if (s.kind == .level) return g.env.shapes.recastWhole(g.gpa(), g.account(), &g.env.cells.sets, at, n);
             n = (try g.env.shapes.proj(g.gpa(), g.account(), g.env.places, g.env.cells, n, s)) orelse return g.topLeaf(at);
         }
-        if (g.env.shapes.place(n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
+        // At a type variable's place the call instantiates the variable to
+        // the actual's type: the actual stands at its own place (#1350).
+        if (g.env.shapes.place(n) != at and g.env.places.kind(at) != .@"var") return g.env.shapes.recast(g.gpa(), g.account(), at, n);
         return n;
     }
 
@@ -835,11 +837,12 @@ const Grafter = struct {
     /// approximate), so that every re-rooted actual is reached through one
     /// (*κ across a call*), the other cells mapped into one leaf, the parts
     /// joined raw. Escapes are `apply`'s, made once per call from the class.
-    fn viewLeaf(g: *Grafter, members: *std.ArrayList(NodeId), at: PlaceId, cells: SetId) Error!NodeId {
+    fn viewLeaf(g: *Grafter, members: *std.ArrayList(NodeId), template_at: PlaceId, cells: SetId) Error!NodeId {
         if (rerootCell(g.env.cells, cells)) |cell| {
             const x = g.env.cells.get(cell);
-            return g.argAt(x.a, .from(x.b), at);
+            return g.argAt(x.a, .from(x.b), template_at);
         }
+        const at = try g.instantiatedAt(template_at, cells);
         const first = members.items.len;
         defer members.shrinkRetainingCapacity(first);
         var rest: SetId = .none;
@@ -864,6 +867,29 @@ const Grafter = struct {
         }
         if (rest != .none or members.items.len == first) try members.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, rest));
         return g.env.shapes.joinRaw(g.gpa(), g.account(), at, members.items[first..]);
+    }
+
+    /// The place a template leaf at `at` stands at under this call. At a
+    /// type variable's place whose cells are all parameter cells, the
+    /// exact ones' actuals at one place, the call instantiates the
+    /// variable to that place (`argAt`, #1350): `choose b l r = if b then l
+    /// else r` answers its actuals' record, whose fields are steps. Any
+    /// other leaf stays at `at`.
+    fn instantiatedAt(g: *Grafter, at: PlaceId, cells: SetId) Error!PlaceId {
+        if (g.env.places.kind(at) != .@"var") return at;
+        var got: PlaceId = .none;
+        var it = g.env.cells.sets.iterate(cells);
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const cell: CellId = .from(e.key);
+            if (g.env.cells.origin(cell) != .param) return at;
+            if (e.value == 1) continue;
+            const x = g.env.cells.get(cell);
+            const p = g.env.shapes.place(try g.argAt(x.a, .from(x.b), at));
+            if (got != .none and got != p) return at;
+            got = p;
+        }
+        return if (got == .none) at else got;
     }
 
     /// The cells a class cell stands for at this call: a parameter's, the
