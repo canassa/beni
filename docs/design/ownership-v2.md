@@ -1681,19 +1681,21 @@ of the same handle still add multiplicity through the path-multiset primitive.
       class's entries are now the own part, the argument's snapshot is a ref, and a read joins
       both, as the merged entry did.
     - When `P`'s own part or a ref is a fold, `P` is that fold merged with the others, eagerly, as
-      `kappaMerge` folds today (memoised per pair). The cost is paid only at a recursive place
-      (§2.9), and the counted tests below count it.
+      `kappaMerge` folds today (memoised per pair). That happens only at a recursive place (§2.9);
+      a chain through one is debt (*Debt: recursive results*, below).
     - `kappaChild` makes a position only where the own part and a ref, or two refs, have a child at
       the same step. Otherwise it returns the one child there, with no new id. Making that position
       is a charged operation: the readers of a position with `refs` call `kappaChildAt(gpa,
       charge, …)`, interned, so it is made once per `(P, s)`. The pure `kappaChild` stays for
       positions without refs.
-    - *Nested refs.* A ref may itself have refs, so a chain of k calls nests k levels. Two rules
-      keep a lookup from descending all of them:
-      - `kappaGet(P, n)` skips a ref whose `bound` set (below) does not hold `n`;
-      - each position memoises its step set and its entry keys (`kappaLinks`, `kappaHere`), made
-        once from its own part and its refs' memoised sets.
-      A lookup then reads only the refs that bind `n`: one ref, for a node of one actual's region.
+    - *Nested refs.* A ref may itself have refs, so a chain of k calls nests k levels. A lookup
+      never descends them. Each position memoises two things, each made once from its own part
+      and its refs' memoised ones:
+      - `kappaLinks(Q)`, its step set;
+      - `kappaHere(Q)`, every entry readable at `Q` (own part and refs, joined at a shared key), as
+        one hash-consed persistent map. It is made by a union of maps memoised per pair of map
+        nodes, so a position built over an earlier one costs the keys it adds.
+      `kappaGet(P, n)` is a lookup in `kappaHere(P)`: O(log n), whatever the nesting.
   - *The caller cannot change or hide the argument's snapshot through a link.* Positions are
     immutable and interned. A ref names the argument's own position, never a copy of it.
     - Every write on the caller's side (`kappaSet`, `kappaSetAt`, `kappaLink`, `kappaMerge`,
@@ -1716,46 +1718,52 @@ of the same handle still add multiplicity through the path-multiset primitive.
       below, so reading the ref alone could answer more than the merged read. The test looks at
       every position the crossing's walk would read: `P` and each position below it on the
       actual's region. `foldBelow(P)`, whether any position at or below `P` (own part or ref) is
-      a fold, is memoised per position like `bound`.
+      a fold, is memoised per position like `kappaHere`.
     - *Debt: recursive results.* A chain of calls whose result is recursive (a tree-insert chain,
       `t_k = insert t_{k-1} k`) folds at every call, so every call reads at `flatten(P)`, value-sized:
       O(n²) in its κ reads. This is accepted debt, #1289, and the counted tests do not include it.
     - *When the crossing is exact.* The crossing walks `R` where the merged read walks
       `flatten(P)`, position by position. Along the walk the two are at a pair of positions,
-      `(Q, R_Q)`: `Q` is `P`'s position at a path and `R_Q` is `R`'s child at the same path. At
-      `Q`, an entry `κ(m)` is `own(m) ⊔ refs(m)`, and the crossing reads `R_Q(m)`. The two are equal
-      when every other source's entry at `Q` is **absorbed** by `R_Q`: for each key `m` another
-      source binds at `Q`, `R_Q` binds `m` too, and `join(R_Q(m), e) = R_Q(m)`. `join` is canonical,
-      so that is one id comparison. A key `R_Q` does not bind is not absorbed, since `R_Q(m)` absent
-      reads as derived only. When the pair is absorbed at every position the walk reaches, and no
-      fold is met, a whole walk at `P` (`deep`, `dagKappa`) equals the walk at `R`, at the same
-      `at_summary`.
+      `(Q, R_Q)`: `Q` is `P`'s position at a path, and `R_Q` is `R`'s child at the same path.
+      - At `Q` the crossing reads `κ(m)` only for nodes `m` of the actual's region: the nodes of
+        the re-rooted actual's DAG, `region(a)`. That is a persistent node set memoised per node
+        and made from its parts' sets. It is a superset of the nodes the walk meets at any one path.
+      - For such an `m`, the merged read is `kappaHere(Q)(m)` and the crossing's is `R_Q(m)`.
+      - The two are equal when every other source's entry for `m` is **absorbed** by `R_Q`: `R_Q`
+        binds `m`, and `join(R_Q(m), e)` has the same kind and atom set as `R_Q(m)`. The two are
+        compared by `flat`, so an entry's tree shape never decides. A key `R_Q` does not bind is not
+        absorbed, since an absent `R_Q(m)` reads as derived only.
+      - Keys outside `region(a)`, the class's view ids and another actual's nodes, are never read
+        by the crossing, so they are not tested.
+      - When the pair is absorbed at every position the walk reaches, and no fold is met, a whole
+        walk at `P` (`deep`, `dagKappa`) equals the walk at `R`, at the same `at_summary`.
     - *The test.*
-      - `absorbed(Q, R_Q)` is a predicate on a pair of positions: absorbed here, and
-        `absorbed(Q.child(s), R_Q.child(s))` at each step `s` where `Q`'s other sources have a
-        child.
-      - It is memoised per pair. At one position, the comparison of entries is memoised per pair
-        of radix nodes of the two entry maps, so a pair of maps that each grew from a pair already
-        compared compares only the radix nodes on their changed spines.
-      - `bound(Q)`, the nodes a position binds at every depth below it, is only a pruning:
-        `absorbed` is true at once when no other source at `Q` binds anything (`bound` empty).
-        `bound` decides nothing else.
-      - Positions are immutable, so no memo entry goes stale.
+      - `others(Q, R_Q)` is the entries at `Q` of every source but `R_Q`: `Q`'s own part and its
+        other refs, joined at a shared key. It is hash-consed like `kappaHere`, so it is one map id,
+        made by the same pairwise-memoised union.
+      - `absorbed(others, R_Q, region(a))` holds when, for each key of `others` in `region(a)`,
+        `R_Q` absorbs its entry. It is also required at each step `s` where `Q`'s other sources
+        have a child: `absorbed(others(Q.child(s), R_Q.child(s)), R_Q.child(s), region(a))`.
+      - The predicate is memoised per triple of ids. At one position, the comparison is memoised
+        per pair of radix nodes of the two maps (and the region set's), so maps that each grew
+        from a pair already compared compare only the radix nodes on their changed spines.
+      - Positions and maps are immutable, so no memo entry goes stale.
     - *Where it fails.* The class's own part binds only view ids made at this call, and a view is
-      never a node of an argument. So the test fails only when an actual's node is also bound,
-      with an entry `R` does not absorb, by another actual or by the caller. There the read at that
-      crossing is made at `flatten(P)`, the old merged position (memoised per pair as
-      `kappaMerge` is), exact and value-sized once.
+      never a node of an argument, so it is never tested. So the test fails only when a node of the
+      actual's region is also bound, with an entry `R` does not absorb, by another actual or by the
+      caller. There the read at that crossing is made at `flatten(P)`, the old merged position
+      (memoised per pair as `kappaMerge` is), exact and value-sized once.
     - *A shared actual stays incremental.* In `x_k = step x_{k-1} l`, with one `l` at every call,
       `l`'s node is bound by `x_{k-1}`'s snapshot (from the earlier call) and by `l`'s own, with the
       same entry. So `R` absorbs it, the crossing holds, and the chain costs the new layer per call.
-      The counted tests below include this family.
+      `pick c y_{k-1} …` and `merge x y` test nothing for the other actual's nodes outside the
+      crossed actual's region.
     - *A shared actual that grows.* In `x_k = merge x_{k-1} y_k`, each `y_k` grown from `y_{k-1}`
-      and also held below `x_{k-1}`, the test compares `y_k`'s entries with `x_{k-1}`'s at the
-      shared positions. With the radix-pair memo, a call costs the radix nodes that differ from a
-      pair already compared: O(Δ log n), Δ the keys added since the earlier call. That is not
-      O(log² n) when many keys are added at once. The counted tests include this family and
-      `merge` over two independent chains.
+      and also held below `x_{k-1}`, the test compares the shared keys. `others` is one hash-consed
+      map, `kappaHere(x_{k-1})` at that path, so the nesting of `x_{k-1}`'s refs costs nothing
+      here. With the radix-pair memo, a call costs the radix nodes that differ from a triple
+      already compared: O(Δ log n), Δ the keys added since the earlier call. The counted tests
+      include this family and `merge` over two independent chains.
     - *The shared-cell twin.* `l = [ 1 ]`, `x1 = step x0 l`, `x2 = step x1 l`, then a push on an
       element of `x2` must be refused, and the twin with two distinct lists must be accepted
       (`CallChainSharedElement`). It works because `l` is a built node with an entry of its own. The
@@ -1836,9 +1844,15 @@ of the same handle still add multiplicity through the path-multiset primitive.
         `xreq` (its `fails` test and its `flat`).
   - Resolving is `instantiate` with `Grafter.atom` under `E`, memoised per atom, its result
     canonical (*Canonical partials*). `Cond.resolved(k)` is the one entry.
-  - The table's own readers assert in a `runtime_safety` build that they meet no `inst` atom:
-    `flat`, `kind`, `get`, `leq` and `rely`. `fails` is a test of the id alone, so it takes the
-    table to make the same assertion.
+  - `join`, `and` and `flat` treat an `inst` atom as an opaque atom. That is sound, because
+    resolving distributes over `and`: `instantiate` maps each atom on its own. So the carriers and
+    the table's own operations need no check. Each resolving reader above asserts, at its entry
+    and in a `runtime_safety` build, that what it tests holds no `inst` atom after resolving.
+  - *Publishing.* Read-off resolves every stored entry of the result's κ before it maps it (its
+    `cond` resolves first), charged to the publish force (*Blocks force a view at publish*). So a
+    published κ holds no `inst` atom. `Block.Writer` reads the stored entries of that κ
+    (`Block.position`), and `Summary.Table.add` asserts there are none in a `runtime_safety`
+    build, as it does for views.
   - The entry stored under `(position, view)` is that atom, so the memo is per `(view, κ position)`.
   - `xreq` is instantiated the same way, as an `inst` atom on the first write's `relies`.
   - *With the chain join.* `chainStored` joins the stored entries of a view's chain as they are.
