@@ -8552,6 +8552,117 @@ test "the checker v2's call costs are flat per call through chains of calls and 
     try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
 }
 
+/// The crossing's counts from a dump: reads crossed, redone at `C`, and
+/// `base_epoch`'s moves (`ownership-v2.md` §2.11 *κ across a call*).
+fn crossingOf(dump: []const u8) ![3]u64 {
+    const at = std.mem.indexOf(u8, dump, "crossing: reads ") orelse return error.NoCrossing;
+    var it = std.mem.tokenizeAny(u8, dump[at + "crossing: reads ".len ..], " ,\n");
+    const reads = try std.fmt.parseInt(u64, it.next().?, 10);
+    _ = it.next(); // redone
+    const redone = try std.fmt.parseInt(u64, it.next().?, 10);
+    _ = it.next(); // base
+    _ = it.next(); // moves
+    const moves = try std.fmt.parseInt(u64, it.next().?, 10);
+    return .{ reads, redone, moves };
+}
+
+/// A chain of `n` calls of one family of §2.11's counted tests, its last
+/// value's element read (a push on it) or, for `push`, published.
+fn shareProgram(a: std.mem.Allocator, family: []const u8, n: u32) ![]const u8 {
+    var src: std.ArrayList(u8) = .empty;
+    const read = "    case {s}{d} of\n        [ a, …_ ] →\n            List.length (List.push a 0)\n\n        _ →\n            0\n";
+    if (std.mem.eql(u8, family, "step") or std.mem.eql(u8, family, "shared")) {
+        const shared = family[1] == 'h';
+        try src.appendSlice(a, "step : List (List Int), List Int → List (List Int)\nstep x v =\n    List.push x v\n\n\npub chain : ⊤ → Int\nchain ⊤ =\n");
+        if (shared) try src.appendSlice(a, "    l = [ 1 ]\n");
+        try src.appendSlice(a, "    x0 = [ [ 0 ] ]\n");
+        for (1..n + 1) |k| if (shared) try src.print(a, "    x{d} = step x{d} l\n", .{ k, k - 1 }) else try src.print(a, "    x{d} = step x{d} [ {d} ]\n", .{ k, k - 1, k });
+        try src.print(a, read, .{ "x", n });
+    } else if (std.mem.eql(u8, family, "pick")) {
+        try src.appendSlice(a, "pick : Bool, List (List Int), List (List Int) → List (List Int)\npick c a b =\n    if c then a else b\n\n\npub chain : Bool → Int\nchain c =\n    z = [ [ 0 ] ]\n    y0 = [ [ 0 ] ]\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = pick c y{d} (List.push z [ {d} ])\n", .{ k, k - 1, k });
+        try src.print(a, read, .{ "y", n });
+    } else if (std.mem.eql(u8, family, "push")) {
+        try src.appendSlice(a, "pub chain : ⊤ → List Int\nchain ⊤ =\n    x0 = [ 0 ]\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ k, k - 1, k });
+        try src.print(a, "    x{d}\n", .{n});
+    } else {
+        // `merge`: `x_k = merge x_{k-1} y_k`, `y_k` grown from `y_{k-1}` and
+        // held below `x_{k-1}`; `indep`: `m_k = merge a_k b_k`, two chains.
+        try src.appendSlice(a, "merge : List (List Int), List (List Int) → List (List Int)\nmerge a b =\n    a ++ b\n\n\npub chain : ⊤ → Int\nchain ⊤ =\n");
+        if (family[0] == 'm') {
+            try src.appendSlice(a, "    x0 = [ [ 0 ] ]\n    y0 = [ [ 0 ] ]\n");
+            for (1..n + 1) |k| try src.print(a, "    y{d} = List.push y{d} [ {d} ]\n    x{d} = merge x{d} y{d}\n", .{ k, k - 1, k, k, k - 1, k });
+            try src.print(a, read, .{ "x", n });
+        } else {
+            try src.appendSlice(a, "    a0 = [ [ 0 ] ]\n    b0 = [ [ 0 ] ]\n");
+            for (1..n + 1) |k| try src.print(a, "    a{d} = List.push a{d} [ {d} ]\n    b{d} = List.push b{d} [ {d} ]\n    m{d} = merge a{d} b{d}\n", .{ k, k - 1, k, k, k - 1, k, k, k, k });
+            try src.print(a, read, .{ "m", n });
+        }
+    }
+    return src.toOwnedSlice(a);
+}
+
+/// §2.11's counted test for one family: the share of `chain`'s records that
+/// is not Demands' resolve (#1214's), per call, at 10 and 40 calls, flat
+/// (at most a quarter more, a log factor's room); and the crossing's redos
+/// and `base_epoch` moves not per call.
+fn callChainShare(family: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var per: [2]u64 = undefined;
+    var counts: [2][3]u64 = undefined;
+    for ([_]u32{ 10, 40 }, 0..) |n, run| {
+        try w.write("Main.beni", try shareProgram(a, family, n));
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+        const total = try accountField(dump.stdout, "chain", "total");
+        per[run] = (total - try accountField(dump.stdout, "chain", "demands")) / n;
+        counts[run] = try crossingOf(dump.stdout);
+    }
+    if (per[1] * 4 > per[0] * 5) {
+        std.debug.print("{s}: {d} records a call at 10, {d} at 40\n", .{ family, per[0], per[1] });
+        return error.TestUnexpectedResult;
+    }
+    try testing.expect(counts[1][1] <= counts[0][1] + 2);
+    try testing.expect(counts[1][2] <= counts[0][2] + 2);
+}
+
+test "the checker v2's call share is flat per call: a step chain read at its element (CallChainShare)" {
+    // `ownership-v2.md` §2.11 *κ across a call*, *Counted tests*: `x_k =
+    // step x_{k-1} [ k ]`. Each call's read below its argument crosses into
+    // the argument's own snapshot and meets the reads the earlier call made.
+    try callChainShare("step");
+}
+
+test "the checker v2's call share is flat per call: a push chain, published (CallChainShare)" {
+    try callChainShare("push");
+}
+
+test "the checker v2's call share is flat per call: one shared actual at every call (CallChainShare)" {
+    // `x_k = step x_{k-1} l`: `l`'s node is held below `x_{k-1}` with the same
+    // entry in both snapshots, so the crossing holds.
+    try callChainShare("shared");
+}
+
+test "the checker v2's call share is flat per call: a chain of joins (CallChainShare)" {
+    // The 2a guard's chain of joins: its share is flat; the whole
+    // continuation waits for #1214 (`scenario/CK-1214`).
+    try callChainShare("pick");
+}
+
+test "the checker v2's call share is flat per call: merge with a shared actual that grows (CallChainShare)" {
+    try callChainShare("merge");
+}
+
+test "the checker v2's call share is flat per call: merge over two independent chains (CallChainShare)" {
+    // Both sides of the callee's `apart` grow: merged along their tries,
+    // memoised per node pair, never the smaller side's size.
+    try callChainShare("indep");
+}
+
 test "the checker v2's dump of push chains with an early read is the same at --jobs=1 and --jobs=8" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
