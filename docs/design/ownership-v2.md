@@ -1807,6 +1807,28 @@ of the same handle still add multiplicity through the path-multiset primitive.
     subtree the merge did not touch. The comparison is memoised per pair of map nodes, and a shared
     node equals itself at once. So it costs the nodes on the spines the merge changed, and for each
     key there, one tested-key query and one `flat` comparison.
+    - *As built (2026-10-30): the region stays out of the pair memo.* Two facts break the plain
+      reading above. First, `C_Q` shares `R_Q`'s subtrees only where `R_Q` is the larger side. At
+      a crossing into a small actual (the literal `[ k ]` in the step chain), every key of the
+      other actual is bound in `C_Q` alone: O(k) per call if each is tested one by one. Second,
+      `region(a)` is new at every call, so a memo keyed by it never meets a pair twice. So the
+      comparison is split:
+      - `diffKeys(m_C, m_R)`: the keys the two maps bind differently (bound on one side only, or
+        with another kind or atom set), as a node set. It is memoised per pair of map nodes,
+        for good: maps and their entries never change. A map's keys as a node set are memoised
+        per map node. So the pairs of subtrees an earlier call compared are met again.
+      - The region enters only at the end. The maps are equal on the region when no key of the
+        difference is the empty value and the keys' `bases*` (memoised per radix node of the
+        difference, within one `base_epoch`) do not meet `region(a)`. The meet is a radix
+        intersection memoised per pair of set nodes.
+      - So a call pays the changed spines of both maps, the difference's new radix nodes and
+        the meet's new pairs: O(Δ log n).
+    - *The empty value.* `proj` past a missing child answers the one interned empty leaf of the
+      child's place. That leaf is a κ key, and it would gain a base at every call (measured in
+      `merge x y`). It is **tested for every region** instead, and records no construction:
+      `eqOn` always compares its entries, which only makes the equality stricter, and it is
+      never wholly of a region, so it is read at `C`. Sound, because `tested` may only
+      over-approximate.
   - *Argument 2: the merge costs the change, not the size.* `kappaMerge` is memoised per pair of
     positions, and it goes down only the steps both sides link. Finding them scans one side's links
     for the other's, at most a place's steps: the type's width, never the value's size. At a
