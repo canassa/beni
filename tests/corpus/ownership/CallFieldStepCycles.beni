@@ -1,0 +1,96 @@
+-- ownership: a callee's read through a cycle of the caller's place graph
+-- (ownership-v2.md §2.7, §2.10's read-off, §2.1's `⟲`, #1325). `viaT`'s
+-- argument is `π1#T.0`, and `readKid` reads `π1⟲.v` below it: the cycle
+-- `T → .kid → Just → T` starts above the argument in the caller, so the
+-- read is `π1⟲#T.0.v`, as the inline walk (`inlineT`) names it, never
+-- `π1#T.0⟲.v`, which no demand queries. A push of a list the kid's `.v`
+-- holds, with `t` read later, is refused. The same through two types,
+-- `A` and `B`: `viaA` reads `π1⟲#A.1#B.0`, as `inlineA` does.
+type T
+    = T { v : List Int, kid : Maybe T }
+
+
+readKid : { v : List Int, kid : Maybe T } → Int
+readKid r =
+    case r.kid of
+        Just (T k) →
+            List.length k.v
+
+        Nothing →
+            0
+
+
+viaT : T → Int
+viaT t =
+    case t of
+        T r →
+            readKid r
+
+
+inlineT : T → Int
+inlineT t =
+    case t of
+        T r →
+            case r.kid of
+                Just (T k) →
+                    List.length k.v
+
+                Nothing →
+                    0
+
+
+pub kidVia : List Int → Int
+kidVia xs =
+    ys = [ 3 ]
+    t = T { v = ys, kid = Just (T { v = xs, kid = Nothing }) }
+    p = List.push xs 1
+    viaT t + List.length p
+
+
+type A
+    = A (List Int) B
+
+
+type B
+    = B (List Int) (Maybe A)
+
+
+readBB : B → Int
+readBB b =
+    case b of
+        B _ (Just (A _ b2)) →
+            case b2 of
+                B l _ →
+                    List.length l
+
+        _ →
+            0
+
+
+viaA : A → Int
+viaA a =
+    case a of
+        A _ b →
+            readBB b
+
+
+inlineA : A → Int
+inlineA a =
+    case a of
+        A _ b →
+            case b of
+                B _ (Just (A _ b2)) →
+                    case b2 of
+                        B l _ →
+                            List.length l
+
+                _ →
+                    0
+
+
+pub mutualVia : List Int → Int
+mutualVia xs =
+    ys = [ 3 ]
+    a = A ys (B ys (Just (A ys (B xs Nothing))))
+    p = List.push xs 1
+    viaA a + List.length p
