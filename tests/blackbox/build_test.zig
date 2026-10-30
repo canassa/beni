@@ -10252,35 +10252,55 @@ test "the checker v2 treats core read with --core-root as core, not as user code
     try testing.expect(std.mem.indexOf(u8, copied.stdout, "unchecked f:") == null);
 }
 
-test "the checker v2 reads 300 derived comparisons of one module within a second" {
+/// The sum of every `account f<k>:` line's `total` in a v2 dump.
+fn sumFunctionTotals(dump: []const u8) !u64 {
+    var sum: u64 = 0;
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "account f")) continue;
+        const key = ", total ";
+        const at = std.mem.indexOf(u8, t, key) orelse return error.NoField;
+        const digits = t[at + key.len ..];
+        const end = std.mem.indexOfNone(u8, digits, "0123456789") orelse digits.len;
+        sum += try std.fmt.parseInt(u64, digits[0..end], 10);
+    }
+    return sum;
+}
+
+test "the checker v2 reads 300 derived comparisons of one module in linear records" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §2.13.13: a derived `==` is read through the
     // user-written comparisons its type reaches. The module's `eq` is found
     // once and remembered (`cmp_decl`), not by scanning its declarations at
-    // every use. Wall time cannot tell the two apart under this budget: the
-    // walk of each use costs more than the scan did here, so this only guards
-    // the shape the review measured against growth.
+    // every use. The scan itself is a plain loop and no account charges it, so
+    // records cannot catch its return; what they pin is that the work every
+    // use is charged stays a constant per use: four times the uses, at most
+    // four times the records.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    for (0..300) |i| try src.print(a, "type T{d}\n    = T{d} (List Int)\n\n\npub f{d} : List Int → Bool × List Int\nf{d} xs = ( T{d} xs == T{d} [], xs )\n\n\n", .{ i, i, i, i, i, i });
-    try w.write("Main.beni", src.items);
+    var totals: [2]u64 = undefined;
+    for ([2]usize{ 75, 300 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for (0..n) |i| try src.print(a, "type T{d}\n    = T{d} (List Int)\n\n\npub f{d} : List Int → Bool × List Int\nf{d} xs = ( T{d} xs == T{d} [], xs )\n\n\n", .{ i, i, i, i, i, i });
+        try w.write("Main.beni", src.items);
 
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const start = std.Io.Timestamp.now(testing.io, .awake);
-    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
-    const wall_ms = start.durationTo(std.Io.Timestamp.now(testing.io, .awake)).toMilliseconds();
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f") == null);
+        totals[run] = try sumFunctionTotals(dump.stdout);
+    }
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f299") == null);
-    try testing.expect(wall_ms < 1000);
+    try testing.expect(totals[0] > 0);
+    try testing.expect(totals[1] <= totals[0] * 4 + totals[0] / 4);
 }
