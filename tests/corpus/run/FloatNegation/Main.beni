@@ -1,0 +1,42 @@
+-- Literal/prefix and first-class negation obey IEEE-754 signed-zero rules.
+import Node exposing (Program)
+import Probe
+import Ref
+
+
+apply : (Float → Float), Float → Float
+apply operation value = operation value
+
+
+line : Float → String
+line value =
+    words = Probe.bits value
+    String.fromInt words.high ++ "/" ++ String.fromInt words.low
+
+
+main : Program
+main =
+    nativeZero = Probe.negativeZero ⊤
+    count = Ref.make 0
+    counted : ⊤ → Float
+    counted ⊤ =
+        Ref.update count λn → n + 1
+        0.0
+    values =
+        [ -0.0
+        , negate 0.0
+        , apply negate 0.0
+        , apply negate nativeZero
+        , -(-0.0)
+        , -(1.0e-324)
+        , -(counted ⊤)
+        , negate (1 / 0)
+        , negate (-42.5)
+        ]
+    Node.printLines
+        ([ …List.map values line
+         , …List.map (List.map [ 0.0, nativeZero ] negate) line
+         , "evaluations=" ++ String.fromInt (Ref.get count)
+         , "nan=" ++ (if isNaN (apply negate (0 / 0)) then "true" else "false")
+         ]
+        )

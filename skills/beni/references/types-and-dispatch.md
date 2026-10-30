@@ -171,3 +171,11 @@ counts texts = decodeAll texts
 ```
 
 Sources: `docs/design/language.md` §5.1, §6.3; `docs/design/static-dispatch-spike.md` §1–§4.
+
+## Floating-point signs
+
+Prefix `-` and `negate` invert the sign of zero as well as ordinary numbers:
+`negate 0.0` is negative zero, and negating negative zero gives positive zero.
+The two zeros compare equal; their reciprocals and native binary bit patterns
+distinguish them. This behavior is the same for a direct call, a function passed
+as a callback, and development or release builds.

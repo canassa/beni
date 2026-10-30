@@ -373,9 +373,11 @@ isInfinite x =
 --|     negate 42 == -42
 --|
 --| This is what the prefix `-` desugars to, which is why it is written as a
---| subtraction from zero rather than as `-n`.
+--| multiplication by negative one rather than as `-n`. This inverts the
+--| sign of zero too: `negate 0.0` is `-0.0`, and vice versa. Subtracting
+--| from positive zero would lose that distinction.
 pub negate : number → number
-negate n = 0 - n
+negate n = (0 - 1) * n
 
 
 --| Get the absolute value of a number.
