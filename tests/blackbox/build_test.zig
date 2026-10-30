@@ -9009,6 +9009,82 @@ test "the checker v2's write deep below a chain of field wrappers is linear in i
     }
 }
 
+/// `wall r` pushes onto each of `n` fields of `r`; `caller w = wall w`,
+/// and with `literal` also `fresh k`, which calls `wall` on a record
+/// literal of `n` fresh lists.
+fn manyWrites(a: std.mem.Allocator, n: u32, literal: bool) ![]u8 {
+    var src: std.ArrayList(u8) = .empty;
+    errdefer src.deinit(a);
+    try src.appendSlice(a, "type alias W =\n");
+    for (0..n) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+    try src.appendSlice(a, "\n\nwall : W → Int\nwall r =\n    0");
+    for (0..n) |i| try src.print(a, " + List.length (List.push r.f{d:0>3} 1)", .{i});
+    try src.appendSlice(a, "\n\n\npub caller : W → Int\ncaller w =\n    wall w\n");
+    if (literal) {
+        try src.appendSlice(a, "\n\npub fresh : Int → Int\nfresh k =\n    wall\n");
+        for (0..n) |i| try src.print(a, "        {s} f{d:0>3} = [ k ]\n", .{ if (i == 0) "{" else ",", i });
+        try src.appendSlice(a, "        }\n");
+    }
+    return src.toOwnedSlice(a);
+}
+
+test "the checker v2's call writing many fields of one parameter costs its caller linear work" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1, §4.4 (#1334): each of `wall`'s
+    // writes is Disjoint against the other paths of its argument, and the
+    // other written fields are those paths. A write visits only the paths
+    // whose cells may be its base, through the call's index, so 256 fields
+    // cost `caller` about 4 times what 64 do, with no limit (it was
+    // quadratic: `ownership_summary_size` at 256).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 256 }, 0..) |n, run| {
+        const src = try manyWrites(a, n, false);
+        defer a.free(src);
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 45) {
+        std.debug.print("64 fields: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing many fields of a fresh record literal is linear" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 (#1334): `fresh` hands `wall` a
+    // literal of distinct lists, so each write's other paths hold cells,
+    // none of which may be its base. They are not listed per write: 128
+    // fields cost `fresh` at most 2.2 times what 64 do (it was 4 times,
+    // 60 115 → 238 889 records).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 128 }, 0..) |n, run| {
+        const src = try manyWrites(a, n, true);
+        defer a.free(src);
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src), "fresh");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] * 10 > totals[0] * 22) {
+        std.debug.print("64 fields: {d} records, 128: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 /// The crossing's counts from a dump: reads crossed, redone at `C`, and
 /// `base_epoch`'s moves (`ownership-v2.md` §2.11 *κ across a call*).
 fn crossingOf(dump: []const u8) ![3]u64 {

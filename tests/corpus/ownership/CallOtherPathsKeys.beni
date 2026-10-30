@@ -1,0 +1,42 @@
+-- ownership: a write's other paths hold cells of fresh values (§2.11 item
+-- 3, #1334). A write's operand keeps only the cells that may be its base,
+-- found through the call's index of the paths beside the write: `shared`
+-- puts one list at `x` and `z`, which `two` both writes, so each write is
+-- refused `disjoint`; `sharedRead` puts it at the written `x` and the read
+-- `y`, so only `x`'s write is; `apart`'s three lists are distinct. The
+-- same one level down (`nestedShared`, `nestedInner`): the list beside the
+-- write is a sibling of the written field's record or of the field itself.
+two : { x : List Int, y : List Int, z : List Int } → Int
+two r = List.length (List.push r.x 1) + List.length (List.push r.z 1) + List.length r.y
+
+
+pub shared : Int → Int
+shared k =
+    l = [ k ]
+    two { x = l, y = [ k ], z = l }
+
+
+pub sharedRead : Int → Int
+sharedRead k =
+    l = [ k ]
+    two { x = l, y = l, z = [ k ] }
+
+
+pub apart : Int → Int
+apart k = two { x = [ k ], y = [ k ], z = [ k ] }
+
+
+nested : { a : { x : List Int, y : List Int }, b : List Int } → Int
+nested r = List.length (List.push r.a.x 1) + List.length r.b + List.length r.a.y
+
+
+pub nestedShared : Int → Int
+nestedShared k =
+    l = [ k ]
+    nested { a = { x = l, y = [ k ] }, b = l }
+
+
+pub nestedInner : Int → Int
+nestedInner k =
+    l = [ k ]
+    nested { a = { x = l, y = l }, b = [ k ] }

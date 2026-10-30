@@ -1,0 +1,29 @@
+module Main
+  18:9 List.push xs: rejected alias: g.x.c holds it and is read at 19:5
+  26:9 List.push xs: rejected alias: g.x.c holds it and is read at 27:5
+  34:9 List.push xs: rejected alias: g.x.c holds it and is read at 35:5
+  42:9 List.push xs: rejected alias: g.x.c holds it and is read at 43:5
+  50:9 List.push xs: rejected alias: g.x.c holds it and is read at 51:5
+  58:9 List.push xs: rejected alias: g.x.c holds it and is read at 59:5
+  summary ownRec: π1.x R
+  summary recordArg: π1 RW[storage], π1[*] R
+  summary localRecord: π1 RW[storage], π1[*] R
+  summary tupleArg: π1 RW[storage], π1[*] R
+  summary ctorArg: π1 RW[storage], π1[*] R
+  summary inlineCall: π1 RW[storage], π1[*] R
+  summary inlineField: π1 RW[storage], π1[*] R
+  demands 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+module Temps
+  summary rbc: π1.b.c R
+  summary wrapRec: π1.x R
+  summary tb: π1.1.c R
+  summary wrapTuple: π1.x R
+  summary just: π1 R, π1#Just.0.c R
+  summary wrapCtor: π1.x R
+  summary pick: π1 RA; res π1
+  summary rbx: π1.c R
+  summary n1: π1.x R
+  summary n2: π1.x R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause alias 6

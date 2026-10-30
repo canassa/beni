@@ -586,6 +586,15 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             if (u.kind == .call and u.use_node != .none and whole) try graft.compose(pq[0], at, u.use_node);
         };
     }
+    // R: the parameter parts a consumed value holds, a temporary's too
+    // (#1330: `rbc { b = g.x }`, `rbx (pick g.x)`), at their own paths and
+    // the callee's use below them (`Transfer.Frame.readsOf`).
+    for (frame.param_reads.items) |rd| if (try paramOf(env, rd.cell)) |pq| {
+        try env.charge.reserve(gpa, .inspection, 1);
+        if (rd.use_node == .none) {
+            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true }, &steps);
+        } else try graft.compose(pq[0], pq[1], rd.use_node);
+    };
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {
         var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node));
