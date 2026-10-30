@@ -1,0 +1,36 @@
+-- ownership (project): see Main.beni. `kids` writes a tree's own list,
+-- `pushRoot` writes it and answers its subtrees, and `pushKids` does that
+-- to both subtrees of a node.
+pub type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub kids : Tree → List Int
+kids t =
+    case t of
+        Node _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+pushRoot : Tree → Tree
+pushRoot t =
+    case t of
+        Node l xs r →
+            Node l (List.push xs 1) r
+
+        Leaf →
+            Leaf
+
+
+pub pushKids : Tree → Tree
+pushKids t =
+    case t of
+        Node l xs r →
+            Node (pushRoot l) xs (pushRoot r)
+
+        Leaf →
+            Leaf

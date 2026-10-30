@@ -1,0 +1,28 @@
+-- ownership (project): `SiblingSubtrees` with the callees in another module
+-- (ownership-v2.md §2.1, as amended for #1253; §2.11 slice 3: a call of an
+-- imported declaration applies the class its block publishes). A node's two
+-- subtrees are two places across the block: a write to `l`'s list beside
+-- `r` is accepted (`both`), `Trees.pushKids` over one list in both subtrees
+-- is refused (`sharedKids`) and over two lists accepted (`distinctKids`).
+-- Before #1253 `both` and `distinctKids` were refused.
+import Trees exposing (Leaf, Node, Tree)
+
+
+pub both : Tree → List Int × Tree
+both t =
+    case t of
+        Node l _ r →
+            ( Trees.kids l, r )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub sharedKids : ⊤ → Tree
+sharedKids ⊤ =
+    xs = [ 1 ]
+    Trees.pushKids (Node (Node Leaf xs Leaf) [] (Node Leaf xs Leaf))
+
+
+pub distinctKids : ⊤ → Tree
+distinctKids ⊤ = Trees.pushKids (Node (Node Leaf [ 1 ] Leaf) [] (Node Leaf [ 2 ] Leaf))
