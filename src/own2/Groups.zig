@@ -73,10 +73,17 @@ pub const Input = struct {
     dispatch: ?*const Dispatch,
     /// Per global symbol, its rank in text order (§3.8).
     ranks: []const u32,
-    /// Per module, whether it is embedded in the binary (core).
-    embedded: []const bool = &.{},
+    /// Per module, whether it is in the core package; its comparisons are
+    /// trusted to compose their evidence (§2.13.13).
+    core: []const bool = &.{},
+    /// Symbol text, to name a type's `eq`/`compare`.
+    interner: ?*const InternPool.Global = null,
     /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
     imports: ?Imports = null,
+
+    pub fn isCore(in: *const Input, m: u32) bool {
+        return m < in.core.len and in.core[m];
+    }
 };
 
 /// How a module reads another's classes (§3.6): module `m`'s block decoded
@@ -803,20 +810,26 @@ pub const Module = struct {
         const mod = self(ctx);
         const bir = mod.in.bir;
         var target: ?[2]u32 = null;
-        var derived = false;
+        // A comparison whose class is its components' (§2.13.13): derived or
+        // primitive, or a container's in core.
+        var composed = false;
+        var term: ?Dispatch.TermIndex = null;
         if (bir.instTag(@fromBackingInt(inst)) == .call) {
             const head = bir.instData(@fromBackingInt(inst)).lhs;
             if (ctorOf(ctx, head)) |c| return .{ .ctor = c[0] };
             target = mod.declOf(head);
         } else if (mod.in.dispatch) |dt| if (dt.siteOf(@fromBackingInt(inst))) |site| if (site.callee.unwrap()) |ti| {
+            term = ti;
             switch (dt.term(ti)) {
                 .top => |u| target = .{ mod.in.module, u.decl.int() },
                 .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| {
                     target = .{ u.module.int(), d.int() };
                 },
                 // A derived or primitive `eq`/`compare` (§2.13.13): its class
-                // composes its components' — none written by hand here.
-                else => derived = try mod.handWritten(dt, ti) == false,
+                // composes its components'.
+                // A parameter's or a codec's names no function here.
+                .param, .codec => {},
+                else => composed = true,
             }
         };
         var args: std.ArrayList(u32) = .empty;
@@ -826,27 +839,38 @@ pub const Module = struct {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
             if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, t[0], owner.decls[t[1]]) };
-            // A declaration of this module walked before this one (an
-            // earlier group, §8 S3b): its class, applied at this call. One
-            // of this group (recursion) or one past its limit is not built
-            // here.
-            if (t[0] == mod.in.module and words.len == 0) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
-            // One of another module (S3b slice 3): the class its block
-            // publishes, applied the same way.
-            if (t[0] != mod.in.module and words.len == 0) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
-            // A container's `eq`/`compare` with no words (`List.eq`, written
-            // in JavaScript over its element evidence): the derived class when
-            // no evidence it is handed is written by hand (§2.13.13).
-            // Core's comparisons compose their evidence. One written outside
-            // core is hand-written: a walk that was not built, or was stopped
-            // at a limit, gives it no class, and reading it as derived would
-            // apply a read-only class to a body that may write.
-            const trusted = t[0] < mod.in.embedded.len and mod.in.embedded[t[0]];
-            if ((trusted or owner.decls[t[1]].kind != .value) and try mod.unwordedComparison(inst)) derived = true;
+            // A container's `eq`/`compare` in core (`List.eq`, written over
+            // its element evidence): its class is its components', whatever
+            // block it publishes, so the evidence it is handed is read.
+            if (mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call) {
+                const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
+                if (m.origin != .none) composed = true;
+            }
+            if (!composed) {
+                // A declaration of this module walked before this one (an
+                // earlier group, §8 S3b): its class, applied at this call. One
+                // of this group (recursion) or one past its limit is not built
+                // here.
+                if (t[0] == mod.in.module) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
+                // One of another module (S3b slice 3): the class its block
+                // publishes, applied the same way.
+                if (t[0] != mod.in.module) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
+            }
         }
-        if (derived and args.items.len == 2) {
-            const res = try placeOfInst(ctx, inst);
-            return .{ .class = try Rows.derivedClass(mod.env(), &mod.sums, try placeOfInst(ctx, args.items[0]), res, &.{}) };
+        // Evidence that names no function (a parameter's, a codec) hides its
+        // components.
+        if (composed) if (term) |ti| if (mod.in.dispatch) |dt| if (try mod.opaqueEvidence(dt, ti, inst)) {
+            composed = false;
+        };
+        if (composed and args.items.len == 2) {
+            var comps: std.ArrayList(ClassId) = .empty;
+            defer comps.deinit(mod.gpa);
+            // A user-written comparison reached through the type with no class
+            // leaves the call unbuilt: nothing is known of what it writes.
+            const at = try placeOfInst(ctx, args.items[0]);
+            if (try mod.componentClasses(at, inst, &comps)) {
+                return .{ .class = try Rows.derivedClass(mod.env(), &mod.sums, at, try placeOfInst(ctx, inst), comps.items) };
+            }
         }
         // Every argument and the result cross: nothing to track.
         if (mod.places.kind(try placeOfInst(ctx, inst)) != .cross) return .unbuilt;
@@ -874,38 +898,72 @@ pub const Module = struct {
         return mod.places.kind(at) == .ref and mod.places.child(at, Step.contents) != null;
     }
 
-    /// Whether an evidence term names a function written by hand (a `top`
-    /// or `ext` term anywhere in it): its class is a summary, S3b's.
-    /// Whether `inst` is an `==`/`<` method call whose dispatched callee
-    /// takes only derived or primitive evidence (nothing written by hand).
-    fn unwordedComparison(mod: *const Module, inst: u32) Allocator.Error!bool {
-        const bir = mod.in.bir;
-        if (bir.instTag(@fromBackingInt(inst)) != .method_call) return false;
-        const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
-        if (m.origin == .none) return false;
-        const dt = mod.in.dispatch orelse return false;
-        const site = dt.siteOf(@fromBackingInt(inst)) orelse return false;
-        const ti = site.callee.unwrap() orelse return false;
-        for (dt.argsOfTerm(ti)) |a| if (try mod.handWritten(dt, a)) return false;
-        return true;
-    }
-
-    fn handWritten(mod: *const Module, dt: *const Dispatch, root: Dispatch.TermIndex) Allocator.Error!bool {
+    /// Whether an evidence root of the comparison at `inst` is opaque: a
+    /// parameter's or a codec, anywhere in it.
+    fn opaqueEvidence(mod: *const Module, dt: *const Dispatch, ti: Dispatch.TermIndex, inst: u32) Allocator.Error!bool {
         var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
+        defer stack.deinit(mod.gpa);
         // Evidence is a DAG (`EvidenceDagBuildDepth32`): each term once.
         var seen: stamped.Column(Dispatch.TermIndex, void) = .{};
         defer seen.deinit(mod.gpa);
-        defer stack.deinit(mod.gpa);
-        try stack.append(mod.gpa, root);
-        while (stack.pop()) |ti| {
-            if (seen.contains(ti)) continue;
-            try seen.put(mod.gpa, ti, {});
-            switch (dt.term(ti)) {
-                .top, .ext, .param, .codec => return true,
-                else => try stack.appendSlice(mod.gpa, dt.argsOfTerm(ti)),
+        try stack.appendSlice(mod.gpa, dt.argsOfTerm(ti));
+        if (dt.siteOf(@fromBackingInt(inst))) |site| try stack.appendSlice(mod.gpa, dt.argsAt(site.evidence));
+        while (stack.pop()) |t| {
+            if (seen.contains(t)) continue;
+            try seen.put(mod.gpa, t, {});
+            switch (dt.term(t)) {
+                .param, .codec => return true,
+                else => try stack.appendSlice(mod.gpa, dt.argsOfTerm(t)),
             }
         }
         return false;
+    }
+
+    /// The classes of the user-written `eq`/`compare` the comparison at
+    /// `inst` reaches through its first argument's type (§2.13.13): its
+    /// derived row calls each nominal component's own. False when one has no
+    /// class an importer or this module may apply.
+    fn componentClasses(mod: *Module, root: PlaceId, inst: u32, out: *std.ArrayList(ClassId)) Error!bool {
+        const interner = mod.in.interner orelse return false;
+        const bir = mod.in.bir;
+        const name: []const u8 = blk: {
+            if (bir.instTag(@fromBackingInt(inst)) != .method_call) break :blk "";
+            const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
+            break :blk switch (m.origin) {
+                .eq, .neq => "eq",
+                .lt, .le, .gt, .ge => "compare",
+                .none => interner.slice(bir.symbol(m.name)),
+            };
+        };
+        var seen: stamped.Column(u32, void) = .{};
+        defer seen.deinit(mod.gpa);
+        var stack: std.ArrayList(PlaceId) = .empty;
+        defer stack.deinit(mod.gpa);
+        try stack.append(mod.gpa, root);
+        while (stack.pop()) |p| {
+            if (seen.contains(p.int())) continue;
+            try seen.put(mod.gpa, p.int(), {});
+            if (mod.places.kind(p) == .ctor and mod.places.head(p) < mod.in.types.entries.len) {
+                const m = mod.in.types.entries[mod.places.head(p)].module.int();
+                if (!mod.in.isCore(m)) if (userComparison(mod.in, interner, m, name)) |di| {
+                    const c = (if (m == mod.in.module) mod.walkedClass(di) else try mod.importedClass(m, di)) orelse return false;
+                    try out.append(mod.gpa, c);
+                };
+            }
+            try stack.appendSlice(mod.gpa, mod.places.steps(p).children);
+        }
+        return true;
+    }
+
+    /// The `pub` value `name` of module `m`, a type's method by the rule of
+    /// §2.13.13 ("the `pub` values of the module declaring it").
+    fn userComparison(in: *const Input, interner: *const InternPool.Global, m: u32, name: []const u8) ?u32 {
+        const bir = in.birs[m];
+        for (bir.decls, 0..) |d, di| {
+            if (d.kind != .value or !d.is_pub) continue;
+            if (std.mem.eql(u8, interner.slice(bir.symbol(d.name)), name)) return @intCast(di);
+        }
+        return null;
     }
 
     /// A worded declaration's class at this call (§5's signature adapter):

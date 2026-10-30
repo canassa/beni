@@ -10224,3 +10224,30 @@ test "the checker v2's growth over a tower of Js.array values is n log n, and a 
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked wide") == null);
 }
+
+test "the checker v2 treats core read with --core-root as core, not as user code" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: a comparison written in beni composes its
+    // components' classes in core. A copy of core under `--core-root` is
+    // core as well: `f` is checked with either, never unchecked for one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try w.write("Main.beni", "pub f : List Int → Bool × List Int\nf xs = ( xs == [ 1 ], List.push xs 2 )\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const embedded = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const copied = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--core-root=mycore", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), embedded.exit_code);
+    try testing.expectEqual(@as(u8, 0), copied.exit_code);
+    try testing.expect(std.mem.indexOf(u8, embedded.stdout, "unchecked f:") == null);
+    try testing.expect(std.mem.indexOf(u8, copied.stdout, "unchecked f:") == null);
+}

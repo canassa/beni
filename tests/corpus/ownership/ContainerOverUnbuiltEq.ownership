@@ -1,0 +1,7 @@
+module ContainerOverUnbuiltEq
+  12:36 List.push l: accepted param
+  16:29 value ContainerOverUnbuiltEq.eq: pending: it is passed as evidence, whose calls the checker does not see
+  summary eq: π1 R, π1#Key.0 RW[storage]
+  summary viaListEq: π1 RA; res .1 π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 0
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 0

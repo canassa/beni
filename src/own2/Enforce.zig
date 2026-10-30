@@ -30,9 +30,9 @@ const Interface = @import("../resolve/Interface.zig");
 pub const Inputs = struct {
     birs: []*const Bir,
     names: [][]const u8,
-    /// Per module, whether it is embedded in the binary (core): its
-    /// comparisons are trusted to compose their evidence (§2.13.13).
-    embedded: []bool = &.{},
+    /// Per module, whether it is in the core package (`Session.fileIsCore`):
+    /// its comparisons compose their evidence (§2.13.13).
+    core: []bool = &.{},
     /// Per global symbol its rank in text order, and per rank its symbol.
     ranks: []u32,
     rank_names: []InternPool.Symbol,
@@ -40,7 +40,7 @@ pub const Inputs = struct {
     pub fn deinit(i: *Inputs, gpa: Allocator) void {
         gpa.free(i.birs);
         gpa.free(i.names);
-        gpa.free(i.embedded);
+        gpa.free(i.core);
         gpa.free(i.ranks);
         gpa.free(i.rank_names);
     }
@@ -51,7 +51,7 @@ pub fn inputs(gpa: Allocator, session: *const Session) Allocator.Error!Inputs {
     var out: Inputs = .{
         .birs = try gpa.alloc(*const Bir, n),
         .names = try gpa.alloc([]const u8, n),
-        .embedded = try gpa.alloc(bool, n),
+        .core = try gpa.alloc(bool, n),
         .ranks = &.{},
         .rank_names = &.{},
     };
@@ -59,7 +59,7 @@ pub fn inputs(gpa: Allocator, session: *const Session) Allocator.Error!Inputs {
         const f = session.graph.moduleFile(@fromBackingInt(@intCast(i)));
         out.birs[i] = session.artifacts.bir(f);
         out.names[i] = session.store.moduleName(f);
-        out.embedded[i] = session.store.isEmbedded(f);
+        out.core[i] = session.fileIsCore(f);
     }
     // Every symbol by its text, once (§3.8: steps order by text, never by
     // a session id).
@@ -166,7 +166,8 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .provenance = session.resolution.provenance,
         .dispatch = if (m < t.dispatch.len) &t.dispatch[m] else null,
         .ranks = ins.ranks,
-        .embedded = ins.embedded,
+        .core = ins.core,
+        .interner = &session.interner,
     };
 }
 
