@@ -4602,13 +4602,17 @@ version of each read it makes, so a change wakes only the walks that read that p
 - **The new value.** Read-off gives `F_f`. The new value is `widen(x_f ⊔ F_f)`: `Summary.join`, then
   `res` and its κ through `Cond.widenValue`. A member is woken for the next round only when a part it
   read in its last walk changed. A part it only passed on, cells or marks along a recorded edge, is
-  delivered by `Fix.propagate` and wakes nobody.
+  delivered by `Fix.propagate` (from 4b) and wakes no inference walk. Such a fact can still change
+  what a walk's demands and call obligations decide, so the read check before publication
+  (*Validation*, below) walks the member again whenever one did.
 - **Stable labels.** Inside a group, read-off numbers fresh cells by stable keys, not in the order
   they are met (§2.12): an own allocation by its instruction, and anything that a group call ι answers
   fresh (`result ι·k`, for any k and any chain below it) by one folded label `ι⋆`. The pairs of
   distinct pre-fold `sep` labels it merges are recorded for S4. The renumbering by result path runs
   once, at publication. So the label inventory is bounded by the group's instructions, however many
-  rounds run.
+  rounds run. *A note, not built in slice 4:* keying the fold by `(ι, the callee's top label)` would
+  keep `sep` between a callee's two own allocations. It makes the inventory calls × allocations, a
+  product of source, so it waits for S4, whose `within` needs those labels anyway.
 
 *Termination.* At a fixed inventory every part rises in a finite lattice:
 - `res` is widened, a quotient over the canonical paths of its place graph with `⟲` at every
@@ -4618,42 +4622,78 @@ version of each read it makes, so a change wakes only the walks that read that p
 - κ and `xreq` atoms range over the same inventory and only weaken (`and(A,A)=A`).
 
 A round that changes anything therefore moves up, and the worklist stops at a round that changes
-nothing. The number of rounds is bounded by the structural height, that is, how many times a member's
-`res` shape, use shapes and atom sets can change. That height comes from the inventory (the
-member's types and the group's instructions), never from the values the program builds. There is
-no round cap (R-7.4). A group that keeps growing stops at R_f before the work (§4.4).
+nothing. The bound on the number of rounds is the inventory: rounds ≤ the number of
+`(res or use position, cell)` facts plus the number of atom pairs, and every one of those is charged.
+That is **not** source-sized:
+- a constructor of n list fields shifted by one field per round takes n rounds;
+- nested aliased tuples have 2^d leaf paths from O(d) source;
+- `apart` pairs that weaken one at a time take O(positions²) rounds.
+
+R_f stops each of these before the work (§4.4), loudly, so they stay sound. There is no round cap
+(R-7.4).
 
 A knot needs no new mechanism. Round r's class may be cyclic. Its view expands to views that close
 through the interned view id (§2.11 *Cycles, links and folds*). A cycle with no node on it is read at
 its least fixed point (#1314, #1335). `widen` takes a cyclic source, because its union–find runs over
 explicit edges. `Summary.eq` and `leq` are coinductive.
 
-*Validation and publication.* Every walk keeps its lines until the next walk of its member replaces
-them. When a round changes nothing, the iteration stops. Every member's last walk then read only
-versions that x* still has, because a walk that read an older version would have been woken. So
-each member's last walk is its final source validation walk (§2.12, §4.1's lane): its read-off is
-F(x*), and its demands are the ones reported. `Summary.leq` checks F(x*) ⊑ x*, κ and fold
-obligations included, with the facts delivered since that walk. A check that fails (a late
-weakening) wakes that member for one more inference round. No acceptance from an earlier generation
-is published (§2.12). Then every member publishes at once, renumbered canonically: `results`
-receive the classes and the lines together.
+*Validation and publication: the read check.* Every walk keeps its lines and its **read vector**
+until the next walk of its member replaces them. The read vector is the `(part, version)` of
+everything the walk observed of a group port, the parts it only passed on included: marks that
+reached its parameters, cells along its result edges, and absences. When a round changes nothing,
+the iteration stops, and before anything is published each member's read vector is **compared**
+with x*. This check is performed, never argued from the wake rule: a delivered fact wakes no
+inference walk, yet it changes what the walk's demands and call obligations decide.
+- **Equal:** that walk saw x* exactly, so it is the member's final source validation walk (§2.12,
+  §4.1's lane). Its read-off is F(x*), and its demands are the ones reported.
+- **Different:** the member is walked once more against x*, and that walk is the validation.
+
+Either way, `Summary.leq` checks F(x*) ⊑ x*, κ and fold obligations included. A check that fails (a
+late weakening) joins F(x*) into x and runs one more inference round, so x only weakens. No
+acceptance from an earlier generation is published (§2.12). Then every member publishes at once,
+renumbered canonically: `results` receive the classes and the lines together.
+
+*Why the read check and not a resolution sweep.* §2.12 also allows a resolution sweep: each call's
+direct obligation and each demand recorded symbolically and resolved again after propagation, with
+no walk. That needs every member's frame (holders, liveness, regions) kept across rounds, and a
+symbolic form of the demands in `Demands`. It saves at most one walk per member, and that walk runs
+on the validation lane that §4.1 gives every body anyway. A sweep over D demands is O(D) ≤ O(S_f),
+the same order as the walk, so the sweep is not clearly cheaper. The read check reuses the walk as
+it is.
 
 So `go n xs = …; if n == 0 then xs else go (n − 1) xs` takes two walks and no growth (§4.1's proved
-R-7.4 row). Round 1 walks against ⊥. Round 2 walks against x₁, finds F(x₁) = x₁, and so is the
-validation.
+R-7.4 row). Round 1 walks against ⊥. Round 2 is woken because `res` went from nothing to `π2`; it
+walks against x₁ and finds F(x₁) = x₁. Its read vector is x*, so it is the validation.
+
+`rot a b n = if n == 0 then List.length (List.push a 0) else (r = rot b a (n − 1); r + List.length
+b)` is the case the check exists for. Round 1 walks against ⊥, and x₁ gets `π1 W`. From 4b, the
+argument edge delivers `W` to `b`, a parameter path, so x* has `π1 W, π2 W` and no inference walk
+wakes. Round 1's read vector saw `use(1)` and `use(2)` at ⊥, which differs from x*, so `rot` is
+walked again against x*. That walk refuses `7:13 call rot b` as `later-use`, since `b` is read again
+at 8:13, exactly as v1 does.
 
 *`Fix.propagate`: what flows along a group's edges* (§2.12's table, Morphic I:114-171). At each group
 call ι of `h` with arguments a₁…aₙ, the walk records:
 - **an argument edge per k**, from `h`'s parameter k to aₖ's node;
 - **a result edge**, from `h`'s `res` to the call's result, carried on to the positions of `f`'s
-  `res` that hold the call's view (where its eager image lands, §2.11 *The eager image*).
+  `res` that hold the call's view (where its eager image lands, §2.11 *The eager image*). **A
+  projection of the view carries the edge too.** A pattern or a field read of the call's result that
+  reaches `f`'s `res` records an edge from `h`'s `res` at that step path, `s·p`. Without such edges,
+  every projected flow would be a read, and 4b would walk again for it.
+
+**A parameter cell's image is an edge, not a snapshot.** When aₖ is itself a group view, as in
+`f x = h (g x) n`, aₖ's cells keep growing as facts are delivered. So the image of πₖ·q is an edge to
+`(aₖ's node, q)`, and it is chained through `g`'s result edge: a fact delivered into `g`'s `res`
+reaches `h`'s parameter, and from there `f`, along the composed edges. A cell set copied at the
+walk would miss every later delivery.
 
 Three kinds of fact flow along these edges:
 - **Marks, backwards along argument edges.** A mark `R`, `A`, `E` or `W{F}` (with `S`) at πₖ·q of
   `class(h)` becomes the same mark at the parameter paths of `f` that aₖ's cells at q are (a `⟲`
-  path reads every position it stands for). A mark that meets a cell of aₖ that is not a parameter
-  of `f` makes a `callsite` demand (§2.11 item 3). That demand needs `f`'s resolution sweep, so it
-  counts as a read of `use(k)`: it wakes `f`.
+  path reads every position it stands for). The mark changes the call's demands whether or not the
+  cell is a parameter. A written argument owes its `callsite` demand (§2.11 item 3), and a parameter
+  is no exception: it may be read after the call, or have another alias (`rot`, above). The read
+  check sends that demand to the validation walk.
 - **Cells, forwards along result edges.** A cell at a position p of `h`'s `res` maps under ι:
   πₖ·q becomes aₖ's cells at q, `fresh` becomes `ι⋆`, `esc` becomes `esc ι⋆`, and `shared` and ⊤ are
   kept. The image goes to the positions of `f`'s `res` that the edge names, with its occurrence facts
@@ -4664,7 +4704,9 @@ Three kinds of fact flow along these edges:
 The edge graph is condensed into SCCs (Tarjan, explicit stack). Facts are pushed in topological order
 with persistent sets. Each `(edge, fact)` pair is delivered once, and a new edge receives the facts
 already present once (§2.12 *Termination*). `rot a₁ … aN n` records N edges in one walk. Its `W`
-reaches every parameter through propagation, not through N walks.
+reaches every parameter through propagation, not through N walks, and the read check then adds one
+validation walk. A delivered fact wakes no inference walk, and the read check accounts for every
+fact a demand or an obligation reads.
 
 *The fold certificate (#1195).* Today a cyclic source saturates (`Cond.ClassAggs.saturated`): every
 class the cycle reaches is all repeated, so `lost`. That is so both in read-off's `widenValue` and in
@@ -4673,27 +4715,40 @@ a call's folded read (`Calls.preimage`). It stays so for every knot except a gro
 - **Key.** A goal is `(fold, member, K)`. K is the image class's canonical path in the member's `res`
   (`Shape.Table.Fold.classAt`). Widen's quotient is by canonical path, so the key does not move from
   round to round, and a certificate is used only at its own key (#1195 (a)).
-- **Base.** Round 1's source is acyclic, because a group call answers ⊥. So its `widenValue` gives an
-  exact `fold_cond` per class. That is the base alternative, checked with no assumption.
-- **Step.** In round r+1, a view of a group class at generation r is a *hypothesis node* for the
-  multiset primitive (`arrivalAggs`, `Calls.Pre`). The walk does not enter the view's cycle. At each
-  key below the view, the view contributes two things: its member's round-r certificate at the
-  corresponding key, instantiated through `E` by κ substitution; and one occurrence of the knot as a
-  whole, so two coexisting occurrences of one knot (`B [w] [w]`) still add to `repeated` (#1195
-  (c)). The primitive counts the occurrences below the cycle and outside the component as it
-  always does (b). A symbolic arrival keeps its `summaryExcl` (d). The step alternative needs the
-  goal `(fold, h, K′)`.
-- **Check.** The validation walk's `widenValue` expands each goal once, on the settled generation,
-  against x*'s own certificates. The Prover decides the group's component: the base with no
-  assumption, the step under the assumption that the members hold. A component with no base is
-  `waiting`, and the class keeps `lost` there (approximate). The published `fold_cond` is the
-  Prover's answer, and F(x*) ⊑ x* checks it against what x* claimed.
+- **The hypothesis node.** A view of a group class, in the source a walk widens (or in an actual
+  that `Calls.Pre` reads), is a *hypothesis node* for the multiset primitive (`arrivalAggs`,
+  `Calls.Pre`). The walk does not enter the view's cycle. At each key below the view, the view
+  contributes its member's certificate at the corresponding key, instantiated through `E`. That
+  certificate is an **aggregate**, not only an atom (#1195 (d), §2.9). With its condition, it
+  publishes its arrival keys: the symbolic arrivals (for example `π1⟲#Node.1`) with their
+  multiplicity, and its own fresh arrivals. The view puts those arrivals, substituted at the actual's
+  cells, into the caller's multiset as ordinary arrivals.
+  - So `P (same t) (same t)`, where `same t = case t of Leaf → Leaf; Node l xs r → Node (same l) xs
+    (same r)`, brings `t⟲#Node.1` in twice, coexisting: `repeated`, and a writer of every `xs` is
+    refused.
+  - `P (same t) (same t2)` brings in two distinct arrivals, which owe `apart`, and it is accepted.
+  - An atom alone, `excl(t⟲xs)` from each side, would hold on both sides and accept the first.
+  - A whole knot that occurs twice (`B [w] [w]`) still adds to `repeated` (#1195 (c)). The primitive
+    counts the occurrences below the cycle and outside the component as it always does (b).
+- **Alternatives, on x*'s validation walk.** The goal `(fold, f, K)` expands once, on the settled
+  generation, from the source of `f`'s validation walk at K. Round 1's `fold_cond` no longer exists
+  by then, and §2.12 forbids reading an earlier generation.
+  - The **base** is the sources at K with no hypothesis node in them, checked with no assumption.
+  - The **step** is the rest: each hypothesis node needs the goal `(fold, h, K′)` and assumes it.
+  - The Prover decides by component. A component in which no goal has a base alternative is
+    `waiting`. Its classes read `lost` at those keys, approximately.
+  - This is the induction on activation depth. An activation's occurrences at K are its own sources
+    (the base) plus what its calls answer, and those calls are strictly inside it (the step).
+- **The answer is joined.** The Prover's answer (`lost` where it waits) is joined into x before the
+  next round. So when a late F(x*) ⋢ x* sends the group round again, the certificate only weakens.
+  The published `fold_cond` is the answer of the last validation.
 - **Witnesses** (#1195): a deeper unrolling that repeats a cell, and a round whose step breaks the
   certificate.
 - **A call's folded read.** `Calls.preimage` over an actual whose cycle is a *certified* knot (a
   settled class whose certificate at that key the induction proved) reads the certificate instead
-  of saturating, by the same rules (a)–(d). An uncertified knot stays `repeated`: a graft tie, a
-  BlockRead tie without the mark (Q3 below), or a certificate at another key.
+  of saturating, by the same rules (a)–(d), its arrival keys included. An uncertified knot stays
+  `repeated`: a graft tie, a BlockRead tie without the mark, or a certificate at another key. The
+  block's certified mark (Q3, decided) publishes the aggregate's arrival keys with the condition.
 - **What the certificate does not cover.** A folded class whose members include `ι⋆` beside an own
   allocation owes W1–W3, and it reads `lost` until S4 emits `within`. The certificate gives a
   parameter-derived fold, such as `incAll`'s `res⟲#Node.1`, the actual's κ instead of `lost`.
@@ -4707,22 +4762,28 @@ in the group's scratch, never in `results`, until the group settles. For the col
 the group is run again, whole, in fresh tables after its callees from earlier groups (`coldRun`
 reaches the group, not only the earlier groups). It is refused only if that cold run exhausts too.
 
-*Charging* (§4.1, §4.4). Each member pays from its own account (Q2): its walks, the deliveries into
-its class, the Prover goals keyed by it, and its validation.
+*Charging* (§4.1, §4.4). Each member pays from its own account (Q2, decided): its walks, the
+deliveries into its class, the Prover goals keyed by it, and its validation.
 - **Lanes.** A member's first walk is the initial equation of the static transfer settlement lane.
-  Its second walk takes the final source validation lane, whichever round it turns out to be. A
-  walk cannot know before it runs whether it is the last, and the reservation is chosen before the
-  work (§4.1). Each written group call takes the call view and direct obligation lane once per
-  laned walk.
+  Its second walk takes the final source validation lane, whichever it turns out to be: an inference
+  walk whose read vector equals x*, or the walk the read check adds. A walk cannot know before it runs
+  whether it is the last, and the reservation is chosen before the work (§4.1). Each written group
+  call takes the call view and direct obligation lane once per laned walk.
 - **Growth.** These are growth, reserved before the work: every later walk of a member (per
   instruction, before the walk starts), every `(edge, fact)` delivery and new-edge replay, and every
   Prover goal, alternative, edge and certificate atom.
-- **Cost.** A round is source-sized: one walk per woken member. Rounds are bounded by the structural
-  height, a function of the member's parameter and result places (§4.1: S_f is already source size
-  × type depth). So a member with K structural versions costs about K·S_f growth: §4.1's qualified row,
-  "K shape changes affecting N transfer nodes can require Θ(NK) tasks" (Q1).
+- **Cost.** One round is source-sized: one walk per woken member. The number of rounds is not.
+  It is bounded by the inventory (*Termination*): the `(position, cell)` facts plus the atom pairs.
+  - In 4a every change wakes every reader, so a group costs rounds × S_f. `GroupFieldShift` below is
+    Θ(n²).
+  - From 4b, facts are deliveries, each `(edge, fact)` once, bounded by the size of the class the
+    group publishes. Walks happen only on a change to a part that was read, plus at most one
+    validation walk per member. A member with K versions of the parts it reads costs about K·S_f
+    growth: §4.1's qualified row, "K shape changes affecting N transfer nodes can require Θ(NK)
+    tasks" (Q1).
+  - Everything past the lanes is charged, so a family that keeps growing exhausts R_f loudly.
 - **Pinned.** The fixed-topology family has no intermediate walk (G_f = 0). From 4b on, a delivered
-  cell, or a mark that reaches a parameter path, never wakes a walk.
+  fact wakes no inference walk, and the read check runs for every member before publication.
 
 *Determinism* (§3.8, rule 5). Group order is Prepass's dependency order. Inside a group:
 - the walks of a round run in rank order, and the rounds are synchronous;
@@ -4739,9 +4800,9 @@ RecursiveSummaryGeneration's reorderings).
 
 | PR | Builds | Done when |
 |---|---|---|
-| 4a | Ports, ⊥, synchronous rounds, group calls by reference with `(port, version)` in `E`, stable labels, widen(x ⊔ F(x)), `Summary.eq` termination, validation as above, publication all at once, failure and cold re-check of a whole group. Its first commit gives a call of the walk's own group its own `.v2.unchecked` reason, `recursion`, so the to-do list is exact before any code lands. Any port change wakes every reader, and every walk past the second is growth (interim, Q1). Cycles stay `repeated`. | Every `recursion` line of every `.v2.unchecked` file is gone or carries another reason. Each changed root holds v1's verdicts, or has a known entry that names 4c (`repeated`) or S4 (`within`) as its owner (Q4). The 4a fixtures below are green, the counted ones as stated. The verdict diff over the corpus is reported. |
-| 4b | `Fix.propagate(Edges)`: argument and result edges, marks, cells, atoms and occurrence facts as deltas; dependencies by part, so a delivered fact wakes no walk. | The counted families below meet their bounds. A per-member walk counter pins that cells and marks never wake a walk. No verdict or block changes from 4a except where a known entry says so. |
-| 4c | The certificate induction: the `fold` claim, the hypothesis node in `arrivalAggs` and `Calls.Pre`, validation through F(x*) ⊑ x*, certified knots at a call's folded read, and the block's certified mark (Q3). | #1195's witnesses and the 4c fixtures are green. Every known entry that 4a gave to 4c is gone. #1195 closes. |
+| 4a | Ports, ⊥, synchronous rounds, group calls by reference with `(port, version)` in `E`, stable labels, widen(x ⊔ F(x)), `Summary.eq` termination, validation as above, publication all at once, failure and cold re-check of a whole group, and the read check (performed in 4a too, where every change wakes its readers). Its first commit gives a call of the walk's own group its own `.v2.unchecked` reason, `recursion`, so the to-do list is exact before any code lands. Any port change wakes every reader, and every walk past the second is growth (interim, Q1). Cycles stay `repeated`. | Every `recursion` line of every `.v2.unchecked` file is gone or carries another reason. Each changed root holds v1's verdicts, or has a known entry that names 4c (`repeated`) or S4 (`within`) as its owner (Q4). The 4a fixtures below are green, the counted ones as stated. The verdict diff over the corpus is reported. |
+| 4b | `Fix.propagate(Edges)`: argument and result edges (projections included), parameter images as chained edges, and marks, cells, atoms and occurrence facts as deltas. Dependencies by part, so a delivered fact wakes no inference walk. The read check sends what demands and obligations read to the validation walk. | The counted families below meet their bounds. A per-member walk counter pins inference walks against delivered facts. `Rot` holds v1's refusal, and so does `o/RecursiveTupleGuards` at 19:17 and 21:17. No verdict or block changes from 4a except where a known entry says so. |
+| 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). | #1195's witnesses and the 4c fixtures are green. Every known entry that 4a gave to 4c is gone. #1195 closes. |
 
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
@@ -4774,11 +4835,14 @@ allowance, with no limit line.
     `sep(π0, π1)`, applied to `(f a, k)`, is refused. The same with a distinct `k2` is accepted.
   - `o/RecursiveGroups`: self recursion, a mutual pair and a ring of three, each with a refused
     twin and an accepted twin. It also has `f x = f x` (⊥, no line) and a member whose other
-    construct is unbuilt, which leaves the whole group unbuilt with its reasons.
+    construct is unbuilt, which leaves the whole group unbuilt with its reasons. It has the `Rot`
+    probe from *Validation*: `7:13 call rot b` refused `later-use` (`b` read again at 8:13), as v1
+    refuses it. Its twin has `b` dead after the call (`r = rot b a (n − 1); r + 1`), which is
+    accepted. Both run under 4a and again under 4b, where the read check is what refuses `Rot`.
     `o/RecursiveGroupsPermuted` has the same declarations in reverse order and gives byte-identical
     lines.
-  - `o/LevelRecursiveUpdates`, `o/RecursiveTupleGuards` and `p/WriteOneLevel`'s `incAll2` callers
-    hold v1's verdicts; `p/WriteOneLevel` moves to `o/` when it is green. `o/Recursion` is checked
+  - `o/LevelRecursiveUpdates`, `o/RecursiveTupleGuards` (its pushes at 19:17 and 21:17 too: the
+    argument written is a parameter) and `p/WriteOneLevel`'s `incAll2` callers hold v1's verdicts; `p/WriteOneLevel` moves to `o/` when it is green. `o/Recursion` is checked
     except for `List.close`, which waits for S4.
   - The Appendix B rows labelled S3b whose witness needs a group: RoseKidsHeld (`incKids` writes only
     `π₁·⟲·#Rose.0`, and `(kids, incKids r)` is refused `held-operand`); FoldedWriteCall (a folded `T`
@@ -4795,22 +4859,42 @@ allowance, with no limit line.
     it with the cold account.
   - **Counted** `GroupSelfFold`: `go acc xs = case xs of [ x, …rest ] → go (List.push acc x) rest;
     [] → acc`, preceded by n scalar statements, at n = 10 / 100 / 1 000. Two walks per member and
-    G_f = 0 at every n.
+    G_f = 0 at every n. Round 2 is woken by `res` going from nothing to `π1`, and its read vector is
+    x*, so the read check adds no walk.
+  - **Counted** `GroupFieldShift`: `shift (R x₁ … xₙ) k = if k == 0 then R x₁ … xₙ else shift (R x₂
+    … xₙ []) (k − 1)` over a constructor of n list fields, at n = 4 / 16 / 64. Each round moves the
+    cells by one field, so 4a takes about n rounds. That is Θ(n²) instructions walked, and it is
+    recorded as 4a's figure, not as a bound. The run must stay within the default allowance at 64.
 - **4b, counted.**
-  - `GroupRotate`: `rot a₁ … aN n`, with N = 4 / 16 / 64. Two walks, `W` at every parameter,
-    deliveries O(N). 4a's count, about N walks, is recorded as the baseline.
+  - `GroupRotate`: `rot a₁ … aN n`, with N = 4 / 16 / 64. 4a: `W` moves by one parameter per round,
+    so there are about N + 1 walks, recorded as the baseline. 4b: the first walk records the N
+    argument edges, and propagation takes `W` to every parameter with O(N) deliveries. No inference
+    walk wakes. The read check finds that the first walk read `use` at ⊥, and adds one validation
+    walk. That is two walks at every N.
+  - `GroupFieldShift` again: two walks per member. Deliveries are one per `(edge, fact)`, and they
+    are bounded by the `(position, cell)` facts of the class it publishes, n(n + 1)/2. The class's own
+    size is quadratic, so this is the size of the answer, delivered once, with no walk per round.
+    The call's result reaches `res` directly, along the result edge. A twin, `GroupFieldShiftMatched`,
+    matches the call's result and rebuilds it field by field. Its flow reaches `res` through
+    projections of the view, so it costs the same only because those projections carry result edges
+    (*Fix.propagate*). It is the witness for those edges.
   - `GroupMutualRing`: k members, each pushing onto its list and calling the next, with
-    k = 4 / 16 / 64 / 256. At most 2k walks, deliveries O(k log k), and G_f linear in k.
+    k = 4 / 16 / 64 / 256. Two walks per member (the second is woken by its callee's `res`
+    leaving ⊥, and its read vector is x*), deliveries O(k log k), and G_f linear in k.
   - `GroupTreeRecursion`: an `incAll`-shaped writer after n scalar statements, at
-    n = 10 / 100 / 1 000. Walks are constant in n (two, plus one per structural version). G_f is one
-    body per structural version and is reported (Q1).
+    n = 10 / 100 / 1 000. Walks are constant in n (two, plus one per version of a part they read). G_f is one
+    body per such version and is reported (Q1).
   - `GroupSelfFold` again: unchanged.
 - **4c.**
   - #1195's witnesses as `o/FoldCertificate`:
     - a deeper unrolling that repeats a cell (`f t = case t of Node l xs r → Node (f l) xs (Node
       Leaf xs Leaf)`): a writer over the result is refused;
-    - a round whose step breaks the round-1 certificate: refused;
+    - a round whose step breaks the certificate an earlier round held: refused, the answer joined weaker;
     - `B [w] [w]` over one knot: refused;
+    - `P (same t) (same t)`, given to a group writer of every `xs`: refused, because both views
+      bring `t⟲#Node.1` in, coexisting (*The hypothesis node*). `P (same t) (same t2)`: accepted;
+    - a group whose every source at a key passes through a hypothesis node: `waiting`, and the key
+      reads `lost`;
     - a certificate at another key: unused;
     - the parameter-derived knot (`incAll`'s result): read at the actual's κ, so a write into a
       returned kids list is accepted when the actual's lists are distinct.
@@ -4822,32 +4906,37 @@ allowance, with no limit line.
     with a group writer, each compared before and after `BlockRead`.
   - The same-module and imported forms of each 4c fixture agree (Q3).
 
-*Open questions, the manager's.*
-- **Q1. A structural change re-walks the member.** The S3b row says "never a full frame replay";
-  §4.1's R-7.4 table accepts Θ(NK) growth for K shape changes. *Recommendation:* amend the row and
-  §2.12 to say this. A delivered fact (cells, marks, substituted atoms, occurrence facts) never wakes
-  a walk. A member that read a part that changed is walked again whole, as growth, once per
-  structural version. 4a may land with every change waking its readers as an interim, all of it
-  charged, and 4b removes the fact-caused walks before S3b closes. *Reason:* `Transfer` is one
-  sequential frame. Re-evaluating only the affected transfers would rebuild the frame (holders,
-  liveness, regions) as an equation graph. That would save work only for long bodies with several
-  structural versions, and the proved fixed-topology family has no such walk.
-- **Q2. Who pays a mutual group's work.** *Recommendation:* per member, charged to the member whose
-  walk or class receives the work, and the group fails whole when any member exhausts. *Reason:*
-  §4.4's owners are declarations and the raise attribute is per declaration. A group account would
-  have no attribute to raise. Charging by target is deterministic and names the declaration to
-  raise.
-- **Q3. The block's certified mark.** #1195's first ruling keeps BlockRead ties `repeated`.
-  *Recommendation:* the block carries, per published fold certificate, a mark saying the induction
-  proved it, with a version bump. An importer reads a certified knot as a same-module caller does,
-  under the block's integrity check (S6), as it reads the traversal marks. *Reason:* slice 3 gives
-  imported calls the same semantics, and F×A requires the inline, helper and imported forms to
-  agree. Without the mark, the imported form of every 4c fixture reads `lost`.
-- **Q4. Interim known entries.** 4a's `repeated` cycles and the `within` that S4 owes make some roots
-  refuse where v1 accepts. *Recommendation:* list each in `ownership-v2-known.txt` with its owner
-  (4c or S4), and do not keep those groups unbuilt. 4c removes its own entries. *Reason:* an unbuilt
-  group hides every demand of its members and of their callers. A sound approximate refusal is
-  checked behaviour, and the list keeps the debt counted.
+*Decisions and the open amendment* (the manager, 2026-10-30, on #1351).
+- **Q1: a change to a part a walk read re-walks the member. Proposed amendment, pending the owner.**
+  The S3b row and §2.12 would say the following.
+  - A member whose read part changed is walked again whole, as growth, once per version of the
+    parts it read: §4.1's qualified Θ(NK) row.
+  - "Never a full frame replay" stays for work that facts cause. A delivered fact (cells, marks,
+    substituted atoms, occurrence facts) wakes no inference walk.
+  - A fact that a demand or a call obligation reads is handled by the read check
+    (*Validation*): at most one validation walk per member, on its validation lane.
+  - *Reason.* `Transfer` is one sequential frame. Re-evaluating only the affected transfers would
+    rebuild it (holders, liveness, regions) as an equation graph, and the saving would be confined
+    to long bodies with several versions of the parts they read. The proved fixed-topology family
+    has no such walk.
+  - *Decided for 4a:* 4a lands with every change waking its readers, all charged as growth. The
+    rule for 4b waits for the owner.
+- **Q2, decided:** each member pays from its own account, charged to the member that receives the
+  work, and the group fails whole. This follows from §4.4's per-declaration owners.
+- **Q3, decided:** the block publishes a certified mark per fold certificate, with the aggregate's
+  arrival keys and a version bump. Importers read certified knots as same-module callers do, because
+  slice 3 promises the same semantics across modules.
+- **Q4, decided:** the interim roots are known entries in `ownership-v2-known.txt`, each naming its
+  owner (4c or S4). No group is left unbuilt for them, because an unbuilt group hides every demand of
+  its members and of their callers.
+
+The plan has one adversarial review before 4a's code starts. Its first round (on #1351) found the
+following, and the plan above now answers each:
+- a mark delivered to a parameter path still changes the call's demands (the read check);
+- certificates over one actual must combine their symbolic arrivals (the aggregate);
+- the base is defined on x*'s validation walk, with the answer joined into x;
+- the round bound is the inventory, not the source;
+- a parameter's image is a chained edge.
 
 The review history sets concrete acceptance obligations, not a duration estimate:
 
