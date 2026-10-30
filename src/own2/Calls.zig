@@ -810,18 +810,18 @@ const Grafter = struct {
         const n = try g.argAt(i, p, at);
         const own = try g.env.shapes.cellsOf(g.gpa(), g.account(), &g.env.cells.sets, n);
         if (!try g.recastAmong(n)) return own;
-        var s = try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
-        var it = g.env.cells.sets.iterate(own);
-        while (it.next()) |e| {
-            try g.env.charge.reserve(g.gpa(), .inspection, 1);
-            s = try g.env.cells.sets.insert(g.gpa(), g.env.charge, s, e.key, 1);
-        }
-        return s;
+        // Approximate per set node, memoised (`approxAll`): a chain of calls
+        // over a growing actual pays each call what it adds.
+        const shapes = g.env.shapes;
+        const all = try g.env.cells.sets.approxAll(g.gpa(), g.env.charge, &shapes.memo_approx_all, own);
+        return g.env.cells.sets.insert(g.gpa(), g.env.charge, all, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
     }
 
     /// Whether `n`, or a side of its unions, choices and positions at its
-    /// own path, is a recast, each view read at its answer: a walk of that
-    /// DAG, growth chosen before it (`Shape.dagWalk`, §4.1).
+    /// own path, is a recast, each view read at its answer. Memoised per node
+    /// for the module (`Views.recasts`) until a knot is tied, so a chain of
+    /// calls over a growing union reads each union once (`CallChainShare`).
+    /// A cycle there is walked whole, unmemoised.
     fn recastAmong(g: *Grafter, n0: NodeId) Error!bool {
         const shapes = g.env.shapes;
         const n = try shapes.force(g.gpa(), g.account(), n0);
@@ -830,8 +830,50 @@ const Grafter = struct {
             .@"union", .choice, .positions => {},
             else => return false,
         }
+        const v = Views.of((shapes.instantiation orelse unreachable).ctx);
+        if (v.recasts_ties != shapes.ties) {
+            v.recasts.clear();
+            v.recasts_ties = shapes.ties;
+        }
+        if (v.recasts.get(n)) |hit| return hit;
         const walk = try shapes.dagWalk(g.gpa(), g.account(), n);
         defer if (walk) |k| g.account().leave(k);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(g.gpa());
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(g.gpa());
+        try stack.append(g.gpa(), .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            const x = f.node;
+            if (v.recasts.contains(x)) continue;
+            const d = shapes.get(x);
+            if (f.expanded) {
+                open.remove(x);
+                const sides = [_]NodeId{ try shapes.force(g.gpa(), g.account(), .from(d.a)), try shapes.force(g.gpa(), g.account(), .from(d.b)) };
+                var any = false;
+                for (sides) |s| any = any or shapes.kind(s) == .recast or (v.recasts.get(s) orelse false);
+                try v.recasts.put(g.gpa(), x, any);
+                continue;
+            }
+            if (open.contains(x)) return g.recastAmongCyclic(n);
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            try open.put(g.gpa(), x, {});
+            try stack.append(g.gpa(), .{ .node = x, .expanded = true });
+            for ([_]u32{ d.a, d.b }) |side| {
+                const s = try shapes.force(g.gpa(), g.account(), .from(side));
+                switch (shapes.kind(s)) {
+                    .@"union", .choice, .positions => if (!v.recasts.contains(s)) try stack.append(g.gpa(), .{ .node = s, .expanded = false }),
+                    else => {},
+                }
+            }
+        }
+        return v.recasts.get(n).?;
+    }
+
+    /// `recastAmong` over a cyclic DAG: every node once, nothing memoised.
+    fn recastAmongCyclic(g: *Grafter, n: NodeId) Error!bool {
+        const shapes = g.env.shapes;
         var seen: stamped.Column(NodeId, void) = .{};
         defer seen.deinit(g.gpa());
         var stack: std.ArrayList(NodeId) = .empty;
@@ -1054,6 +1096,9 @@ pub const Views = struct {
     args: std.ArrayList(Value) = .empty,
     /// A leaf image's parts, a stack: a nested force appends above.
     members: std.ArrayList(NodeId) = .empty,
+    /// `recastAmong`'s answers, valid while the shapes' `ties` is `recasts_ties`.
+    recasts: stamped.Column(NodeId, bool) = .{},
+    recasts_ties: u32 = 0,
     places: *Place.Table,
     cells: *Cell.Table,
     shapes: *Shape.Table,
@@ -1066,6 +1111,7 @@ pub const Views = struct {
         v.envs.deinit(gpa);
         v.args.deinit(gpa);
         v.members.deinit(gpa);
+        v.recasts.deinit(gpa);
     }
 
     /// Set on `v.shapes` once, before the first call.
