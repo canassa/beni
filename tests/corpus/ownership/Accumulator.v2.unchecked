@@ -1,3 +1,3 @@
-Accumulator upTo: lines 11-16 (not built: call)
+Accumulator upTo: lines 11-16 (not built: recursion)
 Accumulator countdown: lines 19-20 (not built: call)
 Accumulator squares: lines 23-24 (not built: local)

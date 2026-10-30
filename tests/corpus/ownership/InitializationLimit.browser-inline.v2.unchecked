@@ -1,2 +1,2 @@
-InitializationLimit rotate: lines 10-97 (not built: call)
+InitializationLimit rotate: lines 10-97 (not built: recursion)
 InitializationLimit seed: lines 100-142 (not built: call)

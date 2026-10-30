@@ -1,2 +1,2 @@
-RecursiveDispatchAnnotated show: lines 19-25 (not built: method_call)
+RecursiveDispatchAnnotated show: lines 19-25 (not built: recursion)
 RecursiveDispatchAnnotated eq: lines 28-31 (not built: lambda)

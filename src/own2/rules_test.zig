@@ -98,7 +98,8 @@ const layers = [_]Entry{
     // and a block's places re-interned onto the adapter's.
     // 1 410 since #1324: a comparison read through the user-written ones its
     // type reaches (`componentClasses`).
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1410 },
+    // 1 430 since S3b slice 4a: a call of the walk's own group named apart.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1430 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

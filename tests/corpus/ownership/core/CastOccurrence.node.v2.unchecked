@@ -1,5 +1,5 @@
 CastOccurrence repeated: lines 4-9 (not built: local)
 CastOccurrence separate: lines 12-16 (not built: local)
-CastOccurrence grow: lines 19-24 (not built: call)
+CastOccurrence grow: lines 19-24 (not built: recursion)
 CastOccurrence foldedRepeated: lines 27-36 (not built: call)
 CastOccurrence foldedSeparate: lines 39-47 (not built: call)

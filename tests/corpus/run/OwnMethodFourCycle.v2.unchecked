@@ -1,4 +1,4 @@
-OwnMethodFourCycle ma: lines 16-20 (not built: method_call)
-OwnMethodFourCycle mb: lines 23-27 (not built: method_call)
-OwnMethodFourCycle mc: lines 30-34 (not built: method_call)
-OwnMethodFourCycle md: lines 37-41 (not built: method_call)
+OwnMethodFourCycle ma: lines 16-20 (not built: recursion)
+OwnMethodFourCycle mb: lines 23-27 (not built: recursion)
+OwnMethodFourCycle mc: lines 30-34 (not built: recursion)
+OwnMethodFourCycle md: lines 37-41 (not built: recursion)
