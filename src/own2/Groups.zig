@@ -73,6 +73,8 @@ pub const Input = struct {
     dispatch: ?*const Dispatch,
     /// Per global symbol, its rank in text order (§3.8).
     ranks: []const u32,
+    /// Per module, whether it is embedded in the binary (core).
+    embedded: []const bool = &.{},
     /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
     imports: ?Imports = null,
 };
@@ -835,7 +837,12 @@ pub const Module = struct {
             // A container's `eq`/`compare` with no words (`List.eq`, written
             // in JavaScript over its element evidence): the derived class when
             // no evidence it is handed is written by hand (§2.13.13).
-            if (try mod.unwordedComparison(inst)) derived = true;
+            // Core's comparisons compose their evidence. One written outside
+            // core is hand-written: a walk that was not built, or was stopped
+            // at a limit, gives it no class, and reading it as derived would
+            // apply a read-only class to a body that may write.
+            const trusted = t[0] < mod.in.embedded.len and mod.in.embedded[t[0]];
+            if ((trusted or owner.decls[t[1]].kind != .value) and try mod.unwordedComparison(inst)) derived = true;
         }
         if (derived and args.items.len == 2) {
             const res = try placeOfInst(ctx, inst);

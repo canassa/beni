@@ -2746,6 +2746,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     including uses, result aliases, escapes, callback effects and `writes`. It is not an unconditional
     read-only row. Apply the existing `writes` prohibition after that join; do not introduce a separate
     ban on an `A`/`E` label instead of computing the class.
+    **A comparison written in beni outside core is never derived** [2026-10-30, #1320]: when its walk is not built, or a
+    limit stopped it, a call of it is unbuilt and the caller unchecked; it is not given the derived, read-only class.
 14. **`?`** (R-5.1.6): §2.6; an error type holding no cell adds nothing.
 15. **Index exchange** (R-4.8.17, #869, `p/RecordIndexExchange`): a callback of `List.indexedMap` (its index
     supplied as a scalar) keeps the source's κ when it is an **exact permutation**, which is a *flat decision chain* on the index

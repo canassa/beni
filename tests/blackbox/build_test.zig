@@ -8493,6 +8493,39 @@ test "the checker v2's cold run applies no class the warm run stopped at a limit
     try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "main", "growth"));
 }
 
+test "the checker v2 leaves unchecked a caller of an imported eq whose walk a limit stopped" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: `Lib.eq` is written in beni, so `==` on
+    // `Key` is not a derived, read-only comparison. `eq` calls `w12`, whose
+    // walk the allowance stops, so the block says an importer may not apply
+    // it: `bad` is unchecked, never accepted with `xs` kept beside `==`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub type Key =\n    Key (List Int)\n\n\nw1 x = ( x, x )\n");
+    for (2..13) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "\n\npub eq : Key, Key → Bool\neq a b =\n    case a of\n        Key l →\n            t = w12 (w12 l)\n            List.length l > 0\n");
+    try w.write("Lib.beni", src.items);
+    try w.write("Main.beni", "import Lib\n\n\npub bad : List Int → Bool × List Int\nbad xs = ( Lib.Key xs == Lib.Key [], xs )\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w12: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  unchecked bad: lines 4-5 (not built: method_call)\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary bad: π1 RA") == null);
+}
+
 /// The continuation `owner`'s walk spent, from `dump`, for a source of `n`
 /// statements: the cost-per-call guards below compare it at n and 4n.
 fn continuationFor(w: *World, src: []const u8, owner: []const u8) !u64 {
