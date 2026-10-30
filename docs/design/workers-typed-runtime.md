@@ -47,7 +47,10 @@ an estimate of migration edits.
 
 The first bounded implementation replaces Inline's function and value pairs
 with a homogeneous queue of closed unit callbacks. Each callback captures its
-actual typed receiver function and value. No callback is converted to Js.Value
+actual typed receiver function and value. This creates one additional closure
+for each queued send compared with the old function and value slots. That is a
+real allocation cost of the migration and must be reported, not described as
+allocation-neutral merely because the buffer itself has no wrapper. No callback is converted to Js.Value
 to enter this queue. Ordinary inferred callback obligations therefore remain
 visible through the closure and the queue element type.
 
@@ -66,18 +69,21 @@ all subsequent callbacks from running. The existing finally guard restores the
 running flag and records a defect when program code throws.
 
 The queue uses a typed portable mutable buffer, exposed only to core and
-platform code as Js.Buffer.Buffer a. Its four operations are:
+platform code as Js.Buffer.Buffer a. Its primitive operations are:
 
 ```text
 pub foreign impure make : ⊤ → Buffer a
 pub foreign impure push : Buffer a, a → ⊤
 pub foreign impure length : Buffer a → Int
 pub foreign impure forEach : Buffer a, sync (a → ⊤) → ⊤
+pub foreign impure forEachWhile : Buffer a, sync (a → Bool) → ⊤
 ```
 
 The buffer's native representation is the array itself. Zig lowers these calls
 to an empty array, native push, length and for-of, preserving the element type.
-The callback is synchronous and invoked in FIFO order; callback defects propagate.
+The callbacks are synchronous and invoked in FIFO order; callback defects propagate.
+forEachWhile stops when its callback returns False. The dispatch drain uses this
+operation so a stopped page does not walk all remaining queued thunks.
 Only private mutable buffers are accepted, so indexing an arbitrary native array
 or accessing an unchecked element is not exposed. A detached batch is walked
 before newly queued work. Queue admission and resource exhaustion retain their
