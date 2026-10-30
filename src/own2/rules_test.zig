@@ -93,8 +93,9 @@ const layers = [_]Entry{
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
     // §5 says 950 since #1073: a snapshot rebuilt from its positions.
     // 1 050 since S3b slice 3: the commit re-interns the block's places.
-    // 1 125 since #1335: a knot's members tied raw, set once it is read.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1125 },
+    // 1 235 since #1335: a knot's members tied raw, set once it is read,
+    // a forward name only on a cycle, and the safety check of each reach.
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1235 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
     .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
 };
