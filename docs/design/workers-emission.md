@@ -26,6 +26,13 @@ must reset these fields; sharing a mutable Emitter.live result across entries
 is forbidden. Shared interned type and interface data is immutable during
 parallel projection work. Each worker has its own scratch arena.
 
+Typed global callback queues are module instances local to each realm. Realm
+summary seeds and call constraints retain their owning declaration so a
+projection includes only reachable producers. A page callback that uses the
+DOM must not seed the worker instance of the same Task queue. Sharing interned
+types does not merge the two entries' availability proofs. Pin this with a page
+and worker that both use Task while only the page registers a DOM callback.
+
 ## Discovery before parallel work
 
 Resolve and validate the platform table first. Constructor metadata identifies
@@ -106,3 +113,42 @@ Record total unique and marginal entry bytes, including emit/release/ goldens,
 compiler time and peak memory. Realm checking retains >250k LOC/s; workers.md's
 transport, cleanup, SolidJS 2 and Effect v4 measurements remain required. A failed
 budget is a defect to resolve, not permission to remove typing or isolation.
+
+## Resolved entry plan: first implementation boundary
+
+The next slice retains resolved metadata in Session.entry_plan while continuing
+to emit one ordinary top entry. It does not add source discovery or move the
+whole projection at once. Existing development and release output must remain
+byte-identical for unchanged programs.
+
+The plan owns flat tables for kinds, constructors, launches and parameter roles.
+A kind retains the checked nominal TypeId, declaring interface identity and
+arity, native realm, platform layer, runtime declaration and ranges of its other
+rows. A declaration reference stores module, declaration and interface scheme
+indices. Role paths use a shared array of interned symbols. No row retains a
+pointer into a temporary alias-expansion frame or a manifest arena. The selected
+top Program identity and runtime are reused by main validation, runtime roots,
+imports, specialization and entry emission instead of resolving them again.
+
+All TypeIds and scheme indices belong to the current checked store. Clear the
+plan before Session.run can replace that store, clear it before each new
+contract-validation attempt, and free its tables in Session.deinit. Revalidation
+rebuilds facts rather than accepting an earlier proof because names still match.
+An invalid row or failed validation publishes no usable plan. A fresh emitter
+may keep the independently resolved top nominal identity only for main diagnostic
+comparison after a rejected contract; it is not retained in the Session plan.
+Table capacity may
+be retained across attempts; selected indices and row lengths must be reset.
+
+Before validation, markup compatibility may inspect the manifest's declared
+runtime candidate solely to choose which legacy exports to request. That is not
+a proof. After validation, runtime selection consumes only the resolved plan.
+Legacy platforms still receive their existing runtime-file or markup behavior.
+The raw table remains available for diagnostics and later implementation stages;
+its mere presence never certifies Wire, callback ownership or realm availability.
+
+Tests pin plan clearing and replacement, runtime removal and rejected rechecks,
+nominal identity under app-module shadowing, and the same check and build
+diagnostics. Existing runtime execution tests and byte comparisons cover both
+output modes. This establishes a used build-wide metadata boundary before
+independent projections and finite entry discovery are added.
