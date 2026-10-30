@@ -94,8 +94,7 @@ pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, ou
     r.all(out) catch |err| {
         out.shrinkRetainingCapacity(mark);
         return switch (err) {
-            // The trial decoded it: only the reader's own tables can make
-            // it fail now.
+            // The trial decoded it: only the reader's own tables can make it fail now.
             error.Malformed => error.BlockConflict,
             else => |e| e,
         };
@@ -733,6 +732,7 @@ const Reader = struct {
                     var i: u32 = 0;
                     while (i < n) : (i += 1) s = try cells.sets.insert(gpa, charge, s, try r.need(.cell), @intCast(bit));
                 }
+                if (cells.deepWithoutRead(s)) return error.Malformed; // `D` is never without `R` (§2.10)
                 return s.int();
             },
             .atoms => {
@@ -1752,6 +1752,30 @@ test "a block names a written field and a shared declaration through Names, neve
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     try testing.expectEqualStrings(try a.text(arena_state.allocator(), c), try b.text(arena_state.allocator(), back.items[0]));
+}
+
+test "#1328: a block with `D` and no `R` beside it is no block; `R D` reads back with `R`" {
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |with_r| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const env = a.env();
+        const list = try a.place(0);
+        const use = try Summary.Table.markUse(env, .none, list, &.{}, .{ .r = with_r, .deep_read = true }, &.{});
+        const c = try a.sums.add(env, .{ .params = &.{use}, .res = try a.shapes.nothing(gpa, &a.account, list) });
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        try write(env, &a.sums, &.{c}, .identity, &words);
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        var back: std.ArrayList(ClassId) = .empty;
+        defer back.deinit(gpa);
+        const got = try read(b.env(), &b.sums, words.items, .identity, &back);
+        try testing.expectEqual(with_r, got != null);
+        if (with_r) try testing.expectEqual(Summary.Marks{ .r = true, .deep_read = true }, try Summary.Table.marksAt(b.env(), b.sums.paramUses(back.items[0])[0], &.{Place.Step.elem}));
+    }
 }
 
 /// `go`'s widened tree (`Shape`'s "widen ties go's grafted levels back"): a
