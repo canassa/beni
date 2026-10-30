@@ -250,8 +250,9 @@ const Graft = struct {
     places: []const PlaceId,
     /// The set `{R}`.
     r: SetId,
-    /// The set `{R, D}`: a callee's deep read (§2.10).
-    rd: SetId,
+    /// The set `{R, D}`: a callee's deep read (§2.10), made at its first
+    /// use, so a frame with none interns no `D` (#1328).
+    rd: SetId = .none,
     /// `(callee node, caller node, place)` → the grafted node, jump-free
     /// grafts only.
     memo: Ids.FixedDict(3) = .{},
@@ -430,6 +431,7 @@ const Graft = struct {
         const d = e.shapes.get(u);
         // A leaf of marks, or a node marked `D`, reads every path below.
         const deep = (d.kind == .leaf and try marked(e, d.cells)) or try Summary.Table.deepRead(e, u);
+        if (deep and g.rd == .none) g.rd = try Summary.Table.marksSet(e, .{ .r = true, .deep_read = true }, &.{});
         const cells = if (deep) try e.cells.sets.unionWith(gpa, e.charge, here, g.rd) else if (try marked(e, d.cells)) try e.cells.sets.unionWith(gpa, e.charge, here, g.r) else here;
         const children: u32 = if (c != .none and e.shapes.kind(c) == .node) e.shapes.get(c).a else Ids.none_int;
         if (d.kind != .node) return try e.shapes.node(gpa, e.account(), place, cells, children);
@@ -560,7 +562,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     // reads `π1.1.0`): at the cell's path, the use's own path below it.
     var use_steps: std.ArrayList(Place.Step) = .empty;
     defer use_steps.deinit(gpa);
-    var graft: Graft = .{ .env = env, .us = uses, .places = in.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}), .rd = try Summary.Table.marksSet(env, .{ .r = true, .deep_read = true }, &.{}) };
+    var graft: Graft = .{ .env = env, .us = uses, .places = in.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}) };
     defer graft.deinit();
     for (frame.uses.items) |u| {
         if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;
