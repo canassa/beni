@@ -1500,41 +1500,48 @@ test "⟲ matches a step onto its cycle: Rose, Maybe T and mutual recursion" {
         }
     };
     const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
-    // Rose: the root's children list is `#Rose.0`; its elements re-enter
-    // Rose and are `⟲`. The list aliases the subtrees, and so does a list
+    // Rose: a child's children list is `#Rose.0[*]#Rose.0`; its elements
+    // re-enter Rose below the first return (`#Rose.0[*]`, a plain path,
+    // #1253) and are `⟲`. The list aliases the subtrees, and so does a list
     // below.
     const rose = try places.of(gpa, &account, source, 0);
     const r0 = try places.ctorStep(gpa, &account, 0, 0);
-    const kids = try cx.param(1, rose, &.{r0});
-    const subtrees = try cx.param(1, rose, &.{ r0, Place.Step.elem });
+    const e = Place.Step.elem;
+    const child = try cx.param(1, rose, &.{ r0, e });
+    try testing.expect(places.pathStep(.from(cells.get(child).b)).kind != .level);
+    const kids = try cx.param(1, rose, &.{ r0, e, r0 });
+    const subtrees = try cx.param(1, rose, &.{ r0, e, r0, e });
     try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(subtrees).b)).kind);
     try testing.expectEqual(Alias.yes, cells.alias(&places, kids, subtrees));
-    const deep_kids = try cx.param(1, rose, &.{ r0, Place.Step.elem, r0 });
+    const deep_kids = try cx.param(1, rose, &.{ r0, e, r0, e, r0 });
     try testing.expectEqual(Alias.yes, cells.alias(&places, kids, deep_kids));
     try testing.expect(places.sameCycle(rose, places.child(rose, r0).?));
-    // Maybe T: the `Maybe` step is on T's cycle, the `List Int` is not.
+    // Maybe T, below the first return `#T.0#Just.0`: the `Maybe` step is
+    // on T's cycle, the `List Int` is not.
     const t = try places.of(gpa, &account, source, 2);
     const t0 = try places.ctorStep(gpa, &account, 0, 0);
     const t1 = try places.ctorStep(gpa, &account, 0, 1);
     const just = try places.ctorStep(gpa, &account, 1, 0);
-    const maybe = try cx.param(2, t, &.{t0});
-    const below_t = try cx.param(2, t, &.{ t0, just });
-    const own_list = try cx.param(2, t, &.{t1});
+    const maybe = try cx.param(2, t, &.{ t0, just, t0 });
+    const below_t = try cx.param(2, t, &.{ t0, just, t0, just });
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(below_t).b)).kind);
+    const own_list = try cx.param(2, t, &.{ t0, just, t1 });
     try testing.expectEqual(Alias.yes, cells.alias(&places, maybe, below_t));
     try testing.expectEqual(Alias.no, cells.alias(&places, own_list, below_t));
     try testing.expectEqual(Alias.no, cells.alias(&places, own_list, maybe));
-    // Mutual recursion: A's B, B's list and the A below are one cycle; A's
-    // `Leaf Int` is not.
+    // Mutual recursion, below the first return `#A.0#B.0[*]`: A's B, B's
+    // list and the A below are one cycle; A's `Leaf Int` is not.
     const a = try places.of(gpa, &account, source, 5);
     const a0 = try places.ctorStep(gpa, &account, 0, 0);
     const leaf = try places.ctorStep(gpa, &account, 1, 0);
     const b0 = try places.ctorStep(gpa, &account, 0, 0);
-    const b = try cx.param(3, a, &.{a0});
-    const b_list = try cx.param(3, a, &.{ a0, b0 });
-    const below_a = try cx.param(3, a, &.{ a0, b0, Place.Step.elem });
+    const b = try cx.param(3, a, &.{ a0, b0, e, a0 });
+    const b_list = try cx.param(3, a, &.{ a0, b0, e, a0, b0 });
+    const below_a = try cx.param(3, a, &.{ a0, b0, e, a0, b0, e });
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(below_a).b)).kind);
     try testing.expectEqual(Alias.yes, cells.alias(&places, b, below_a));
     try testing.expectEqual(Alias.yes, cells.alias(&places, b_list, below_a));
-    const a_leaf = try cx.param(3, a, &.{leaf});
+    const a_leaf = try cx.param(3, a, &.{ a0, b0, e, leaf });
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, below_a));
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, b));
 }
@@ -1591,10 +1598,13 @@ test "below, stepsTo and unrefined: containment by the trie, by refinement and t
         }
     };
     const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
-    const root = try cx.param(rose, &.{});
-    const kids = try cx.param(rose, &.{r0});
-    const subtrees = try cx.param(rose, &.{ r0, Place.Step.elem }); // r⟲
-    const deep_kids = try cx.param(rose, &.{ r0, Place.Step.elem, r0 }); // r⟲#Rose.0
+    // From a child, the first return to Rose (a plain path, #1253): its
+    // subtrees are below it, through `⟲`.
+    const el = Place.Step.elem;
+    const root = try cx.param(rose, &.{ r0, el });
+    const kids = try cx.param(rose, &.{ r0, el, r0 });
+    const subtrees = try cx.param(rose, &.{ r0, el, r0, el }); // c⟲
+    const deep_kids = try cx.param(rose, &.{ r0, el, r0, el, r0 }); // c⟲#Rose.0
     // A trie descendant is below its ancestor, never the other way.
     try testing.expect(cells.below(&places, kids, root));
     try testing.expect(!cells.below(&places, root, kids));

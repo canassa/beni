@@ -2466,8 +2466,12 @@ test "FoldCallbackIdentity: a folded accumulator that holds one kids list at two
         try snapshotYes(&f, round, &path, &snap);
         const widened = try f.conds.widenValue(gpa, f.charge(), f.view(), round, snap);
         try testing.expect(widened.node != round);
-        const kids = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, widened.node, kid)).?;
-        const read = try f.conds.kappaOf(gpa, f.charge(), f.view(), f.conds.kappaChild(widened.kappas, kid), kids, false);
+        // The kids lists below the root are one class, at the root's first
+        // return (a plain path since #1253, the levels below folded into
+        // it): acc's and the depth-2 one.
+        const lv = [_]Step{ kid, Step.elem, kid };
+        const kids = (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, widened.node, kid)).?, Step.elem)).?, kid)).?;
+        const read = try f.conds.kappaOf(gpa, f.charge(), f.view(), f.conds.kappaAlong(widened.kappas, &lv), kids, false);
         // A write into the kids lists relies on that read.
         var w: World = .{ .f = &f, .entries = &.{.{ .goal = demand(0), .alts = &.{.{ .require = read }} }} };
         const got = try f.prove(&w, demand(0));

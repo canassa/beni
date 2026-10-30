@@ -3081,9 +3081,12 @@ pub const Table = struct {
                 const seen_before = w.occurs.get(fnode) orelse 0;
                 try w.occurs.put(w.gpa, fnode, seen_before + 1);
                 try w.account.reserve(.edge, 1);
-                // `⟲` is its ancestor's class: the re-entered place's node.
-                const reentry = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
-                const key = if (reentry) w.places.pathParent(f.path) else f.path;
+                // `⟲` is its ancestor's class: the re-entered place's node,
+                // the first return (#1253), which keys its own. Both are on
+                // the cycle being folded, where a union is opened.
+                const level = w.places.pathParent(f.path) != .none and w.places.pathStep(f.path).kind == .level;
+                const reentry = w.places.isReturn(f.path);
+                const key = if (level) w.places.pathParent(f.path) else f.path;
                 if (w.by_path.get(key)) |cls| {
                     _ = try w.unite(cls, fnode.int());
                 } else {
@@ -3534,16 +3537,28 @@ test "a cyclic type is one place, and widen ties go's grafted levels back" {
     const outer = try f.shapes.node(gpa, &f.account, tree, .none, outer_children);
     const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, outer);
     try testing.expect(w != outer);
-    // The knot: the recursive children name the widened node itself (or
-    // its union with the parameter leaf), and the lists are joined.
-    const w_child = try f.proj(w, s0);
-    try testing.expect(w_child == w or (f.shapes.kind(w_child) == .@"union" and f.shapes.nodes.items(.a)[w_child.int()] == w.int()));
-    const lists = try f.proj(w, s1);
-    // Both fresh lists and the parameter's own list below (`π₂·#Node.1`).
-    try testing.expectEqual(@as(u32, 3), f.cells.sets.count(f.shapes.cells(lists)));
+    // The root keeps its own list (#1253: the first return to `Tree` is a
+    // plain path and keys its own class); the subtrees, one node `inner` at
+    // `#Node.0` and `#Node.2` with the levels below, are one class, a knot: its recursive children name it (or
+    // its union with the parameter leaf), and its lists are joined.
+    try testing.expectEqual(@as(u32, 1), f.cells.sets.count(f.shapes.cells(try f.proj(w, s1))));
+    const sub = try f.proj(w, s0);
+    try testing.expect(sub != w);
+    try testing.expectEqual(sub, try f.proj(w, s2));
+    const knot = struct {
+        fn of(x: NodeId, y: NodeId, sh: *const Table) bool {
+            return x == y or (sh.kind(x) == .@"union" and sh.nodes.items(.a)[x.int()] == y.int());
+        }
+    }.of;
+    const sub_core: NodeId = if (f.shapes.kind(sub) == .@"union") .from(f.shapes.nodes.items(.a)[sub.int()]) else sub;
+    try testing.expect(knot(try f.proj(sub_core, s0), sub_core, &f.shapes));
+    const lists = try f.proj(sub, s1);
+    // Inner's fresh list and, beside the image, the parameter's own list
+    // below (`π₂·#Node.1`).
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(f.shapes.cells(lists)));
     // Extensive, and a fixpoint: widening again changes nothing semantically.
     try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, outer, w));
-    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, inner, w));
+    try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, inner, sub));
     try f.shapes.crossCheckWiden(gpa, &f.account, &f.places, &f.cells, outer, w);
     const w2 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, w);
     try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, w, w2));
@@ -3772,26 +3787,41 @@ fn pickRound(f: *Fixture, x: NodeId, root: u8) !NodeId {
     };
 }
 
-/// One node per canonical path (§2.3): the class at the root is one built
-/// node (beside its leaf side, a `union` whose explicit side it is), and
-/// both re-entering steps name that class itself, so `#Node.0` and
-/// `#Node.2` are the root's path and nothing below them is a second node.
+/// One node per canonical path (§2.3): a class is one built node (beside
+/// its leaf side, a `union` whose explicit side it is). The root's
+/// re-entering steps `#Node.0` and `#Node.2` are first returns, a plain
+/// path each with a class of its own (#1253), and that class's re-entering
+/// steps name it, so nothing below a first return is a second node.
 fn oneNodePerPath(f: *Fixture, w: NodeId) !void {
     const gpa = testing.allocator;
-    const d = f.shapes.get(w);
-    const n: NodeId = switch (d.kind) {
-        .node => w,
-        .@"union" => .from(d.a),
-        else => return error.TestUnexpectedResult,
-    };
+    const core = struct {
+        fn of(ff: *Fixture, x: NodeId) !NodeId {
+            const d = ff.shapes.get(x);
+            return switch (d.kind) {
+                .node => x,
+                .@"union" => .from(d.a),
+                else => error.TestUnexpectedResult,
+            };
+        }
+    }.of;
+    const n = try core(f, w);
     try testing.expectEqual(Kind.node, f.shapes.kind(n));
     for ([_]u32{ 0, 2 }) |i| {
         const s = try f.places.ctorStep(gpa, &f.account, 0, i);
-        try testing.expectEqual(@as(?NodeId, w), f.shapes.overGet(f.shapes.get(n).a, s));
+        const c = f.shapes.overGet(f.shapes.get(n).a, s) orelse continue;
+        // A node the root shares (a leaf arm there and a child here) puts
+        // the first return in the root's class, its knot the root's.
+        if (f.shapes.kind(c) == .leaf or c == w) continue;
+        const cn = try core(f, c);
+        try testing.expectEqual(Kind.node, f.shapes.kind(cn));
+        for ([_]u32{ 0, 2 }) |j| {
+            const t = try f.places.ctorStep(gpa, &f.account, 0, j);
+            if (f.shapes.overGet(f.shapes.get(cn).a, t)) |cc| if (f.shapes.kind(cc) != .leaf) try testing.expectEqual(c, cc);
+        }
     }
 }
 
-test "#1360: in a group's rounds widen opens a choice at a member's root, nested or inside a union, and settles in one step" {
+test "#1360: in a group's rounds widen opens a choice at a member's root, nested or inside a union, and settles" {
     for ([_]u8{ 0, 1, 2 }) |root| {
         var f: Fixture = .{};
         f.init();
@@ -3811,10 +3841,15 @@ test "#1360: in a group's rounds widen opens a choice at a member's root, nested
         try testing.expect(fold.opened.contains(v1));
         try oneNodePerPath(&f, x1);
         try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, v1, x1));
-        // One more round over the widened value is below it: the group settles.
+        // Two more rounds and the third is below the second: the group
+        // settles. The first return is a plain path (#1253), so its class
+        // takes the previous round's root a round after the root's own.
         const x2 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, try pickRound(&f, x1, root));
         try oneNodePerPath(&f, x2);
-        try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x2, x1));
+        try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x1, x2));
+        const x3 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, try pickRound(&f, x2, root));
+        try oneNodePerPath(&f, x3);
+        try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x3, x2));
     }
 }
 
@@ -4010,9 +4045,14 @@ test "a union absorbs a member anywhere in its DAG, and reach is one set per cyc
     const growth = f.account.growth;
     try testing.expectEqual(r1, try f.shapes.reach(gpa, &f.account, &f.cells.sets, w));
     try testing.expectEqual(growth, f.account.growth);
-    // The knot's node (the union's explicit side, which points back at it) shares the set.
-    const w_node: NodeId = .from(f.shapes.nodes.items(.a)[w.int()]);
-    try testing.expectEqual(r1, try f.shapes.reach(gpa, &f.account, &f.cells.sets, w_node));
+    // The subtrees' knot (the root is a class of its own, #1253): its node,
+    // the union's explicit side, which points back at it, shares the set.
+    const sub = try f.proj(w, s0);
+    try testing.expectEqual(Kind.@"union", f.shapes.kind(sub));
+    const sub_node: NodeId = .from(f.shapes.nodes.items(.a)[sub.int()]);
+    const r2 = try f.shapes.reach(gpa, &f.account, &f.cells.sets, sub);
+    try testing.expectEqual(@as(u32, 2), f.cells.sets.count(r2)); // site 3, π₂
+    try testing.expectEqual(r2, try f.shapes.reach(gpa, &f.account, &f.cells.sets, sub_node));
 }
 
 /// `go`'s shape before widening, `k` levels deep: `Node(t, [site], t)`
@@ -4048,12 +4088,16 @@ test "widen is linearithmic on a grafted tower: k = 1000, 2000, 4000" {
         const before = f.account.growth;
         const w = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, n);
         costs[idx] = f.account.growth - before;
-        // One class for every level, the lists joined: the knot.
+        // The root keeps its own list (#1253); every level below is one
+        // class, its lists joined, with the parameter's beside it: the knot.
         const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
         const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+        try testing.expectEqual(@as(u32, 1), f.cells.sets.count(f.shapes.cells(try f.proj(w, s1))));
         const below = try f.proj(w, s0);
-        try testing.expect(below == w or (f.shapes.kind(below) == .@"union" and f.shapes.nodes.items(.a)[below.int()] == w.int()));
-        try testing.expectEqual(k + 1, f.cells.sets.count(f.shapes.cells(try f.proj(w, s1))));
+        const core: NodeId = if (f.shapes.kind(below) == .@"union") .from(f.shapes.nodes.items(.a)[below.int()]) else below;
+        const again = try f.proj(core, s0);
+        try testing.expect(again == core or again == below);
+        try testing.expectEqual(k, f.cells.sets.count(f.shapes.cells(try f.proj(below, s1))));
         // Within c·k·log₂k records, with c small; k² would be a million at k = 1000.
         const log2k: u64 = std.math.log2_int(u32, k) + 1;
         try testing.expect(costs[idx] <= 60 * @as(u64, k) * log2k);
