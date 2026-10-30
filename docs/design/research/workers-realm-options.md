@@ -47,7 +47,10 @@ nominal opaque native types and typed operations from the pinned IDL, inside the
 platform wall. For example Browser.Host.Document exports type Document;
 Browser.Host.Storage exports Storage. The native object itself is the value,
 not a record containing it. Document.querySelector receives Document and returns
-a typed nullable Element; generated callback arguments name their Event subtype.
+a typed nullable Element; generated callback arguments use their declared IDL types. EventTarget
+callbacks declared as Event stay Event. Richer event-name/subtype bindings need
+a pinned prose event map and checked native branding; an event-name String
+is not permission to cast an arbitrary Event.
 Native inheritance uses generated explicit identity upcasts (for example to
 EventTarget), rather than adding general subtyping or unsafe downcasts to beni.
 Typed accessors/operations have source-local realm bounds derived from the native
@@ -86,16 +89,57 @@ Internal queues/Task/renderer records that currently erase callbacks must use
 typed records, typed closure unions or ordinary polymorphic containers. They
 still lower to their existing arrays/objects; no wrapper allocation is added.
 
-A Js.Value becomes a native type only through a privileged generated validator
-with a typed mismatch result. The validator uses the native interface's actual
-brand/acquisition contract, not a structural property-name test or unchecked
-Js.to. Cross-realm objects require spec-valid branding, not an assumption that
-instanceof the current realm's constructor always works. Ordinary applications
-cannot manufacture a brand. DOM-created objects and native event callbacks
-arrive already typed. Unanticipated validation/adapter faults remain defects;
-no catch-all turns them into a mismatch. Platform-private expandos use typed
-owner-managed storage/accessors with fixed keys; dynamic bookkeeping data is
-separate from the native receiver. HostFree erasure of those owners is refused.
+Unknown native intake uses a separate privileged opaque **Host.Raw** token,
+not Js.Value. Generated WebIDL any/object results, foreign unknown values and
+unknown callback arguments enter this quarantine; ordinary known IDL types
+arrive typed. Raw cannot be passed to Js.from/to/get/call, generic data helpers,
+ordinary containers or public platform APIs. Private typed quarantine queues
+may own Raw while awaiting validation, without exposing its payload. Its only
+eliminators are generated native validators or checked data-acquisition adapters.
+This is an explicit nominal type boundary, not hidden provenance through Value.
+
+A native validator returns Result NativeValidationError Document (or its own interface)
+using a spec-valid brand operation, not a structural property test or unchecked
+Js.to. Cross-realm objects do not rely on instanceof the current realm's
+constructor. Native brands are privileged; ordinary applications cannot create
+them. If an interface has no sound non-invoking brand check, generic raw intake
+returns RawValidationUnsupported and only its trusted typed acquisition path
+is exposed. This does not remove that interface's typed constructors/methods.
+Unknown validator faults remain defects, never a broad mismatch catch.
+The private generated signature spells both expected outcomes explicitly:
+
+```text
+type NativeValidationError = NativeMismatch | RawValidationUnsupported
+validateDocument : Raw → Result NativeValidationError Document
+```
+
+The validator is impure; it executes only the selected native brand operation.
+
+
+Plain Js.Value enters generic helpers only through a data proof. Safe primitive
+intake is separate from aggregate intake. A trusted JSON parse or native clone
+deserialization path can certify plain aggregate production, after schema and
+native-handle checks; arbitrary foreign objects cannot claim that certificate.
+There is no universal non-invoking Proxy detector. If proving a raw aggregate
+would require an untrusted accessor/proxy trap, keep it Raw or return the typed
+UnsupportedRawData outcome. Do not invoke the trap and then pretend the object
+was proven safe. Native brand/schema operations use only their exact documented
+predicates; trusted acquisition is not an unchecked raw-to-Value alias.
+
+Thus old untyped Js.Value native intake migrates to Raw followed by validation;
+a genuinely plain Js.Value cannot secretly contain a native object. Creating a
+native object from plain data uses its typed factory, not a cast. Generated
+known callback parameters arrive typed; any/object parameters follow the same
+quarantine and validation rules before reaching ordinary app callbacks.
+
+Platform-private expandos use typed owner-managed storage/accessors with fixed
+keys; dynamic bookkeeping data is separate from the native receiver. HostFree
+erasure of those owners is refused. ECMAScript builtin function namespaces and
+method values also stay typed under C; Math or a captured builtin callable is
+not a plain Value loophole. Known portable primitive/string/array operations
+still lower directly, and typed internal container representations can carry
+callbacks without erasing their schemes. This extends the portable-container
+migration caveat below; it is not another hidden value-shape analysis.
 
 Generated operations carry the native identity in a checked platform binding
 artifact: IDL interface/member/overload, beni signature, realm set, effects,

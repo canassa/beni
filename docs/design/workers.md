@@ -6,7 +6,8 @@ below gate their dependent implementation; recommendations are not decisions.
 The [research and inventory](research/workers-api-research.md) establish the
 baseline. This document owns the compiler/runtime contract, not a claim that
 all listed browser features have shipped. No production JavaScript is added:
-runtime logic is beni over privileged `Js`; compiler changes are Zig.
+runtime logic is beni over privileged platform primitives (including Js for
+raw data); compiler changes are Zig.
 
 ## Open decisions for the owner
 

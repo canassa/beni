@@ -221,7 +221,7 @@ not a user promise hidden in the runtime.
 
 `Program config state protocol`, `Handle protocol` and `Pool protocol` carry
 one type-only protocol record. For example `type alias Jobs = Worker.Protocol
-Predict Int Frames Error Event Int` is shared by both sides. Ordinary alias
+Call Int StreamRequest Error Event Int` is shared by both sides. Ordinary alias
 expansion/unification selects its fields; there are no new associated-type
 projections or runtime protocol records. The eight parameters of Definition
 are spelled out only at generic constructor signatures. A call-only protocol
