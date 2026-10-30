@@ -82,7 +82,8 @@ pub foreign impure forEachWhile : Buffer a, sync (a → Bool) → ⊤
 The buffer's native representation is the array itself. Zig lowers these calls
 to an empty array, native push, length and for-of, preserving the element type.
 The callbacks are synchronous and invoked in FIFO order; callback defects propagate.
-forEachWhile stops when its callback returns False. The dispatch drain uses this
+forEachWhile stops immediately when its callback returns False; no unvisited
+element is passed to the callback. The dispatch drain uses this
 operation so a stopped page does not walk all remaining queued thunks.
 Only private mutable buffers are accepted, so indexing an arbitrary native array
 or accessing an unchecked element is not exposed. A detached batch is walked
@@ -113,6 +114,13 @@ already-known extractor presence. commands keeps Cmd msg and its actual msg
 callback typed. Listen calls sendVia with its typed callback and extractor.
 Compiler-generated zero-payload sends supply unit explicitly where the source
 runtime requires an argument. Runtime arities and emit goldens change together.
+
+A global queue denotes a realm-local runtime instance. Inferred realm-summary
+seeds come only from writes reachable in that entry's execution graph. Do not
+merge Window callback seeds into a worker's queue merely because both entries
+reuse the same checked runtime declaration. Preserve symbolic callback storage
+obligations in interfaces and instantiate them per entry, as workers-emission.md
+specifies for globals, initializers and native binding dependencies.
 
 The program mount and native listener registration are separately audited
 boundaries. Their existing raw representation is not evidence that C has been
