@@ -391,6 +391,7 @@ pub const Account = struct {
 
     /// Reserve `n` growth records first: a product, a general task.
     pub fn reserveGrowth(a: *Account, category: Category, n: u32) AccountError!void {
+        profSample(n); // PROF-TEMP
         if (a.failed) |f| return f.err();
         // The source continuation first, whole or not at all, decided at
         // this reservation before its work: only what passes K·I_f is growth.
@@ -871,4 +872,19 @@ test "an input limit is named, terminal and checked before work" {
     try testing.expectEqual(Limit.record_fields, a.failed.?.limit);
     try testing.expectError(error.OwnershipLimit, a.reserve(.cell, 1));
     try testing.expectEqual(@as(u32, 0), a.growth);
+}
+// PROF-TEMP
+pub var prof_on: bool = false;
+var prof_acc: u64 = 0;
+pub fn profSample(n: u32) void {
+    if (!prof_on) return;
+    prof_acc += n;
+    while (prof_acc >= 16) {
+        prof_acc -= 16;
+        var buf: [256]usize = undefined;
+        const tr = std.debug.captureCurrentStackTrace(.{ .allow_unsafe_unwind = true }, &buf);
+        std.debug.print("PROF", .{});
+        for (tr.return_addresses) |x| std.debug.print(" {x}", .{x});
+        std.debug.print("\n", .{});
+    }
 }

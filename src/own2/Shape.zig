@@ -125,6 +125,19 @@ pub const Table = struct {
     view_free: Ids.FixedDict(1) = .{},
     view_free_epoch: u32 = 0,
     memo_view_reach: Ids.FixedDict(2) = .{},
+    /// The crossing's node sets (§2.11 *κ across a call*): `region` and `bases`
+    /// live in `node_sets`, unions memoised per pair; `base_epoch` moves when
+    /// an existing node gains a base.
+    node_sets: Cell.Radix = .{ .category = .memo },
+    memo_node_union: Ids.FixedDict(2) = .{},
+    bases: Ids.FixedDict(1) = .{},
+    base_epoch: u32 = 0,
+    memo_region: Ids.FixedDict(1) = .{},
+    region_ties: Ids.FixedDict(1) = .{},
+    memo_bstar: Ids.FixedDict(1) = .{},
+    bstar_epoch: Ids.FixedDict(1) = .{},
+    memo_tested: Ids.FixedDict(3) = .{},
+    memo_wholly: Ids.FixedDict(3) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -147,6 +160,15 @@ pub const Table = struct {
         t.memo_step.deinit(gpa);
         t.view_free.deinit(gpa);
         t.memo_view_reach.deinit(gpa);
+        t.node_sets.deinit(gpa);
+        t.memo_node_union.deinit(gpa);
+        t.bases.deinit(gpa);
+        t.memo_region.deinit(gpa);
+        t.region_ties.deinit(gpa);
+        t.memo_bstar.deinit(gpa);
+        t.bstar_epoch.deinit(gpa);
+        t.memo_tested.deinit(gpa);
+        t.memo_wholly.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -423,6 +445,9 @@ pub const Table = struct {
         /// One template reach cell's image: a parameter cell the actual's
         /// reach at its path, any other its mapped self.
         reach: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, cell: CellId, approx: u1) Error!SetId,
+        /// The snapshot position a re-root view's template reads its actual
+        /// at, null for a template that is no re-root leaf (*The crossing*).
+        reroot: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!?Ids.KappaId,
     };
 
     /// `view(template, env)`: a call's result by reference, interned, its
@@ -488,6 +513,267 @@ pub const Table = struct {
     /// again (a chain, §2.11); null at the chain's last view.
     pub fn chainNext(t: *const Table, v: NodeId) ?NodeId {
         return t.memo_step.get(v);
+    }
+
+    // ---- the crossing's region and bases (§2.11 *κ across a call*) -----------------
+
+    /// The `R` a re-root view `v` reads its actual at: null for a node that is
+    /// no re-root view (a view whose template is a leaf of one exact parameter
+    /// cell, *The crossing*).
+    pub fn rerootKappa(t: *Table, gpa: Allocator, account: *Account, v: NodeId) Error!?Ids.KappaId {
+        if (t.kind(v) != .view) return null;
+        const inst = t.instantiation orelse return null;
+        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        if (t.kind(template) != .leaf) return null;
+        return inst.reroot(inst.ctx, t, gpa, account, t.nodes.items(.b)[v.int()], template);
+    }
+
+    /// The persistent set of `m`'s bases (*Bases*): what a `proj` or a join
+    /// made it from. `.none` for none.
+    pub fn basesOf(t: *const Table, m: NodeId) SetId {
+        return if (t.bases.get(.{m.int()})) |s| .from(s) else .none;
+    }
+
+    /// `m` made from `b` (a `proj`'s node, a join's member). An existing node
+    /// that gains a base moves `base_epoch`: an answer about what is based on
+    /// a region may change then. `fresh`: `m` was made by this operation.
+    fn addBase(t: *Table, gpa: Allocator, account: *Account, m: NodeId, b: NodeId, fresh: bool) Error!void {
+        if (m == b) return;
+        // The crossing's bookkeeping, a growth task: never the asking lane's
+        // share (a wide join records a base per member, §4.1).
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        try account.reserve(.memo, 1);
+        const old = t.basesOf(m);
+        if (t.node_sets.member(old, b.int())) return;
+        const new = try t.node_sets.insert(gpa, .growth(account), old, b.int(), 0);
+        (try t.bases.getOrPut(gpa, .{m.int()})).value_ptr.* = new.int();
+        if (!fresh) t.base_epoch += 1;
+    }
+
+    /// The node set `region(n)` (*What the crossing reads: the region*): `n`'s
+    /// DAG, and for a view in it its chain and forced answer with theirs,
+    /// memoised per node (until a knot is tied) and made from its parts' sets
+    /// by `unionMemo`.
+    pub fn region(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!SetId {
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        return t.closure(gpa, account, .region, n);
+    }
+
+    /// Whether key `m` is based on `reg` at all (*tested*): in it, or a base
+    /// chain from `m` reaches it. Memoised within one `base_epoch`.
+    pub fn tested(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
+        try account.reserve(.inspection, 1);
+        if (t.node_sets.member(reg, m.int())) return true;
+        if (t.basesOf(m) == .none) return false;
+        try account.reserve(.memo, 1);
+        const key: [3]u32 = .{ m.int(), reg.int(), t.base_epoch };
+        if (t.memo_tested.get(key)) |hit| return hit == 1;
+        const out = try t.node_sets.intersects(gpa, .growth(account), try t.closure(gpa, account, .bases, m), reg);
+        (try t.memo_tested.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        return out;
+    }
+
+    /// Whether `m` is wholly of `reg`: a node of it, or one made by `proj` or
+    /// a join from such nodes only. A base chain that cycles answers no
+    /// (read at `C`, exact), and is not kept. Memoised within one `base_epoch`.
+    pub fn wholly(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
+        try account.reserve(.inspection, 1);
+        if (t.node_sets.member(reg, m.int())) return true;
+        if (t.basesOf(m) == .none) return false;
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var done: stamped.Column(NodeId, bool) = .{};
+        defer done.deinit(gpa);
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
+        var cyclic = false;
+        try stack.append(gpa, .{ .node = m, .expanded = false });
+        while (stack.pop()) |f| {
+            if (done.contains(f.node)) continue;
+            // A known answer for every base, or the first base that is not.
+            var pending = false;
+            var answer = true;
+            var it = t.node_sets.iterate(t.basesOf(f.node));
+            while (it.next()) |e| {
+                try account.reserve(.inspection, 1);
+                const b: NodeId = .from(e.key);
+                if (t.node_sets.member(reg, b.int())) continue;
+                if (t.basesOf(b) == .none) {
+                    answer = false;
+                    break;
+                }
+                if (done.get(b)) |v| {
+                    if (!v) {
+                        answer = false;
+                        break;
+                    }
+                    continue;
+                }
+                try account.reserve(.memo, 1);
+                if (t.memo_wholly.get(.{ b.int(), reg.int(), t.base_epoch })) |v| {
+                    if (v == 0) {
+                        answer = false;
+                        break;
+                    }
+                    continue;
+                }
+                if (open.contains(b)) {
+                    cyclic = true;
+                    answer = false;
+                    break;
+                }
+                if (!f.expanded) pending = true;
+            }
+            if (answer and pending) {
+                try open.put(gpa, f.node, {});
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                var bt = t.node_sets.iterate(t.basesOf(f.node));
+                while (bt.next()) |e| {
+                    const b: NodeId = .from(e.key);
+                    if (!t.node_sets.member(reg, b.int()) and !done.contains(b)) try stack.append(gpa, .{ .node = b, .expanded = false });
+                }
+                continue;
+            }
+            open.remove(f.node);
+            try done.put(gpa, f.node, answer);
+        }
+        const out = done.get(m).?;
+        if (!cyclic) {
+            try account.reserve(.memo, 1);
+            (try t.memo_wholly.getOrPut(gpa, .{ m.int(), reg.int(), t.base_epoch })).value_ptr.* = @intFromBool(out);
+        }
+        return out;
+    }
+
+    const Closure = enum { region, bases };
+
+    /// The node's own successors in `which`'s graph.
+    fn closureSuccs(t: *Table, gpa: Allocator, account: *Account, which: Closure, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        if (which == .bases) {
+            var it = t.node_sets.iterate(t.basesOf(n));
+            while (it.next()) |e| try out.append(gpa, .from(e.key));
+            return;
+        }
+        const d = t.get(n);
+        switch (d.kind) {
+            .leaf => {},
+            .node, .delta => {
+                if (d.kind == .delta) try out.append(gpa, .from(d.a));
+                var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                while (it.next()) |e| try out.append(gpa, e.node);
+            },
+            .recast => try out.append(gpa, .from(d.a)),
+            .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            // A view's chain and its forced answer (*the region*).
+            .view => {
+                const answer = try t.force(gpa, account, n);
+                try out.append(gpa, t.chainNext(n) orelse answer);
+            },
+        }
+    }
+
+    fn closureMemo(t: *const Table, which: Closure, n: NodeId) ?SetId {
+        const key: [1]u32 = .{n.int()};
+        return switch (which) {
+            .region => if (t.region_ties.get(key) == t.ties) (if (t.memo_region.get(key)) |s| SetId.from(s) else null) else null,
+            .bases => if (t.bstar_epoch.get(key) == t.base_epoch) (if (t.memo_bstar.get(key)) |s| SetId.from(s) else null) else null,
+        };
+    }
+
+    fn closureKeep(t: *Table, gpa: Allocator, which: Closure, n: NodeId, s: SetId) Error!void {
+        const key: [1]u32 = .{n.int()};
+        switch (which) {
+            .region => {
+                (try t.memo_region.getOrPut(gpa, key)).value_ptr.* = s.int();
+                (try t.region_ties.getOrPut(gpa, key)).value_ptr.* = t.ties;
+            },
+            .bases => {
+                (try t.memo_bstar.getOrPut(gpa, key)).value_ptr.* = s.int();
+                (try t.bstar_epoch.getOrPut(gpa, key)).value_ptr.* = t.base_epoch;
+            },
+        }
+    }
+
+    /// The set of every node `start` reaches in `which`'s graph, itself
+    /// included: Tarjan on an explicit stack, one set per strongly connected
+    /// component, each made from its successors' by `unionMemo`. A record per
+    /// node and edge.
+    fn closure(t: *Table, gpa: Allocator, account: *Account, which: Closure, start: NodeId) Error!SetId {
+        try account.reserve(.memo, 1);
+        if (t.closureMemo(which, start)) |s| return s;
+        const charge: Ids.Charge = .growth(account);
+        const Frame = struct { node: NodeId, next: u32, end: u32, from: u32 };
+        var frames: std.ArrayList(Frame) = .empty;
+        defer frames.deinit(gpa);
+        var succ: std.ArrayList(NodeId) = .empty;
+        defer succ.deinit(gpa);
+        var index: stamped.Column(NodeId, [2]u32) = .{};
+        defer index.deinit(gpa);
+        var acc: stamped.Column(NodeId, SetId) = .{};
+        defer acc.deinit(gpa);
+        var on: stamped.Column(NodeId, void) = .{};
+        defer on.deinit(gpa);
+        var comp: std.ArrayList(NodeId) = .empty;
+        defer comp.deinit(gpa);
+        var visits: u32 = 0;
+        const Push = struct {
+            fn go(tt: *Table, g: Allocator, a: *Account, w: Closure, fs: *std.ArrayList(Frame), sc: *std.ArrayList(NodeId), ix: *stamped.Column(NodeId, [2]u32), ac: *stamped.Column(NodeId, SetId), o: *stamped.Column(NodeId, void), cs: *std.ArrayList(NodeId), v: *u32, n: NodeId) Error!void {
+                try a.reserve(.inspection, 1);
+                try ix.put(g, n, .{ v.*, v.* });
+                v.* += 1;
+                try o.put(g, n, {});
+                try cs.append(g, n);
+                try ac.put(g, n, try tt.node_sets.insert(g, .growth(a), .none, n.int(), 0));
+                const from: u32 = @intCast(sc.items.len);
+                try tt.closureSuccs(g, a, w, n, sc);
+                try fs.append(g, .{ .node = n, .next = from, .end = @intCast(sc.items.len), .from = from });
+            }
+        };
+        try Push.go(t, gpa, account, which, &frames, &succ, &index, &acc, &on, &comp, &visits, start);
+        while (frames.items.len > 0) {
+            const f = &frames.items[frames.items.len - 1];
+            if (f.next < f.end) {
+                const s = succ.items[f.next];
+                f.next += 1;
+                try account.reserve(.inspection, 1);
+                if (t.closureMemo(which, s)) |set| {
+                    try acc.put(gpa, f.node, try t.node_sets.unionMemo(gpa, charge, &t.memo_node_union, acc.get(f.node).?, set));
+                    continue;
+                }
+                if (index.get(s)) |il| {
+                    if (on.contains(s)) index.getPtr(f.node).?[1] = @min(index.get(f.node).?[1], il[0]);
+                    continue;
+                }
+                try Push.go(t, gpa, account, which, &frames, &succ, &index, &acc, &on, &comp, &visits, s);
+                continue;
+            }
+            const done = frames.pop().?;
+            succ.shrinkRetainingCapacity(done.from);
+            const il = index.get(done.node).?;
+            if (il[1] == il[0]) {
+                // A component closed: its members' sets as one.
+                var set: SetId = .none;
+                const from = std.mem.lastIndexOfScalar(NodeId, comp.items, done.node).?;
+                for (comp.items[from..]) |x| set = try t.node_sets.unionMemo(gpa, charge, &t.memo_node_union, set, acc.get(x).?);
+                for (comp.items[from..]) |x| {
+                    on.remove(x);
+                    try account.reserve(.memo, 1);
+                    try t.closureKeep(gpa, which, x, set);
+                }
+                comp.shrinkRetainingCapacity(from);
+                if (frames.items.len > 0) {
+                    const p = frames.items[frames.items.len - 1].node;
+                    try acc.put(gpa, p, try t.node_sets.unionMemo(gpa, charge, &t.memo_node_union, acc.get(p).?, set));
+                }
+            } else if (frames.items.len > 0) {
+                const p = frames.items[frames.items.len - 1].node;
+                index.getPtr(p).?[1] = @min(index.get(p).?[1], il[1]);
+            }
+        }
+        return t.closureMemo(which, start).?;
     }
 
     /// Whether `n`'s DAG holds a view: a check of the invariant that a class
@@ -645,6 +931,23 @@ pub const Table = struct {
 
     /// The lazy join of two nodes at one place (a binary DAG).
     pub fn @"union"(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const before = t.nodes.len;
+        const out = try t.unionMake(gpa, account, cellsets, l, r);
+        try t.joinBases(gpa, account, out, &.{ l, r }, before);
+        return out;
+    }
+
+    /// Each member a base of the join `out` made of them (*Bases*); `before`
+    /// the table's size before it, so a node made by the join is fresh.
+    fn joinBases(t: *Table, gpa: Allocator, account: *Account, out: NodeId, members: []const NodeId, before: usize) Error!void {
+        // An interned join met again was made of the same members: its bases
+        // are recorded already. A member it absorbed gains the others.
+        const fresh = out.int() >= before;
+        if (!fresh and std.mem.indexOfScalar(NodeId, members, out) == null) return;
+        for (members) |m| try t.addBase(gpa, account, out, m, fresh);
+    }
+
+    fn unionMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         if (l == r) return l;
         // A union absorbs a member it already has, so projecting a cyclic
         // union reaches a fixpoint instead of nesting forever.
@@ -660,6 +963,13 @@ pub const Table = struct {
     /// fixpoint's arms, one of which is the value. Interned apart from `union`;
     /// it absorbs only a member of its own choice DAG (the maximum allows it).
     pub fn choice(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const before = t.nodes.len;
+        const out = try t.choiceMake(gpa, account, cellsets, l, r);
+        try t.joinBases(gpa, account, out, &.{ l, r }, before);
+        return out;
+    }
+
+    fn choiceMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         if (l == r) return l;
         if (try t.dagHas(gpa, account, .choice, l, r)) return l;
         if (try t.dagHas(gpa, account, .choice, r, l)) return r;
@@ -779,6 +1089,13 @@ pub const Table = struct {
 
     /// Two positions at one place (`collect`'s node, `proj`'s image of one).
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const before = t.nodes.len;
+        const out = try t.positionsMake(gpa, account, cellsets, l, r);
+        try t.joinBases(gpa, account, out, &.{ l, r }, before);
+        return out;
+    }
+
+    fn positionsMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         // A side that is nothing (an empty leaf) is no position: no object
         // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
         // `[*]` past the empty list is `x`'s alone, not a new node per level.
@@ -936,6 +1253,7 @@ pub const Table = struct {
     /// `n`'s projection at `s`, what it reads projected already.
     fn projOne(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
+        const before = t.nodes.len;
         const child_place = places.child(d.place, s) orelse {
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = Ids.none_int;
             return;
@@ -958,6 +1276,16 @@ pub const Table = struct {
             .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
             .view => got(t, t.memo_force.get(n).?.int(), s),
         };
+        // A node the projection makes records `n` (*Bases*): a leaf's, a
+        // recast's, a join's image, and the empty value past a missing
+        // child. An explicit child, an override and a base's or an answer's
+        // projection are made by none, so they record nothing more.
+        const made = switch (d.kind) {
+            .leaf, .recast, .@"union", .positions, .choice => true,
+            .node => t.overGet(d.a, s) == null,
+            .delta, .view => false,
+        };
+        if (made) try t.addBase(gpa, account, out, n, out.int() >= before);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
     }
 
@@ -1391,7 +1719,7 @@ pub const Table = struct {
     fn joinAs(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId, mode: Kind) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
-        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode };
+        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode, .before = t.nodes.len };
         defer w.deinit();
         return w.run(members);
     }
@@ -1413,6 +1741,8 @@ pub const Table = struct {
         cellt: *Cell.Table,
         /// `union` or `choice`: what the outer DAG and the child joins are made of.
         mode: Kind = .@"union",
+        /// The table's size before the join: a node made by it is fresh.
+        before: usize = 0,
         pool: std.ArrayList(NodeId) = .empty,
         reqs: std.ArrayList(Req) = .empty,
         parts: std.ArrayList(Part) = .empty,
@@ -1588,6 +1918,9 @@ pub const Table = struct {
                 },
             };
             const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items, w.mode);
+            // Each member a base of the join made of them (*Bases*), once,
+            // where the join is computed: a memo hit records nothing more.
+            for (w.pool.items[r.first..][0..r.len]) |m| try t.addBase(w.gpa, w.account, out, m, out.int() >= w.before);
             w.reqs.items[id].result = out;
             if (r.key) |k| (try t.memo_join.getOrPut(w.gpa, k)).value_ptr.* = out.int();
         }
@@ -3181,7 +3514,7 @@ pub const TestInstantiation = struct {
     arg: NodeId,
 
     pub fn inst(x: *TestInstantiation) Table.Instantiation {
-        return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach };
+        return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot };
     }
 
     fn of(ctx: *anyopaque) *TestInstantiation {
@@ -3203,6 +3536,11 @@ pub const TestInstantiation = struct {
     fn cells(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, s: SetId, at: PlaceId) Error!SetId {
         _ = .{ ctx, t, gpa, account, env, at };
         return s;
+    }
+
+    fn reroot(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!?Ids.KappaId {
+        _ = .{ ctx, t, gpa, account, env, template };
+        return null;
     }
 
     fn reach(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, c: CellId, approx: u1) Error!SetId {

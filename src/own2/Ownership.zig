@@ -130,6 +130,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 if (steps != 0) line.writer.print(", step lanes {d}", .{steps}) catch return error.OutOfMemory;
                 try others.append(arena, line.written());
             }
+            // The crossing's counts (§2.11 *κ across a call*), once per module:
+            // the reads that crossed, those redone at `C` and `base_epoch`'s
+            // moves (the counted tests read them).
+            if (in.format_summaries and dr == &mod.results.items[0]) try others.append(arena, try std.fmt.allocPrint(arena, "crossing: reads {d}, redone {d}, base moves {d}", .{ mod.conds.crossed_reads, mod.conds.crossed_redos, mod.shapes.base_epoch }));
             if (in.format_summaries and dr.class != .none) {
                 var sn: SummaryNames = .{ .names = in.names, .module = mi.module, .shared = mod.shared_of.items };
                 var buf: std.Io.Writer.Allocating = .init(arena);

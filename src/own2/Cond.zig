@@ -47,6 +47,7 @@ const Facts = @import("Facts.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const stamped = @import("../stamped.zig");
+const full_cross_check = @import("ownership_options").full_cross_check;
 
 pub const CondId = Ids.CondId;
 pub const CellId = Ids.CellId;
@@ -177,6 +178,26 @@ pub const Table = struct {
     marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
     /// `kappaMerge`'s memo: an unordered pair of positions → their merge.
     memo_merge: Ids.FixedDict(2) = .{},
+    /// The reads across a call (§2.11 *κ across a call*): a DAG node's sides'
+    /// join by `(position, node, class)` (`memo_inner`), its `DagFacts` by node,
+    /// the entries a crossed read keeps pending until it is known not to have
+    /// seen `base_epoch` move, `eqOn` by `(C, R, region, epoch)` and per pair of
+    /// map nodes, `foldBelow` by position, and `mapUnion` by its pair and
+    /// `Combine`.
+    memo_inner: Ids.FixedDict(3) = .{},
+    dag_facts: stamped.Column(NodeId, u32) = .{},
+    facts: std.ArrayList(DagFacts) = .empty,
+    pending: std.ArrayList(Pending) = .empty,
+    memo_eq: Ids.FixedDict(4) = .{},
+    memo_map_eq: Ids.FixedDict(4) = .{},
+    memo_fold_below: Ids.FixedDict(1) = .{},
+    memo_map_union: Ids.FixedDict(3) = .{},
+    /// A read made with no crossing (a redo, the cross-check) and with no
+    /// memo (the cross-check); and how many reads crossed, and were redone.
+    no_cross: bool = false,
+    no_memo: bool = false,
+    crossed_reads: u32 = 0,
+    crossed_redos: u32 = 0,
     /// For tests: every position a reader (`deep`, `propagate`,
     /// `kappaLeq`) reads, as `node << 1 | class`, so a test can compare
     /// the frontiers they walk.
@@ -224,6 +245,14 @@ pub const Table = struct {
         t.memo_chain.deinit(gpa);
         t.kview_free.deinit(gpa);
         t.memo_merge.deinit(gpa);
+        t.memo_inner.deinit(gpa);
+        t.dag_facts.deinit(gpa);
+        t.facts.deinit(gpa);
+        t.pending.deinit(gpa);
+        t.memo_eq.deinit(gpa);
+        t.memo_map_eq.deinit(gpa);
+        t.memo_fold_below.deinit(gpa);
+        t.memo_map_union.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -952,63 +981,142 @@ pub const Table = struct {
         (try memo.getOrPut(gpa, .{ctx.int()})).value_ptr.* = out.int();
     }
 
-    /// κ of a union or a positions node: the join of its sides' and the
-    /// stored, every node of the DAG (both kinds) read ONCE per read (a seen
-    /// column for this read alone, nothing goes stale; a side in progress
-    /// reads `yes`). At a summary position — a positions node makes it one —
-    /// the leaf rule over the root's cells besides, every cell both sides of
-    /// a positions node hold counted once more (the multiset; a repeat
-    /// through a side holding a recast anywhere in its DAG is `lost`). A
-    /// record per node and repeated cell: linear.
-    fn dagKappa(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, root: NodeId, at_summary: bool) Error!CondId {
-        // A union's or a positions node's DAG (§4.1, #1098).
-        const walk = try v.shapes.dagWalk(gpa, charge.account, root);
-        defer if (walk) |k| charge.account.leave(k);
-        var memo: stamped.Column(NodeId, CondId) = .{};
-        defer memo.deinit(gpa);
-        var done: stamped.Column(NodeId, void) = .{};
-        defer done.deinit(gpa);
-        var dups: std.ArrayList(Item) = .empty;
-        defer dups.deinit(gpa);
-        var approx: stamped.Column(NodeId, void) = .{};
-        defer approx.deinit(gpa);
-        var summary = at_summary;
+    // ---- κ reads, and the crossing (§2.11 *κ across a call*) -------------------------
+
+    /// A crossing carried down a walk (*Carried along the walk*): the
+    /// re-rooted actual's region and the position `R_Q` the walk reads it at.
+    pub const Pair = struct { region: SetId, r: Kappas };
+
+    /// What a union, choice or positions DAG holds besides its κ, a function
+    /// of the node alone (*`dagKappa`*): whether a recast is below it (a view
+    /// of a recast included), whether a positions node is, and the cells the
+    /// positions nodes below it repeat (`dups`, `dups_approx` those one of
+    /// whose occurrences is approximate), as sets.
+    pub const DagFacts = struct { approx: bool = false, positions: bool = false, dups: SetId = .none, dups_approx: SetId = .none };
+
+    fn isDag(k: Shape.Kind) bool {
+        return k == .@"union" or k == .choice or k == .positions;
+    }
+
+    /// A memo entry a crossed read made, written once the read is known not
+    /// to have seen `base_epoch` move (*A read in flight*).
+    const Pending = struct { which: enum(u8) { dag, inner, deep }, key: [3]u32, value: u32 };
+
+    fn memoPut(t: *Table, gpa: Allocator, which: @FieldType(Pending, "which"), key: [3]u32, value: u32, crossed: bool) Error!void {
+        if (t.no_memo) return;
+        if (crossed) return t.pending.append(gpa, .{ .which = which, .key = key, .value = value });
+        const m = switch (which) {
+            .dag => &t.memo_dag,
+            .inner => &t.memo_inner,
+            .deep => &t.memo_deep,
+        };
+        (try m.getOrPut(gpa, key)).value_ptr.* = value;
+    }
+
+    fn memoGet(t: *const Table, which: @FieldType(Pending, "which"), key: [3]u32) ?u32 {
+        if (t.no_memo) return null;
+        return switch (which) {
+            .dag => t.memo_dag.get(key),
+            .inner => t.memo_inner.get(key),
+            .deep => t.memo_deep.get(key),
+        };
+    }
+
+    /// The pending entries from `from` on: kept, or dropped with the read.
+    fn settle(t: *Table, gpa: Allocator, from: usize, kept: bool) Error!void {
+        if (kept) for (t.pending.items[from..]) |p| {
+            const m = switch (p.which) {
+                .dag => &t.memo_dag,
+                .inner => &t.memo_inner,
+                .deep => &t.memo_deep,
+            };
+            (try m.getOrPut(gpa, p.key)).value_ptr.* = p.value;
+        };
+        t.pending.shrinkRetainingCapacity(from);
+    }
+
+    /// The facts of a DAG node (`DagFacts`), memoised per node: post-order on
+    /// an explicit stack over its union, choice and positions sides (a view
+    /// side is read at its answer as one position, not walked), a node met
+    /// again while open adding nothing and keeping no memo. A record per node
+    /// and repeated cell.
+    fn dagFacts(t: *Table, gpa: Allocator, charge: Charge, v: View, root: NodeId) Error!DagFacts {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.dag_facts.get(root)) |i| return t.facts.items[i];
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        var local: stamped.Column(NodeId, DagFacts) = .{};
+        defer local.deinit(gpa);
+        var open: stamped.Column(NodeId, void) = .{};
+        defer open.deinit(gpa);
+        var cyclic = false;
         try stack.append(gpa, .{ .node = root, .expanded = false });
         while (stack.pop()) |f| {
             const n = f.node;
-            if (done.contains(n)) continue;
-            try charge.reserve(gpa, .inspection, 1);
-            const nk = v.shapes.kind(n);
+            if (local.contains(n)) continue;
+            if (!isDag(v.shapes.kind(n))) {
+                // A recast, or a view of one, is approximate (§2.11).
+                const nk = v.shapes.kind(n);
+                const approx = nk == .recast or (nk == .view and v.shapes.kind(try v.shapes.force(gpa, charge.account, n)) == .recast);
+                try local.put(gpa, n, .{ .approx = approx });
+                continue;
+            }
+            if (t.dag_facts.get(n)) |i| {
+                try local.put(gpa, n, t.facts.items[i]);
+                continue;
+            }
             const d = v.shapes.get(n);
-            if (nk != .@"union" and nk != .choice and nk != .positions) {
-                try memo.put(gpa, n, try t.kappaOf(gpa, charge, v, ctx, n, at_summary));
-                // A view of a recast is a recast read at its answer (§2.11).
-                if (nk == .recast or (nk == .view and v.shapes.kind(try v.shapes.force(gpa, charge.account, n)) == .recast)) try approx.put(gpa, n, {});
-            } else if (!f.expanded) {
-                try memo.put(gpa, n, yes);
+            if (!f.expanded) {
+                if (open.contains(n)) {
+                    cyclic = true;
+                    continue;
+                }
+                try open.put(gpa, n, {});
                 try stack.appendSlice(gpa, &.{ .{ .node = n, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
                 continue;
-            } else {
-                var k = try t.join(gpa, charge, memo.get(.from(d.a)).?, memo.get(.from(d.b)).?);
-                if (t.kappaGet(ctx, n)) |s| k = try t.join(gpa, charge, s, k);
-                try memo.put(gpa, n, k);
-                if (approx.contains(.from(d.a)) or approx.contains(.from(d.b))) try approx.put(gpa, n, {});
-                if (nk == .positions) {
-                    summary = true;
-                    var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.a)), try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.b))));
-                    while (it.next()) |e| {
-                        try charge.reserve(gpa, .inspection, 1);
-                        try dups.append(gpa, .{ .cell = .from(e.key), .approx = approx.contains(n) or e.value == 1 });
-                    }
+            }
+            open.remove(n);
+            const fa = local.get(.from(d.a)) orelse DagFacts{};
+            const fb = local.get(.from(d.b)) orelse DagFacts{};
+            var out: DagFacts = .{
+                .approx = fa.approx or fb.approx,
+                .positions = fa.positions or fb.positions or d.kind == .positions,
+                .dups = try v.cells.sets.unionWith(gpa, charge, fa.dups, fb.dups),
+                .dups_approx = try v.cells.sets.unionWith(gpa, charge, fa.dups_approx, fb.dups_approx),
+            };
+            if (d.kind == .positions) {
+                var it = v.cells.sets.iterate(try v.cells.sets.intersection(gpa, charge, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.a)), try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, .from(d.b))));
+                while (it.next()) |e| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    out.dups = try v.cells.sets.insert(gpa, charge, out.dups, e.key, 0);
+                    if (out.approx or e.value == 1) out.dups_approx = try v.cells.sets.insert(gpa, charge, out.dups_approx, e.key, 0);
                 }
             }
-            try done.put(gpa, n, {});
+            try local.put(gpa, n, out);
+            if (!cyclic) {
+                try charge.reserve(gpa, .memo, 1);
+                try t.dag_facts.put(gpa, n, @intCast(t.facts.items.len));
+                try t.facts.append(gpa, out);
+            }
         }
-        if (!summary) return memo.get(root).?;
-        return t.@"and"(gpa, charge, memo.get(root).?, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, dups.items));
+        return local.get(root).?;
+    }
+
+    /// A DAG node's read once its sides' join `inner` is known: at a summary
+    /// position, a positions node below making it one, the leaf rule over its
+    /// cells and the repeats its positions nodes found (*`dagKappa`*).
+    fn dagRoot(t: *Table, gpa: Allocator, charge: Charge, v: View, root: NodeId, at_summary: bool, inner: CondId) Error!CondId {
+        const facts = try t.dagFacts(gpa, charge, v, root);
+        if (!at_summary and !facts.positions) return inner;
+        var dups: std.ArrayList(Item) = .empty;
+        defer dups.deinit(gpa);
+        var it = v.cells.sets.iterate(facts.dups);
+        while (it.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            try dups.append(gpa, .{ .cell = .from(e.key), .approx = v.cells.sets.member(facts.dups_approx, e.key) });
+        }
+        return t.@"and"(gpa, charge, inner, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, dups.items));
     }
 
     /// What is stored for view `n` along its chain (§2.11 *κ at a view*):
@@ -1056,23 +1164,240 @@ pub const Table = struct {
     /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
     /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
     pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        // A view is read at its answer, with the entries stored under every id
-        // of its chain joined in before the kind's rule (§2.11 *κ at a view*).
-        var at = n;
-        var chain_stored: ?CondId = null;
-        if (v.shapes.kind(n) == .view) {
-            at = try v.shapes.force(gpa, charge.account, n);
-            chain_stored = try t.chainStored(gpa, charge, v, ctx, n);
-        }
-        const k = try t.kappaRead(gpa, charge, v, ctx, at, at_summary, chain_stored);
-        // A widened class image owes its path-multiset obligation wherever it
-        // is read, a union's side included (§2.9, #1128). `fold_cond` never
-        // keys a view: widen folds answers.
-        const fc = t.fold_cond.get(at) orelse return k;
-        return t.@"and"(gpa, charge, k, fc);
+        return t.readAt(gpa, charge, v, ctx, n, at_summary, &.{});
     }
 
+    /// `kappaOf` with the crossings a walk carries (`deep`'s frontier): the
+    /// read at `ctx`, its value the same with or without them (*Argument 1*).
+    /// A crossed read notes `base_epoch`; if it moved, the read is made again
+    /// at `ctx`, exact, its memo entries dropped (*A read in flight*).
+    fn readAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
+        // A union's, a positions node's or a view's read is a DAG walk (§4.1, #1098).
+        const walk = try v.shapes.dagWalk(gpa, charge.account, n);
+        defer if (walk) |k| charge.account.leave(k);
+        const epoch = v.shapes.base_epoch;
+        const from = t.pending.items.len;
+        const r = try t.machine(gpa, charge, v, ctx, n, at_summary, pairs);
+        if (!r.crossed) return r.k;
+        t.crossed_reads += 1;
+        if (v.shapes.base_epoch != epoch) {
+            t.crossed_redos += 1;
+            try t.settle(gpa, from, false);
+            const saved = t.no_cross;
+            t.no_cross = true;
+            defer t.no_cross = saved;
+            return (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k;
+        }
+        try t.settle(gpa, from, true);
+        if (std.debug.runtime_safety and full_cross_check) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
+        return r.k;
+    }
+
+    /// `-Downership-full-cross-check` (*Cross-check*): a crossed read made
+    /// again at `C`, with no crossing and no memo, gives the same kind and
+    /// atom set.
+    fn crossCheckRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
+        const saved = .{ t.no_cross, t.no_memo };
+        t.no_cross = true;
+        t.no_memo = true;
+        defer {
+            t.no_cross = saved[0];
+            t.no_memo = saved[1];
+        }
+        const exact = (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k;
+        try t.expectSame(gpa, charge, k, exact);
+    }
+
+    /// Two conditions of one kind and one atom set, or a defect.
+    fn expectSame(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!void {
+        const same = blk: {
+            if (fails(a) or fails(b) or a == yes or b == yes) break :blk a == b;
+            break :blk try t.flat(gpa, charge, a) == try t.flat(gpa, charge, b);
+        };
+        if (!same) std.debug.panic("ownership v2 cross-check: a crossed read {d} differs from its read at C {d}", .{ a.int(), b.int() });
+    }
+
+    /// The crossing at re-root view `n` read at `ctx` (*The crossing*):
+    /// `R`, the actual and its region, when `eqOn(ctx, R)` holds on the
+    /// region; null where the read stays at `ctx`.
+    fn crossAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?struct { r: Kappas, region: SetId } {
+        if (t.no_cross) return null;
+        const r = (try v.shapes.rerootKappa(gpa, charge.account, n)) orelse return null;
+        const answer = try v.shapes.force(gpa, charge.account, n);
+        const actual = v.shapes.chainNext(n) orelse answer;
+        const region = try v.shapes.region(gpa, charge.account, actual);
+        if (!try t.eqOn(gpa, charge, v, ctx, r, region)) return null;
+        return .{ .r = r, .region = region };
+    }
+
+    /// The position a node met at `ctx` with `pairs` carried is read at: a
+    /// carried pair's `R_Q` when the node is wholly of its region, else `ctx`
+    /// (*Carried along the walk*). `true` when it crossed.
+    fn carried(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, pairs: []const Pair) Error!?Kappas {
+        if (t.no_cross) return null;
+        for (pairs) |p| if (try v.shapes.wholly(gpa, charge.account, n, p.region)) return p.r;
+        return null;
+    }
+
+    const Read = struct { k: CondId, crossed: bool };
+
+    /// The read machine: `kappaOf` and the DAG walk below it on one explicit
+    /// stack (#1130: a chain of views below views is as long as the calls
+    /// that made it, never native-stack depth). A `read` task is `kappaOf`
+    /// at its position; an `inner` task a DAG node's join of its sides' reads
+    /// with its own entry. At a re-root view the read may cross into the
+    /// actual's own position (`crossAt`), and below a crossing a node wholly
+    /// of the actual's region is read at the carried `R_Q`. Both tasks are
+    /// memoised by `(position, node, class)`: positions and nodes are
+    /// immutable, so a read is a function of its key, crossed or not. Within
+    /// one run each task is made once; a task met again while it is open (a
+    /// cycle) reads `yes`, and the run then keeps no memo entry.
+    fn machine(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx0: Kappas, n0: NodeId, s0: bool, pairs: []const Pair) Error!Read {
+        const Op = enum(u8) { read, inner };
+        const Frame = struct {
+            op: Op,
+            ctx: Kappas,
+            node: NodeId,
+            summary: bool,
+            /// Whether the carried pairs hold below this task.
+            carry: bool,
+            stage: u8 = 0,
+            /// A read: the position and node its kind's rule reads (a view's
+            /// answer, perhaps across) and what the chain stored.
+            at: Kappas = .none,
+            answer: NodeId = .none,
+            extra: CondId = .none,
+            /// Read at a position a crossing chose.
+            crossed: bool = false,
+
+            fn key(f: @This()) [4]u32 {
+                return .{ @backingInt(f.op), f.ctx.int(), f.node.int(), @intFromBool(f.summary) };
+            }
+        };
+        const open_mark = std.math.maxInt(u32);
+        var frames: std.ArrayList(Frame) = .empty;
+        defer frames.deinit(gpa);
+        var vals: std.ArrayList(Read) = .empty;
+        defer vals.deinit(gpa);
+        var state: Ids.FixedDict(4) = .{};
+        defer state.deinit(gpa);
+        var done: std.ArrayList(Read) = .empty;
+        defer done.deinit(gpa);
+        var cyclic = false;
+        try frames.append(gpa, .{ .op = .read, .ctx = ctx0, .node = n0, .summary = s0, .carry = pairs.len > 0 });
+        while (frames.items.len > 0) {
+            const fi = frames.items.len - 1;
+            var f = frames.items[fi];
+            if (f.stage == 0) {
+                try charge.reserve(gpa, .memo, 1);
+                const got = try state.getOrPut(gpa, f.key());
+                if (got.found_existing) {
+                    _ = frames.pop();
+                    if (got.value_ptr.* == open_mark) {
+                        cyclic = true;
+                        try vals.append(gpa, .{ .k = yes, .crossed = false });
+                    } else try vals.append(gpa, done.items[got.value_ptr.*]);
+                    continue;
+                }
+                got.value_ptr.* = open_mark;
+            }
+            var result: ?Read = null;
+            switch (f.op) {
+                .read => if (f.stage == 0) {
+                    f.at = f.ctx;
+                    f.answer = f.node;
+                    var extra: ?CondId = null;
+                    if (v.shapes.kind(f.node) == .view) {
+                        f.answer = try v.shapes.force(gpa, charge.account, f.node);
+                        if (try t.crossAt(gpa, charge, v, f.ctx, f.node)) |x| {
+                            // The view's own entry, the class's binding, at `C`;
+                            // the chain past it and the answer at `R`.
+                            f.at = x.r;
+                            f.crossed = true;
+                            extra = t.kappaGet(f.ctx, f.node);
+                            if (v.shapes.chainNext(f.node)) |next| if (try t.chainStored(gpa, charge, v, x.r, next)) |c| {
+                                extra = if (extra) |e| try t.join(gpa, charge, e, c) else c;
+                            };
+                        } else extra = try t.chainStored(gpa, charge, v, f.ctx, f.node);
+                    }
+                    f.extra = extra orelse .none;
+                    if (!isDag(v.shapes.kind(f.answer))) {
+                        result = .{ .k = try t.kappaReadOne(gpa, charge, v, f.at, f.answer, f.summary, extra), .crossed = f.crossed };
+                    } else {
+                        if (t.memoGet(.dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) })) |hit| {
+                            result = .{ .k = if (extra) |e| try t.join(gpa, charge, e, .from(hit)) else .from(hit), .crossed = f.crossed };
+                        } else {
+                            // The answer's DAG, its sides' join first. Below a
+                            // crossing every node of it is of the region, read at
+                            // `R`: the carried pairs are not needed there.
+                            f.stage = 1;
+                            frames.items[fi] = f;
+                            try frames.append(gpa, .{ .op = .inner, .ctx = f.at, .node = f.answer, .summary = f.summary, .carry = f.carry and !f.crossed });
+                            continue;
+                        }
+                    }
+                } else {
+                    const inner = vals.pop().?;
+                    const root = try t.dagRoot(gpa, charge, v, f.answer, f.summary, inner.k);
+                    const crossed = f.crossed or inner.crossed;
+                    if (!cyclic) try t.memoPut(gpa, .dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) }, root.int(), crossed);
+                    result = .{ .k = if (f.extra != .none) try t.join(gpa, charge, f.extra, root) else root, .crossed = crossed };
+                },
+                .inner => if (f.stage == 0) {
+                    // The task's one record (above) covers its memo lookups.
+                    if (t.memoGet(.inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) })) |hit| {
+                        result = .{ .k = .from(hit), .crossed = false };
+                    } else {
+                        f.stage = 1;
+                        frames.items[fi] = f;
+                        const d = v.shapes.get(f.node);
+                        for ([_]NodeId{ .from(d.b), .from(d.a) }) |sd| {
+                            var at = f.ctx;
+                            var carry = f.carry;
+                            if (f.carry) if (try t.carried(gpa, charge, v, sd, pairs)) |r| {
+                                at = r;
+                                carry = false;
+                            };
+                            try frames.append(gpa, .{ .op = if (isDag(v.shapes.kind(sd))) .inner else .read, .ctx = at, .node = sd, .summary = f.summary, .carry = carry, .crossed = at != f.ctx });
+                        }
+                        continue;
+                    }
+                } else {
+                    const a = vals.pop().?;
+                    const b = vals.pop().?;
+                    var k = try t.join(gpa, charge, a.k, b.k);
+                    if (t.kappaGet(f.ctx, f.node)) |st| k = try t.join(gpa, charge, st, k);
+                    const crossed = a.crossed or b.crossed or f.crossed;
+                    if (!cyclic) try t.memoPut(gpa, .inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) }, k.int(), crossed);
+                    result = .{ .k = k, .crossed = crossed };
+                },
+            }
+            var r = result.?;
+            // A widened class image owes its path-multiset obligation wherever
+            // it is read, a union's side included (§2.9, #1128). `fold_cond`
+            // never keys a view: widen folds answers.
+            if (f.op == .read) if (t.fold_cond.get(f.answer)) |fc| {
+                r.k = try t.@"and"(gpa, charge, r.k, fc);
+            };
+            _ = frames.pop();
+            (try state.getOrPut(gpa, f.key())).value_ptr.* = @intCast(done.items.len);
+            try done.append(gpa, r);
+            try vals.append(gpa, r);
+        }
+        return vals.pop().?;
+    }
+
+    /// `kappaRead` of a node that is no view: a DAG node's read through the
+    /// machine, any other kind's at once.
     fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
+        if (!isDag(v.shapes.kind(n))) return t.kappaReadOne(gpa, charge, v, ctx, n, at_summary, extra);
+        const k = try t.readAt(gpa, charge, v, ctx, n, at_summary, &.{});
+        return if (extra) |e| t.join(gpa, charge, e, k) else k;
+    }
+
+    /// The read of a node of a kind that walks nothing below it (no view, no
+    /// DAG): its stored entry, `extra` joined, and the derived read.
+    fn kappaReadOne(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
         const own = t.kappaGet(ctx, n);
         const stored: ?CondId = if (extra) |e| (if (own) |s| try t.join(gpa, charge, s, e) else e) else own;
         // THE RULE (header): stored ⊔ derived at the read's position.
@@ -1104,23 +1429,181 @@ pub const Table = struct {
                 if (at_summary) d = try t.@"and"(gpa, charge, d, try t.derivedCells(gpa, charge, v, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n)), true, &.{}));
                 break :blk d;
             },
-            .@"union", .choice, .positions => {
-                // A pure function of the read, memoised like `deep`.
-                const key: [3]u32 = .{ ctx.int(), n.int(), @intFromBool(at_summary) };
-                try charge.reserve(gpa, .memo, 1);
-                const k: CondId = if (t.memo_dag.get(key)) |hit| .from(hit) else blk: {
-                    const read = try t.dagKappa(gpa, charge, v, ctx, n, at_summary);
-                    try charge.reserve(gpa, .memo, 1);
-                    (try t.memo_dag.getOrPut(gpa, key)).value_ptr.* = read.int();
-                    break :blk read;
-                };
-                // What a view's chain stored, as the union's own entry is
-                // read by `dagKappa` (§2.11).
-                return if (extra) |e| t.join(gpa, charge, e, k) else k;
-            },
-            .view => unreachable, // `kappaOf` reads a view at its answer
+            .@"union", .choice, .positions, .view => unreachable, // the machine's
         };
         return if (stored) |s| t.join(gpa, charge, s, derived) else derived;
+    }
+
+    // ---- the equality a crossing rests on (*The equality*) -----------------------------
+
+    /// Whether any position at or below `ctx` is a fold, exact or collapsed
+    /// (*No crossing at a fold*): memoised per position, post-order on an
+    /// explicit stack.
+    fn foldBelow(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas) Error!bool {
+        if (ctx == .none) return false;
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_fold_below.get(.{ctx.int()})) |hit| return hit == 1;
+        const Frame = struct { at: Kappas, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .at = ctx, .expanded = false });
+        while (stack.pop()) |f| {
+            if (t.memo_fold_below.get(.{f.at.int()}) != null) continue;
+            const p = t.position(f.at);
+            if (p.fold != 0) {
+                (try t.memo_fold_below.getOrPut(gpa, .{f.at.int()})).value_ptr.* = 1;
+                continue;
+            }
+            if (!f.expanded) {
+                try charge.reserve(gpa, .inspection, 1);
+                try stack.append(gpa, .{ .at = f.at, .expanded = true });
+                var it = t.mapEntries(p.links);
+                while (it.next()) |e| if (t.memo_fold_below.get(.{e.value}) == null) try stack.append(gpa, .{ .at = .from(e.value), .expanded = false });
+                continue;
+            }
+            var any = false;
+            var it = t.mapEntries(p.links);
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (t.memo_fold_below.get(.{e.value}).? == 1) any = true;
+            }
+            try charge.reserve(gpa, .memo, 1);
+            (try t.memo_fold_below.getOrPut(gpa, .{f.at.int()})).value_ptr.* = @intFromBool(any);
+        }
+        return t.memo_fold_below.get(.{ctx.int()}).? == 1;
+    }
+
+    /// `eqOn(C, R)` on `region` (*The equality*): at every pair of positions
+    /// the walk can reach, neither is a fold, every key based on the region
+    /// has in both no entry or entries of one kind and atom set, and `C`
+    /// links a step exactly when `R` does. Memoised per `(C, R, region)`
+    /// within one `base_epoch`; a pair of equal positions is equal at once,
+    /// and the entry maps are compared per pair of map nodes (`mapsEqOn`).
+    pub fn eqOn(t: *Table, gpa: Allocator, asking: Charge, v: View, c: Kappas, r: Kappas, region: SetId) Error!bool {
+        // The crossing's comparison, a growth task (§4.1).
+        const task = try asking.account.enter(gpa, null);
+        defer asking.account.leave(task);
+        const charge: Charge = .growth(asking.account);
+        if (try t.foldBelow(gpa, charge, c) or try t.foldBelow(gpa, charge, r)) return false;
+        if (c == r) return true;
+        const key: [4]u32 = .{ c.int(), r.int(), region.int(), v.shapes.base_epoch };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_eq.get(key)) |hit| return hit == 1;
+        const out = try t.eqOnWalk(gpa, charge, v, c, r, region);
+        (try t.memo_eq.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        return out;
+    }
+
+    fn eqOnWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, c0: Kappas, r0: Kappas, region: SetId) Error!bool {
+        var stack: std.ArrayList([2]Kappas) = .empty;
+        defer stack.deinit(gpa);
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, .{ c0, r0 });
+        while (stack.pop()) |pr| {
+            const c, const r = pr;
+            if (c == r) continue;
+            try charge.reserve(gpa, .memo, 1);
+            if ((try seen.getOrPut(gpa, .{ c.int(), r.int() })).found_existing) continue;
+            if (t.memo_eq.get(.{ c.int(), r.int(), region.int(), v.shapes.base_epoch })) |hit| {
+                if (hit == 0) return false;
+                continue;
+            }
+            const pc = t.position(c);
+            const pr_ = t.position(r);
+            if (pc.fold != 0 or pr_.fold != 0) return false;
+            if (!try t.mapsEqOn(gpa, charge, v, pc.here, pr_.here, region)) return false;
+            if (!try t.linksEq(gpa, charge, pc.links, pr_.links, &stack)) return false;
+        }
+        return true;
+    }
+
+    /// Two entry maps equal on the keys based on `region`: walked together,
+    /// a shared node equal at once, memoised per pair of map nodes within one
+    /// `base_epoch`; a key one side binds alone, or with another kind or atom
+    /// set, fails only if it is tested. The recursion is the key width.
+    fn mapsEqOn(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
+        if (a == b) return true;
+        const key: [4]u32 = .{ a, b, region.int(), v.shapes.base_epoch };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_map_eq.get(key)) |hit| return hit == 1;
+        const out = try t.mapsEqOnUncached(gpa, charge, v, a, b, region);
+        (try t.memo_map_eq.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        return out;
+    }
+
+    fn mapsEqOnUncached(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
+        try charge.reserve(gpa, .inspection, 1);
+        if (a == Ids.none_int or b == Ids.none_int) {
+            // Every key of the other side is bound on one side alone.
+            var it = t.mapEntries(if (a == Ids.none_int) b else a);
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (try v.shapes.tested(gpa, charge.account, .from(e.key), region)) return false;
+            }
+            return true;
+        }
+        const na = t.mapNode(a);
+        const nb = t.mapNode(b);
+        if (na.mask == 0 and nb.mask == 0 and na.prefix == nb.prefix) {
+            if (na.left == nb.left) return true;
+            if (!try v.shapes.tested(gpa, charge.account, .from(na.prefix), region)) return true;
+            return t.sameCond(gpa, charge, .from(na.left), .from(nb.left));
+        }
+        if (na.mask == 0 or nb.mask == 0) {
+            // One leaf against a map: its key against the map's value there,
+            // every other key of the map bound alone.
+            const leaf = if (na.mask == 0) na else nb;
+            const other = if (na.mask == 0) b else a;
+            var it = t.mapEntries(other);
+            var met = false;
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (e.key == leaf.prefix) {
+                    met = true;
+                    if (e.value == leaf.left) continue;
+                    if (try v.shapes.tested(gpa, charge.account, .from(e.key), region) and !try t.sameCond(gpa, charge, .from(e.value), .from(leaf.left))) return false;
+                    continue;
+                }
+                if (try v.shapes.tested(gpa, charge.account, .from(e.key), region)) return false;
+            }
+            if (!met and try v.shapes.tested(gpa, charge.account, .from(leaf.prefix), region)) return false;
+            return true;
+        }
+        if (na.mask == nb.mask and na.prefix == nb.prefix) return try t.mapsEqOn(gpa, charge, v, na.left, nb.left, region) and try t.mapsEqOn(gpa, charge, v, na.right, nb.right, region);
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
+            const zero = nb.prefix & na.mask == 0;
+            return try t.mapsEqOn(gpa, charge, v, if (zero) na.left else na.right, b, region) and try t.mapsEqOn(gpa, charge, v, if (zero) na.right else na.left, Ids.none_int, region);
+        }
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+            const zero = na.prefix & nb.mask == 0;
+            return try t.mapsEqOn(gpa, charge, v, a, if (zero) nb.left else nb.right, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, if (zero) nb.right else nb.left, region);
+        }
+        return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
+    }
+
+    /// One kind and one atom set (`flat`): what a block and a verdict see.
+    fn sameCond(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!bool {
+        if (a == b) return true;
+        if (fails(a) or fails(b) or a == yes or b == yes) return false;
+        return try t.flat(gpa, charge, a) == try t.flat(gpa, charge, b);
+    }
+
+    /// Two link maps with the same steps, each pair of differing children
+    /// queued for `eqOn`: an extra link is no equality (*The equality*).
+    fn linksEq(t: *Table, gpa: Allocator, charge: Charge, a: u32, b: u32, out: *std.ArrayList([2]Kappas)) Error!bool {
+        if (a == b) return true;
+        var ia = t.mapEntries(a);
+        var ib = t.mapEntries(b);
+        while (true) {
+            try charge.reserve(gpa, .inspection, 1);
+            const x = ia.next();
+            const y = ib.next();
+            if (x == null and y == null) return true;
+            if (x == null or y == null) return false;
+            if (x.?.key != y.?.key) return false;
+            if (x.?.value != y.?.value) try out.append(gpa, .{ .from(x.?.value), .from(y.?.value) });
+        }
     }
 
     /// κ from the cells at the read's position (header), `extra` arrivals
@@ -5448,7 +5931,7 @@ test "#1279 review: κ stored under a chain's middle view survives a read-off's 
     // Read-off: `map` the value, then carry its κ over the map's images.
     const Carry = struct {
         shapes: *Shape.Table,
-        fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
+        fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
             const c: *@This() = @ptrCast(@alignCast(ctx));
             return c.shapes.memo_map.get(x);
         }

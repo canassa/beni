@@ -1083,11 +1083,17 @@ const Grafter = struct {
         return g.env.shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, copy);
     }
 
-    /// A view's leaf image (§2.11): each parameter cell re-rooted at the
-    /// actual there (`argAt`, a recast when approximate), the other cells
-    /// mapped into one leaf, the parts joined raw. Escapes are `apply`'s, made
-    /// once per call from the class.
+    /// A view's leaf image (§2.11): a re-root template (one exact parameter
+    /// cell) answers the actual there (`argAt`); otherwise each parameter
+    /// part is a re-root view over an interned one-cell leaf (a recast when
+    /// approximate), so that every re-rooted actual is reached through one
+    /// (*κ across a call*), the other cells mapped into one leaf, the parts
+    /// joined raw. Escapes are `apply`'s, made once per call from the class.
     fn viewLeaf(g: *Grafter, members: *std.ArrayList(NodeId), at: PlaceId, cells: SetId) Error!NodeId {
+        if (rerootCell(g.env.cells, cells)) |cell| {
+            const x = g.env.cells.get(cell);
+            return g.argAt(x.a, .from(x.b), at);
+        }
         const first = members.items.len;
         defer members.shrinkRetainingCapacity(first);
         var rest: SetId = .none;
@@ -1096,8 +1102,8 @@ const Grafter = struct {
             try g.env.charge.reserve(g.gpa(), .inspection, 1);
             const cell: CellId = .from(e.key);
             if (g.env.cells.origin(cell) == .param) {
-                const x = g.env.cells.get(cell);
-                var n = try g.argAt(x.a, .from(x.b), at);
+                const one = try g.env.shapes.leaf(g.gpa(), g.account(), at, try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, cell.int(), 0));
+                var n = try g.env.shapes.view(g.gpa(), g.account(), one, g.view_env);
                 if (e.value == 1) n = try g.env.shapes.recast(g.gpa(), g.account(), at, n);
                 try members.append(g.gpa(), n);
                 continue;
@@ -1196,6 +1202,17 @@ const Grafter = struct {
     }
 };
 
+/// A cell set's one exact parameter cell, null when it is anything else:
+/// the template of a re-root view (§2.11 *κ across a call*).
+fn rerootCell(cellt: *const Cell.Table, cells: SetId) ?CellId {
+    if (cells == .none or cells == Shape.Table.lazy_cells) return null;
+    var it = cellt.sets.iterate(cells);
+    const e = it.next() orelse return null;
+    if (it.next() != null or e.value != 0) return null;
+    const c: CellId = .from(e.key);
+    return if (cellt.origin(c) == .param) c else null;
+}
+
 /// The environments of the views calls answer (§2.11 *Representation of a
 /// view*): per call its class, its actuals and its invocation label, kept
 /// as long as the module's tables, which hold the views. The table's
@@ -1221,7 +1238,7 @@ pub const Views = struct {
 
     /// Set on `v.shapes` once, before the first call.
     pub fn instantiation(v: *Views) Shape.Table.Instantiation {
-        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage };
+        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage, .reroot = rerootImage };
     }
 
     /// One call's environment.
@@ -1241,7 +1258,7 @@ pub const Views = struct {
     fn grafter(v: *Views, gpa_: Allocator, account_: *Ids.Account, e: u32, s: *Scratch) Grafter {
         const x = v.envs.items[e];
         const env: Env = .{ .gpa = gpa_, .charge = .growth(account_), .places = v.places, .cells = v.cells, .shapes = v.shapes, .conds = v.conds };
-        return .{ .env = env, .sums = v.sums, .args = v.args.items[x.args.start..][0..x.args.len], .label = x.label, .s = s };
+        return .{ .env = env, .sums = v.sums, .args = v.args.items[x.args.start..][0..x.args.len], .label = x.label, .s = s, .view_env = e };
     }
 
     fn leafImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!NodeId {
@@ -1256,6 +1273,19 @@ pub const Views = struct {
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
         return g.imageCells(s, at);
+    }
+
+    /// The snapshot position a re-root view reads its actual at (§2.11 *κ
+    /// across a call*, `R = argKappa(E, i, q)`), null for a view that is no
+    /// re-root view: its template a leaf of one exact parameter cell.
+    fn rerootImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!?Ids.KappaId {
+        const v = of(ctx);
+        if (t.kind(template) != .leaf) return null;
+        const cell = rerootCell(v.cells, t.cells(template)) orelse return null;
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, account_, e, &none);
+        const x = v.cells.get(cell);
+        return try g.argKappa(x.a, .from(x.b));
     }
 
     fn reachImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, c: CellId, approx: u1) Error!SetId {
@@ -1496,6 +1526,9 @@ fn deepCall() !void {
     defer conds.deinit(gpa);
     var sums: Summary.Table = .{};
     defer sums.deinit(gpa);
+    var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
+    defer views.deinit(gpa);
+    shapes.instantiation = views.instantiation();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1545,6 +1578,9 @@ test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image,
     defer conds.deinit(gpa);
     var sums: Summary.Table = .{};
     defer sums.deinit(gpa);
+    var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
+    defer views.deinit(gpa);
+    shapes.instantiation = views.instantiation();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1590,6 +1626,9 @@ test "#1143: a back edge onto a union's side is grafted once the knot is tied" {
     defer conds.deinit(gpa);
     var sums: Summary.Table = .{};
     defer sums.deinit(gpa);
+    var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
+    defer views.deinit(gpa);
+    shapes.instantiation = views.instantiation();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1636,6 +1675,7 @@ const KnotFixture = struct {
     conds: Cond.Table = undefined,
     sums: Summary.Table = .{},
     graph: TestGraph = undefined,
+    views: Views = undefined,
     t_place: PlaceId = .none,
     list: PlaceId = .none,
     arg: Step = undefined,
@@ -1644,6 +1684,8 @@ const KnotFixture = struct {
         const gpa = testing.allocator;
         x.conds = try Cond.Table.init(gpa, .growth(&x.account));
         x.graph = .{ .table = &x.places, .account = &x.account, .gpa = gpa };
+        x.views = .{ .places = &x.places, .cells = &x.cells, .shapes = &x.shapes, .conds = &x.conds, .sums = &x.sums };
+        x.shapes.instantiation = x.views.instantiation();
         const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
         x.t_place = try x.places.of(gpa, &x.account, src, 0);
         x.list = try x.places.of(gpa, &x.account, src, 1);
@@ -1653,6 +1695,7 @@ const KnotFixture = struct {
     fn deinit(x: *KnotFixture) void {
         const gpa = testing.allocator;
         x.sums.deinit(gpa);
+        x.views.deinit(gpa);
         x.conds.deinit(gpa);
         x.account.deinit(gpa);
         x.shapes.deinit(gpa);
@@ -2735,11 +2778,12 @@ test "a call's argument that is a view folds its preimage as its eager image doe
         const xs = try bList(&x, 4, &.{try bOf(&x, k, try bList(&x, 5, &.{}))});
         const empty = try bList(&x, 6, &.{});
         const p = try x.shapes.leaf(gpa, &x.account, LB, try x.cells.sets.insert(gpa, .growth(&x.account), .none, (try x.cells.symbolic(gpa, &x.account, &x.places, .param, 3, try x.places.rootPath(gpa, LB), 0)).int(), 0));
-        var ti: Shape.TestInstantiation = .{ .cellt = &x.cells, .arg = xs };
-        x.shapes.instantiation = ti.inst();
+        // The view's environment: parameter 3 is `xs`.
+        const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+        const env_id = try x.views.add(x.env(), .from(0), &.{ .{}, .{}, .{}, .{ .node = xs } }, label);
         const template = try bOf(&x, p, if (probe == 0) p else empty);
         const eager = try bOf(&x, xs, if (probe == 0) xs else empty);
-        const v = try x.shapes.view(gpa, &x.account, template, 0);
+        const v = try x.shapes.view(gpa, &x.account, template, env_id);
         const steps = [_]Step{ b0, e, b0 };
         const want = try foldProbe(&x, B, &steps, eager);
         try testing.expectEqual(if (probe == 0) Cond.lost else Cond.yes, want);

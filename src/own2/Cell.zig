@@ -610,6 +610,9 @@ pub const RadixNode = struct {
 
 pub const Radix = struct {
     nodes: std.MultiArrayList(RadixNode) = .empty,
+    /// What a node is reserved as: a cell set's `set`, a node set's (the
+    /// crossing's `region` and `bases`) `memo`. Instrumentation only.
+    category: Ids.Category = .set,
     /// Hash-consing: equal contents have one canonical structure, and with
     /// every node interned by `(prefix, mask, left, right)` they have one
     /// id too.
@@ -630,7 +633,7 @@ pub const Radix = struct {
     /// its logical entry even when the physical node exists already, so
     /// what a request costs never depends on which owner built the node).
     fn make(r: *Radix, gpa: Allocator, charge: Charge, n: RadixNode) Error!SetId {
-        try charge.reserve(gpa, .set, 1);
+        try charge.reserve(gpa, r.category, 1);
         const got = try r.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
         const id: SetId = .from(@intCast(r.nodes.len));
@@ -796,6 +799,68 @@ pub const Radix = struct {
             return r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = nb.left, .right = rt });
         }
         return r.join(gpa, charge, na.prefix, a, nb.prefix, b);
+    }
+
+    /// `unionWith`, memoised per pair of set nodes at every level (§2.11 *κ
+    /// across a call*, `region`): two sets built over earlier ones meet, below
+    /// their changed spines, the pairs an earlier union met, and take them
+    /// from `memo`. A memo record per pair met; the recursion is the key
+    /// width, 33 frames.
+    pub fn unionMemo(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(2), a: SetId, b: SetId) Error!SetId {
+        if (a == .none) return b;
+        if (b == .none) return a;
+        if (a == b) return a;
+        const key: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(key)) |hit| return .from(hit);
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        const out: SetId = blk: {
+            if (na.mask == 0 or nb.mask == 0) break :blk try r.unionWith(gpa, charge, a, b);
+            if (na.mask == nb.mask and na.prefix == nb.prefix) {
+                const l = try r.unionMemo(gpa, charge, memo, na.left, nb.left);
+                const rt = try r.unionMemo(gpa, charge, memo, na.right, nb.right);
+                if (l == na.left and rt == na.right) break :blk a;
+                if (l == nb.left and rt == nb.right) break :blk b;
+                break :blk try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = rt });
+            }
+            if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
+                if (zeroBit(nb.prefix, na.mask)) {
+                    const l = try r.unionMemo(gpa, charge, memo, na.left, b);
+                    break :blk if (l == na.left) a else try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = na.right });
+                }
+                const rt = try r.unionMemo(gpa, charge, memo, na.right, b);
+                break :blk if (rt == na.right) a else try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = na.left, .right = rt });
+            }
+            if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+                if (zeroBit(na.prefix, nb.mask)) {
+                    const l = try r.unionMemo(gpa, charge, memo, a, nb.left);
+                    break :blk if (l == nb.left) b else try r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = l, .right = nb.right });
+                }
+                const rt = try r.unionMemo(gpa, charge, memo, a, nb.right);
+                break :blk if (rt == nb.right) b else try r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = nb.left, .right = rt });
+            }
+            break :blk try r.join(gpa, charge, na.prefix, a, nb.prefix, b);
+        };
+        (try memo.getOrPut(gpa, key)).value_ptr.* = out.int();
+        return out;
+    }
+
+    /// Whether `a` and `b` share a key: a walk of the structure they have in
+    /// common, a record per node pair; the recursion is the key width.
+    pub fn intersects(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!bool {
+        if (a == .none or b == .none) return false;
+        if (a == b) return true;
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return r.member(a, nb.prefix);
+        if (na.mask == nb.mask and na.prefix == nb.prefix) return try r.intersects(gpa, charge, na.left, nb.left) or try r.intersects(gpa, charge, na.right, nb.right);
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) return r.intersects(gpa, charge, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) return r.intersects(gpa, charge, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+        return false;
     }
 
     /// `a ⊑ b`: every key of `a` is in `b` with a bit no larger (exact is
