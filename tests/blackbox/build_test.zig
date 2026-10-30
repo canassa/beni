@@ -8899,6 +8899,59 @@ test "the checker v2's escape queries are charged and indexed, never an uncharge
     try testing.expect(mixed < 48 * 48 / 4);
 }
 
+/// `g`'s `n` bound lists `xᵢ = [ i ]` and the list of them, the dump's
+/// `total` of `g`'s account line: every record the checker v2 charged.
+fn boundListsTotal(n: u32) !u64 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub g : ⊤ → List (List Int)\ng ⊤ =\n");
+    for (0..n) |i| try src.print(a, "    x{d} = [ {d} ]\n", .{ i, i });
+    try src.appendSlice(a, "    [ ");
+    for (0..n) |i| try src.print(a, "{s}x{d}", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " ]\n");
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked g") == null);
+    return accountField(dump.stdout, "g", "total");
+}
+
+test "the checker v2 walks a list of bound lists in time linear in their count" {
+    // #1273 (§4.1): the list's element is a recast of each bound list, all
+    // at one place. The join walked one entry per inner, each projecting
+    // every member through every member's own inners: n² projections, 3.6×
+    // the work at twice the lists. One run per place, each inner's node kept.
+    const t100 = try boundListsTotal(100);
+    const t200 = try boundListsTotal(200);
+    // Linear, with headroom: at most 2.3× (measured 2.1× once fixed).
+    try testing.expect(t200 * 10 <= t100 * 23);
+}
+
+test "the checker v2 stores a joined position's κ under each inner's own node" {
+    // #1273 (§4.1): one run per place below a recast's inners, but the κ
+    // each inner's child carries stays under that child's node, the id a
+    // read through `Shape.proj` looks up; under one joined node the block
+    // lost two `shared` entries (1 756 → 1 624 bytes). Pinned byte for byte.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub w2 : List (List Int) → List (List (List Int))
+        \\w2 xss =
+        \\    a = [ [ 1 ] ]
+        \\    x0 = [ …a, …xss ]
+        \\    x1 = [ …xss, …a ]
+        \\    x2 = [ …a, …a ]
+        \\    [ x0, x1, x2 ]
+        \\
+    );
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1756 bytes, hash e63ec028a3fa3b88\n") != null);
+}
+
 test "the checker v2 refuses every write after the escapes in the same branch" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -9578,22 +9631,22 @@ test "the checker v2 says why a summary is not printed" {
     // └─────────────────────────────────────────┘
     // #1182: the summary print reads the class on the declaration's account,
     // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing. A 214-field
-    // record of records re-read 15 times checks at growth 65 276, and its
-    // print passes 65 536: the dump says so.
+    // that error, and the `summary` line was simply missing. A 179-field
+    // record of 11-field records re-read 15 times checks at growth 65 353,
+    // and its print passes 65 536: the dump says so.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
     try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
+    for (1..11) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
     try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..214) |i| try src.print(a, "\n    , r{d} : S", .{i});
+    for (1..179) |i| try src.print(a, "\n    , r{d} : S", .{i});
     try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
+    for (1..11) |i| try src.print(a, ", s{d} = xs", .{i});
     try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..214) |i| try src.print(a, ", r{d} = s", .{i});
+    for (1..179) |i| try src.print(a, ", r{d} = s", .{i});
     try src.appendSlice(a, " }\n    [ r");
     for (1..15) |_| try src.appendSlice(a, ", r");
     try src.appendSlice(a, " ]\n");
@@ -9615,7 +9668,7 @@ test "the checker v2 says why a summary is not printed" {
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
 /// cold growth about 62 700 of 65 536), after another (`g`) or before it:
 /// its dump in that order (#1104). Its growth is a genuine product, a
-/// 210-field record of records re-read at 15 positions: source-shaped work
+/// 222-field record of records re-read at 15 positions: source-shaped work
 /// spends the source continuation, never the allowance (§4.1, #1188).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
@@ -9624,11 +9677,11 @@ fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     try h.appendSlice(a, "type alias S =\n    { s0 : List Int");
     for (1..10) |i| try h.print(a, "\n    , s{d} : List Int", .{i});
     try h.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..210) |i| try h.print(a, "\n    , r{d} : S", .{i});
+    for (1..222) |i| try h.print(a, "\n    , r{d} : S", .{i});
     try h.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
     for (1..10) |i| try h.print(a, ", s{d} = xs", .{i});
     try h.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..210) |i| try h.print(a, ", r{d} = s", .{i});
+    for (1..222) |i| try h.print(a, ", r{d} = s", .{i});
     try h.appendSlice(a, " }\n    [ r");
     for (1..15) |_| try h.appendSlice(a, ", r");
     try h.appendSlice(a, " ]\n");

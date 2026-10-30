@@ -2030,39 +2030,81 @@ pub const Table = struct {
     pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, via: NodeId = .none };
 
     pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, out: *std.ArrayList(Next)) Error!void {
-        try t.steps(gpa, charge, v, n, summary, cursors, .none, out);
+        var cs: CursorSteps = .{};
+        defer cs.deinit(gpa);
+        try t.cursorSteps(gpa, charge, cursors, &cs);
+        try t.frontierWith(gpa, charge, v, n, summary, &cs, out);
+    }
+
+    /// `frontier` against cursors read already: a frame reading several
+    /// nodes against one run reads its cursors once (#1273).
+    fn frontierWith(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cs: *const CursorSteps, out: *std.ArrayList(Next)) Error!void {
+        try t.steps(gpa, charge, v, n, summary, cs, .none, out);
         var inners: std.ArrayList(NodeId) = .empty;
         defer inners.deinit(gpa);
         try innersOf(gpa, charge, v, n, &inners);
-        for (inners.items) |i| try t.steps(gpa, charge, v, i, summary, cursors, i, out);
+        for (inners.items) |i| try t.steps(gpa, charge, v, i, summary, cs, i, out);
     }
 
-    fn steps(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, via: NodeId, out: *std.ArrayList(Next)) Error!void {
-        var named: std.ArrayList(u32) = .empty;
-        defer named.deinit(gpa);
-        try explicitSteps(gpa, charge, v, n, &named);
-        var cand: std.ArrayList(u32) = .empty;
-        defer cand.deinit(gpa);
-        try cand.appendSlice(gpa, named.items);
-        // A fold's links are the steps it saw (sparse below it too), a step
-        // once: a wide run's cursors name the same few steps, so the sort is
-        // over the distinct ones (#1139).
+    /// What a frontier reads of its cursors, the same for every node read
+    /// against them: the steps their links name, distinct and sorted (a
+    /// fold's links are the steps it saw, sparse below it too; a wide
+    /// run's cursors name the same few steps, #1139), those a cursor has a
+    /// position at, and whether one is a fold (a position at every step).
+    pub const CursorSteps = struct {
+        /// `step word << 1 | linked`, sorted.
+        words: std.ArrayList(u64) = .empty,
+        fold: bool = false,
+
+        pub fn deinit(c: *CursorSteps, gpa: Allocator) void {
+            c.words.deinit(gpa);
+        }
+    };
+
+    fn cursorSteps(t: *Table, gpa: Allocator, charge: Charge, cursors: []const Kappas, out: *CursorSteps) Error!void {
+        out.words.clearRetainingCapacity();
+        out.fold = false;
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
-        for (named.items) |w| _ = try seen.getOrPut(gpa, .{w});
         for (cursors) |c| {
+            if (c != .none and t.position(c).fold != 0) out.fold = true;
             var it = t.kappaLinks(c);
             while (it.next()) |e| {
                 try charge.reserve(gpa, .inspection, 1);
                 const got = try seen.getOrPut(gpa, .{e.step.word()});
-                if (!got.found_existing) try cand.append(gpa, e.step.word());
+                if (!got.found_existing) {
+                    got.value_ptr.* = @intCast(out.words.items.len);
+                    try out.words.append(gpa, @as(u64, e.step.word()) << 1);
+                }
+                if (t.kappaChild(c, e.step) != .none) out.words.items[got.value_ptr.*] |= 1;
             }
         }
-        try charge.reserve(gpa, .inspection, sortCost(cand.items.len) + sortCost(named.items.len));
-        std.mem.sort(u32, cand.items, {}, std.sort.asc(u32));
+        try charge.reserve(gpa, .inspection, sortCost(out.words.items.len));
+        std.mem.sort(u64, out.words.items, {}, std.sort.asc(u64));
+    }
+
+    fn steps(_: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cs: *const CursorSteps, via: NodeId, out: *std.ArrayList(Next)) Error!void {
+        var named: std.ArrayList(u32) = .empty;
+        defer named.deinit(gpa);
+        try explicitSteps(gpa, charge, v, n, &named);
+        try charge.reserve(gpa, .inspection, sortCost(named.items.len));
         std.mem.sort(u32, named.items, {}, std.sort.asc(u32));
+        // The named steps and the cursors' merged, each once, in order;
+        // each is charged below as it is read.
+        var a: usize = 0;
+        var b: usize = 0;
         var last: ?u32 = null;
-        for (cand.items) |w| {
+        while (a < named.items.len or b < cs.words.items.len) {
+            const wb: ?u32 = if (b < cs.words.items.len) @intCast(cs.words.items[b] >> 1) else null;
+            const take_named = a < named.items.len and (wb == null or named.items[a] <= wb.?);
+            const w = if (take_named) named.items[a] else wb.?;
+            const explicit_here = take_named;
+            var linked = cs.fold;
+            if (take_named) a += 1;
+            if (wb != null and wb.? == w) {
+                linked = linked or cs.words.items[b] & 1 == 1;
+                b += 1;
+            }
             if (last != null and last.? == w) continue;
             last = w;
             try charge.reserve(gpa, .inspection, 1);
@@ -2070,13 +2112,7 @@ pub const Table = struct {
             const c = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, n, s)) orelse continue;
             // Through a recast's inner only what a snapshot stores is more:
             // an unstored inner adds nothing to the recast's derived read.
-            const explicit = via == .none and std.sort.binarySearch(u32, named.items, w, struct {
-                fn order(x: u32, y: u32) std.math.Order {
-                    return std.math.order(x, y);
-                }
-            }.order) != null;
-            var linked = false;
-            for (cursors) |cur| linked = linked or t.kappaChild(cur, s) != .none;
+            const explicit = via == .none and explicit_here;
             const empty = v.shapes.kind(c) == .leaf and v.shapes.cells(c) == .none;
             if (!linked and (!explicit or empty)) continue;
             try out.append(gpa, .{ .node = c, .summary = summary or below(s), .step = w, .explicit = explicit, .via = via });
@@ -2183,12 +2219,21 @@ pub const Table = struct {
         defer runs.deinit(gpa);
         var run_ctxs: std.ArrayList(Kappas) = .empty;
         defer run_ctxs.deinit(gpa);
-        // `route`: the joined nodes on the way to this frame, each with its
+        // A frame is a run of members and the joined nodes read against it,
+        // each a `Rec` with its own output position and route (#1273): the
+        // entries one step below a recast's inners at one place project
+        // every member alike (`side` reads the place, not the inner), so
+        // they share one run, while each inner's child keeps its own node,
+        // the key its κ is stored under (`Shape.proj` reaches it so).
+        // `route`: the joined nodes on the way to this node, each with its
         // output position (a persistent map node → path).
         // `clean`: every joined node on the way, this one included, has a
         // finite rank of at least 1, so nothing below can fold back onto
         // the way: the walk from here is a function of the state alone.
-        const Frame = struct { node: NodeId, first: u32, len: u32, summary: bool, msummary: bool, path: u32, folded: bool, route: u32, clean: bool };
+        const Rec = struct { node: NodeId, path: u32, folded: bool, route: u32, clean: bool };
+        var recs: std.ArrayList(Rec) = .empty;
+        defer recs.deinit(gpa);
+        const Frame = struct { rfirst: u32, rlen: u32, first: u32, len: u32, summary: bool, msummary: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try runs.appendSlice(gpa, members);
@@ -2221,7 +2266,8 @@ pub const Table = struct {
         var linked: std.ArrayList(Linked) = .empty;
         defer linked.deinit(gpa);
         const root_route = try t.mapPut(gpa, charge, Ids.none_int, joined.int(), 0);
-        try stack.append(gpa, .{ .node = joined, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary, .path = 0, .folded = false, .route = root_route, .clean = traversal == null and try memoRank(gpa, charge, v, joined) });
+        try recs.append(gpa, .{ .node = joined, .path = 0, .folded = false, .route = root_route, .clean = traversal == null and try memoRank(gpa, charge, v, joined) });
+        try stack.append(gpa, .{ .rfirst = 0, .rlen = 1, .first = 0, .len = @intCast(members.len), .summary = at_summary, .msummary = member_summary });
         // Exact states: a run interned as a cons list of `(member, position)`
         // pairs (`prop_runs`, across calls), the state `(node, class, run,
         // output position)`.
@@ -2231,6 +2277,22 @@ pub const Table = struct {
         defer items.deinit(gpa);
         var next: std.ArrayList(Next) = .empty;
         defer next.deinit(gpa);
+        // A frame's children: each node's frontier entries, grouped by what
+        // the members are projected along — the step, and the place of the
+        // inner it leaves from (`side`) — so each group projects the run once.
+        const Pend = struct { group: u32, rec: u32, e: Next };
+        var pend: std.ArrayList(Pend) = .empty;
+        defer pend.deinit(gpa);
+        var group_of: Ids.FixedDict(3) = .{};
+        defer group_of.deinit(gpa);
+        var group_count: std.ArrayList(u32) = .empty;
+        defer group_count.deinit(gpa);
+        var group_head: std.ArrayList(Next) = .empty;
+        defer group_head.deinit(gpa);
+        var order: std.ArrayList(u32) = .empty;
+        defer order.deinit(gpa);
+        var cursor_steps: CursorSteps = .{};
+        defer cursor_steps.deinit(gpa);
         while (stack.pop()) |f| {
             var run: u32 = Ids.none_int;
             var r = f.len;
@@ -2241,165 +2303,221 @@ pub const Table = struct {
                 if (!got.found_existing) got.value_ptr.* = got.index;
                 run = got.value_ptr.*;
             }
-            try charge.reserve(gpa, .memo, 1);
-            const state = try visited.getOrPut(gpa, .{ f.node.int(), @as(u32, @intFromBool(f.summary)) | @as(u32, @intFromBool(f.msummary)) << 1, run, f.path });
-            if (state.found_existing) continue;
-            state.value_ptr.* = 1;
-            path_states.items[f.path] += 1;
-            try t.traced(gpa, f.node, f.summary);
-            // One alternative, or alternatives all one member at its own
-            // node: the position IS that member's, a link (§2.9, #1112) —
-            // nothing below is walked, nothing is written.
-            // An alternative that is nothing (an empty leaf with nothing
-            // stored) adds nothing to a join, so it does not count.
-            // Together, an empty member is no object either, but two equal
-            // members are two positions, never one.
-            if (f.len > 0) {
-                var m0: NodeId = .none;
-                var c0: Kappas = .none;
-                var one = true;
-                for (0..f.len) |i| {
-                    const m = runs.items[f.first + i];
-                    const c = run_ctxs.items[f.first + i];
-                    if (c == .none and nothingAt(v, m)) continue;
-                    if (m0 == .none) {
-                        m0 = m;
-                        c0 = c;
-                    } else one = one and mode == .alternatives and m == m0 and c == c0;
+            // What the run alone decides, once per frame: its one member
+            // (the link test's), and κ from the members, apart from whether
+            // the node is the call's root.
+            var m0: NodeId = .none;
+            var c0: Kappas = .none;
+            var one_run = true;
+            for (0..f.len) |i| {
+                const m = runs.items[f.first + i];
+                const c = run_ctxs.items[f.first + i];
+                if (c == .none and nothingAt(v, m)) continue;
+                if (m0 == .none) {
+                    m0 = m;
+                    c0 = c;
+                } else one_run = one_run and mode == .alternatives and m == m0 and c == c0;
+            }
+            var k_run: [2]?CondId = .{ null, null };
+            var cursors_read = false;
+            pend.clearRetainingCapacity();
+            group_of.clearRetainingCapacity();
+            group_count.clearRetainingCapacity();
+            group_head.clearRetainingCapacity();
+            for (f.rfirst..f.rfirst + f.rlen) |ri| {
+                const rec = recs.items[ri];
+                try charge.reserve(gpa, .memo, 1);
+                const state = try visited.getOrPut(gpa, .{ rec.node.int(), @as(u32, @intFromBool(f.summary)) | @as(u32, @intFromBool(f.msummary)) << 1, run, rec.path });
+                if (state.found_existing) continue;
+                state.value_ptr.* = 1;
+                path_states.items[rec.path] += 1;
+                try t.traced(gpa, rec.node, f.summary);
+                // One alternative, or alternatives all one member at its own
+                // node: the position IS that member's, a link (§2.9, #1112) —
+                // nothing below is walked, nothing is written.
+                // An alternative that is nothing (an empty leaf with nothing
+                // stored) adds nothing to a join, so it does not count.
+                // Together, an empty member is no object either, but two equal
+                // members are two positions, never one.
+                if (f.len > 0) {
+                    const one = one_run and m0 != .none and (rec.node == m0 or try joinOfOne(gpa, charge, v, rec.node, m0, if (mode == .alternatives) .@"union" else .positions));
+                    if (one) {
+                        try charge.reserve(gpa, .inspection, 1);
+                        try linked.append(gpa, .{ .path = rec.path, .at = c0 });
+                        // A literal's one element at its `[*]` itself: the objects it
+                        // holds at any path below are compared there (§2.9), over
+                        // those construction does not make apart (`arrivals`).
+                        if (mode == .together and rec.node == joined) {
+                            var k1 = try t.kappaOf(gpa, charge, v, c0, m0, f.msummary);
+                            k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m0))));
+                            if (traversal == null) {
+                                // Its reach's aggregate, extended from its parts' (#1121).
+                                k1 = try t.@"and"(gpa, charge, k1, try t.aggCond(gpa, charge, v.cells, v.places, try t.reachAgg(gpa, charge, v, m0)));
+                            } else {
+                                items.clearRetainingCapacity();
+                                var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
+                                while (it.next()) |e| {
+                                    try charge.reserve(gpa, .inspection, 1);
+                                    try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+                                }
+                                k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
+                            }
+                            try outs.append(gpa, .{ .path = rec.path, .node = rec.node, .k = k1 });
+                        }
+                        continue;
+                    }
                 }
-                one = one and m0 != .none and (f.node == m0 or try joinOfOne(gpa, charge, v, f.node, m0, if (mode == .alternatives) .@"union" else .positions));
-                if (one) {
-                    try charge.reserve(gpa, .inspection, 1);
-                    try linked.append(gpa, .{ .path = f.path, .at = c0 });
-                    // A literal's one element at its `[*]` itself: the objects it
-                    // holds at any path below are compared there (§2.9), over
-                    // those construction does not make apart (`arrivals`).
-                    if (mode == .together and f.node == joined) {
-                        var k1 = try t.kappaOf(gpa, charge, v, c0, m0, f.msummary);
-                        k1 = try t.@"and"(gpa, charge, k1, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m0))));
-                        if (traversal == null) {
-                            // Its reach's aggregate, extended from its parts' (#1121).
-                            k1 = try t.@"and"(gpa, charge, k1, try t.aggCond(gpa, charge, v.cells, v.places, try t.reachAgg(gpa, charge, v, m0)));
-                        } else {
-                            items.clearRetainingCapacity();
-                            var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
+                // A clean state met before, in this call or another: its walk
+                // is the same, so its position is the snapshot that walk made,
+                // linked as it is (§2.9, *The join memo*).
+                if (rec.clean) {
+                    const key: [3]u32 = .{ rec.node.int(), stateBits(f.summary, f.msummary, mode, rec.node == joined), run };
+                    try charge.reserve(gpa, .memo, 1);
+                    if (t.memo_prop.get(key)) |hit| {
+                        try linked.append(gpa, .{ .path = rec.path, .at = .from(hit) });
+                        continue;
+                    }
+                    try candidates.append(gpa, .{ .key = key, .path = rec.path });
+                }
+                const root = rec.node == joined;
+                const kr = k_run[@intFromBool(root)] orelse kr: {
+                    var k: CondId = yes;
+                    items.clearRetainingCapacity();
+                    // At the joined node, the members' reaches as one multiset of
+                    // aggregates, each extended from its parts' (#1121).
+                    const by_agg = mode == .together and root and traversal == null;
+                    var together: Agg = .{};
+                    for (0..f.len) |i| {
+                        const m = runs.items[f.first + i];
+                        const c = run_ctxs.items[f.first + i];
+                        const km = try t.kappaOf(gpa, charge, v, c, m, f.msummary);
+                        k = if (mode == .alternatives) try t.join(gpa, charge, k, km) else try t.@"and"(gpa, charge, k, km);
+                        if (mode == .together) {
+                            k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m))));
+                            // At the position itself every object a member holds
+                            // anywhere below counts (I-κ: one object at two
+                            // positions, at whatever paths, is shared — the
+                            // `[ (a, b), (b, a) ]` twin); below it, the path's own.
+                            if (by_agg) {
+                                together = try t.aggMerge(gpa, charge, v.cells, v.places, together, try t.reachAgg(gpa, charge, v, m), true);
+                                continue;
+                            }
+                            const set = if (root) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m));
+                            var it = v.cells.sets.iterate(set);
                             while (it.next()) |e| {
                                 try charge.reserve(gpa, .inspection, 1);
                                 try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
                             }
-                            k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
                         }
-                        try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k1 });
                     }
-                    continue;
-                }
-            }
-            // A clean state met before, in this call or another: its walk
-            // is the same, so its position is the snapshot that walk made,
-            // linked as it is (§2.9, *The join memo*).
-            if (f.clean) {
-                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined), run };
-                try charge.reserve(gpa, .memo, 1);
-                if (t.memo_prop.get(key)) |hit| {
-                    try linked.append(gpa, .{ .path = f.path, .at = .from(hit) });
-                    continue;
-                }
-                try candidates.append(gpa, .{ .key = key, .path = f.path });
-            }
-            var k: CondId = yes;
-            items.clearRetainingCapacity();
-            // At the joined node, the members' reaches as one multiset of
-            // aggregates, each extended from its parts' (#1121).
-            const by_agg = mode == .together and f.node == joined and traversal == null;
-            var together: Agg = .{};
-            for (0..f.len) |i| {
-                const m = runs.items[f.first + i];
-                const c = run_ctxs.items[f.first + i];
-                const km = try t.kappaOf(gpa, charge, v, c, m, f.msummary);
-                k = if (mode == .alternatives) try t.join(gpa, charge, k, km) else try t.@"and"(gpa, charge, k, km);
-                if (mode == .together) {
-                    k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m))));
-                    // At the position itself every object a member holds
-                    // anywhere below counts (I-κ: one object at two
-                    // positions, at whatever paths, is shared — the
-                    // `[ (a, b), (b, a) ]` twin); below it, the path's own.
                     if (by_agg) {
-                        together = try t.aggMerge(gpa, charge, v.cells, v.places, together, try t.reachAgg(gpa, charge, v, m), true);
-                        continue;
+                        k = try t.@"and"(gpa, charge, k, try t.aggCond(gpa, charge, v.cells, v.places, together));
+                    } else if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
+                    if (mode == .alternatives and f.len == 0) k = lost;
+                    k_run[@intFromBool(root)] = k;
+                    break :kr k;
+                };
+                // The repeats of a class `widen` opened a collection into are stored,
+                // so the block carries them (§2.3, #1120).
+                // A folded class's obligation, stored so the block carries it: the
+                // class image's own, or its sides' where it rides in a union.
+                const k = try t.@"and"(gpa, charge, kr, try t.foldCondOf(gpa, charge, v, rec.node));
+                // A leaf's read is the stored ⊔ the derivation, so a κ no
+                // stronger than the derivation stores nothing: what a reader
+                // derives there is the same before and after the join.
+                // (Against the read without its fold obligation, so the snapshot
+                // stores the obligation itself, #1128.)
+                const redundant = v.shapes.kind(rec.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, rec.node, f.summary));
+                if (!redundant) {
+                    try charge.reserve(gpa, .inspection, 1);
+                    try outs.append(gpa, .{ .path = rec.path, .node = rec.node, .k = k });
+                }
+                // Children: the node's frontier, each entry in its group.
+                next.clearRetainingCapacity();
+                if (!cursors_read) {
+                    try t.cursorSteps(gpa, charge, run_ctxs.items[f.first..][0..f.len], &cursor_steps);
+                    cursors_read = true;
+                }
+                try t.frontierWith(gpa, charge, v, rec.node, f.summary, &cursor_steps, &next);
+                for (next.items) |e| {
+                    try charge.reserve(gpa, .memo, 1);
+                    const place: u32 = if (e.via == .none) Ids.none_int else v.shapes.place(e.via).int();
+                    const got = try group_of.getOrPut(gpa, .{ e.step, place, @intFromBool(e.summary) });
+                    if (!got.found_existing) {
+                        got.value_ptr.* = @intCast(group_count.items.len);
+                        try group_count.append(gpa, 0);
+                        try group_head.append(gpa, e);
                     }
-                    const set = if (f.node == joined) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m));
-                    var it = v.cells.sets.iterate(set);
-                    while (it.next()) |e| {
-                        try charge.reserve(gpa, .inspection, 1);
-                        try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
-                    }
+                    group_count.items[got.value_ptr.*] += 1;
+                    try pend.append(gpa, .{ .group = got.value_ptr.*, .rec = @intCast(ri), .e = e });
                 }
             }
-            if (by_agg) {
-                k = try t.@"and"(gpa, charge, k, try t.aggCond(gpa, charge, v.cells, v.places, together));
-            } else if (mode == .together) k = try t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, traversal));
-            if (mode == .alternatives and f.len == 0) k = lost;
-            // The repeats of a class `widen` opened a collection into are stored,
-            // so the block carries them (§2.3, #1120).
-            // A folded class's obligation, stored so the block carries it: the
-            // class image's own, or its sides' where it rides in a union.
-            k = try t.@"and"(gpa, charge, k, try t.foldCondOf(gpa, charge, v, f.node));
-            // A leaf's read is the stored ⊔ the derivation, so a κ no
-            // stronger than the derivation stores nothing: what a reader
-            // derives there is the same before and after the join.
-            // (Against the read without its fold obligation, so the snapshot
-            // stores the obligation itself, #1128.)
-            const redundant = v.shapes.kind(f.node) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, f.node, f.summary));
-            if (!redundant) {
-                try charge.reserve(gpa, .inspection, 1);
-                try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
+            // Each group's entries in the order they were met.
+            order.clearRetainingCapacity();
+            try order.resize(gpa, pend.items.len);
+            var acc: u32 = 0;
+            for (group_count.items) |*c| {
+                const n = c.*;
+                c.* = acc;
+                acc += n;
             }
-            // Children: the joined node's frontier, the members projected
-            // along each step of it, each at its position one step below.
-            next.clearRetainingCapacity();
-            try t.frontier(gpa, charge, v, f.node, f.summary, run_ctxs.items[f.first..][0..f.len], &next);
-            for (next.items) |e| {
-                const s = Step.fromWord(e.step);
-                const child = e.node;
+            for (pend.items, 0..) |p, pi| {
+                order.items[group_count.items[p.group]] = @intCast(pi);
+                group_count.items[p.group] += 1;
+            }
+            var start: u32 = 0;
+            for (group_head.items, 0..) |head, gi| {
+                const end = group_count.items[gi];
+                defer start = end;
+                // The members projected along the group's step, once: every
+                // entry of it reads them alike.
+                const s = Step.fromWord(head.step);
                 const first: u32 = @intCast(runs.items.len);
                 for (0..f.len) |i| {
                     try charge.reserve(gpa, .inspection, 1);
                     const m = runs.items[f.first + i];
                     const c = run_ctxs.items[f.first + i];
-                    const sm = (try side(gpa, charge, v, m, e.via)) orelse continue;
+                    const sm = (try side(gpa, charge, v, m, head.via)) orelse continue;
                     const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, sm, s)) orelse continue;
                     try runs.append(gpa, pm);
                     try run_ctxs.append(gpa, t.kappaChild(c, s));
                 }
-                // The child's output position: a fold stays itself; a node
-                // the route has passed folds there (its knot); else one step.
-                var path = f.path;
-                var folded = f.folded;
-                var route = f.route;
-                if (!folded) {
-                    if (t.mapGet(f.route, child.int())) |back| {
-                        path = back;
-                        folded = true;
-                        fold_at.items[back] = true;
-                    } else {
-                        try charge.reserve(gpa, .memo, 1);
-                        const got = try path_index.getOrPut(gpa, .{ f.path, e.step });
-                        if (!got.found_existing) {
-                            got.value_ptr.* = @intCast(paths.items.len);
-                            try paths.append(gpa, .{ .parent = f.path, .step = e.step });
-                            try fold_at.append(gpa, false);
-                            try path_states.append(gpa, 0);
+                const rfirst: u32 = @intCast(recs.items.len);
+                for (order.items[start..end]) |pi| {
+                    const p = pend.items[pi];
+                    const parent = recs.items[p.rec];
+                    const child = p.e.node;
+                    // The child's output position: a fold stays itself; a node
+                    // the route has passed folds there (its knot); else one step.
+                    var path = parent.path;
+                    var folded = parent.folded;
+                    var route = parent.route;
+                    if (!folded) {
+                        if (t.mapGet(parent.route, child.int())) |back| {
+                            path = back;
+                            folded = true;
+                            fold_at.items[back] = true;
+                        } else {
+                            try charge.reserve(gpa, .memo, 1);
+                            const got = try path_index.getOrPut(gpa, .{ parent.path, p.e.step });
+                            if (!got.found_existing) {
+                                got.value_ptr.* = @intCast(paths.items.len);
+                                try paths.append(gpa, .{ .parent = parent.path, .step = p.e.step });
+                                try fold_at.append(gpa, false);
+                                try path_states.append(gpa, 0);
+                            }
+                            path = got.value_ptr.*;
+                            route = try t.mapPut(gpa, charge, parent.route, child.int(), path);
                         }
-                        path = got.value_ptr.*;
-                        route = try t.mapPut(gpa, charge, f.route, child.int(), path);
                     }
+                    // A step taken at a fold is one of the steps it saw.
+                    if (folded) {
+                        try charge.reserve(gpa, .inspection, 1);
+                        try fold_steps.append(gpa, .{ path, p.e.step });
+                    }
+                    try recs.append(gpa, .{ .node = child, .path = path, .folded = folded, .route = route, .clean = parent.clean and !folded and try memoRank(gpa, charge, v, child) });
                 }
-                // A step taken at a fold is one of the steps it saw.
-                if (folded) {
-                    try charge.reserve(gpa, .inspection, 1);
-                    try fold_steps.append(gpa, .{ path, e.step });
-                }
-                try stack.append(gpa, .{ .node = child, .first = first, .len = @intCast(runs.items.len - first), .summary = e.summary, .msummary = f.msummary or below(s), .path = path, .folded = folded, .route = route, .clean = f.clean and !folded and try memoRank(gpa, charge, v, child) });
+                try stack.append(gpa, .{ .rfirst = rfirst, .rlen = @intCast(recs.items.len - rfirst), .first = first, .len = @intCast(runs.items.len - first), .summary = head.summary, .msummary = f.msummary or below(s) });
             }
         }
         // Each output position below a fold is the fold (the highest one on
