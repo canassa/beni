@@ -705,7 +705,8 @@ uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame'
 record pattern or field capture — **hoistable**), `whole` (a scrutinee, a comparison at the root, a store, a
 return, a send, a whole capture at consumption), `call` (an argument: the callee reads it at the paths its class
 `use` names — recorded once as `(local, p, use-node U)` and answered lazily by projecting `U` along the queried
-remainder; **never hoistable**, since the read happens inside the callee: R-4.8.2 bullet 4, R-4.8.7). Uses are
+remainder, a node marked `D` on the way answering for every remainder below it (§2.10); **never hoistable**,
+since the read happens inside the callee: R-4.8.2 bullet 4, R-4.8.7). Uses are
 keyed by **path**, never by place (two fields of one record type share a place).
 
 **The index** (`Liveness.zig`, §3.4a): per `(local, PathId)` the uses sorted by point; each use is stored once at its own path.
@@ -739,7 +740,7 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 
 | Query | Lists | Answer |
 |---|---|---|
-| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`; a `call` use non-empty only at untouched fields is no use |
+| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it); a `call` use non-empty only at untouched fields is no use |
 | a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**; kind `call`/`whole` → a whole use, refused |
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
@@ -1477,7 +1478,7 @@ A **class** describes a function type's behaviour (thesis §4.7); a **summary** 
 
 | Field | Content |
 |---|---|
-| `use(i)` | a shape over πᵢ's places labelled `{R, A, E, W}` plus `W`'s field set `F` and deep flag `S`; `unused` where nothing is named |
+| `use(i)` | a shape over πᵢ's places labelled `{R, A, E, W}` plus `W`'s field set `F`, `W`'s deep flag `S` and the deep-read mark `D` (*A deep read across a call*, below); `unused` where nothing is named |
 | `res` | a shape over ρ's places whose cells are provenances `πᵢ·q`, `fresh k`, `esc k`, `shared`, `cb j@λ·q`, `⊤`; `fresh` numbered after solving by canonical result path of first occurrence (two sites at one path may share a number, adding aliasing only; κ is published, not re-derived; inference uses stable allocation/port keys) |
 | `κ` | immutable interpretation of `res` at each selected path, atoms over arrivals (a parameter's own `excl` implicit); supply/use values retain their corresponding snapshots |
 | `xreq` | the atoms the body relied on |
@@ -1557,6 +1558,39 @@ Read-off composes its relabelling and quotient with §2.9's path map, retaining 
 until the aggregate is computed. A cell-numbering memo may share the cell but never discard its second
 route; read-off's shape, κ and published arrival certificate all use that one correspondence (#1122).
 
+**A deep read across a call: the mark `D`** [M 2026-10-30, #1328]. A leaf of marks holds each of its
+marks at every path below it: §2.13.6's deep words (`borrowed a`), `⊤call`, a deep demand's `S`. A caller
+does not copy a callee's leaf into its own class. There, a shallow `W` at the same path would join the leaf
+and become `S` (`Summary.Table.markAt`: marks added under a leaf join it), which v1 never does (v1's
+`π1 RW[storage]` beside a deep read). So a deep read has a mark of its own, `D`: *πᵢ is read at `q` and at
+every path below `q`*. `D` is in a `node`, always with `R`, so the node keeps its children and its other
+marks at their own depth. **`W` never takes `D`**: a shallow `W` beside it stays `W`, and only `S` makes a
+write deep. Read-off writes `{R, D}` at `q` where a `call` use of the argument at `q`, or a callee step below
+it, meets a leaf with marks or a node marked `D` in the callee's use (`Walk.readOff`'s graft). A caller's
+own leaf at or above `q` takes `R` into it, as before. `D` does not replace a leaf that is the class's own
+(a row, `⊤call`, a deep demand). Writing `R` at every canonical path below `q` instead was rejected: it
+costs the size of the place graph per call, and a type-variable place has no paths below it to write. What
+each reader takes from `D`:
+
+- `marksAt(U, q)`: the marks of `U`'s node at `q`, plus `{R, D}` when a node on the way from the root to `q`,
+  `q`'s own included, is marked `D`. This holds also where `U` has no node at `q`.
+- Liveness (§2.7): a `call` use with node `U` counts at a remainder `r` when `U` is non-empty at `r` **or**
+  a node of `U` at a prefix of `r` is marked `D`. So every demand at or below the path sees the read. The
+  holder index's cursor is free below a `D` node, as it is below a non-empty leaf.
+- Callsite demands (§2.11 items 3–4): `D` makes no demand. A `W` beside it is a shallow write's demand, and
+  `S` alone is `consumed`. Item 3 reads a `D` node as it reads any marked node: the actual's whole value
+  there is beside the write when the path is beside it. A `D` above the write, on the write's own path, is
+  a read of the written object. A body that reads it after the write is refused in the callee (condition 5),
+  so rule (a) does not change.
+- Join, `leq`, widening and the normal form treat `D` as they treat the other mark cells, by inclusion.
+- `Summary.print`: `D` prints nothing of its own, so a deep read prints `R`, as v1 prints it
+  (`summary str: π1.x R`). v1's grammar has no letter for a deep read.
+- The block (§3.6): `D` is a `mark` cell with its own `Cell.Mark` value, written and read as the other marks
+  are. The block version is 13.
+
+Fixtures: `ownership/DeepReadAcrossCall` and `ownership/DeepReadAcrossCallImported` (`viaHelper`: v1's
+refusal, in one module and across an import, and the shapes beside it).
+
 **Room for #587.** A class names no declaration and lives in a class table a summary owns; a `closure` place has a
 class slot (§2.1). #587 attaches an inferred class to every function type and copies it through `Instantiate` as
 effect classes are; `Calls` changes only where it looks the class up. An in-place shared cell type is a
@@ -1569,7 +1603,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
 1. **Uses**: an argument `x.p` is used at `(x, p, U = S.use(i))`, kind `call`; a temporary's closures have their
    whole captures used.
 2. **Pending operands** hold the demanded cell only at paths the call touches.
-3. **W**: per `(i, q, W{F}, S?)`, a `callsite` demand on `cellsAt(aᵢ, q)` (Disjoint against every other argument,
+3. **W**: per `(i, q, W{F}, S?)` (`D` never makes a write deep, §2.10), a `callsite` demand on `cellsAt(aᵢ, q)` (Disjoint against every other argument,
    every other path of `aᵢ`, and `S`'s environment cells: R-5.1.5).
    **"Every other path of `aᵢ`"** (as built for S3b, #1016) is every path `q′` of πᵢ that the class marks
    (`R`, `A`, `W` or `E`), read at the actual as every position it stands for (a `⟲` step is every re-entry
@@ -2678,7 +2712,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    `type alias Id a = a`, expanded before deciding; not `List a`) can hold any
    structure at the call, and the callee — a `foreign`, `Js`, or evidence — may read anything inside it. So
    every word there is its deep form: `borrowed a` is `R` at `ε` and at every path below (a leaf of marks,
-   §2.10), and so `A`, `E` and `W` for the words that give them. `Rows.fromWords` reads this from the
+   §2.10), and so `A`, `E` and `W` for the words that give them. A caller of such a callee reads the leaf
+   as `D` at the argument's path (§2.10, *A deep read across a call*), never as a leaf of its own.
+   `Rows.fromWords` reads this from the
    callee's annotation (`Rows.Param.type_variable`), never from the call site's instantiated places, where
    `ε` would end at the instantiated type's root. A word on `List a` keeps its own depth (`List.length`
    reads only `ε`, R-4.3.5). Fixture: `ownership/core/HeldIntoTypeVariable.beni`.
@@ -3221,7 +3257,7 @@ A class is a sub-table of the walk's tables plus:
 
 ```
 Class
-  params   : Range   per parameter a use-shape NodeId; labels are Cell.Origin.mark payloads
+  params   : Range   per parameter a use-shape NodeId; labels are Cell.Origin.mark payloads (R A E W S D, W{f})
   kappa    : KappaId immutable interpretation root for res and corresponding roots on supply/use values
   res      : NodeId
   xreq     : Range   atoms
@@ -3459,6 +3495,10 @@ names its adapter's node, and the parts below it, onto its own graph (§2.1; §8
 3*); a parameterised constructor type named alone, whose arguments the block does not write, keeps the
 block's namespace until S6 writes them (#1317). Decoding still happens in tables of their own first;
 only the commit re-interns.
+
+**The deep-read mark (#1328).** A use shape's mark cells gain `D` (§2.10, *A deep read across a call*), a
+`Cell.Mark` value of its own, written and read as the other marks are. A block of version 12 holds no `D`,
+and a version-12 reader would refuse the value as a malformed mark, so the version is 13.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
