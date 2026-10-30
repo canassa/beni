@@ -1,0 +1,26 @@
+module DeepReadAcrossCall
+  25:9 List.push l: rejected alias: g.x.a holds it and is read at 26:20
+  37:9 List.push l: rejected alias: k.inner.x.a holds it and is read at 38:20
+  44:22 List.push r.y: accepted param
+  51:9 List.push l: rejected alias: g.x.a holds it and is read at 52:5
+  52:5 call DeepReadAcrossCall.readWrite g.y: accepted fresh (DeepReadAcrossCall.readWrite writes π1.y)
+  59:9 List.push l: accepted fresh
+  60:5 call DeepReadAcrossCall.readWrite g.y: accepted fresh (DeepReadAcrossCall.readWrite writes π1.y)
+  71:9 List.push l: rejected alias: t#Rose.1[*]⟨Rose⟩#Rose.0 holds it and is read at 72:20
+  82:22 List.push xss: accepted param
+  88:5 call DeepReadAcrossCall.showPush <literal>: accepted fresh (DeepReadAcrossCall.showPush writes π1)
+  summary str: π1.x R
+  summary viaHelper: unused
+  summary str2: π1.inner R, π1.inner.x R
+  summary viaTwo: unused
+  summary readWrite: π1.x R, π1.y RW[storage]
+  summary besideWrite: unused
+  summary besideWriteFresh: unused
+  summary showRose: π1 R
+  summary recursive: unused
+  summary show: π1 R
+  summary showPush: π1 RW[storage]
+  summary shallowBeside: unused
+  demands 10: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 10: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

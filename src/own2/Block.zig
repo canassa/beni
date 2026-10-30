@@ -103,7 +103,8 @@ pub const magic: u32 = 0x324e574f;
 /// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
 /// 12: the published block's directory names each class's declaration and
 /// whether an importer may apply it (`Ownership.publish`, S3b slice 3).
-pub const version: u32 = 12;
+/// 13: a use shape's marks gain `D`, a deep read (§2.10, #1328).
+pub const version: u32 = 13;
 
 pub const none: u32 = Ids.none_int;
 

@@ -1,0 +1,88 @@
+-- ownership: a callee's deep read crosses a call as the mark `D`
+-- (ownership-v2.md §2.10, *A deep read across a call*, #1328). `str`
+-- reads `r.x` deeply (`Debug.toString`), so its class reads `π1.x` and
+-- every path below it, and a push of a list that `g.x.a` holds, with `g`
+-- read later through `str`, is refused `alias`, as v1 refuses it. The
+-- same through two helpers (`viaTwo`), beside a write at a sibling path
+-- (`readWrite` reads `π1.x` deeply and pushes onto `π1.y`), and of a
+-- recursive type (`showRose` reads a whole rose deeply, so a list three
+-- levels down is read). `besideWriteFresh` holds no `l` in `g`, and is
+-- accepted. `W` never takes `D`: `showPush` reads its list deeply and
+-- pushes onto it, a shallow write, so a list of two equal elements is
+-- accepted, as v1 accepts it.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+str : { x : { a : List Int, b : List Int }, y : List Int } → String
+str r = Debug.toString r.x
+
+
+pub viaHelper : Int → Int
+viaHelper n =
+    l = [ n ]
+    g = { x = { a = l, b = [] }, y = [] }
+    p = List.push l 5
+    String.length (str g) + List.length p
+
+
+str2 : { inner : { x : { a : List Int, b : List Int }, y : List Int }, z : List Int } → String
+str2 k = str k.inner
+
+
+pub viaTwo : Int → Int
+viaTwo n =
+    l = [ n ]
+    k = { inner = { x = { a = l, b = [] }, y = [] }, z = [] }
+    p = List.push l 5
+    String.length (str2 k) + List.length p
+
+
+readWrite : { x : { a : List Int, b : List Int }, y : List Int } → Int
+readWrite r =
+    s = String.length (str r)
+    s + List.length (List.push r.y 1)
+
+
+pub besideWrite : Int → Int
+besideWrite n =
+    l = [ n ]
+    g = { x = { a = l, b = [] }, y = [] }
+    p = List.push l 5
+    readWrite g + List.length p
+
+
+pub besideWriteFresh : Int → Int
+besideWriteFresh n =
+    l = [ n ]
+    g = { x = { a = [ n ], b = [] }, y = [] }
+    p = List.push l 5
+    readWrite g + List.length p
+
+
+showRose : Rose → String
+showRose t = Debug.toString t
+
+
+pub recursive : Int → Int
+recursive n =
+    l = [ n ]
+    t = Rose [] [ Rose [] [ Rose l [] ] ]
+    p = List.push l 5
+    String.length (showRose t) + List.length p
+
+
+show : List (List Int) → String
+show xss = Debug.toString xss
+
+
+showPush : List (List Int) → Int
+showPush xss =
+    s = String.length (show xss)
+    s + List.length (List.push xss [ 1 ])
+
+
+pub shallowBeside : Int → Int
+shallowBeside n =
+    l = [ n ]
+    showPush [ l, l ]

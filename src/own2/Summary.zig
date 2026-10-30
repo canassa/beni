@@ -3,9 +3,10 @@
 //! is a declaration's class. A class names no declaration (#587's room).
 //!
 //! `use(i)` is a shape over πᵢ's places whose cells are `mark`s (`R A E W
-//! S`, `W{f}`): a `node` of marks labels its own path, a LEAF every path
-//! below it (a deep read or write), so §2.7's "`U` non-empty at the
-//! remainder" is one `cellsAt`. `res` is a shape over ρ's places; `kappas`
+//! S D`, `W{f}`): a `node` of marks labels its own path (with `D`, a read,
+//! every path below too), a LEAF every path below it (a deep read or
+//! write), so §2.7's "`U` non-empty at the remainder" is one `cellsAt` or
+//! a `D` on the way. `res` is a shape over ρ's places; `kappas`
 //! is THE CLASS'S OWN κ snapshot over it (nodes are interned, so κ is the
 //! holder's, never the node's, §3.4); `xreq` the flat atom set relied on;
 //! `fun(j)` has `calls`, `need`, `seen`, supplies keyed by LABEL and `k`
@@ -128,7 +129,8 @@ pub const Marks = packed struct(u8) {
     e: bool = false,
     w: bool = false,
     deep: bool = false,
-    _pad: u3 = 0,
+    deep_read: bool = false, // `D` (§2.10): read below too; `w` stays shallow
+    _pad: u2 = 0,
 
     pub fn isEmpty(m: Marks) bool {
         return @as(u8, @bitCast(m)) == 0;
@@ -426,7 +428,7 @@ pub const Table = struct {
     /// The set of mark cells for `m` and the written fields' ranks.
     pub fn marksSet(env: Env, m: Marks, fields: []const u32) Error!SetId {
         var s: SetId = .none;
-        inline for (.{ .{ m.r, Cell.Mark.r }, .{ m.a, Cell.Mark.a }, .{ m.e, Cell.Mark.e }, .{ m.w, Cell.Mark.w }, .{ m.deep, Cell.Mark.deep } }) |pair| {
+        inline for (.{ .{ m.r, Cell.Mark.r }, .{ m.a, Cell.Mark.a }, .{ m.e, Cell.Mark.e }, .{ m.w, Cell.Mark.w }, .{ m.deep, Cell.Mark.deep }, .{ m.deep_read, Cell.Mark.deep_read } }) |pair| {
             if (pair[0]) s = try env.cells.sets.insert(env.gpa, env.charge, s, (try env.cells.mark(env.gpa, env.account(), pair[1], 0)).int(), 0);
         }
         for (fields) |rank| s = try env.cells.sets.insert(env.gpa, env.charge, s, (try env.cells.mark(env.gpa, env.account(), .field, rank)).int(), 0);
@@ -485,15 +487,15 @@ pub const Table = struct {
         return out;
     }
 
-    /// The marks at `steps` of a use shape: the node's own, plus `deep`
-    /// from a leaf on the way (whose marks hold below it). Empty when the
-    /// path is not used. One record per step.
+    /// The marks at `steps` of a use shape (a leaf's hold below it), and `R D`
+    /// past a `D` on the way (§2.10); empty when unused. A record per step.
     pub fn marksAt(env: Env, use: NodeId, steps: []const Step) Error!Marks {
         var at = use;
         var m: Marks = .{};
         if (at == .none) return m;
         for (steps) |s| {
             try env.charge.reserve(env.gpa, .inspection, 1);
+            if (try deepRead(env, at)) m = .{ .r = true, .deep_read = true };
             at = (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, at, s)) orelse return m;
         }
         var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, at));
@@ -506,6 +508,7 @@ pub const Table = struct {
                 .e => m.e = true,
                 .w => m.w = true,
                 .deep => m.deep = true,
+                .deep_read => m.deep_read = true,
                 .field => {},
             }
         }
@@ -513,10 +516,17 @@ pub const Table = struct {
     }
 
     /// Whether a callee's use shape names anything at or below `steps`
-    /// (§2.7's lazy `call` use): `cellsAt` non-empty.
+    /// (§2.7's lazy `call` use): `cellsAt` non-empty, or a `D` on the way.
     pub fn usedAt(env: Env, use: NodeId, steps: []const Step) Error!bool {
         if (use == .none) return false;
+        if ((try marksAt(env, use, steps)).deep_read) return true;
         return (try env.shapes.cellsAt(env.gpa, env.account(), env.places, env.cells, use, steps)) != .none;
+    }
+
+    /// Whether a use shape's node is marked `D` (§2.10).
+    pub fn deepRead(env: Env, n: NodeId) Error!bool {
+        const d = try env.cells.mark(env.gpa, env.account(), .deep_read, 0);
+        return env.cells.sets.member(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n), d.int());
     }
 
     // ---- the lattice -------------------------------------------------------------
@@ -1322,7 +1332,7 @@ pub const Table = struct {
                 const c: CellId = .from(e.key);
                 if (env.cells.origin(c) != .mark) continue;
                 switch (env.cells.markOf(c)) {
-                    .r => m.r = true,
+                    .r, .deep_read => m.r = true,
                     .a => m.a = true,
                     .e => m.e = true,
                     .w => m.w = true,
@@ -1590,7 +1600,7 @@ pub const Table = struct {
                 .top => try w.writeAll("⊤"),
                 .elem, .others, .level, .below, .loan => unreachable,
                 .mark => try w.writeAll(switch (env.cells.markOf(c)) {
-                    .r => "R",
+                    .r, .deep_read => "R",
                     .a => "A",
                     .e => "E",
                     .w => "W",
@@ -1829,6 +1839,29 @@ test "use shapes: marks by path, deep leaves, the lazy call-use query, join and 
     try testing.expect(!try Table.leqUse(env, j, u));
     try testing.expect(try Table.leqUse(env, .none, u));
     try testing.expectEqual(u, try Table.joinUse(env, u, .none));
+}
+
+test "#1328: a deep read is `D` in a node: read below it, and a shallow `W` beside it stays shallow" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const rec = try f.placeOf(0);
+    const fa = try Place.Step.field(&f.account, 10);
+    const fb = try Place.Step.field(&f.account, 11);
+    const d = try Table.markUse(env, .none, rec, &.{fa}, .{ .r = true, .deep_read = true }, &.{});
+    try testing.expectEqual(Shape.Kind.node, f.shapes.kind((try f.shapes.proj(testing.allocator, &f.account, &f.places, &f.cells, d, fa)).?));
+    // Below the `D`, where the use has no node of its own: read.
+    try testing.expect(try Table.usedAt(env, d, &.{ fa, Place.Step.elem }));
+    try testing.expectEqual(Marks{ .r = true, .deep_read = true }, try Table.marksAt(env, d, &.{ fa, Place.Step.elem }));
+    try testing.expect(!try Table.usedAt(env, d, &.{fb}));
+    // A shallow write at the `D`'s path and one below it: neither is `S`.
+    const w = try Table.markUse(env, d, rec, &.{fa}, .{ .w = true }, &.{});
+    try testing.expectEqual(Marks{ .r = true, .w = true, .deep_read = true }, try Table.marksAt(env, w, &.{fa}));
+    const wb = try Table.markUse(env, w, rec, &.{ fa, Place.Step.elem }, .{ .w = true }, &.{});
+    try testing.expectEqual(Marks{ .r = true, .w = true, .deep_read = true }, try Table.marksAt(env, wb, &.{ fa, Place.Step.elem }));
+    try testing.expectEqual(Shape.Kind.node, f.shapes.kind((try f.shapes.proj(testing.allocator, &f.account, &f.places, &f.cells, wb, fa)).?));
+    try testing.expect(try Table.leqUse(env, d, wb));
 }
 
 test "a class prints in v1's grammar: bits by path, res by path with κ, funs, xreq" {
