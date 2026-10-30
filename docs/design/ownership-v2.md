@@ -740,7 +740,7 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 
 | Query | Lists | Answer |
 |---|---|---|
-| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it); a `call` use non-empty only at untouched fields is no use |
+| a use of `h` at an ancestor of `q` or at `q`, after `p`, compatible | `(h, q')` for each prefix `q'` of `q` | a whole use (`later-use`/`alias`); a `call` use counts the same when its node `U` is non-empty at the remainder of `q`, or (record demand) at `q·f` for some `f ∈ F`, or when `U` has a node marked `D` at a prefix of that remainder (§2.10: every demand at or below a deep read's path sees it); a use whose *exit* (below) is a prefix of `q` counts as one at `q`; a `call` use non-empty only at untouched fields is no use |
 | a use under a written field `f ∈ F` (record demand) | subtree of `(h, q.f)` | kind `field` → a **hoist**; kind `call`/`whole` → a whole use, refused |
 | a use under `q` (list demand) | subtree of `(h, q)` | a use |
 | an untouched field's use | never read | — |
@@ -748,6 +748,44 @@ Queries at a demand point `p` for holder `(h, q)` of cell `c`:
 Query cost is the bound of *One query per prefix* for the direct holder; other holders and rejected `call`
 candidates pay their own reserved tasks (§4.1). No bound solely by returned uses is asserted. `R-4.8.2`'s untouched
 fields cost nothing.
+
+**A read that leaves its path on a cycle** [M 2026-10-30, #1345]. The cover is by prefix: a use at `q` counts
+for a hold at or below `q`. That is not enough where `q`'s place is on a cycle of the place graph. `extend`
+folds a re-entry into the `⟲` of the deepest place on the path that the step re-enters (§2.1), and that place
+can be *above* `q`. For `type Tree = Tree { v : List Int, kids : List Tree }` and `r` the record of a `Tree`,
+every tree below `r` is reached through `r.kids[*]`, but its canonical path is `r⟲`, and `r.kids` is not a
+prefix of `r⟲.v`. So `Debug.toString r.kids` after a push of a list that a tree below holds was accepted, and
+v1 refuses it. A use therefore counts for the subtrees of its **exits** as well: the paths outside the subtree
+being read at which `extend` puts what the use reads.
+
+- **A deep read exits at `Up(p)`.** A read of every path below `p` — a `whole` or `field` use at `p = q`, a
+  `call` use with no node, and a `call` use whose node `U` at the caller path `p` is a leaf with marks or is
+  marked `D` (§2.10) — exits at `Up(p)`: the paths that `extend` reaches from `p`, step by step along `p`'s
+  place's cycle, and that are not below `p`. Each is a fold target, `a⟲` for a prefix `a` of `p`, or `a`
+  when it is a `⟲` already. The closure goes on from each target, because the levels below `a⟲` re-enter
+  places further up. The cover below such an exit is free, as below a leaf.
+- **A `call` use's node is replayed in the caller's place graph**, as the graft replays it (§2.10, *Read-off*;
+  `Walk.Graft`): from `q`, a step that `extend` folds out of the path being built, and a callee `⟲` at `p`,
+  which lands at `levels(p)`, are exits with the callee node they lead to, and the cursor reads on from there.
+  `grand ts = case ts of [ Tree a ] → case a.kids of [ Tree b ] → List.length b.v` reads
+  `π1⟲[*]#Tree.0.v`, which at the caller's `r.kids` is `r⟲.v`.
+
+A hold at `f` is covered when `f` is a prefix of `q` or of an exit, or when `f` is below `q` or an exit and the
+cursor from there accepts the rest of `f`. `⟲` names levels, not routes: `a⟲` holds what every route from `a`
+re-enters. So the deep read of `r.kids` also covers a tree that a sibling field of `r` leads to, as if it were
+below `r.kids`. That is the fold's abstraction (§2.1). It costs precision only where two fields of one record
+reach one cycle; it costs no soundness.
+
+**What it costs.** `Up(p)` is computed once per path in `Place.Table` and memoised. `hits(x)` is the fold
+targets of `x`'s plain subtree on its cycle that are not below `x`, made from its plain children's, so each
+canonical path of a cycle is visited once (on an explicit stack); `Up(p)` closes `hits(p)` over each target's
+`hits`. Each request is one charged record, and a miss charges its steps and targets. A use's exits are made
+once per `(path, use node)` in the holder index, by one walk of the use node, charged per node; a node whose
+subtree has no place on a cycle has none. The descent of §2.8 step 3 does not follow exits: the cover of a
+group that has one falls back to listing the holds (`hold listings`), as a folded step does. Fixtures:
+`ownership/DeepReadCycle`, `ownership/DeepReadCycleImported` (v1's refusals: inline, through a helper, of
+mutually recursive types, two levels below the cycle's entry, a whole use, a callee's `⟲` read; and a hold at
+the root's own field, outside the read, accepted).
 
 ### 2.8 Demands and the check
 
@@ -1576,7 +1614,9 @@ each reader takes from `D`:
   `q`'s own included, is marked `D`. This holds also where `U` has no node at `q`.
 - Liveness (§2.7): a `call` use with node `U` counts at a remainder `r` when `U` is non-empty at `r` **or**
   a node of `U` at a prefix of `r` is marked `D`. So every demand at or below the path sees the read. The
-  holder index's cursor is free below a `D` node, as it is below a non-empty leaf.
+  holder index's cursor is free below a `D` node, as it is below a non-empty leaf. Where the node's path is
+  on a cycle of the place graph, the read also covers the `⟲` paths its levels fold into, above it (§2.7,
+  *A read that leaves its path on a cycle*, #1345).
 - Callsite demands (§2.11 items 3–4): `D` makes no demand. A `W` beside it is a shallow write's demand, and
   `S` alone is `consumed`. Item 3 reads a `D` node as it reads any marked node: the actual's whole value
   there is beside the write when the path is beside it. A `D` above the write, on the write's own path, is
