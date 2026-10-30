@@ -526,7 +526,7 @@ pub const Pass = struct {
                     if (v.unwrap()) |e| try stack.append(p.scratch, e);
                 },
                 .expr_stmt, .throw_stmt, .spread_property => try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs))),
-                .member, .unary => try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs))),
+                .dynamic_import, .member, .unary => try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs))),
                 .property => try stack.append(p.scratch, @fromBackingInt(@intCast(d.rhs))),
                 .func_decl => try stack.appendSlice(p.scratch, try p.nodesOf(p.func(d.rhs).body())),
                 .arrow => try stack.appendSlice(p.scratch, try p.nodesOf(p.func(d.lhs).body())),
@@ -628,7 +628,7 @@ pub const Pass = struct {
                 return p.add(t, at, lhs.int(), rhs.int());
             },
             .expr_stmt, .throw_stmt, .spread_property => return p.add(t, at, (try p.clone(@fromBackingInt(@intCast(d.lhs)))).int(), d.rhs),
-            .member, .unary => return p.add(t, at, (try p.clone(@fromBackingInt(@intCast(d.lhs)))).int(), d.rhs),
+            .dynamic_import, .member, .unary => return p.add(t, at, (try p.clone(@fromBackingInt(@intCast(d.lhs)))).int(), d.rhs),
             .func_decl, .gen_decl => return p.add(t, at, d.lhs, @backingInt(try p.cloneFunc(d.rhs))),
             .arrow => return p.add(t, at, @backingInt(try p.cloneFunc(d.lhs)), d.rhs),
             .if_stmt => {

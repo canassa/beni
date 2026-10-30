@@ -114,7 +114,7 @@ pub const Options = struct {
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
-    recursion_limit: u32 = 256,
+    recursion_limit: u32 = 128,
     /// A scope-hoisted build (§9, *One scope-hoisted file under
     /// `--release`*): the module's `import` and `export` statements are not
     /// printed, because every name they carry is already one binding of the
@@ -485,7 +485,7 @@ const Printer = struct {
     work: std.ArrayList(Work) = .empty,
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
-    recursion_limit: u32 = 256,
+    recursion_limit: u32 = 128,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
@@ -2378,7 +2378,7 @@ const Printer = struct {
             .cond => prec_cond,
             .arrow, .assign => prec_arrow,
             .sequence => prec_seq,
-            .call, .new_call, .member, .index_get => prec_call,
+            .dynamic_import, .call, .new_call, .member, .index_get => prec_call,
             // A numeric literal is not a primary expression for the purpose
             // of what may follow it: `1.a` is a syntax error, because the dot
             // reads as a decimal point. Below `prec_call` is exactly the rule
@@ -2451,6 +2451,11 @@ const Printer = struct {
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
             .this_lit => try p.push("this"),
+            .dynamic_import => {
+                try p.push("import(");
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_arrow, level);
+                try p.push(")");
+            },
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
                     try p.tok("new ", "new");
@@ -2623,6 +2628,11 @@ const Printer = struct {
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
             .this_lit => try p.push("this"),
+            .dynamic_import => {
+                try p.push("import(");
+                try p.later(.piece(.close_paren));
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_arrow);
+            },
             .call => {
                 // callee, then `call_rest`
                 try p.later(.rest(.call_rest, node));
@@ -4199,8 +4209,8 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
 /// Twice the depth the printer fails at when it only recurses, on
 /// `small_stack.size`: with no switch to its work stack
 /// (`recursion_limit` unbounded) it printed 250 links on the Debug test
-/// binary and overflowed at 400. Its default 256 recursive levels fit, with
-/// about a third of the stack to spare.
+/// binary and overflowed at 400. The default switches after 128 levels so
+/// future switch-frame growth leaves room on the unchanged small stack.
 const deep_chain = 800;
 
 test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {
@@ -4503,4 +4513,83 @@ fn mapNameIn(
         try marks.src.append(marks.allocator, index.int());
     }
     return slot.*;
+}
+
+test "dynamic module import is an expression, traversed, printed and retained" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var f = try Fixture.init(a);
+    const path = try f.string("./fixture.mjs");
+    const imp = try f.node(.dynamic_import, path.int(), 0);
+    const unused = try f.node(.const_decl, @backingInt(try f.name("unused")), imp.int());
+    const discarded = try f.node(.expr_stmt, imp.int(), 0);
+    var ir = try f.b.toOwned(try f.b.addRange(&.{ unused, discarded }));
+    try ir.verify();
+    var stack: std.ArrayList(Index) = .empty;
+    try ir.pushOperands(a, &stack, imp);
+    try std.testing.expectEqualSlices(Index, &.{path}, stack.items);
+    try std.testing.expect(try ir.holdsIntrinsicEffect(a, &stack, unused));
+    const plan = try Opt.runKeeping(a, &ir, &.{}, &.{discarded}, &.{});
+    try std.testing.expect(!plan.isDropped(unused));
+    try std.testing.expect(!plan.isDropped(discarded));
+    const dev = try print(a, a, &ir, .fromLocal(&f.interner), .{});
+    const iterative = try print(a, a, &ir, .fromLocal(&f.interner), .{ .recursion_limit = 0 });
+    try std.testing.expectEqualStrings(dev, iterative);
+    try std.testing.expect(std.mem.indexOf(u8, dev, "import(\"./fixture.mjs\")") != null);
+    const compact = try print(a, a, &ir, .fromLocal(&f.interner), .{ .compact = true, .recursion_limit = 0 });
+    try std.testing.expect(std.mem.indexOf(u8, compact, "import(\"./fixture.mjs\")") != null);
+    const globals = try a.alloc(u32, ir.names.len);
+    @memset(globals, std.math.maxInt(u32));
+    const Spec = @import("Spec.zig");
+    _ = try Spec.run(a, a, .{ .modules = &.{.{ .ir = &ir, .global = globals }}, .globals = 0, .escaping = &.{} });
+    try ir.verify();
+    const after = try print(a, a, &ir, .fromLocal(&f.interner), .{});
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, after, "import(\"./fixture.mjs\")"));
+}
+
+test "dynamic module import sequence is one operand in both printers" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var f = try Fixture.init(a);
+    const args = try f.b.addRecord(try f.b.addRange(&.{}));
+    const call_a = try f.node(.call, (try f.ident("a")).int(), @backingInt(args));
+    const call_b = try f.node(.call, (try f.ident("b")).int(), @backingInt(args));
+    const operands = try f.b.addRange(&.{ call_a, call_b });
+    const sequence = try f.node(.sequence, @backingInt(operands.start), @backingInt(operands.end));
+    const imp = try f.node(.dynamic_import, sequence.int(), 0);
+    const stmt = try f.node(.expr_stmt, imp.int(), 0);
+    var ir = try f.b.toOwned(try f.b.addRange(&.{stmt}));
+    try ir.verify();
+    for ([_]bool{ false, true }) |compact| {
+        const recursive = try print(a, a, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+        const iterative = try print(a, a, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 0 });
+        try testing.expectEqualStrings(recursive, iterative);
+        try testing.expectEqualStrings(if (compact) "import((a(),b()));\n" else "import((a(), b()));\n", recursive);
+    }
+}
+
+test "dynamic module import chains use the work stack within the small stack" {
+    const Body = struct {
+        fn go() !void {
+            var f = try Fixture.init(testing.allocator);
+            defer f.deinit();
+            var value = try f.string("./fixture.mjs");
+            for (0..deep_chain) |_| value = try f.node(.dynamic_import, value.int(), 0);
+            const stmt = try f.node(.expr_stmt, value.int(), 0);
+            var ir = try f.b.toOwned(try f.b.addRange(&.{stmt}));
+            defer ir.deinit(testing.allocator);
+            try ir.verify();
+            for ([_]bool{ false, true }) |compact| {
+                const recursive = try printAlone(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+                defer testing.allocator.free(recursive);
+                const iterative = try printAlone(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 0 });
+                defer testing.allocator.free(iterative);
+                try testing.expectEqualStrings(iterative, recursive);
+                try testing.expectEqual(@as(usize, deep_chain), std.mem.count(u8, recursive, "import("));
+            }
+        }
+    };
+    try small_stack.run(Body.go, .{});
 }

@@ -3292,6 +3292,7 @@ const Spec = struct {
     }
 
     fn effectFreeAt(s: *Spec, m: *Mod, a: Index, depth: u32) Allocator.Error!bool {
+        if (m.ir.tag(a) == .dynamic_import) return false;
         if (inert(m.ir, a)) return true;
         if (!s.pts.ok) return false;
         if (m.ir.tag(a) == .call) return s.pureCall(m, a, depth);
@@ -10442,6 +10443,7 @@ const Spec = struct {
                     const r = try c.expr(b.right, depth + 1);
                     return c.node(from, .binary, try c.dst.append(c.gpa(), &.{ l.int(), r.int() }), d.rhs);
                 },
+                .dynamic_import => return c.node(from, .dynamic_import, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), 0),
                 .unary => return c.node(from, .unary, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), d.rhs),
                 // A store: its target copied as the read it names, never as a
                 // value a fact gives the read (`projected`, `knownExpr`).
@@ -10603,7 +10605,7 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
     switch (ir.tag(node)) {
         .ident => return if (d.lhs == p.int()) .found else .clean,
         .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => return .clean,
-        .member => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
+        .dynamic_import, .member => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
         .index_get => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
         .unary => {
             const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
@@ -10732,7 +10734,7 @@ fn countNodes(ir: *const JsIr, root: Index, pts: *Pts, mi: u32, fns: ?*FnsMet) u
         var children: [16]Index = undefined;
         var n: usize = 0;
         switch (ir.tag(node)) {
-            .member, .unary, .spread_property => {
+            .dynamic_import, .member, .unary, .spread_property => {
                 children[0] = @fromBackingInt(@intCast(d.lhs));
                 n = 1;
             },
@@ -16335,7 +16337,7 @@ const Pts = struct {
                 const items = try p.readAll(vals[f.iterable.int()]);
                 try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), items);
             },
-            .throw_stmt => try p.escape(vals[d.lhs]),
+            .dynamic_import, .throw_stmt => try p.escape(vals[d.lhs]),
             else => {},
         }
     }
@@ -17002,7 +17004,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // jump where an `else` prong first checks the tag in Zig's own
         // backend, and a second call checks it again.
         .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
-        .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
+        .dynamic_import, .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
         .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
         .call, .new_call => {

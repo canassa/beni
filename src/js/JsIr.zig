@@ -303,6 +303,8 @@ pub const Node = struct {
         /// in place is wherever its spread was an expression:
         /// `(r.f = v, r)` (§31.10, *The form*).
         sequence,
+        /// `import(path)`: effectful module evaluation; lhs is one expression, rhs zero.
+        dynamic_import,
 
         /// Whether the tag is a statement (the leading run of this enum).
         pub fn isStatement(t: Tag) bool {
@@ -810,7 +812,7 @@ pub inline fn inlineRange(d: Node.Data) SubRange {
 pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
-        .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.lhs))}),
+        .dynamic_import, .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.lhs))}),
         .index_get => try pushAll(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.rhs))}),
         .call, .new_call => {
@@ -900,8 +902,9 @@ pub const VerifyError = error{
 /// of a record update written in place (`assign`), outside any function it
 /// makes. Such a statement is never dropped as an unused pure one
 /// (`ownership-checker.md` §31.10, *The optimiser barrier*): the store is
-/// the update. Iterative, over `stack`, which it leaves as it found it.
-pub fn holdsStore(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), root: Node.Index) Allocator.Error!bool {
+/// the update. Dynamic import is also intrinsically effectful even when no
+/// checked source binding listed it. Iterative, leaving `stack` as found.
+pub fn holdsIntrinsicEffect(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), root: Node.Index) Allocator.Error!bool {
     const base = stack.items.len;
     defer stack.shrinkRetainingCapacity(base);
     try pushOperand(gpa, stack, root);
@@ -914,7 +917,7 @@ pub fn holdsStore(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.In
             }
         }.idx;
         switch (ir.tag(node)) {
-            .assign => return true,
+            .assign, .dynamic_import => return true,
             // A function made here runs elsewhere.
             .arrow, .func_decl, .gen_decl, .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
             .const_decl => try pushOperand(gpa, stack, at(d.rhs)),
@@ -1110,6 +1113,10 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
         .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .dynamic_import => {
+            if (d.rhs != 0) return error.OutOfBounds;
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+        },
         .call, .new_call => {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .expression);
@@ -1567,6 +1574,7 @@ pub const Builder = struct {
                     try Push.one(&stack, gpa, at, d.lhs, w.call, 0);
                     try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.call, 0);
                 },
+                .dynamic_import => try Push.one(&stack, gpa, at, d.lhs, w.call, 0),
                 .member, .unary => try Push.one(&stack, gpa, at, d.lhs, w.member, 0),
                 .index_get => {
                     try Push.one(&stack, gpa, at, d.lhs, w.member, 0);
@@ -1644,6 +1652,10 @@ pub const Builder = struct {
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
                 .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(gpa, v.int()),
                 .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(gpa, v.int()),
+                .dynamic_import => {
+                    out.call = true;
+                    try stack.append(gpa, d.lhs);
+                },
                 .unary => {
                     if (@as(UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .yield) out.call = true;
                     try stack.append(gpa, d.lhs);
@@ -1956,4 +1968,23 @@ test "measure: `a && b && c` built to the left is flat, `a && (b && c)` is not" 
     // chain so far, which prints without parentheses and nests nothing.
     try testing.expectEqual(nesting.operand, (try b.measure(gpa, &.{left})).whole);
     try testing.expectEqual(10 * nesting.operand, (try b.measure(gpa, &.{right})).whole);
+}
+
+test "dynamic module import rejects malformed operands and reserved rhs" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var b: Builder = .init(a);
+    const offset, const len = try b.addString("x");
+    const path = try b.addParts(.string, Node.no_pos, offset, len);
+    const imp = try b.addParts(.dynamic_import, Node.no_pos, path.int(), 0);
+    const stmt = try b.addParts(.expr_stmt, Node.no_pos, imp.int(), 0);
+    var ir = try b.toOwned(try b.addRange(&.{stmt}));
+    try ir.verify();
+    ir.nodes.items(.data)[imp.int()].rhs = 1;
+    try std.testing.expectError(error.OutOfBounds, ir.verify());
+    ir.nodes.items(.data)[imp.int()] = .{ .lhs = stmt.int(), .rhs = 0 };
+    try std.testing.expectError(error.WrongPosition, ir.verify());
+    ir.nodes.items(.data)[imp.int()] = .{ .lhs = std.math.maxInt(u32), .rhs = 0 };
+    try std.testing.expectError(error.OutOfBounds, ir.verify());
 }
