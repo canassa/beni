@@ -768,6 +768,11 @@ measurements must not run concurrently with another full suite on Dagon.
 
 ## 11. Independently landable implementation order
 
+The concrete [build planning and entry projection contract](workers-emission.md)
+specifies the emitter restructuring before implementation. Progress is tracked
+in [the implementation plan](../../plans/workers-implementation.md).
+
+
 | Slice | Depends on | Done |
 |---|---|---|
 | Entry runtime contract | This design | #1287 generalized to realm runtime table, precise program/arity/effect diagnostics and no markup dependency; dev/release fixtures. |
