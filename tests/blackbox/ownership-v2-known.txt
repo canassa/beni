@@ -103,3 +103,12 @@ tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #0 :: <Wrap …>
 tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
 tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #0 :: <Wrap …> :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
 tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #1 :: <Wrap …> :: absent :: accepted  the fresh result of the same comparison
+
+# v2 reads a private comparison through a derived or container one (ownership-v2.md §2.13.13).
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #0 :: <expression> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #1 :: <expression> :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <expression> :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <Just …> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: List.eq <literal> :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: value PrivateEqThroughShapes.eq :: pending :: absent  v1 holds the private comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #1 :: List.eq <literal> :: absent :: accepted  the fresh result of the same comparison

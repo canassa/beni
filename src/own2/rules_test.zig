@@ -67,9 +67,9 @@ const layers = [_]Entry{
     // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
     // calls of walked declarations; 1 330 since slice 3: imported classes,
     // and a block's places re-interned onto the adapter's.
-    // 1 390 since #1324: a comparison read through the user-written ones its
+    // 1 410 since #1324: a comparison read through the user-written ones its
     // type reaches (`componentClasses`).
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1390 },
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1410 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

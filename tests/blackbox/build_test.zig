@@ -10251,3 +10251,36 @@ test "the checker v2 treats core read with --core-root as core, not as user code
     try testing.expect(std.mem.indexOf(u8, embedded.stdout, "unchecked f:") == null);
     try testing.expect(std.mem.indexOf(u8, copied.stdout, "unchecked f:") == null);
 }
+
+test "the checker v2 reads 300 derived comparisons of one module within a second" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.13.13: a derived `==` is read through the
+    // user-written comparisons its type reaches. The module's `eq` is found
+    // once and remembered (`cmp_decl`), not by scanning its declarations at
+    // every use. Wall time cannot tell the two apart under this budget: the
+    // walk of each use costs more than the scan did here, so this only guards
+    // the shape the review measured against growth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    for (0..300) |i| try src.print(a, "type T{d}\n    = T{d} (List Int)\n\n\npub f{d} : List Int → Bool × List Int\nf{d} xs = ( T{d} xs == T{d} [], xs )\n\n\n", .{ i, i, i, i, i, i });
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const start = std.Io.Timestamp.now(testing.io, .awake);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const wall_ms = start.durationTo(std.Io.Timestamp.now(testing.io, .awake)).toMilliseconds();
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked f299") == null);
+    try testing.expect(wall_ms < 1000);
+}

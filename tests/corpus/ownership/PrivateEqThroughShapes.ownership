@@ -1,0 +1,12 @@
+module PrivateEqThroughShapes
+  13:26 List.push l: accepted param
+  17:22 call PrivateEqThroughShapes.eq <Key …>#Key.0: rejected alias: xs holds it and is read at 17:13 (PrivateEqThroughShapes.eq writes π1#Key.0)
+  29:27 value PrivateEqThroughShapes.eq: pending: it is passed as evidence, whose calls the checker does not see
+  summary eq: π1 R, π1#Key.0 RW[storage]
+  summary direct: π1 RAW[storage]; res .1 π1
+  summary viaTuple: π1 RA; res .1 π1
+  summary viaMaybe: π1 RA; res .1 π1
+  summary viaList: π1 RA; res .1 π1
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+cause alias 1
