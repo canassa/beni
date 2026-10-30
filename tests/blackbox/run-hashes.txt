@@ -39,8 +39,8 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 06add9ce22502fa63b40f567ce142e8211097666ce3e8f3e56aae0e27684e4bf
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 10dd656abb5b1a1eee4acb1463eaabdf4bb058199a92893c2eef23b24e13a952
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 30c6c61c5c3a41c1a556da2e3f55185328052d16d9fbafd9408b312e530034e3
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 f92b4ca867fe8ccae30d52ca59736317b4c8f36aa40f01ce826a33cc056da43f
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 a4ca55fe9dbb275e41ae8e5143172dd5b6d363ab55169d5af698dac2c2138d4a
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 7164b50c43b702f82e5208a7eb5ef6f79a83b7cd18469fe6c2ca2be889e4f9ab
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 e3076f318a1e33717a08e458dc096ac5b7405c5d8c8b9c65940423229a2d4978
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dccd75722fdcfd94e1ee3c64ddcd74498245760fa1a7a3aee4f1f5ef05b7403d
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -54,7 +54,7 @@ build_test.test.a development build copies hand-written JavaScript byte for byte
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 2f95b3c4275e673205374ba208d776f269004fcd6357175a0a01a02b1baf4384
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 bdb45053d72c73e435c747cb7c315a1b8a2ece431f710ce4e072bf78c1a68343
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 59a5ac1b935ed06bdba429056cb3f74b0428deff5f03c3dc2add9ff544adc240
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 e0fee7643e87440d321d289763d077136839254a70be669e16df50e6bac84dd9
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 29f9924c141d4dd3ad78f7478d587a15f3fa1e3374aba734b0a6f3911437e435
 build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 7e72c78745b14b0967f5e7cee65ec7a4b851b7d2cb8c08e73e44433969c88152
 build_test.test.a non-zero exit code from the platform reaches the process #0 7839e111324769dcb8ed2c068542fbc64385245f63347934c3db4ec28682263b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
@@ -64,7 +64,7 @@ build_test.test.a platform that declares exports gets an entry file that exports
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #1 3ba1fe19ce10eb75bf1245700c570da39147951bfcd5dc77667060fd8a65262c
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #2 c0a4c377b0770e255b520ef57b83968cbc7866c69e7b781adbfcd89b968cefe1
 build_test.test.a program computes something and prints the right answer #0 e8567c4615453a4ee166a7858b41b281335202a6f9ee5dcf9e2f1555ff505f17
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 d640683cce69c5a41b04832579017f6bee137f12fb43bd5d06155acb6f696d04
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 23f2e85d67d4c63f6d0acfdaf29ae357ed4f1c5c75465c03f21b5c2cb7a5fe2d
 build_test.test.a project that lists exports for a platform without the key gets a warning and a build #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 b7350c41206ccdd903daa449a4dc8f1fed403e6d4a468542c737f0df96cc0529
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
@@ -145,12 +145,12 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 78699e5824e6792b066495bebb5004f86c7c9ead4248f52dd077eb8b213624be
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 96b79619ccf2358e7a1b2ee8d2b1a43e3e1847f702047004c080e95cef4a38cb
 ordering_test.test.nullary methods and record defaults print the same reversed #0 866a63c3d9a0d461b3a80c4b06b846fa28944d486889575b2a4305e77331c82d
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 92b060845e826d3968b09b8c1281920b3e6290a152b0f454d68343d40b42946b
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 4471200b780cc9c0fe9344a613a958220af3667ca0bc9d313ee6e44efc076e95
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 bf9f9e7f79bdc54454cd3185d2819b380e68096baf7b9a908590ab68c7a7a08a
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 2c5bbe47043e845f635153039453bb634baa2ebf89f655d1ecd42edfc16abebc
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 dde03f840f422df7da58bb99747ee1eb391d572ec0d70316b434d1b62d86bef8
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 fe6ab13b599207e865649c1cd31e2601f4231eb2281099b2310dee5c3f6e2035
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 64acb624a904a569586774fbce982d795c4381ade3ea1c20bf81de12ae5d9237
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 68e8aaf73059df63c683e0b97d3ca69c222b5cd09c42cd1239689cb2952c6c92
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 e2ed67987402a40d5c3ffdea0a9f9b57aa081f9273158547e0f78efd67487d80
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 0895119316f75ed5a1a0540a6f66842ec27b40599788f8de291187bf715bfba4
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 b7b2eebfcab75888713574f163bdc1f24a94f8f576310b2a391e40ebf52c507c
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 6b3496c66c3e758c91693ce06975e08a94bcf4b277e48aba4ccc47afe5960e8c
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 018e5f9d833641ff5cdbd8c6dfc28e4dfd67eeaa5f7202e0acd4874f068bec59
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 f7497c201403a6f7bca564157b6b42bb6cadea6d4b47f29e40a9c18314e40e4b
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 8d7aee9a13d1bc37127c51b78355ff7cd0517503c368d42308ec7152aba08fcb
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 265cad686df83aaa2bb24d8c2ccc08b1eb688dd781b6a2fa359c35833498591a
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
