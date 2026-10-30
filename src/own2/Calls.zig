@@ -1886,6 +1886,59 @@ test "#1314: every lazy reader of a view of a cycle with no node on it ends, its
     }
 }
 
+test "#1335: Holders' closure of a view of a cycle with no node on it ends at its least fixed point" {
+    // #1314's knot `U = union(leaf{π0}, delta(U, {[*]: site}))` (and its
+    // sides swapped) applied to a list `a` whose `[*]` is `e`: a holder's
+    // value that is the view. Its closure for `a`'s own cell holds it, with
+    // no state to descend; for `e`'s cell it descends `a` alone, one of
+    // several (the union's), and holds nothing at the root. The view, its
+    // union answer and the delta side, all on the cycle, answer the same.
+    // Each read is bounded by the allowance, so a closure that does not end
+    // fails fast.
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |swap| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const L = x.list;
+        const p0 = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, try x.places.rootPath(gpa, L), 0);
+        const p0_set = try x.cells.sets.insert(gpa, x.env().charge, .none, p0.int(), 0);
+        const pleaf = try x.shapes.leaf(gpa, &x.account, L, p0_set);
+        const uu = try x.shapes.knot(gpa, &x.account);
+        const ud = try x.shapes.knot(gpa, &x.account);
+        x.shapes.tie(ud, .{ .kind = .delta, .place = L, .cells = p0_set, .a = uu.int(), .b = try x.one(Place.Step.elem, try x.site(26, x.t_place)), .reach = .none });
+        if (swap) try x.tieUnion(uu, ud, pleaf) else try x.tieUnion(uu, pleaf, ud);
+        const u = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = uu, .kappas = .none });
+        const e = try x.site(21, x.t_place);
+        const a = try listAt(&x, L, 20, e);
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        const v = (try apply(x.env(), &x.sums, u, &.{.{ .node = a, .kappa = .none }}, 0, &s)).result.node;
+        try testing.expectEqual(Shape.Kind.view, x.shapes.kind(v));
+        x.account.allowance = x.account.growth + 1_000_000;
+        const sh = &x.shapes;
+        const fu = try sh.force(gpa, &x.account, v);
+        const side = try sh.force(gpa, &x.account, .from(if (swap) sh.get(fu).a else sh.get(fu).b));
+        try testing.expectEqual(v.int(), sh.get(side).a);
+        var ai = x.cells.sets.iterate(sh.cells(a));
+        const xa: Cell.CellId = .from(ai.next().?.key);
+        var ei = x.cells.sets.iterate(sh.cells(e));
+        const xe: Cell.CellId = .from(ei.next().?.key);
+        var kids: std.ArrayList(NodeId) = .empty;
+        defer kids.deinit(gpa);
+        for ([_]NodeId{ v, fu, side }) |n| {
+            kids.clearRetainingCapacity();
+            const root = try Holders.closureOf(x.env(), n, xa, xa, &kids);
+            try testing.expect(root.any);
+            try testing.expectEqual(@as(usize, 0), kids.items.len);
+            const elem = try Holders.closureOf(x.env(), n, xe, xe, &kids);
+            try testing.expect(!elem.any);
+            try testing.expectEqualSlices(NodeId, &.{a}, kids.items);
+        }
+    }
+}
+
 /// #1146's chain (`unionChainCost`'s), each `N_k` also holding `π0` at its
 /// own path when `params`; its root, and `lf` its seed and argument.
 fn linkChain(x: *KnotFixture, n: usize, params: bool, lf: NodeId) !NodeId {

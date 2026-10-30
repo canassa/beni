@@ -164,6 +164,11 @@ const Reader = struct {
     /// `high`: in a knot, any member).
     low: usize = 0,
     high: usize = 0,
+    /// In a knot: its first ordinal, and which members are tied raw with a
+    /// side, a base or an inner still to set (§2.11 *A cycle with no node on
+    /// it*), so that no constructor reads one before the knot is whole.
+    knot_base: usize = 0,
+    unfinished: std.ArrayList(bool) = .empty,
 
     const Failure = ReadError || error{Malformed};
 
@@ -180,6 +185,7 @@ const Reader = struct {
         r.infos.deinit(gpa);
         r.edges.deinit(gpa);
         r.pos_of.deinit(gpa);
+        r.unfinished.deinit(gpa);
     }
 
     /// `absorbed`: a union its constructor folded into a side, the union
@@ -429,6 +435,9 @@ const Reader = struct {
             try r.kinds.append(gpa, .node);
             try r.pos_of.append(gpa, none);
         }
+        r.knot_base = base;
+        r.unfinished.clearRetainingCapacity();
+        try r.unfinished.appendNTimes(gpa, false, k);
         i = 0;
         while (i < k) : (i += 1) {
             if (try r.get() != @backingInt(Kind.node)) return error.Malformed;
@@ -437,8 +446,43 @@ const Reader = struct {
             r.vals.items[base + i] = (try r.node(true)).int();
             r.pos_of.items[base + i] = @intCast(r.infos.items.len - 1);
         }
-        // Every member made: the child maps of its nodes and deltas.
+        // Every member made: the sides, bases and inners of the members tied
+        // raw, checked as their constructors check them, then their cells,
+        // the cycle's least fixed point (`cellsOf`, §2.11).
         const shapes = r.env.shapes;
+        const sets = &r.env.cells.sets;
+        // Who reads from whom among the raw members: each is entered from
+        // outside, or the knot is no value (`Block.entered`).
+        const graph = try gpa.alloc([2]u32, k);
+        defer gpa.free(graph);
+        @memset(graph, .{ Block.outside, none });
+        for (r.pos_of.items[base..][0..k], 0..) |pi, m| {
+            if (!r.unfinished.items[m]) continue;
+            const p = r.infos.items[pi];
+            const nk = shapes.kind(p.node);
+            var parts: [2]u32 = .{ none, none };
+            var n: usize = 0;
+            for (r.edges.items[p.first..][0..p.len]) |e| if (!e.stepped) {
+                if (n == 2) return error.Malformed;
+                parts[n] = r.vals.items[e.to];
+                graph[m][n] = if (e.to >= base and r.unfinished.items[e.to - base]) @intCast(e.to - base) else Block.outside;
+                n += 1;
+            };
+            if (n != @as(usize, if (nk == .delta or nk == .recast) 1 else 2)) return error.Malformed;
+            if (nk != .recast) for (parts[0..n]) |x| {
+                if (shapes.place(.from(x)) != p.place or (nk == .delta and shapes.kind(.from(x)) == .delta)) return error.Malformed;
+            };
+            shapes.nodes.items(.a)[p.node.int()] = parts[0];
+            if (nk != .delta and nk != .recast) shapes.nodes.items(.b)[p.node.int()] = parts[1];
+        }
+        if (std.mem.indexOfScalar(bool, r.unfinished.items, true) != null) {
+            try r.env.charge.reserve(gpa, .inspection, 5 * k);
+            if (!try Block.entered(gpa, graph)) return error.Malformed;
+        }
+        for (r.pos_of.items[base..][0..k], 0..) |pi, m| {
+            if (r.unfinished.items[m]) _ = try shapes.cellsOf(gpa, r.env.account(), sets, r.infos.items[pi].node);
+        }
+        // The child maps of its nodes and deltas.
         for (r.pos_of.items[base..][0..k]) |pi| {
             const p = r.infos.items[pi];
             const nk = shapes.kind(p.node);
@@ -888,6 +932,28 @@ const Reader = struct {
         return .from(r.vals.items[o]);
     }
 
+    /// `side` in a knot, where a side, a base or an inner may name any
+    /// member: null when it names one not made yet or tied raw, and the
+    /// position is then tied raw too (`unit` sets the part once the knot is
+    /// whole).
+    fn knotSide(r: *Reader, in_knot: bool) Failure!?NodeId {
+        if (!in_knot) return try r.side();
+        const o = try r.get();
+        if (o == none or o >= r.high or r.kinds.items[o] != .node) return error.Malformed;
+        try r.edges.append(r.env.gpa, .{ .to = o });
+        if (o >= r.knot_base and (o >= r.low or r.unfinished.items[o - r.knot_base])) return null;
+        return .from(r.vals.items[o]);
+    }
+
+    /// A knot's member with an unfinished part: its record as its
+    /// constructor would make it but for the cycle, its cells to settle.
+    fn tieRaw(r: *Reader, kind: Shape.Kind, at: PlaceId, b: u32) Failure!NodeId {
+        const id = try r.env.shapes.knot(r.env.gpa, r.env.account());
+        r.env.shapes.tie(id, .{ .kind = kind, .place = at, .cells = Shape.Table.lazy_cells, .a = none, .b = b, .reach = .none });
+        r.unfinished.items[r.low - r.knot_base] = true;
+        return id;
+    }
+
     /// A position: its node made by its constructor, or — a knot's member
     /// `raw` — tied as its constructor would have made it, its parts read
     /// before it; then the κ read there and the positions `proj` makes.
@@ -918,7 +984,10 @@ const Reader = struct {
                 break :blk id;
             },
             .delta => blk: {
-                const base = try r.side();
+                const base = (try r.knotSide(in_knot)) orelse {
+                    _ = try r.steps(false, false);
+                    break :blk try r.tieRaw(.delta, at, none);
+                };
                 if (shapes.kind(base) == .delta or shapes.place(base) != at) return error.Malformed;
                 const over = try r.steps(false, !in_knot);
                 if (!in_knot) break :blk try shapes.delta(gpa, acct, base, over);
@@ -928,13 +997,15 @@ const Reader = struct {
             },
             .recast => blk: {
                 const whole = try r.flag(1) == 1;
-                const inner = try r.side();
+                const inner = (try r.knotSide(in_knot)) orelse break :blk try r.tieRaw(.recast, at, @intFromBool(whole));
                 break :blk if (whole) try shapes.recastWhole(gpa, acct, sets, at, inner) else try shapes.recast(gpa, acct, at, inner);
             },
             .@"union", .choice, .positions => blk: {
                 if (try r.get() != 2) return error.Malformed;
-                const a = try r.side();
-                const b = try r.side();
+                const sa = try r.knotSide(in_knot);
+                const sb = try r.knotSide(in_knot);
+                const a = sa orelse break :blk try r.tieRaw(kind, at, none);
+                const b = sb orelse break :blk try r.tieRaw(kind, at, none);
                 // Two sides at the union's own place, as `join` makes them.
                 if (shapes.place(a) != at or shapes.place(b) != at) return error.Malformed;
                 if (kind == .positions) break :blk try shapes.collect(gpa, acct, sets, &.{ a, b });
@@ -3766,4 +3837,88 @@ test "#1157 review: a widened class's lost stays lost through the block, a choic
         // `roundTrip` compares the printed class before and after.
         _ = try roundTrip(&a, &b, c);
     }
+}
+
+/// #1314's knot over `List` (place 0): `U = union(leaf{π0}, D)`,
+/// `D = delta(U, {[*]: site})`, its sides swapped with `swap`. The cycle
+/// `U → D → U` has no node on it (§2.11 *A cycle with no node on it*).
+fn nodelessKnot(t: *Tables, swap: bool) !NodeId {
+    const gpa = testing.allocator;
+    const list = try t.place(0);
+    const p0 = try t.cells.symbolic(gpa, &t.account, &t.places, .param, 0, try t.places.rootPath(gpa, list), 0);
+    const p0_set = try t.cells.sets.insert(gpa, t.env().charge, .none, p0.int(), 0);
+    const leaf = try t.shapes.leaf(gpa, &t.account, list, p0_set);
+    const elem = try t.place(1);
+    const s = try t.cells.site(gpa, &t.account, 26, elem, .record);
+    const site = try t.shapes.leaf(gpa, &t.account, elem, try t.cells.sets.insert(gpa, t.env().charge, .none, s.int(), 0));
+    const u = try t.shapes.knot(gpa, &t.account);
+    const d = try t.shapes.knot(gpa, &t.account);
+    t.shapes.tie(d, .{ .kind = .delta, .place = list, .cells = p0_set, .a = u.int(), .b = try t.shapes.overPut(gpa, &t.account, Ids.none_int, Step.elem, site), .reach = .none });
+    const l, const r = if (swap) .{ d, leaf } else .{ leaf, d };
+    t.shapes.tie(u, .{ .kind = .@"union", .place = list, .cells = p0_set, .a = l.int(), .b = r.int(), .reach = .none });
+    return u;
+}
+
+test "#1335: a cycle with no node on it round-trips through a block, and so does a call's view of it, forced" {
+    // The class `u` whose result is the knot, and a class whose result is
+    // a call of `u`'s view, forced as read-off maps it (§2.11 *Blocks force
+    // a view at publish*): its delta's base is its union again. Each is
+    // written, read back and written again; the decoded class reads the
+    // cells and κ the original reads at its root and at `[*]`. Each read is
+    // bounded by the allowance, so a codec that loops fails fast.
+    const gpa = testing.allocator;
+    for ([_]bool{ false, true }) |swap| for (0..2) |viewed| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        a.account.allowance = std.math.maxInt(u32) - 1;
+        const env = a.env();
+        const knot = try nodelessKnot(&a, swap);
+        const u = try a.sums.add(env, .{ .params = &.{.none}, .res = knot });
+        var c = u;
+        var res = knot;
+        if (viewed == 1) {
+            const list = try a.place(0);
+            const site = try a.cells.site(gpa, &a.account, 20, list, .list);
+            const arg = try a.shapes.leaf(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0));
+            var s: Calls.Scratch = .{};
+            defer s.deinit(gpa);
+            const applied = try Calls.apply(env, &a.sums, u, &.{.{ .node = arg, .kappa = .none }}, 0, &s);
+            const Same = struct {
+                fn cells(_: void, s0: Ids.SetId) Shape.Error!Ids.SetId {
+                    return s0;
+                }
+            };
+            a.account.allowance = a.account.growth + 1_000_000;
+            res = try a.shapes.map(gpa, &a.account, applied.result.node, {}, Same.cells);
+            c = try a.sums.add(env, .{ .params = &.{.none}, .res = res });
+        }
+        a.account.allowance = a.account.growth + 1_000_000;
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        b.account.allowance = 1_000_000;
+        const back = b.sums.get(try roundTrip(&a, &b, c));
+        const orig = a.sums.get(c);
+        // Both hold the cycle: a union whose delta side's base is the union.
+        for ([_]*Tables{ &a, &b }, [_]NodeId{ orig.res, back.res }) |t, n| {
+            const d = t.shapes.get(n);
+            try testing.expectEqual(Shape.Kind.@"union", d.kind);
+            const side: NodeId = .from(if (t.shapes.kind(.from(d.a)) == .delta) d.a else d.b);
+            try testing.expectEqual(Shape.Kind.delta, t.shapes.kind(side));
+            try testing.expectEqual(n.int(), t.shapes.get(side).a);
+        }
+        for ([_][]const Step{ &.{}, &.{Step.elem} }) |path| {
+            var at_a = orig.res;
+            var at_b = back.res;
+            for (path) |st| {
+                at_a = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, at_a, st)).?;
+                at_b = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at_b, st)).?;
+            }
+            const ca = try a.shapes.cellsOf(gpa, &a.account, &a.cells.sets, at_a);
+            const cb = try b.shapes.cellsOf(gpa, &b.account, &b.cells.sets, at_b);
+            try testing.expectEqual(a.cells.sets.count(ca), b.cells.sets.count(cb));
+            try testing.expectEqual(try kappaAt(&a, orig.kappas, orig.res, path), try kappaAt(&b, back.kappas, back.res, path));
+        }
+    };
 }

@@ -266,7 +266,7 @@ pub const Table = struct {
     /// cycle of them, all they read from outside it settled. Each record is
     /// entered once, so a cycle with no `node` on it (`U = union(leaf,
     /// delta(U, o))` under a view, #1314) ends at its least fixed point.
-    fn cycleWalk(t: *Table, gpa: Allocator, start: NodeId, r: anytype) Error!void {
+    pub fn cycleWalk(t: *Table, gpa: Allocator, start: NodeId, r: anytype) Error!void {
         const Frame = struct { node: NodeId, from: [2]NodeId, next: u8 = 0 };
         var frames: std.ArrayList(Frame) = .empty;
         defer frames.deinit(gpa);
