@@ -1,0 +1,40 @@
+-- ownership (project): the same with `Inner` imported.
+import Inner
+
+
+type Tree
+    = Node Tree Inner.Inner
+    | Leaf
+
+
+type Up
+    = Up Down Inner.Inner
+    | Stop
+
+
+type Down
+    = Down Up
+
+
+pub viaTree : List Int → Bool
+viaTree xs = Node Leaf (Inner.Inner xs) == Leaf
+
+
+pub callerTree : List Int → Bool × List Int
+callerTree xs = ( viaTree xs, xs )
+
+
+pub viaDeepTree : List Int → Bool
+viaDeepTree xs = Node (Node Leaf (Inner.Inner xs)) (Inner.Inner []) == Leaf
+
+
+pub callerDeepTree : List Int → Bool × List Int
+callerDeepTree xs = ( viaDeepTree xs, xs )
+
+
+pub viaMutual : List Int → Bool
+viaMutual xs = Up (Down (Up (Down Stop) (Inner.Inner xs))) (Inner.Inner []) == Stop
+
+
+pub callerMutual : List Int → Bool × List Int
+callerMutual xs = ( viaMutual xs, xs )

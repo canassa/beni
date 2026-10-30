@@ -597,7 +597,9 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     };
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {
-        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node));
+        // A deep demand writes everything its base reaches (§2.8): a fresh value holding a parameter writes it.
+        const written = if (d.kind.isDeep()) try env.shapes.reach(gpa, env.account(), &env.cells.sets, d.base.node) else try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node);
+        var it = env.cells.sets.iterate(written);
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };

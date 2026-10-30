@@ -782,8 +782,7 @@ pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_p
 /// `R` deep on every branch that leads to no component; at a component's
 /// place the use its class gives its parameter, so a write inside it reaches
 /// what a fresh value there holds (`#Inner.0 W`); `R` at the places between.
-/// A cycle of places, and a place with more than `max_write_paths` paths that
-/// escape or write below it, is one deep leaf each, with the `E` and `W` of every
+/// A cycle of places is one deep leaf each, with the `E` and `W` of every
 /// component below it. Tarjan's walk on explicit stacks: a strongly connected
 /// set is settled when its head is done, after everything it reaches, so
 /// each place is built once, and what a result is is known before any record
@@ -800,10 +799,7 @@ const UseBuild = struct {
     open: std.ArrayList(PlaceId) = .empty,
     entered: u32 = 0,
 
-    /// `paths`: the paths below that escape or write, one for a leaf.
-    /// Past this many paths that escape or write below one place, the place is one deep leaf: each path is a demand of its own in a caller, checked against every other, so n of them cost n². A bound on the use's size, as master's composition was at every width (§2.13 item 13).
-    const max_write_paths = 8;
-    const Res = struct { node: NodeId, e: bool, w: bool, any: bool, paths: u32 };
+    const Res = struct { node: NodeId, e: bool, w: bool, any: bool };
     const Frame = struct { place: PlaceId, next: u32 };
 
     fn deinit(b: *UseBuild) void {
@@ -894,7 +890,7 @@ const UseBuild = struct {
             if (env.shapes.place(node) != p) node = .none;
         }
         if (node == .none) node = try b.leaf(p, .{ .r = true, .e = e, .w = w, .deep = true });
-        try b.memo.put(gpa, p.int(), .{ .node = node, .e = e, .w = w, .any = true, .paths = @intFromBool(e or w) });
+        try b.memo.put(gpa, p.int(), .{ .node = node, .e = e, .w = w, .any = true });
     }
 
     /// The open places `members`, one strongly connected set whose every
@@ -905,7 +901,6 @@ const UseBuild = struct {
         var e = false;
         var w = false;
         var any = false;
-        var paths: u32 = 0;
         var cyclic = members.len > 1;
         for (members) |m| {
             const kids = env.places.steps(m);
@@ -915,14 +910,13 @@ const UseBuild = struct {
                     e = e or r.e;
                     w = w or r.w;
                     any = any or r.any;
-                    paths +|= r.paths;
                 } else if (c == m) cyclic = true;
             }
         }
         for (members) |m| {
             try env.charge.reserve(gpa, .shape, 1);
             var node: NodeId = undefined;
-            const flat = cyclic or !any or paths > max_write_paths;
+            const flat = cyclic or !any;
             if (flat) {
                 node = try b.leaf(m, .{ .r = true, .e = e, .w = w, .deep = true });
             } else {
@@ -934,7 +928,7 @@ const UseBuild = struct {
                 }
                 node = try env.shapes.node(gpa, env.account(), m, try Summary.Table.marksSet(env, .{ .r = true }, &.{}), children);
             }
-            try b.memo.put(gpa, m.int(), .{ .node = node, .e = e, .w = w, .any = any, .paths = if (flat) @intFromBool(e or w) else paths });
+            try b.memo.put(gpa, m.int(), .{ .node = node, .e = e, .w = w, .any = any });
         }
     }
 };
