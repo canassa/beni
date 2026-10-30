@@ -1,0 +1,174 @@
+-- ownership: a value bound by a pattern on the caller's own parameter and
+-- passed at two unrelated paths of a callee that found them apart
+-- (ownership-v2.md §2.11 item 3, rule (c), as amended for #1383 and
+-- #1385). The pattern refines what it binds, so `x` of `Pair _ x` is a
+-- refinement of `π1#Pair.1`; a call over `Pair x x` is refused `disjoint`
+-- because the held `x` is read at its canonical cell, which holds the
+-- written `π1#Pair.1#Box.0`, as v1 refuses it: `g`, `gLeft`, `gMid` (through
+-- a second callee), `b7` and `a7` (one subtree `r` of `t` at two subtrees).
+-- The `Maybe Box` and tuple controls were refused already; the `Distinct`
+-- twins and `g0` are accepted. Before #1385 v2 accepted `g`, `gLeft`,
+-- `gMid`, `b7` and `a7`.
+type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+pub g : Pair → Int × Int
+g p =
+    case p of
+        Pair _ x →
+            case rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+
+pub g0 : ⊤ → Int × Int
+g0 ⊤ = g (Pair (Box [ 1 ]) (Box [ 0 ]))
+
+
+pub gLeft : Pair → Int × Int
+gLeft p =
+    case p of
+        Pair x _ →
+            case rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+
+pub fromMaybe : Maybe Box → Int × Int
+fromMaybe m =
+    case m of
+        Just x →
+            case rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        Nothing →
+            ( 0, 0 )
+
+
+pub fromTuple : Box × Int → Int × Int
+fromTuple t =
+    case t of
+        ( x, _ ) →
+            case rightLeft (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+
+pub gDistinct : Pair → Int × Int
+gDistinct p =
+    case p of
+        Pair a b →
+            case rightLeft (Pair a b) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+
+mid : Pair → List Int × Box
+mid q = rightLeft q
+
+
+pub gMid : Pair → Int × Int
+gMid p =
+    case p of
+        Pair _ x →
+            case mid (Pair x x) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+
+type Tree
+    = Leaf
+    | Br Tree (List Int) Tree
+
+
+kids : Tree → List Int
+kids t =
+    case t of
+        Br _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+size : Tree → Int
+size t =
+    case t of
+        Br _ xs _ →
+            List.length xs
+
+        Leaf →
+            0
+
+
+rightLeftT : Tree → List Int × Tree
+rightLeftT t =
+    case t of
+        Br l _ r →
+            ( kids r, l )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub b7 : Tree → Int × Int
+b7 t =
+    case t of
+        Br _ _ r →
+            case rightLeftT (Br r [] r) of
+                ( ys, l ) →
+                    ( List.length ys, size l )
+
+        Leaf →
+            ( 0, 0 )
+
+
+pub a7 : Tree → Int × Int
+a7 t =
+    case t of
+        Br _ _ r →
+            case rightLeftT (Br (Br r [] Leaf) [] r) of
+                ( ys, l ) →
+                    ( List.length ys, size l )
+
+        Leaf →
+            ( 0, 0 )
+
+
+pub b7Distinct : Tree → Int × Int
+b7Distinct t =
+    case t of
+        Br l _ r →
+            case rightLeftT (Br l [] r) of
+                ( ys, l2 ) →
+                    ( List.length ys, size l2 )
+
+        Leaf →
+            ( 0, 0 )
