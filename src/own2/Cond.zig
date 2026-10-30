@@ -6749,3 +6749,91 @@ test "#1279 review: a union's view side owes its answer's fold certificate" {
     try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u_e));
     try testing.expectEqual(lost, try f.conds.foldCondOf(gpa, f.charge(), f.view(), u_v));
 }
+
+test "#1121: a cell set's derivation over its aggregate and an atom's two sides merged along their tries are apart's" {
+    // `ownership-v2.md` §2.11 *The derivation*: `derivedCells` over the set
+    // aggregate (memoised per radix node), the repeats added as sets, and
+    // `aggMergeSets` over two sets, against one sorted list of the same
+    // multiset (`apart`), on sets built one insertion at a time.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    var pool: [24]CellId = undefined;
+    for (&pool, 0..) |*c, i| c.* = if (i % 3 == 0)
+        try f.param(@intCast(i), 1, &.{})
+    else
+        try f.cells.site(gpa, &f.account, @intCast(500 + i), list, .list);
+    var prng = std.Random.DefaultPrng.init(1121);
+    const r = prng.random();
+    var a: SetId = .none;
+    var b: SetId = .none;
+    for (0..40) |_| {
+        const c = pool[r.uintLessThan(usize, pool.len)];
+        const approx: u1 = @intFromBool(r.uintLessThan(u8, 8) == 0);
+        if (r.boolean()) a = try f.cells.sets.insert(gpa, f.charge(), a, c.int(), approx) else b = try f.cells.sets.insert(gpa, f.charge(), b, c.int(), approx);
+        // Two sides as one multiset.
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(gpa);
+        for ([_]SetId{ a, b }) |s| {
+            var it = f.cells.sets.iterate(s);
+            while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
+        }
+        const want = try f.conds.apart(gpa, f.charge(), &f.cells, &f.places, items.items, null);
+        const got = try f.conds.aggCond(gpa, f.charge(), &f.cells, &f.places, try f.conds.aggMergeSets(gpa, f.charge(), &f.cells, &f.places, a, b));
+        try f.conds.expectSame(gpa, f.charge(), want, got);
+        // One set, its common cells with the other as repeats.
+        const both = try f.cells.sets.intersection(gpa, f.charge(), a, b);
+        const dups_approx = try f.conds.cellPart(gpa, f.charge(), &f.cells, &f.places, .approx, both);
+        const u = try f.cells.sets.unionWith(gpa, f.charge(), a, b);
+        try f.conds.expectSame(gpa, f.charge(), try f.conds.derivedCellsFlat(gpa, f.charge(), f.view(), u, both, dups_approx), try f.conds.derivedCells(gpa, f.charge(), f.view(), u, true, both, dups_approx));
+    }
+}
+
+test "eqOn compares only the keys based on the region, the empty value always" {
+    // `ownership-v2.md` §2.11 *The equality*: an entry `C` holds and `R` does
+    // not is no inequality for a key the region does not test; it is for a
+    // node of the region and for the empty value.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const inside = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 1, list, .list)}));
+    const outside = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 2, list, .list)}));
+    const empty = try f.shapes.nothing(gpa, &f.account, list);
+    const region = try f.shapes.node_sets.insert(gpa, f.charge(), .none, inside.int(), 0);
+    const atom = try f.conds.excl(gpa, f.charge(), try f.param(0, 1, &.{}));
+    const r = try f.setK(.none, inside, yes);
+    try testing.expect(try f.conds.eqOn(gpa, f.charge(), f.view(), try f.setK(r, outside, atom), r, region));
+    try testing.expect(!try f.conds.eqOn(gpa, f.charge(), f.view(), try f.setK(r, inside, atom), r, region));
+    try testing.expect(!try f.conds.eqOn(gpa, f.charge(), f.view(), try f.setK(r, empty, atom), r, region));
+    // A step `C` links and `R` does not is no equality either.
+    const linked = try f.conds.kappaLink(gpa, f.charge(), r, Place.Step.elem, try f.setK(.none, outside, atom));
+    try testing.expect(!try f.conds.eqOn(gpa, f.charge(), f.view(), linked, r, region));
+}
+
+test "#1121: two growing sets merged along their tries cost their new spines" {
+    // `aggMergeSets` is memoised per node pair: a pair of sets one insertion
+    // larger each costs about their two changed spines, not their size.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    f.account.allowance = 1 << 24;
+    var a: SetId = .none;
+    var b: SetId = .none;
+    var costs: [2]u64 = .{ 0, 0 };
+    for (0..512) |i| {
+        a = try f.cells.sets.insert(gpa, f.charge(), a, (try f.cells.site(gpa, &f.account, @intCast(2 * i), list, .list)).int(), 0);
+        b = try f.cells.sets.insert(gpa, f.charge(), b, (try f.cells.site(gpa, &f.account, @intCast(2 * i + 1), list, .list)).int(), 0);
+        const before = f.account.growth;
+        _ = try f.conds.aggMergeSets(gpa, f.charge(), &f.cells, &f.places, a, b);
+        if (i == 63) costs[0] = f.account.growth - before;
+        if (i == 511) costs[1] = f.account.growth - before;
+    }
+    // Eight times the cells: a few more levels, never eight times the work.
+    try testing.expect(costs[1] <= 2 * costs[0] + 64);
+}

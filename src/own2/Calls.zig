@@ -2868,3 +2868,47 @@ test "a call's argument that is a view folds its preimage as its eager image doe
         try testing.expectEqual(want, try foldProbe(&x, B, &steps, v));
     }
 }
+
+test "a chain of 400 calls is read and its conditions resolved at its end on a small stack (#1130)" {
+    // `ownership-v2.md` §2.11 *κ across a call*: `x_k = f x_{k-1}`, `f x`'s
+    // result the join of `x` and a fresh cell, its κ `excl π1` there. The
+    // last value is read only at the end: the read walks 400 views below
+    // views and resolves 400 conditions in creation order, each on the
+    // explicit stack: 64 KiB is 160 bytes a call, far below a native frame
+    // per call in any build.
+    const gpa = testing.allocator;
+    const x = try gpa.create(KnotFixture);
+    defer gpa.destroy(x);
+    x.* = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    const p = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, try x.places.rootPath(gpa, x.t_place), 0);
+    const site = try x.cells.site(gpa, &x.account, 1, x.t_place, .record);
+    const res = try x.shapes.leaf(gpa, &x.account, x.t_place, try x.cells.sets.insert(gpa, x.env().charge, try x.cells.sets.insert(gpa, x.env().charge, .none, p.int(), 0), site.int(), 0));
+    const km = (try x.conds.kappaSet(gpa, x.env().charge, .none, res, try x.conds.excl(gpa, x.env().charge, p))).ctx;
+    const c = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = res, .kappas = km });
+    var v: Value = .{ .node = try x.site(2, x.t_place) };
+    v.kappa = (try x.conds.kappaSet(gpa, x.env().charge, .none, v.node, Cond.yes)).ctx;
+    for (0..400) |i| {
+        var s: Scratch = .{};
+        defer s.deinit(gpa);
+        v = (try apply(x.env(), &x.sums, c, &.{v}, @intCast(i + 1), &s)).result;
+    }
+    const Read = struct {
+        fn run(f: *KnotFixture, at: Value, out: *anyerror!CondId) void {
+            out.* = blk: {
+                const k = f.conds.kappaOf(testing.allocator, f.env().charge, f.env().view(), at.kappa, at.node, false) catch |e| break :blk e;
+                _ = f.conds.deep(testing.allocator, f.env().charge, f.env().view(), at.kappa, at.node, false) catch |e| break :blk e;
+                break :blk k;
+            };
+        }
+    };
+    var result: anyerror!CondId = Cond.yes;
+    const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, Read.run, .{ x, v, &result });
+    th.join();
+    const k = try result;
+    // Resolved: what a reader tests holds no `inst` atom.
+    try x.conds.assertResolved(gpa, x.env().charge, k);
+    try testing.expect(!Cond.Table.fails(k));
+}
