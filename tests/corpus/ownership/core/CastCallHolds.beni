@@ -176,3 +176,43 @@ freshDeeper n =
 
         [] →
             0
+
+
+-- The same through a view: `deeperFirstVia` publishes the view of a class
+-- whose result steps into the cast (`deeperFirst`), and its caller projects
+-- it. The published eager image keeps that step whole (#1309's review).
+deeperFirst : List (List (List Int)) → List (List (List Int))
+deeperFirst x =
+    case deeper x of
+        [ a, …_ ] →
+            a
+
+        [] →
+            []
+
+
+deeperFirstVia : List (List (List Int)) → List (List (List Int))
+deeperFirstVia x = deeperFirst x
+
+
+pub sharedDeeperView : Int → Int
+sharedDeeperView n =
+    l = [ n ]
+    a = deeperFirstVia [ [ l ] ]
+    case a of
+        [ b, …_ ] →
+            List.length (List.push b [ 5 ]) + List.length l
+
+        [] →
+            0
+
+
+pub freshDeeperView : Int → Int
+freshDeeperView n =
+    a = deeperFirstVia [ [ [ n ] ] ]
+    case a of
+        [ b, …_ ] →
+            List.length (List.push b [ 5 ])
+
+        [] →
+            0

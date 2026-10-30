@@ -13,6 +13,8 @@ module CastCallHolds
   138:34 List.push b: rejected element: l holds it and is read at 138:55 (approx)
   156:34 List.push b: rejected alias: l holds it and is read at 156:55
   172:34 List.push b: accepted fresh
+  204:26 List.push b: rejected element: l holds it and is read at 204:47 (approx)
+  215:26 List.push b: accepted call
   summary generic: π1 RA; res π1
   summary deepGeneric: π1 RAW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
   summary sharedElems: unused
@@ -34,7 +36,11 @@ module CastCallHolds
   summary sharedDeeper: unused
   summary sharedDeeperInline: unused
   summary freshDeeper: unused
-  demands 14: accepted 8 (fresh 5, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
-total 14: accepted 8 (fresh 5, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+  summary deeperFirst: π1 R, π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩ R, π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩[*] RA; res fresh1 π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩[*]{excl π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩}r{excl π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩}
+  summary deeperFirstVia: π1 R, π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩ R, π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩[*] RA; res ~fresh1 ~π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩[*]{excl π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩}r{excl π1⟨as 1:List::List(66:1:List::List(49:1:List::List(32:1:List::List(15:1:Basics::Int()))))⟩}
+  summary sharedDeeperView: unused
+  summary freshDeeperView: unused
+  demands 16: accepted 9 (fresh 5, call 3, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 16: accepted 9 (fresh 5, call 3, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
 cause alias 4
-cause element 2
+cause element 3
