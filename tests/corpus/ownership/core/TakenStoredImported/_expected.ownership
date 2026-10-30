@@ -1,0 +1,21 @@
+module Main
+  10:13 call Taken.copyOne xs: rejected disjoint: another operand of the same operation reaches it (Taken.copyOne writes π3)
+  14:18 call Taken.copyOne ys: accepted param (Taken.copyOne writes π3)
+  18:11 call Taken.copyOne <literal>: accepted fresh (Taken.copyOne writes π3)
+  22:17 call Taken.copyInto xs: rejected disjoint: another operand of the same operation reaches it (Taken.copyInto writes π3)
+  26:22 call Taken.copyInto ys: accepted param (Taken.copyInto writes π3)
+  summary shared: π1 RAEW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*] ~⊤{lost}r{lost}, π1{lost}
+  summary distinct: π1 RE, π2 RAW[storage], π2[*] RA; res [*] ~condition(fresh1) ~π2[*] ~⊤{lost}r{lost}, π2{lost}
+  summary fresh: res [*] fresh1 ~condition(fresh3) ~⊤{lost}r{lost}, fresh2{lost}
+  summary pushShared: π1 RAEW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*] ~⊤{lost}r{lost}, π1{lost}
+  summary pushDistinct: π1 RE, π2 RAW[storage], π2[*] RA; res [*] ~condition(fresh1) ~π2[*] ~⊤{lost}r{lost}, π2{lost}
+  demands 5: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+module Taken
+  7:17 List.set b: accepted param
+  11:18 List.push b: accepted param
+  summary takeAt: π1 RE, π2 RE; res ⊤{lost}r{lost}
+  summary copyOne: π1 RE, π3 RAW[storage], π3[*] A; res [*] ~condition(fresh1) ~π3[*] ~⊤{lost}r{lost}, π3{lost}r{lost}
+  summary copyInto: π1 RE, π3 RAW[storage], π3[*] A; res [*] ~condition(fresh1) ~π3[*] ~⊤{lost}r{lost}, π3{lost}r{lost}
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 7: accepted 5 (fresh 1, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 2
