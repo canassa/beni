@@ -1,0 +1,6 @@
+module JoinHolds
+  9:9 List.push xs: rejected element: h.f holds it and is read at 10:5 (approx)
+  16:9 List.push xs: rejected element: h holds it and is read at 17:5 (approx)
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause element 2
