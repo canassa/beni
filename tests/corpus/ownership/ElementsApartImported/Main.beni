@@ -1,0 +1,51 @@
+-- ownership (project): `ElementsApart` with the callees in another module
+-- (ownership-v2.md §2.11 step 7, #1386): `Elements.t8` publishes its
+-- reliance on its list's elements being apart as `xreq excl π1[*]` in its
+-- block, and a call here discharges it exactly as a call of the module's
+-- own declaration does. Refused over `[ b, b ]`, fresh or a parameter, and
+-- over `[ b, Box [ 1 ], b ]`; accepted over distinct parameters and boxes
+-- distinct by construction. `relay` hands its own list on to the imported
+-- `pass`, so it owes the requirement in turn.
+import Elements exposing (Box)
+
+
+pub t8e : ⊤ → Int × Int
+t8e ⊤ =
+    b = Box [ 0 ]
+    Elements.t8 [ b, b ]
+
+
+pub t8c : Box → Int × Int
+t8c b = Elements.t8 [ b, b ]
+
+
+pub t8d : Box, Box → Int × Int
+t8d a b = Elements.t8 [ a, b ]
+
+
+pub t8f : ⊤ → Int × Int
+t8f ⊤ = Elements.t8 [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub t3e : ⊤ → Int × Int
+t3e ⊤ =
+    b = Box [ 0 ]
+    Elements.t3 [ b, Box [ 1 ], b ]
+
+
+pub t3f : ⊤ → Int × Int
+t3f ⊤ = Elements.t3 [ Box [ 0 ], Box [ 1 ], Box [ 2 ] ]
+
+
+pub relay : List Box → Int × Int
+relay bs = Elements.pass bs
+
+
+pub relayShared : ⊤ → Int × Int
+relayShared ⊤ =
+    b = Box [ 0 ]
+    relay [ b, b ]
+
+
+pub relayDistinct : ⊤ → Int × Int
+relayDistinct ⊤ = relay [ Box [ 1 ], Box [ 2 ] ]

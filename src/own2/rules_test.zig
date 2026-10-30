@@ -75,8 +75,9 @@ const layers = [_]Entry{
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`).
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1600 },
-    // §5 says 1 810 since #1350: a missing step's fallback.
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1840 },
+    // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
+    // #1386: two positions of one split beside a write.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1940 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },

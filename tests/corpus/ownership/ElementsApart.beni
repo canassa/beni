@@ -1,0 +1,116 @@
+-- ownership: a callee that writes one element of its list parameter while
+-- it answers another relies on the elements being apart (ownership-v2.md
+-- §2.2 `under`, §2.11 item 3 (c) and step 7, #1386). `[ a, c ]` binds two
+-- positions of one split, both at the summary path `π1[*]`, so no other
+-- path tells them apart: `t8` relies on the split's κ, `excl π1[*]`, and
+-- publishes it as its `xreq`, which every caller discharges at the call.
+-- Refused over `[ b, b ]`, fresh or a parameter, and over a three-element
+-- list holding one box twice; accepted over distinct parameters and boxes
+-- distinct by construction. `pass` hands its own list on, so it owes the
+-- requirement in turn. `same` writes and answers one position: one object
+-- written and held, refused `disjoint`.
+type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+pub t8 : List Box → Int × Int
+t8 bs =
+    case bs of
+        [ a, c ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub t8e : ⊤ → Int × Int
+t8e ⊤ =
+    b = Box [ 0 ]
+    t8 [ b, b ]
+
+
+pub t8c : Box → Int × Int
+t8c b = t8 [ b, b ]
+
+
+pub t8d : Box, Box → Int × Int
+t8d a b = t8 [ a, b ]
+
+
+pub t8f : ⊤ → Int × Int
+t8f ⊤ = t8 [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub t3 : List Box → Int × Int
+t3 bs =
+    case bs of
+        [ a, _, c ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub t3e : ⊤ → Int × Int
+t3e ⊤ =
+    b = Box [ 0 ]
+    t3 [ b, Box [ 1 ], b ]
+
+
+pub t3f : ⊤ → Int × Int
+t3f ⊤ = t3 [ Box [ 0 ], Box [ 1 ], Box [ 2 ] ]
+
+
+pub pass : List Box → Int × Int
+pass bs = t8 bs
+
+
+pub passShared : ⊤ → Int × Int
+passShared ⊤ =
+    b = Box [ 0 ]
+    pass [ b, b ]
+
+
+pub passDistinct : ⊤ → Int × Int
+passDistinct ⊤ = pass [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub same : List Box → Int × Int
+same bs =
+    case bs of
+        [ a, _ ] →
+            case rightLeft (Pair a a) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )

@@ -1,0 +1,58 @@
+-- ownership (project): see Main.beni. The callees of `ElementsApart`:
+-- `t8` and `t3` answer one element of their list and write another, and
+-- `pass` hands its list on to `t8`.
+pub type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+pub t8 : List Box → Int × Int
+t8 bs =
+    case bs of
+        [ a, c ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub t3 : List Box → Int × Int
+t3 bs =
+    case bs of
+        [ a, _, c ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub pass : List Box → Int × Int
+pass bs = t8 bs

@@ -1852,6 +1852,21 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `case p of Pair a b`) finds them apart in turn (this rule), and its class marks both, so its callers
      check them: transitive through the marks, as for every reliance this item reads. Pinned:
      `ApartPaths` and `ApartPathsImported`, every line v1's.
+     **Two positions of one split are not two paths (#1386).** `[ a, c ]` binds `elem bs·ι` at two
+     positions, and both are at the one summary path `π1[*]`: a projection forgets the split (§2.2),
+     so the base of a write into `c`, `π1[*]#Box.0`, is a cell `a`'s value reaches too. In
+     `t8 bs = case bs of [ a, c ] → rightLeft (Pair a c)`, `a` is apart from the written object only
+     under the split's κ (§2.2's `under`), so the refinements the write's path meets in the actual
+     along its exact prefix are compared, by `alias`, with each refinement beside it whose canonical
+     position is at or above the base's: another side of the split relies on its κ, which is the
+     demand's reliance (§2.9's rule: `yes` passes, atoms are the class's `xreq`, step 7, here
+     `excl π1[*]`; `shared`/`lost` refuses `exclusive`); the same side is the base's object held, a
+     conflict (`rightLeft (Pair a a)`, refused `disjoint`). No caller can find this pair by paths, so
+     only the published `xreq` carries it: `t8 [ b, b ]` is refused at the call, and a caller
+     handing its own list on owes `excl` of its elements in turn (`ElementsApart`). The *refined
+     holder* reading above (#1385) reads a held cell at its canonical cell, which for another side of
+     the split is the base's summary path, so it leaves a side of a split the write's path met to this
+     rule: read as a hold, `t8` itself was refused `disjoint`, where v1 accepts it with `xreq excl π1`.
    **One demand per path of the pair graph (#1356).** The `(i, q)` are read off the use shape `S.use(i)` as
    the DAG it is, paired with the actual: each route from the root to a `W` (or, for item 4, an `E`) carries
    the actual's value there, read step by step as `cellsAt` reads a path (a missing step keeps the value
@@ -4491,7 +4506,7 @@ L0  Ids
 | `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 010 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk) |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 600 (#1350: a view's instantiated place) |
 | `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 840 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base) |
+| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 940 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write) |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 330 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places) |

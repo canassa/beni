@@ -1241,6 +1241,13 @@ pub const Frame = struct {
         // the write's path there.
         const leaf = try f.leafDepth(arg, ws);
         const exact = exactPath(ws);
+        // The refinements the write's path meets in the argument along its
+        // exact prefix: the position of a split the base is, which its
+        // projection forgot (§2.2: `elem c·ι` below is `c[*]` below).
+        var refs: std.ArrayList(CellId) = .empty;
+        defer refs.deinit(gpa);
+        try f.spineRefinements(arg.node, ws, &refs);
+        var relied: CondId = Cond.yes;
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(gpa);
         var seen: Ids.FixedDict(3) = .{};
@@ -1271,7 +1278,7 @@ pub const Frame = struct {
                     .below, .off => .{ true, it.folded },
                 };
                 if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
-                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), &kept, &excl);
+                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), refs.items, &kept, &excl, &relied);
             }
             if (d.kind != .node) continue;
             if (it.mode == .spine and it.depth < ws.len) {
@@ -1313,6 +1320,7 @@ pub const Frame = struct {
             }
         }
         const dm = &f.demands.items[f.demands.items.len - 1];
+        dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, relied);
         var xt = cells.sets.iterate(excl);
         while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.excl(gpa, f.env.charge, .from(x.key)));
         if (kept == .none) return;
@@ -1396,22 +1404,35 @@ pub const Frame = struct {
     /// (`Cell.below`: a trie ancestor, or levels through `⟲`). What a callee
     /// relied on when it found two paths of one parameter apart, discharged
     /// here (§2.11 item 3, rule (c), #1383).
-    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool) Error!?u1 {
+    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool, refs: []const CellId) Error!?u1 {
         const cells = f.env.cells;
         var it = cells.sets.iterate(reach);
         while (it.next()) |e| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             const d: CellId = .from(e.key);
             if (cells.origin(cells.base(d)) != .param) continue;
+            // Another side of a split the write's path met is apart from
+            // the base under the split's κ, which `splitBeside` relies on
+            // (#1386), though its canonical cell is the base's.
+            if (try f.otherSide(d, refs)) continue;
             const du = (try cells.unrefined(f.gpa, f.account(), f.env.places, d)) orelse continue;
             if (du == cu or (held and cells.below(f.env.places, cu, du))) return @intCast(e.value);
         }
         return null;
     }
 
-    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, kept: *SetId, excl: *SetId) Error!void {
+    /// `keepBeside`: a refinement of `v` whose canonical position holds
+    /// the base's is another position of a split the write's path met
+    /// (`refs`), apart from the base only under that split's κ (§2.2's
+    /// `under`, §2.11 item 3 (c)): `[ a, c ]`'s `a` beside a write into `c` is `c[*]` beside
+    /// `c[*]`, one summary path, so the write relies on the split's κ —
+    /// `excl` of a parameter's elements — into `relied`, and from the
+    /// demand into the class's `xreq` (step 7). The same position holds
+    /// the base's object: its cell is kept.
+    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
         const cells = f.env.cells;
         const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
+        if (refs.len != 0) try f.splitBeside(want, reach, refs, kept, relied);
         for (want.params.items) |c| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             // The base's cell, or its canonical cell when a pattern refined it
@@ -1419,7 +1440,7 @@ pub const Frame = struct {
             // above the base's holds it, a symbolic leaf's reach being its own
             // cell (#1383).
             const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
-            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held) orelse continue;
+            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, refs) orelse continue;
             if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
                 excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
                 continue;
@@ -1440,6 +1461,83 @@ pub const Frame = struct {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             const s = try bs.keyed(f.env, v, reach, k);
             if (s != .none) kept.* = try cells.sets.unionWith(f.gpa, f.env.charge, kept.*, s);
+        }
+    }
+
+    /// The refinement cells of the argument `v` at each node of the write's
+    /// path `ws` up to its first `[*]` or `⟲` (`otherPaths`): past one, the
+    /// path stands for several positions.
+    fn spineRefinements(f: *Frame, v: NodeId, ws: []const Step, out: *std.ArrayList(CellId)) Error!void {
+        const shapes = f.env.shapes;
+        const cells = f.env.cells;
+        var at = v;
+        var i: usize = 0;
+        while (true) : (i += 1) {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            at = try shapes.force(f.gpa, f.account(), at);
+            var it = cells.sets.iterate(try shapes.cellsOf(f.gpa, f.account(), &cells.sets, at));
+            while (it.next()) |e| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if (cells.origin(.from(e.key)).isRefinement()) try out.append(f.gpa, .from(e.key));
+            }
+            if (i == ws.len or ws[i].kind == .elem or ws[i].kind == .level) return;
+            at = (try shapes.proj(f.gpa, f.account(), f.env.places, cells, at, ws[i])) orelse return;
+        }
+    }
+
+    /// Whether the refinement `d` is on another side of a split one of
+    /// `refs` is on, and on no `refs`' own side (`Cell.alias`).
+    fn otherSide(f: *Frame, d: CellId, refs: []const CellId) Error!bool {
+        const cells = f.env.cells;
+        if (!cells.origin(d).isRefinement()) return false;
+        var other = false;
+        for (refs) |r| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            if (cells.base(r) != cells.base(d)) continue;
+            switch (cells.alias(f.env.places, d, r)) {
+                .yes => return false,
+                .under, .under_kappa => other = true,
+                .no => {},
+            }
+        }
+        return other;
+    }
+
+    /// `keepBeside`'s refinements: each refinement `d` of `reach` whose
+    /// canonical position is at or above a parameter cell of the base,
+    /// against each refinement `r` of one base the write's path met: a
+    /// side of `r`'s split relies on its κ, `r` itself keeps the base's
+    /// cell (`Cell.alias`).
+    fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, kept: *SetId, relied: *CondId) Error!void {
+        const cells = f.env.cells;
+        const places = f.env.places;
+        var it = cells.sets.iterate(reach);
+        while (it.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const d: CellId = .from(e.key);
+            if (!cells.origin(d).isRefinement()) continue;
+            const db = cells.base(d);
+            const du = (try cells.unrefined(f.gpa, f.account(), places, d)) orelse continue;
+            const dp = cells.get(du);
+            for (want.params.items) |c| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                const cu = (try cells.unrefined(f.gpa, f.account(), places, c)) orelse c;
+                const cp = cells.get(cu);
+                if (cp.a != dp.a or !places.isPrefix(.from(dp.b), .from(cp.b))) continue;
+                for (refs) |r| {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    if (cells.base(r) != db) continue;
+                    switch (cells.alias(places, d, r)) {
+                        .no => {},
+                        .yes => kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), e.value),
+                        .under => |s| {
+                            const k = cells.splitOf(s).cond;
+                            relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, if (k == .none) Cond.lost else k);
+                        },
+                        .under_kappa => relied.* = Cond.lost,
+                    }
+                }
+            }
         }
     }
 
