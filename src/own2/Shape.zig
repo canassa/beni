@@ -1148,8 +1148,9 @@ pub const Table = struct {
     /// joins the class's entry under it with its answer's (*κ at a view*).
     /// Two distinct views stay two: each holds its own call's entry.
     fn sameAnswer(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error!?NodeId {
-        // Two recasts at one place of one value are one value.
-        if (t.kind(l) == .recast and t.kind(r) == .recast and t.place(l) == t.place(r)) {
+        // Two recasts at one place of one value are one value; a whole one is
+        // never a plain one (#1311).
+        if (t.kind(l) == .recast and t.kind(r) == .recast and t.place(l) == t.place(r) and t.isWhole(l) == t.isWhole(r)) {
             const one = (try t.sameAnswer(gpa, account, .from(t.get(l).a), .from(t.get(r).a))) orelse return null;
             return if (one.int() == t.get(l).a) l else r;
         }
@@ -2457,7 +2458,8 @@ pub const Table = struct {
                         while (it.next()) |e| x = try t.put(gpa, account, places, cellt, x, e.step, t.eagerOf(try t.view(gpa, account, e.node, d.b)), true, .none);
                         break :blk x;
                     },
-                    .recast => try t.recast(gpa, account, tm.place, t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b))),
+                    // A whole recast stays whole (#1311).
+                    .recast => try t.recastAs(gpa, account, &cellt.sets, .from(d.a), t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b))),
                     .@"union", .choice => blk: {
                         var two = [_]NodeId{ t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b)), t.eagerOf(try t.view(gpa, account, .from(tm.b), d.b)) };
                         break :blk if (tm.kind == .choice) try t.joinChoice(gpa, account, places, cellt, &two) else try t.join(gpa, account, places, cellt, &two);
@@ -2483,7 +2485,7 @@ pub const Table = struct {
                 while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(e.node));
                 return t.delta(gpa, account, base, over);
             },
-            .recast => return t.recast(gpa, account, d.place, t.eagerOf(.from(d.a))),
+            .recast => return t.recastAs(gpa, account, &cellt.sets, n, t.eagerOf(.from(d.a))),
             .@"union" => return t.@"union"(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
             .choice => return t.choice(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
             .positions => return t.positions(gpa, account, &cellt.sets, t.eagerOf(.from(d.a)), t.eagerOf(.from(d.b))),
