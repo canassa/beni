@@ -1,9 +1,9 @@
 // The sibling JavaScript of `Io.beni` (docs/design/boundary.md §4): one
 // export per `foreign` value, under the same name, and nothing else.
 //
-// Each primitive starts one host operation, resumes the waiting fiber once
-// with its answer, and returns what cancels it (transparent-effects-proposal.md
-// §16.5): a cancelled fiber's timer is cleared and its read aborted.
+// The directory listing starts one host operation, resumes the waiting fiber
+// once with its answer, and returns what cancels the wait
+// (transparent-effects-proposal.md §16.5).
 
 import { Buffer } from "node:buffer";
 import { readdir } from "node:fs/promises";

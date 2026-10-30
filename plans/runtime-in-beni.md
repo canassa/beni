@@ -933,11 +933,15 @@ handles, so Node reports it and exits 1 (`CLAUDE.md` rule 9). A `case` over the 
 was the first cut; it made the two programs that read a file 333 raw bytes larger than the
 sibling, and the table is the sibling's own shape. The canceller aborts the controller.
 Both are `impure` by inference, as the `foreign`s declared, and `startRead`'s lambdas are `sync`.
-`Io.js` is deleted; the `node` platform keeps `Node.js`, `Http/Server.js` and `WebSocket.js`.
+`Io.js` keeps only the newer `startReadDir`, added on the base while this move was pending;
+its directory listing, errors, ordering and cancellation stay unchanged. The `node` platform
+also keeps `Node.js`, `Http/Server.js` and `WebSocket.js`.
 
 **What changes shape.** `Exit` and `Result FileError String` crossed the boundary through the
 `foreign` annotations; they cross nothing now, so a release build gives `Exit` and `Result`
-integer tags. `FileError` keeps its string tags: the table holds its constructors through
+integer tags when no other boundary pins them. The newer `startReadDir` still exposes
+`Result FileError (List Entry)`, so `Result` keeps string tags in a build that reaches it.
+`FileError` keeps its string tags: the table holds its constructors through
 `Js.from`, a use at the type that pins it (`backend.md` §9 item 4), as the sibling's annotation
 did. `Program` stays a `foreign type` of `Node`, read by its two plain properties.
 `emit/release/app/IoReadFile` pins the shape; `run/SuspendReadFile`, `run/ReadFileErrors` (the
