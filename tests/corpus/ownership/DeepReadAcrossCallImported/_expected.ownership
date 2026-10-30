@@ -1,0 +1,25 @@
+module Main
+  15:9 List.push l: rejected alias: g.x.a holds it and is read at 16:20
+  23:9 List.push l: rejected alias: k.inner.x.a holds it and is read at 24:20
+  31:9 List.push l: rejected alias: g.x.a holds it and is read at 32:5
+  32:5 call Reads.readWrite g.y: accepted fresh (Reads.readWrite writes π1.y)
+  39:9 List.push l: rejected alias: t#Rose.1[*]⟨Rose⟩#Rose.0 holds it and is read at 40:20
+  46:5 call Reads.showPush <literal>: accepted fresh (Reads.showPush writes π1)
+  summary viaHelper: unused
+  summary viaTwo: unused
+  summary besideWrite: unused
+  summary recursive: unused
+  summary shallowBeside: unused
+  demands 6: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Reads
+  18:22 List.push r.y: accepted param
+  32:22 List.push xss: accepted param
+  summary str: π1.x R
+  summary str2: π1.inner R, π1.inner.x R
+  summary readWrite: π1.x R, π1.y RW[storage]
+  summary showRose: π1 R
+  summary show: π1 R
+  summary showPush: π1 RW[storage]
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 8: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

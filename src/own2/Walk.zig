@@ -239,17 +239,19 @@ fn stepsOf(places: *const Place.Table, p: PathId, gpa: Allocator, out: *std.Arra
 /// that `extend` folds into a `⟲` above, is not below the path being
 /// built: it is a jump, installed after the graft from the root.
 ///
-/// A callee's deep read (a leaf: every path below, §2.13.6) is `R` at its
-/// path only, as before #1325. A leaf here would make a shallow `W` at the
-/// same path deep (`S`), which v1 does not do; a use shape cannot hold a
-/// deep `R` beside a shallow `W` (#1328). A step the caller's place does
-/// not take is `R` where it stopped.
+/// A callee's deep read (a leaf of marks: every path below, §2.13.6; or a
+/// node marked `D`) is `R` and `D` at its path, in a node (§2.10, *A deep
+/// read across a call*, #1328): never a leaf, which would make a shallow
+/// `W` of the caller's at the same path deep (`S`), as v1 never does. A
+/// step the caller's place does not take is `R` where it stopped.
 const Graft = struct {
     env: Env,
     us: []NodeId,
     places: []const PlaceId,
     /// The set `{R}`.
     r: SetId,
+    /// The set `{R, D}`: a callee's deep read (§2.10).
+    rd: SetId,
     /// `(callee node, caller node, place)` → the grafted node, jump-free
     /// grafts only.
     memo: Ids.FixedDict(3) = .{},
@@ -426,7 +428,9 @@ const Graft = struct {
             if (bare) return try e.shapes.node(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, e.shapes.get(u).cells), e.shapes.get(u).a);
         }
         const d = e.shapes.get(u);
-        const cells = if (try marked(e, d.cells)) try e.cells.sets.unionWith(gpa, e.charge, here, g.r) else here;
+        // A leaf of marks, or a node marked `D`, reads every path below.
+        const deep = (d.kind == .leaf and try marked(e, d.cells)) or try Summary.Table.deepRead(e, u);
+        const cells = if (deep) try e.cells.sets.unionWith(gpa, e.charge, here, g.rd) else if (try marked(e, d.cells)) try e.cells.sets.unionWith(gpa, e.charge, here, g.r) else here;
         const children: u32 = if (c != .none and e.shapes.kind(c) == .node) e.shapes.get(c).a else Ids.none_int;
         if (d.kind != .node) return try e.shapes.node(gpa, e.account(), place, cells, children);
         try g.stack.append(gpa, .{ .u = u, .path = path, .c = c, .cells = cells, .children = children, .jump_free = true, .it = e.shapes.overEntries(d.a), .step = step });
@@ -470,10 +474,10 @@ const Graft = struct {
         return run;
     }
 
-    /// Whether `u`'s subtree is plain `node`s whose cells are `R` marks at
-    /// most, with no `⟲` step and no place on a cycle: its graft at its own
-    /// place over nothing is itself. Memoised per node, on an explicit
-    /// stack (#1138); a child not settled (a cycle) is not pure.
+    /// Whether `u`'s subtree is plain `node`s whose cells are `R` and `D`
+    /// marks at most, with no `⟲` step and no place on a cycle: its graft
+    /// at its own place over nothing is itself. Memoised per node, on an
+    /// explicit stack (#1138); a child not settled (a cycle) is not pure.
     fn pure(g: *Graft, u: NodeId) Error!bool {
         const e = g.env;
         const gpa = e.gpa;
@@ -497,7 +501,7 @@ const Graft = struct {
                 var ct = e.cells.sets.iterate(d.cells);
                 while (ct.next()) |x| {
                     const c: CellId = .from(x.key);
-                    if (e.cells.origin(c) != .mark or e.cells.markOf(c) != .r) ok = false;
+                    if (e.cells.origin(c) != .mark or (e.cells.markOf(c) != .r and e.cells.markOf(c) != .deep_read)) ok = false;
                 }
                 var it = e.shapes.overEntries(d.a);
                 while (it.next()) |k| {
@@ -556,7 +560,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     // reads `π1.1.0`): at the cell's path, the use's own path below it.
     var use_steps: std.ArrayList(Place.Step) = .empty;
     defer use_steps.deinit(gpa);
-    var graft: Graft = .{ .env = env, .us = uses, .places = in.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}) };
+    var graft: Graft = .{ .env = env, .us = uses, .places = in.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}), .rd = try Summary.Table.marksSet(env, .{ .r = true, .deep_read = true }, &.{}) };
     defer graft.deinit();
     for (frame.uses.items) |u| {
         if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;

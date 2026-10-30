@@ -1332,6 +1332,9 @@ const Index = struct {
         try ix.rec(1);
         const shapes = ix.env.shapes;
         if (shapes.kind(n) == .leaf) return if (shapes.cells(n) != .none) .free else .dead;
+        // A node marked `D` reads every path below it, as a leaf does
+        // (§2.10, *A deep read across a call*).
+        if (try Summary.Table.deepRead(ix.env, n)) return .free;
         const p = (try shapes.proj(ix.gpa, ix.env.account(), ix.env.places, ix.env.cells, n, st)) orelse return .free;
         return .{ .node = p };
     }

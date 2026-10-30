@@ -1,0 +1,32 @@
+-- ownership (project): see Main.beni. The callees, whose classes read
+-- their argument deeply below a path (`D`, #1328).
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub str : { x : { a : List Int, b : List Int }, y : List Int } → String
+str r = Debug.toString r.x
+
+
+pub str2 : { inner : { x : { a : List Int, b : List Int }, y : List Int }, z : List Int } → String
+str2 k = str k.inner
+
+
+pub readWrite : { x : { a : List Int, b : List Int }, y : List Int } → Int
+readWrite r =
+    s = String.length (str r)
+    s + List.length (List.push r.y 1)
+
+
+pub showRose : Rose → String
+showRose t = Debug.toString t
+
+
+show : List (List Int) → String
+show xss = Debug.toString xss
+
+
+pub showPush : List (List Int) → Int
+showPush xss =
+    s = String.length (show xss)
+    s + List.length (List.push xss [ 1 ])

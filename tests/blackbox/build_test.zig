@@ -9666,7 +9666,8 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // of the same inner, so its cells are always the reach (`~fresh3` too)
     // and the block writes the mark (1 756 → 1 776 bytes, #1310, #1311). The
     // directory names `w2` and whether an importer may apply its class
-    // (1 776 → 1 796 bytes, #1316).
+    // (1 776 → 1 796 bytes, #1316). The block version 13 (#1328) changes
+    // the hash, not the size.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9681,7 +9682,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 037eaff68cf4041f\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 62cfae45f5ea3412\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {

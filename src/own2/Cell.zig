@@ -124,9 +124,12 @@ pub const Kind = enum(u8) {
 };
 
 /// What a `mark` cell says of a parameter path (§2.10's `use(i)` labels):
-/// read, kept in the result, escaped, written, written deeply (`S`), or one
-/// written field (`W{F}`), whose rank is the cell's `b`.
-pub const Mark = enum(u8) { r, a, e, w, deep, field };
+/// read, kept in the result, escaped, written, written deeply (`S`), one
+/// written field (`W{F}`), whose rank is the cell's `b`, or read at the path
+/// and every path below it (`D`, `deep_read`: a callee's deep read composed
+/// at a call, #1328), which `W` never takes. `deep_read` is last: a block
+/// writes a mark by its number.
+pub const Mark = enum(u8) { r, a, e, w, deep, field, deep_read };
 
 /// One cell. `a`, `b`, `c` by origin (§3.2): `site`: the instruction;
 /// `result`/`esc`: label + k; `param`/`env`/`shared`/`msg`: index + path;
