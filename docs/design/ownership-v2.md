@@ -4599,7 +4599,16 @@ a hit adding that set to the reader's vector (§2.12 asks a request to record it
 absences included). That changes five memos, and every memo added later must do the same, or the
 check is silently unsound. The coarse rule is recorded at the one place a walk can meet a group
 class, its own group call. Views are never shared between calls (§2.11), and every class content a
-walk reads comes in through one of them. So the coarse rule is sound whatever a memo does.
+walk reads comes in through one of them (`Views.add` appends, and `Shape.make` keys a view on its
+environment's index). So the coarse rule is sound whatever a memo does.
+
+The call records the eager reads inside `apply` too, in the same entry, because they read the
+callee's class before any view exists:
+- `marked()` over the use shapes, the `W`, `E` and `A` marks that become the call's demands;
+- the `escaped` leaves;
+- `xreq`, instantiated through `instSet`;
+- in the identity-class case, where `apply` answers the actual itself and makes no view, its read of
+  `cls.res`.
 
 Its price is precision of the vector, not of the verdict. A delivery into any part of h makes
 every walk that called h stale, so that walk is walked again (*Validation*). That is at most one
@@ -4630,11 +4639,16 @@ walk per member per pass of the stop rule. The rule applies in 4a too.
   whenever its read vector is stale.
 - **When `propagate` runs.** It runs to quiescence after each round's walks, before that round's
   wake decisions.
-- **A delivery whose target position does not exist yet.** This happens when the target member's
-  `res` shape there is still nothing. The fact is not dropped. It stays on its edge. Such a delivery
-  comes from a source position that a `res.shape` change created, and that change has woken the
-  target. The target's next walk makes the position, and the edge's facts reach it then, by the
-  new-edge replay.
+- **A delivery whose target position does not exist yet.** The two directions differ.
+  - **Along a result edge**, this happens when the target member's `res` shape there is still
+    nothing. The fact is not dropped. It stays on its edge. Such a delivery comes from a source
+    position that a `res.shape` change created, and that change has woken the target. The target's
+    next walk makes the position, and the edge's facts reach it then, by the new-edge replay.
+  - **Along an argument edge**, a mark going backwards into a caller's use shape **makes its own
+    parameter-path position**. A new `use(k)` path is not a `res.shape` change, so nothing would
+    wake a walk to make it, and a mark kept on its edge would never arrive. The paths come from the
+    parameter's place graph with `⟲` (*Termination*), a fixed inventory, so making one costs only
+    the delivery that is charged anyway. `GroupRotate` stays at two walks.
 - **Stable labels.** Inside a group, read-off numbers fresh cells by stable keys, not in the order
   they are met (§2.12): an own allocation by its instruction, and anything that a group call ι answers
   fresh (`result ι·k`, for any k and any chain below it) by one folded label `ι⋆`. The pairs of
