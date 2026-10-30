@@ -208,6 +208,8 @@ pub const Table = struct {
     inst_queue: std.ArrayList(CondId) = .empty,
     inst_next: u32 = 0,
     memo_resolved: Ids.FixedDict(1) = .{},
+    memo_resolved_root: Ids.FixedDict(1) = .{},
+    memo_inst_latest: Ids.FixedDict(1) = .{},
     no_cross: bool = false,
     no_memo: bool = false,
     crossed_reads: u32 = 0,
@@ -273,6 +275,8 @@ pub const Table = struct {
         t.memo_set_agg.deinit(gpa);
         t.inst_queue.deinit(gpa);
         t.memo_resolved.deinit(gpa);
+        t.memo_resolved_root.deinit(gpa);
+        t.memo_inst_latest.deinit(gpa);
         t.memo_cell_part.deinit(gpa);
     }
 
@@ -3805,35 +3809,105 @@ pub const Table = struct {
     /// native stack (#1130).
     pub fn resolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId {
         if (k == yes or fails(k) or t.inst_queue.items.len == 0) return k;
-        try charge.reserve(gpa, .memo, 1);
-        if (t.memo_resolved.get(.{k.int()})) |hit| return .from(hit);
         // Resolving is the reader's growth: never a lane's share (§4.1).
         const task = try charge.account.enter(gpa, null);
         defer charge.account.leave(task);
         const g: Charge = .growth(charge.account);
-        var latest: ?u32 = null;
-        var it = t.atoms.iterate(try t.flat(gpa, g, k));
-        while (it.next()) |e| {
-            const a = t.get(.from(e.key));
-            if (a.atom == .inst) latest = if (latest) |l| @max(l, a.b & ~inst_set_bit) else a.b & ~inst_set_bit;
-        }
-        const out: CondId = if (latest) |env| blk: {
-            try t.drainTo(gpa, g, env);
-            // One `inst` atom: its resolution, canonical already.
-            if (t.get(k).kind == .atom) break :blk try t.resolveAtom(gpa, g, k);
-            var acc: CondId = yes;
-            var at = t.atoms.iterate(try t.flat(gpa, g, k));
-            while (at.next()) |e| {
-                try g.reserve(gpa, .inspection, 1);
-                const atom: CondId = .from(e.key);
-                const r: CondId = if (t.get(atom).atom == .inst) try t.resolveAtom(gpa, g, atom) else atom;
-                acc = try t.@"and"(gpa, g, acc, r);
-                if (acc == shared) break;
-            }
-            break :blk try t.canonical(gpa, g, acc);
-        } else k;
-        (try t.memo_resolved.getOrPut(gpa, .{k.int()})).value_ptr.* = out.int();
+        const latest = try t.instLatest(gpa, g, k) orelse return k;
+        try g.reserve(gpa, .memo, 1);
+        if (t.memo_resolved_root.get(.{k.int()})) |hit| return .from(hit);
+        try t.drainTo(gpa, g, latest);
+        const out = try t.canonical(gpa, g, try t.resolveTree(gpa, g, k));
+        (try t.memo_resolved_root.getOrPut(gpa, .{k.int()})).value_ptr.* = out.int();
         return out;
+    }
+
+    /// The latest environment an `inst` atom of `k` names, null for none:
+    /// memoised per node of `k`'s `and` tree, so a condition built over
+    /// earlier ones reads its new nodes. Post-order on an explicit stack.
+    fn instLatest(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!?u32 {
+        const none: u32 = 0;
+        const of = struct {
+            fn leaf(tt: *const Table, x: CondId) ?u32 {
+                if (x == yes or fails(x)) return none;
+                const c = tt.get(x);
+                if (c.kind != .atom) return null;
+                return if (c.atom == .inst) (c.b & ~inst_set_bit) + 1 else none;
+            }
+        };
+        if (of.leaf(t, k)) |v| return if (v == none) null else v - 1;
+        var stack: std.ArrayList(CondId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, k);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.memo_inst_latest.get(.{x.int()}) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            try charge.reserve(gpa, .memo, 1);
+            const c = t.get(x);
+            var vals: [2]u32 = undefined;
+            var missing = false;
+            for ([_]CondId{ .from(c.a), .from(c.b) }, 0..) |sd, i| {
+                if (of.leaf(t, sd)) |v| {
+                    vals[i] = v;
+                } else if (t.memo_inst_latest.get(.{sd.int()})) |v| {
+                    vals[i] = v;
+                } else {
+                    missing = true;
+                    try stack.append(gpa, sd);
+                }
+            }
+            if (missing) continue;
+            (try t.memo_inst_latest.getOrPut(gpa, .{x.int()})).value_ptr.* = @max(vals[0], vals[1]);
+            _ = stack.pop();
+        }
+        const v = t.memo_inst_latest.get(.{k.int()}).?;
+        return if (v == none) null else v - 1;
+    }
+
+    /// `k` with each `inst` atom replaced by its resolution: memoised per node
+    /// of its `and` tree, a node's the `and` of its two sides'. Post-order on
+    /// an explicit stack; the caller makes the answer canonical.
+    fn resolveTree(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId {
+        const leafOf = struct {
+            fn get(tt: *Table, g: Allocator, ch: Charge, x: CondId) Error!?CondId {
+                if (x == yes or fails(x)) return x;
+                const c = tt.get(x);
+                if (c.kind != .atom) return null;
+                return if (c.atom == .inst) try tt.resolveAtom(g, ch, x) else x;
+            }
+        }.get;
+        if (try leafOf(t, gpa, charge, k)) |r| return r;
+        var stack: std.ArrayList(CondId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, k);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.memo_resolved.get(.{x.int()}) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            try charge.reserve(gpa, .memo, 1);
+            const c = t.get(x);
+            var sides: [2]CondId = undefined;
+            var missing = false;
+            for ([_]CondId{ .from(c.a), .from(c.b) }, 0..) |sd, i| {
+                if (try leafOf(t, gpa, charge, sd)) |r| {
+                    sides[i] = r;
+                } else if (t.memo_resolved.get(.{sd.int()})) |r| {
+                    sides[i] = .from(r);
+                } else {
+                    missing = true;
+                    try stack.append(gpa, sd);
+                }
+            }
+            if (missing) continue;
+            (try t.memo_resolved.getOrPut(gpa, .{x.int()})).value_ptr.* = (try t.@"and"(gpa, charge, sides[0], sides[1])).int();
+            _ = stack.pop();
+        }
+        return .from(t.memo_resolved.get(.{k.int()}).?);
     }
 
     /// The queued atoms up to environment `env`, resolved in creation order.
