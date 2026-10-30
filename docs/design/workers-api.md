@@ -243,15 +243,21 @@ Shared initialization fixes the instance limit from its Program descriptor.
 The constructor's bound is immutable descriptor data evaluated from the static
 program declaration. It is included in the managed build fingerprint. It cannot
 be overridden by an opener or a pool.
-Shared clients compare credentials and extendedLifetime against the elected
-instance. These are the exact fields that can return IncompatibleInstanceOptions.
-The name and emitted URL select instance identity instead. Build and protocol
-differences, including different constructor descriptors, use
-ProtocolVersionMismatch. A native constructor refusal still uses its precise
-native error before a managed handshake can compare options.
-Deadlines, heartbeat, lease and queue limits are local connection policies and
-may differ between clients. The root has its constructor's admission bound;
-per-connection queues never silently reset it.
+Shared clients negotiate heartbeatEvery and leaseWithin in Hello, before any
+initialization configuration is transferred. The first initializer elects these
+two managed policy fields before consuming its configuration. A different requested value returns
+IncompatibleInstanceOptions. All its connections then use that heartbeat
+cadence and lease duration, while tracking liveness independently.
+Native type, credentials and extendedLifetime mismatches prevent attachment
+before this handshake. HTML exposes only a generic asynchronous error event;
+that is WorkerLoadFailed, with no invented mismatch reason. Name and emitted
+URL select native instance identity. Build and protocol differences, including
+different constructor descriptors, use ProtocolVersionMismatch if a managed
+peer can be reached.
+Ready and cleanup observation deadlines and queue limits remain local policies.
+For dedicated workers, heartbeat and lease policy is local to their one
+connection. The shared root has its constructor's admission bound; no
+connection's queue limits can reset it.
 Atomic Ref updates and machine updates preserve a valid state at every
 cancellation point. A multi-step invariant uses Semaphore and a finalizer.
 No concrete use case here requires a consuming constructor: resource replacement
@@ -820,7 +826,8 @@ Pool size is a discriminated Fixed or Elastic value. Only Elastic carries
 idleFor and utilization. Its numeric bounds are validated independently of the
 worker protocol. Pool queuedRequests is separate from each connection queue.
 Shared extendedLifetime is a native instance option for every Shared Program.
-IncompatibleInstanceOptions compares only the instance fields listed above.
+IncompatibleInstanceOptions compares the managed heartbeat and lease durations
+listed above, not native constructor options.
 
 Raw dedicated and shared APIs use NativeOptions, specified below, rather than
 managed Options. This avoids irrelevant Ready, heartbeat and managed request

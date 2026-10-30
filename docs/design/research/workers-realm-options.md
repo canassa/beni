@@ -17,6 +17,10 @@ These are proposed beni fragments inside the platform package, not executable
 examples of today's API. Storage access can be denied by browser policy, so
 the typed operations return Result StorageError (Maybe String). Native helpers
 below represent the same exact policy guard; none catches an unknown defect.
+The A and B helper invokes its acquisition callback inside that guard. It handles
+the specified SecurityError from the localStorage getter separately from getItem.
+It never evaluates the getter before entering the guard. Unknown exceptions
+remain defects. The C helper performs the same guarded steps.
 The DOM operation reads textContent. Both snippets require a page realm.
 
 **A: manually maintained typed wrappers.** The platform author writes the raw
@@ -25,11 +29,9 @@ the exported wrapper. The wrapper signature is checked; its raw implementation
 still needs review.
 
 ```text
-realm window
-pub readTheme : ⊤ → Result StorageError (Maybe String)
-readTheme ⊤ = guardedStorageItem (Js.global "localStorage") "theme"
-realm window
-pub text : Element → Maybe String
+pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
+readTheme ⊤ = guardedStorageItem (λ⊤ → Js.global "localStorage") "theme"
+pub realm window text : Element → Maybe String
 text element = nullableString (Js.get (rawElement element) "textContent")
 ```
 
@@ -38,9 +40,9 @@ expressions. The checker traces the receiver from localStorage and the DOM
 acquisition or caller argument. It infers the page requirement.
 
 ```text
-pub readTheme : ⊤ → Result StorageError (Maybe String)
-readTheme ⊤ = guardedStorageItem (Js.global "localStorage") "theme"
-pub text : Js.Value → Maybe String
+pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
+readTheme ⊤ = guardedStorageItem (λ⊤ → Js.global "localStorage") "theme"
+pub realm window text : Js.Value → Maybe String
 text element = nullableString (Js.get element "textContent")
 ```
 
@@ -50,9 +52,9 @@ textContent belongs to Node. Storage.localItem is the typed composition of
 Window storage acquisition and getItem, including their exact error adapters.
 
 ```text
-pub readTheme : ⊤ → Result StorageError (Maybe String)
+pub realm window readTheme : ⊤ → Result StorageError (Maybe String)
 readTheme ⊤ = Storage.localItem "theme"
-pub text : Element → Maybe String
+pub realm window text : Element → Maybe String
 text element = Node.textContent (Element.toNode element)
 ```
 
