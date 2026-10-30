@@ -3515,14 +3515,21 @@ publish). The codec writes it as it is. It does not close it through a node firs
 value with its own cells, so the result would be another value, and a block serializes the meaning the
 class has. A knot's member order is still the post-order of the parts that are not child steps. A
 member that the walk meets again while it is open is named before it is written, as a child step may
-be. The reader ties the member that names a member not yet read, and each member that names such a
-member, as a record that no constructor interns (`Shape.knot`). When every member is read, it sets
-their sides, bases and inners, checks them as their constructors do (sides and a base at the
-member's place, no base a delta), and reads their cells by `cellsOf`, the cycle's least fixed point.
-Every member must be reached from outside by what it is read from (`Block.entered`): a cycle that
-nothing enters, `recast(x)` of `x` itself, is no value that a constructor makes, so the writer
-refuses it loudly and the reader reads no block. This changes the format, so the version is 13. The
-order is the keys' order, so bisimilar knots write the same bytes, and write ∘ read ∘ write is write.
+be. The reader ties as a record that no constructor interns (`Shape.knot`) the member that names a
+member not yet read, each member that names such a member, and a whole recast over any member, whose
+cells are its inner's reach. When every member is read, it sets their sides, bases and inners, checks
+them as their constructors do (sides and a base at the member's place, no base a delta), ties the
+child maps of the knot's nodes and deltas, and only then reads the raw members' cells by `cellsOf`, the
+cycle's least fixed point: a reach read before a delta's child map is tied misses what is below it and
+keeps that in its memo (#1335's review). A `runtime_safety` build checks each member's memoised reach
+against a walk of the tied knot. A member names a later member only where both are on one cycle of raw
+members (`Shape.Table.cycleWalk` over the strict parts), as the writer's order makes it; any other
+forward name is no block. Every member must be reached from outside by what it is read from
+(`Block.entered`): a cycle that nothing enters, `recast(x)` of `x` itself or `union(x, x)`, is no
+value that a constructor makes, so the writer refuses it loudly and the reader reads no block. A cycle
+that something enters, `union(leaf, x)` of `x`, is a value. This changes the format, so the version
+is 13. The order is the keys' order, so bisimilar knots write the same bytes, and write ∘ read ∘
+write is write.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
@@ -4193,7 +4200,7 @@ L0  Ids
 | `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 10 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
-| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 125 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw) |
+| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 235 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle) |
 | `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |

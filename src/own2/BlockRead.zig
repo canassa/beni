@@ -465,6 +465,9 @@ const Reader = struct {
             for (r.edges.items[p.first..][0..p.len]) |e| if (!e.stepped) {
                 if (n == 2) return error.Malformed;
                 parts[n] = r.vals.items[e.to];
+                // A later member is named only on a cycle of raw members
+                // (`forwardOnCycles`), never a node or a constructor's.
+                if (e.to > base + m and !r.unfinished.items[e.to - base]) return error.Malformed;
                 graph[m][n] = if (e.to >= base and r.unfinished.items[e.to - base]) @intCast(e.to - base) else Block.outside;
                 n += 1;
             };
@@ -478,9 +481,7 @@ const Reader = struct {
         if (std.mem.indexOfScalar(bool, r.unfinished.items, true) != null) {
             try r.env.charge.reserve(gpa, .inspection, 5 * k);
             if (!try Block.entered(gpa, graph)) return error.Malformed;
-        }
-        for (r.pos_of.items[base..][0..k], 0..) |pi, m| {
-            if (r.unfinished.items[m]) _ = try shapes.cellsOf(gpa, r.env.account(), sets, r.infos.items[pi].node);
+            if (!try r.forwardOnCycles(base, graph)) return error.Malformed;
         }
         // The child maps of its nodes and deltas.
         for (r.pos_of.items[base..][0..k]) |pi| {
@@ -492,6 +493,111 @@ const Reader = struct {
                 if (e.stepped and !e.made) root = try shapes.overPut(gpa, r.env.account(), root, e.step, .from(r.vals.items[e.to]));
             }
             if (nk == .node) shapes.nodes.items(.a)[p.node.int()] = root else shapes.nodes.items(.b)[p.node.int()] = root;
+        }
+        // Only then the raw members' cells: a whole recast's are its inner's
+        // reach, which a delta with no child map yet would leave short, in
+        // its memo (#1335's review).
+        for (r.pos_of.items[base..][0..k], 0..) |pi, m| {
+            if (r.unfinished.items[m]) _ = try shapes.cellsOf(gpa, r.env.account(), sets, r.infos.items[pi].node);
+        }
+        if (std.debug.runtime_safety) try r.checkReach(base, k);
+    }
+
+    /// Whether every raw member's part that names a later member lies on a
+    /// cycle with it, as the writer's order makes it: a forward name off a
+    /// cycle is an order no write makes. The cycles are `Shape.Table
+    /// .cycleWalk`'s over `graph` (`unit`'s), each member read once.
+    fn forwardOnCycles(r: *Reader, base: usize, graph: []const [2]u32) Failure!bool {
+        const gpa = r.env.gpa;
+        const k = graph.len;
+        try r.env.charge.reserve(gpa, .inspection, @intCast(4 * k));
+        const scc = try gpa.alloc(u32, k);
+        defer gpa.free(scc);
+        @memset(scc, none);
+        var of: Ids.FixedDict(1) = .{};
+        defer of.deinit(gpa);
+        for (0..k) |m| if (r.unfinished.items[m]) {
+            (try of.getOrPut(gpa, .{r.vals.items[base + m]})).value_ptr.* = @intCast(m);
+        };
+        const Walk = struct {
+            r: *Reader,
+            base: usize,
+            graph: []const [2]u32,
+            scc: []u32,
+            of: *const Ids.FixedDict(1),
+            next: u32 = 0,
+            fn member(w: *const @This(), x: NodeId) u32 {
+                return w.of.get(.{x.int()}).?;
+            }
+            pub fn from(w: *@This(), x: NodeId) Error![2]NodeId {
+                var out: [2]NodeId = .{ .none, .none };
+                for (w.graph[w.member(x)], 0..) |j, i| {
+                    if (j != Block.outside and j != none) out[i] = .from(w.r.vals.items[w.base + j]);
+                }
+                return out;
+            }
+            pub fn settled(w: *const @This(), x: NodeId) bool {
+                return w.scc[w.member(x)] != none;
+            }
+            pub fn settle(w: *@This(), members: []const NodeId) Error!void {
+                for (members) |x| w.scc[w.member(x)] = w.next;
+                w.next += 1;
+            }
+        };
+        var w: Walk = .{ .r = r, .base = base, .graph = graph, .scc = scc, .of = &of };
+        for (0..k) |m| if (r.unfinished.items[m] and scc[m] == none) {
+            try r.env.shapes.cycleWalk(gpa, .from(r.vals.items[base + m]), &w);
+        };
+        for (graph, 0..) |two, m| for (two) |j| {
+            if (j != Block.outside and j != none and j > m and scc[j] != scc[m]) return false;
+        };
+        return true;
+    }
+
+    /// Under runtime safety: each member's memoised reach is the one a
+    /// walk of the tied knot finds, read with no memo (#1335's review: a
+    /// reach read before the child maps were tied kept a short set).
+    fn checkReach(r: *Reader, base: usize, k: usize) Failure!void {
+        const gpa = r.env.gpa;
+        const shapes = r.env.shapes;
+        const sets = &r.env.cells.sets;
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        for (r.vals.items[base..][0..k]) |v| {
+            const memo = shapes.nodes.items(.reach)[v];
+            if (memo == .none) continue;
+            seen.clear();
+            // The walk's cells, values joined as `unionWith` joins them.
+            var cells: Ids.FixedDict(1) = .{};
+            defer cells.deinit(gpa);
+            try stack.append(gpa, .from(v));
+            while (stack.pop()) |x| {
+                if (seen.contains(x)) continue;
+                try seen.put(gpa, x, {});
+                const d = shapes.get(x);
+                if (!shapes.isLazy(x)) {
+                    var it = sets.iterate(d.cells);
+                    while (it.next()) |e| {
+                        const got = try cells.getOrPut(gpa, .{e.key});
+                        got.value_ptr.* = if (got.found_existing) got.value_ptr.* & e.value else e.value;
+                    }
+                }
+                switch (d.kind) {
+                    .leaf, .view => {},
+                    .node, .delta => {
+                        if (d.kind == .delta) try stack.append(gpa, .from(d.a));
+                        var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                        while (it.next()) |e| try stack.append(gpa, e.node);
+                    },
+                    .recast => try stack.append(gpa, .from(d.a)),
+                    .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                }
+            }
+            std.debug.assert(sets.count(memo) == cells.count());
+            var it = sets.iterate(memo);
+            while (it.next()) |e| std.debug.assert(cells.get(.{e.key}) == e.value);
         }
     }
 
@@ -998,6 +1104,9 @@ const Reader = struct {
             .recast => blk: {
                 const whole = try r.flag(1) == 1;
                 const inner = (try r.knotSide(in_knot)) orelse break :blk try r.tieRaw(.recast, at, @intFromBool(whole));
+                // A whole recast's cells are its inner's reach: over a member,
+                // read once the knot is tied.
+                if (whole and in_knot and r.edges.items[r.edges.items.len - 1].to >= r.knot_base) break :blk try r.tieRaw(.recast, at, 1);
                 break :blk if (whole) try shapes.recastWhole(gpa, acct, sets, at, inner) else try shapes.recast(gpa, acct, at, inner);
             },
             .@"union", .choice, .positions => blk: {
@@ -1730,6 +1839,33 @@ test "a knot's member may name itself by a child step and by nothing else" {
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     for ([_][]const u32{ &by_step, &by_inner, &by_side }, [_]bool{ true, false, false }) |words, ok| {
+        var t: Tables = .{};
+        try t.init();
+        defer t.deinit();
+        try testing.expectEqual(ok, try read(t.env(), &t.sums, words, .identity, &out) != null);
+    }
+}
+
+test "#1335 review: a knot's member names a later member only on a cycle of them" {
+    const tag = struct {
+        fn k(x: Kind) u32 {
+            return @backingInt(x);
+        }
+    }.k;
+    const elem = @backingInt(Place.StepKind.elem);
+    // One place, `List` of itself; `yes`; one knot of two members; no class.
+    const head = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 1, elem, 0, 0, 2, tag(.cond), @backingInt(Cond.Kind.yes), tag(.group), 2 };
+    const recast = @backingInt(Shape.Kind.recast);
+    const node = @backingInt(Shape.Kind.node);
+    // A node whose `[*]` is a recast of it, in the writer's order: the
+    // node, then the recast of an earlier member.
+    const ordered = head ++ [_]u32{ tag(.node), node, 0, 0, 0, none, 1, elem, 0, 2, 0, 0, tag(.node), recast, 0, 0, 0, 0, 1, 0, 0, 0 };
+    // The same knot with the recast first, naming the later node: no cycle
+    // of raw members, an order no write makes.
+    const forward = head ++ [_]u32{ tag(.node), recast, 0, 0, 0, 0, 2, 0, 0, tag(.node), node, 0, 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
+    var out: std.ArrayList(ClassId) = .empty;
+    defer out.deinit(testing.allocator);
+    for ([_][]const u32{ &ordered, &forward }, [_]bool{ true, false }) |words, ok| {
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -3918,6 +4054,64 @@ test "#1335: a cycle with no node on it round-trips through a block, and so does
             const ca = try a.shapes.cellsOf(gpa, &a.account, &a.cells.sets, at_a);
             const cb = try b.shapes.cellsOf(gpa, &b.account, &b.cells.sets, at_b);
             try testing.expectEqual(a.cells.sets.count(ca), b.cells.sets.count(cb));
+            try testing.expectEqual(try kappaAt(&a, orig.kappas, orig.res, path), try kappaAt(&b, back.kappas, back.res, path));
+        }
+    };
+}
+
+test "#1335 review: a knot through a whole recast round-trips, its cells read once the knot is tied" {
+    // `U = union(leaf{π0}, P)`, `P = positions(D, R)`, `D = delta(U,
+    // {[*]: site})`, `R = recast(U)`, plain and whole, published at `U` and
+    // at `P`. A whole recast's cells are its inner's reach (`approxReach`):
+    // read before the delta's child map is tied, the reach misses the
+    // override and keeps the loss in its memo. The decoded class writes the
+    // same words, prints the same text and reads the same cells and κ at ε
+    // and `[*]`.
+    const gpa = testing.allocator;
+    for (0..2) |whole| for (0..2) |at_p| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        a.account.allowance = std.math.maxInt(u32) - 1;
+        const env = a.env();
+        const list = try a.place(0);
+        const p0 = try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, try a.places.rootPath(gpa, list), 0);
+        const p0_set = try a.cells.sets.insert(gpa, env.charge, .none, p0.int(), 0);
+        const leaf = try a.shapes.leaf(gpa, &a.account, list, p0_set);
+        const elem = try a.place(1);
+        const s26 = try a.cells.site(gpa, &a.account, 26, elem, .record);
+        const site = try a.shapes.leaf(gpa, &a.account, elem, try a.cells.sets.insert(gpa, env.charge, .none, s26.int(), 0));
+        const u = try a.shapes.knot(gpa, &a.account);
+        const p = try a.shapes.knot(gpa, &a.account);
+        const d = try a.shapes.knot(gpa, &a.account);
+        const r = try a.shapes.knot(gpa, &a.account);
+        const lazy = Shape.Table.lazy_cells;
+        a.shapes.tie(d, .{ .kind = .delta, .place = list, .cells = lazy, .a = u.int(), .b = try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, site), .reach = .none });
+        a.shapes.tie(r, .{ .kind = .recast, .place = list, .cells = lazy, .a = u.int(), .b = @intCast(whole), .reach = .none });
+        a.shapes.tie(p, .{ .kind = .positions, .place = list, .cells = lazy, .a = d.int(), .b = r.int(), .reach = .none });
+        a.shapes.tie(u, .{ .kind = .@"union", .place = list, .cells = lazy, .a = leaf.int(), .b = p.int(), .reach = .none });
+        const root = if (at_p == 1) p else u;
+        _ = try a.shapes.cellsOf(gpa, &a.account, &a.cells.sets, root);
+        const c = try a.sums.add(env, .{ .params = &.{.none}, .res = root });
+        a.account.allowance = a.account.growth + 1_000_000;
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        b.account.allowance = 1_000_000;
+        const back = b.sums.get(try roundTrip(&a, &b, c));
+        const orig = a.sums.get(c);
+        for ([_][]const Step{ &.{}, &.{Step.elem} }) |path| {
+            var at_a = orig.res;
+            var at_b = back.res;
+            for (path) |st| {
+                at_a = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, at_a, st)).?;
+                at_b = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, at_b, st)).?;
+            }
+            for ([_]bool{ false, true }) |reach| {
+                const ca = if (reach) try a.shapes.reach(gpa, &a.account, &a.cells.sets, at_a) else try a.shapes.cellsOf(gpa, &a.account, &a.cells.sets, at_a);
+                const cb = if (reach) try b.shapes.reach(gpa, &b.account, &b.cells.sets, at_b) else try b.shapes.cellsOf(gpa, &b.account, &b.cells.sets, at_b);
+                try testing.expectEqual(a.cells.sets.count(ca), b.cells.sets.count(cb));
+            }
             try testing.expectEqual(try kappaAt(&a, orig.kappas, orig.res, path), try kappaAt(&b, back.kappas, back.res, path));
         }
     };
