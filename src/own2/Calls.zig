@@ -57,9 +57,6 @@ pub const Error = Ids.ChargeError;
 pub const Write = struct { param: u32, steps: Ids.Range, deep: bool };
 /// A parameter path the class lets escape (`E`).
 pub const Escape = struct { param: u32, steps: Ids.Range };
-/// A parameter path the class marks, and whether it holds what is there
-/// (answers or lets it escape: `A`, `E`).
-pub const Touch = struct { param: u32, steps: Ids.Range, held: bool };
 
 pub const Applied = struct {
     result: Value,
@@ -67,9 +64,6 @@ pub const Applied = struct {
     xreq: CondId,
     writes: []const Write,
     escapes: []const Escape,
-    /// Every parameter path the class marks (R, A, W or E): what a write's
-    /// Disjoint checks against, beside the other arguments (§2.11 item 3).
-    touched: []const Touch = &.{},
     /// The values the result lets escape (an `esc k`), deeply.
     escaped: []const NodeId,
     /// The steps the `Write`s and `Escape`s name, root first.
@@ -82,7 +76,6 @@ pub const Scratch = struct {
     writes: std.ArrayList(Write) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
     escaped: std.ArrayList(NodeId) = .empty,
-    touched: std.ArrayList(Touch) = .empty,
     steps: std.ArrayList(Step) = .empty,
     members: std.ArrayList(NodeId) = .empty,
 
@@ -91,7 +84,6 @@ pub const Scratch = struct {
         s.writes.deinit(gpa);
         s.escapes.deinit(gpa);
         s.escaped.deinit(gpa);
-        s.touched.deinit(gpa);
         s.steps.deinit(gpa);
         s.members.deinit(gpa);
     }
@@ -1167,18 +1159,15 @@ fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
 
 /// The writes and escapes a use shape marks, with their paths: a walk of
 /// its explicit structure (a leaf's marks hold below it, so a leaf ends a
-/// path). Every node visited is a record. The touched paths are read only
-/// beside a write of the same parameter (§2.11 item 3), so a use with no
-/// `W` walks only the subtrees that hold an `E`: a read-only use shape that
-/// is a DAG (a callee's reads composed by the read-off, #1325) is never
-/// walked path by path.
+/// path) through the subtrees that hold a `W` or an `E` only (`marksBelow`),
+/// so a use that is a DAG of reads is never walked path by path. Every node
+/// visited is a record. A write's other paths (§2.11 item 3) are not listed
+/// here: `Transfer` walks the use shape for them, by node (#1325).
 fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
     if (use == .none) return;
     var below: Ids.FixedDict(1) = .{};
     defer below.deinit(env.gpa);
-    const bits = try marksBelow(env, use, &below);
-    const all = bits & 1 != 0;
-    if (!all and bits & 2 == 0) return;
+    if (try marksBelow(env, use, &below) == 0) return;
     // Paths as parent chains: a node's path is its entry's.
     const Entry = struct { step: Step, parent: u32 };
     var entries: std.ArrayList(Entry) = .empty;
@@ -1189,9 +1178,6 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
     try stack.append(env.gpa, .{ .node = use, .entry = Ids.none_int });
     while (stack.pop()) |f| {
         try env.charge.reserve(env.gpa, .inspection, 1);
-        var any = false;
-        var held = false;
-        var answered = false;
         var w = false;
         var e = false;
         var deep = false;
@@ -1199,19 +1185,14 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
         while (it.next()) |x| {
             const c: CellId = .from(x.key);
             if (env.cells.origin(c) != .mark) continue;
-            any = true;
             switch (env.cells.markOf(c)) {
                 .w => w = true,
-                .e => {
-                    e = true;
-                    held = true;
-                },
-                .a => answered = true,
+                .e => e = true,
                 .deep => deep = true,
                 else => {},
             }
         }
-        if (any) {
+        if (w or e) {
             const start: u32 = @intCast(s.steps.items.len);
             var at = f.entry;
             while (at != Ids.none_int) : (at = entries.items[at].parent) try s.steps.append(env.gpa, entries.items[at].step);
@@ -1219,15 +1200,11 @@ fn marked(env: Env, use: NodeId, param: u32, s: *Scratch) Error!void {
             const r: Ids.Range = .{ .start = start, .len = @intCast(s.steps.items.len - start) };
             if (w) try s.writes.append(env.gpa, .{ .param = param, .steps = r, .deep = deep });
             if (e) try s.escapes.append(env.gpa, .{ .param = param, .steps = r });
-            // Answered or escaped, exactly or not: the result, or whoever it
-            // escaped to, may hold this very object.
-            if (answered) held = true;
-            try s.touched.append(env.gpa, .{ .param = param, .steps = r, .held = held });
         }
         if (env.shapes.kind(f.node) != .node) continue;
         var kt = env.shapes.overEntries(env.shapes.get(f.node).a);
         while (kt.next()) |k| {
-            if (!all and (below.get(.{k.node.int()}) orelse 3) & 2 == 0) continue;
+            if ((below.get(.{k.node.int()}) orelse 3) == 0) continue;
             const id: u32 = @intCast(entries.items.len);
             try entries.append(env.gpa, .{ .step = k.step, .parent = f.entry });
             try stack.append(env.gpa, .{ .node = k.node, .entry = id });
@@ -1243,7 +1220,6 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     s.writes.clearRetainingCapacity();
     s.escapes.clearRetainingCapacity();
     s.escaped.clearRetainingCapacity();
-    s.touched.clearRetainingCapacity();
     s.steps.clearRetainingCapacity();
     const cls = sums.get(class);
     const label = try env.cells.label(gpa, env.account(), inst, .none, false);
@@ -1284,7 +1260,6 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
         .xreq = xreq,
         .writes = s.writes.items,
         .escapes = s.escapes.items,
-        .touched = s.touched.items,
         .escaped = s.escaped.items,
         .steps = s.steps.items,
     };

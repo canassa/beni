@@ -8899,6 +8899,116 @@ test "the checker v2's read-off of a call's reads costs a wrapper of a wide reco
     }
 }
 
+/// A v2 dump of `src` as `Main.beni` with no declaration past a limit;
+/// growth allowed.
+fn ownDumpNoLimit(w: *World, src: []const u8) ![]const u8 {
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (std.mem.indexOf(u8, dump.stdout, "\n  limit ")) |at| {
+        const end = std.mem.indexOfScalarPos(u8, dump.stdout, at + 1, '\n') orelse dump.stdout.len;
+        std.debug.print("{s}\n", .{dump.stdout[at + 1 .. end]});
+        return error.TestUnexpectedResult;
+    }
+    return dump.stdout;
+}
+
+test "the checker v2's write beside many read paths of its parameter costs its caller what one read costs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 *call view and direct obligation*
+    // (#1325's review): `top` writes `π1.l` and, through `rall`, reads every
+    // field of `π1.w.w`. At `caller`'s call each read path is beside the
+    // write; they are one operand, walked by node in growth, so 256 fields
+    // cost the caller what 64 do, and no lane passes its ceiling (it was
+    // `ownership_accounting_invariant` at 64).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 256 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d:0>3} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nrall : W → Int\nrall r =\n    0");
+        for (1..n + 1) |i| try src.print(a, " + List.length r.f{d:0>3}", .{i});
+        try src.appendSlice(a, "\n\n\ntop : { w : { w : W, z : Int }, l : List Int } → Int\ntop r = rall r.w.w + List.length (List.push r.l 1)\n\n\npub caller w =\n    l = [ 1 ]\n    top { w = w, l = l }\n");
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("64 fields: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's write beside a doubling DAG of read paths costs its caller the DAG's nodes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, §4.1 (#1325's review): `top` writes
+    // `π1.l` beside `d_n`'s reads of `π1.d`, 2^n paths over n distinct
+    // nodes. Depth 10 costs the caller at most twice depth 5, with no limit
+    // (depth 5 was `ownership_accounting_invariant`).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 5, 10 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "d1 ( a, b ) = List.length a + List.length b\n");
+        for (2..n + 1) |i| try src.print(a, "\n\nd{d} ( a, b ) = d{d} a + d{d} b\n", .{ i, i - 1, i - 1 });
+        try src.print(a, "\n\ntop r = d{d} r.d + List.length (List.push r.l 1)\n\n\npub caller d =\n    l = [ 1 ]\n    top {{ d = d, l = l }}\n", .{n});
+        totals[run] = try accountTotal(try ownDumpNoLimit(&w, src.items), "caller");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (totals[1] > totals[0] * 2) {
+        std.debug.print("depth 5: {d} records, depth 10: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's write deep below a chain of field wrappers is linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 *call view and direct obligation* (#1325's
+    // review): `f0 r = List.push r.b 1`, `f_i g = f_{i-1} g.x`. `f_i`'s call
+    // writes `i` steps below its argument; that walk is value-sized, growth
+    // chosen before it, never the call's lane (it was
+    // `ownership_accounting_invariant` at `f74`). One module of 80: `f80`
+    // costs at most 2.2 times `f40`, with no limit. 80, not 100: the module
+    // of 100 takes 1.3 s (0.7 s of it checking, as on master; the rest the
+    // dump's printing), past a black-box test's 1 s.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "f0 r = List.push r.b 1\n");
+    for (1..81) |i| try src.print(a, "\n\nf{d} g = f{d} g.x\n", .{ i, i - 1 });
+    const dump = try ownDumpNoLimit(&w, src.items);
+    const deep = try accountTotal(dump, "f80");
+    const half = try accountTotal(dump, "f40");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (deep * 10 > half * 22) {
+        std.debug.print("f40: {d} records, f80: {d}\n", .{ half, deep });
+        return error.TestUnexpectedResult;
+    }
+}
+
 /// The crossing's counts from a dump: reads crossed, redone at `C`, and
 /// `base_epoch`'s moves (`ownership-v2.md` §2.11 *κ across a call*).
 fn crossingOf(dump: []const u8) ![3]u64 {
