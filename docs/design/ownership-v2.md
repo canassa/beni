@@ -447,7 +447,7 @@ own choice DAG (`choice(x, x) = x`, `choice(x, choice(x, y)) = choice(x, y)`; th
 it a tower of branch joins re-nests its projections at every level: K grew 14 864 / 94 264 records at
 10 / 20 levels instead of 7 071 / 21 117). It never absorbs into or from a `union` (`unionHas` per kind). **No
 `choice` lies on a cycle**: a cycle is a widened knot or a graft's or decoder's copy of one, widen opens every union and
-choice it meets on the cycle (at a re-entry, or at a place on a cycle such as a branch join at a tree's root, #1360)
+choice it meets on the cycle (at a re-entry, or in a recursive group's rounds at a place on a cycle a re-entry relates to, #1360)
 and its image keeps no opened node, and graft, `map` and decode copy
 structure without adding a cycle. So projecting a `choice` terminates; absorption is for its cost, not its termination. Set readers
 (`reach`, `leq`'s γ, `cellsAt`, `rank`, `deep`'s frontier) read a choice as a union. `leq` is kind-blind,
@@ -543,30 +543,30 @@ Operations, memoised on their node arguments:
   structure is walked like any member's. Every other union, choice or positions node (off the cycle, below) is kept as it is, and widen never
   unifies two sides pairwise.
 
-  **On the cycle** [M 2026-10-30, #1360] is where the value's own structure comes back: a `union`, `choice` or
-  `positions` node at a `⟲` step, and also one at a path `p` whose **place lies on a cycle** of the place graph
-  (`Place.onCycle`: a step of it reaches a place that reaches it again) when a **knot** returns to `p` or above
-  it. A knot is a built node of the value (a `node` or a `delta`, reached through any union's, choice's or
-  positions node's sides) at a `⟲` step: the explicit structure re-entering, its class path the `⟲`'s parent. A
-  leaf at a `⟲` is no knot: `π1⟲` names a parameter's own deeper levels, not the value coming back. A branch
-  join at the root of a recursive value whose arm builds a re-entering node
-  (`case t of Node … → Node (case l of Node a ys _ → Node a ys u; …) …; Leaf → Leaf`, or a recursive member's
-  round nesting the last round's choice at its call) is such a node. Kept whole, the walk would never see the
-  re-entry under it (a kept node has no explicit edges), the arm's inner node would stay a second node at
-  `#Node.0#Node.0`, and the group would never settle; tying the knot to the kept node instead would put a
-  `choice` on a cycle. Opened, its sides (a nested choice's or union's too) are members of its class. The join
-  whose arms re-enter only through leaves (`case t of Node a xs b → Node a (List.push xs 1) b; Leaf → Leaf`)
-  holds no knot and stays exact: folding it would merge every level's list into one class and refuse its
-  callers' disjoint operands. The knots are found by one probe of the value before the walk, each node once
-  (`Widen.findKnots`), and only for a value that has such a node. The arms keep their meaning for κ, because the
-  primitive below reads the **pre-fold** source: the fold records the node as opened, and an opened `choice`'s
-  arms are taken by the maximum, an opened `union`'s or `positions` node's sides by the sum, wherever it was
-  opened. Merging the arms into one image is γ's alone (a set), so it neither turns a choice into coexistence
-  nor the reverse. *Precision limits:* the knot's class path is canonical, so a knot that returns above `p`
-  through a sibling, not through the node, still opens it (sound: a class is the union of its members); and
-  the probe reads a node shared at two paths at the first, as the walk does. A node at a place **above** a
-  cycle but not on one (`{ t : Tree }`, `Maybe Tree`) stays kept, and its arms are not walked; how to fold
-  under it is still open (#1362).
+  **On the cycle** [M 2026-10-30, #1360; the manager's decision on the review] is where a value can nest itself
+  without end. A finite value has no cycle, so a branch join built once (a non-recursive function's result, as
+  in `case t of Node a xs b → Node (Node a [] Leaf) (List.push xs 1) b; Leaf → Leaf`) is kept whole, exactly
+  as every other union, choice or positions node off a `⟲`: §2.3's *no choice on a cycle* holds with no opening,
+  and opening it would merge every level's list into one class and refuse its callers' disjoint operands.
+  Opening is needed for **termination**, where a recursive group's round value nests its own previous round
+  (§2.12): there (`Shape.Table.widen_rounds`, set by the group's driver around its rounds), widen also opens a
+  `union`, `choice` or `positions` node at a path `p` whose **place lies on a cycle** of the place graph
+  (`Place.onCycle`: a step of it reaches a place that reaches it again) when a re-entry **relates** to `p`: the
+  class path a `⟲` returns to (its target) is `p`, above `p`, or below it. Kept whole, the walk would never see
+  the re-entries under it (a kept node has no explicit edges), and the round's nesting would grow each round:
+  at the target (`pick`'s inner `Node a ys u` a second node at `#Node.0#Node.0`) or below the join
+  (`growA`'s `A1 xs (B2 [] b)`, B's own cycle under A's root join, one more `B2` a round). Opened, its sides
+  (a nested choice's or union's too) are members of its class. The targets are found by one probe of the value
+  before the walk, each node once (`Widen.findTargets`), and only for a value that has such a node. The arms
+  keep their meaning for κ, because the primitive below reads the **pre-fold** source: the fold records the
+  node as opened, and an opened `choice`'s arms are taken by the maximum, an opened `union`'s or `positions`
+  node's sides by the sum, wherever it was opened. Merging the arms into one image is γ's alone (a set), so it
+  neither turns a choice into coexistence nor the reverse. *Precision limits:* in a round, a re-entry is
+  related by its canonical target alone, so one that relates to `p` through a sibling, not through the node,
+  still opens it, and a leaf's `⟲` (a parameter's deeper levels) counts as one (sound: a class is the union of
+  its members); the probe reads a node shared at two paths at the first, as the walk does. A node at a place
+  **above** a cycle but not on one (`{ t : Tree }`, `Maybe Tree`) stays kept, and its arms are not walked; how
+  to fold under it is still open (#1362).
 
   A member of a congruence class that is not explicit structure rides beside the class
   image: the class's leaves (and a delta's leaf base) fold into one leaf, and a recast, or a union or positions
@@ -4284,7 +4284,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 290 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's knot probe, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 290 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 220 (#1335: `foldCondOf` by the cycle walk) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |

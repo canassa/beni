@@ -1,9 +1,9 @@
--- ownership (v2): widen quotients through a branch join at the root of a
--- recursive value (ownership-v2.md §2.3, #1360). `pick`'s result is a
--- `choice` whose first arm holds, at `#Node.0`, another choice that
--- re-enters `Tree`. The root is on the cycle, so widen opens it: both arms
--- are members of the root's class, and the inner `Node a ys u` folds into
--- it as a `⟲`, never as a second node at `#Node.0#Node.0`. The summary is
+-- ownership (v2): a non-recursive function's branch join stays exact
+-- (ownership-v2.md §2.3, *On the cycle*, #1360). `pick`'s result is a
+-- `choice` whose first arm holds, at `#Node.0`, another choice that builds a
+-- `Tree`: a finite value with no cycle, so widen keeps both joins, and the
+-- summary names `#Node.0#Node.0` exactly. Only a recursive group's rounds,
+-- where a value nests its own previous round, open them. The summary is
 -- pinned by `build_test.zig`; v1's is its own.
 type Tree
     = Leaf

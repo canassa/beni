@@ -5790,10 +5790,11 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
     }
 }
 
-test "#1360: widen opens a choice at the root and keeps its arms exclusive: a kids list in each arm is one, beside each other two" {
+test "#1360: in a group's rounds widen opens a choice at the root and keeps its arms exclusive: a kids list in each arm is one, beside each other two" {
     var f: Fixture = .{};
     try f.init();
     defer f.deinit();
+    f.shapes.widen_rounds = true;
     const gpa = testing.allocator;
     const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
     const nothing = try f.shapes.nothing(gpa, &f.account, try f.placeOf(6));
