@@ -179,6 +179,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/iface_test.zig", 1 },
     .{ "tests/blackbox/ordering_test.zig", 2 },
     .{ "tests/blackbox/platform_test.zig", 1 },
+    .{ "tests/blackbox/typed_buffer_test.zig", 1 },
     .{ "tests/blackbox/oracle_test.zig", 2 },
     .{ "tests/blackbox/page_fuzz_test.zig", 1 },
     .{ "tests/blackbox/playground_page_test.zig", 1 },
@@ -347,6 +348,59 @@ pub fn build(b: *std.Build) void {
     run_cmd.addPassthruArgs();
     run_step.dependOn(&run_cmd.step);
 
+    // Native binding catalogue generation: workers-native-bindings.md.
+    // An explicit command consumes the pinned archive and writes ordinary
+    // nominal types plus source-indexed metadata; it exposes no operations.
+    const native_module = b.createModule(.{
+        .root_source_file = b.path("src/native/Generate.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const native_tool_module = b.createModule(.{
+        .root_source_file = b.path("tests/native_bindings.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    native_tool_module.addImport("native_bindings", native_module);
+    native_tool_module.addAnonymousImport("webref_idl", .{
+        .root_source_file = b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"),
+    });
+    native_tool_module.addAnonymousImport("webref_receipt", .{
+        .root_source_file = b.path("docs/design/research/workers/sources.json"),
+    });
+    const native_tool = b.addExecutable(.{ .name = "beni-native-bindings", .root_module = native_tool_module });
+    const native_step = b.step("native-bindings", "Generate the pinned native type and binding metadata catalogue");
+    const native_run = b.addRunArtifact(native_tool);
+    native_run.addPassthruArgs();
+    native_step.dependOn(&native_run.step);
+    const native_tests = b.addTest(.{
+        .name = "native_bindings_test",
+        .root_module = native_tool_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_unit_tests = b.addTest(.{
+        .name = "native_idl_test",
+        .root_module = native_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_test_step = b.step("test-native-bindings", "Test pinned native type and metadata generation");
+    const native_test_run = runTests(b, native_tests);
+    native_test_step.dependOn(&native_test_run.step);
+    const native_unit_run = runTests(b, native_unit_tests);
+    native_test_step.dependOn(&native_unit_run.step);
+    // Compile every generated nominal type with the real development compiler.
+    // These files are output of the command, not hand-written stand-ins.
+    const native_generated = b.addRunArtifact(native_tool);
+    native_generated.addFileArg(b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"));
+    const native_directory = native_generated.addOutputDirectoryArg("native-bindings");
+    const native_check = b.addRunArtifact(exe);
+    native_check.addArgs(&.{ "check", "--core", "--no-cache" });
+    native_check.addPrefixedDirectoryArg("--root=", native_directory);
+    native_check.addDirectoryArg(native_directory);
+    native_test_step.dependOn(&native_check.step);
+
     // ---- Hermetic suite. ----
     // `src/beni.zig` references every internal module from its test block;
     // `diagnostic` is its own module and therefore its own test artifact.
@@ -398,6 +452,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const test_step = b.step("test", "Run the hermetic unit tests");
+    test_step.dependOn(&native_test_run.step);
+    test_step.dependOn(&native_unit_run.step);
+    test_step.dependOn(&native_check.step);
     // One binary, `unit_shards` processes: the test runner runs a test in
     // the process whose number is its index modulo the count, so the suite
     // takes about as long as its slowest test instead of the sum of all.
@@ -1513,11 +1570,32 @@ var core_pack_maker: ?*std.Build.Step.Compile = null;
 
 /// `core`'s files in a directory of their own, for the maker's
 /// `--core-root`: the files `embedCore` embeds, under the same names.
+/// The actual foreign sibling for the typed portable buffer. Its JavaScript
+/// is generated from structured JsIr, not maintained as a source asset.
+fn typedBufferSibling(b: *std.Build) std.Build.LazyPath {
+    if (typed_buffer_sibling) |path| return path;
+    const generator = b.addExecutable(.{
+        .name = "typed_buffer",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/typed_buffer_main.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    const run = b.addRunArtifact(generator);
+    const path = run.addOutputFileArg("Buffer.js");
+    typed_buffer_sibling = path;
+    return path;
+}
+
+var typed_buffer_sibling: ?std.Build.LazyPath = null;
+
 fn coreDirectory(b: *std.Build, core: Core) std.Build.LazyPath {
     const wf = b.addWriteFiles();
     for (coreFiles(b, core)) |file| switch (file.origin) {
         .disk => |full| _ = wf.addCopyFile(b.path(full), file.rel),
         .text => |text| _ = wf.add(file.rel, text),
+        .generated => |path| _ = wf.addCopyFile(path, file.rel),
     };
     return wf.getDirectory();
 }
@@ -1690,13 +1768,18 @@ var tree_copies: std.ArrayList(TreeCopy) = .empty;
 /// `core`'s files as the build id hashes them: a `treeCopy` of its
 /// directory, with its extra file beside them if it has one.
 fn coreCopy(b: *std.Build, core: Core) std.Build.LazyPath {
-    const extra = core.extra orelse return treeCopy(b, core.dir, b.path(core.dir));
-    // `coreFiles` refuses an extra file that would replace one of the
-    // directory's.
-    _ = coreFiles(b, core);
+    const files = coreFiles(b, core);
+    const generated = for (files) |file| {
+        if (file.origin == .generated) break true;
+    } else false;
+    if (core.extra == null and !generated) return treeCopy(b, core.dir, b.path(core.dir));
     const wf = b.addWriteFiles();
     _ = wf.addCopyDirectory(b.path(core.dir), "tree", .{});
-    _ = wf.add(b.fmt("tree/{s}", .{extra.rel}), extra.text);
+    if (core.extra) |extra| _ = wf.add(b.fmt("tree/{s}", .{extra.rel}), extra.text);
+    for (files) |file| switch (file.origin) {
+        .generated => |path| _ = wf.addCopyFile(path, b.fmt("tree/{s}", .{file.rel})),
+        else => {},
+    };
     return wf.getDirectory().path(b, "tree");
 }
 
@@ -1799,6 +1882,7 @@ fn embedCore(b: *std.Build, core: Core, fixed: bool) Stable {
     for (files) |file| copies.append(b.allocator, .{ .name = file.rel, .from = switch (file.origin) {
         .disk => |full| b.path(full),
         .text => |text| wf.add(file.rel, text),
+        .generated => |path| path,
     } }) catch @panic("OOM");
     var manifest: std.ArrayList(u8) = .empty;
     manifest.appendSlice(b.allocator,
@@ -1817,6 +1901,7 @@ fn embedCore(b: *std.Build, core: Core, fixed: bool) Stable {
         \\pub const Asset = struct {
         \\    path: []const u8,
         \\    bytes: []const u8,
+        \\    generated: bool = false,
         \\};
         \\
     ) catch @panic("OOM");
@@ -1828,7 +1913,7 @@ fn embedCore(b: *std.Build, core: Core, fixed: bool) Stable {
     manifest.appendSlice(b.allocator, "};\npub const assets = [_]Asset{\n") catch @panic("OOM");
     for (files) |file| {
         if (file.module) continue;
-        manifest.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ dir, file.rel, file.rel })) catch @panic("OOM");
+        manifest.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\"), .generated = {s} }},\n", .{ dir, file.rel, file.rel, if (file.origin == .generated) "true" else "false" })) catch @panic("OOM");
     }
     manifest.appendSlice(b.allocator, "};\n") catch @panic("OOM");
     copies.items[0] = .{ .from = wf.add("core_package.zig", manifest.items), .name = "core_package.zig" };
@@ -1858,6 +1943,8 @@ const CoreFile = struct {
         disk: []const u8,
         /// Its bytes, made by this script.
         text: []const u8,
+        /// An asset produced by a tracked build step.
+        generated: std.Build.LazyPath,
     },
 };
 
@@ -1872,6 +1959,13 @@ fn coreFiles(b: *std.Build, core: Core) []const CoreFile {
         for (list.items) |rel| if (std.mem.eql(u8, rel, extra.rel)) std.debug.panic("{s}/{s} exists; a core's extra file must be a new one", .{ core.dir, rel });
         list.append(b.allocator, extra.rel) catch @panic("OOM");
     }
+    const buffer_source = for (paths.items) |rel| {
+        if (std.mem.eql(u8, rel, "Js/Buffer.beni")) break true;
+    } else false;
+    const buffer_sibling = for (assets.items) |rel| {
+        if (std.mem.eql(u8, rel, "Js/Buffer.js")) break true;
+    } else false;
+    if (buffer_source and !buffer_sibling) assets.append(b.allocator, "Js/Buffer.js") catch @panic("OOM");
     sortPaths(&paths);
     sortPaths(&assets);
     if (paths.items.len == 0) std.debug.panic("the core package at {s} is empty", .{core.dir});
@@ -1886,7 +1980,7 @@ fn coreFiles(b: *std.Build, core: Core) []const CoreFile {
             out.append(b.allocator, .{
                 .rel = rel,
                 .module = module,
-                .origin = if (extra_text) |text| .{ .text = text } else .{ .disk = b.pathJoin(&.{ core.dir, rel }) },
+                .origin = if (extra_text) |text| .{ .text = text } else if (buffer_source and !buffer_sibling and std.mem.eql(u8, rel, "Js/Buffer.js")) .{ .generated = typedBufferSibling(b) } else .{ .disk = b.pathJoin(&.{ core.dir, rel }) },
             }) catch @panic("OOM");
         }
     }

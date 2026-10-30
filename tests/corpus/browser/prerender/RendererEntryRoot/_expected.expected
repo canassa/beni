@@ -1,0 +1,4 @@
+-- load
+<body>
+  <output>"42"</output>
+</body>

@@ -1,0 +1,93 @@
+-- Direct operations lower to native array operations. First-class operations
+-- must also work through the actual compiler-generated foreign sibling.
+import Js
+import Js.Buffer as Buffer
+
+
+pub direct : ⊤ → Int × Int
+direct ⊤ =
+    buffer = Buffer.make ⊤
+    Buffer.push buffer 7
+    Buffer.push buffer 11
+    total = Js.ref 0
+    Buffer.forEach buffer λvalue → Js.write total (Js.read total + value)
+    ( Buffer.length buffer, Js.read total )
+
+
+pub firstClass : ⊤ → Int × String
+firstClass ⊤ = withMake Buffer.make
+
+
+withMake : (⊤ → Buffer.Buffer String) → Int × String
+withMake make =
+    buffer = make ⊤
+    withPush buffer Buffer.push
+
+
+withPush : Buffer.Buffer String, (Buffer.Buffer String, String → ⊤) → Int × String
+withPush buffer push =
+    push buffer "a"
+    push buffer "b"
+    withRead buffer Buffer.length Buffer.forEach
+
+
+withRead :
+      Buffer.Buffer String
+    , (Buffer.Buffer String → Int)
+    , (Buffer.Buffer String, (String → ⊤) → ⊤)
+    → Int × String
+withRead buffer length each =
+    text = Js.ref ""
+    each buffer λvalue → Js.write text (Js.read text ++ value)
+    ( length buffer, Js.read text )
+
+
+pub earlyStop : ⊤ → Int × Int
+earlyStop ⊤ = earlyWith Buffer.forEachWhile
+
+
+earlyWith : (Buffer.Buffer Int, (Int → Bool) → ⊤) → Int × Int
+earlyWith each =
+    buffer = Buffer.make ⊤
+    Buffer.push buffer 1
+    Buffer.push buffer 2
+    Buffer.push buffer 3
+    Buffer.push buffer 4
+    calls = Js.ref 0
+    total = Js.ref 0
+    each buffer λvalue →
+        Js.write calls (Js.read calls + 1)
+        Js.write total (Js.read total + value)
+        value < 3
+    ( Js.read calls, Js.read total )
+
+
+pub ordered : ⊤ → Int
+ordered ⊤ =
+    first = Buffer.make ⊤
+    Buffer.push first 1
+    second = Buffer.make ⊤
+    Buffer.push second 9
+    current = Js.ref first
+    result = Js.ref 0
+    Buffer.forEachWhile (Js.read current) (switchBuffer current second result)
+    Js.read result
+
+
+switchBuffer : Js.Ref (Buffer.Buffer Int), Buffer.Buffer Int, Js.Ref Int → (Int → Bool)
+switchBuffer current next result =
+    Js.write current next
+    λvalue →
+        Js.write result value
+        False
+
+
+pub lengths : ⊤ → Int × Int × Int
+lengths ⊤ =
+    buffer = Buffer.make ⊤
+    before = Buffer.length buffer
+    Buffer.push buffer 5
+    middle = Buffer.length buffer
+    Buffer.push buffer 8
+    after = Buffer.length buffer
+    ( before, middle, after )

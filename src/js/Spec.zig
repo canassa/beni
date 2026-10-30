@@ -305,6 +305,9 @@ pub const Input = struct {
     /// (backend.md §9, *The entry's call is a call*): fact 3 reads it as a
     /// call, facts 1 and 2 and `prune` as names that escape.
     entry: ?Entry = null,
+    /// External exports of numeric-index reads, rather than the whole base
+    /// value. Prerender-pre exports main[0] and main[1] (render and routes).
+    indexed_exports: []const IndexedExport = &.{},
     /// The property-name id of `insertBefore` and the pooled symbol of
     /// `appendChild`, when the program names the first: slice 4's
     /// `appendChild` rewrite.
@@ -403,11 +406,17 @@ pub const VarOrigin = struct {
 /// `module` of `Input.modules`, and that node's byte offset in its source.
 pub const SiteOrigin = struct { module: u32, node: u32, pos: u32 };
 
-/// Every name `Input.escaping` lists, then the entry call's.
+/// A numeric-index read exported to code outside the build. Numeric reads
+/// currently share `index_get`'s element summary, independently of the index.
+pub const IndexedExport = struct { base: u32, index: u32 };
+
+/// Every external export's base name, then the entry call's names.
 fn eachRoot(in: Input, i: usize) ?u32 {
     if (i < in.escaping.len) return in.escaping[i];
+    const projection = i - in.escaping.len;
+    if (projection < in.indexed_exports.len) return in.indexed_exports[projection].base;
     const e = in.entry orelse return null;
-    const j = i - in.escaping.len;
+    const j = projection - in.indexed_exports.len;
     if (j == 0) return e.callee;
     return if (j - 1 < e.args.len) e.args[j - 1] else null;
 }
@@ -16026,6 +16035,10 @@ const Pts = struct {
             p.changed = false;
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
+            // Use the same numeric-read transfer as index_get. Do not escape
+            // the base container: only the externally consumed read escapes.
+            for (s.in.indexed_exports) |e| if (e.base < p.globals.len)
+                try p.escape(try p.readAll(try p.view(p.globals[e.base])));
             try p.drain();
             if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();

@@ -30,9 +30,21 @@ remain explicitly gated. The same PR stays open throughout implementation.
 
 ## Session status
 
-Implementation resumed after clarifying the stop condition. Three agents own
-runtime metadata, typed runtime storage and native binding foundations. Their
-concrete design documents precede their code. The manager owns the emission
-restructuring specification and final integration. No completed implementation
-or performance result is claimed by this plan; later entries record validated
-commits and remaining work.
+The independently landable foundation checkpoint implements generic runtime
+metadata with strict six-key tables, the Session-owned validated entry plan,
+the pinned native binding catalogue, and the typed Buffer primitive with its
+generated sibling, core-override checks and ordinary type/effect tests. The
+prerender export-root correction remains paired with its regression and keeps
+the call-graph guard enabled. Focused validation and review have passed; the
+manager will run full gates on this exact checkpoint before committing it.
+
+The typed Inline queue and its coordinated callback ABI are deliberately held
+out of this checkpoint. The candidate has passed source review, focused corpus
+and real Chromium behavior validation, but remains under performance validation.
+The existing Inline implementation and inline run hashes stay unchanged here;
+the candidate mixed-type fixture will accompany the eventual accepted queue
+migration. No budget is waived.
+
+Task continuation storage, remaining callback consumers, per-entry realm and Wire
+proofs, and public worker launching remain pending. This checkpoint does not
+complete C or enable worker launch. All further accepted work stays on PR #1304.

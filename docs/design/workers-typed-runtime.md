@@ -1,10 +1,12 @@
 # Typed callback storage for worker realms
 
-Specified 2026-10-30 for workers.md §4 and #1295. This implements the selected
+Specified 2026-10-30 for workers.md §4 and #1295. This specifies the selected
 native-type design. Native handles and callbacks must retain ordinary types;
 there is no runtime-wide Js.Value exemption. This document changes runtime
 implementation structure, not source grammar or the fatal and suspension
-contracts. Implementation status is recorded below as each bounded slice lands.
+contracts. Implementation status is recorded below as each bounded slice
+lands. The first foundation checkpoint includes the typed Buffer primitive; the Inline queue
+candidate remains unlanded pending performance validation.
 
 ## 1. Audited baseline
 
@@ -50,7 +52,11 @@ with a homogeneous queue of closed unit callbacks. Each callback captures its
 actual typed receiver function and value. This creates one additional closure
 for each queued send compared with the old function and value slots. That is a
 real allocation cost of the migration and must be reported, not described as
-allocation-neutral merely because the buffer itself has no wrapper. No callback is converted to Js.Value
+allocation-neutral merely because the buffer itself has no wrapper. The always
+initialized typed queue also makes one initial empty array and one replacement
+empty array per detached batch; stop and defect reset it to an empty array.
+The old nullable queue allocated its array only when nested work arrived. These
+are additional queue-mechanics costs to include in the remaining parity work. No callback is converted to Js.Value
 to enter this queue. Ordinary inferred callback obligations therefore remain
 visible through the closure and the queue element type.
 
@@ -192,3 +198,64 @@ for the direct path and suspension path. The full >250k LOC/s and runtime parity
 measurements belong to the integrated implementation and run without concurrent
 full gates on Dagon. Site counts and source line counts are not throughput or
 allocation measurements.
+
+## 5. First focused implementation checkpoint
+
+The independently landable foundation checkpoint implements the typed Buffer
+primitive, its generated sibling and core-override/authority checks, alongside
+generic runtime metadata, the Session entry plan and the native catalogue. The
+manager will run full gates on that exact checkpoint before committing it.
+
+The typed Inline queue and direct/via callback ABI are a reviewed candidate,
+not included in this checkpoint. Existing Inline source, its generated ABI and
+inline run hashes remain unchanged. The candidate passed the behavioral checks
+recorded below but remains under performance validation; its mixed-type fixture
+is held with that candidate. Normative queue and Task migration requirements
+above are unchanged. Task continuation storage and remaining native callback
+shims are not migrated. Public worker launch remains gated on the full C proof
+and Wire implementation; no budget is waived.
+
+Focused validation of the held queue candidate and the Buffer foundation used
+the Zig development compiler, not a release-mode compiler. It passed the entire browser/inline corpus, the typed buffer corpus
+in development and release output modes, and four separate black-box tests
+for core override assets, module authority and ordinary custom Core.Js names.
+The integrated browser/inline corpus also passed in real Chromium. The
+4,096-message mixed Int and String fixture preserves FIFO, values and trailing-message order on two runs.
+ReadDuringDispatch and StopMidDispatch retain their existing transcripts.
+The emitted applyBatch uses a native for-of with a break after the stop guard.
+
+The generated sibling's first-class forEachWhile fallback is exercised by the
+earlyWith helper: it calls exactly three values and stops before the fourth.
+A nonliteral callback-factory fixture also verifies array selection happens
+before callback creation. Mutable length snapshots remain 0, 1 and 2 across
+pushes. Direct, forwarded and while callbacks that suspend are refused with
+complete sync_boundary diagnostics. The buffer remains inaccessible to ordinary
+applications, while a separately resolved application Js.Buffer module works.
+
+Generated sibling lookup was checked with a warm and cold cache. A missing
+physical asset uses the generated implementation. An empty physical file wins
+and receives the existing five foreign-export diagnostics. A dangling physical
+symlink also wins and receives the existing missing-sibling diagnostic; it must
+not be mistaken for absence. The symlink test failed before the no-follow stat
+fix and passed after it. Failed builds write no entry output. The intrinsic
+lookup separately excludes Buffer-only implementation names from Core.Js, so a
+custom core ordinary makeBuffer function retains its ordinary meaning (#1339).
+
+For the held queue candidate, the baseline 128902faf Debug compiler and the
+changed Debug compiler produced these DispatchDeepKey release-output sizes.
+These measurements describe the candidate, not code in the foundation checkpoint. The measurement concatenates the
+sorted emitted .mjs files, excluding maps and HTML, and applies Brotli 1.2.0 at
+quality 11 with identical options:
+
+| Release output | Baseline | Typed queue | Difference |
+|---|---:|---:|---:|
+| Raw JavaScript bytes | 2,312 | 2,322 | +10 |
+| Brotli bytes | 827 | 817 | −10 |
+
+The changed compiler build identity was 12532ea7398a70b1e2ba045c40899980.
+This small output comparison is not a throughput, allocation or parity result.
+The additional closed thunk per nested send and the changed empty-buffer
+allocation policy remain explicit runtime costs. No performance budget is
+waived, and this does not claim that typed callback storage alone proves realms.
+The typed primitive emit golden independently pins the direct array operations
+and early break, with no type box, proxy or registration table.

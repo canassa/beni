@@ -516,7 +516,8 @@ pub fn build(
             // may write `foreign` (`boundary.md` §2).
             if (!imp.prelude and g.modules.items(.package)[i] == .app and !platforms.app_privileged and
                 g.modules.items(.package)[target.int()] == .core and
-                std.mem.eql(u8, interner.slice(g.modules.items(.name)[target.int()]), "Js"))
+                (std.mem.eql(u8, interner.slice(g.modules.items(.name)[target.int()]), "Js") or
+                    std.mem.eql(u8, interner.slice(g.modules.items(.name)[target.int()]), "Js.Buffer")))
             {
                 try diagnostics.append(gpa, .{ .code = .js_outside_platform, .file = file, .token = imp.name_token });
             }

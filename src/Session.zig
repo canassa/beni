@@ -88,6 +88,7 @@ const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
 const stamped = @import("stamped.zig");
+const EntryPlan = @import("entry/Plan.zig");
 
 const Session = @This();
 
@@ -115,6 +116,8 @@ resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
 /// included the check step.
 checked: Check = .empty,
+/// Resolved entry facts refer only to the current checked store.
+entry_plan: EntryPlan = .{},
 /// One persistent-cache key per module (`fast-compiler.md` §8), computed
 /// serially between resolution and the check. Empty unless the phases
 /// included the check step.
@@ -654,6 +657,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.compare_keys);
     session.freeOwnershipBlocks();
     session.keys.deinit(gpa);
+    session.entry_plan.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
     session.graph.deinit(gpa);
@@ -680,6 +684,8 @@ pub const RunError = error{
 /// Enumerate `paths`, run `phases.per_file` over every file on
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
+    // Even an early input failure must not leave facts from an older store.
+    session.entry_plan.reset();
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.
@@ -920,6 +926,11 @@ fn isPlatformRoot(session: *const Session, name: []const u8) bool {
     const chain = session.options.chain orelse return true;
     for (chain.layers) |layer| {
         const m = layer.manifest;
+        for (m.entryKinds) |kind| {
+            if (std.mem.eql(u8, kind.runtime, name) or std.mem.eql(u8, moduleOf(kind.programType), name)) return true;
+            for (kind.constructors) |constructor| if (std.mem.eql(u8, moduleOf(constructor.name), name)) return true;
+            for (kind.launches) |launch| if (std.mem.eql(u8, moduleOf(launch.name), name)) return true;
+        }
         if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.markup.module) |module| if (std.mem.eql(u8, module, name)) return true;
@@ -2493,11 +2504,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
     // reads core from disk, so the embedded copy must not shadow it.
     var embedded: std.ArrayList(Key.Asset) = .empty;
     defer embedded.deinit(gpa);
-    if (session.options.core_root == null) {
-        for (core_package.assets) |asset| {
-            try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });
-        }
-    }
+    try @import("core_assets.zig").append(Key.Asset, gpa, worker.arena.allocator(), session.io, session.options.core_root, &embedded);
     if (session.options.chain) |chain| for (chain.layers) |layer| {
         const p = layer.embedded orelse continue;
         for (p.assets) |asset| try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });

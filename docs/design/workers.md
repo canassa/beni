@@ -260,7 +260,7 @@ including 41 in core/Task.beni, 11 in the inline renderer and 12 in browser/Rt.
 These are use counts, not storage rewrite sizes. #1295 must audit producers and
 queues before claiming that migration measured. The inline projection requires
 upcasts at 32 native sites. The full pinned IDL input has 346 files, 2,782 blocks
-and 11,620 member rows; generated output size still needs measurement.
+and 11,621 member rows; generated output size still needs measurement.
 
 ### Generated bindings and ordinary types
 
@@ -769,7 +769,11 @@ measurements must not run concurrently with another full suite on Dagon.
 ## 11. Independently landable implementation order
 
 The concrete [build planning and entry projection contract](workers-emission.md)
-specifies the emitter restructuring before implementation. Progress is tracked
+specifies the emitter restructuring before implementation. The
+[generic runtime foundation](workers-entry-implementation.md),
+[typed callback storage](workers-typed-runtime.md) and
+[native binding generation](workers-native-bindings.md) specify their concrete
+implementation boundaries. Progress is tracked
 in [the implementation plan](../../plans/workers-implementation.md).
 
 

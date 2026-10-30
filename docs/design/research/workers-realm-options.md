@@ -117,14 +117,18 @@ converted local or choosing a different helper type changes the source edit
 count. This is a stated migration plan, not a language-intrinsic minimum.
 
 C also needs a Zig WebIDL binding generator. The pinned package has **346 IDL
-files, 2,782 declaration blocks and 11,620 member rows**. The complete
+files, 2,782 declaration blocks and 11,621 member rows**. The complete
 [count receipt](workers/binding-surface-counts.json) records every block and the
 counting method. That is 8,257 interface, mixin and namespace member rows plus
-3,363 dictionary fields. The generated surface must cover them, merge partials,
+3,364 dictionary fields. The generated surface must cover them, merge partials,
 expand includes, and add typed inheritance conversions. Overloads, enum and
 callback types, getters and setters, checked adapters and name collisions still
 need generation rules. Generated declaration count and bytes are **unknown
-until that generator is measured**. The 102 worker-specific blocks in the
+until that generator is measured**. The implementation parser corrected one
+previously omitted dictionary field: SanitizerElementNamespace._namespace has a
+quoted URL whose // was incorrectly stripped as a comment by the old counter.
+The corrected receipt retains the exact cause; file and declaration totals are
+unchanged. The 102 worker-specific blocks in the
 older inventory are not the size of this full binding package.
 
 **B keeps most raw expressions but adds a second analysis beside type checking.**

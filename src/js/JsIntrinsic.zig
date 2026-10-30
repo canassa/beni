@@ -94,6 +94,11 @@ pub const Which = enum {
     /// carries, a string literal or a concatenation (`backend.md` §4,
     /// *`Js.fingerprint` is its type's identity*).
     fingerprint,
+    makeBuffer,
+    pushBuffer,
+    lengthBuffer,
+    eachBuffer,
+    eachBufferWhile,
 };
 
 /// Whether `inst` is a `case` on `Js.development` or on `Js.testHooks` —
@@ -237,8 +242,24 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
     if (graph.modulePackage(module) != .core) return null;
-    if (!same(interner.slice(graph.moduleName(module)), "Js")) return null;
+    const module_name = interner.slice(graph.moduleName(module));
+    if (!same(module_name, "Js") and !same(module_name, "Js.Buffer")) return null;
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
+    const name = interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (same(module_name, "Js.Buffer")) {
+        if (same(name, "make")) return .makeBuffer;
+        if (same(name, "push")) return .pushBuffer;
+        if (same(name, "length")) return .lengthBuffer;
+        if (same(name, "forEach")) return .eachBuffer;
+        if (same(name, "forEachWhile")) return .eachBufferWhile;
+        return null;
+    }
+    const which = std.meta.stringToEnum(Which, name) orelse return null;
+    return switch (which) {
+        // These implementation tags belong only to core Js.Buffer. A
+        // custom core Js module may define ordinary functions of these names.
+        .makeBuffer, .pushBuffer, .lengthBuffer, .eachBuffer, .eachBufferWhile => null,
+        else => which,
+    };
 }

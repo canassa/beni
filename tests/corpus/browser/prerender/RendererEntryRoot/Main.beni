@@ -1,0 +1,15 @@
+-- The build calls the exported renderer, not the page runtime's run(main).
+-- Release --check-call-graph must retain this renderer and its view.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html ⊤
+view count = <output>{count + 1}</output>
+
+
+main : Tea.Program
+main =
+    Browser.prerender (Tea.sandbox { init = λ⊤ → 41, update = λ⊤ model → model, view = view })
+        [ "/" ]

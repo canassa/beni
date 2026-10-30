@@ -67,7 +67,8 @@ native identities by exact IDL name. An interface or namespace has exactly one
 primary declaration. Partials must have a compatible primary kind. Includes
 must join an interface to a declared mixin. Duplicate primary declarations,
 missing parents, missing include targets and cyclic inheritance are refusals.
-Merging retains each source block and member range. It never overwrites one
+Repeated includes of the same interface and mixin are refused as duplicate
+identity. Merging retains each source block and member range. It never overwrites one
 partial with another or expands a mixin twice because of input ordering.
 
 Each native interface and namespace gets one nominal type. The generated module
@@ -75,7 +76,9 @@ is `Browser.Host.<IDLName>` and exports `pub foreign type <IDLName>`. These are
 opaque native object identities, without a constructor, wrapper record or runtime
 allocation. IDL names that cannot be represented as an ordinary beni module and
 type name must receive an explicit versioned name-map row before generation;
-they are not guessed or silently renamed. Dictionaries, enums, callbacks and
+they are not guessed or silently renamed. Format v1 maps only the lowercase
+IDL namespace console to Browser.Host.Console and its Console type. The artifact
+publishes that map and rejects collisions with unchanged IDL identities. Dictionaries, enums, callbacks and
 typedefs retain catalogue rows but are not opaque native objects. Their callable
 operation mapping must later produce ordinary beni records, unions, function
 and alias types from the retained IDL facts. Mixins contribute operations to

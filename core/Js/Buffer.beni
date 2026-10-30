@@ -1,0 +1,27 @@
+--! A typed mutable buffer for privileged runtime queues. The array itself
+--! is its representation; values keep their real types when stored here.
+--! Only core and platform packages may import this module.
+
+--| A mutable sequence retaining its element type, including callback types.
+pub foreign type Buffer a
+
+
+--| Make an empty buffer. Each call makes a distinct native array.
+pub foreign impure make : ⊤ → Buffer a
+
+
+--| Append one element. The caller owns the private mutable buffer.
+pub foreign impure push : Buffer a, a → ⊤
+
+
+--| The current number of elements.
+pub foreign impure length : Buffer a → Int
+
+
+--| Invoke body for each element, in FIFO order. A callback defect propagates.
+--| As with native array iteration, appends during the walk are visible.
+pub foreign impure forEach : Buffer a, sync (a → ⊤) → ⊤
+
+
+--| Invoke body in FIFO order until it returns False. A defect propagates.
+pub foreign impure forEachWhile : Buffer a, sync (a → Bool) → ⊤

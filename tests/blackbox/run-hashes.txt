@@ -154,3 +154,12 @@ page_fuzz_test.test.a page that stopped hands nothing to the next: a message tha
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 64acb624a904a569586774fbce982d795c4381ade3ea1c20bf81de12ae5d9237
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 68e8aaf73059df63c683e0b97d3ca69c222b5cd09c42cd1239689cb2952c6c92
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
+platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
+platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
+platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
+typed_buffer_test.test.an application Js.Buffer module has no privileged core identity #0 008e84de07a8192f43c96506a965c9022d3eae5baeca6c4d963a531aa7efef09
+typed_buffer_test.test.generated buffer sibling participates in core overrides and physical export validation #0 44b29054ed044fe1c75d6da9eeab0c842794f3cd412f8d5107f37637da738c9f
+typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #0 0df0830ad7032c495670a98392a429935ca1dd7b66239b1c35b89f4befa722a9
+typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #1 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
