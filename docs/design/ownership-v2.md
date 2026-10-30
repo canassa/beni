@@ -2296,7 +2296,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    interned apart from the plain recast of the same inner at the same place, whose cells are the inner's
    own. Every rebuild keeps the mark: a cast of it (a cast of a value inside the inner is still one), a
    call's image (there a parameter cell stands for what the actual reaches, not for the actual's own
-   cells), a relabelling, a view's step and the block. Its κ is what the leaf rule gives approximate
+   cells), a relabelling, a view's step and the block. A step into it is whole again, even where its
+   place has the step to the inner's child: it is never the inner's own part. Its κ is what the leaf rule gives approximate
    cells: `lost`. The one rule therefore gives `lost` for `[*]` of `Js.to (Js.from xs)` when `xs` is a
    parameter, whether the cast is written inline or reached through a call of a declaration that casts.
    `excl π1` is a certificate that the cast lost, and v2 read it only where the two recasts were one
