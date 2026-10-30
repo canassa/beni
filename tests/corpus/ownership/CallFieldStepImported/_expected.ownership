@@ -1,0 +1,21 @@
+module Main
+  17:9 List.push xs: rejected alias: g.x.b holds it and is read at 18:5
+  25:9 List.push xs: rejected alias: k.y.x.b holds it and is read at 26:5
+  33:9 List.push xs: rejected alias: g.x.1 holds it and is read at 34:5
+  41:9 List.push xs: rejected alias: g.x#Box.0 holds it and is read at 42:5
+  summary rxb3: π1.y R, π1.y.x R, π1.y.x.b R
+  summary twoCalls: π1 RW[storage], π1[*] R
+  summary threeCalls: π1 RW[storage], π1[*] R
+  summary tuplePart: π1 RW[storage], π1[*] R
+  summary ctorField: π1 RW[storage], π1[*] R
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Steps
+  summary rb: π1.b R
+  summary rxb2: π1.x R, π1.x.b R
+  summary tb: π1.1 R
+  summary txb2: π1.x R, π1.x.1 R
+  summary cb: π1 R, π1#Box.0 R
+  summary cxb2: π1.x R, π1.x#Box.0 R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

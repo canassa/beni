@@ -245,12 +245,59 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             // that level (`π1#Rose.0⟨List⟩`), never the outer object's storage.
             us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items, m, &.{});
         }
+
+        /// `R` at `base` and below it at every path the callee's use shape
+        /// `u` marks anything at (§2.7: `U` non-empty there is a read), the
+        /// callee's steps after the argument's (#1325). Each `(parameter,
+        /// node, path)` once (`seen`: two parameters of one place share
+        /// their paths), on an explicit stack (#1138).
+        ///
+        /// A callee's deep read (a leaf: every path below, §2.13.6) is `R`
+        /// at its path only, as before #1325. A leaf here would make a
+        /// shallow `W` at the same path deep (`S`), which v1 does not do;
+        /// a use shape cannot hold a deep `R` beside a shallow `W` (#1328).
+        /// So are a step the caller's place does not take and an argument
+        /// path that stopped short (`whole` false): `R` where it stopped.
+        fn compose(e: Env, us: []NodeId, places: []const PlaceId, k: u32, base: PathId, whole: bool, u: NodeId, st: *std.ArrayList(Place.Step), seen: *Ids.FixedDict(3)) Error!void {
+            if (!whole) return;
+            const Item = struct { n: NodeId, path: PathId };
+            var stack: std.ArrayList(Item) = .empty;
+            defer stack.deinit(e.gpa);
+            try stack.append(e.gpa, .{ .n = u, .path = base });
+            while (stack.pop()) |item| {
+                try e.charge.reserve(e.gpa, .inspection, 1);
+                const got = try seen.getOrPut(e.gpa, .{ k, item.n.int(), item.path.int() });
+                if (got.found_existing) continue;
+                const d = e.shapes.get(item.n);
+                if (try marked(e, d.cells)) try at(e, us, places, k, item.path, .{ .r = true }, st);
+                if (d.kind != .node) continue;
+                var it = e.shapes.overEntries(d.a);
+                while (it.next()) |c| {
+                    // `⟲` is one or more levels, so the callee's `⟲` below
+                    // the argument's is the argument's (`π1⟲`, not `π1⟲⟲`).
+                    const again = c.step.kind == .level and e.places.pathParent(item.path) != .none and e.places.pathStep(item.path).kind == .level;
+                    const below = if (again) item.path else (try e.places.extend(e.gpa, e.charge, item.path, c.step)) orelse {
+                        try at(e, us, places, k, item.path, .{ .r = true }, st);
+                        continue;
+                    };
+                    try stack.append(e.gpa, .{ .n = c.node, .path = below });
+                }
+            }
+        }
+
+        fn marked(e: Env, cells: SetId) Error!bool {
+            var it = e.cells.sets.iterate(cells);
+            while (it.next()) |x| if (e.cells.origin(.from(x.key)) == .mark) return true;
+            return false;
+        }
     };
     // R: the body's reads of a local that names a parameter's object — the
     // parameter itself, or a part a pattern bound (`count ( _, ( b, _ ) )`
     // reads `π1.1.0`): at the cell's path, the use's own path below it.
     var use_steps: std.ArrayList(Place.Step) = .empty;
     defer use_steps.deinit(gpa);
+    var seen: Ids.FixedDict(3) = .{};
+    defer seen.deinit(gpa);
     for (frame.uses.items) |u| {
         if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;
         const v = frame.locals[u.local];
@@ -260,8 +307,18 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try env.charge.reserve(gpa, .inspection, 1);
             var at = pq[1];
-            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse break;
+            var whole = true;
+            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse {
+                whole = false;
+                break;
+            };
             try Mark.at(env, uses, in.param_places, pq[0], at, .{ .r = true }, &steps);
+            // A `call` use reads the argument at every path its callee's
+            // `use` names (§2.7), so the class marks `R` there too, the
+            // callee's paths below the argument's (#1325: `rxb2 g = rb g.x`
+            // with `rb r = List.length r.b` reads `π1.x.b`, not only `π1.x`).
+            if (u.kind == .call and u.use_node != .none)
+                try Mark.compose(env, uses, in.param_places, pq[0], at, whole, u.use_node, &steps, &seen);
         };
     }
     // W: a demand's base cells that are a parameter's.
