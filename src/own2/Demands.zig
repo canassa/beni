@@ -1199,6 +1199,10 @@ const Resolver = struct {
 /// holders whose last use it was. One outcome per demand, in its order.
 pub fn resolve(env: Env, frame: Frame, out: []Outcome) Error!void {
     std.debug.assert(out.len == frame.demands.len);
+    // Counted apart (`Account.demands`).
+    const was = env.account().in_demands;
+    env.account().in_demands = true;
+    defer env.account().in_demands = was;
     const gpa = env.gpa;
     var r: Resolver = .{ .gpa = gpa, .env = env, .frame = frame, .live = .{ .gpa = gpa, .env = env } };
     defer r.deinit();
