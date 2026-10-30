@@ -8969,6 +8969,11 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // each inner's child carries stays under that child's node, the id a
     // read through `Shape.proj` looks up; under one joined node the block
     // lost two `shared` entries (1 756 → 1 624 bytes). Pinned byte for byte.
+    // One `[*][*]` entry reads `lost`, not `excl π1[*]`: a stepped recast
+    // that keeps its whole inner reads the inner's reach approximately
+    // (#1261), because the shallow read before it was unsound (#1132's
+    // fixtures `WideResult` and `core/FullCast`). A cast-aware rule that
+    // keeps the inner's own cells exact outside a region fold is #1291.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -8983,7 +8988,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1756 bytes, hash e63ec028a3fa3b88\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1756 bytes, hash b6b4579f1f103edc\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {
