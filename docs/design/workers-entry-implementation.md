@@ -10,8 +10,9 @@ implementation must retain its guarantees and budgets.
 A platform manifest may declare entryKinds, an array of records. Each record
 has programType (a module-qualified nominal type), realm (a native realm name),
 runtime (a module name in that platform package), constructors, launches and
-parameters. The final three default to empty arrays for a plain top-level
-program whose nominal type takes no parameters. A kind is identified by its
+parameters. All six fields are required, as workers.md specifies. A plain
+top-level program whose nominal type takes no parameters writes explicit empty
+arrays for its unused constructors, launches and parameter roles. A kind is identified by its
 program type, not an arbitrary string alias or a compiler-known module name.
 
 Constructor rows name a qualified declaration in name, its zero-based callback
@@ -25,9 +26,13 @@ use six wire rows under parameter index two; state uses a local row at one.
 
 The chain combines rows from its platform packages while preserving the defining
 package and source manifest. Repeating a program type is invalid_entry_kind;
-there is no order-dependent override. Unknown JSON keys retain the manifest's
-ordinary forward-compatible behavior. Malformed JSON field types remain the
-manifest's exit-2 error. Invalid semantic names, arities and roles produce
+there is no order-dependent override. Identity is the resolved declaring module
+and type, including its platform package, not a raw qualified string. The current
+module graph still refuses equal platform module names across chain layers as
+duplicate_module; this slice preserves that boundary and adds no new package
+namespace feature. Unknown JSON keys retain the manifest's
+ordinary forward-compatible behavior. Missing required fields or malformed JSON
+field types remain the manifest's exit-2 error. Invalid semantic names, arities and roles produce
 invalid_entry_kind against the defining manifest at 1:1, before output is written.
 
 For the first complete runtime foundation, an existing top-level program string
@@ -42,7 +47,9 @@ Check and build validate the same metadata against checked module interfaces.
 All metadata-named modules are roots even when an app does not import them.
 The selected runtime's run must be a public beni value with a body, exactly one
 parameter and no hidden evidence parameters. The parameter is the selected
-nominal Program with its declared arity; the result is unit. Aliases are expanded
+nominal Program with its declared arity; the result is unit. This unit-returning runtime cannot also supply the result required by
+legacy exports program mode; that contradictory combination is invalid_entry_kind.
+Aliases are expanded
 using their checked interface bodies. Generic type arguments remain generic;
 the runtime cannot silently specialize a universal Program contract to Int.
 
@@ -88,3 +95,14 @@ malformed rows; fuzzing must retain the manifest reader's no-panic contract.
 
 Use the development compiler while iterating. The manager runs full gates after
 integrating the implementation and reviews the emitted behavior and diagnostics.
+
+## Foundation scope
+
+The first code slice checks runtime signatures and effects completely for the
+selected top entry. Constructor records currently receive field-name and arity
+shape checks, not ownership or effect certification of their callbacks. Concrete
+record paths in constructor and launch schemes are checked now; generic field
+paths remain in the original metadata as obligations for later instantiation.
+None of these shallow shape checks certifies Wire or native realm availability.
+The later source-entry, realm, wire and ownership v2 passes must consume the
+retained rows before a public worker launcher can ship.
