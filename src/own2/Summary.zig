@@ -327,11 +327,13 @@ pub const Table = struct {
     /// before anything is appended. Funs are stored sorted by `j`, their
     /// supplies and keeps sorted by their keys, the once paths by id.
     pub fn add(t: *Table, env: Env, d: Draft) Error!ClassId {
-        // A class is stored forced: no view in its `res` or use shapes, so a
-        // template, a block and a printer never meet one (§2.11).
+        // A class is stored forced: no view in its `res`, its use shapes or
+        // the nodes its κ is stored under, so a template, a block and a
+        // printer never meet one (§2.11).
         if (std.debug.runtime_safety) {
             std.debug.assert(!try env.shapes.holdsView(env.gpa, d.res));
             for (d.params) |u| std.debug.assert(!try env.shapes.holdsView(env.gpa, u));
+            std.debug.assert(!try env.conds.kappaHoldsView(env.gpa, env.shapes, d.kappas));
         }
         var n: u32 = 1 + @as(u32, @intCast(d.params.len + d.funs.len + d.slots.len + d.classes.len + d.once.len));
         for (d.funs) |f| n += @intCast(f.supplies.len + f.keeps.len + f.backs.len);

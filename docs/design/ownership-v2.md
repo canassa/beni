@@ -1570,7 +1570,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
     `⊤` kept). Several parts are joined, raw (below).
   - `node`: a `node` at `T`'s place, with the image of `T`'s own cells and the child `view(c, E)` for
     each child `c`.
-  - `delta`: `delta(view(base, E), {step ↦ view(c, E)})`.
+  - `delta`: `delta(view(base, E), {step ↦ view(c, E)})`. When the base's answer is itself a delta (a
+    parameter leaf whose actual is one), the overrides compose over that delta's base, as `put` does, so
+    no delta is over a delta. `map` composes the same way at a view base.
   - `recast`: `recast(place, view(inner, E))`.
   - `union`, `choice`, `positions`: the same kind over the views of its sides, **built raw**. The
     record has `lazy_cells` and is made with no absorption test (`unionHas`, `dagHas`), so a force
@@ -1636,8 +1638,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   (§4.1), and to its growth only past it. A frame's temporaries are never forced for a block.
 - **Who holds a view.** Only a frame's values hold views: a call's result, what is built from it, and
   what a reader projects from those. **A class is stored forced.** Read-off maps the result through
-  `force` before it widens (`Shape.map`), use shapes are built from marks, and `Summary.Table.add`
-  checks both in a `runtime_safety` build.
+  `force` before it widens (`Shape.map`, which gives every view of a forced chain the answer's image, so
+  κ stored under a middle view is carried over), use shapes are built from marks, and `Summary.Table.add`
+  checks `res`, the use shapes and the nodes κ is stored under in a `runtime_safety` build.
   - So these hold no view, and their readers need no view arm: a template (`expandView`'s or the
     graft's), a block, a printed or normalized summary, `Rows`' result, and a class's use node in
     `Demands`. `f x = g x` publishes `g`'s result forced.
