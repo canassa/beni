@@ -1,0 +1,6 @@
+element "root"
+input #control "edited"
+focus #control
+click #set
+click #clear
+click #clear

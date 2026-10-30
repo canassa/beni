@@ -161,6 +161,23 @@ by its type — hides nothing: it is written exactly, and accepted.
    write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
    read as a rule of the language, and names what would lift it.
 
+*Implementation specified 2026-10-30: scalar String class attributes.* The checker already
+records whether an attribute is its declared String form or a class list
+(`language.md` §11.19; `Item.class`). A vocabulary row carrying `classes` does
+not by itself make every use a list. Inline accepts its `.string` form:
+constants use existing HTML attribute escaping, and changing values use
+`setAttribute` on the existing DOM node only when `getAttribute` differs from
+the desired String, preserving §8.2's binding compare. Target and desired value
+are each evaluated once. An empty String retains an empty
+attribute; no value is discarded or reinterpreted as a class list. Native
+attribute operations avoid assuming `className` is a String property. This
+implementation accepts currently supported HTML shapes; the existing SVG/MathML
+element refusal remains unchanged, and no Inline SVG support is claimed.
+The existing read-set/write guards, initialization and source evaluation order
+remain in force. `raw`, style attributes carrying `styles`, and actual
+`.class_list` values remain their separate existing compiler limits. This adds
+no grammar, vocabulary, runtime escape or alternative class semantics.
+
 ## 6. The release ledger (`plans/direct-rewrite.md` §8, as the owner decided for S0)
 
 - **The dispatch guard and the mid-dispatch send queue are kept** on every page: a defect stops the
