@@ -1676,6 +1676,26 @@ of the same handle still add multiplicity through the path-multiset primitive.
     - The crossing keeps the read's own `at_summary`: only the position changes.
     - The read is made at `R` only when `C` equals `R` on the tested keys (below). Otherwise it is
       made at `C`, as today, exact.
+    - *Carried along the walk.* A walk reaches an actual's nodes in two ways: through the re-root
+      view itself (`dagKappa` reading a union's side), and below it by `proj` of the union the view
+      is a side of (`deep`'s frontier), which gives the actual's own children, not views. So once
+      a walk has crossed at a re-root view for actual `a`, it carries the pair `(C_Q, R_Q)` down
+      with it. Both positions step together: `C_Q.child(s)` and `R_Q.child(s)`. At each position,
+      while `eqOn` holds at that pair:
+      - a node wholly of the actual's region is read at `R_Q`. That is a node of `region(a)`, or one
+        made by `proj` or a join from such nodes only;
+      - every other node is read at `C_Q`, a union that mixes the actual with another value
+        included, and each side of it by this rule again. In `x_k = step x_{k-1} [ k ]` the union
+        below `[*]` holds `x_{k-1}`'s part and the literal's: it is read at `C_Q`, the first side at
+        `R_Q`, the second at `C_Q`;
+      - `eqOn` compares every key based on the region at all, which covers these: a node wholly of
+        the region is based on it.
+    - *Where `eqOn` fails partway down.* At the first pair where `eqOn(C_Q, R_Q)` fails, the read
+      reverts to `C` from that point on and does not cross back below it. Mixing `C` above with
+      `R` below a pair is exact because `eqOn` held at each pair above: there every read at `R_Q`
+      equals the read at `C_Q` (*Argument 1*, applied pair by pair). A read at one pair depends only
+      on that pair and the pairs below the walk takes. So replacing `R_Q` by `C_Q` from some pair
+      down changes nothing above it, and below it the walk reads `C`, as the merged read does.
     - *Where the read crosses.* The re-root view's own entry, the class's binding stored under the
       view at this call, is read at `C` (the chain join, at `C`). Only what lies past it is read at
       `R`: the views on its chain past it, its forced answer (the actual), and what is below. So the
