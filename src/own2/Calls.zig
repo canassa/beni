@@ -561,8 +561,11 @@ const Grafter = struct {
         return try g.argAt(x.a, .from(x.b), shapes.place(res));
     }
 
+    /// A class condition at this call: the atom `inst(k, E)`, resolved only
+    /// when a reader tests it (§2.11 *κ across a call*, part 3).
     fn instantiated(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: CondId) Error!CondId {
-        return t.instantiate(gpa_, charge, k, .{ .ctx = ctx, .atom = Grafter.atom });
+        const g: *Grafter = @ptrCast(@alignCast(ctx));
+        return t.instAtom(gpa_, charge, k, g.view_env);
     }
 
     /// `kappa` with each argument's snapshot merged in at every position of
@@ -1210,6 +1213,8 @@ const Grafter = struct {
                 return k;
             },
             .within, .keep, .writes => return Cond.lost,
+            // A class is published resolved: its conditions hold no `inst`.
+            .inst => unreachable,
         }
     }
 };
@@ -1285,6 +1290,30 @@ pub const Views = struct {
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
         return g.imageCells(s, at);
+    }
+
+    /// The resolver of the `inst` atoms calls make (§2.11 *κ across a call*,
+    /// part 3), set on `conds` once, as `instantiation` is.
+    pub fn resolver(v: *Views) Cond.Table.Resolver {
+        return .{ .ctx = v, .resolve = resolveImage };
+    }
+
+    /// Class condition `k` instantiated at the call of environment `e`.
+    fn resolveImage(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: u32, e: u32, set: bool) Error!CondId {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        var g = v.grafter(gpa_, charge.account, e, &none);
+        defer g.folded.deinit(gpa_);
+        defer g.deeps.deinit(gpa_);
+        if (!set) return t.instantiate(gpa_, charge, .from(k), .{ .ctx = &g, .atom = Grafter.atom });
+        // An atom set (a class's `xreq`): each atom answered here, conjoined.
+        var acc: CondId = Cond.yes;
+        var at = t.atoms.iterate(.from(k));
+        while (at.next()) |a| {
+            try charge.reserve(gpa_, .inspection, 1);
+            acc = try t.@"and"(gpa_, charge, acc, try Grafter.atom(&g, t, gpa_, charge, t.get(.from(a.key))));
+        }
+        return acc;
     }
 
     /// The snapshot position a re-root view reads its actual at (§2.11 *κ
@@ -1415,14 +1444,8 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     // the callee's κ size per call (#1265).
     var kappa = try env.conds.kappaRelabel(gpa, env.charge, cls.kappas, .{ .ctx = &g, .node = Grafter.relabelNode, .cond = Grafter.instantiated });
     kappa = try g.linkArgs(kappa, cls.res);
-    var xreq: CondId = Cond.yes;
-    if (cls.xreq != .none) {
-        var at = env.conds.atoms.iterate(cls.xreq);
-        while (at.next()) |e| {
-            try env.charge.reserve(gpa, .inspection, 1);
-            xreq = try env.conds.@"and"(gpa, env.charge, xreq, try Grafter.atom(&g, env.conds, gpa, env.charge, env.conds.get(.from(e.key))));
-        }
-    }
+    // The callee's `xreq` the same way: one `inst` atom of its atom set.
+    const xreq: CondId = if (cls.xreq == .none) Cond.yes else try env.conds.instSet(gpa, env.charge, cls.xreq, g.view_env);
     return .{
         .result = .{ .node = res, .kappa = kappa },
         .xreq = xreq,
@@ -1541,6 +1564,7 @@ fn deepCall() !void {
     var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
     defer views.deinit(gpa);
     shapes.instantiation = views.instantiation();
+    conds.resolver = views.resolver();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1593,6 +1617,7 @@ test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image,
     var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
     defer views.deinit(gpa);
     shapes.instantiation = views.instantiation();
+    conds.resolver = views.resolver();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1641,6 +1666,7 @@ test "#1143: a back edge onto a union's side is grafted once the knot is tied" {
     var views: Views = .{ .places = &places, .cells = &cells, .shapes = &shapes, .conds = &conds, .sums = &sums };
     defer views.deinit(gpa);
     shapes.instantiation = views.instantiation();
+    conds.resolver = views.resolver();
     var graph: TestGraph = .{ .table = &places, .account = &account, .gpa = gpa };
     const src: Place.Source = .{ .ctx = &graph, .describe = TestGraph.describe };
     const t_place = try places.of(gpa, &account, src, 0);
@@ -1698,6 +1724,7 @@ const KnotFixture = struct {
         x.graph = .{ .table = &x.places, .account = &x.account, .gpa = gpa };
         x.views = .{ .places = &x.places, .cells = &x.cells, .shapes = &x.shapes, .conds = &x.conds, .sums = &x.sums };
         x.shapes.instantiation = x.views.instantiation();
+        x.conds.resolver = x.views.resolver();
         const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
         x.t_place = try x.places.of(gpa, &x.account, src, 0);
         x.list = try x.places.of(gpa, &x.account, src, 1);
@@ -2026,14 +2053,30 @@ test "#1146: linking at each knot's own cursor builds the snapshot replaying roo
 }
 
 test "#1146: a chain of knots as deep as the source is linked on a small stack" {
-    var result: anyerror!u64 = 0;
+    // The tables are built here; only the link walk runs on the small stack.
+    const gpa = testing.allocator;
+    const x = try gpa.create(KnotFixture);
+    defer gpa.destroy(x);
+    x.* = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    const lf = try x.site(7, x.t_place);
+    const root = try linkChain(x, 1_024, true, lf);
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(x, lf) }}, .label = label, .s = &s };
+    defer g.folded.deinit(gpa);
+    defer g.deeps.deinit(gpa);
+    var result: anyerror!Cond.Kappas = .none;
     const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
-        fn run(out: *anyerror!u64) void {
-            out.* = linkChainCost(1_024, true);
+        fn run(gr: *Grafter, r: NodeId, out: *anyerror!Cond.Kappas) void {
+            out.* = gr.linkArgs(.none, r);
         }
-    }.run, .{&result});
+    }.run, .{ &g, root, &result });
     th.join();
-    _ = try result;
+    try testing.expect(try result != .none);
 }
 
 // ---- the review's random differential (#1149) ---------------------------------------
@@ -2314,7 +2357,7 @@ test "#1128: a template path through ⟲ compares the argument's arrivals across
         var s: Scratch = .{};
         defer s.deinit(gpa);
         const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
-        try testing.expectEqual(repeat, Cond.Table.fails(applied.xreq));
+        try testing.expectEqual(repeat, Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
     }
 }
 
@@ -2335,7 +2378,7 @@ fn foldProbe(x: *KnotFixture, root: PlaceId, steps: []const Step, arg: NodeId) !
     try snapshotYes(x, arg, &path, &ak);
     var s: Scratch = .{};
     defer s.deinit(gpa);
-    return (try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s)).xreq;
+    return x.conds.resolved(testing.allocator, x.env().charge, (try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s)).xreq);
 }
 
 fn snapshotYes(x: *KnotFixture, n: NodeId, path: *std.ArrayList(Step), ak: *Cond.Kappas) !void {
@@ -2630,7 +2673,7 @@ test "#1159: many template paths under one prefix walk the argument once, kept a
         var ak: Cond.Kappas = .none;
         try snapshotYes(&x, arg, &snap_path, &ak);
         const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
-        try testing.expect(!Cond.Table.fails(applied.xreq));
+        try testing.expect(!Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
         // One walk of the argument for every path under the prefix.
         try testing.expectEqual(walks + 1, x.conds.classes_done.items.len);
         grew[run] = x.account.growth - before;
@@ -2730,7 +2773,7 @@ test "#1196 review, #1199: a symbolic leaf below the prefix — Repro A and Repr
         var s: Scratch = .{};
         defer s.deinit(gpa);
         const applied = try apply(x.env(), &x.sums, c, &args, 0, &s);
-        try testing.expectEqual(shared_list, Cond.Table.fails(applied.xreq));
+        try testing.expectEqual(shared_list, Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
     };
 }
 
@@ -2771,7 +2814,7 @@ test "#1196 decision 1, #1199: a callee writing at `0·[*]·⟲·arg` while it a
         var s: Scratch = .{};
         defer s.deinit(gpa);
         const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = ak }}, 0, &s);
-        try testing.expectEqual(shared_list, Cond.Table.fails(applied.xreq));
+        try testing.expectEqual(shared_list, Cond.Table.fails(try x.conds.resolved(gpa, x.env().charge, applied.xreq)));
     }
 }
 

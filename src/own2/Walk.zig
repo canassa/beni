@@ -81,6 +81,8 @@ pub const Result = struct {
 pub fn walk(in: Input) Error!Result {
     const env = in.env;
     const gpa = env.gpa;
+    // The `inst` atoms queued before this walk are no frame's of it (§2.11).
+    env.conds.instFloor();
     var regions = try Regions.build(gpa, env.account(), in.phase, in.bir, in.decl, in.prepass);
     defer regions.deinit(gpa);
     var frame: Transfer.Frame = .{ .gpa = gpa, .env = env, .sums = in.sums, .ctx = in.ctx, .bir = in.bir, .decl = in.decl, .regions = &regions, .param_places = in.param_places };
@@ -110,7 +112,10 @@ pub fn walk(in: Input) Error!Result {
     }, outcomes);
     const lines = try gpa.alloc(Line, outcomes.len);
     errdefer gpa.free(lines);
-    var xreq = try env.conds.flat(gpa, env.charge, if (Cond.Table.fails(frame.xreq)) Cond.yes else frame.xreq);
+    // The frame's `xreq` is tested here: its `inst` atoms resolved first.
+    const frame_xreq = try env.conds.resolved(gpa, env.charge, frame.xreq);
+    try env.conds.assertResolved(gpa, env.charge, frame_xreq);
+    var xreq = try env.conds.flat(gpa, env.charge, if (Cond.Table.fails(frame_xreq)) Cond.yes else frame_xreq);
     for (frame.demands.items, outcomes, lines) |d, o, *l| {
         l.* = .{ .demand = d, .outcome = o };
         if (o.holder != none) l.holder = frame.holders.items[o.holder];
