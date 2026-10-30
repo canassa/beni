@@ -4518,6 +4518,15 @@ test "#1372: a positions node whose sides map to one node keeps both edges" {
     try testing.expectEqual(Kind.@"union", f.shapes.kind(mu));
 }
 
+/// The built side of a knot's union with the parameter leaf, or the node.
+fn knotSide(f: *Fixture, n: NodeId) !NodeId {
+    if (f.shapes.kind(n) != .@"union") return n;
+    const d = f.shapes.get(n);
+    const sides = [_]NodeId{ .from(d.a), .from(d.b) };
+    for (sides) |s| if (f.shapes.kind(s) != .leaf) return s;
+    return error.TestUnexpectedResult;
+}
+
 test "#1372: an image on a knot is not interned: each map of a widened value ties its own knot" {
     var f: Fixture = .{};
     f.init();
@@ -4547,11 +4556,23 @@ test "#1372: an image on a knot is not interned: each map of a widened value tie
     const m2 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
     try testing.expect(m1 != w and m2 != w);
     try testing.expect(m1 != m2);
-    // Each a knot of its own: the recursive child names its own image.
-    for ([_]NodeId{ m1, m2 }) |m| {
-        const child = try f.proj(m, s0);
-        try testing.expect(child == m or (f.shapes.kind(child) == .@"union" and f.shapes.nodes.items(.a)[child.int()] == m.int()));
+    // Each a knot of its own (#1253, #1382: the root's first return keys a
+    // class of its own, and the subtrees are the knot): the recursive child
+    // of each map's subtree class names that class's own image, and the two
+    // maps' knots are two records. The root is on no knot and only names
+    // its knot, so it is interned, and differs because its knot does.
+    var subs: [2]NodeId = undefined;
+    for ([_]NodeId{ m1, m2 }, 0..) |m, i| {
+        const sub = try f.proj(m, s0);
+        try testing.expect(sub != m);
+        // The knot is the union's built side; `map` orders a union's sides
+        // by birth, so the parameter leaf may come first.
+        const core = try knotSide(&f, sub);
+        const child = try f.proj(core, s0);
+        try testing.expectEqual(core, try knotSide(&f, child));
+        subs[i] = core;
     }
+    try testing.expect(subs[0] != subs[1]);
     try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m2));
 }
 
