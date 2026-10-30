@@ -138,6 +138,17 @@ pub const Table = struct {
     bstar_epoch: Ids.FixedDict(1) = .{},
     memo_tested: Ids.FixedDict(3) = .{},
     memo_wholly: Ids.FixedDict(3) = .{},
+    /// Each node's constructions, a list through `cons` (`next`), their members
+    /// in `cons_pool`; a projection's once per (node, base). The relevant
+    /// nodes: κ keys and their `bases*`, once the κ table reports its keys.
+    cons_head: Ids.FixedDict(1) = .{},
+    cons: std.ArrayList(struct { next: u32, start: u32, len: u32 }) = .empty,
+    cons_pool: std.ArrayList(NodeId) = .empty,
+    cons_single: Ids.FixedDict(2) = .{},
+    relevant: stamped.Column(NodeId, void) = .{},
+    /// `inners` by forced node.
+    memo_inners: stamped.Column(NodeId, SetId) = .{},
+    track_relevance: bool = false,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -169,6 +180,12 @@ pub const Table = struct {
         t.bstar_epoch.deinit(gpa);
         t.memo_tested.deinit(gpa);
         t.memo_wholly.deinit(gpa);
+        t.cons_head.deinit(gpa);
+        t.cons.deinit(gpa);
+        t.cons_pool.deinit(gpa);
+        t.cons_single.deinit(gpa);
+        t.relevant.deinit(gpa);
+        t.memo_inners.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -534,21 +551,72 @@ pub const Table = struct {
         return if (t.bases.get(.{m.int()})) |s| .from(s) else .none;
     }
 
-    /// `m` made from `b` (a `proj`'s node, a join's member). An existing node
-    /// that gains a base moves `base_epoch`: an answer about what is based on
-    /// a region may change then. `fresh`: `m` was made by this operation.
-    fn addBase(t: *Table, gpa: Allocator, account: *Account, m: NodeId, b: NodeId, fresh: bool) Error!void {
-        if (m == b) return;
+    /// `m` made by one construction from `members` (a `proj`'s node, a join's
+    /// members): recorded as that construction, and each member a base of `m`
+    /// (*Bases*). When a relevant node (`isRelevant`) gains a base, an answer
+    /// about what is based on a region may change: `base_epoch` moves, and the
+    /// new bases are relevant too. `fresh`: `m` was made by this operation.
+    fn addConstruction(t: *Table, gpa: Allocator, account: *Account, m: NodeId, members: []const NodeId, fresh: bool) Error!void {
+        for (members) |b| {
+            if (b != m) break;
+        } else return;
         // The crossing's bookkeeping, a growth task: never the asking lane's
         // share (a wide join records a base per member, §4.1).
         const task = try account.enter(gpa, null);
         defer account.leave(task);
-        try account.reserve(.memo, 1);
-        const old = t.basesOf(m);
-        if (t.node_sets.member(old, b.int())) return;
-        const new = try t.node_sets.insert(gpa, .growth(account), old, b.int(), 0);
-        (try t.bases.getOrPut(gpa, .{m.int()})).value_ptr.* = new.int();
+        try account.reserve(.memo, @intCast(1 + members.len));
+        // A projection is one construction per (node, base): `proj` is
+        // memoised, so it is met again only through another node.
+        if (members.len == 1) {
+            const got = try t.cons_single.getOrPut(gpa, .{ m.int(), members[0].int() });
+            if (got.found_existing) return;
+        }
+        const head = t.cons_head.get(.{m.int()}) orelse Ids.none_int;
+        try t.cons.append(gpa, .{ .next = head, .start = @intCast(t.cons_pool.items.len), .len = @intCast(members.len) });
+        try t.cons_pool.appendSlice(gpa, members);
+        (try t.cons_head.getOrPut(gpa, .{m.int()})).value_ptr.* = @intCast(t.cons.items.len - 1);
+        var old = t.basesOf(m);
+        var gained = false;
+        for (members) |b| {
+            if (b == m or t.node_sets.member(old, b.int())) continue;
+            old = try t.node_sets.insert(gpa, .growth(account), old, b.int(), 0);
+            gained = true;
+        }
+        if (!gained) return;
+        (try t.bases.getOrPut(gpa, .{m.int()})).value_ptr.* = old.int();
+        if (!t.isRelevant(m)) return;
         if (!fresh) t.base_epoch += 1;
+        for (members) |b| try t.markRelevant(gpa, account, b);
+    }
+
+    /// Whether a base gained by `m` can change a `tested` answer: `m` is a κ
+    /// key or in `bases*` of one (*Bases*). Every node is, until the κ table
+    /// reports its keys (`trackRelevance`).
+    pub fn isRelevant(t: *const Table, m: NodeId) bool {
+        return !t.track_relevance or t.relevant.contains(m);
+    }
+
+    /// The κ table reports its keys from now on (`markRelevant`).
+    pub fn trackRelevance(t: *Table) void {
+        t.track_relevance = true;
+    }
+
+    /// `n` and its `bases*` relevant, each node marked once: `n` became a κ
+    /// key, or a relevant node gained `n` as a base.
+    pub fn markRelevant(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!void {
+        if (!t.track_relevance or t.relevant.contains(n)) return;
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (t.relevant.contains(x)) continue;
+            try account.reserve(.memo, 1);
+            try t.relevant.put(gpa, x, {});
+            var it = t.node_sets.iterate(t.basesOf(x));
+            while (it.next()) |e| if (!t.relevant.contains(.from(e.key))) try stack.append(gpa, .from(e.key));
+        }
     }
 
     /// The node set `region(n)` (*What the crossing reads: the region*): `n`'s
@@ -575,75 +643,152 @@ pub const Table = struct {
         return out;
     }
 
-    /// Whether `m` is wholly of `reg`: a node of it, or one made by `proj` or
-    /// a join from such nodes only. A base chain that cycles answers no
-    /// (read at `C`, exact), and is not kept. Memoised within one `base_epoch`.
+    /// Whether `m` is wholly of `reg` (*Carried along the walk*): a node of
+    /// it, or one with a construction (`addConstruction`) whose every member
+    /// is wholly of it. One such construction fixes `m`'s structure, which is
+    /// immutable, so a yes stays a yes: memoised for good. A no may turn into
+    /// a yes when `m` is made again; it is kept within one `base_epoch`, and
+    /// not when a construction cycles (a member open on the way, read as no).
     pub fn wholly(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
         try account.reserve(.inspection, 1);
         if (t.node_sets.member(reg, m.int())) return true;
-        if (t.basesOf(m) == .none) return false;
-        const Frame = struct { node: NodeId, expanded: bool };
+        if (t.cons_head.get(.{m.int()}) == null) return false;
+        const Frame = struct { node: NodeId, c: u32, i: u32 };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         var done: stamped.Column(NodeId, bool) = .{};
         defer done.deinit(gpa);
+        var cyclic = false;
+        try stack.append(gpa, .{ .node = m, .c = t.cons_head.get(.{m.int()}).?, .i = 0 });
+        while (stack.items.len > 0) {
+            const f = &stack.items[stack.items.len - 1];
+            const answer: ?bool = blk: {
+                if (f.c == Ids.none_int) break :blk false;
+                const con = t.cons.items[f.c];
+                if (f.i == con.len) break :blk true;
+                const x = t.cons_pool.items[con.start + f.i];
+                try account.reserve(.inspection, 1);
+                const known: ?bool = if (x == f.node or t.node_sets.member(reg, x.int()))
+                    true
+                else if (done.get(x)) |d|
+                    d
+                else if (t.memo_wholly.get(.{ x.int(), reg.int(), 0 }) != null)
+                    true
+                else if (t.memo_wholly.get(.{ x.int(), reg.int(), t.base_epoch + 1 }) != null)
+                    false
+                else if (t.cons_head.get(.{x.int()}) == null)
+                    false
+                else
+                    null;
+                if (known) |k| {
+                    if (k) f.i += 1 else {
+                        f.c = con.next;
+                        f.i = 0;
+                    }
+                    break :blk null;
+                }
+                // `x` in progress lower on the stack: a cycle, read as no.
+                for (stack.items) |g| if (g.node == x) {
+                    cyclic = true;
+                    f.c = con.next;
+                    f.i = 0;
+                    break :blk null;
+                };
+                try stack.append(gpa, .{ .node = x, .c = t.cons_head.get(.{x.int()}).?, .i = 0 });
+                break :blk null;
+            };
+            const a = answer orelse continue;
+            const finished = stack.pop().?.node;
+            try done.put(gpa, finished, a);
+            if (a or !cyclic) {
+                try account.reserve(.memo, 1);
+                (try t.memo_wholly.getOrPut(gpa, .{ finished.int(), reg.int(), if (a) 0 else t.base_epoch + 1 })).value_ptr.* = 1;
+            }
+        }
+        return done.get(m).?;
+    }
+
+    /// The inners of the recasts at `n`'s path, as a node set (`Cond`'s
+    /// `innersOf`): `n`'s own, those of its union's, choice's or positions
+    /// node's sides, and those found inside an inner (one path), each view
+    /// read at its answer. Memoised per node, made from its parts' sets by
+    /// `unionMemo`, so a chain of views below views costs its new nodes, not
+    /// its length. Where the DAG cycles, the plain walk, kept nowhere.
+    pub fn inners(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!SetId {
+        const n0 = try t.force(gpa, account, n);
+        switch (t.kind(n0)) {
+            .recast, .@"union", .choice, .positions => {},
+            else => return .none,
+        }
+        // A finite rank: no recast anywhere below, so none at this path.
+        if (try t.rank(gpa, account, n0) != rank_unbounded) return .none;
+        try account.reserve(.memo, 1);
+        if (t.memo_inners.get(n0)) |s| return s;
+        const charge: Ids.Charge = .growth(account);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
         var open: stamped.Column(NodeId, void) = .{};
         defer open.deinit(gpa);
+        var local: stamped.Column(NodeId, SetId) = .{};
+        defer local.deinit(gpa);
         var cyclic = false;
-        try stack.append(gpa, .{ .node = m, .expanded = false });
+        try stack.append(gpa, .{ .node = n0, .expanded = false });
         while (stack.pop()) |f| {
-            if (done.contains(f.node)) continue;
-            // A known answer for every base, or the first base that is not.
-            var pending = false;
-            var answer = true;
-            var it = t.node_sets.iterate(t.basesOf(f.node));
-            while (it.next()) |e| {
-                try account.reserve(.inspection, 1);
-                const b: NodeId = .from(e.key);
-                if (t.node_sets.member(reg, b.int())) continue;
-                if (t.basesOf(b) == .none) {
-                    answer = false;
-                    break;
-                }
-                if (done.get(b)) |v| {
-                    if (!v) {
-                        answer = false;
-                        break;
-                    }
-                    continue;
-                }
-                try account.reserve(.memo, 1);
-                if (t.memo_wholly.get(.{ b.int(), reg.int(), t.base_epoch })) |v| {
-                    if (v == 0) {
-                        answer = false;
-                        break;
-                    }
-                    continue;
-                }
-                if (open.contains(b)) {
-                    cyclic = true;
-                    answer = false;
-                    break;
-                }
-                if (!f.expanded) pending = true;
-            }
-            if (answer and pending) {
-                try open.put(gpa, f.node, {});
-                try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                var bt = t.node_sets.iterate(t.basesOf(f.node));
-                while (bt.next()) |e| {
-                    const b: NodeId = .from(e.key);
-                    if (!t.node_sets.member(reg, b.int()) and !done.contains(b)) try stack.append(gpa, .{ .node = b, .expanded = false });
-                }
+            const x = f.node;
+            if (local.contains(x)) continue;
+            if (t.memo_inners.get(x)) |s| {
+                try local.put(gpa, x, s);
                 continue;
             }
-            open.remove(f.node);
-            try done.put(gpa, f.node, answer);
+            const d = t.get(x);
+            const parts: [2]NodeId = switch (d.kind) {
+                .recast => .{ try t.force(gpa, account, .from(d.a)), .none },
+                .@"union", .choice, .positions => .{ try t.force(gpa, account, .from(d.a)), try t.force(gpa, account, .from(d.b)) },
+                else => {
+                    try local.put(gpa, x, .none);
+                    continue;
+                },
+            };
+            if (!f.expanded) {
+                if (open.contains(x)) {
+                    cyclic = true;
+                    continue;
+                }
+                try account.reserve(.inspection, 1);
+                try open.put(gpa, x, {});
+                try stack.append(gpa, .{ .node = x, .expanded = true });
+                for (parts) |p| if (p != .none and !local.contains(p)) try stack.append(gpa, .{ .node = p, .expanded = false });
+                continue;
+            }
+            open.remove(x);
+            var s: SetId = if (d.kind == .recast) try t.node_sets.insert(gpa, charge, .none, d.a, 0) else .none;
+            for (parts) |p| if (p != .none) {
+                s = try t.node_sets.unionMemo(gpa, charge, &t.memo_node_union, s, local.get(p) orelse .none);
+            };
+            try local.put(gpa, x, s);
+            if (!cyclic) try t.memo_inners.put(gpa, x, s);
         }
-        const out = done.get(m).?;
-        if (!cyclic) {
-            try account.reserve(.memo, 1);
-            (try t.memo_wholly.getOrPut(gpa, .{ m.int(), reg.int(), t.base_epoch })).value_ptr.* = @intFromBool(out);
+        if (!cyclic) return local.get(n0).?;
+        // A cycle: every recast the DAG reaches, each node once.
+        var out: SetId = .none;
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, .{ .node = n0, .expanded = false });
+        while (stack.pop()) |f| {
+            const x = try t.force(gpa, account, f.node);
+            if (seen.contains(x)) continue;
+            try account.reserve(.inspection, 1);
+            try seen.put(gpa, x, {});
+            const d = t.get(x);
+            switch (d.kind) {
+                .recast => {
+                    out = try t.node_sets.insert(gpa, charge, out, d.a, 0);
+                    try stack.append(gpa, .{ .node = .from(d.a), .expanded = false });
+                },
+                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
+                else => {},
+            }
         }
         return out;
     }
@@ -944,7 +1089,7 @@ pub const Table = struct {
         // are recorded already. A member it absorbed gains the others.
         const fresh = out.int() >= before;
         if (!fresh and std.mem.indexOfScalar(NodeId, members, out) == null) return;
-        for (members) |m| try t.addBase(gpa, account, out, m, fresh);
+        try t.addConstruction(gpa, account, out, members, fresh);
     }
 
     fn unionMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
@@ -1285,7 +1430,7 @@ pub const Table = struct {
             .node => t.overGet(d.a, s) == null,
             .delta, .view => false,
         };
-        if (made) try t.addBase(gpa, account, out, n, out.int() >= before);
+        if (made) try t.addConstruction(gpa, account, out, &.{n}, out.int() >= before);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
     }
 
@@ -1920,7 +2065,7 @@ pub const Table = struct {
             const out = try t.balancedUnion(w.gpa, w.account, w.cellt, groups.items, w.mode);
             // Each member a base of the join made of them (*Bases*), once,
             // where the join is computed: a memo hit records nothing more.
-            for (w.pool.items[r.first..][0..r.len]) |m| try t.addBase(w.gpa, w.account, out, m, out.int() >= w.before);
+            try t.addConstruction(w.gpa, w.account, out, w.pool.items[r.first..][0..r.len], out.int() >= w.before);
             w.reqs.items[id].result = out;
             if (r.key) |k| (try t.memo_join.getOrPut(w.gpa, k)).value_ptr.* = out.int();
         }
