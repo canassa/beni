@@ -223,3 +223,9 @@ tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 9:14 #0 :: Ref.
 #
 # v2 makes one demand per path of a use's pair graph with the argument (ownership-v2.md §2.11 item 3): paths that meet one value are one demand, named by the last.
 tests/corpus/ownership/CallOtherPathsKeys.beni [node] CallOtherPathsKeys 16:5 #0 :: CallOtherPathsKeys.two <record>.x :: rejected :: absent  `x` and `z` hold one list: one demand, at `.z`, refused `disjoint` as both were (#1356)
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.0.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.0.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.0.1 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.0.1 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
