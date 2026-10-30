@@ -614,8 +614,16 @@ pub const Frame = struct {
     fn projectAt(f: *Frame, v: Value, s: Step, at: PlaceId) Error!Value {
         const shapes = f.env.shapes;
         if (v.node == .none) return f.topValue(at);
-        const n = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, v.node, s)) orelse
-            return .{ .node = try shapes.recast(f.gpa, f.account(), at, v.node), .kappa = v.kappa };
+        // No such step (a value at a type variable's place, or a folded
+        // place): a leaf is itself there, its cells exact; a built value is
+        // some value inside it, its reach approximately (§2.13.9), never its
+        // own cells, which its parts' are not among (#1350).
+        const n = (try shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, v.node, s)) orelse {
+            var inner = try shapes.force(f.gpa, f.account(), v.node);
+            while (shapes.kind(inner) == .recast and !shapes.isWhole(inner)) inner = try shapes.force(f.gpa, f.account(), .from(shapes.get(inner).a));
+            if (shapes.kind(inner) == .leaf) return .{ .node = try shapes.recast(f.gpa, f.account(), at, v.node), .kappa = v.kappa };
+            return .{ .node = try shapes.recastWhole(f.gpa, f.account(), &f.env.cells.sets, at, v.node), .kappa = v.kappa };
+        };
         return .{ .node = n, .kappa = f.env.conds.kappaChild(v.kappa, s) };
     }
 
@@ -794,8 +802,7 @@ pub const Frame = struct {
     /// `v` read at place `at`: itself, or a recast when its place differs.
     fn fit(f: *Frame, v: Value, at: PlaceId) Error!Value {
         if (v.node == .none) return f.topValue(at);
-        // A view at a type variable's place stands at its answer's (#1350).
-        if (try f.env.shapes.standsAt(f.gpa, f.account(), v.node) == at) return v;
+        if (f.env.shapes.place(v.node) == at) return v;
         return .{ .node = try f.env.shapes.recast(f.gpa, f.account(), at, v.node), .kappa = v.kappa };
     }
 
@@ -1076,6 +1083,7 @@ pub const Frame = struct {
                 // The graft copies the callee's class over the arguments' structure:
                 // named growth until §4.1's call view by reference (#1097, S3b).
                 const graft = try f.account().enter(f.gpa, null);
+                f.calls.result_place = at;
                 const applied = Calls.apply(f.env, f.sums, class, argv.items, i, &f.calls) catch |e| {
                     f.account().leave(graft);
                     return e;

@@ -1,0 +1,18 @@
+module Main
+  14:26 List.push a: rejected alias: xs holds it and is read at 14:43
+  21:26 List.push a: rejected alias: xs holds it and is read at 21:43
+  28:26 List.push a: rejected alias: xs holds it and is read at 28:43
+  35:26 List.push a: rejected alias: xs holds it and is read at 35:43
+  summary one: π1 RW[storage]
+  summary two: π1 RW[storage]
+  summary viaG: π1 RW[storage]
+  summary viaG2: π1 RW[storage]
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Pairs
+  summary w1: π1 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}r{shared}
+  summary w2: π1 RA; res .0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared}r{shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}r{shared}
+  summary g: π1 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}
+  summary g2: π1 RA; res .0 condition(fresh1){shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

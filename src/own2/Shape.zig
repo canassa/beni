@@ -235,13 +235,6 @@ pub const Table = struct {
         return t.nodes.items(.place)[n.int()];
     }
 
-    /// The place `n` stands at: a view's is its answer's, where a call
-    /// instantiated a type variable's place to its actual's (§2.11
-    /// *Re-rooting at a parameter*, #1350); any other node's own.
-    pub fn standsAt(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!PlaceId {
-        return t.place(try t.force(gpa, account, n));
-    }
-
     /// The cells at `ε`.
     pub fn cells(t: *const Table, n: NodeId) SetId {
         return t.nodes.items(.cells)[n.int()];
@@ -581,6 +574,12 @@ pub const Table = struct {
         /// the actual at each parameter cell (`approx` where the cell is
         /// approximate), then the other cells mapped into one leaf.
         parts: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId, out: *std.ArrayList(LeafPart)) Error!void,
+        /// The place a view of `template` stands at: at a type variable's
+        /// place, the place the call instantiates it to (§2.11
+        /// *Re-rooting at a parameter*, #1350); the template's otherwise.
+        place: ?*const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!PlaceId = null,
+        /// Whether `p` is a type variable's place (no steps, §2.1).
+        is_var: ?*const fn (ctx: *anyopaque, p: PlaceId) bool = null,
     };
 
     /// One part of a template leaf's eager image.
@@ -589,7 +588,26 @@ pub const Table = struct {
     /// `view(template, env)`: a call's result by reference, interned, its
     /// cells lazy until a reader asks.
     pub fn view(t: *Table, gpa: Allocator, account: *Account, template: NodeId, env: u32) Error!NodeId {
-        return t.make(gpa, account, .{ .kind = .view, .place = t.place(template), .cells = lazy_cells, .a = template.int(), .b = env, .reach = .none });
+        // A view stands at the place its call instantiates its template's
+        // to, so every reader that compares places, or steps through one,
+        // reads a view as it reads its answer (§2.11, #1350).
+        const at = if (t.instantiation) |inst| if (inst.place) |f| try f(inst.ctx, t, gpa, account, env, template) else t.place(template) else t.place(template);
+        return t.make(gpa, account, .{ .kind = .view, .place = at, .cells = lazy_cells, .a = template.int(), .b = env, .reach = .none });
+    }
+
+    /// The place of a join of `l` and `r`, whatever their order: theirs when
+    /// they share one; where one is a type variable's place (a value that
+    /// may be anything, whose step is read whole), the other's; otherwise
+    /// the lower place, as the table numbers them.
+    fn joinPlace(t: *const Table, l: NodeId, r: NodeId) PlaceId {
+        const p = t.place(l);
+        const q = t.place(r);
+        if (p == q) return p;
+        if (t.instantiation) |inst| if (inst.is_var) |isVar| {
+            if (isVar(inst.ctx, p) and !isVar(inst.ctx, q)) return q;
+            if (isVar(inst.ctx, q) and !isVar(inst.ctx, p)) return p;
+        };
+        return if (p.int() < q.int()) p else q;
     }
 
     /// `n`, or the answer of a view already forced: a reader past the force
@@ -645,6 +663,8 @@ pub const Table = struct {
         }
         try account.reserve(.memo, @intCast(chain.items.len));
         for (chain.items) |v| try t.memo_force.put(gpa, v, at);
+        // A view stands at its answer's place (§2.11 *Re-rooting at a parameter*).
+        if (std.debug.runtime_safety and t.instantiation != null and t.instantiation.?.place != null) for (chain.items) |v| std.debug.assert(t.place(v) == t.place(at));
         return at;
     }
 
@@ -1128,11 +1148,11 @@ pub const Table = struct {
         return switch (d.kind) {
             .leaf => inst.leaf(inst.ctx, t, gpa, account, env, template),
             .node => blk: {
-                const c = if (d.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, env, try t.cellsOf(gpa, account, cellsets, template), d.place);
+                const c = if (d.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, env, try t.cellsOf(gpa, account, cellsets, template), t.place(v));
                 var over: u32 = over_none;
                 var it = t.overEntries(d.a);
                 while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, try t.view(gpa, account, e.node, env));
-                break :blk t.node(gpa, account, d.place, c, over);
+                break :blk t.node(gpa, account, t.place(v), c, over);
             },
             .delta => blk: {
                 var over: u32 = over_none;
@@ -1151,10 +1171,10 @@ pub const Table = struct {
                     over = composed;
                     base = .from(t.nodes.items(.a)[fb.int()]);
                 }
-                break :blk t.make(gpa, account, .{ .kind = .delta, .place = d.place, .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
+                break :blk t.make(gpa, account, .{ .kind = .delta, .place = t.place(v), .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
             },
             .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = d.b, .reach = .none }),
-            .@"union", .choice, .positions => t.make(gpa, account, .{ .kind = d.kind, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = (try t.view(gpa, account, .from(d.b), env)).int(), .reach = .none }),
+            .@"union", .choice, .positions => t.make(gpa, account, .{ .kind = d.kind, .place = t.place(v), .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = (try t.view(gpa, account, .from(d.b), env)).int(), .reach = .none }),
             // A template is a class's node, and a class is stored forced
             // (`Summary.Table.add` checks it): it holds no view (§2.11).
             .view => unreachable,
@@ -1271,7 +1291,7 @@ pub const Table = struct {
         const x = @min(l.int(), r.int());
         const y = @max(l.int(), r.int());
         const c = try cellsets.unionWith(gpa, .growth(account), try t.cellsOf(gpa, account, cellsets, l), try t.cellsOf(gpa, account, cellsets, r));
-        return t.make(gpa, account, .{ .kind = .@"union", .place = t.place(l), .cells = c, .a = x, .b = y, .reach = .none });
+        return t.make(gpa, account, .{ .kind = .@"union", .place = t.joinPlace(l, r), .cells = c, .a = x, .b = y, .reach = .none });
     }
 
     /// The lazy join of exclusive alternatives (§2.3, #1128): a branch's or a
@@ -1290,7 +1310,7 @@ pub const Table = struct {
         if (try t.dagHas(gpa, account, .choice, l, r)) return l;
         if (try t.dagHas(gpa, account, .choice, r, l)) return r;
         const c = try cellsets.unionWith(gpa, .growth(account), try t.cellsOf(gpa, account, cellsets, l), try t.cellsOf(gpa, account, cellsets, r));
-        return t.make(gpa, account, .{ .kind = .choice, .place = t.place(l), .cells = c, .a = @min(l.int(), r.int()), .b = @max(l.int(), r.int()), .reach = .none });
+        return t.make(gpa, account, .{ .kind = .choice, .place = t.joinPlace(l, r), .cells = c, .a = @min(l.int(), r.int()), .b = @max(l.int(), r.int()), .reach = .none });
     }
 
     /// `collect(n₁…nₖ)` (§2.3): a built value's elements under `[*]` as a
@@ -1419,7 +1439,7 @@ pub const Table = struct {
         if (try t.isNothing(gpa, account, l)) return r;
         _ = cellsets;
         // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
-        return t.make(gpa, account, .{ .kind = .positions, .place = t.place(l), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
+        return t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
     }
 
     /// Whether `x` is a member of the union DAG `u` (its sides, through
@@ -1578,6 +1598,16 @@ pub const Table = struct {
                 return .from(tt.memo_proj.get(.{ x, st.word() }).?);
             }
         }.of;
+        // A side with no such step stands at a type variable's place (a
+        // join's place is the other side's, `joinPlace`): some value inside
+        // it, read whole (§2.13.9).
+        const side = struct {
+            fn of(tt: *Table, gpa_: Allocator, account_: *Account, sets: *Cell.Radix, x: u32, st: Step, at: PlaceId) Error!NodeId {
+                const hit = tt.memo_proj.get(.{ x, st.word() }).?;
+                if (hit != Ids.none_int) return .from(hit);
+                return tt.recastWhole(gpa_, account_, sets, at, .from(x));
+            }
+        }.of;
         const out: NodeId = switch (d.kind) {
             .leaf => try t.projectLeaf(gpa, account, places, cellt, d.cells, child_place, s),
             .node => t.overGet(d.a, s) orelse try t.nothing(gpa, account, child_place),
@@ -1586,9 +1616,9 @@ pub const Table = struct {
             // `recastPart` finds one (§2.13.9, #1132's review); otherwise of
             // the whole inner, as far as anyone knows.
             .recast => if (try t.recastPart(gpa, account, places, n, s)) |inner| try t.recast(gpa, account, child_place, got(t, inner.int(), s)) else try t.recastWhole(gpa, account, &cellt.sets, child_place, .from(d.a)),
-            .@"union" => try t.@"union"(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
-            .positions => try t.positions(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
-            .choice => try t.choice(gpa, account, &cellt.sets, got(t, d.a, s), got(t, d.b, s)),
+            .@"union" => try t.@"union"(gpa, account, &cellt.sets, try side(t, gpa, account, &cellt.sets, d.a, s, child_place), try side(t, gpa, account, &cellt.sets, d.b, s, child_place)),
+            .positions => try t.positions(gpa, account, &cellt.sets, try side(t, gpa, account, &cellt.sets, d.a, s, child_place), try side(t, gpa, account, &cellt.sets, d.b, s, child_place)),
+            .choice => try t.choice(gpa, account, &cellt.sets, try side(t, gpa, account, &cellt.sets, d.a, s, child_place), try side(t, gpa, account, &cellt.sets, d.b, s, child_place)),
             .view => unreachable, // answered above
         };
         // A node the projection makes records `n` (*Bases*): a leaf's, a
@@ -2553,15 +2583,15 @@ pub const Table = struct {
                         if (parts.len == 1 and !parts[0].approx) break :blk t.eagerOf(parts[0].node);
                         const ms = try gpa.alloc(NodeId, parts.len);
                         defer gpa.free(ms);
-                        for (parts, ms) |p, *m| m.* = if (p.approx) try t.recast(gpa, account, tm.place, t.eagerOf(p.node)) else t.eagerOf(p.node);
+                        for (parts, ms) |p, *m| m.* = if (p.approx) try t.recast(gpa, account, d.place, t.eagerOf(p.node)) else t.eagerOf(p.node);
                         break :blk if (ms.len == 1) ms[0] else try t.join(gpa, account, places, cellt, ms);
                     },
                     .node => blk: {
-                        const c = if (tm.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, d.b, tm.cells, tm.place);
+                        const c = if (tm.cells == .none) SetId.none else try inst.cells(inst.ctx, t, gpa, account, d.b, tm.cells, d.place);
                         var over: u32 = over_none;
                         var it = t.overEntries(tm.a);
                         while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(try t.view(gpa, account, e.node, d.b)));
-                        break :blk try t.node(gpa, account, tm.place, c, over);
+                        break :blk try t.node(gpa, account, d.place, c, over);
                     },
                     .delta => blk: {
                         var x = t.eagerOf(try t.view(gpa, account, .from(tm.a), d.b));
