@@ -276,3 +276,12 @@ doubled xs = List.map xs (\x → x * 2)
 
 Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.6, §12, Appendix A;
 `docs/design/ownership-checker.md` §31.
+
+Compile-time text files: `import "./shaders/triangle.wgsl" as triangleSource : String`
+binds a private ordinary String, resolved relative to this source file. The file
+must be UTF-8; its contents (including BOM and line endings) are preserved and
+embedded in the bundle. There is no runtime fetch. Paths cannot interpolate. Both
+`as` and the type annotation are required; no `exposing`. Missing/unreadable or
+invalid UTF-8 files are compile errors. WGSL validation/minification is separate.
+
+Contract: `docs/design/language.md` §5.5.

@@ -671,3 +671,28 @@ fn getWith(w: *World, port: u16, target: []const u8, headers: []const u8) !Respo
     }
     return .{ .status = status, .content_type = content_type, .body = raw[head_end + 4 ..] };
 }
+
+test "build --watch tracks text imports across missing, edited, and deleted assets" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "import \"../assets/shader.wgsl\" as shader : String\nimport Node\nmain : Node.Program\nmain = Node.print shader\n");
+    var live = try Live.start(&w, &.{ "build", "--watch", "--poll-interval=10", "--platform=node", "src" });
+    defer live.deinit();
+    try live.waitFor("beni: build failed; waiting for changes\n", 1);
+    try w.write("assets/shader.wgsl", "first");
+    try live.waitFor("beni: built in ", 1);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "first\n" });
+    try w.write("assets/ignored.wgsl", "not imported");
+    try live.pump(100);
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, live.out.items, "beni: built in "));
+    try w.write("assets/shader.wgsl", "other");
+    try live.waitFor("beni: built in ", 2);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "other\n" });
+    try w.tmp.dir.deleteFile(w.io, "assets/shader.wgsl");
+    try live.waitFor("beni: build failed; waiting for changes\n", 2);
+    try w.write("assets/shader.wgsl", "again");
+    try live.waitFor("beni: built in ", 3);
+    const term = try live.stop();
+    try testing.expectEqual(std.process.Child.Term{ .exited = 0 }, term);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "again\n" });
+}

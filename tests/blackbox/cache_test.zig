@@ -5909,3 +5909,24 @@ test "ownership summary interfaces are deterministic at --jobs=1 and --jobs=8" {
     // └─────────────────────────────────────────┘
     for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
 }
+
+test "text asset contents move only the owning checked key and preserve syntax keys" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.write("src/Leaf.beni", "import \"./asset.wgsl\" as text : String\npub value : String\nvalue = text\n");
+    try w.write("src/Top.beni", "import Leaf\npub value : String\nvalue = Leaf.value\n");
+    try w.write("src/asset.wgsl", "first");
+    const before = try baselineKeys(&w, arena);
+    const syntax_before = try baselineFileKeys(&w, arena);
+    try w.write("src/asset.wgsl", "other");
+    const edited = try baselineKeys(&w, arena);
+    const syntax_after = try baselineFileKeys(&w, arena);
+    try expectMoved("asset contents", before, edited, &.{"app:Leaf"});
+    try expectMoved("asset does not change syntax", syntax_before, syntax_after, &.{});
+    try w.write("src/unrelated.wgsl", "not an input");
+    const unrelated = try baselineKeys(&w, arena);
+    try expectMoved("unrelated text", edited, unrelated, &.{});
+    const parallel = try keysOf(&w, arena, &.{ "--jobs=4", "src" });
+    try expectMoved("parallel text keys", unrelated, parallel, &.{});
+}

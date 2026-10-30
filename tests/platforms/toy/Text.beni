@@ -1,0 +1,5 @@
+import "./assets/shader.wgsl" as shader : String
+
+
+pub value : String
+value = shader

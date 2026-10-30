@@ -2017,3 +2017,11 @@ that the wrong order costs a 30,000-line refactor (01 §7).
    function of that plus the package privilege bits and the module name.*
 5. **Mutual-recursion stack safety** (§9.4). Trampolining costs the common case; leaving it unfixed
    is a real cliff for idiomatic ML code. Defer, but don't forget.
+
+**Compile-time text imports (2026-10-30).** Compile-time text imports (language.md §5.5): the frontend cache is syntax-only
+and records paths with unresolved bodies (artifact version 28). Each run reads
+assets again before checking. A module with text imports replaces its source-hash
+term with a hash of the source hash followed by fixed-width path and content
+hashes in declaration order. Paths in this recipe are source literals, never
+cwd-dependent absolute names. Other modules retain their existing source-hash
+recipe. Asset errors make a module uncacheable like other reported errors.

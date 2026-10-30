@@ -1849,7 +1849,12 @@ const Measurer = struct {
                 const i = tree.fullImport(n);
                 var last_tok = i.import_token;
                 if (i.name) |t| last_tok = t;
+                if (i.path) |path| try m.measure(path);
                 if (i.alias) |t| last_tok = t;
+                if (i.type_expr) |te| {
+                    try m.measure(te);
+                    last_tok = m.last(te);
+                }
                 for (i.exposed) |e| {
                     try m.measure(e);
                     last_tok = m.last(e) + 1; // the `)` after the last name
@@ -2809,8 +2814,8 @@ const Printer = struct {
     fn importLessThan(p: *Printer, a: u32, b: u32) bool {
         const ia = p.tree.fullImport(@fromBackingInt(@intCast(a)));
         const ib = p.tree.fullImport(@fromBackingInt(@intCast(b)));
-        const na = if (ia.name) |t| p.text(t) else "";
-        const nb = if (ib.name) |t| p.text(t) else "";
+        const na = if (ia.name) |t| p.text(t) else if (ia.path) |path| p.text(p.tree.nodeMainToken(path) + 1) else "";
+        const nb = if (ib.name) |t| p.text(t) else if (ib.path) |path| p.text(p.tree.nodeMainToken(path) + 1) else "";
         return std.mem.order(u8, na, nb) == .lt;
     }
 
@@ -2836,18 +2841,26 @@ const Printer = struct {
         }
     }
 
-    fn import(p: *Printer, n: Index) Io.Writer.Error!void {
+    fn import(p: *Printer, n: Index) Error!void {
         const i = p.tree.fullImport(n);
         try p.tok(i.import_token);
         if (i.name) |t| {
             try p.space();
             try p.tok(t);
         }
+        if (i.path) |path| {
+            try p.space();
+            try p.expr(path, 0);
+        }
         if (i.alias) |t| {
             try p.space();
             try p.tok(t - 1); // `as`
             try p.space();
             try p.tok(t);
+        }
+        if (i.type_expr) |te| {
+            try p.raw(" : ");
+            try p.typ(te, 0);
         }
         if (i.exposing_token) |t| {
             try p.space();

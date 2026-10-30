@@ -293,6 +293,7 @@ alternatives. Layout constraints from §4 are implicit in every rule.
 Module      := ModuleDoc? Import* Decl*
 
 Import      := 'import' qualified_upper_or_upper ('as' upper_ident)? Exposing?
+             | 'import' StringLiteral 'as' lower_ident ':' TypeExpr
 Exposing    := 'exposing' '(' Exposed (',' Exposed)* ')'
 Exposed     := lower_ident | upper_ident
 
@@ -660,6 +661,47 @@ normative delta is [`schema.md`](schema.md) §2–§4: the schema is the defined
 thing, its types are `User.Type` and `User.Encoded`, and explicit exposure brings
 only `User`. Its open choices are listed first; no schema syntax has landed.
 The diagnostic additions at the end of §10's catalogue are specified there in §8.
+
+### 5.5 Compile-time text imports (2026-10-30)
+
+`import "./shaders/triangle.wgsl" as triangleSource : String` binds a private,
+ordinary String value. The path is a non-interpolated, single-line string literal
+with the normal string escapes. The alias is a lower identifier; both `as` and
+the annotation are required. No `exposing` clause is accepted. This is a text
+loader, with no WGSL parsing, validation or minification.
+
+The compiler resolves the path relative to the importing source file's directory,
+including sources in dependency packages. Absolute paths are accepted under the
+same host filesystem rules as other compiler inputs. Empty paths and paths with a
+NUL byte are errors. The file must be strictly valid UTF-8: malformed sequences,
+overlong encodings, surrogate encodings and code points above U+10FFFF are rejected.
+The entire decoded text is preserved: a UTF-8 BOM is U+FEFF in the value; CRLF,
+trailing newlines, NUL, tabs and non-BMP characters are unchanged. There is no runtime
+filesystem access or fetch. The annotation uses ordinary type resolution and must
+check against the String value, just as an ordinary annotated string definition
+does. The binding follows normal value collision and shadowing rules; it grants no
+JavaScript privilege. It cannot be made public directly; a public ordinary binding
+may refer to it.
+
+All imports are checked and read even when the binding is unreachable. Missing,
+unreadable and invalid UTF-8 files produce diagnostics at the import, exit 1, and
+no output. Allocation failure remains an ordinary compiler failure. The frontend
+artifact retains the decoded path and source token, with an unresolved empty
+string body. Every build/check reloads the asset before checking: the checked
+module key includes its contents, while the syntax-only frontend cache remains
+reusable after asset edits. Dependency interfaces change only when their public
+surface changes. Text values use the ordinary JavaScript string emitter and DCE;
+an unused binding contributes no emitted text. Source maps point at the import,
+not into the asset. The project watcher tracks the explicit asset paths (including
+missing paths), updates them after each build, and rebuilds for edits/deletions or
+creation without treating unrelated files with arbitrary extensions as inputs.
+
+**Text in embedded packages (§5.5).** A relative text import in a module
+embedded in the compiler reads the package bytes shipped with that compiler
+(including its source files), never a same-named app file. A missing packaged
+asset is a text-import diagnostic. Directory packages and directory overrides
+read their files normally. Absolute imports explicitly name host files. Text
+and the other strings in one module must fit the BIR 32-bit storage limit.
 
 ## 6. Expression details
 
@@ -1561,7 +1603,7 @@ codes named above are the M1 catalogue; each has at least one fixture under
 `tests/corpus/parse/bad/` or `tests/corpus/check/bad/`.
 
 ```
-invalid_utf8  invalid_module_path  bare_carriage_return  tab_in_source  invalid_character
+text_import_failed  invalid_utf8  invalid_module_path  bare_carriage_return  tab_in_source  invalid_character
 invalid_number  unterminated_string  invalid_escape  nested_string_in_interpolation
 invalid_char_literal  doc_comment_unattached  module_doc_not_at_top
 expected_declaration  expected_token  unexpected_token  unclosed_delimiter

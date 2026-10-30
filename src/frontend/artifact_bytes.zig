@@ -135,7 +135,8 @@ pub const magic = "BENIFE\x00\x00";
 /// `prepended` and the stored callback (ownership-v2.md §2.13.6) — three new
 /// word bits in a declaration's v2 column, and `misplaced_ownership_word`
 /// has two new readings, which shifted the later ones.
-pub const format_version: u32 = 27;
+/// 28 (2026-10-30): declaration rows retain compile-time text import paths.
+pub const format_version: u32 = 28;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -892,7 +893,7 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 110 since it carries the v2 column, two words, and the type word.
     // 118 since it carries its spread chains' range, two words.
     // 122 since it carries its raised ownership summary size, one word.
-    try testing.expectEqual(@as(u32, 122), rowBytes(Bir.Decl));
+    try testing.expectEqual(@as(u32, 126), rowBytes(Bir.Decl));
     // 21 since a constructor carries its `failure` mark.
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));

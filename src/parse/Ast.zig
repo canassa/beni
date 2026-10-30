@@ -774,6 +774,8 @@ pub const DeclHeader = struct {
 };
 
 pub const Import = struct {
+    path: Node.OptionalIndex = .none,
+    type_expr: Node.OptionalIndex = .none,
     /// The module path token (`upper_ident` or `qualified_upper`), or none
     /// when it was missing.
     name: OptionalTokenIndex,
@@ -902,6 +904,8 @@ pub const VocabDecl = struct {
 
 pub const full = struct {
     pub const Import = struct {
+        path: ?Node.Index,
+        type_expr: ?Node.Index,
         import_token: TokenIndex,
         name: ?TokenIndex,
         alias: ?TokenIndex,
@@ -1276,6 +1280,8 @@ pub fn fullImport(tree: *const Ast, node: Node.Index) full.Import {
     const d = tree.extraData(@fromBackingInt(@intCast(tree.nodeData(node).lhs)), Import);
     return .{
         .import_token = tree.nodeMainToken(node),
+        .path = d.path.unwrap(),
+        .type_expr = d.type_expr.unwrap(),
         .name = d.name.unwrap(),
         .alias = d.alias.unwrap(),
         .exposing_token = d.exposing_token.unwrap(),
@@ -1626,7 +1632,7 @@ test "extraData flattens nested headers and extraLen agrees" {
     try testing.expectEqual(@as(u32, 9), extraLen(DeclHeader));
     try testing.expectEqual(@as(u32, 11), extraLen(Definition));
     try testing.expectEqual(@as(u32, 13), extraLen(TypeDecl));
-    try testing.expectEqual(@as(u32, 5), extraLen(Import));
+    try testing.expectEqual(@as(u32, 7), extraLen(Import));
 
     const none_token = std.math.maxInt(u32);
     const words = [_]u32{ 7, none_token, 3, none_token, 6, 2, 5, 0, 0, 10, 12 };

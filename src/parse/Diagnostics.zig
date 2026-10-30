@@ -164,6 +164,8 @@ pub const Construct = enum {
     /// `⊥` in an expression or a pattern: a type with no values
     /// (language.md §12.10).
     bottom_outside_type,
+    /// Text imports cannot interpolate their compile-time path.
+    text_import_path,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -216,6 +218,7 @@ fn constructText(c: Construct) []const u8 {
         .field_name => "a field name",
         .branch => "a branch",
         .constraint => "a `where` constraint like `k.compare : k, k → Order`",
+        .text_import_path => "a literal text-file path",
         .float_pattern => "a pattern",
         .expose_all => "a name to expose",
         .record_or_update => "`=` or `|`",
@@ -450,6 +453,8 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\or `…_`. The items around the spread match single elements, so a pattern for
                     \\them goes there: `[ x, y, …rest ]` rather than `[ x, …[ y, …_ ] ]`.
                 , .{text});
+            } else if (item.construct == .text_import_path) {
+                try w.writeAll("A text import needs a literal file path. Interpolation is not allowed in the path.\n\n    import \"./shader.wgsl\" as shader : String");
             } else if (item.construct == .float_pattern) {
                 try w.print(
                     \\`{s}` is a float, and a pattern cannot match a float.

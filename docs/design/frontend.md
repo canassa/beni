@@ -2263,3 +2263,11 @@ Each test now has the same 120-second hang guard; performance is checked outside
 `.agents/skills/beni/` is a later decision. There is no `beni skill uninstall`: the installed
 copy is one directory, and `rm -r <dir>/beni` removes it. The command writes nothing under a
 home directory on its own.
+
+**Compile-time text imports (2026-10-30).** Compile-time text imports (language.md §5.5) retain their literal path and type in
+the import AST. Lowering declares a private value and stores a separate path
+instruction in `Bir.Decl.text_import`. Frontend artifact version 28 serializes
+that metadata and an empty string body. After frontend cache load/store, Session
+loads each text file before graph checking, reports input failures at the literal,
+and fills the ordinary string body. `build --watch` receives explicit paths from
+all source sessions, including data programs and failed reads.

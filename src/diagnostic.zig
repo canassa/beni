@@ -505,12 +505,14 @@ pub const Code = enum {
     prerender_data_failed,
     prerender_data_invalid,
     prerender_data_ignored,
+    text_import_failed,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
 /// CASE in Elm's register: they name the problem, not the rule.
 pub fn title(code: Code) []const u8 {
     return switch (code) {
+        .text_import_failed => "CANNOT IMPORT TEXT",
         .invalid_utf8 => "INVALID UTF-8",
         .invalid_module_path => "INVALID MODULE PATH",
         .bare_carriage_return => "BARE CARRIAGE RETURN",
