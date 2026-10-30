@@ -1639,7 +1639,26 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      refused (`CallOtherPathsCopies`); an `excl ys[*]` there would only say that distinct positions
      hold distinct objects. The cost is a precision loss where a built value holds two distinct
      projections (#1272).
-4. **E**: `cellsAt(aᵢ, q)` escape deeply. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
+   **One demand per path of the pair graph (#1356).** The `(i, q)` are read off the use shape `S.use(i)` as
+   the DAG it is, paired with the actual: each route from the root to a `W` (or, for item 4, an `E`) carries
+   the actual's value there, read step by step as `cellsAt` reads a path (a missing step keeps the value
+   reached; below a `⟲` a route has no single value and is its own). Two sibling steps of one route that
+   reach the same `(use node, value node)` pair are **one route from there**: below that pair they have the
+   same base, the same other paths (rules (a)–(c) walk the same pairs, the step each takes being the one
+   the other leaves beside it) and the same marks, so their demands would have the same verdict and
+   exactness. They are one demand, and its **witness**, the path its message names
+   (`write_path`, `base_path`), is the route met first in the walk's order: the walk pops a node's
+   children last step first, so a shared pair is named by its last sibling step, as the per-path order
+   of the demand lines already was; its cause is the witness's (`later-use` and `alias` tell the base's
+   own path from another, §2.8 condition 5). The demand stands for every path through the pair, and a refusal
+   of it refuses the call as each of theirs would have. So a use that is a DAG over a value that shares
+   its parts (`( x, x )` built `k` levels deep, a derived comparison over it, a record literal holding one
+   list at two written fields) costs its distinct pairs, never its paths. Over distinct values (a tree,
+   the distinct positions of a parameter) every route is its own, and nothing changes. The only
+   difference a reader sees is the count: where a shared value is written through `n` paths, v1 reports
+   `n` demands and v2 one (`tests/blackbox/ownership-v2-known.txt`). The routes and their values are
+   made lazily, a value when its route is reached, in the order the per-path reading made them.
+4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
    parameter where `S.supply(L, k)` is borrowed → `supply`; owned with provenance `πᵢ·q″` → a `callsite` demand on `aᵢ` at `q″`; `cb j′`
