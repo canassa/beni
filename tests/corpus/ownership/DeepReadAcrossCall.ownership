@@ -9,6 +9,10 @@ module DeepReadAcrossCall
   71:9 List.push l: rejected alias: t#Rose.1[*]⟨Rose⟩#Rose.0 holds it and is read at 72:20
   82:22 List.push xss: accepted param
   88:5 call DeepReadAcrossCall.showPush <literal>: accepted fresh (DeepReadAcrossCall.showPush writes π1)
+  109:9 List.push r.y: rejected later-use: r.y is read again at 110:20
+  115:9 List.push r.y: rejected later-use: r.y is read again at 116:20
+  121:9 List.push r.y: rejected later-use: r.y is read again at 122:20
+  127:9 List.push r.x.a: accepted param
   summary str: π1.x R
   summary viaHelper: unused
   summary str2: π1.inner R, π1.inner.x R
@@ -21,6 +25,14 @@ module DeepReadAcrossCall
   summary show: π1 R
   summary showPush: π1 RW[storage]
   summary shallowBeside: unused
-  demands 10: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
-total 10: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  summary showY: π1.y R
+  summary showAll: π1 R
+  summary showAll2: π1 R
+  summary insideLeaf: π1 R, π1.y RW[storage], π1.y[*] R
+  summary insideNode: π1 R, π1.y RW[storage], π1.y[*] R
+  summary insideTwo: π1 R, π1.y RW[storage], π1.y[*] R
+  summary insideSibling: π1.x.a RW[storage], π1.x.a[*] R, π1.y R
+  demands 14: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 14: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause later-use 3
 cause alias 4
