@@ -1,0 +1,10 @@
+module TopHoldersMany
+  17:10 List.push x1: accepted param
+  18:10 List.push x2: accepted param
+  19:10 List.push x3: accepted param
+  29:17 List.push first: rejected call: o2⋆ may hold it through the call at 25:10, and is read at 33:14 (approx)
+  summary many: π1 RA, π2 RA, π3 RA, π4 RAW[storage], π4[*] RA, π5 RAW[storage], π5[*] RA, π6 RAW[storage], π6[*] RA; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{lost}r{lost} ~π1 ~π2 ~π3 ~π4 ~π4[*] ~π5 ~π5[*] ~π6 ~π6[*]
+  summary reached: π1 RA, π1[*] RAW[storage], π1[*][*] RA; res fresh2{lost}r{lost}, ⋆ ~condition(fresh1) ~fresh1{lost}r{lost} ~π1 ~π1[*][*]{excl π1} ~π1[*]{excl π1}; xreq excl π1
+  demands 4: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 4: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

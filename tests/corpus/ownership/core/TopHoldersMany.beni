@@ -1,0 +1,33 @@
+-- ownership (core): many opaque holders (#1214, ownership-v2.md §2.8's
+-- inversion). Each `oi` is a `Js.Value` built from its own `zi`, so it may
+-- hold `zi` and nothing else; the `xi` pushed afterwards never went into one,
+-- so every push is accepted while every `oi` is read again. A `⊤` holder is
+-- found through a cell it holds that may be the base, never by every demand
+-- asking every opaque holder: k holders and k pushes are k pairs, not k × k
+-- (`build_test.zig` counts it at 25 and 100).
+-- `reached` pushes a list that did go into `o2`: refused, `o2` holds it.
+import Js
+
+
+many : List Int, List Int, List Int, List Int, List Int, List Int → Js.Value
+many z1 z2 z3 x1 x2 x3 =
+    o1 = Js.array [ Js.from z1 ]
+    o2 = Js.array [ Js.from z2 ]
+    o3 = Js.array [ Js.from z3 ]
+    y1 = List.push x1 1
+    y2 = List.push x2 2
+    y3 = List.push x3 3
+    Js.array [ o1, o2, o3, Js.from y1, Js.from y2, Js.from y3 ]
+
+
+reached : List (List Int) → Js.Value
+reached xss =
+    o2 = Js.array [ Js.from xss ]
+    ys =
+        case xss of
+            [ first, …_ ] →
+                List.push first 1
+
+            [] →
+                []
+    Js.array [ o2, Js.from ys ]
