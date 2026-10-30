@@ -101,7 +101,7 @@ pub const magic: u32 = 0x324e574f;
 /// 7: a position's κ is what is stored there, never the read (#1069).
 /// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
 /// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
-pub const version: u32 = 10;
+pub const version: u32 = 11;
 
 pub const none: u32 = Ids.none_int;
 
@@ -599,7 +599,11 @@ const Writer = struct {
                 while (it.next()) |e| try named.append(gpa, .{ .step = e.step, .rec = try w.pos(e.node, below(p.at_summary, e.step), p.owner, conds.kappaChild(cur, e.step)) });
                 try w.steps(named.items);
             },
-            .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur)),
+            // Whether it keeps its whole inner (`Shape.recastWhole`), then the inner.
+            .recast => {
+                try w.word(d.b);
+                try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur));
+            },
             .@"union", .choice, .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
             // A class is stored forced (§2.11): a view here is the codec's defect, loud.
             .view => return w.invariant(),

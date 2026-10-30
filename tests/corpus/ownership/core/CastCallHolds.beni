@@ -1,0 +1,120 @@
+-- ownership (core): a value inside a cast, returned through a call
+-- (`ownership-v2.md` §2.13.9, #1311). A step into a cast whose inner has no
+-- such part (`[*]` of a cast list, a cast tuple's elements, a cast record's
+-- field) is some value inside the inner: what the inner reaches, read
+-- approximately. A call's result keeps that reading, so the caller sees
+-- that `a` may be `l`, and an edit of it while `l` is read again is refused,
+-- as v1 refuses it. Each `fresh` twin hands the call lists that nothing else
+-- holds, and its edit is accepted.
+import Js
+
+
+generic : List a → List a
+generic xs = Js.to (Js.from xs)
+
+
+deepGeneric : List (List Int) → List (List Int)
+deepGeneric xss = List.push (generic xss) [ 1 ]
+
+
+pub sharedElems : Int → Int
+sharedElems n =
+    l = [ n ]
+    r = deepGeneric [ l, l ]
+    case r of
+        [ a, …_ ] →
+            List.length (List.push a 5) + List.length l
+
+        [] →
+            0
+
+
+pub freshElems : Int → Int
+freshElems n =
+    r = deepGeneric [ [ n ], [ n ] ]
+    case r of
+        [ a, …_ ] →
+            List.length (List.push a 5)
+
+        [] →
+            0
+
+
+tupleFirst : List Int × List Int → List Int
+tupleFirst t =
+    r : List (List Int)
+    r = Js.to (Js.from t)
+    case r of
+        [ a, …_ ] →
+            a
+
+        [] →
+            []
+
+
+pub sharedTuple : Int → Int
+sharedTuple n =
+    l = [ n ]
+    a = tupleFirst ( l, [] )
+    List.length (List.push a 5) + List.length l
+
+
+pub freshTuple : Int → Int
+freshTuple n =
+    a = tupleFirst ( [ n ], [] )
+    List.length (List.push a 5)
+
+
+recordPack : { r | values : List a } → Js.Value
+recordPack record = Js.from record
+
+
+recordUnpack : Js.Value → { r | values : List a }
+recordUnpack value = Js.to value
+
+
+valuesOf : List Int → List Int
+valuesOf xs =
+    record : { count : Int, values : List Int }
+    record = recordUnpack (recordPack { count = 0, values = xs })
+    record.values
+
+
+pub sharedRecord : Int → Int
+sharedRecord n =
+    l = [ n ]
+    v = valuesOf l
+    List.length (List.push v 5) + List.length l
+
+
+pub freshRecord : Int → Int
+freshRecord n =
+    v = valuesOf [ n ]
+    List.length (List.push v 5)
+
+
+pack : List a × Int → Js.Value
+pack value = Js.from value
+
+
+unpack : Js.Value → List a × Int
+unpack value = Js.to value
+
+
+firstOf : List Int → List Int
+firstOf xs =
+    ( ys, _ ) = unpack (pack ( xs, 0 ))
+    ys
+
+
+pub sharedPair : Int → Int
+sharedPair n =
+    l = [ n ]
+    v = firstOf l
+    List.length (List.push v 5) + List.length l
+
+
+pub freshPair : Int → Int
+freshPair n =
+    v = firstOf [ n ]
+    List.length (List.push v 5)

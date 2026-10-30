@@ -60,7 +60,8 @@ pub const Error = Ids.ChargeError;
 pub const Kind = enum(u8) { leaf, node, delta, recast, @"union", positions, choice, view };
 
 /// One node (§3.3). `a`, `b` by kind: `node`: the children map; `delta`:
-/// base + the override map; `recast`: inner; `union`, `positions`: left, right.
+/// base + the override map; `recast`: inner, and `b` 1 for a stepped recast
+/// that keeps the whole inner (`recastWhole`); `union`, `positions`: left, right.
 pub const Node = struct {
     kind: Kind,
     place: PlaceId,
@@ -216,6 +217,14 @@ pub const Table = struct {
                 }
                 try account.reserve(.shape, 1);
                 t.nodes.items(.cells)[x.int()] = t.cells(answer);
+                _ = stack.pop();
+                continue;
+            }
+            // A whole recast's are its inner's reach (`recastWhole`).
+            if (t.isWhole(x)) {
+                const c = try t.approxReach(gpa, account, cellsets, .from(d.a));
+                try account.reserve(.shape, 1);
+                t.nodes.items(.cells)[x.int()] = c;
                 _ = stack.pop();
                 continue;
             }
@@ -379,8 +388,21 @@ pub const Table = struct {
         // Casts compose to one recast (§2.13.9).
         // Casts compose through a view's answer too (§2.11).
         const inn = try t.force(gpa, account, inner);
+        // A cast of some value inside the inner stays one (#1311).
+        if (t.isWhole(inn)) return t.wholeOver(gpa, account, at, inn, t.cells(inn));
         const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = t.cells(in), .a = in.int(), .b = 0, .reach = .none });
+    }
+
+    /// Whether `n` is a stepped recast that keeps its whole inner (`recastWhole`).
+    pub fn isWhole(t: *const Table, n: NodeId) bool {
+        return t.kind(n) == .recast and t.nodes.items(.b)[n.int()] == 1;
+    }
+
+    /// `n`'s image over its inner's image `inner`, whole where `n` is (#1311).
+    pub fn recastAs(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, inner: NodeId) Error!NodeId {
+        if (t.isWhole(n)) return t.recastWhole(gpa, account, cellsets, t.place(n), inner);
+        return t.recast(gpa, account, t.place(n), inner);
     }
 
     // ---- views (§2.11 *Representation of a view*, #1097) ---------------------------
@@ -537,7 +559,7 @@ pub const Table = struct {
                 }
                 break :blk t.make(gpa, account, .{ .kind = .delta, .place = d.place, .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
             },
-            .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = 0, .reach = .none }),
+            .recast => t.make(gpa, account, .{ .kind = .recast, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = d.b, .reach = .none }),
             .@"union", .choice, .positions => t.make(gpa, account, .{ .kind = d.kind, .place = d.place, .cells = lazy_cells, .a = (try t.view(gpa, account, .from(d.a), env)).int(), .b = (try t.view(gpa, account, .from(d.b), env)).int(), .reach = .none }),
             // A template is a class's node, and a class is stored forced
             // (`Summary.Table.add` checks it): it holds no view (§2.11).
@@ -585,17 +607,29 @@ pub const Table = struct {
     /// cells are what the inner reaches, approximately — never the inner's
     /// own cells, which are the value around it (#1132's defect, through a
     /// call's instantiated place).
-    fn recastWhole(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, at: PlaceId, inner: NodeId) Error!NodeId {
-        // Casts compose through a view's answer too (§2.11).
+    pub fn recastWhole(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, at: PlaceId, inner: NodeId) Error!NodeId {
+        return t.wholeOver(gpa, account, at, inner, try t.approxReach(gpa, account, cellsets, try t.force(gpa, account, inner)));
+    }
+
+    /// A whole recast at `at` holding `c`, over `inner` (a recast composed
+    /// to its inner, a view read at its answer, §2.11). Marked (`b`), so it
+    /// interns apart from `recast(at, inner)`, whose cells are the inner's
+    /// own (#1310), and every rebuild keeps it whole (`recastAs`, #1311).
+    fn wholeOver(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, inner: NodeId, c: SetId) Error!NodeId {
         const inn = try t.force(gpa, account, inner);
         const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
+        return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = c, .a = in.int(), .b = 1, .reach = .none });
+    }
+
+    /// `reach(n)`, every cell approximate.
+    fn approxReach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
         var c: SetId = .none;
-        var it = cellsets.iterate(try t.reach(gpa, account, cellsets, in));
+        var it = cellsets.iterate(try t.reach(gpa, account, cellsets, n));
         while (it.next()) |e| {
             try account.reserve(.inspection, 1);
             c = try cellsets.insert(gpa, .growth(account), c, e.key, 1);
         }
-        return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = c, .a = in.int(), .b = 0, .reach = .none });
+        return c;
     }
 
     /// The lazy join of two nodes at one place (a binary DAG).
@@ -1630,7 +1664,9 @@ pub const Table = struct {
                 },
                 .recast => {
                     if (t.memo_map.get(n) != null) continue;
-                    try t.memo_map.put(gpa, n, try t.recast(gpa, account, d.place, t.memo_map.get(.from(d.a)).?));
+                    const in = t.memo_map.get(.from(d.a)).?;
+                    // A whole recast stays whole, its reach relabelled (#1311).
+                    try t.memo_map.put(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
                 },
                 .@"union", .choice, .positions => {
                     if (t.memo_map.get(n) != null) continue;

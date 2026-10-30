@@ -922,7 +922,10 @@ const Grafter = struct {
                 var in = g.s.memo.get(.from(d.a)).?;
                 if (built(pending, in) and shapes.kind(in) == .recast) in = .from(shapes.get(in).a);
                 rec.a = in.int();
-                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, shapes.place(.from(d.a)));
+                rec.b = d.b;
+                // A whole recast's cells are a reach: a parameter cell there
+                // stands for what the argument reaches (#1311).
+                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else if (d.b == 1) try g.imageReach(d.cells, shapes.place(.from(d.a))) else try g.imageCells(d.cells, shapes.place(.from(d.a)));
             },
             .@"union", .choice, .positions => {
                 rec.a = g.s.memo.get(.from(d.a)).?.int();
@@ -951,6 +954,27 @@ const Grafter = struct {
                 continue;
             }
             c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, (try g.mapCell(cell, at)).int(), e.value);
+        }
+        return c;
+    }
+
+    /// The image of a whole recast's cells, a reach (`Shape.recastWhole`):
+    /// a parameter cell the argument's reach there, any other its mapped
+    /// self, every one approximate.
+    fn imageReach(g: *Grafter, cells: SetId, at: PlaceId) Error!SetId {
+        var c: SetId = .none;
+        var it = g.env.cells.sets.iterate(cells);
+        while (it.next()) |e| {
+            const cell: CellId = .from(e.key);
+            const one: SetId = if (g.env.cells.origin(cell) == .param) blk: {
+                const x = g.env.cells.get(cell);
+                break :blk try g.env.shapes.reach(g.gpa(), g.account(), &g.env.cells.sets, try g.argAt(x.a, .from(x.b), at));
+            } else try g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(cell, at)).int(), 1);
+            var ot = g.env.cells.sets.iterate(one);
+            while (ot.next()) |o| {
+                try g.env.charge.reserve(g.gpa(), .inspection, 1);
+                c = try g.env.cells.sets.insert(g.gpa(), g.env.charge, c, o.key, 1);
+            }
         }
         return c;
     }
@@ -987,7 +1011,9 @@ const Grafter = struct {
                 while (kt.next()) |e| n = try shapes.put(g.gpa(), g.account(), g.env.places, g.env.cells, n, e.step, g.s.memo.get(e.node).?, true, .none);
                 break :blk n;
             },
-            .recast => try shapes.recast(g.gpa(), g.account(), d.place, g.s.memo.get(.from(d.a)).?),
+            // A whole recast is some value inside its inner: the image's
+            // reach, never its root's cells (#1311).
+            .recast => try shapes.recastAs(g.gpa(), g.account(), &g.env.cells.sets, t, g.s.memo.get(.from(d.a)).?),
             .@"union" => blk: {
                 var two = [_]NodeId{ g.s.memo.get(.from(d.a)).?, g.s.memo.get(.from(d.b)).? };
                 break :blk try shapes.join(g.gpa(), g.account(), g.env.places, g.env.cells, &two);

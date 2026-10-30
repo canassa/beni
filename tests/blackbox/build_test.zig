@@ -9071,6 +9071,9 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // (#1261), because the shallow read before it was unsound (#1132's
     // fixtures `WideResult` and `core/FullCast`). A cast-aware rule that
     // keeps the inner's own cells exact outside a region fold is #1291.
+    // That recast is marked whole and interned apart from the plain recast
+    // of the same inner, so its cells are always the reach (`~fresh3` too)
+    // and the block writes the mark (1 756 → 1 776 bytes, #1310, #1311).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -9085,7 +9088,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1756 bytes, hash b6b4579f1f103edc\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1776 bytes, hash 73b48a57aa97b39c\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {
