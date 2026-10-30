@@ -1,0 +1,4 @@
+module WidenChoiceRoot
+  summary pick: π1 R, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.0 RA, π1#Node.0⟨Tree⟩#Node.1 RA, π1#Node.1 RA, π2 RA; res #Node.0 condition(fresh1){lost}r{sep π1#Node.0⟨Tree⟩#Node.0 π2} π2, #Node.0⟨Tree⟩#Node.0 condition(fresh2) π1#Node.0⟨Tree⟩#Node.0, #Node.0⟨Tree⟩#Node.1 condition(fresh3) π1#Node.0⟨Tree⟩#Node.1, #Node.0⟨Tree⟩#Node.2 condition(fresh4) π2, #Node.1 condition(fresh6) π1#Node.1, condition(fresh5){sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.0, sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.1, sep π1#Node.1 π2}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

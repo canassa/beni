@@ -615,6 +615,14 @@ pub const Table = struct {
         return false;
     }
 
+    /// Whether `p` lies on a cycle of the place graph: one of its steps
+    /// reaches a place that can reach `p` again, so a value at `p` can
+    /// hold a re-entry back to its own path (§2.3's widen). O(steps).
+    pub fn onCycle(t: *const Table, p: PlaceId) bool {
+        for (t.steps(p).children) |c| if (t.sameCycle(p, c)) return true;
+        return false;
+    }
+
     // ---- canonical paths ------------------------------------------------
 
     /// The `ε` path of `place`.

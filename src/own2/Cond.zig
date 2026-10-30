@@ -5790,6 +5790,39 @@ test "#1125 review: widen opening two depths into one class reads a cell both ho
     }
 }
 
+test "#1360: widen opens a choice at the root and keeps its arms exclusive: a kids list in each arm is one, beside each other two" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const arg = try f.places.ctorStep(gpa, &f.account, 6, 0);
+    const nothing = try f.shapes.nothing(gpa, &f.account, try f.placeOf(6));
+    for ([_]bool{ true, false }) |exclusive| {
+        // `if c then Rose k else Rose [ Rose k ]`: `k` at `#Rose.0` in one
+        // arm and at `#Rose.0·[*]·#Rose.0`, the same class, in the other.
+        const k = try listOver(&f, 7, 1, nothing, .none);
+        const shallow = try roseOver(&f, 3, k.node, k.k);
+        const kids = try listOver(&f, 7, 2, shallow.node, shallow.k);
+        const deep = try roseOver(&f, 4, kids.node, kids.k);
+        const root = if (exclusive) try f.shapes.choice(gpa, &f.account, &f.cells.sets, shallow.node, deep.node) else try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, shallow.node, deep.node);
+        const rk = try f.conds.kappaMerge(gpa, f.charge(), shallow.k, deep.k);
+        const widened = try f.conds.widenValue(gpa, f.charge(), f.view(), root, rk);
+        // Opened: the arms are members of the root's class, the knot ties
+        // back to a node, never to a choice.
+        try testing.expect(widened.node != root);
+        try testing.expect(f.shapes.kind(widened.node) != .choice);
+        const at = try f.projOf(widened.node, arg);
+        // The class's obligation from the path-multiset primitive (§2.9):
+        // one execution has one arm, so `k` once; coexisting sides, twice.
+        // (The read through the built image may be `lost` for other
+        // reasons, as #1125's distinct lists are.)
+        try testing.expect(f.conds.fold_cond_n > 0);
+        const fc = try f.conds.foldCondOf(gpa, f.charge(), f.view(), at);
+        if (exclusive) try testing.expect(!Table.fails(fc)) else try testing.expectEqual(lost, fc);
+        if (!exclusive) try testing.expectEqual(lost, try f.kappa(f.conds.kappaChild(widened.kappas, arg), at, false));
+    }
+}
+
 test "#1125 verification: a leaf-only folded class stores its repeat, so the snapshot alone reads it" {
     var f: Fixture = .{};
     try f.init();
