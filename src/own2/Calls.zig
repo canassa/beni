@@ -1596,7 +1596,8 @@ fn deepCall() !void {
         at.node = (try shapes.proj(gpa, &account, &places, &cells, at.node, Place.Step.elem)).?;
         at.kappa = conds.kappaChild(at.kappa, Place.Step.elem);
     }
-    try testing.expectEqual(a, at.node);
+    // A view of the template's bottom, re-rooted at the argument (§2.11).
+    try testing.expectEqual(a, try shapes.force(gpa, &account, at.node));
     try testing.expectEqual(Cond.yes, conds.kappaGet(at.kappa, a).?);
 }
 
@@ -1643,7 +1644,8 @@ test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image,
     const applied = try apply(env, &sums, c, &.{.{ .node = a, .kappa = .none }}, 0, &s);
     // The image is cyclic: down `#T.0` and `[*]` is the image again.
     const r = applied.result.node;
-    try testing.expectEqual(Shape.Kind.node, shapes.kind(r));
+    // The result is a view (§2.11): its answer is the image's record.
+    try testing.expectEqual(Shape.Kind.node, shapes.kind(try shapes.force(gpa, &account, r)));
     const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
     const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
     try testing.expect(back == r or (shapes.kind(back) == .@"union" and (shapes.get(back).a == r.int() or shapes.get(back).b == r.int())));
@@ -1693,15 +1695,18 @@ test "#1143: a back edge onto a union's side is grafted once the knot is tied" {
     // The image: `T`, its list's `[*]` a union whose one side is the image
     // and the other the argument (the parameter's leaf grafted).
     const r = applied.result.node;
-    try testing.expectEqual(Shape.Kind.node, shapes.kind(r));
+    // The result is a view (§2.11): its answer is the image's record.
+    try testing.expectEqual(Shape.Kind.node, shapes.kind(try shapes.force(gpa, &account, r)));
     const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
-    const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
+    // The `[*]` child is the view of the template's union: its answer a
+    // union whose one side is the image (the interned view) again.
+    const back = try shapes.force(gpa, &account, (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?);
     try testing.expectEqual(Shape.Kind.@"union", shapes.kind(back));
     try testing.expectEqual(t_place, shapes.place(back));
     const d = shapes.get(back);
     try testing.expect(d.a == r.int() or d.b == r.int());
     // Its cells are the argument's: what the tied sides hold.
-    try testing.expect(cells.sets.member(shapes.cells(back), asite.int()));
+    try testing.expect(cells.sets.member(try shapes.cellsOf(gpa, &account, &cells.sets, back), asite.int()));
 }
 
 /// Tables for a hand-built cyclic `res` over `TestGraph`'s `T`/list.
@@ -1863,8 +1868,11 @@ test "#1143: a cycle with no node on it, a delta over the union it sits in, is g
     const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = try x.site(3, x.t_place), .kappa = .none }}, 0, &s);
     // The image is the same cycle: a union whose delta side's base is it.
     const r = applied.result.node;
-    try testing.expectEqual(Shape.Kind.@"union", x.shapes.kind(r));
-    const dr: NodeId = .from(x.shapes.get(r).b);
+    // The result is a view (§2.11): each record read at its answer, the
+    // cycle closing through the interned view.
+    const fr = try x.shapes.force(gpa, &x.account, r);
+    try testing.expectEqual(Shape.Kind.@"union", x.shapes.kind(fr));
+    const dr = try x.shapes.force(gpa, &x.account, .from(x.shapes.get(fr).b));
     try testing.expectEqual(Shape.Kind.delta, x.shapes.kind(dr));
     try testing.expectEqual(r.int(), x.shapes.get(dr).a);
 }
@@ -2534,8 +2542,13 @@ test "#1157 review: one fold of an argument per template path at a call, however
         const arg = try ctorOf(&x, x.t_place, x.arg, l0);
         var s: Scratch = .{};
         defer s.deinit(gpa);
+        const applied = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = .none }}, 0, &s);
+        // The conditions are instantiated when read (§2.11, part 3): every
+        // entry of the result's κ and the `xreq` resolved, what that makes counted.
         const before = x.shapes.count();
-        _ = try apply(x.env(), &x.sums, c, &.{.{ .node = arg, .kappa = .none }}, 0, &s);
+        _ = try x.conds.resolved(gpa, x.env().charge, applied.xreq);
+        var it = x.conds.kappaHere(x.conds.kappaChild(applied.result.kappa, e));
+        while (it.next()) |en| _ = try x.conds.resolved(gpa, x.env().charge, en.cond);
         grew[run] = x.shapes.count() - before;
     }
     // The argument is folded once: eight atoms add no image of their own.
