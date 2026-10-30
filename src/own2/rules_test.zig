@@ -54,10 +54,15 @@ const layers = [_]Entry{
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
-    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
+    // §5 says 750 since #1214: a path's uses grouped for a filter, and a
+    // child's range found by its one step.
+    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
-    // §5 says 1 300 since S3b slice 1: a writer call's write path and `xreq`.
-    .{ .file = "Demands.zig", .layer = 6, .max_lines = 1300 },
+    // §5 says 1 900 since #1214: the holder index, below Demands, which reads
+    // it; with the frame types, the naive scan and the fallback hold listing.
+    .{ .file = "Holders.zig", .layer = 6, .max_lines = 1900 },
+    // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
+    .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
     .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
@@ -128,7 +133,7 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Rows.zig" };
+const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -359,7 +364,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 26), layers.len);
+    try testing.expectEqual(@as(usize, 27), layers.len);
     try testing.expectEqual(@as(usize, 19), causes.len);
 }
 

@@ -78,6 +78,12 @@ pub const Filter = struct {
     }
 };
 
+/// A use's group within its path (§2.8, #1214): its kind, and a `call`
+/// use's callee use node, the only things a filter judges.
+fn groupOf(u: Use) u32 {
+    return if (u.kind == .call and u.use_node != .none) u.use_node.int() + 3 else @backingInt(u.kind);
+}
+
 pub const Index = struct {
     uses: std.MultiArrayList(Use) = .empty,
     /// Per local: its run of `uses`.
@@ -174,7 +180,10 @@ pub const Index = struct {
                 try x.runs.put(gpa, node, .{ .start = start, .len = @intCast(x.steps.items.len - start) });
             }
         }
-        // Sorted by (local, path, point).
+        // Sorted by (local, path, group, point, atom): a path's `call` uses of
+        // one callee use node are one contiguous group (`groupKey`), whose
+        // acceptance is decided once (§2.8, #1214), and the atom makes the
+        // order total (§2.8 *Verdicts*: a tie is never broken by discovery).
         const order = try gpa.alloc(u32, n);
         defer gpa.free(order);
         for (order, 0..) |*o, i| o.* = @intCast(i);
@@ -186,8 +195,9 @@ pub const Index = struct {
                 if (ua.local != ub.local) return ua.local < ub.local;
                 const o = c.x.comparePaths(c.places, ua.path, ub.path);
                 if (o != .eq) return o == .lt;
+                if (groupOf(ua) != groupOf(ub)) return groupOf(ua) < groupOf(ub);
                 if (ua.point != ub.point) return ua.point < ub.point;
-                return @backingInt(ua.kind) < @backingInt(ub.kind);
+                return ua.atom < ub.atom;
             }
         }.lessThan);
         var max_local: u32 = 0;
@@ -444,14 +454,103 @@ pub const Index = struct {
     /// (`rank₂ > t`) that the filter accepts; every candidate visited is one
     /// record.
     fn earliest(x: *const Index, gpa: Allocator, charge: Charge, r: Ids.Range, p: u32, t: u32, filter: Filter) Error!?UseId {
-        var from: Pair = .{ .point = p + 1, .use = 0, .rank2 = 0 };
-        while (true) {
-            const c = (try x.firstCompatible(gpa, charge, r, from, t)) orelse return null;
+        if (filter.accept == Filter.all.accept) return x.firstAfter(gpa, charge, r, p, t);
+        // A filter judges a use by its kind, callee use node and path, which
+        // one group shares: once per group, never per use (§2.8, #1214).
+        var best: ?UseId = null;
+        var at = r.start;
+        while (at < r.start + r.len) {
+            const end = x.groupEnd(at, r.start + r.len);
             try charge.reserve(gpa, .inspection, 1);
-            if (try filter.accept(filter.ctx, x.uses.get(c.use), .from(c.use))) return .from(c.use);
-            if (c.use == std.math.maxInt(u32)) return null;
-            from = .{ .point = c.point, .use = c.use + 1, .rank2 = 0 };
+            if (try filter.accept(filter.ctx, x.uses.get(at), .from(at))) {
+                if (try x.firstAfter(gpa, charge, .{ .start = at, .len = end - at }, p, t)) |u| {
+                    if (best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) best = u;
+                }
+            }
+            at = end;
         }
+        return best;
+    }
+
+    fn pairOf(x: *const Index, u: UseId) Pair {
+        return .{ .point = x.uses.items(.point)[u.int()], .use = u.int(), .rank2 = 0 };
+    }
+
+    /// The earliest use of index range `r` after `p` with `rank₂ > t`.
+    pub fn firstAfter(x: *const Index, gpa: Allocator, charge: Charge, r: Ids.Range, p: u32, t: u32) Error!?UseId {
+        const c = (try x.firstCompatible(gpa, charge, r, .{ .point = p + 1, .use = 0, .rank2 = 0 }, t)) orelse return null;
+        return .from(c.use);
+    }
+
+    /// Whether use `i` is a `call` use whose callee's use shape decides
+    /// what it reads (§2.7).
+    pub fn filtered(x: *const Index, i: u32) bool {
+        return x.groupKey(i) >= 3;
+    }
+
+    /// Use `i`'s group: its kind, and a `call` use's callee use node.
+    pub fn groupKey(x: *const Index, i: u32) u32 {
+        return groupOf(x.uses.get(i));
+    }
+
+    /// The end of use `at`'s group within `[at, end)`: the uses of one path
+    /// and group are contiguous, so a binary search.
+    pub fn groupEnd(x: *const Index, at: u32, end: u32) u32 {
+        const paths = x.uses.items(.path);
+        const g = x.groupKey(at);
+        var lo = at + 1;
+        var hi = end;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (paths[mid] == paths[at] and x.groupKey(mid) == g) lo = mid + 1 else hi = mid;
+        }
+        return lo;
+    }
+
+    /// `range` for a caller outside: local `h`'s uses at the path of steps
+    /// `q_steps` below its root, and below it when `subtree`.
+    pub fn rangeOf(x: *const Index, places: *const Place.Table, h: u32, q_steps: []const Place.Step, subtree: bool) Ids.Range {
+        return x.range(places, h, q_steps, subtree);
+    }
+
+    /// Within `r`, a subtree range of a path of `depth` steps: the uses at
+    /// that path itself (they come first), or those below it whose next step
+    /// is `s`. Two binary searches on the one step at `depth`, never the
+    /// whole path: a descent pays O(log U) a level, not O(depth · log U).
+    pub fn childRange(x: *const Index, places: *const Place.Table, r: Ids.Range, depth: u32, s: Place.Step) Ids.Range {
+        const Ctx = struct { x: *const Index, places: *const Place.Table, depth: u32, s: Place.Step };
+        const c: Ctx = .{ .x = x, .places = places, .depth = depth, .s = s };
+        const items = x.uses.items(.path)[r.start..][0..r.len];
+        const lo = std.sort.partitionPoint(PathId, items, c, struct {
+            fn f(k: Ctx, p: PathId) bool {
+                const st = k.x.stepAt(p, k.depth) orelse return true;
+                return k.places.stepLess(st, k.s);
+            }
+        }.f);
+        const hi = std.sort.partitionPoint(PathId, items, c, struct {
+            fn f(k: Ctx, p: PathId) bool {
+                const st = k.x.stepAt(p, k.depth) orelse return true;
+                return !k.places.stepLess(k.s, st);
+            }
+        }.f);
+        return .{ .start = r.start + @as(u32, @intCast(lo)), .len = @intCast(hi - lo) };
+    }
+
+    /// The end of the uses at the path of `depth` steps itself within its
+    /// subtree range `r`: they come first.
+    pub fn exactEnd(x: *const Index, r: Ids.Range, depth: u32) u32 {
+        const items = x.uses.items(.path)[r.start..][0..r.len];
+        return r.start + @as(u32, @intCast(std.sort.partitionPoint(PathId, items, .{ x, depth }, struct {
+            fn f(k: struct { *const Index, u32 }, p: PathId) bool {
+                return k[0].stepAt(p, k[1]) == null;
+            }
+        }.f)));
+    }
+
+    /// Step `depth` of a use's path from its root, or null when it is shorter.
+    fn stepAt(x: *const Index, p: PathId, depth: u32) ?Place.Step {
+        const run = x.runs.get(p) orelse unreachable;
+        return if (depth < run.len) x.steps.items[run.start + depth] else null;
     }
 
     /// `rank₂(p)`, one charged region read (§2.7's rank lookup).
