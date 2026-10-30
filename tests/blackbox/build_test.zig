@@ -9879,8 +9879,8 @@ test "the checker v2 says why a summary is not printed" {
     // └─────────────────────────────────────────┘
     // #1182: the summary print reads the class on the declaration's account,
     // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing. A 156-field
-    // record of 11-field records re-read 16 times checks at growth 65 373,
+    // that error, and the `summary` line was simply missing. A 190-field
+    // record of 10-field records re-read 16 times checks at growth 65 357 (re-sized for 2b's crossing records),
     // and its print passes 65 536: the dump says so.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
@@ -9888,13 +9888,13 @@ test "the checker v2 says why a summary is not printed" {
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
     try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..11) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
+    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
     try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..156) |i| try src.print(a, "\n    , r{d} : S", .{i});
+    for (1..190) |i| try src.print(a, "\n    , r{d} : S", .{i});
     try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..11) |i| try src.print(a, ", s{d} = xs", .{i});
+    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
     try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..156) |i| try src.print(a, ", r{d} = s", .{i});
+    for (1..190) |i| try src.print(a, ", r{d} = s", .{i});
     try src.appendSlice(a, " }\n    [ r");
     for (1..16) |_| try src.appendSlice(a, ", r");
     try src.appendSlice(a, " ]\n");
@@ -9914,9 +9914,9 @@ test "the checker v2 says why a summary is not printed" {
 }
 
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 62 700 of 65 536), after another (`g`) or before it:
+/// cold growth about 62 200 of 65 536), after another (`g`) or before it:
 /// its dump in that order (#1104). Its growth is a genuine product, a
-/// 222-field record of records re-read at 15 positions: source-shaped work
+/// 210-field record of records (re-sized for 2b's crossing records) re-read at 15 positions: source-shaped work
 /// spends the source continuation, never the allowance (§4.1, #1188).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
@@ -9925,11 +9925,11 @@ fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     try h.appendSlice(a, "type alias S =\n    { s0 : List Int");
     for (1..10) |i| try h.print(a, "\n    , s{d} : List Int", .{i});
     try h.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..222) |i| try h.print(a, "\n    , r{d} : S", .{i});
+    for (1..210) |i| try h.print(a, "\n    , r{d} : S", .{i});
     try h.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
     for (1..10) |i| try h.print(a, ", s{d} = xs", .{i});
     try h.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..222) |i| try h.print(a, ", r{d} = s", .{i});
+    for (1..210) |i| try h.print(a, ", r{d} = s", .{i});
     try h.appendSlice(a, " }\n    [ r");
     for (1..15) |_| try h.appendSlice(a, ", r");
     try h.appendSlice(a, " ]\n");

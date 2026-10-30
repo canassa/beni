@@ -859,7 +859,7 @@ pub const Table = struct {
             .region => if (t.region_ties.get(key) == t.ties) (if (t.memo_region.get(key)) |s| SetId.from(s) else null) else null,
             .bases => if (t.bstar_epoch.get(key) == t.base_epoch) (if (t.memo_bstar.get(key)) |s| SetId.from(s) else null) else null,
             .union_dag, .choice_dag => blk: {
-                const k2: [2]u32 = .{ @intFromEnum(which), n.int() };
+                const k2: [2]u32 = .{ @backingInt(which), n.int() };
                 break :blk if (t.dag_members_ties.get(k2) == t.ties) (if (t.memo_dag_members.get(k2)) |s| SetId.from(s) else null) else null;
             },
         };
@@ -877,7 +877,7 @@ pub const Table = struct {
                 (try t.bstar_epoch.getOrPut(gpa, key)).value_ptr.* = t.base_epoch;
             },
             .union_dag, .choice_dag => {
-                const k2: [2]u32 = .{ @intFromEnum(which), n.int() };
+                const k2: [2]u32 = .{ @backingInt(which), n.int() };
                 (try t.memo_dag_members.getOrPut(gpa, k2)).value_ptr.* = s.int();
                 (try t.dag_members_ties.getOrPut(gpa, k2)).value_ptr.* = t.ties;
             },

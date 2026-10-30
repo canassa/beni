@@ -1249,6 +1249,13 @@ pub const Table = struct {
     }
 
     fn readAtRaw(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
+        // A node that walks nothing below it (no view, no DAG): read at once,
+        // as the machine would, with no task of its own.
+        if (v.shapes.kind(n) != .view and !isDag(v.shapes.kind(n))) {
+            const k = try t.kappaReadOne(gpa, charge, v, ctx, n, at_summary, null);
+            const fc = t.fold_cond.get(n) orelse return k;
+            return t.@"and"(gpa, charge, k, fc);
+        }
         // A union's, a positions node's or a view's read is a DAG walk (§4.1, #1098).
         const walk = try v.shapes.dagWalk(gpa, charge.account, n);
         defer if (walk) |k| charge.account.leave(k);
@@ -1725,9 +1732,16 @@ pub const Table = struct {
     /// κ from the cells at the read's position (header), `extra` arrivals
     /// counted besides them at a summary position; charged per read.
     fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, dups: SetId, dups_approx: SetId) Error!CondId {
-        // At a plain path: `lost` for an approximate cell or `⊤` (`anyLost`,
-        // memoised per radix node).
-        if (!at_summary) return if (try t.anyLost(gpa, charge, v.cells, cells)) lost else yes;
+        // At a plain path: `lost` for an approximate cell or `⊤`, the first one
+        // found; a set read once costs its cells up to it.
+        if (!at_summary) {
+            var it = v.cells.sets.iterate(cells);
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (e.value == 1 or v.cells.origin(.from(e.key)) == .top) return lost;
+            }
+            return yes;
+        }
         // `summaryExcl(cells) ∧ apart(cells ⊎ dups)` (*The derivation*): the
         // set's aggregate, memoised per radix node, with the repeats added as
         // second occurrences. Every repeat is a cell of `cells`, one exact
@@ -1916,7 +1930,6 @@ pub const Table = struct {
         }
         return a;
     }
-
 
     /// Whether anything below `p` may hold an object.
     fn holdsBelow(places: *const Cell.Places, p: Ids.PlaceId) bool {
