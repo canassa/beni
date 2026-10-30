@@ -1,0 +1,22 @@
+module Main
+  19:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 20:28
+  27:9 List.push l: rejected alias: t#Rose.1[*]⟨Rose⟩#Rose.0 holds it and is read at 28:20
+  35:9 List.push l: rejected alias: t#Leaf.1⟨Leaf⟩#Leaf.0 holds it and is read at 36:20
+  43:9 List.push l: rejected alias: t#Leaf.1⟨Leaf⟩#Leaf.0 holds it and is read at 44:20
+  53:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 54:13
+  63:17 List.push l: accepted fresh
+  summary inlineField: unused
+  summary viaHelper: unused
+  summary mutual: unused
+  summary twoBelow: unused
+  summary viaGrand: unused
+  summary outside: unused
+  demands 6: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+module Shows
+  summary showKids: π1 R, π1#Rose.1 R
+  summary showWood: π1 R, π1#Leaf.1 R
+  summary showLeaves: π1 R, π1#Leaf.1#Wood.0 R
+  summary grand: π1 R, π1[*]#Tree.0.kids R, π1[*]⟨Tree⟩⁺#Tree.0.v R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 5

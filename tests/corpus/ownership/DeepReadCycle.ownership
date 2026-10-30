@@ -1,0 +1,22 @@
+module DeepReadCycle
+  36:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 37:28
+  51:9 List.push l: rejected alias: t#Rose.1[*]⟨Rose⟩#Rose.0 holds it and is read at 52:20
+  66:9 List.push l: rejected alias: t#Leaf.1⟨Leaf⟩#Leaf.0 holds it and is read at 67:20
+  81:9 List.push l: rejected alias: t#Leaf.1⟨Leaf⟩#Leaf.0 holds it and is read at 82:20
+  91:17 List.push l: accepted fresh
+  105:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 106:13
+  135:17 List.push l: rejected alias: r.kids[*]⟨Tree⟩#Tree.0.v holds it and is read at 136:13
+  summary inlineField: unused
+  summary showKids: π1 R, π1#Rose.1 R
+  summary viaHelper: unused
+  summary showWood: π1 R, π1#Leaf.1 R
+  summary mutual: unused
+  summary showLeaves: π1 R, π1#Leaf.1#Wood.0 R
+  summary twoBelow: unused
+  summary outside: unused
+  summary scrutinee: unused
+  summary grand: π1 R, π1[*]#Tree.0.kids R, π1[*]⟨Tree⟩⁺#Tree.0.v R
+  summary viaGrand: unused
+  demands 7: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 7: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause alias 6

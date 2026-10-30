@@ -273,6 +273,13 @@ pub const Table = struct {
     /// their index, so a module has 2²⁸ of them (`ctor_steps`); the
     /// canonical order among them is by the pair (`stepLess`).
     ctor_args: Ids.FixedDict(2) = .{},
+    /// `hits` and `up`'s memos, path → a run of `fold_runs` into
+    /// `fold_paths` (§2.7, *A read that leaves its path on a cycle*).
+    hit_memo: Ids.FixedDict(1) = .{},
+    up_memo: Ids.FixedDict(1) = .{},
+    level_memo: Ids.FixedDict(1) = .{},
+    fold_runs: std.ArrayList([2]u32) = .empty,
+    fold_paths: std.ArrayList(PathId) = .empty,
     limits: Limits = .{},
     /// Instrumentation: places visited by the holds fixpoint.
     holds_visits: u32 = 0,
@@ -286,6 +293,11 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.extend_memo.deinit(gpa);
         t.ctor_args.deinit(gpa);
+        t.hit_memo.deinit(gpa);
+        t.up_memo.deinit(gpa);
+        t.level_memo.deinit(gpa);
+        t.fold_runs.deinit(gpa);
+        t.fold_paths.deinit(gpa);
     }
 
     /// Start a block's place namespace: `ofBlock`'s numbers from here on
@@ -709,6 +721,152 @@ pub const Table = struct {
             try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up });
         }
         return .from(got.value_ptr.*);
+    }
+
+    /// Whether `p` is on a cycle of the place graph: a step back to itself,
+    /// or a strongly connected component of two places or more.
+    pub fn cyclic(t: *const Table, p: PlaceId) bool {
+        for (t.steps(p).children) |c| if (t.sameCycle(p, c)) return true;
+        return false;
+    }
+
+    /// `Up(p)` (§2.7, *A read that leaves its path on a cycle*): the paths
+    /// that `extend` reaches from `p`, step by step along the cycle of
+    /// `p`'s place, and that are not below `p`: the `⟲` paths above `p`
+    /// that `p`'s levels fold into, closed over the levels below each. A
+    /// deep read at `p` reads every path below each of them. Memoised per
+    /// path; a run of `fold_paths`, read by `foldPath`.
+    pub fn foldsUp(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.up_memo.get(.{p.int()})) |i| return rangeOf(t.fold_runs.items[i]);
+        var acc: std.ArrayList(PathId) = .empty;
+        defer acc.deinit(gpa);
+        if (t.cyclic(t.pathPlace(p))) {
+            // The targets of `p`'s own levels, then those of each target's
+            // levels: a target is a `⟲` of a prefix, so each round climbs.
+            try t.mergeHits(gpa, charge, p, p, &acc);
+            var i: usize = 0;
+            while (i < acc.items.len) : (i += 1) try t.mergeHits(gpa, charge, acc.items[i], p, &acc);
+        }
+        return t.memoRun(gpa, &t.up_memo, p, acc.items);
+    }
+
+    /// The paths at the place of `p` one or more steps around its cycles,
+    /// each as `extend` makes it (`Walk.Graft.levels`' answer): where a
+    /// callee's `⟲` step at `p` lands in this graph. A walk of the
+    /// canonical paths of the place's strongly connected component, each
+    /// once; memoised per path; empty when the place is on no cycle.
+    pub fn levelsOf(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.level_memo.get(.{p.int()})) |i| return rangeOf(t.fold_runs.items[i]);
+        const target = t.pathPlace(p);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        var queue: std.ArrayList(PathId) = .empty;
+        defer queue.deinit(gpa);
+        var acc: std.ArrayList(PathId) = .empty;
+        defer acc.deinit(gpa);
+        try queue.append(gpa, p);
+        _ = try seen.getOrPut(gpa, .{p.int()});
+        while (queue.pop()) |x| {
+            const n = t.steps(t.pathPlace(x)).steps.len;
+            var j: usize = 0;
+            while (j < n) : (j += 1) {
+                const st = t.steps(t.pathPlace(x));
+                try charge.reserve(gpa, .inspection, 1);
+                if (st.children[j] != target and !t.sameCycle(target, st.children[j])) continue;
+                const np = (try t.extend(gpa, charge, x, st.steps[j])) orelse continue;
+                if (t.pathPlace(np) == target and std.mem.indexOfScalar(PathId, acc.items, np) == null) try acc.append(gpa, np);
+                if (!(try seen.getOrPut(gpa, .{np.int()})).found_existing) try queue.append(gpa, np);
+            }
+        }
+        return t.memoRun(gpa, &t.level_memo, p, acc.items);
+    }
+
+    fn memoRun(t: *Table, gpa: Allocator, memo: *Ids.FixedDict(1), p: PathId, items: []const PathId) Allocator.Error!Ids.Range {
+        const run: [2]u32 = .{ @intCast(t.fold_paths.items.len), @intCast(items.len) };
+        try t.fold_paths.appendSlice(gpa, items);
+        (try memo.getOrPut(gpa, .{p.int()})).value_ptr.* = @intCast(t.fold_runs.items.len);
+        try t.fold_runs.append(gpa, run);
+        return rangeOf(run);
+    }
+
+    pub fn foldPath(t: *const Table, i: u32) PathId {
+        return t.fold_paths.items[i];
+    }
+
+    fn rangeOf(r: [2]u32) Ids.Range {
+        return .{ .start = r[0], .len = r[1] };
+    }
+
+    /// Add `hits(x)` to `acc`, each once, but those below `p`.
+    fn mergeHits(t: *Table, gpa: Allocator, charge: Charge, x: PathId, p: PathId, acc: *std.ArrayList(PathId)) Error!void {
+        const r = try t.hits(gpa, charge, x);
+        var k: u32 = 0;
+        while (k < r[1]) : (k += 1) {
+            try charge.reserve(gpa, .inspection, 1);
+            const e = t.fold_paths.items[r[0] + k];
+            if (e == p or t.pathParent(e) == p) continue;
+            for (acc.items) |a| {
+                if (a == e) break;
+            } else try acc.append(gpa, e);
+        }
+    }
+
+    /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle
+    /// folds into, outside `x`'s subtree. A fold lands at the deepest place
+    /// of the path it re-enters (`extend`), so a target is `a⟲` for a
+    /// prefix `a`, or `a` when that is a `⟲` already; below `x` exactly
+    /// when `a` is `x`. Made from the plain children's, so each canonical
+    /// path of a cycle is visited once, on an explicit stack (#1138).
+    fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
+        try charge.reserve(gpa, .memo, 1);
+        if (t.hit_memo.get(.{x0.int()})) |i| return t.fold_runs.items[i];
+        const Fr = struct { path: PathId, expanded: bool };
+        var stack: std.ArrayList(Fr) = .empty;
+        defer stack.deinit(gpa);
+        var acc: std.ArrayList(PathId) = .empty;
+        defer acc.deinit(gpa);
+        try stack.append(gpa, .{ .path = x0, .expanded = false });
+        while (stack.pop()) |f| {
+            const x = f.path;
+            if (t.hit_memo.get(.{x.int()}) != null) continue;
+            const here = t.pathPlace(x);
+            if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true });
+            acc.clearRetainingCapacity();
+            const n = t.steps(here).steps.len;
+            var j: usize = 0;
+            while (j < n) : (j += 1) {
+                // By index: `extend` makes paths, never steps, but reads anew.
+                const st = t.steps(here);
+                const s = st.steps[j];
+                try charge.reserve(gpa, .inspection, 1);
+                if (!t.sameCycle(here, st.children[j])) continue;
+                const y = (try t.extend(gpa, charge, x, s)) orelse continue;
+                const plain = t.pathParent(y) == x and t.pathStep(y).word() == s.word();
+                if (!f.expanded) {
+                    if (plain and t.hit_memo.get(.{y.int()}) == null) try stack.append(gpa, .{ .path = y, .expanded = false });
+                    continue;
+                }
+                if (plain) {
+                    const r = t.fold_runs.items[t.hit_memo.get(.{y.int()}).?];
+                    var k: u32 = 0;
+                    while (k < r[1]) : (k += 1) {
+                        try charge.reserve(gpa, .inspection, 1);
+                        try addOutside(&acc, gpa, x, t.fold_paths.items[r[0] + k], t);
+                    }
+                } else try addOutside(&acc, gpa, x, y, t);
+            }
+            if (!f.expanded) continue;
+            _ = try t.memoRun(gpa, &t.hit_memo, x, acc.items);
+        }
+        return t.fold_runs.items[t.hit_memo.get(.{x0.int()}).?];
+    }
+
+    fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, x: PathId, e: PathId, t: *const Table) Allocator.Error!void {
+        if (e == x or t.pathParent(e) == x) return;
+        for (acc.items) |a| if (a == e) return;
+        try acc.append(gpa, e);
     }
 
     /// Whether `path` is a summary position or below one: it holds a
