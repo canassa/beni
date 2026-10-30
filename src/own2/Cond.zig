@@ -188,6 +188,8 @@ pub const Table = struct {
     dag_facts: stamped.Column(NodeId, u32) = .{},
     facts: std.ArrayList(DagFacts) = .empty,
     pending: std.ArrayList(Pending) = .empty,
+    /// The memo entries a crossed read made, by key: their value then.
+    memo_crossed: Ids.FixedDict(4) = .{},
     memo_eq: Ids.FixedDict(4) = .{},
     memo_fold_below: Ids.FixedDict(1) = .{},
     memo_map_union: Ids.FixedDict(3) = .{},
@@ -266,6 +268,7 @@ pub const Table = struct {
         t.dag_facts.deinit(gpa);
         t.facts.deinit(gpa);
         t.pending.deinit(gpa);
+        t.memo_crossed.deinit(gpa);
         t.memo_eq.deinit(gpa);
         t.memo_fold_below.deinit(gpa);
         t.memo_map_union.deinit(gpa);
@@ -1066,7 +1069,9 @@ pub const Table = struct {
 
     /// A crossing carried down a walk (*Carried along the walk*): the
     /// re-rooted actual's region and the position `R_Q` the walk reads it at.
-    pub const Pair = struct { region: SetId, r: Kappas };
+    /// `epoch`: the `base_epoch` its `eqOn` held at; once that moves, the pair
+    /// carries nothing (*A read in flight*).
+    pub const Pair = struct { region: SetId, r: Kappas, epoch: u32 };
 
     /// What a union, choice or positions DAG holds besides its κ, a function
     /// of the node alone (*`dagKappa`*): whether a recast is below it (a view
@@ -1096,11 +1101,15 @@ pub const Table = struct {
 
     fn memoGet(t: *const Table, which: @FieldType(Pending, "which"), key: [3]u32) ?u32 {
         if (t.no_memo) return null;
-        return switch (which) {
+        const v = switch (which) {
             .dag => t.memo_dag.get(key),
             .inner => t.memo_inner.get(key),
             .deep => t.memo_deep.get(key),
-        };
+        } orelse return null;
+        // A read with no crossing (a redo, the cross-check) takes no entry a
+        // crossing made (*A read in flight*).
+        if (t.no_cross) if (t.memo_crossed.get(.{ @backingInt(which), key[0], key[1], key[2] })) |c| if (c == v) return null;
+        return v;
     }
 
     /// The pending entries from `from` on: kept, or dropped with the read.
@@ -1112,6 +1121,7 @@ pub const Table = struct {
                 .deep => &t.memo_deep,
             };
             (try m.getOrPut(gpa, p.key)).value_ptr.* = p.value;
+            (try t.memo_crossed.getOrPut(gpa, .{ @backingInt(p.which), p.key[0], p.key[1], p.key[2] })).value_ptr.* = p.value;
         };
         t.pending.shrinkRetainingCapacity(from);
     }
@@ -1321,7 +1331,7 @@ pub const Table = struct {
     /// (*Carried along the walk*). `true` when it crossed.
     fn carried(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, pairs: []const Pair) Error!?Kappas {
         if (t.no_cross) return null;
-        for (pairs) |p| if (try v.shapes.wholly(gpa, charge.account, n, p.region)) return p.r;
+        for (pairs) |p| if (p.epoch == v.shapes.base_epoch and try v.shapes.wholly(gpa, charge.account, n, p.region)) return p.r;
         return null;
     }
 
@@ -2922,7 +2932,7 @@ pub const Table = struct {
                 // Below a crossing, a node wholly of a carried region is read
                 // at that pair's `R_Q`, where earlier reads met it.
                 if (f.pairs[1] > 0 and !t.no_cross) {
-                    for (pairs.items[f.pairs[0]..][0..f.pairs[1]]) |p| if (try v.shapes.wholly(gpa, charge.account, f.node, p.region)) {
+                    for (pairs.items[f.pairs[0]..][0..f.pairs[1]]) |p| if (p.epoch == v.shapes.base_epoch and try v.shapes.wholly(gpa, charge.account, f.node, p.region)) {
                         f.at = p.r;
                         f.pairs = .{ 0, 0 };
                         f.crossed = true;
@@ -2981,11 +2991,11 @@ pub const Table = struct {
                     const pf: u32 = @intCast(pairs.items.len);
                     for (0..f.pairs[1]) |i| {
                         const p = pairs.items[f.pairs[0] + i];
-                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s) });
+                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s), .epoch = p.epoch });
                     }
                     for (0..own_pairs) |i| {
                         const p = pairs.items[sub_from + i];
-                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s) });
+                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s), .epoch = p.epoch });
                     }
                     try stack.append(gpa, .{ .at = t.kappaChild(f.at, s), .node = e.node, .summary = e.summary, .explicit = e.explicit, .pairs = .{ pf, @intCast(pairs.items.len - pf) } });
                 }
@@ -3035,7 +3045,7 @@ pub const Table = struct {
                 if (try t.crossAt(gpa, charge, v, ctx, x)) |c| {
                     for (out.items) |p| {
                         if (p.region == c.region and p.r == c.r) break;
-                    } else try out.append(gpa, .{ .region = c.region, .r = c.r });
+                    } else try out.append(gpa, .{ .region = c.region, .r = c.r, .epoch = v.shapes.base_epoch });
                     continue;
                 }
                 const answer = try v.shapes.force(gpa, charge.account, x);
@@ -6870,4 +6880,30 @@ test "#1121: two growing sets merged along their tries cost their new spines" {
     }
     // Eight times the cells: a few more levels, never eight times the work.
     try testing.expect(costs[1] <= 2 * costs[0] + 64);
+}
+
+test "a crossing's pair carries nothing once base_epoch moves, and a redo takes no entry a crossing made" {
+    // `ownership-v2.md` §2.11 *A read in flight*: a pair `deep` made while
+    // `eqOn` held is carried only within that epoch; and a read made again
+    // with no crossing never answers from an entry a crossed read kept.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const n = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 1, list, .list)}));
+    const region = try f.shapes.node_sets.insert(gpa, f.charge(), .none, n.int(), 0);
+    const r = try f.setK(.none, n, yes);
+    const pair: Table.Pair = .{ .region = region, .r = r, .epoch = f.shapes.base_epoch };
+    try testing.expectEqual(r, (try f.conds.carried(gpa, f.charge(), f.view(), n, &.{pair})).?);
+    // A relevant node gains a base: the epoch moves, the pair carries nothing.
+    f.shapes.base_epoch += 1;
+    try testing.expect(try f.conds.carried(gpa, f.charge(), f.view(), n, &.{pair}) == null);
+    // An entry a crossed read kept: a read with no crossing skips it.
+    const key: [3]u32 = .{ r.int(), n.int(), 0 };
+    try f.conds.memoPut(gpa, .dag, key, yes.int(), true);
+    try f.conds.settle(gpa, 0, true);
+    try testing.expectEqual(yes.int(), f.conds.memoGet(.dag, key).?);
+    f.conds.no_cross = true;
+    try testing.expect(f.conds.memoGet(.dag, key) == null);
 }

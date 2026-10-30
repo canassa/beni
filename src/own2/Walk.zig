@@ -299,26 +299,34 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
         };
-        const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
+        // Rebuilt with the constructors, as an eager image was (§2.11): a
+        // view's expansion joins its sides raw.
+        const mapped = try env.shapes.reintern(gpa, env.account(), &env.cells.sets, try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel));
         // The value's κ, carried over the relabelling: each entry's node
         // relabelled, its path unchanged (§2.9).
+        // Only a node of the published value keys an entry: one the
+        // rebuilding absorbed is in none, as in an eager image.
         const Carry = struct {
             ro: *ReadOff,
+            keep: SetId,
             fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
                 const shapes = c.ro.env.shapes;
-                if (shapes.memo_map.get(x)) |m| return m;
-                // A view the map did not meet, on a chain it forced: its
-                // entries join the answer's (§2.11 *κ at a view*).
-                const answer = shapes.answerOf(x) orelse return null;
-                return shapes.memo_map.get(answer);
+                const m = shapes.memo_map.get(x) orelse blk: {
+                    // A view the map did not meet, on a chain it forced: its
+                    // entries join the answer's (§2.11 *κ at a view*).
+                    const answer = shapes.answerOf(x) orelse return null;
+                    break :blk shapes.memo_map.get(answer) orelse return null;
+                };
+                const img = shapes.reinternOf(m);
+                return if (shapes.node_sets.member(c.keep, img.int())) img else null;
             }
             fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
                 return c.ro.cond(k);
             }
         };
-        var carry: Carry = .{ .ro = &ro };
+        var carry: Carry = .{ .ro = &ro, .keep = try env.shapes.region(gpa, env.account(), mapped) };
         kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
         // Widened, its κ carried onto the image with each folded class's
         // path-multiset obligation (§2.9, #1128).
