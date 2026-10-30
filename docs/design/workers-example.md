@@ -1,7 +1,9 @@
 # Complete proposed page and worker
 
 2026-10-30. **Proposed beni, not compiled:** the seven worker modules and
-entry/realm contracts are specified in [workers-api.md](workers-api.md).
+entry and realm contracts are specified in [workers-api.md](workers-api.md).
+The platform callback records require owner decision [#1319](https://github.com/canassa/beni/issues/1319).
+User function summaries are inferred; no user signature needs an ownership word.
 The page uses browser-inline, whose genuinely suspending Cmd.perform kernel
 is a prerequisite tracked in [#1306](https://github.com/canassa/beni/issues/1306).
 There is no legacy renderer or handwritten JavaScript fallback. A page with
@@ -37,7 +39,7 @@ init context weights =
     else
         Ok weights
 
-pub start : Worker.Context Event, borrowed Model → ⊤
+pub start : Worker.Context Event, Model → ⊤
 start context model =
     _ = Task.spawnIn (Worker.scope context) λ⊤ → pulse context
     ⊤
@@ -49,10 +51,10 @@ pulse context =
         Ok ⊤ → pulse context
         Err _ → ⊤
 
-pub handle : Worker.Context Event, borrowed Model, Call → Result Error Int
+pub handle : Worker.Context Event, Model, Call → Result Error Int
 handle context model (Predict value) = Ok (value * List.sum model)
 
-pub produce : Worker.Context Event, borrowed Model, StreamRequest, Stream.Sink Error Int → Result Error ⊤
+pub produce : Worker.Context Event, Model, StreamRequest, Stream.Sink Error Int → Result Error ⊤
 produce context model (Frames count) sink =
     if count ≤ 0 then
         Err InvalidCount

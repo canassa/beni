@@ -145,8 +145,10 @@ index**, a realm, and a runtime module. For example, the browser's dedicated
 kind names Browser.Worker.Program and Browser.Worker.open; these names are
 resolved symbols from data, never hardcoded in the checker. Type-parameter
 roles identify worker-local state versus cross-entry configuration/protocol
-values, and the entry record parameter uses the existing `entry` ownership
-contract. Validate arity, generic roles and program argument/result types when
+values. The entry record parameter requires the proposed
+[callback contract amendment](workers-callback-contracts.md), gated by
+[owner decision #1319](https://github.com/canassa/beni/issues/1319).
+The current entry word does not recognize these worker records. Validate arity, generic roles and program argument/result types when
 loading the platform; no ad-hoc implicit coercion is added.
 
 The entryKinds record has these required fields; indices are zero-based:
@@ -154,7 +156,7 @@ The entryKinds record has these required fields; indices are zero-based:
 | Field | Checked meaning |
 |---|---|
 | `programType` | Resolved nominal type-constructor symbol and arity |
-| `constructors` | Symbols returning that program type; exactly one `entry` argument with deferred callbacks |
+| `constructors` | Symbols returning that program type; entry argument index and callbackProtocol (handlers or machine), checked by the proposed callback contract amendment |
 | `launches` | Pairs of function symbol and program argument index; includes pool launch and shared connect as well as direct open |
 | `parameters` | Indexed type-role paths: index 0 config (Wire); index 1 local (not Wire); index 2 protocol fields call/reply/stream/error/event/chunk (each Wire). Paths and labels are manifest data, validated after ordinary alias expansion. |
 | `realm` | One native execution realm, checked against the host universe |
@@ -193,7 +195,8 @@ per-instance dynamic data travels in the explicit configuration argument.
 
 The discovered declarations root **their own** execution graphs. Their body
 and init are not evaluated in the referring realm; its descriptor contains
-only a compiler-produced identity/URL and protocol metadata. The compiler
+only a compiler-produced identity, URL, protocol metadata and immutable
+admission bound from its constructor. The compiler
 checks those deferred bodies in the entry's realm using the manifest roles.
 This permits a page to hold a descriptor mentioning worker-local state types
 without constructing or reading such a value on the page.
@@ -708,7 +711,9 @@ low-level operation, with its starvation implications documented, not the
 implementation of `call` or stream back-pressure.
 
 A fixed pool owns a positive number of dedicated workers, a bounded admission
-queue and a positive per-worker concurrency. An elastic pool adds min/max,
+queue. Each Program supplies its admission bound. Only concurrent constructors
+take a validated positive Concurrency value; serial and machine constructors
+have no bound argument, and pools cannot override it. An elastic pool adds min/max,
 idle time and target utilization, all validated for finite/range values.
 Selection uses queued-plus-running load with stable round-robin ties; measure
 before introducing more machinery. Requests are never replayed after worker
@@ -790,7 +795,7 @@ measurements must not run concurrently with another full suite on Dagon.
 |---|---|---|
 | Entry runtime contract | This design | #1287 generalized to realm runtime table, precise program/arity/effect diagnostics and no markup dependency; dev/release fixtures. |
 | Multi-entry emission and bootstrap | Runtime contract | Source-discovered generic entry descriptors, stable IDs, staged defect bootstrap, relative URLs, per-entry roots/maps/collisions and jobs 1/8 output fixtures; never user JS. |
-| Realm checking | Multi-entry roots; owner #1315 | Selected A/B/C mechanism, declaration-local bounds, interface/cache contract, exact census migration, initializer/EntryHost proofs, diagnostic and no-byte-growth release fixtures. Worker builds cannot ship without this gate. |
+| Realm checking | Multi-entry roots; owner #1315 | Owner-approved realm mechanism, declaration-local bounds, interface/cache contract, exact census migration, initializer/EntryHost proofs, diagnostic and no-byte-growth release fixtures. Worker builds cannot ship without this gate. |
 | Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, owner-selected release-safe representation plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
 | Dedicated runtime and defects | Prior compiler slices | Borrowed worker-local init/state/root scope, distinct call/stream protocol roles, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
 | Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared initializer election versus configuration-free attach, leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |

@@ -1,6 +1,8 @@
 # Proposed browser worker API
 
 **Normative proposed signatures, 2026-10-30; not implemented or compiled.**
+The callback record signatures require the proposed [language amendment](workers-callback-contracts.md)
+and owner decision [#1319](https://github.com/canassa/beni/issues/1319). They are not legal in the current language.
 [workers.md](workers.md) owns semantics and open decisions. Each code block
 lists beni declarations using its real n-ary signature syntax. `-- pure`,
 `-- impure` and `-- suspends` apply to following signatures until the next rung
@@ -30,7 +32,7 @@ import Browser.WorkerStream exposing (Stream, Sink)
 -- Opaque: Ticket error reply; Prepared a; Context event; ConnectionId
 -- Opaque: Reply error reply; Command msg; Subscription msg; ScriptUrl
 -- Opaque: ExternalProtocol input output; Policy; PolicyName
--- Opaque: ExternalPrepared input output
+-- Opaque: ExternalPrepared input output; Concurrency
 
 pub type UrlError = InvalidUrl
 pub type Credentials = Omit | SameOrigin | Include
@@ -111,7 +113,6 @@ pub type alias Options =
     heartbeatEvery : Duration
     leaseWithin : Duration
     queuedRequests : Int
-    concurrency : Int
     queuedEvents : Int
     queuedBytes : Int
     policy : Maybe Policy
@@ -134,10 +135,11 @@ pub type alias Definition config state call reply streamRequest error event chun
 -- pure; callbacks are deferred entry roots. Both constructors borrow stable state.
 pub program : entry Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
-pub concurrent : entry Definition config state call reply streamRequest error event chunk
+pub concurrent : Concurrency, entry Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
 
 -- pure
+pub concurrency : Int → Result ConfigError Concurrency
 pub options : Options
 -- suspends; argument 1 is the generic entry edge, config is serialized.
 pub open : Scope, Program config state (Protocol call reply streamRequest error event chunk), config, Options
@@ -195,7 +197,7 @@ pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError Scr
 
 `options` supplies name empty, same-origin credentials, 30 s ready deadline,
 5 s cleanup observation, 5 s heartbeat, 30 s lease, 64 queued requests,
-64 queued events, concurrency 1 and 1 MiB queue bytes; these are configurable policy defaults,
+64 queued events and 1 MiB queue bytes; these are configurable policy defaults,
 not performance claims. Open validates positivity, finite values and lease ≥
 heartbeat before acquiring a native worker. No successful close is inferred
 from a deadline. A failed init returns InitializationFailed with cleanup status.
@@ -225,21 +227,33 @@ Call Int StreamRequest Error Event Int` is shared by both sides. Ordinary alias
 expansion/unification selects its fields; there are no new associated-type
 projections or runtime protocol records. The eight parameters of Definition
 are spelled out only at generic constructor signatures. A call-only protocol
-uses `⊥` for streamRequest (and usually chunk); its required stream callback
-eliminates that empty input with Basics.never. No value can be supplied
+uses `⊥` for streamRequest and chunk. The library value Worker.noStream
+supplies that field without a user callback. No value can be supplied
 to Worker.stream, and no runtime WrongRequest branch exists. ExternalProtocol
 is a different, value-level pair of schemas for untyped native peers.
 
 Serial program admits one call **or** stream producer until its scope settles.
 Concurrent admits independent request scopes up to the configured bound.
 Both borrow state; serial admission is ordering, not ownership consumption.
-Worker.Options.concurrency must equal 1 for program/machine; concurrent permits
-a positive bound. Pool.Options.perWorkerConcurrency supplies that bound for
-pool-owned workers (overriding worker.concurrency before validation). Shared
-initialization fixes the instance concurrency; connect with a different bound
-returns IncompatibleInstanceOptions, rather than changing other clients' limits.
-Atomic Ref/machine updates preserve a valid state at every cancellation point;
-a multi-step invariant uses Semaphore and a finalizer, not a suspended Ref update.
+The concurrent constructor takes Concurrency, created by Worker.concurrency.
+That pure validator returns NonPositiveLimit "concurrency" for zero or negative
+input. Serial program and machine have no bound argument. Pools use the limit
+of their supplied Program. They have no override that could contradict it.
+Shared initialization fixes the instance limit from its Program descriptor.
+The constructor's bound is immutable descriptor data evaluated from the static
+program declaration. It is included in the managed build fingerprint. It cannot
+be overridden by an opener or a pool.
+Shared clients compare credentials and extendedLifetime against the elected
+instance. These are the exact fields that can return IncompatibleInstanceOptions.
+The name and emitted URL select instance identity instead. Build and protocol
+differences, including different constructor descriptors, use
+ProtocolVersionMismatch. A native constructor refusal still uses its precise
+native error before a managed handshake can compare options.
+Deadlines, heartbeat, lease and queue limits are local connection policies and
+may differ between clients. The root has its constructor's admission bound;
+per-connection queues never silently reset it.
+Atomic Ref updates and machine updates preserve a valid state at every
+cancellation point. A multi-step invariant uses Semaphore and a finalizer.
 No concrete use case here requires a consuming constructor: resource replacement
 can be an atomic machine update or an explicit resource transaction. It is
 removed along with WorkerStateLost, rather than retaining default retirement.
@@ -264,7 +278,7 @@ pub type ExternalCleanup = LocalReleased | NativeTerminated
 pub type ExternalShutdown = TerminateOnScopeExit
 pub type ExternalError = ExternalLoadFailed | ExternalTransport TransportError
 pub type alias ExternalOptions =
-    worker : Options
+    worker : NativeOptions
     kind : ScriptKind
     shutdown : ExternalShutdown
 -- suspends; native construction/load observation, no invented Ready for raw scripts.
@@ -314,10 +328,12 @@ pub type alias Machine config model msg call reply streamRequest error event chu
     subscriptions : sync (model → Subscription msg)
     request : sync (call, Reply error reply → msg)
     stream : sync (streamRequest, Sink error chunk → msg)
--- pure; update/request/stream/subscriptions callbacks are sync, init may suspend.
+-- pure; update, request, stream and subscriptions are sync; init may suspend.
 pub machine : entry Machine config model msg call reply streamRequest error event chunk
     → Program config model (Protocol call reply streamRequest error event chunk)
 -- pure
+pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
+pub noStreamRequest : ⊥, Sink error ⊥ → msg
 pub none : Command msg
 pub batch : List (Command msg) → Command msg
 pub noSubscriptions : Subscription msg
@@ -368,7 +384,7 @@ pub type alias Options =
 pub options : Options
 pub program : entry Worker.Definition config state call reply streamRequest error event chunk
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
-pub concurrent : entry Worker.Definition config state call reply streamRequest error event chunk
+pub concurrent : Worker.Concurrency, entry Worker.Definition config state call reply streamRequest error event chunk
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
 pub machine : entry Worker.Machine config model msg call reply streamRequest error event chunk
     → Program config model (Worker.Protocol call reply streamRequest error event chunk)
@@ -405,7 +421,7 @@ import Browser.MessagePort as Port
 pub port : Handle (Worker.Protocol call reply streamRequest error event chunk) → Port.ManagedView
 -- Opaque: External input output
 -- suspends; raw semantics as Worker.openExternal, including no invented Ready.
-pub openExternal : Scope, Worker.ScriptUrl, Worker.ExternalProtocol input output, Options, Worker.ScriptKind
+pub openExternal : Scope, Worker.ScriptUrl, Worker.ExternalProtocol input output, Worker.NativeOptions, Bool, Worker.ScriptKind
     → Result (OpenError ⊥) (External input output)
 -- impure, borrower of the raw endpoint; same owner as External.
 pub externalPort : External input output → Port.Port input output
@@ -622,7 +638,6 @@ import Task exposing (Scope)
 pub type Size = Fixed Int | Elastic { minimum : Int, maximum : Int, idleFor : Duration, utilization : Float }
 pub type alias Options =
     size : Size
-    perWorkerConcurrency : Int
     queuedRequests : Int
     worker : Worker.Options
 pub type OpenError error = InvalidPool Worker.ConfigError | WorkerOpenFailed (Worker.OpenError error)
@@ -643,8 +658,8 @@ pub stats : Pool (Worker.Protocol call reply streamRequest error event chunk) �
 pub events : Pool (Worker.Protocol call reply streamRequest error event chunk) → Stream Worker.TransportError (Int × event)
 ```
 
-A serial program with perWorkerConcurrency > 1 is InvalidPool, not silent
-serialization under an advertised concurrency. Queue admission has explicit
+The supplied Program determines each worker's admission bound. Fixed and Elastic
+size validation concerns numeric values only, independently of that program. Queue admission has explicit
 failure rather than unbounded retained transferred buffers. Elastic shrink
 awaits idle scope cleanup and never kills active finalizers. Configuration
 functions and returned config have normal effects/Wire constraints; generation
@@ -775,10 +790,61 @@ A call-only API can name its grouped types without inventing a stream request:
 
 ```text
 pub type alias CallsOnly = Worker.Protocol Call Int ⊥ Error Event ⊥
-noStream : Worker.Context Event, borrowed Model, ⊥, Stream.Sink Error ⊥ → Result Error ⊤
-noStream context model impossible sink = never impossible
+pub calls : Worker.Program (List Int) Model CallsOnly
+calls = Worker.program { init = init, start = start, handle = handle, stream = Worker.noStream }
 ```
 
-This is a signature fragment using the example's Call/Error/Event/Model names,
+This fragment uses the example's Call, Error, Event and Model names,
 not a second protocol value. `Worker.stream handle (Frames 1)` on a CallsOnly
 handle is refused with the ordinary type mismatch: expected ⊥, got StreamRequest.
+
+
+The library implements noStream by eliminating its third argument with never.
+It implements noStreamRequest by eliminating its first argument. Both are pure
+and satisfy the inferred borrow and sync contracts. Use noStream with program
+or concurrent, including SharedWorker. Use noStreamRequest for the stream field
+of machine, including SharedWorker.machine. These are ordinary library values;
+they introduce no syntax or new language feature. The resulting protocol has
+bottom stream request and chunk types, so stream cannot be called with a value.
+
+### Options audit
+
+No managed options field depends on the program constructor or protocol.
+Queue counts, durations and byte limits are numeric policy values; their
+positivity and lease ordering are genuine runtime validation. An uninhabited
+event or stream type does not invalidate those limits. Unused queues allocate
+nothing. Credentials, name and policy concern native construction for every
+managed Program. Script kind is fixed to Module in the managed API.
+
+Pool size is a discriminated Fixed or Elastic value. Only Elastic carries
+idleFor and utilization. Its numeric bounds are validated independently of the
+worker protocol. Pool queuedRequests is separate from each connection queue.
+Shared extendedLifetime is a native instance option for every Shared Program.
+IncompatibleInstanceOptions compares only the instance fields listed above.
+
+Raw dedicated and shared APIs use NativeOptions, specified below, rather than
+managed Options. This avoids irrelevant Ready, heartbeat and managed request
+queue fields. Raw incoming queues still require bounded event counts and bytes.
+ScriptKind distinguishes classic and module explicitly. Credentials are valid
+for both; the native classic constructor ignores them by specification, so the
+wrapper documents that behavior rather than inventing an InvalidOptions case.
+Policy applies to both kinds. TerminateOnScopeExit is the only dedicated raw
+shutdown policy and is part of its owner type, not a runtime discriminator.
+MessagePort and BroadcastChannel have no options records. WorkerGlobal and
+WorkerStream have none either.
+
+The following declarations belong to Browser.Worker:
+
+```text
+pub type alias NativeOptions =
+    name : String
+    credentials : Credentials
+    queuedEvents : Int
+    queuedBytes : Int
+    policy : Maybe Policy
+pub nativeOptions : NativeOptions
+```
+
+NativeOptions defaults match the corresponding managed fields. Shared raw
+openExternal takes Worker.NativeOptions and extendedLifetime as a separate Bool,
+then ScriptKind. It does not take managed SharedWorker.Options.

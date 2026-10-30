@@ -1,5 +1,160 @@
 # Worker realms: three compiler designs on the same census
 
+## What the owner is deciding
+
+A realm is a JavaScript execution environment with its own global APIs.
+A page and a worker are different realms: a page has the DOM and localStorage,
+while a worker does not.
+
+All three options provide this application guarantee: **a worker build never
+calls an API unavailable in a worker, and misuse is caught at compile time.**
+Option A relies on audited platform implementations to make that promise true.
+Options B and C also check native access inside those implementations.
+
+### Same platform code under each option
+
+These are proposed beni fragments inside the platform package, not executable
+examples of today's API. Storage access can be denied by browser policy, so
+the typed operations return Result StorageError (Maybe String). Native helpers
+below represent the same exact policy guard; none catches an unknown defect.
+The DOM operation reads textContent. Both snippets require a page realm.
+
+**A: manually maintained typed wrappers.** The platform author writes the raw
+access inside an audited wrapper and declares its realm. An application calls
+the exported wrapper. The wrapper signature is checked; its raw implementation
+still needs review.
+
+```text
+realm window
+pub readTheme : ⊤ → Result StorageError (Maybe String)
+readTheme ⊤ = guardedStorageItem (Js.global "localStorage") "theme"
+realm window
+pub text : Element → Maybe String
+text element = nullableString (Js.get (rawElement element) "textContent")
+```
+
+**B: hidden native information follows each value.** The platform keeps raw Js
+expressions. The checker traces the receiver from localStorage and the DOM
+acquisition or caller argument. It infers the page requirement.
+
+```text
+pub readTheme : ⊤ → Result StorageError (Maybe String)
+readTheme ⊤ = guardedStorageItem (Js.global "localStorage") "theme"
+pub text : Js.Value → Maybe String
+text element = nullableString (Js.get element "textContent")
+```
+
+**C: generated typed browser operations.** The platform author calls generated
+operations. There is no raw object cast. The Element upcast is explicit because
+textContent belongs to Node. Storage.localItem is the typed composition of
+Window storage acquisition and getItem, including their exact error adapters.
+
+```text
+pub readTheme : ⊤ → Result StorageError (Maybe String)
+readTheme ⊤ = Storage.localItem "theme"
+pub text : Element → Maybe String
+text element = Node.textContent (Element.toNode element)
+```
+
+For an application worker calling readTheme, the proposed diagnostic text is:
+
+- A: `worker_realm_violation: Jobs.handle calls readTheme, which requires Window; this entry runs in DedicatedWorker.`
+- B: `worker_realm_violation: Jobs.handle → readTheme → localStorage requires Window; this entry runs in DedicatedWorker.`
+- C: `worker_realm_violation: Jobs.handle → readTheme → Window.localStorage requires Window; this entry runs in DedicatedWorker.`
+
+For the same worker reaching inline text through a callback, the text is:
+
+- A: `worker_realm_violation: Jobs.handle reaches Inline.text through a callback; Inline.text requires Window.`
+- B: `worker_realm_violation: Jobs.handle reaches Node.textContent through Inline.text; the receiver comes from Window.document.`
+- C: `worker_realm_violation: Jobs.handle reaches Node.textContent through Inline.text; Node is unavailable in DedicatedWorker.`
+
+These are specified diagnostic goldens for future implementation, not output
+claimed from a probe. The source span and shortest call chain accompany each.
+
+### Costs before choosing
+
+**C introduces two concepts.** HostFree checks that data contains no browser
+objects or erased functions. Host.Raw is an opaque type for unknown values
+received from the browser, which must be checked before use. They need language
+and checker specifications, tests and interface support.
+
+Core Task and the renderer must retain real callback types instead of putting
+functions in Js.Value. The existing census counts **130 erased-callable use
+sites**, including **41 in core/Task.beni**, **11 in
+platforms/browser-inline/Inline.beni**, and **12 in platforms/browser/Rt.beni**.
+The remaining 66 are in the other platform and core files listed in the census.
+These are apply or construct expressions classified mixed. They are not counts
+of callback storage declarations or erasure-producing conversions. Js.from and
+Js.to were outside the census primitive list. The storage rewrite's size is
+unknown; a typed queue and callback producer audit is the first migration task.
+
+Beni has no subtyping. C therefore needs explicit conversions from Element to
+Node and from Node to EventTarget. A source-reviewed projection of the inline
+census has **32 native-operation sites requiring at least one upcast: 12 in
+Browser/Navigation.beni and 20 in Inline.beni**. Each is listed in
+[inline-upcasts.csv](workers/inline-upcasts.csv). This projection keeps element
+helpers typed Element, event traversal typed Node, anchor detection typed
+HTMLAnchorElement, and the navigation click typed MouseEvent. Generated methods
+live on their declaring interface; mixin members are projected onto their
+implementing interface. Some conversions traverse two inheritance edges.
+One operation can require both a receiver and argument conversion. The count
+is operation sites, not conversion expressions. Generic helper call boundaries
+and checked downcasts are additional work and are not included. Sharing a
+converted local or choosing a different helper type changes the source edit
+count. This is a stated migration plan, not a language-intrinsic minimum.
+
+C also needs a Zig WebIDL binding generator. The pinned package has **346 IDL
+files, 2,782 declaration blocks and 11,620 member rows**. The complete
+[count receipt](workers/binding-surface-counts.json) records every block and the
+counting method. That is 8,257 interface, mixin and namespace member rows plus
+3,363 dictionary fields. The generated surface must cover them, merge partials,
+expand includes, and add typed inheritance conversions. Overloads, enum and
+callback types, getters and setters, checked adapters and name collisions still
+need generation rules. Generated declaration count and bytes are **unknown
+until that generator is measured**. The 102 worker-specific blocks in the
+older inventory are not the size of this full binding package.
+
+**B keeps most raw expressions but adds a second analysis beside type checking.**
+It follows native objects through aliases, containers, callback captures and
+generic calls. The census identifies 24 dynamic native selections requiring
+rewrites. The other 702 native or mixed sites retain expressions but need flow
+proofs. Precision loss can reject valid code. Interface graph size and analysis
+time must be measured; the fixed five-byte descriptor target excludes those
+graphs. There is no generated public binding package, but a pinned native table
+and precise error adapters are still required.
+
+**A has the smallest compiler addition and the largest audited promise.**
+Authors maintain wrappers for 556 native sites and preserve typed callbacks and
+containers at 170 mixed sites. The wrapper declarations must cover the same
+native surface as C, manually rather than through the proposed generator.
+Wrong code inside an audited raw wrapper can invalidate its promise. Callback
+storage changes remain necessary outside the trusted boundary. Moving more
+runtime code inside that boundary reduces migration only by increasing the
+amount that ordinary checking cannot prove safe.
+
+### Recommendation and next action
+
+I recommend C because native objects stay visible in ordinary types. It catches
+wrong receivers and member names without a second hidden value-flow analysis.
+Its migration cost and generated package size need measurement before adoption.
+No option is approved by this recommendation.
+
+- If the owner chooses A, #1295 starts the wrapper authority boundary and typed
+  wrapper census. First measure checking throughput and direct wrapper emission.
+- If the owner chooses B, #1295 starts the native table and flow summaries.
+  First measure callback and container precision, graph memory and throughput.
+- If the owner chooses C, #1295 starts the generated binding design, HostFree,
+  Host.Raw and typed callback storage. First generate the full pinned surface,
+  count declarations and bytes, and measure small and full-package indexing.
+
+Every path must retain **>250k LOC/s** on the specified checking benchmark.
+Every path first pins **emit/release/** byte goldens for equivalent native
+operations, callbacks and explicit upcasts. No static type mechanism may add
+runtime wrappers or emitted registration tables. Then #1297 through #1300 build
+the worker runtime, shared ports, transfer support, pools and streams on the
+accepted realm gate. Callback construction also waits for #1319. Wire layout
+still waits for #1305; lifecycle choices remain with their existing owner issues.
+
 2026-10-30. This is an **owner decision**, not adoption of a new checker.
 The complete [census](workers-host-and-wire.md#1-host-access-census-before-choosing-a-mechanism)
 counts 556 definite native sites, 170 caller-dependent sites and 2,130 portable
@@ -26,7 +181,7 @@ raw member inside that wall is not proved correct by ordinary typing. Literal
 root/realm consistency can be checked cheaply, but that is not a proof of an
 arbitrary received object's member. This is stronger than merely scattering
 trusted realm words through ordinary code, and still has a larger trusted base
-than B/C. Dynamic selection must choose typed wrapper operations, not grant
+than B and C. Dynamic selection must choose typed wrapper operations, not grant
 arbitrary strings authority. Beni-over-Js wrappers need the same operation-level
 failure review as foreign functions; declaring a rung does not wrap exceptions.
 
@@ -39,8 +194,7 @@ selection. Static-dispatch evidence and initializers export the same obligations
 This proves native member/realm availability through existing raw code, including
 inside wrappers, provided the graph is precise enough. Unknown reflection fails
 closed. The cost is a second shape-flow problem, sparse interface graphs and
-precision diagnostics in addition to ordinary type inference. This option is
-specified, retained and **no longer selected** pending the owner's decision.
+precision diagnostics in addition to ordinary type inference. This option remains a candidate pending the owner's decision.
 
 **C — generated real beni native types and ordinary realm summaries.** Generate
 nominal opaque native types and typed operations from the pinned IDL, inside the
@@ -221,7 +375,7 @@ A budget failure is an issue, not permission to weaken checking or erase types.
 | Raw data used as Document | Boundary validator required | unresolved_host_provenance or native-shape mismatch | Expected Document, got Js.Value; point to privileged validated acquisition |
 | DOM effect hidden in callback/evidence | Boundary's declared effect/realm chain | Callback shape/capture witness | Ordinary callback/evidence realm witness, never an untyped erased function |
 
-A/C native handles lower to the underlying host object. Identity upcasts,
+A and C native handles lower to the underlying host object. Identity upcasts,
 phantom/interface indices and typed selector dispatch specialize away; known
 member accesses become the same direct host operation. No boxing, proxy,
 runtime type dictionary, duplicate receiver object or registration table is

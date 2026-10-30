@@ -655,6 +655,11 @@ pub foreign type List a
 | a `foreign` with a `where` clause | a `pub foreign` may carry a `where` clause (§3), and the sibling export's arity is then **evidence count + declared arity** — `core/List.beni`'s `eq` is declared 2-ary and is written `(m0, xs, ys)` in `core/List.js`. **This rule is documented and not enforced**: [`boundary.md`](boundary.md) §4's checks are export coverage and import coverage, and neither looks at arity. → `static-dispatch-spike.md` §5.2. |
 | binding, lowering | each core module that declares foreigns has a sibling JavaScript file exporting one function per foreign value, under the same name, in the emitted calling convention; binding is by name, and a missing export is a build error of the core package, not a user diagnostic. Lowering emits a `foreign` declaration into the interface skeleton like any other `pub` name, and the interface records that it is foreign so M3's printer can key its peephole on the module-qualified name. |
 
+**Proposed, not approved:** [worker callback record contracts](workers-callback-contracts.md)
+requires [owner decision #1319](https://github.com/canassa/beni/issues/1319).
+It specifies a narrow extension for platform record fields and worker entry rows.
+The sync and ownership-word rules above remain the accepted language until that decision.
+
 **Schemas** add a declaration and a schema namespace to this section. The
 normative delta is [`schema.md`](schema.md) §2–§4: the schema is the defined
 thing, its types are `User.Type` and `User.Encoded`, and explicit exposure brings
