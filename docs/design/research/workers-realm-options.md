@@ -22,7 +22,8 @@ These are proposed beni fragments inside the platform package, not executable
 examples of today's API. Storage access can be denied by browser policy, so
 the typed operations return Result StorageError (Maybe String). Native helpers
 below represent the same exact policy guard; none catches an unknown defect.
-The A and B helper invokes its acquisition callback inside that guard. It handles
+A's manually audited ManualStorage.localItem and B's guardedStorageItem invoke
+the acquisition callback inside their guard. Each handles
 the specified SecurityError from the localStorage getter separately from getItem.
 It never evaluates the getter before entering the guard. Unknown exceptions
 remain defects. The C helper performs the same guarded steps. A passes typed Element to its
@@ -31,7 +32,8 @@ origin the hidden analysis must prove. This is the key implementation difference
 The DOM operation reads textContent. Both snippets require a page realm.
 
 **A: manually maintained typed wrappers.** The platform author writes and audits typed
-wrappers and their realm metadata. ManualNode.textContent is such a wrapper;
+wrappers and their realm metadata. ManualStorage.localItem contains the deferred
+localStorage getter and its precise guard. ManualNode.textContent is another wrapper;
 its body performs the raw Node textContent read. An application calls
 the exported wrapper. The manually authored wrapper signature is checked; its raw implementation
 still needs review. Its hypothetical realm contract is privileged metadata,
@@ -39,7 +41,7 @@ not accepted beni syntax. The snippets contain no realm metadata.
 
 ```text
 pub readTheme : ⊤ → Result StorageError (Maybe String)
-readTheme ⊤ = guardedStorageItem (λ⊤ → Js.global "localStorage") "theme"
+readTheme ⊤ = ManualStorage.localItem "theme"
 pub text : Element → Maybe String
 text element = ManualNode.textContent element
 ```

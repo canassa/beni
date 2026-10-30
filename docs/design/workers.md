@@ -159,8 +159,8 @@ The manifest loader validates symbols against their interfaces, including
 constructor result instantiation and launch argument instantiation; inconsistent
 roles are invalid_entry_kind. Different serial/concurrent/machine constructors
 can target the same nominal program type. Their source implementations and
-protocol rows enforce callback contracts against inferred summaries; the compiler only
-knows the generic deferred-entry edge. Runtime `run` receives the descriptor's
+protocol rows enforce callback contracts against inferred summaries; the compiler checks
+the generic entry and callback protocol contracts. Runtime `run` receives the descriptor's
 worker-local definition and reads configuration through the platform's typed
 bootstrap, never a user Js.Value. Ordinary page `program`/runtime remains the
 existing contract and supplies the Window entry proof. `--entry` selects a
@@ -627,9 +627,10 @@ expired leases cancel that client's scope, without deleting other clients.
 A suspended page is unresponsive, not proved dead. Shared workers retain the
 native origin/storage-partition/name/URL/options identity, with build identity
 in the generated URL/name to prevent accidental cross-version reuse. Multiple
-clients get separate connection IDs, quotas and scopes; the worker calls
-`close` only after its last connection/root work closes under its chosen
-lifetime policy. `extendedLifetime` is a request to the browser, no guarantee.
+clients get separate connection IDs, quotas and scopes. Under normal lifetime
+policy the worker closes only after its last connection and root work settle.
+Fatal shutdown follows §7 instead: its deadline may abandon unfinished cleanup.
+`extendedLifetime` is a request to the browser, not a guarantee.
 
 `Task` scheduler state remains module-local in each realm. In browsers it
 uses MessageChannel for macrotask yielding and queueMicrotask for drain;

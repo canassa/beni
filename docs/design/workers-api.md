@@ -428,8 +428,10 @@ lifecycle observation remains possible without letting two independent
 owners move the runtime's protocol port. A view rejects protocol-data injection;
 external shared workers instead use their explicitly declared raw protocol.
 No terminate method exists in the standard, so no shared terminate API is
-invented. The shared runtime's global close closes its instance after all
-client/root scopes settle, under the decided defect and lifetime policy. A shared defect stops every
+invented. Normal cooperative instance close waits for all client and root
+scopes to settle. Fatal shutdown instead follows the deadline exception in
+workers.md §7: the coordinator requests native global close without joining
+unfinished children and records abandoned workers. A shared defect stops every
 attached beni page; ordinary page shutdown closes only its own connection.
 
 ```text
