@@ -67,6 +67,9 @@ pub const Scratch = struct {
     memo: stamped.Column(NodeId, NodeId) = .{},
     escaped: std.ArrayList(NodeId) = .empty,
     members: std.ArrayList(NodeId) = .empty,
+    /// The place the caller reads the call's result at (its instruction's),
+    /// or `.none`: a structured result template is instantiated there.
+    result_place: PlaceId = .none,
 
     pub fn deinit(s: *Scratch, gpa: Allocator) void {
         s.memo.deinit(gpa);
@@ -451,7 +454,7 @@ const Grafter = struct {
         }
         // At a type variable's place the call instantiates the variable to
         // the actual's type: the actual stands at its own place (#1350).
-        if (g.env.places.kind(at) != .@"var" and try g.env.shapes.standsAt(g.gpa(), g.account(), n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
+        if (g.env.places.kind(at) != .@"var" and g.env.shapes.place(n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
         return n;
     }
 
@@ -842,7 +845,7 @@ const Grafter = struct {
             const x = g.env.cells.get(cell);
             return g.argAt(x.a, .from(x.b), template_at);
         }
-        const at = try g.instantiatedAt(template_at, cells);
+        const at = try g.instantiatedPlace(template_at, cells);
         const first = members.items.len;
         defer members.shrinkRetainingCapacity(first);
         var rest: SetId = .none;
@@ -869,13 +872,30 @@ const Grafter = struct {
         return g.env.shapes.joinRaw(g.gpa(), g.account(), at, members.items[first..]);
     }
 
+    /// The place `argAt(i, p, at)` answers at, read off the place graph
+    /// alone: no node is made or projected, so a view's place costs its
+    /// template's cells and nothing of the actual (`placeImage`).
+    fn argPlace(g: *Grafter, i: u32, p: PathId, at: PlaceId) Error!PlaceId {
+        if (i >= g.args.len or g.args[i].node == .none) return at;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(g.gpa());
+        try g.stepsOf(p, &steps);
+        var q = g.env.shapes.place(g.args[i].node);
+        for (steps.items) |s| {
+            if (s.kind == .level) return at;
+            q = g.env.places.child(q, s) orelse return at;
+        }
+        return if (g.env.places.kind(at) == .@"var") q else at;
+    }
+
     /// The place a template leaf at `at` stands at under this call. At a
     /// type variable's place whose cells are all parameter cells, the
     /// exact ones' actuals at one place, the call instantiates the
     /// variable to that place (`argAt`, #1350): `choose b l r = if b then l
     /// else r` answers its actuals' record, whose fields are steps. Any
-    /// other leaf stays at `at`.
-    fn instantiatedAt(g: *Grafter, at: PlaceId, cells: SetId) Error!PlaceId {
+    /// other leaf stays at `at`. Read off the place graph (`argPlace`), so
+    /// a view is made at its answer's place before it is forced.
+    fn instantiatedPlace(g: *Grafter, at: PlaceId, cells: SetId) Error!PlaceId {
         if (g.env.places.kind(at) != .@"var") return at;
         var got: PlaceId = .none;
         var it = g.env.cells.sets.iterate(cells);
@@ -885,7 +905,7 @@ const Grafter = struct {
             if (g.env.cells.origin(cell) != .param) return at;
             if (e.value == 1) continue;
             const x = g.env.cells.get(cell);
-            const p = try g.env.shapes.standsAt(g.gpa(), g.account(), try g.argAt(x.a, .from(x.b), at));
+            const p = try g.argPlace(x.a, .from(x.b), at);
             if (got != .none and got != p) return at;
             got = p;
         }
@@ -1018,6 +1038,10 @@ pub const Views = struct {
     args: std.ArrayList(Value) = .empty,
     /// A leaf image's parts, a stack: a nested force appends above.
     members: std.ArrayList(NodeId) = .empty,
+    /// The place a structured template stands at under an environment,
+    /// `(environment, template)`, where it is not the template's own: a call
+    /// instantiates its type variables (`instantiate`, `placeImage`).
+    places_of: std.AutoHashMapUnmanaged(u64, PlaceId) = .empty,
     places: *Place.Table,
     cells: *Cell.Table,
     shapes: *Shape.Table,
@@ -1030,11 +1054,12 @@ pub const Views = struct {
         v.envs.deinit(gpa);
         v.args.deinit(gpa);
         v.members.deinit(gpa);
+        v.places_of.deinit(gpa);
     }
 
     /// Set on `v.shapes` once, before the first call.
     pub fn instantiation(v: *Views) Shape.Table.Instantiation {
-        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage, .reroot = rerootImage, .parts = partsImage };
+        return .{ .ctx = v, .sets = &v.cells.sets, .leaf = leafImage, .cells = cellsImage, .reach = reachImage, .reroot = rerootImage, .parts = partsImage, .place = placeImage, .is_var = isVar };
     }
 
     /// One call's environment.
@@ -1055,6 +1080,79 @@ pub const Views = struct {
         const x = v.envs.items[e];
         const env: Env = .{ .gpa = gpa_, .charge = .growth(account_), .places = v.places, .cells = v.cells, .shapes = v.shapes, .conds = v.conds };
         return .{ .env = env, .sums = v.sums, .args = v.args.items[x.args.start..][0..x.args.len], .label = x.label, .s = s, .view_env = e };
+    }
+
+    /// The place a view of `template` stands at under environment `e`: a
+    /// leaf at a type variable's place stands where its image does (one
+    /// exact parameter cell's actual, or `instantiatedPlace`'s shared place);
+    /// a structured template where its parent's instantiated place has its
+    /// step (`instantiate`); any other at its own (§2.11 *Re-rooting at a
+    /// parameter*).
+    fn placeImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!PlaceId {
+        const v = of(ctx);
+        const at = t.place(template);
+        const d = t.get(template);
+        switch (d.kind) {
+            .leaf => {
+                if (v.places.kind(at) != .@"var") return at;
+                var none: Scratch = .{};
+                var g = v.grafter(gpa_, account_, e, &none);
+                return g.instantiatedPlace(at, d.cells);
+            },
+            .recast => return at,
+            else => {
+                try account_.reserve(.memo, 1);
+                if (v.places_of.get(@as(u64, e) << 32 | template.int())) |p| return p;
+                if (v.places.kind(at) != .@"var" or !(d.kind == .@"union" or d.kind == .choice or d.kind == .positions)) return at;
+                // A join at a type variable's place stands where its sides
+                // do, a side at a `var` place yielding (`Shape.joinPlace`).
+                const l = try placeImage(ctx, t, gpa_, account_, e, .from(d.a));
+                const r = try placeImage(ctx, t, gpa_, account_, e, .from(d.b));
+                if (l == r or v.places.kind(r) == .@"var") return l;
+                return if (v.places.kind(l) == .@"var") r else at;
+            },
+        }
+    }
+
+    fn structured(t: *Shape.Table, n: NodeId) bool {
+        return switch (t.kind(n)) {
+            .node, .delta, .@"union", .choice, .positions => true,
+            else => false,
+        };
+    }
+
+    /// Records that `template` stands at `p` under environment `e`, and so
+    /// its structured children at `p`'s child places, a join's sides at
+    /// `p`. Nothing when `p` is the template's own place or another kind
+    /// of place, nor for a leaf (`instantiatedPlace`) or a recast, whose
+    /// inner keeps its own place (§2.13.9).
+    fn instantiate(v: *Views, gpa_: Allocator, account_: *Ids.Account, t: *Shape.Table, template: NodeId, e: u32, p: PlaceId) Error!void {
+        // The whole template at once, before any of its views is made, so
+        // a view made out of order (a κ relabelling) has its place too.
+        const Item = struct { n: NodeId, p: PlaceId };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(gpa_);
+        try stack.append(gpa_, .{ .n = template, .p = p });
+        while (stack.pop()) |x| {
+            if (x.p == .none or !structured(t, x.n) or x.p == t.place(x.n) or v.places.kind(x.p) != v.places.kind(t.place(x.n))) continue;
+            try account_.reserve(.memo, 1);
+            const got = try v.places_of.getOrPut(gpa_, @as(u64, e) << 32 | x.n.int());
+            if (got.found_existing) continue;
+            got.value_ptr.* = x.p;
+            const d = t.get(x.n);
+            switch (d.kind) {
+                .node, .delta => {
+                    if (d.kind == .delta) try stack.append(gpa_, .{ .n = .from(d.a), .p = x.p });
+                    var it = t.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (it.next()) |c| if (v.places.child(x.p, c.step)) |q| try stack.append(gpa_, .{ .n = c.node, .p = q });
+                },
+                else => for ([_]u32{ d.a, d.b }) |s| try stack.append(gpa_, .{ .n = .from(s), .p = x.p }),
+            }
+        }
+    }
+
+    fn isVar(ctx: *anyopaque, p: PlaceId) bool {
+        return of(ctx).places.kind(p) == .@"var";
     }
 
     fn leafImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!NodeId {
@@ -1296,7 +1394,10 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
         g.root = cls.res;
         g.answer = actual;
         break :blk actual;
-    } else try env.shapes.view(gpa, env.account(), cls.res, g.view_env);
+    } else blk: {
+        try views.instantiate(env.gpa, env.account(), env.shapes, cls.res, g.view_env, s.result_place);
+        break :blk try env.shapes.view(gpa, env.account(), cls.res, g.view_env);
+    };
     // The values the result lets escape: its `esc k`, each an `esc ι·k`.
     var rt = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, cls.res));
     while (rt.next()) |e| {

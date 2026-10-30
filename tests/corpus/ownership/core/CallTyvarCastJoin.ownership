@@ -1,0 +1,18 @@
+module CallTyvarCastJoin
+  26:9 List.push xs: rejected alias: g.x.c holds it and is read at 27:5
+  45:9 List.push xs: rejected alias: g.x.c holds it and is read at 46:5
+  59:5 List.push v.c: accepted param
+  66:9 call CallTyvarCastJoin.w g.x.c: rejected call: xs holds it and is read at 67:5; the callee writes it only through an approximate step (CallTyvarCastJoin.w writes π1.x.c) (approx)
+  summary mix: π2 RA, π3 RA; res π2 π3
+  summary n: π1.x R, π2 R
+  summary viaMix: π1 RW[storage], π1[*] R, π2 R
+  summary mix2: π2 RA; res π2
+  summary n2: π1.x R
+  summary viaCast: π1 RW[storage], π1[*] R
+  summary mix3: π2 RA; res fresh2 π2, ⟨as 1:List::List(45:1:List::List(28:var(0:CallTyvarCastJoin:6:1)))⟩[*] fresh1
+  summary w: π1.x R, π1.x.c RAw[storage], π1.x.c[*] A; res [*] ~fresh3 ~π1.x.c[*], [*]⋆ ~fresh1, ~fresh2 ~π1.x.c, ⋆ ~fresh1
+  summary viaWrite: π1 Rw[storage], π1[*] R
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 2
+cause call 1

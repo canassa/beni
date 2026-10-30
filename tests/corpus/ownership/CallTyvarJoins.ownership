@@ -1,0 +1,32 @@
+module CallTyvarJoins
+  28:21 List.push q.c: accepted param
+  38:9 call CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c: rejected alias: xs holds it and is read at 39:5 (CallTyvarJoins.wfirst writes π1⟨Tree⟩⁺#Node.0.c)
+  46:9 call CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c: rejected alias: xs holds it and is read at 47:5 (CallTyvarJoins.wfirst writes π1⟨Tree⟩⁺#Node.0.c)
+  55:9 call CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c: rejected alias: xs holds it and is read at 56:5 (CallTyvarJoins.wfirst writes π1⟨Tree⟩⁺#Node.0.c)
+  72:9 List.push xs: rejected alias: g.x.c holds it and is read at 73:5
+  89:9 List.push xs: rejected alias: g.x.c holds it and is read at 90:5
+  106:9 List.push xs: rejected alias: g.x.c holds it and is read at 107:5
+  123:9 List.push xs: rejected alias: g.x.c holds it and is read at 124:5
+  140:9 List.push xs: rejected alias: g.x.c holds it and is read at 141:5
+  157:9 List.push xs: rejected alias: g.x.c holds it and is read at 158:5
+  summary ans: π1.b RA; res π1.b
+  summary wfirst: π1 R, π1#Node.0.kids R, π1⟨Tree⟩⁺#Node.0.c RAW[storage], π1⟨Tree⟩⁺#Node.0.c[*] A; res [*] ~π1⟨Tree⟩⁺#Node.0.c[*]{excl π1#Node.0.kids}r{excl π1#Node.0.kids}, fresh1 π1⟨Tree⟩⁺#Node.0.c{excl π1#Node.0.kids}; xreq excl π1#Node.0.kids
+  summary t3: π1 RW[storage], π1[*] R; xreq excl π1
+  summary t3Two: π1 RW[storage], π1[*] R
+  summary t3Bound: π1 RW[storage], π1[*] R; xreq excl π1
+  summary j1: π2.x R, π2.x.c R, π2.y R, π2.y.c R
+  summary joinViewFirst: π1 RW[storage], π1[*] R
+  summary j2: π2.x R, π2.x.c R, π2.y R, π2.y.c R
+  summary joinViewSecond: π1 RW[storage], π1[*] R
+  summary j3: π2.x R, π2.x.c R, π2.y R, π2.y.c R
+  summary joinBothViews: π1 RW[storage], π1[*] R
+  summary j4: π2.x R, π2.x.c R, π2.y R, π2.y.c R
+  summary joinExtraField: π1 RW[storage], π1[*] R
+  summary deep3: π1 RA; res #Rose.0 condition(fresh6) π1{shared}r{shared}, #Rose.1 fresh4{shared}r{shared}, #Rose.1[*] condition(fresh2){shared}r{shared}, condition(fresh5){shared}r{shared}, ⟨Rose⟩⁺#Rose.0 condition(fresh3) π1{shared}r{shared}, ⟨Rose⟩⁺#Rose.1 fresh1{excl π1}r{excl π1}
+  summary k1: π1.x R, π1.x.c R
+  summary knotView: π1 RW[storage], π1[*] R
+  summary k2: π1.x R, π1.x.c R
+  summary knotViewDeep: π1 RW[storage], π1[*] R
+  demands 10: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 10: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause alias 9

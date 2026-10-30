@@ -1,0 +1,131 @@
+-- ownership (project): `CallTyvarJoins` with the callees in another
+-- module (ownership-v2.md §2.11 *Re-rooting at a parameter*, §3.6,
+-- #1350): a list of a recursive type holding an imported view, written
+-- through `⟲` by `Picks.wfirst`, is refused, as are the joins of record
+-- literals with a view field, in either order, and the reads through
+-- `Picks.deep3`'s widened result.
+import Picks exposing (Node, Rose)
+
+
+pub t3 : List Int → Int
+t3 xs =
+    leaf = Node { c = xs, kids = [] }
+    t = Node { c = [ 2 ], kids = [ Picks.ans { b = leaf } ] }
+    p = Picks.wfirst t
+    List.length xs + List.length p
+
+
+pub t3Two : List Int → Int
+t3Two xs =
+    leaf = Node { c = xs, kids = [] }
+    t = Node { c = [ 2 ], kids = [ Picks.ans { b = leaf }, leaf ] }
+    p = Picks.wfirst t
+    List.length xs + List.length p
+
+
+pub t3Bound : List Int → Int
+t3Bound xs =
+    leaf = Node { c = xs, kids = [] }
+    v = Picks.ans { b = leaf }
+    t = Node { c = [ 2 ], kids = [ v ] }
+    p = Picks.wfirst t
+    List.length xs + List.length p
+
+
+j1 b g =
+    v =
+        if b then
+            { b = Picks.ans { b = g.x } }
+        else
+            { b = g.y }
+    List.length v.b.c
+
+
+pub joinViewFirst : List Int → Int
+joinViewFirst xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j1 True g + List.length p
+
+
+j2 b g =
+    v =
+        if b then
+            { b = g.y }
+        else
+            { b = Picks.ans { b = g.x } }
+    List.length v.b.c
+
+
+pub joinViewSecond : List Int → Int
+joinViewSecond xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j2 True g + List.length p
+
+
+j3 b g =
+    v =
+        if b then
+            { b = Picks.ans { b = g.x } }
+        else
+            { b = Picks.ans { b = g.y } }
+    List.length v.b.c
+
+
+pub joinBothViews : List Int → Int
+joinBothViews xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j3 True g + List.length p
+
+
+j4 b g =
+    v =
+        if b then
+            { b = Picks.ans { b = g.x }, e = 0 }
+        else
+            { b = g.y, e = 1 }
+    List.length v.b.c
+
+
+pub joinExtraField : List Int → Int
+joinExtraField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    j4 True g + List.length p
+
+
+k1 g =
+    case Picks.deep3 g.x of
+        Rose r _ →
+            List.length r.c
+
+
+pub knotView : List Int → Int
+knotView xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    k1 g + List.length p
+
+
+k2 g =
+    case Picks.deep3 g.x of
+        Rose _ [ Rose _ [ Rose r _, …_ ], …_ ] →
+            List.length r.c
+
+        _ →
+            0
+
+
+pub knotViewDeep : List Int → Int
+knotViewDeep xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    k2 g + List.length p

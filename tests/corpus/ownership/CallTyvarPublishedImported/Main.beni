@@ -1,0 +1,35 @@
+-- ownership (project): a module that publishes a call's result whose
+-- type variables the call instantiated (ownership-v2.md §2.11
+-- *Re-rooting at a parameter*, §3.6, #1374). Each published node stands
+-- at the place its children's steps reach, so the block decodes and every
+-- call into `Pairs` is checked: a push of a part of each result, with
+-- `xs` read later, is refused, through `w1`, `w2`, `g` and `g2`.
+import Pairs
+
+
+pub one : List Int → Int
+one xs =
+    case Pairs.w1 xs of
+        ( a, _ ) →
+            List.length (List.push a 1) + List.length xs
+
+
+pub two : List Int → Int
+two xs =
+    case Pairs.w2 xs of
+        ( ( _, a ), _ ) →
+            List.length (List.push a 1) + List.length xs
+
+
+pub viaG : List Int → Int
+viaG xs =
+    case Pairs.g xs of
+        ( _, a ) →
+            List.length (List.push a 1) + List.length xs
+
+
+pub viaG2 : List Int → Int
+viaG2 xs =
+    case Pairs.g2 xs of
+        ( _, ( a, _ ) ) →
+            List.length (List.push a 1) + List.length xs

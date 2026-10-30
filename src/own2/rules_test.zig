@@ -44,8 +44,8 @@ const layers = [_]Entry{
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    // §5 says 3 290 since #1360: widen's re-entry probe (§2.3 *On the cycle*).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3290 },
+    // §5 says 3 350 since #1350: a view's instantiated place and a join's place (3 290 since #1360).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3350 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
@@ -69,8 +69,10 @@ const layers = [_]Entry{
     .{ .file = "Holders.zig", .layer = 6, .max_lines = 2010 },
     // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
-    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
+    // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`).
+    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1600 },
+    // §5 says 1 810 since #1350: a missing step's fallback.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1810 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
