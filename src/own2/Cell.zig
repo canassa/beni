@@ -316,9 +316,12 @@ pub const Table = struct {
         return id;
     }
 
-    /// Whether `s` holds `D` (§2.10).
+    /// Whether `s` holds `D` (§2.10); `D` without `R` (no use shape's).
     pub fn hasDeepRead(t: *const Table, s: SetId) bool {
         return t.mark_d != .none and t.sets.member(s, t.mark_d.int());
+    }
+    pub fn deepWithoutRead(t: *const Table, s: SetId) bool {
+        return t.hasDeepRead(s) and !(t.mark_r != .none and t.sets.member(s, t.mark_r.int()));
     }
 
     /// The mark a `mark` cell carries.
