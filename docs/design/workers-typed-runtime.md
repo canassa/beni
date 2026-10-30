@@ -65,7 +65,9 @@ batches until no queued work remains. A callback that stops the page prevents
 all subsequent callbacks from running. The existing finally guard restores the
 running flag and records a defect when program code throws.
 
-The initial storage is Js.Ref (List (⊤ → ⊤)). Appending uses List.push, whose
+The initial storage is Ref (List (⊤ → ⊤)), with Ref.update and Ref.modify
+providing the existing ownership-aware cell contract. A generic Js.Ref read
+cannot establish exclusive list ownership, so it is not used for this queue. Appending uses List.push, whose
 existing contract is bounded copying below 32 elements and amortized constant
 append above that threshold. It must never use repeated whole-list append or
 prepend. Draining detaches the current batch before invoking it, so sends made
