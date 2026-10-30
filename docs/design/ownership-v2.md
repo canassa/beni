@@ -691,10 +691,12 @@ Operations, memoised on their node arguments:
   alike is `positions(x, x)`, two edges, which every multiplicity reader counts as two (§2.9's aggregates
   compose by edge: `Cond.arrivalAggs`, `Calls.preimage` and `dagKappa`'s intersection of the sides). Two
   source nodes that become one image at one position carry their κ entries joined (`kappaRelabel`), which
-  only weakens. The summary printer's provenance list is a set per distinct node (#1182), so a node that
-  a round copied once per round now prints once: TailModConsMerge's `mergeSort` (4a) prints `fresh1` at
-  `res`'s root instead of `fresh1 fresh1 fresh1`, the same `{lost}`; those copies were arms of the round
-  choice, not coexisting positions.
+  only weakens. The summary printer's provenance list is a set per distinct node (#1182): `[ x, x ]`
+  prints `x` once, and its κ (`shared`) is what says two. So a node a round copied once per round now
+  prints once. TailModConsMerge's `mergeSort` (4a) prints `fresh1` at `res`'s root instead of
+  `fresh1 fresh1 fresh1` (copies that were arms of the round choice), and at `[*]` `~fresh10 ~fresh11 …`
+  instead of `~fresh10 ~fresh10 ~fresh11 …`, two lines that were copies of one becoming one; every κ
+  printed and every verdict is the same.
 - `leq(n, m)`, `eq(n, m)`: **coinductive** lockstep inclusion/equality (the kind-blind γ-inclusion above), memoised per immutable-version pair with a **shape-only** coinductive assumption on
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
@@ -5205,6 +5207,24 @@ deliveries into its class, the Prover goals keyed by it, and its validation.
     about i·n `(position, cell)` facts, so the total is about n³/2. That is 2 048 at n = 16 and
     about 131 000 at n = 64, against a default growth allowance of 65 536. So 4a is loud
     (`ownership_summary_size`) at n = 64, and the fixture records it that way.
+  - **Measured** [M 2026-10-30, #1372, #1368]. The estimate above does not hold, for two reasons.
+    The unit is not one record per fact: a walk costs about 55 to 115 records per node or edge of
+    the port's shape DAG it reads (the radix's key width, a memo record charged on a hit too,
+    `proj`, the bases), and about 60 once the DAG holds only distinct structure. And the class is
+    not n(n + 1)/2 facts: a choice keeps its alternatives (§2.3), so `res` is n + 1 alternatives of
+    n fields, about n² edges; n(n + 1)/2 is a pointwise join. 4a with #1363 measured (ReleaseSafe,
+    self-hosted, the cold account, growth allowance raised): 67 434 / 483 630 / 6 288 382 records
+    at n = 4 / 8 / 16 (27 s at 16), about n⁴, because read-off copied every node each round and a
+    round's choice nested the last one, so the port grew to 2 056 nodes and 6 376 edges at n = 16
+    with 37 distinct. With `map` interning images on no knot and `joinAlternatives` flattening a
+    choice member (§2.3, #1372), the port holds its distinct structure and a walk is about 60 records
+    per element of it: 20 194 / 78 098 / 385 482 at n = 4 / 8 / 16 (1.1 s), about n³·c with
+    c ≈ 60 (growth 21 380 at n = 8, 303 768 at 16), so it passes the allowance between n = 8 and 16.
+    Its verdicts and summary lines are byte-identical. The same change takes `mergeSort` from
+    213 096 to 125 352 records and the self-map `f (Node xs c₁ … cₙ) = Node xs (f c₁) … (f cₙ)` at
+    n = 16 from 134 542 to 90 141. `mergeSort` stays past the allowance: its `res[*]` positions
+    multiset nests both views of the last port every round (#1368), and a self-map's n views are
+    forced one by one before widen folds them into one class; both are open (#1372).
   - From 4b, facts are deliveries, each `(edge, fact)` once, bounded by the size of the class the
     group publishes. Inference walks happen only on a new callee `res.shape`. Validation walks are
     one per member per pass of the stop rule, plus the one that follows any inference walk that
@@ -5297,7 +5317,8 @@ allowance, with no limit line.
     cells by one field, so 4a takes about n rounds, and read-off touches about n³/2 facts in all:
     2 048 at n = 16. At n = 64 that is about 131 000, against a growth allowance of 65 536, so 4a is
     recorded **loud** there: `ownership_summary_size`, no class published. These are 4a's figures,
-    not a bound.
+    not a bound. Measured, the walks cost about n³·60 records with #1372's sharing (about n⁴
+    without it), so n = 16 is loud too (*Cost* above).
   - `o/RecursiveGroupsSharedRead` (*Ports*, the coarse read vector): members f and g both call h on
     the same actual and read the same view of it, and only g has a demand on the cells it reads. A
     later delivery into `h.res.cells` must leave g's vector stale, so that g is walked again and its
@@ -5314,7 +5335,10 @@ allowance, with no limit line.
     `res.shape` that walk 1 made, and its vector is x*. Deliveries are one per `(edge, fact)`, bounded
     by the `(position, cell)` facts of the class it publishes, n(n + 1)/2, which at n = 64 is well
     inside the allowance. The class's own size is quadratic, so this is the size of the answer,
-    delivered once.
+    delivered once. *Measured* [M 2026-10-30, #1372]: the class holds n + 1 alternatives of n fields,
+    about n² edges, and a walk reads it at about 60 records per element, so one validation walk at
+    n = 64 is about 250 000 records, loud even with 4b unless the class is summarised pointwise. 4b
+    changes the number of walks, not the cost of one.
   - `GroupFieldShiftMatched` matches the call's result and rebuilds it field by field, so its flow
     reaches `res` through projections of the view. Walk 1, over ⊥, has no projection to record, so
     walk 2 records those edges, and by the general rule (*Validation*) a third walk validates. That
