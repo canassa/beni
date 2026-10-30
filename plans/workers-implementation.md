@@ -35,8 +35,8 @@ metadata with strict six-key tables, the Session-owned validated entry plan,
 the pinned native binding catalogue, and the typed Buffer primitive with its
 generated sibling, core-override checks and ordinary type/effect tests. The
 prerender export-root correction remains paired with its regression and keeps
-the call-graph guard enabled. Focused validation and review have passed; the
-manager will run full gates on this exact checkpoint before committing it.
+the call-graph guard enabled. Manager source review, full run-hash recording and full unfiltered gates passed
+on Dagon for foundation code commit d61f2d338. CI validates the pushed head next.
 
 The typed Inline queue and its coordinated callback ABI are deliberately held
 out of this checkpoint. The candidate has passed source review, focused corpus

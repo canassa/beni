@@ -204,7 +204,8 @@ allocation measurements.
 The independently landable foundation checkpoint implements the typed Buffer
 primitive, its generated sibling and core-override/authority checks, alongside
 generic runtime metadata, the Session entry plan and the native catalogue. The
-manager will run full gates on that exact checkpoint before committing it.
+manager source review, full run-hash recording and full unfiltered gates passed
+for foundation code commit d61f2d338.
 
 The typed Inline queue and direct/via callback ABI are a reviewed candidate,
 not included in this checkpoint. Existing Inline source, its generated ABI and
