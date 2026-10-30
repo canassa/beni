@@ -1,0 +1,1 @@
+v2 folds a choice at the root of a recursive value (ownership-v2.md §2.3, #1360); v1 has no such fold.

@@ -2801,9 +2801,10 @@ pub const Table = struct {
         /// Canonical path → the class at it.
         by_path: stamped.Column(PathId, u32) = .{},
         visited: stamped.Column(NodeId, void) = .{},
-        /// The unions and positions nodes met at a re-entry (`⟲`), whose
-        /// sides are walked as members of their class (§2.3): their meaning
-        /// is their sides', so they ride beside no image.
+        /// The unions, choices and positions nodes met on the cycle (at a
+        /// `⟲`, or at a place on a cycle), whose sides are walked as members
+        /// of their class (§2.3): their meaning is their sides', so they
+        /// ride beside no image.
         opened: stamped.Column(NodeId, void) = .{},
         /// How many times the walk reached each node: a node reached twice
         /// stands at two positions of its class.
@@ -2812,6 +2813,9 @@ pub const Table = struct {
         image: stamped.Column(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
         any_merge: bool = false,
+        /// Whether the walk met a `⟲` step: without one nothing is on a
+        /// cycle, and the merges of opened sides are no quotient.
+        any_reentry: bool = false,
         /// The source nodes in the order first visited, and where `widenFold`
         /// wants the path map.
         seen_order: std.ArrayList(NodeId) = .empty,
@@ -2968,10 +2972,15 @@ pub const Table = struct {
                 if (w.visited.contains(fnode)) continue;
                 try w.visited.put(w.gpa, fnode, {});
                 try w.seen_order.append(w.gpa, fnode);
-                // A union or a positions node on the cycle being folded: its sides
-                // are at its path, so they are members of its class (§2.3).
+                if (reentry) w.any_reentry = true;
+                // A union, choice or positions node on the cycle being folded:
+                // its sides are at its path, so they are members of its class
+                // (§2.3). On the cycle is at a re-entry, or at a place a
+                // re-entry can come back to (a branch join at the root of a
+                // tree): kept whole there, its arms' re-entries would never
+                // be walked and the knot would tie back to a choice.
                 switch (w.t.kind(fnode)) {
-                    .@"union", .choice, .positions => if (reentry) {
+                    .@"union", .choice, .positions => if (reentry or w.places.onCycle(w.t.place(fnode))) {
                         try w.opened.put(w.gpa, fnode, {});
                         const d = w.t.get(fnode);
                         try stack.appendSlice(w.gpa, &.{ .{ .node = .from(d.a), .path = f.path }, .{ .node = .from(d.b), .path = f.path } });
@@ -2995,7 +3004,7 @@ pub const Table = struct {
             }
             // Phase 2: congruence closure.
             while (w.pending.pop()) |pair| _ = try w.unite(pair[0], pair[1]);
-            if (!w.any_merge) return root; // the identity
+            if (!w.any_merge or !w.any_reentry) return root; // the identity
             // The classes are of the answers `run` visited (a view root's too).
             const out = try w.emit(try w.t.force(w.gpa, w.account, root));
             if (w.out) |fo| {
@@ -3595,6 +3604,107 @@ test "widen keeps a delta member's leaf base and is extensive on it" {
     };
     try testing.expect(found);
     try f.shapes.crossCheckWiden(gpa, &f.account, &f.places, &f.cells, d, w);
+}
+
+/// One round of `pick`'s result over the recursive call's value `x`
+/// (#1360): `case t of Node l xs _ → Node (case l of Node a ys _ → Node a
+/// ys x; Leaf → x) xs Leaf; Leaf → Leaf`, its root a branch join. `root`
+/// says what joins at the root: 0 the two arms, a `choice`; 1 a `choice`
+/// nested in a `choice` (an `if` in one arm); 2 that `choice` inside a
+/// `union` with `x` (a pattern's two descriptions of one value).
+fn pickRound(f: *Fixture, x: NodeId, root: u8) !NodeId {
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const s2 = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    const leaf_ctor = try f.shapes.leaf(gpa, &f.account, tree, .none);
+    const a = try f.shapes.leaf(gpa, &f.account, tree, try f.param(1, tree));
+    var kids = try f.one(s0, a);
+    kids = try f.shapes.overPut(gpa, &f.account, kids, s1, try f.shapes.leaf(gpa, &f.account, list, try f.param(4, list)));
+    kids = try f.shapes.overPut(gpa, &f.account, kids, s2, x);
+    const inner = try f.shapes.choice(gpa, &f.account, &f.cells.sets, try f.shapes.node(gpa, &f.account, tree, try f.site(1, tree, .none), kids), x);
+    var okids = try f.one(s0, inner);
+    okids = try f.shapes.overPut(gpa, &f.account, okids, s1, try f.shapes.leaf(gpa, &f.account, list, try f.param(5, list)));
+    okids = try f.shapes.overPut(gpa, &f.account, okids, s2, leaf_ctor);
+    const outer = try f.shapes.node(gpa, &f.account, tree, try f.site(2, tree, .none), okids);
+    return switch (root) {
+        0 => f.shapes.choice(gpa, &f.account, &f.cells.sets, outer, leaf_ctor),
+        1 => f.shapes.choice(gpa, &f.account, &f.cells.sets, try f.shapes.choice(gpa, &f.account, &f.cells.sets, outer, x), leaf_ctor),
+        else => f.shapes.@"union"(gpa, &f.account, &f.cells.sets, try f.shapes.choice(gpa, &f.account, &f.cells.sets, outer, leaf_ctor), x),
+    };
+}
+
+/// One node per canonical path (§2.3): the class at the root is one built
+/// node (beside its leaf side, a `union` whose explicit side it is), and
+/// both re-entering steps name that class itself, so `#Node.0` and
+/// `#Node.2` are the root's path and nothing below them is a second node.
+fn oneNodePerPath(f: *Fixture, w: NodeId) !void {
+    const gpa = testing.allocator;
+    const d = f.shapes.get(w);
+    const n: NodeId = switch (d.kind) {
+        .node => w,
+        .@"union" => .from(d.a),
+        else => return error.TestUnexpectedResult,
+    };
+    try testing.expectEqual(Kind.node, f.shapes.kind(n));
+    for ([_]u32{ 0, 2 }) |i| {
+        const s = try f.places.ctorStep(gpa, &f.account, 0, i);
+        try testing.expectEqual(@as(?NodeId, w), f.shapes.overGet(f.shapes.get(n).a, s));
+    }
+}
+
+test "#1360: widen opens a choice at the root of a recursive value, nested or inside a union, and settles in one step" {
+    for ([_]u8{ 0, 1, 2 }) |root| {
+        var f: Fixture = .{};
+        f.init();
+        defer f.deinit();
+        const gpa = testing.allocator;
+        const tree = try f.placeOf(0);
+        const seed = try f.shapes.leaf(gpa, &f.account, tree, try f.param(3, tree));
+        const v1 = try pickRound(&f, seed, root);
+        var fold: Table.Fold = .{};
+        defer fold.deinit(gpa);
+        const x1 = try f.shapes.widenFold(gpa, &f.account, &f.places, &f.cells, v1, &fold);
+        // Quotiented through the root: the knot ties back to a node, the
+        // root's arms are members of its class, never a choice on a cycle.
+        try testing.expect(x1 != v1);
+        try testing.expect(f.shapes.kind(x1) != .choice);
+        try testing.expect(fold.opened.contains(v1));
+        try oneNodePerPath(&f, x1);
+        try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, v1, x1));
+        // One more round over the widened value is below it: the group settles.
+        const x2 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, try pickRound(&f, x1, root));
+        try oneNodePerPath(&f, x2);
+        try testing.expect(try f.shapes.leq(gpa, &f.account, &f.places, &f.cells, x2, x1));
+    }
+}
+
+test "#1360: widen is idempotent on a widened choice root" {
+    for ([_]u8{ 0, 1, 2 }) |root| {
+        var f: Fixture = .{};
+        f.init();
+        defer f.deinit();
+        const gpa = testing.allocator;
+        const tree = try f.placeOf(0);
+        const seed = try f.shapes.leaf(gpa, &f.account, tree, try f.param(3, tree));
+        const x1 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, try pickRound(&f, seed, root));
+        try oneNodePerPath(&f, x1);
+        const x2 = try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, x1);
+        try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, x1, x2));
+        try oneNodePerPath(&f, x2);
+    }
+}
+
+test "#1360: a choice at the root with no re-entry below is kept: widen stays the identity" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const c = try f.shapes.choice(gpa, &f.account, &f.cells.sets, try f.shapes.leaf(gpa, &f.account, tree, try f.param(1, tree)), try f.shapes.leaf(gpa, &f.account, tree, try f.param(2, tree)));
+    try testing.expectEqual(c, try f.shapes.widen(gpa, &f.account, &f.places, &f.cells, c));
 }
 
 test "leq's coinductive answers are provisional: a failed outer pair does not leave a true behind" {

@@ -447,7 +447,8 @@ own choice DAG (`choice(x, x) = x`, `choice(x, choice(x, y)) = choice(x, y)`; th
 it a tower of branch joins re-nests its projections at every level: K grew 14 864 / 94 264 records at
 10 / 20 levels instead of 7 071 / 21 117). It never absorbs into or from a `union` (`unionHas` per kind). **No
 `choice` lies on a cycle**: a cycle is a widened knot or a graft's or decoder's copy of one, widen opens every union and
-choice it meets at a re-entry and its image keeps no opened node, and graft, `map` and decode copy
+choice it meets on the cycle (at a re-entry, or at a place on a cycle such as a branch join at a tree's root, #1360)
+and its image keeps no opened node, and graft, `map` and decode copy
 structure without adding a cycle. So projecting a `choice` terminates; absorption is for its cost, not its termination. Set readers
 (`reach`, `leq`'s γ, `cellsAt`, `rank`, `deep`'s frontier) read a choice as a union. `leq` is kind-blind,
 so `union(a, b) ≤ choice(a, b)` both ways; the fixpoint's convergence is guarded by `kappaLeq`, whose
@@ -539,8 +540,29 @@ Operations, memoised on their node arguments:
   value, at the coinductive pair cost and with no matching task.
 - `widen` across kinds [M 2026-10-27, #1120]: **a `union` or `positions` node met at a re-entry (a `⟲` step: on the
   cycle being folded) is opened**. Its sides stand at its path, so they become members of its class and their own
-  structure is walked like any member's. Every other union or positions node is kept as it is, and widen never
-  unifies two sides pairwise. A member of a congruence class that is not explicit structure rides beside the class
+  structure is walked like any member's. Every other union, choice or positions node (off the cycle, below) is kept as it is, and widen never
+  unifies two sides pairwise.
+
+  **On the cycle** [M 2026-10-30, #1360] is where a re-entry can come back to: a `union`, `choice` or `positions`
+  node at a `⟲` step, and also one at any path whose **place lies on a cycle** of the place graph
+  (`Place.onCycle`: a step of it reaches a place that reaches it again). A branch join at the root of a recursive
+  value (`case t of Node … → Node (case l of …) …; Leaf → Leaf`) is such a node: its arms stand at the root's
+  path, and a re-entry inside an arm comes back to that path. Kept whole, the walk would never see the re-entry
+  under it (a kept node has no explicit edges), the arm's inner node would stay a second node at `#Node.0#Node.0`,
+  and a recursive group nesting the previous round's choice at the recursive call would never settle; tying the
+  knot to the kept node instead would put a `choice` on a cycle. So the rule is the same at the root as at a
+  re-entry: opened, its sides (a nested choice's or union's too) are members of its class. The arms keep their
+  meaning for κ, because the primitive below reads the **pre-fold** source: the fold records the node as
+  opened, and an opened `choice`'s arms are taken by the maximum, an opened `union`'s or `positions` node's sides
+  by the sum, wherever it was opened. Merging the arms into one image is γ's alone (a set), so it neither turns a
+  choice into coexistence nor the reverse. Opening applies only when the walk meets some `⟲` at all: a value with
+  no re-entry is widen's identity whatever it holds, so `choice(leaf{π₁}, leaf{π₂})` over a tree stays itself.
+  *Precision limit:* the place test is static, so a choice at a place on a cycle is opened, and its arms merged in
+  the image, even where no re-entry lies under that node while one lies elsewhere in the value (sound: a class is
+  the union of its members). A node at a place **above** a cycle but not on one (`{ t : Tree }`, `Maybe Tree`)
+  stays kept, and its arms are not walked; how to fold under it is still open (#1362).
+
+  A member of a congruence class that is not explicit structure rides beside the class
   image: the class's leaves (and a delta's leaf base) fold into one leaf, and a recast, or a union or positions
   member that was not opened, stays as it is; these are the sides of a `union` with the image. An opened member
   rides beside nothing, since its meaning is its sides', which are members. **Opening is sound:** a class denotes

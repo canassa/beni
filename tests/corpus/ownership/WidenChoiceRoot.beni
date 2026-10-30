@@ -1,0 +1,29 @@
+-- ownership (v2): widen quotients through a branch join at the root of a
+-- recursive value (ownership-v2.md §2.3, #1360). `pick`'s result is a
+-- `choice` whose first arm holds, at `#Node.0`, another choice that
+-- re-enters `Tree`. The root is on the cycle, so widen opens it: both arms
+-- are members of the root's class, and the inner `Node a ys u` folds into
+-- it as a `⟲`, never as a second node at `#Node.0#Node.0`. The summary is
+-- pinned by `build_test.zig`; v1's is its own.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub pick : Tree, Tree → Tree
+pick t u =
+    case t of
+        Node l xs _ →
+            Node
+                (case l of
+                    Node a ys _ →
+                        Node a ys u
+
+                    Leaf →
+                        u
+                )
+                xs
+                Leaf
+
+        Leaf →
+            Leaf
