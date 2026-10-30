@@ -11196,4 +11196,123 @@ test "a derived comparison over a doubling type with a component costs its level
         std.debug.print("depth 4: {d} records, depth 8: {d}\n", .{ costs[0], costs[1] });
         return error.TestUnexpectedResult;
     }
+/// `go acc xs`, a recursive group of one, after `n` scalar statements
+/// (`GroupSelfFold`, ownership-v2.md §8 S3b slice 4).
+fn groupSelfFold(w: *World, n: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "pub go : List Int, List Int → List Int\ngo acc xs =\n");
+    for (0..n) |i| try src.print(a, "    s{d} = {d}\n", .{ i, i });
+    try src.appendSlice(a, "    case xs of\n        [ x, …rest ] →\n            go (List.push acc x) rest\n\n        [] →\n            acc\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 solves a self-recursive fold in four walks and no growth at any length (GroupSelfFold)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4 (4a): round 2 adds `π1[*] A`, round 3 `π1[*] R`, round
+    // 4 settles; the walks past the second are growth the source
+    // continuation covers, so G_f is 0 whatever the body's length.
+    for ([_]usize{ 10, 100, 1000 }) |n| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupSelfFold(&w, n);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expectEqual(@as(u64, 4), try accountField(dump.stdout, "go", "walks"));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "go", "growth"));
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "15:17 List.push acc: accepted param") != null or std.mem.indexOf(u8, dump.stdout, "List.push acc: accepted param") != null);
+    }
+}
+
+/// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
+/// (`GroupFieldShift`, ownership-v2.md §8 S3b slice 4); with `mutual`, as
+/// the pair `shift`/`shift2`. `before` is an earlier group, and `after`
+/// calls it.
+fn groupFieldShift(w: *World, n: usize, mutual: bool) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "type R\n    = R");
+    for (0..n) |_| try src.appendSlice(a, " (List Int)");
+    try src.appendSlice(a, "\n\n\npub before : List Int → List Int\nbefore xs = List.push xs 0\n");
+    for ([_][]const u8{ "shift", "shift2" }, 0..) |name, k| {
+        if (k == 1 and !mutual) break;
+        const callee = if (mutual) (if (k == 0) "shift2" else "shift") else "shift";
+        try src.print(a, "\n\npub {s} : R, Int → R\n{s} r k =\n    case r of\n        R", .{ name, name });
+        for (0..n) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " →\n            if k == 0 then\n                R");
+        for (0..n) |i| try src.print(a, " x{d}", .{i});
+        try src.print(a, "\n\n            else\n                {s} (R", .{callee});
+        for (1..n) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " []) (k - 1)\n");
+    }
+    try src.appendSlice(a, "\n\npub after : List Int → Int\nafter xs = List.length (before xs) + List.length xs\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2's GroupFieldShift: n = 4 settles in n + 3 walks, n = 16 is loud (GroupFieldShift)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // 4a's figures, not a bound (§8 S3b slice 4, #1372): each round moves the
+    // cells by one field, and a walk costs far more than the facts it adds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const four = try groupFieldShift(&w, 4, false);
+    var w16 = try World.init(testing.allocator, testing.io);
+    defer w16.deinit();
+    const sixteen = try groupFieldShift(&w16, 16, false);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), four.exit_code);
+    try testing.expectEqual(@as(u64, 7), try accountField(four.stdout, "shift", "walks"));
+    try testing.expect(std.mem.indexOf(u8, four.stdout, "limit shift") == null);
+    try testing.expectEqual(@as(u8, 0), sixteen.exit_code);
+    try testing.expect(std.mem.indexOf(u8, sixteen.stdout, "limit shift: ownership_summary_size") != null);
+}
+
+test "the checker v2 publishes nothing of a recursive group a limit stops, and still serves an earlier group" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 16 fields exhausts in a
+    // round past the second. The group is built whole or not at all: one
+    // member has the limit, the other is unbuilt at its group call, and
+    // neither publishes a class or a line. `before`, an earlier group, still
+    // serves `after`, whose call is checked.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try groupFieldShift(&w, 16, true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const limit1 = std.mem.indexOf(u8, dump.stdout, "limit shift: ownership_summary_size") != null;
+    const limit2 = std.mem.indexOf(u8, dump.stdout, "limit shift2: ownership_summary_size") != null;
+    try testing.expect(limit1 or limit2);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "summary shift:") == null or std.mem.indexOf(u8, dump.stdout, "summary shift: not") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked shift") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked shift2") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.before xs: rejected later-use") != null);
 }

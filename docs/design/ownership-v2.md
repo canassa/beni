@@ -5493,14 +5493,16 @@ allowance, with no limit line.
     group's classes are still served. The cold re-check of a group that exhausts only warm accepts
     it with the cold account.
   - **Counted** `GroupSelfFold`: `go acc xs = case xs of [ x, …rest ] → go (List.push acc x) rest;
-    [] → acc`, preceded by n scalar statements, at n = 10 / 100 / 1 000. Three walks per member and
+    [] → acc`, preceded by n scalar statements, at n = 10 / 100 / 1 000. Four walks per member and
     G_f = 0 at every n (corrected while building 4a; this text said two). Round 2 is woken by `res`
     going from nothing to `π1`. Its read-off is not x₁: the call now answers `List.push acc x` through
     the view of x₁, a list node whose element `[*]` holds `π1[*]`. So the result reaches `π1[*]`, and
     read-off marks `A` at `π1[*]`, where round 1's result `acc` is a leaf of `π1` whose reach is `π1`
     alone (a node of marks stands for its own path, §2.10). v1's summary has `π1[*] A` too. Round 3
-    reads x₂ and finds F(x₂) ⊑ x₂, and its read vector is x*, so the read check adds no walk. The third
-    walk is growth that the source continuation covers.
+    reads x₂, whose use now marks `π1[*]`, and the call's use (§2.7) reads the argument there, so
+    read-off adds `π1[*] R` (v1 has no `R` there: v2 reads every path a callee's use marks). Round 4
+    finds F(x₃) ⊑ x₃, and its read vector is x*, so the read check adds no walk. Walks 3 and 4 are
+    growth that the source continuation covers.
   - **Counted** `GroupFieldShift`: `shift (R x₁ … xₙ) k = if k == 0 then R x₁ … xₙ else shift (R x₂
     … xₙ []) (k − 1)` over a constructor of n list fields, at n = 4 / 16 / 64. Each round moves the
     cells by one field, so 4a takes about n rounds, and read-off touches about n³/2 facts in all:
@@ -5508,6 +5510,7 @@ allowance, with no limit line.
     recorded **loud** there: `ownership_summary_size`, no class published. These are 4a's figures,
     not a bound. Measured, the walks cost about n³·60 records with #1372's sharing (about n⁴
     without it), so n = 16 is loud too (*Cost* above).
+    The counted test records n = 4 checked in 7 walks, and n = 16 loud.
   - `o/RecursiveGroupsSharedRead` (*Ports*, the coarse read vector): members f and g both call h on
     the same actual and read the same view of it, and only g has a demand on the cells it reads. A
     later delivery into `h.res.cells` must leave g's vector stale, so that g is walked again and its
