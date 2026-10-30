@@ -5545,6 +5545,11 @@ and complexity budgets; the >250k LOC/s cold/core target still applies.
 must precede public launch support. Native transfer backing demands belong to
 the ownership pass, not an assertion that host state can never change.
 
+Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
+realm mechanism: generated native types are recommended; hidden provenance
+remains specified as option B, not adopted. Common EntryHost/realm guarantees
+apply to either. Grouped protocol roles distinguish call and stream inputs.
+
 
 The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14; this
 section says only where it sits in this checker.

@@ -23,8 +23,10 @@ import Duration
 import List
 import Task
 
-pub type Request = Predict Int | Frames Int
-pub type Error = EmptyModel | WrongRequest | InvalidCount | OutputStopped
+pub type Call = Predict Int
+pub type StreamRequest = Frames Int
+pub type alias Protocol = Worker.Protocol Call Int StreamRequest Error Event Int
+pub type Error = EmptyModel | InvalidCount | OutputStopped
 pub type Event = Alive | Progress Int
 pub type alias Model = List Int
 
@@ -35,7 +37,7 @@ init context weights =
     else
         Ok weights
 
-pub start : Worker.Context Event, Model → ⊤
+pub start : Worker.Context Event, borrowed Model → ⊤
 start context model =
     _ = Task.spawnIn (Worker.scope context) λ⊤ → pulse context
     ⊤
@@ -47,21 +49,15 @@ pulse context =
         Ok ⊤ → pulse context
         Err _ → ⊤
 
-pub handle : Worker.Context Event, Model, Request → Model × Result Error Int
-handle context model request =
-    case request of
-        Predict value → ( model, Ok (value * List.sum model) )
-        Frames _ → ( model, Err WrongRequest )
+pub handle : Worker.Context Event, borrowed Model, Call → Result Error Int
+handle context model (Predict value) = Ok (value * List.sum model)
 
-pub produce : Worker.Context Event, Model, Request, Stream.Sink Error Int → Result Error ⊤
-produce context model request sink =
-    case request of
-        Predict _ → Err WrongRequest
-        Frames count →
-            if count ≤ 0 then
-                Err InvalidCount
-            else
-                frames context (List.sum model) sink 0 count
+pub produce : Worker.Context Event, borrowed Model, StreamRequest, Stream.Sink Error Int → Result Error ⊤
+produce context model (Frames count) sink =
+    if count ≤ 0 then
+        Err InvalidCount
+    else
+        frames context (List.sum model) sink 0 count
 
 frames : Worker.Context Event, Int, Stream.Sink Error Int, Int, Int → Result Error ⊤
 frames context weight sink index count =
@@ -75,13 +71,9 @@ frames context weight sink index count =
                     Err _ → Err OutputStopped
                     Ok ⊤ → frames context weight sink (index + 1) count
 
-stream : Worker.Context Event, Model, Request, Stream.Sink Error Int → Model × Result Error ⊤
-stream context model request sink =
-    ( model, produce context model request sink )
-
-pub program : Worker.Program (List Int) Model Request Int Error Event Int
+pub program : Worker.Program (List Int) Model Protocol
 program =
-    Worker.program { init = init, start = start, handle = handle, stream = stream }
+    Worker.program { init = init, start = start, handle = handle, stream = produce }
 ```
 
 The root-scoped pulse illustrates genuinely unsolicited events. Event overflow
@@ -91,12 +83,14 @@ it cannot publish. An application can choose another typed overflow policy.
 
 ## Page: Main.beni
 
-Cancelling a serial stream before its state lease returns retires the worker
-with WorkerStateLost; this example closes it immediately afterwards. An app
-that must reuse stable borrowed state selects the concurrent constructor.
+Cancelling the stream cancels only its request scope. The root-owned model
+remains available; a second Predict request on the same handle succeeds after
+cancel has awaited producer cleanup. Passing Frames to call (or Predict to
+stream) is a type mismatch, so WrongRequest does not exist.
 
 Run opens one worker, consumes pushed events concurrently, calls Predict,
-starts Frames, consumes/releases one chunk, cancels the stream, stops its local
+starts Frames, consumes/releases one chunk, cancels the stream, successfully
+calls Predict again with the same model, stops its local
 event reader and closes the worker. All paths stay in Task.scope; failure does
 not leak a worker. The button is disabled while running. Explicit cleanup
 status is shown, and an unconfirmed implicit finalizer remains fatal as §7
@@ -160,6 +154,9 @@ run send =
                                 Stream.release chunk
                         stopped = Stream.cancel frames
                         send (Status ("stream " ++ cleanupText stopped))
+                        case Worker.call worker (Jobs.Predict 11) of
+                            Err _ → send (Status "post-cancel prediction failed")
+                            Ok value → send (Status ("still usable: " ++ String.fromInt value))
                 Task.cancel observer
                 closed = Worker.close worker
                 send (Finished (cleanupText closed))
@@ -210,8 +207,8 @@ import Duration
 import Task
 
 type Msg
-    = Call Jobs.Request (Worker.Reply Jobs.Error Int)
-    | Produce Jobs.Request (Stream.Sink Jobs.Error Int)
+    = Call Jobs.Call (Worker.Reply Jobs.Error Int)
+    | Produce Jobs.StreamRequest (Stream.Sink Jobs.Error Int)
     | Pulse
 
 init : Worker.Context Jobs.Event, List Int → Result Jobs.Error (Jobs.Model × Worker.Command Msg)
@@ -224,12 +221,12 @@ update : Worker.Context Jobs.Event, Msg, Jobs.Model → Jobs.Model × Worker.Com
 update context msg model =
     case msg of
         Call request reply →
-            ( next, answer ) = Jobs.handle context model request
+            answer = Jobs.handle context model request
             command = Worker.performFor reply λsend →
                 case Worker.respond reply answer of
                     Ok ⊤ → ⊤
                     Err _ → ⊤
-            ( next, command )
+            ( model, command )
         Produce request sink →
             command = Worker.performStream sink λsend →
                 answer = Jobs.produce context model request sink
@@ -254,7 +251,7 @@ pulse send =
     send Pulse
     pulse send
 
-pub program : Worker.Program (List Int) Jobs.Model Jobs.Request Int Jobs.Error Jobs.Event Int
+pub program : Worker.Program (List Int) Jobs.Model Jobs.Protocol
 program =
     Worker.machine
         { init = init

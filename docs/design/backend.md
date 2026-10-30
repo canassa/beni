@@ -79,7 +79,11 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
 *Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§5
 adds source-discovered entries, `_workers/<stable-entry-id>/_main.mjs`, staged
 runtime bootstrap and relative descriptor URLs. IDs precede parallel work;
-all output paths share collision preflight. Each entry has separate roots,
+all output paths share collision preflight.
+Worker runtime `run : Program config state protocol → ⊤` is impure and
+non-suspending. It starts an owned Task root and returns; init may suspend
+inside that root, driven by the realm-local scheduler. The emitted entry calls
+run(main) synchronously; entry_runtime_suspends rejects a suspending run. Each entry has separate roots,
 initializers, DCE and source maps (§9/§11); sharing chunks requires exposure
 valid in every importing realm. EntryHost proofs replace `host: page`.
 The owner must choose shared wire-visible names with selective normalization
@@ -87,6 +91,11 @@ or universal canonical codecs; independently renamed entries cannot exchange
 raw layouts by accident. §4's intended representations and today's emitted
 representations are compared in [the audit](research/workers-host-and-wire.md).
 This amendment does not change either representation merely to ease transport.
+
+Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
+realm mechanism: generated native types are recommended; hidden provenance
+remains specified as option B, not adopted. Common EntryHost/realm guarantees
+apply to either. Grouped protocol roles distinguish call and stream inputs.
 
 
 ```

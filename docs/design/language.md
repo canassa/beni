@@ -1566,6 +1566,11 @@ calls and distinguishes worker-local state from Wire configuration/messages.
 Moved native backing cannot remain live through an alias. Wire lowering is an
 explicit owner decision, not a mandate for a codec on every record.
 
+Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
+realm mechanism: generated native types are recommended; hidden provenance
+remains specified as option B, not adopted. Common EntryHost/realm guarantees
+apply to either. Grouped protocol roles distinguish call and stream inputs.
+
 
 Every diagnostic has a stable snake_case code, a severity, a file, a `{line, col}` start and end
 (end exclusive, same line or later), a title in `SHOUTING CASE` in Elm's style, and a message. The

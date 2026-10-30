@@ -1248,6 +1248,11 @@ Entry metadata resolves symbols and type roles, never hardcoded platform API
 names; sorted package/module/declaration identities determine output IDs.
 Interfaces include host-flow, Wire and entry-role fingerprints (§4 cost model).
 
+Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
+realm mechanism: generated native types are recommended; hidden provenance
+remains specified as option B, not adopted. Common EntryHost/realm guarantees
+apply to either. Grouped protocol roles distinguish call and stream inputs.
+
 
 *Added 2026-10-01* — Milestone 1's *developer loop v0* (`plans/status-2026-10.md` §6). Four pieces,
 each small, and none of them the daemon: `fast-compiler.md` §4's resident process, its socket, its

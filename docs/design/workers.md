@@ -10,6 +10,14 @@ runtime logic is beni over privileged `Js`; compiler changes are Zig.
 
 ## Open decisions for the owner
 
+**Host typing versus hidden provenance — [#1315](https://github.com/canassa/beni/issues/1315).**
+I recommend generated real beni native types with ordinary inferred realm
+summaries (option C). The [three-way comparison](research/workers-realm-options.md)
+prices guarantees, exact census migration, diagnostics, compiler/interface costs
+and erased release output against manually authored wrappers (A) and the retained
+hidden-provenance mechanism (B). This is not adopted: #1295 waits for the owner.
+All options preserve the same public API, precise failures and EntryHost guarantee.
+
 **Wire naming or universal codecs.** This remains open. I recommend shared
 wire-visible names inside a build, direct clone for proven stable shapes, and
 normalization where required. §3 and the host/wire research price both designs;
@@ -84,24 +92,30 @@ state or a typed initialization failure. State may contain a GPU device,
 loaded model or WASM instance: **state has no Wire requirement and never
 crosses to the page**. Configuration does cross and therefore has one.
 
-The worker root scope owns state and resources registered during init. Serial
-handlers receive the current state and return its replacement alongside their
-result. A stream keeps that state until its handler finishes. This prevents
-two requests from simultaneously consuming an owned state record. Until the
-handler returns its replacement, it holds a state lease. If interrupted before
-return, the original state must not be resurrected: close admission, cancel
-queued work with Transport WorkerStateLost, clean the instance root and close
-it. A defect takes the existing fatal route. Only a successful tuple return
-restores the lease; an ordinary typed Err returned alongside state is safe.
-Shared programs expose only borrowed stable-state handlers (or synchronous
-machine updates), so one client's cancellation cannot retire other clients.
-Concurrent borrowed-state programs avoid this retirement because their state
-was never consumed. Test cancellation after moving a state field, not only
-before the handler starts. A machine update restores its model synchronously;
-its async commands may only borrow stable retained state. The separate
-concurrent constructor borrows stable state; the checker rejects a handler
-that consumes it. Mutable coordination then uses explicit worker-local Ref/
-Semaphore resources, not an unchecked shared record update.
+The worker root scope owns state and resources acquired by init, so they
+outlive individual requests. Every default handler borrows stable state, so
+cancelling one request cannot lose a loaded model or GPU device. Mutable
+state lives in explicit Ref/Semaphore resources or the machine's model, so
+updates have defined ownership. Ref and machine updates are synchronous atomic
+steps, so cancellation sees a valid old or new state. A multi-step transaction
+uses a scoped semaphore and cancellation-safe finalizer to preserve its invariant.
+
+Serial admission runs one call or stream producer through cleanup before the
+next starts, so applications can depend on that ordering. Concurrent admission
+allows several borrowed handlers under the configured bound, so shared mutation
+requires explicit synchronization. Both contracts are ownership-checked at
+program construction, so neither can move root-owned state into a message.
+There is no consuming-state constructor: this use case needs stable resources,
+and atomic machine updates/resource transactions cover replacement without a
+state lease that cancellation can lose. WorkerStateLost is removed.
+
+Calls and streams have separate input types, so a stream request passed to call
+is a compile-time type mismatch. A type-only `Worker.Protocol call reply
+streamRequest error event chunk` record groups the six message roles. Program
+has three parameters (config, local state, protocol), and Handle/Pool have one.
+Ordinary record-alias unification selects roles; no associated-type language
+feature or runtime protocol value is introduced. `⊥` as streamRequest makes
+streaming uncallable for a call-only program. See the API for generic signatures.
 
 The context gives init/handlers the worker scope and a typed event emitter.
 Events are worker-initiated progress or pushed results, independent of a call.
@@ -141,9 +155,9 @@ The entryKinds record has these required fields; indices are zero-based:
 | `programType` | Resolved nominal type-constructor symbol and arity |
 | `constructors` | Symbols returning that program type; exactly one `entry` argument with deferred callbacks |
 | `launches` | Pairs of function symbol and program argument index; includes pool launch and shared connect as well as direct open |
-| `parameters` | One role per type parameter: `local`, `config`, `request`, `reply`, `error`, `event`, `chunk`; Wire required for every role except local |
+| `parameters` | Indexed type-role paths: index 0 config (Wire); index 1 local (not Wire); index 2 protocol fields call/reply/stream/error/event/chunk (each Wire). Paths and labels are manifest data, validated after ordinary alias expansion. |
 | `realm` | One native execution realm, checked against the host universe |
-| `runtime` | Resolved beni module with `run : Program … → ⊤`; may suspend; deferred initialization owns a root scope and installs handlers before Ready |
+| `runtime` | Resolved beni module with `run : Program … → ⊤`; impure, non-suspending; starts an owned root fiber and returns; init suspends only within that fiber |
 
 The manifest loader validates symbols against their interfaces, including
 constructor result instantiation and launch argument instantiation; inconsistent
@@ -157,6 +171,16 @@ existing contract and supplies the Window entry proof. `--entry` selects a
 worker kind by its program type; ambiguity is invalid_entry_kind. Library
 interfaces preserve deferred bodies/roots as well as descriptor references;
 a URL alone is insufficient to emit a consuming build's worker.
+The runtime's run installs transport/error listeners, starts the Task root and
+returns; the scheduler drives init/handler continuations inside that root.
+The generated entry still calls run(main) synchronously. `entry_runtime_suspends`
+rejects a runtime that could suspend at that call; there is no abandoned
+continuation. Ready follows successful fiber init. Emit.emitEntryWithModule
+already makes a plain call; the runtime contract now agrees with it.
+Type-role paths resolve structurally (including aliases) and must select exactly
+the declared protocol fields. Missing, duplicate or inconsistent paths yield
+invalid_entry_kind. These generic paths are shared by dedicated/shared/pool
+launches; the compiler does not know the names call or stream in source APIs.
 
 A launch argument must be a top-level declaration of the declared program
 type, or a finite selection of such references through aliases, containers or
@@ -242,16 +266,20 @@ value-provenance classifications and exact counts: 556 definite native sites,
 2,130 portable receiver operations, and 170 explicitly caller-dependent
 callable/raw-value sites. The latter retain obligations, never safe defaults.
 
-| Candidate | Effect on the measured code | Guarantee and cost |
+| Candidate | What changes | Guarantee and tradeoff |
 |---|---|---|
-| Typed boundary wrappers only | Move literal accesses and value-based helpers behind a small wrapper surface; replace the three dynamic Listen global lookups | A realm word alone can lie about a wrapper body. Typed host bindings plus checked body access still need a host-shape source; otherwise Window-only access inside a worker-labelled wrapper slips through. Large mechanical migration before any checking. |
-| Compiler host table plus provenance | Check existing literal Js.global/get/call directly; infer requirements of helpers that receive host objects; replace dynamic host names with finite typed selection | Requires a compact pinned WebIDL/ECMAScript shape table and value-flow summaries, but catches the dominant existing beni code without turning it into foreign declarations. Unknown host paths fail closed. |
+| A: manually authored typed wrappers | Redirect 556 native sites; typed bridges for 130 callable and 40 other mixed sites | Real caller types and realm summaries, but privileged raw wrapper bodies remain audited promises. |
+| B: native table plus hidden provenance | Retain 702 native/mixed expressions; explicitly replace 24 dynamic host selectors | Checks raw bodies too, at the cost of a second shape/path inference graph. |
+| C: generated real beni native types | Redirect 556 native sites to typed bindings; retain types through 130 callable and 40 other mixed paths | Uses ordinary types/realm summaries; HostFree prevents native/callable erasure. Generated interface/lowering migration is substantial. |
 
-**Choose the second**, with declaration-local realm words as checked bounds
-and typed selectors for the genuinely dynamic sites. The table describes
-native objects, not beni function names; there is no qualified-name JSON map
-that can drift from a renamed wrapper. The realm word cannot grant permission
-to use a host member that the table says is absent.
+**Recommendation: C; owner decision #1315 gates #1295.** The complete
+[comparison](research/workers-realm-options.md) defines each guarantee, cost,
+interface/cache change, diagnostic, zero-cost lowering and migration row.
+The following subsections retain **option B as a specified alternative**, not
+an adopted requirement. Their hidden descriptors and five-byte fixed summary
+budget apply to B only. Declaration-local checked bounds, per-entry proofs,
+Wire/ownership guarantees and no unchecked public Js.Value apply to every
+option; C uses real native types instead of B's hidden flow paths.
 
 ### Source syntax and host table
 
@@ -349,6 +377,7 @@ that replacement, not silent acceptance.
 | dynamic_host_name | Dynamic global/member expression; known receiver shape, why String is insufficient, typed selector or literal-wrapper fix. |
 | unresolved_host_provenance | Entry use that cannot discharge a parameter/result obligation; show origin/loss path and required native type annotation. |
 | missing_realm_contract | Public host-dependent privileged declaration lacking its source-local word. |
+| entry_runtime_suspends | Platform runtime run declaration and suspending call chain; start an owned root fiber and return instead. |
 | invalid_entry_kind | Platform manifest; unknown symbol, arity/type-role mismatch, absent runtime or invalid realm. |
 | worker_entry_not_static | Launch's program argument; unresolved factory and example of a finite set of top-level program references. |
 | obsolete_host_promise | Platform manifest host key; show entryKind/EntryHost replacement. |
@@ -431,28 +460,27 @@ owning modules from #1278; worker wrappers do not duplicate those handles.
 
 ## 6. Native API adapters and precise failures
 
-The research §9 native-family failure predicates are also normative for
-this design; they are not deferred classifier design. The inventory is the
-surface checklist, including inherited members, both
-postMessage overloads, options dictionaries and event payloads. Common
-EventTarget operations are typed scoped observers: remove on scope close,
-`once`/abort semantics retained, without arbitrary native event dispatch
-masquerading as a worker result. `MessageEvent` retains origin, lastEventId,
-source and transferred ports where applicable. `ErrorEvent` retains message,
-filename, line, column and optional error data for the defect reporter.
-Unknown event payloads/protocol variants from a compiler-owned peer are
-invariant defects; external schema rejection is `ProtocolRejected issues`.
+The [research §9](research/workers-api-research.md#9-exact-native-transfer-and-deserialization-failure-predicates)
+owns the exact native predicates. The following rules explain what the adapter
+protects; the table then names each operation's typed outcomes.
 
-For each catch below, the guard surrounds **only the native operation**, not
-preparation, user callbacks or decoding. DOM failures require a native
-DOMException with the exact name; ECMAScript failures require the named class.
-Unmatched throws/rejections are rethrown into the fatal defect path. Event
-failures are checked by event type and lifecycle state, not exception-message
-substring matching. The public error names in this section denote closed operation-specific ADT
-variants, including preparation/transport errors and the cleanup outcome below.
-No `UnknownError`, broad catch or universal promise catch
-is permitted. `Js.catchIf` already supplies precise rethrowing; do not invent
-a JavaScript helper. Native algorithms and failure anchors are in the research.
+- Wrap only the native operation, so user callbacks and decoding defects cannot
+  become accidental transport errors.
+- Match the specified native exception class and name, so unrelated failures
+  cannot be misreported as an expected refusal.
+- Rethrow every unmatched failure into fatal shutdown, so a program cannot
+  silently continue after an invariant breaks.
+- Classify events by interface and lifecycle state, so forwarded ErrorEvent
+  defects remain fatal even when the browser removes their error object.
+- Preserve MessageEvent metadata and scoped listeners, so callers retain typed
+  data/port ownership without leaking subscriptions.
+- Reject unknown frames from managed peers as defects, so forged protocol
+  success cannot bypass invariants; validate external data into ProtocolRejected.
+
+These are closed operation-specific errors, not UnknownError or message-string
+heuristics. Existing Js.catchIf provides precise rethrowing; no handwritten
+JavaScript helper is needed. Observer once/abort semantics and all inventory
+members remain covered by the API correspondence table.
 
 | Operation | Exact check and typed outcome |
 |---|---|
@@ -476,25 +504,23 @@ This prevents a user callback TypeError from being mistaken for sink rejection.
 [Research §10](research/workers-api-research.md#10-owned-trusted-types-policy-adapter)
 retains the precise creation/validation/default-policy algorithm and fixtures.
 
-`SecurityError` at shared construction has the operation-specific shared name;
-there is no fabricated distinction between indistinguishable security causes.
-Deployment diagnostics can show the URL and advise checking worker-src,
-script-src/default-src fallback, module Content-Type, CORS and COEP, but must
-label those as possible causes. Any native ErrorEvent, including one with `error == null`, is a program
-defect before or after Ready; HTML clears the error object when forwarding
-worker exceptions to owners. Test the event interface, never error-object
-presence. A generic native Event named error before Ready is WorkerLoadFailed;
-unhandled rejection, Defect frame or generic load errors after managed Ready are fatal. Muted
-ErrorEvent metadata remains a defect with limited diagnostics. A host that
-does not preserve these standard event distinctions needs an explicit
-compatibility finding, not a payload-presence heuristic.
+A shared constructor's SecurityError uses its operation-specific name because
+the browser does not reliably distinguish all underlying security causes.
+Diagnostics may suggest CSP/CORS/COEP/MIME checks, but label them as possible
+causes rather than fabricated error variants.
 
-All bytes/URL/source wrappers must document their own acquisition failures;
-worker transport adds no blanket classifier to them. Expected serialization
-errors cannot arise from ordinary structurally checked immutable data but
-remain possible from native resource state, agent-cluster restrictions,
-security and browser support. A raw host getter or proxy is never accepted as
-a beni wire record. External validation must not invoke untrusted accessors.
+Every ErrorEvent is fatal, before or after Ready, because HTML may clear its
+error payload while forwarding it. A generic Event named error before Ready
+is WorkerLoadFailed. A generic load error after managed Ready is fatal because
+a ready managed program must not turn an unexpected runtime failure into data.
+Unhandled rejection and Defect frames always take fatal shutdown. A host that
+cannot preserve these event distinctions needs a compatibility finding.
+
+Native resource state, isolation and support can still cause expected failures,
+so static Wire proof does not remove runtime state checks. Raw getters/proxies
+are not accepted as wire records, so external validation cannot invoke untrusted
+accessors. Bytes/URL/source acquisition errors stay in their owning adapters,
+so transport does not invent a blanket classifier for unrelated operations.
 
 ## 7. Handshake, requests, exits and defect routing
 
@@ -763,9 +789,9 @@ measurements must not run concurrently with another full suite on Dagon.
 |---|---|---|
 | Entry runtime contract | This design | #1287 generalized to realm runtime table, precise program/arity/effect diagnostics and no markup dependency; dev/release fixtures. |
 | Multi-entry emission and bootstrap | Runtime contract | Source-discovered generic entry descriptors, stable IDs, staged defect bootstrap, relative URLs, per-entry roots/maps/collisions and jobs 1/8 output fixtures; never user JS. |
-| Realm checking | Multi-entry roots | Pinned native table, declaration-local bounds, value-flow summaries/cache invalidation, initializer and host:page handling, every §4 realm fixture. Worker builds cannot ship without this gate. |
+| Realm checking | Multi-entry roots; owner #1315 | Selected A/B/C mechanism, declaration-local bounds, interface/cache contract, exact census migration, initializer/EntryHost proofs, diagnostic and no-byte-growth release fixtures. Worker builds cannot ship without this gate. |
 | Wire codecs and ownership moves | Realm check; #1278 | Cross-entry type evidence, owner-selected release-safe representation plans, backing alias demands and partial-failure consumption; negative and round-trip corpus. |
-| Dedicated runtime and defects | Prior compiler slices | Worker-local init/state/root scope, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
+| Dedicated runtime and defects | Prior compiler slices | Borrowed worker-local init/state/root scope, distinct call/stream protocol roles, unsolicited events, full machine adapter, precise native errors, bounded ready handshake, requests/exits/Log, cancellation/scopes and page defect routing proven in Chrome. |
 | Ports, shared workers and broadcast | Dedicated protocol | All inventoried options/overloads/events, shared initializer election versus configuration-free attach, leases/connection scopes, external schema validation, cross-tab and messageerror fixtures. |
 | Native transfer families and atomics | Wire ownership; #1278/#1277 | Every standard type row assigned, implemented and browser-tested or explicit capability refusal; GPU integration, shared memory and typed exact failure coverage. Proposal rows remain visibly gated by owner decision. |
 | Pools, streams and parity measurements | Dedicated/ports | Fixed/elastic bounds, credit/ack/cancel, keep-alive, no implicit retry of moves, size/latency reports and parity-ledger evidence. |
@@ -790,5 +816,6 @@ teach proposed syntax as shipped syntax.
 - Pools, streams and parity measurements: [1300](https://github.com/canassa/beni/issues/1300).
 - Service-worker lifecycle design: [1301](https://github.com/canassa/beni/issues/1301).
 - Owner lifecycle decisions: [1302](https://github.com/canassa/beni/issues/1302).
+- Owner realm-mechanism decision: [1315](https://github.com/canassa/beni/issues/1315).
 - Owner wire-layout decision: [1305](https://github.com/canassa/beni/issues/1305).
 - Suspending browser commands prerequisite: [1306](https://github.com/canassa/beni/issues/1306).

@@ -109,8 +109,8 @@ checking cannot establish the promised guarantee.
 
 ## 2. Mechanism, migration and budget
 
-[workers §4](../workers.md#4-a-realm-check-that-covers-beni-over-js) compares
-wrapper-only and native-table candidates and chooses a pinned table with
+[workers §4](../workers.md#4-a-realm-check-that-covers-beni-over-js) now has an owner-gated [three-way comparison](workers-realm-options.md).
+Its retained option B specifies a pinned table with
 symbolic host provenance and declaration-local checked realm bounds. WebIDL
 Global/Exposed/mixins/partials/member types supply native shapes; ECMAScript
 and host exceptions need a versioned intrinsic supplement. Neither supplement

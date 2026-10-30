@@ -845,12 +845,21 @@ constructors, launch-argument roles, realm and runtime. Source references
 discover entry roots; there is no app `workers` list, qualified `realms` map,
 or implicit Program-to-Entry coercion. The platform chain remains unique
 (§5.3); each entry has its own reachability, initialization and runtime graph.
-Worker runtimes need no markup `start`/`flush` union. Bootstrap stages defect
+Worker runtimes need no markup `start`/`flush` union.
+Worker runtime `run : Program config state protocol → ⊤` is impure and
+non-suspending. It starts an owned Task root and returns; init may suspend
+inside that root, driven by the realm-local scheduler. The emitted entry calls
+run(main) synchronously; entry_runtime_suspends rejects a suspending run. Bootstrap stages defect
 listeners before user evaluation. Only a checked Window projection permits
 the release printer's bare `window`; stale host promises are diagnostics.
 Declaration-local realm words and checked beni-over-Js provenance extend §4's
 privileged boundary. Fatal defects cross connections through private control
 frames, without changing Task.Exit; ordinary close awaits cleanup (§9.8.14).
+
+Owner decision [#1315](https://github.com/canassa/beni/issues/1315) gates the
+realm mechanism: generated native types are recommended; hidden provenance
+remains specified as option B, not adopted. Common EntryHost/realm guarantees
+apply to either. Grouped protocol roles distinguish call and stream inputs.
 
 
 `main`'s type is a platform fact, and so is the shape of the artifact. A browser platform wants a

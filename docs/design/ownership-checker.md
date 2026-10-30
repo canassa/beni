@@ -3792,8 +3792,9 @@ closures and in-flight fibers all participate. Preparation reserves ownership;
 commit consumes the whole attempted list on success or failure because native
 steps can partially detach it. Privileged cleanup releases still-local remnants,
 never resurrects aliases. Port moves rehome cleanup registration. Worker init
-state belongs to its root; serial handlers return it, concurrent handlers must
-borrow stable state. Chunk/Reply/Sink/Message tokens enforce one owner and one
+state belongs to its root; all handlers borrow stable state. Serial/concurrent admission
+changes ordering, not state ownership. Atomic Ref/machine updates and scoped
+resource transactions preserve state across request cancellation. Chunk/Reply/Sink/Message tokens enforce one owner and one
 terminal outcome. SharedArrayBuffer is explicitly shared storage, not a move.
 Negative corpus/oracle fixtures must cover these demands before launching ships.
 

@@ -25,11 +25,11 @@ import Schema exposing (Schema, Issue)
 import Task exposing (Scope)
 import Browser.WorkerStream exposing (Stream, Sink)
 
--- Opaque: Program config state request reply error event chunk
--- Opaque: Handle request reply error event chunk
+-- Opaque: Program config state protocol
+-- Opaque: Handle protocol
 -- Opaque: Ticket error reply; Prepared a; Context event; ConnectionId
 -- Opaque: Reply error reply; Command msg; Subscription msg; ScriptUrl
--- Opaque: Protocol input output; Policy; PolicyName
+-- Opaque: ExternalProtocol input output; Policy; PolicyName
 -- Opaque: ExternalPrepared input output
 
 pub type UrlError = InvalidUrl
@@ -80,7 +80,6 @@ pub type TransportError
     | ProtocolRejected (List Issue)
     | PeerUnresponsive
     | PeerClosed
-    | WorkerStateLost
     | CleanupAbandoned
 pub type OpenReason error
     = UnsupportedWorkerKind
@@ -112,53 +111,55 @@ pub type alias Options =
     heartbeatEvery : Duration
     leaseWithin : Duration
     queuedRequests : Int
+    concurrency : Int
     queuedEvents : Int
     queuedBytes : Int
     policy : Maybe Policy
 
-pub type alias Definition config state request reply error event chunk =
+-- A type-only grouping: never construct or send a value of this record type.
+pub type alias Protocol call reply streamRequest error event chunk =
+    call : call
+    reply : reply
+    stream : streamRequest
+    error : error
+    event : event
+    chunk : chunk
+
+pub type alias Definition config state call reply streamRequest error event chunk =
     init : Context event, config → Result error state
     start : sync (Context event, borrowed state → ⊤)
-    handle : Context event, state, request → state × Result error reply
-    stream : Context event, state, request, Sink error chunk → state × Result error ⊤
+    handle : Context event, borrowed state, call → Result error reply
+    stream : Context event, borrowed state, streamRequest, Sink error chunk → Result error ⊤
 
--- pure; init/start/handle/stream bodies are deferred entry roots, not page calls.
-pub program : entry Definition config state request reply error event chunk
-    → Program config state request reply error event chunk
-
-pub type alias ConcurrentDefinition config state request reply error event chunk =
-    init : Context event, config → Result error state
-    start : sync (Context event, borrowed state → ⊤)
-    handle : Context event, borrowed state, request → Result error reply
-    stream : Context event, borrowed state, request, Sink error chunk → Result error ⊤
-
--- pure; entry ownership checks require start/handlers to borrow stable state.
-pub concurrent : entry ConcurrentDefinition config state request reply error event chunk
-    → Program config state request reply error event chunk
+-- pure; callbacks are deferred entry roots. Both constructors borrow stable state.
+pub program : entry Definition config state call reply streamRequest error event chunk
+    → Program config state (Protocol call reply streamRequest error event chunk)
+pub concurrent : entry Definition config state call reply streamRequest error event chunk
+    → Program config state (Protocol call reply streamRequest error event chunk)
 
 -- pure
 pub options : Options
 -- suspends; argument 1 is the generic entry edge, config is serialized.
-pub open : Scope, Program config state request reply error event chunk, config, Options
-    → Result (OpenError error) (Handle request reply error event chunk)
+pub open : Scope, Program config state (Protocol call reply streamRequest error event chunk), config, Options
+    → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))
 -- suspends; caller cancellation interrupts the handler and awaits cleanup.
-pub call : Handle request reply error event chunk, request → Result (CallError error) reply
+pub call : Handle (Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply
 -- suspends; opens the producer scope, returns once admitted, not after exhaustion.
-pub stream : Handle request reply error event chunk, request
+pub stream : Handle (Protocol call reply streamRequest error event chunk), streamRequest
     → Result (CallError error) (Stream (CallError error) chunk)
 -- impure; one consumer per connection, repeated access returns the same stream.
-pub events : Handle request reply error event chunk → Stream TransportError event
+pub events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event
 -- impure, synchronous codec/commit path; prepared inputs are consumed.
-pub send : Handle request reply error event chunk, Prepared request
+pub send : Handle (Protocol call reply streamRequest error event chunk), Prepared call
     → Result SendError (Ticket error reply)
 -- suspends
 pub await : Ticket error reply → Result (CallError error) reply
 -- suspends, cancel-and-wait; idempotent terminal outcome.
 pub cancel : Ticket error reply → Cleanup
 -- suspends
-pub close : Handle request reply error event chunk → Cleanup
+pub close : Handle (Protocol call reply streamRequest error event chunk) → Cleanup
 -- impure, explicit destructive native terminate; never a scope finalizer.
-pub abort : Handle request reply error event chunk → Cleanup
+pub abort : Handle (Protocol call reply streamRequest error event chunk) → Cleanup
 
 -- impure; preparation without a suspending conversion, takes ownership reservation.
 pub prepare : a → Result PrepareError (Prepared a)
@@ -181,7 +182,7 @@ pub connections : Context event → List ConnectionId
 pub emitTo : Context event, ConnectionId, event → Result EmitError ⊤
 
 -- pure, protocol's typed directional schemas validate external peers.
-pub protocol : Schema encodedIn input, Schema encodedOut output → Protocol input output
+pub externalProtocol : Schema encodedIn input, Schema encodedOut output → ExternalProtocol input output
 -- impure; precise URL parse; policy execution remains outside native constructor guard.
 pub scriptUrl : String → Result UrlError ScriptUrl
 -- impure; a platform-owned total callback returns already accepted URLs only.
@@ -194,7 +195,7 @@ pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError Scr
 
 `options` supplies name empty, same-origin credentials, 30 s ready deadline,
 5 s cleanup observation, 5 s heartbeat, 30 s lease, 64 queued requests,
-64 queued events and 1 MiB queue bytes; these are configurable policy defaults,
+64 queued events, concurrency 1 and 1 MiB queue bytes; these are configurable policy defaults,
 not performance claims. Open validates positivity, finite values and lease ≥
 heartbeat before acquiring a native worker. No successful close is inferred
 from a deadline. A failed init returns InitializationFailed with cleanup status.
@@ -209,11 +210,46 @@ bounded startup queue. A defect during init remains fatal and never becomes that
 
 `start` runs after init and before Ready only until it has installed its
 root-scoped children; it must be non-suspending. Long-running pushes use
-Task.spawnIn with the supplied scope. The ownership checker prevents retaining
-an alias of state that a serial handler later consumes. Concurrent handlers
-may not consume stable state; root-owned mutable resources require explicit
-Ref/Semaphore ownership. These obligations are checked at program construction,
+Task.spawnIn with the supplied scope. All handlers borrow stable root state; cancellation cannot consume or
+replace it. Ref updates and machine updates are synchronous atomic steps;
+longer transactions use a scoped Semaphore with cancellation-safe release.
+Neither constructor may move a root-owned GPU device/model out of state.
+Concurrent handlers require the same proof and explicit synchronization for
+shared mutable resources. These obligations are checked at program construction,
 not a user promise hidden in the runtime.
+
+
+`Program config state protocol`, `Handle protocol` and `Pool protocol` carry
+one type-only protocol record. For example `type alias Jobs = Worker.Protocol
+Predict Int Frames Error Event Int` is shared by both sides. Ordinary alias
+expansion/unification selects its fields; there are no new associated-type
+projections or runtime protocol records. The eight parameters of Definition
+are spelled out only at generic constructor signatures. A call-only protocol
+uses `⊥` for streamRequest (and usually chunk); its required stream callback
+eliminates that empty input with Basics.never. No value can be supplied
+to Worker.stream, and no runtime WrongRequest branch exists. ExternalProtocol
+is a different, value-level pair of schemas for untyped native peers.
+
+Serial program admits one call **or** stream producer until its scope settles.
+Concurrent admits independent request scopes up to the configured bound.
+Both borrow state; serial admission is ordering, not ownership consumption.
+Worker.Options.concurrency must equal 1 for program/machine; concurrent permits
+a positive bound. Pool.Options.perWorkerConcurrency supplies that bound for
+pool-owned workers (overriding worker.concurrency before validation). Shared
+initialization fixes the instance concurrency; connect with a different bound
+returns IncompatibleInstanceOptions, rather than changing other clients' limits.
+Atomic Ref/machine updates preserve a valid state at every cancellation point;
+a multi-step invariant uses Semaphore and a finalizer, not a suspended Ref update.
+No concrete use case here requires a consuming constructor: resource replacement
+can be an atomic machine update or an explicit resource transaction. It is
+removed along with WorkerStateLost, rather than retaining default retirement.
+
+The entry runtime has `run : Program config state protocol → ⊤`, **impure and
+non-suspending**. It installs listeners and starts an owned root fiber, then
+returns to the host. init and later handlers may suspend inside that fiber;
+the realm-local Task scheduler drives their continuations. Ready waits for
+init, not for the synchronous run call to return. This is platform runtime
+machinery, not an additional public Browser.Worker function.
 
 ### External endpoints
 
@@ -232,7 +268,7 @@ pub type alias ExternalOptions =
     kind : ScriptKind
     shutdown : ExternalShutdown
 -- suspends; native construction/load observation, no invented Ready for raw scripts.
-pub openExternal : Scope, ScriptUrl, Protocol input output, ExternalOptions
+pub openExternal : Scope, ScriptUrl, ExternalProtocol input output, ExternalOptions
     → Result (OpenError ⊥) (External input output)
 -- suspends; endpoint input schema runs here, binding plan and generation to token.
 pub preparePost : External input output, input
@@ -272,15 +308,15 @@ scope-owned reservations and their discard/abandonment paths release resources.
 ### Elm-shaped state machine
 
 ```text
-pub type alias Machine config model msg request reply error event chunk =
+pub type alias Machine config model msg call reply streamRequest error event chunk =
     init : Context event, config → Result error (model × Command msg)
     update : sync (Context event, msg, model → model × Command msg)
     subscriptions : sync (model → Subscription msg)
-    request : sync (request, Reply error reply → msg)
-    stream : sync (request, Sink error chunk → msg)
+    request : sync (call, Reply error reply → msg)
+    stream : sync (streamRequest, Sink error chunk → msg)
 -- pure; update/request/stream/subscriptions callbacks are sync, init may suspend.
-pub machine : entry Machine config model msg request reply error event chunk
-    → Program config model request reply error event chunk
+pub machine : entry Machine config model msg call reply streamRequest error event chunk
+    → Program config model (Protocol call reply streamRequest error event chunk)
 -- pure
 pub none : Command msg
 pub batch : List (Command msg) → Command msg
@@ -314,13 +350,14 @@ Disconnect never closes another client's scope.
 import Browser.Worker as Worker
 import Browser.WorkerStream exposing (Stream)
 import Task exposing (Scope)
--- Opaque: Program config state request reply error event chunk
--- Opaque: Handle request reply error event chunk
+-- Opaque: Program config state protocol
+-- Opaque: Handle protocol
 pub type OpenReason error
     = WorkerOpen (Worker.OpenReason error)
     | SharedStorageDenied
     | AlreadyInitialized
     | NotInitialized
+    | IncompatibleInstanceOptions
 pub type alias OpenError error =
     reason : OpenReason error
     cleanup : Worker.Cleanup
@@ -329,28 +366,28 @@ pub type alias Options =
     extendedLifetime : Bool
 -- pure
 pub options : Options
-pub program : entry Worker.ConcurrentDefinition config state request reply error event chunk
-    → Program config state request reply error event chunk
-pub concurrent : entry Worker.ConcurrentDefinition config state request reply error event chunk
-    → Program config state request reply error event chunk
-pub machine : entry Worker.Machine config model msg request reply error event chunk
-    → Program config model request reply error event chunk
+pub program : entry Worker.Definition config state call reply streamRequest error event chunk
+    → Program config state (Worker.Protocol call reply streamRequest error event chunk)
+pub concurrent : entry Worker.Definition config state call reply streamRequest error event chunk
+    → Program config state (Worker.Protocol call reply streamRequest error event chunk)
+pub machine : entry Worker.Machine config model msg call reply streamRequest error event chunk
+    → Program config model (Worker.Protocol call reply streamRequest error event chunk)
 -- suspends; Window-only launch, same generic program-argument role as Worker.open.
-pub open : Scope, Program config state request reply error event chunk, config, Options
-    → Result (OpenError error) (Handle request reply error event chunk)
+pub open : Scope, Program config state (Worker.Protocol call reply streamRequest error event chunk), config, Options
+    → Result (OpenError error) (Handle (Worker.Protocol call reply streamRequest error event chunk))
 -- suspends; attach without a configuration payload; same generic program edge.
-pub connect : Scope, Program config state request reply error event chunk, Options
-    → Result (OpenError error) (Handle request reply error event chunk)
+pub connect : Scope, Program config state (Worker.Protocol call reply streamRequest error event chunk), Options
+    → Result (OpenError error) (Handle (Worker.Protocol call reply streamRequest error event chunk))
 -- pure; legacy string-name constructor form, defaults all other fields.
 pub named : String → Options
 -- suspends
-pub call : Handle request reply error event chunk, request → Result (Worker.CallError error) reply
-pub stream : Handle request reply error event chunk, request
+pub call : Handle (Worker.Protocol call reply streamRequest error event chunk), call → Result (Worker.CallError error) reply
+pub stream : Handle (Worker.Protocol call reply streamRequest error event chunk), streamRequest
     → Result (Worker.CallError error) (Stream (Worker.CallError error) chunk)
-pub close : Handle request reply error event chunk → Worker.Cleanup
+pub close : Handle (Worker.Protocol call reply streamRequest error event chunk) → Worker.Cleanup
 -- impure
-pub events : Handle request reply error event chunk → Stream Worker.TransportError event
-pub send : Handle request reply error event chunk, Worker.Prepared request
+pub events : Handle (Worker.Protocol call reply streamRequest error event chunk) → Stream Worker.TransportError event
+pub send : Handle (Worker.Protocol call reply streamRequest error event chunk), Worker.Prepared call
     → Result Worker.SendError (Worker.Ticket error reply)
 ```
 
@@ -365,10 +402,10 @@ client/root scopes settle, under the owner-approved defect/lifetime policy.
 ```text
 import Browser.MessagePort as Port
 -- impure, nonmovable observation/lifecycle view; does not grant raw protocol send.
-pub port : Handle request reply error event chunk → Port.ManagedView
+pub port : Handle (Worker.Protocol call reply streamRequest error event chunk) → Port.ManagedView
 -- Opaque: External input output
 -- suspends; raw semantics as Worker.openExternal, including no invented Ready.
-pub openExternal : Scope, Worker.ScriptUrl, Worker.Protocol input output, Options, Worker.ScriptKind
+pub openExternal : Scope, Worker.ScriptUrl, Worker.ExternalProtocol input output, Options, Worker.ScriptKind
     → Result (OpenError ⊥) (External input output)
 -- impure, borrower of the raw endpoint; same owner as External.
 pub externalPort : External input output → Port.Port input output
@@ -385,7 +422,7 @@ that shared root state across a suspension. Use explicit root-owned Ref or
 Semaphore resources for mutable state, or machine's non-suspending update to
 replace a model before async commands run. This preserves isolation: cancelling
 one client cannot lose a consuming state lease and retire other clients.
-The consuming Worker.Definition constructor is dedicated-only. Shared init is
+There is no consuming-state constructor. Shared init is
 instance-owned after election; losing its initiating client does not cancel it
 while another connection remains. With no clients, ordinary root cleanup applies.
 
@@ -416,7 +453,7 @@ pub type ReceiveError
     | MessageDeserializationFailed
     | ProtocolRejected (List Schema.Issue)
 -- impure
-pub channel : Scope, Worker.Protocol a b
+pub channel : Scope, Worker.ExternalProtocol a b
     → Result PortError (Port a b × Port b a)
 pub start : Port input output → Result PortError ⊤
 pub post : Port input output, Prepared input output → Result PortError ⊤
@@ -431,7 +468,7 @@ pub prepare : Port input output, input → Result Worker.PrepareError (Prepared 
 pub receive : Port input output → Result ReceiveError output
 pub receiveMessage : Port input output → Result ReceiveError (Worker.Message output)
 -- impure; adopt raw endpoint with declared schemas, no invented peer handshake.
-pub receivePort : Scope, Worker.ReceivedPort, Worker.Protocol a b
+pub receivePort : Scope, Worker.ReceivedPort, Worker.ExternalProtocol a b
     → Result PortError (Port a b)
 -- impure; enables managed observer delivery; closing view delegates to managed close request.
 pub startManaged : ManagedView → ⊤
@@ -581,7 +618,7 @@ import Browser.Worker as Worker
 import Browser.WorkerStream exposing (Stream)
 import Duration exposing (Duration)
 import Task exposing (Scope)
--- Opaque: Pool request reply error event chunk
+-- Opaque: Pool protocol
 pub type Size = Fixed Int | Elastic { minimum : Int, maximum : Int, idleFor : Duration, utilization : Float }
 pub type alias Options =
     size : Size
@@ -595,15 +632,15 @@ pub type alias Stats =
     busy : Int
     queued : Int
 -- suspends; configFor receives stable pool-local slot ID, never a global build ID.
-pub open : Scope, Worker.Program config state request reply error event chunk, (Int → config), Options
-    → Result (OpenError error) (Pool request reply error event chunk)
-pub call : Pool request reply error event chunk, request → Result (CallError error) reply
-pub stream : Pool request reply error event chunk, request
+pub open : Scope, Worker.Program config state (Worker.Protocol call reply streamRequest error event chunk), (Int → config), Options
+    → Result (OpenError error) (Pool (Worker.Protocol call reply streamRequest error event chunk))
+pub call : Pool (Worker.Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply
+pub stream : Pool (Worker.Protocol call reply streamRequest error event chunk), streamRequest
     → Result (CallError error) (Stream (CallError error) chunk)
-pub close : Pool request reply error event chunk → Worker.Cleanup
+pub close : Pool (Worker.Protocol call reply streamRequest error event chunk) → Worker.Cleanup
 -- impure
-pub stats : Pool request reply error event chunk → Stats
-pub events : Pool request reply error event chunk → Stream Worker.TransportError (Int × event)
+pub stats : Pool (Worker.Protocol call reply streamRequest error event chunk) → Stats
+pub events : Pool (Worker.Protocol call reply streamRequest error event chunk) → Stream Worker.TransportError (Int × event)
 ```
 
 A serial program with perWorkerConcurrency > 1 is InvalidPool, not silent
@@ -733,3 +770,15 @@ before native commit with PreparedForDifferentPort/PreparedForDifferentChannel,
 consume the attempted token and dispose still-local resources. A same payload
 type is not evidence of matching schema encodings. Port.discard and broadcast
 discard cancel uncommitted reservations; endpoint scope cleanup owns leftovers.
+
+A call-only API can name its grouped types without inventing a stream request:
+
+```text
+pub type alias CallsOnly = Worker.Protocol Call Int ⊥ Error Event ⊥
+noStream : Worker.Context Event, borrowed Model, ⊥, Stream.Sink Error ⊥ → Result Error ⊤
+noStream context model impossible sink = never impossible
+```
+
+This is a signature fragment using the example's Call/Error/Event/Model names,
+not a second protocol value. `Worker.stream handle (Frames 1)` on a CallsOnly
+handle is refused with the ordinary type mismatch: expected ⊥, got StreamRequest.
