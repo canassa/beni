@@ -101,9 +101,18 @@ pub const Table = struct {
     /// `map`'s knot test (§2.3 *map*, #1372): a node or delta whose image
     /// is open (entered, its parts not all mapped) → its entry index; a
     /// mapped node → the earliest open node its image reaches (`MapLow`).
-    /// An image that reaches no open node is on no knot and is interned.
+    /// An image that reaches no open node is interned: no back edge can
+    /// name its slot (it may still lie on an enclosing knot, reached only
+    /// through a knot that closed; that is harmless, and not Tarjan's test).
     map_open: stamped.Column(NodeId, u32) = .{},
     map_low: stamped.Column(NodeId, MapLow) = .{},
+    /// The built nodes the last `map` relabelled (`mapSource`): what a
+    /// read-off's κ carry counts at a position (`Cond.Relabel.present`).
+    map_src: stamped.Column(NodeId, void) = .{},
+    /// The images built sources took in the last `map`, and whether two
+    /// took one (only then does read-off's κ carry count them per position).
+    map_images: stamped.Column(NodeId, void) = .{},
+    map_shared: bool = false,
     /// `armCount`'s memo: a choice DAG's arms, by node.
     arm_count: stamped.Column(NodeId, u32) = .{},
     /// `arrivals`' memo: the cells of a node's reach that are not apart
@@ -201,6 +210,8 @@ pub const Table = struct {
         t.memo_map.deinit(gpa);
         t.map_open.deinit(gpa);
         t.map_low.deinit(gpa);
+        t.map_src.deinit(gpa);
+        t.map_images.deinit(gpa);
         t.arm_count.deinit(gpa);
         t.arrivals_memo.deinit(gpa);
         t.memo_force.deinit(gpa);
@@ -1456,29 +1467,32 @@ pub const Table = struct {
 
     /// How many arms `n`'s choice DAG has, an arm counted once per route,
     /// saturating: the size a flattening join keeps whole (`joinAlternatives`).
-    /// Memoised per node on an explicit stack; a node is immutable, and a
-    /// node met again before it is counted (no choice lies on a cycle,
-    /// §2.3) counts one.
+    /// Memoised per node on an explicit stack, a count stored only once
+    /// it is final (a refused reservation leaves none behind); a node is
+    /// immutable, and a node met again while it is counted (no choice
+    /// lies on a cycle, §2.3) counts one.
     fn armCount(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!u32 {
         if (t.kind(n) != .choice) return 1;
         try account.reserve(.memo, 1);
         if (t.arm_count.get(n)) |c| return c;
         const Frame = struct { node: NodeId, expanded: bool };
+        const open = try t.marks.take(gpa);
+        defer t.marks.give(open);
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });
         while (stack.pop()) |f| {
             const d = t.get(f.node);
             if (!f.expanded) {
-                if (t.arm_count.get(f.node) != null) continue;
+                if (t.arm_count.get(f.node) != null or open.contains(f.node)) continue;
                 try account.reserve(.inspection, 1);
-                try t.arm_count.put(gpa, f.node, 1);
+                try open.put(gpa, f.node, {});
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                for ([_]u32{ d.a, d.b }) |s| if (t.kind(.from(s)) == .choice and t.arm_count.get(.from(s)) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
+                for ([_]u32{ d.a, d.b }) |s| if (t.kind(.from(s)) == .choice and t.arm_count.get(.from(s)) == null and !open.contains(.from(s))) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
                 continue;
             }
             var c: u32 = 0;
-            for ([_]u32{ d.a, d.b }) |s| c +|= if (t.kind(.from(s)) == .choice) t.arm_count.get(.from(s)).? else 1;
+            for ([_]u32{ d.a, d.b }) |s| c +|= if (t.kind(.from(s)) == .choice) t.arm_count.get(.from(s)) orelse 1 else 1;
             try t.arm_count.put(gpa, f.node, c);
         }
         return t.arm_count.get(n).?;
@@ -2452,8 +2466,8 @@ pub const Table = struct {
     /// The functor relabelling cells: `f(ctx, set) → set` applied to every
     /// node's `ε` cells, memoised per node within one call so a DAG stays
     /// a DAG (#856). A cyclic node is mapped to a node of the same shape.
-    /// An image on no knot is interned (#1372): a value relabelled to what
-    /// an earlier relabelling made is that node, so a round's unchanged
+    /// An image no back edge can name is interned (#1372): a value relabelled to
+    /// what an earlier relabelling made is that node, so a round's unchanged
     /// value keeps its id and every memo keyed by it hits. Interning is by
     /// the record, never by absorption: a union, choice or positions image
     /// keeps both its sides, so no occurrence is dropped (§2.9).
@@ -2461,7 +2475,19 @@ pub const Table = struct {
         t.memo_map.clear();
         t.map_open.clear();
         t.map_low.clear();
+        t.map_src.clear();
+        t.map_images.clear();
+        t.map_shared = false;
         return t.mapWalk(gpa, account, n, ctx, f);
+    }
+
+    /// The built node of the last `map` that `x` stands for: itself, or
+    /// what `eager` made of it or of a view's answer; null for none.
+    pub fn mapSource(t: *const Table, x: NodeId) ?NodeId {
+        for ([_]?NodeId{ x, t.eagerOf(x), t.answerOf(x), if (t.answerOf(x)) |a| t.eagerOf(a) else null }) |c| {
+            if (c) |s| if (t.map_src.contains(s)) return s;
+        }
+        return null;
     }
 
     /// The earliest open node an image reaches: its entry index, and the
@@ -2506,7 +2532,7 @@ pub const Table = struct {
         // `f` runs on entry, as the recursion ran it, and parts in the
         // recursion's order, so what `f` interns is interned as before.
         // Each node or delta entered is open until its parts are mapped; an
-        // image that reaches no open node is on no knot and is interned
+        // image that reaches no node still open is interned
         // (`mapAdopt`), one that does stays the record it was made as.
         const Frame = struct { node: NodeId, expanded: bool, cells: SetId = .none, eager: NodeId = .none };
         var stack: std.ArrayList(Frame) = .empty;
@@ -2655,11 +2681,14 @@ pub const Table = struct {
                     }
                     // Closed: a part that named it named the knot's own
                     // record; one that reaches an earlier open node is on
-                    // that node's knot. Neither is interned.
+                    // that node's knot. Neither is interned; every other
+                    // image is, as no back edge can name its slot.
                     t.map_open.put(gpa, n, map_closed) catch unreachable;
                     if (low) |l| {
                         if (l.index < index) try t.map_low.put(gpa, n, l);
                     } else try t.memo_map.put(gpa, n, try t.mapAdopt(gpa, out));
+                    try t.map_src.put(gpa, n, {});
+                    if ((try t.map_images.getOrPut(gpa, t.memo_map.get(n).?)).found_existing) t.map_shared = true;
                 },
             }
         }

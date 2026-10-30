@@ -56,7 +56,9 @@ const layers = [_]Entry{
     // destination class, the fold conditions), which §3.4 puts in Cond.
     // 2 700 since #1199: the read's summaryExcl and the cell set per key.
     // 4 220 since #1335: `foldCondOf` by the cycle walk.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4220 },
+    // §5 says 4 260 since #1372's review: a source with no entry reads
+    // `lost` where it shares an image (`Relabel.present`).
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4260 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
