@@ -1,0 +1,25 @@
+-- ownership (project): see Main.beni. The callees, whose classes read a
+-- field below their argument's (#1325).
+pub type Box
+    = Box (List Int) Int
+
+
+rb r = List.length r.b
+
+
+pub rxb2 g = rb g.x
+
+
+tb ( _, l ) = List.length l
+
+
+pub txb2 g = tb g.x
+
+
+cb b =
+    case b of
+        Box l _ →
+            List.length l
+
+
+pub cxb2 g = cb g.x
