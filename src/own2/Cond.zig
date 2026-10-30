@@ -192,6 +192,9 @@ pub const Table = struct {
     memo_map_eq: Ids.FixedDict(4) = .{},
     memo_fold_below: Ids.FixedDict(1) = .{},
     memo_map_union: Ids.FixedDict(3) = .{},
+    memo_map_reach: Ids.FixedDict(2) = .{},
+    memo_per_cell: Ids.FixedDict(2) = .{},
+    memo_set_agg: Ids.FixedDict(1) = .{},
     /// A read made with no crossing (a redo, the cross-check) and with no
     /// memo (the cross-check); and how many reads crossed, and were redone.
     /// The shape table whose nodes key this table's entries, told of each new
@@ -256,6 +259,9 @@ pub const Table = struct {
         t.memo_map_eq.deinit(gpa);
         t.memo_fold_below.deinit(gpa);
         t.memo_map_union.deinit(gpa);
+        t.memo_map_reach.deinit(gpa);
+        t.memo_per_cell.deinit(gpa);
+        t.memo_set_agg.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -1545,13 +1551,10 @@ pub const Table = struct {
     fn mapsEqOnUncached(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
         try charge.reserve(gpa, .inspection, 1);
         if (a == Ids.none_int or b == Ids.none_int) {
-            // Every key of the other side is bound on one side alone.
-            var it = t.mapEntries(if (a == Ids.none_int) b else a);
-            while (it.next()) |e| {
-                try charge.reserve(gpa, .inspection, 1);
-                if (try v.shapes.tested(gpa, charge.account, .from(e.key), region)) return false;
-            }
-            return true;
+            // Every key of the other side is bound on one side alone: none may
+            // be tested, one query over the subtree's keys and their `bases*`.
+            const sub = try t.mapReach(gpa, charge, v, if (a == Ids.none_int) b else a);
+            return !try v.shapes.node_sets.intersects(gpa, charge, sub, region);
         }
         const na = t.mapNode(a);
         const nb = t.mapNode(b);
@@ -1586,6 +1589,25 @@ pub const Table = struct {
         return try t.mapsEqOn(gpa, charge, v, a, Ids.none_int, region) and try t.mapsEqOn(gpa, charge, v, Ids.none_int, b, region);
     }
 
+    /// The keys of an entry map's subtree and their `bases*`, as one node set
+    /// (*The comparison and its cost*): what a one-sided subtree is tested
+    /// against. Memoised per map node within one `base_epoch`, made from its
+    /// two halves' sets by `unionMemo`, so a map built over an earlier one
+    /// costs its new spine. The recursion is the key width.
+    fn mapReach(t: *Table, gpa: Allocator, charge: Charge, v: View, m: u32) Error!SetId {
+        if (m == Ids.none_int) return .none;
+        const key: [2]u32 = .{ m, v.shapes.base_epoch };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_map_reach.get(key)) |hit| return .from(hit);
+        const n = t.mapNode(m);
+        const out: SetId = if (n.mask == 0)
+            try v.shapes.basesClosure(gpa, charge.account, .from(n.prefix))
+        else
+            try v.shapes.node_sets.unionMemo(gpa, charge, &v.shapes.memo_node_union, try t.mapReach(gpa, charge, v, n.left), try t.mapReach(gpa, charge, v, n.right));
+        (try t.memo_map_reach.getOrPut(gpa, key)).value_ptr.* = out.int();
+        return out;
+    }
+
     /// One kind and one atom set (`flat`): what a block and a verdict see.
     fn sameCond(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!bool {
         if (a == b) return true;
@@ -1613,22 +1635,139 @@ pub const Table = struct {
     /// κ from the cells at the read's position (header), `extra` arrivals
     /// counted besides them at a summary position; charged per read.
     fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, extra: []const Item) Error!CondId {
-        if (!at_summary) {
-            var it = v.cells.sets.iterate(cells);
-            while (it.next()) |e| {
-                try charge.reserve(gpa, .inspection, 1);
-                if (e.value == 1 or v.cells.origin(.from(e.key)) == .top) return lost;
-            }
-            return yes;
-        }
+        // At a plain path: `lost` for an approximate cell or `⊤` (`anyLost`,
+        // memoised per radix node).
+        if (!at_summary) return if (try t.anyLost(gpa, charge, v.cells, cells)) lost else yes;
+        // `summaryExcl(cells) ∧ apart(cells ⊎ extra)` (*The derivation*): the
+        // set's aggregate, memoised per radix node, the repeats added to it as
+        // second occurrences.
+        var a = try t.setAgg(gpa, charge, v.cells, v.places, cells);
+        for (extra) |x| a = try t.aggAdd(gpa, charge, v.cells, v.places, a, x.cell, x.approx, true);
+        const k = try t.@"and"(gpa, charge, try t.summaryExcl(gpa, charge, v.cells, v.places, cells), try t.aggCond(gpa, charge, v.cells, v.places, a));
+        if (std.debug.runtime_safety and full_cross_check) try t.expectSame(gpa, charge, k, try t.derivedCellsFlat(gpa, charge, v, cells, extra));
+        return k;
+    }
+
+    /// `derivedCells` the old way, a list sorted once (the cross-check's).
+    fn derivedCellsFlat(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, extra: []const Item) Error!CondId {
         var items: std.ArrayList(Item) = .empty;
         defer items.deinit(gpa);
         try items.appendSlice(gpa, extra);
         var it = v.cells.sets.iterate(cells);
         while (it.next()) |e| try items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
-        const k = try t.summaryExcl(gpa, charge, v.cells, v.places, cells);
+        const k = try t.summaryExclFlat(gpa, charge, v.cells, v.places, cells);
         return t.@"and"(gpa, charge, k, try t.apart(gpa, charge, v.cells, v.places, items.items, null));
     }
+
+    /// The aggregate of a cell set (`Agg`), a use mark left out: memoised per
+    /// radix node, a node's the disjoint join of its two halves' (`aggJoin`).
+    /// Post-order on an explicit stack.
+    pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, cells: SetId) Error!Agg {
+        if (cells == .none) return .{};
+        if (cellt.sets.branches(cells) == null) {
+            var it = cellt.sets.iterate(cells);
+            const e = it.next().?;
+            if (cellt.origin(.from(e.key)) == .mark) return .{};
+            return t.aggAdd(gpa, charge, cellt, places, .{}, .from(e.key), e.value == 1, false);
+        }
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_set_agg.get(.{cells.int()})) |hit| return t.aggs.items[hit];
+        var stack: std.ArrayList(SetId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, cells);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.memo_set_agg.get(.{x.int()}) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            try charge.reserve(gpa, .memo, 1);
+            const a: Agg = if (cellt.sets.branches(x)) |kids| blk: {
+                var halves: [2]Agg = .{ .{}, .{} };
+                var missing = false;
+                for (kids, 0..) |kid, i| {
+                    if (kid == .none) continue;
+                    if (t.memo_set_agg.get(.{kid.int()})) |h| halves[i] = t.aggs.items[h] else {
+                        missing = true;
+                        try stack.append(gpa, kid);
+                    }
+                }
+                if (missing) continue;
+                break :blk try t.aggJoin(gpa, charge, cellt, places, halves[0], halves[1]);
+            } else blk: {
+                var it = cellt.sets.iterate(x);
+                const e = it.next().?;
+                if (cellt.origin(.from(e.key)) == .mark) break :blk .{};
+                break :blk try t.aggAdd(gpa, charge, cellt, places, .{}, .from(e.key), e.value == 1, false);
+            };
+            (try t.memo_set_agg.getOrPut(gpa, .{x.int()})).value_ptr.* = try t.agg(gpa, a);
+            _ = stack.pop();
+        }
+        return t.aggs.items[t.memo_set_agg.get(.{cells.int()}).?];
+    }
+
+    /// Two aggregates of disjoint cell sets as one, a set's two halves (*The
+    /// derivation*): the sets united as they are, the taken-element rule met
+    /// across them, and the pairs over a base both bind added as `aggAdd`
+    /// adds them, the smaller side's cells of that base one by one. No repeat
+    /// arises: the keys are disjoint.
+    fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        if (x.all == .none) return y;
+        if (y.all == .none) return x;
+        try charge.reserve(gpa, .inspection, 1);
+        const sets = &cellt.sets;
+        var a: Agg = .{
+            .all = try sets.unionWith(gpa, charge, x.all, y.all),
+            .all_len = x.all_len + y.all_len,
+            .dups = try sets.unionWith(gpa, charge, x.dups, y.dups),
+            .dups_approx = try sets.unionWith(gpa, charge, x.dups_approx, y.dups_approx),
+            .lost_extra = x.lost_extra or y.lost_extra,
+            .group = try sets.unionWith(gpa, charge, x.group, y.group),
+            .group_len = x.group_len + y.group_len,
+            .whole = try sets.unionWith(gpa, charge, x.whole, y.whole),
+            .elems = try sets.unionWith(gpa, charge, x.elems, y.elems),
+            .pairs = try t.@"and"(gpa, charge, x.pairs, y.pairs),
+            .hit = x.hit or y.hit or try sets.intersects(gpa, charge, x.whole, y.elems) or try sets.intersects(gpa, charge, x.elems, y.whole),
+        };
+        // The bases: the larger side's map, the smaller's bases added to it.
+        const big, const small = if (x.group_len >= y.group_len) .{ x, y } else .{ y, x };
+        a.bases = big.bases;
+        var bt = t.mapEntries(small.bases);
+        while (bt.next()) |be| {
+            try charge.reserve(gpa, .inspection, 1);
+            var same: SetId = if (t.mapGet(a.bases, be.key)) |s| .from(s) else .none;
+            if (same == .none) {
+                a.bases = try t.mapPut(gpa, charge, a.bases, be.key, be.value);
+                continue;
+            }
+            var ct = sets.iterate(.from(be.value));
+            while (ct.next()) |ce| {
+                const c: CellId = .from(ce.key);
+                const split = splitKey(cellt, c);
+                var run: ?CellId = null;
+                var run_len: u32 = 0;
+                var it = sets.iterate(same);
+                while (it.next()) |e| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    const w: CellId = .from(e.key);
+                    if (split[0] != Ids.none_int and std.mem.eql(u32, &split, &splitKey(cellt, w))) {
+                        run_len += 1;
+                        run = w;
+                        continue;
+                    }
+                    if (cellt.alias(places, c, w) == .no) continue;
+                    a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.sep(gpa, charge, cellt, places, c, w, false, null));
+                }
+                if (run_len == 1) if (run) |w| if (cellt.alias(places, c, w) != .no) {
+                    a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.sep(gpa, charge, cellt, places, c, w, false, null));
+                };
+                same = try sets.insert(gpa, charge, same, c.int(), 0);
+            }
+            a.bases = try t.mapPut(gpa, charge, a.bases, be.key, same.int());
+        }
+        return a;
+    }
+
 
     /// Whether anything below `p` may hold an object.
     fn holdsBelow(places: *const Cell.Places, p: Ids.PlaceId) bool {
@@ -1845,6 +1984,13 @@ pub const Table = struct {
     /// node of the persistent set, so a new root reads its changed spine.
     fn anyLost(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, s: SetId) Error!bool {
         if (s == .none) return false;
+        // One cell: read at once, never memoised.
+        if (cellt.sets.branches(s) == null) {
+            try charge.reserve(gpa, .inspection, 1);
+            var it = cellt.sets.iterate(s);
+            const e = it.next().?;
+            return e.value == 1 or cellt.origin(.from(e.key)) == .top;
+        }
         try charge.reserve(gpa, .memo, 1);
         if (t.lost_memo.get(.{s.int()})) |v| return v == 1;
         var stack: std.ArrayList(SetId) = .empty;
@@ -2486,7 +2632,7 @@ pub const Table = struct {
                 if (t.kappaGet(fr.at, f.node)) |s| acc = try t.@"and"(gpa, charge, acc, s);
             } else {
                 acc = try t.@"and"(gpa, charge, acc, try t.kappaOf(gpa, charge, v, fr.at, f.node, f.summary));
-                acc = try t.@"and"(gpa, charge, acc, try t.shallow(gpa, charge, v.cells, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, f.node))));
+                acc = try t.@"and"(gpa, charge, acc, try t.shallow(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, f.node))));
             }
             if (acc == shared) break;
             next.clearRetainingCapacity();
@@ -2497,8 +2643,76 @@ pub const Table = struct {
         return acc;
     }
 
-    /// At a summary position: `excl c` per arrival standing for many positions.
+    /// What a cell set owes per cell (*The derivation*): `summary`, at a
+    /// summary position, `excl c` per arrival standing for many positions
+    /// (`summaryExclFlat`); `shallow`, `excl c` for every arrival, a deep
+    /// condition's part (`shallowFlat`). A term depends only on the cell's
+    /// origin, approximation and folding, all immutable, so the answer is
+    /// memoised per radix node of the persistent set: a node's is its two
+    /// halves' `and`, canonical (*Canonical partials*). A set one insertion
+    /// larger reads its new spine. Post-order on an explicit stack.
+    const PerCell = enum(u8) { summary, shallow };
+
+    fn perCell(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, which: PerCell, cells: SetId) Error!CondId {
+        if (cells == .none) return yes;
+        // One cell: its term at once, never memoised.
+        if (cellt.sets.branches(cells) == null) return switch (which) {
+            .summary => t.summaryExclFlat(gpa, charge, cellt, places, cells),
+            .shallow => t.shallowFlat(gpa, charge, cellt, places, cells),
+        };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_per_cell.get(.{ @backingInt(which), cells.int() })) |hit| return .from(hit);
+        var stack: std.ArrayList(SetId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, cells);
+        while (stack.items.len > 0) {
+            const x = stack.items[stack.items.len - 1];
+            if (t.memo_per_cell.get(.{ @backingInt(which), x.int() }) != null) {
+                _ = stack.pop();
+                continue;
+            }
+            const k: CondId = if (cellt.sets.branches(x)) |kids| blk: {
+                var halves: [2]CondId = undefined;
+                var missing = false;
+                for (kids, 0..) |kid, i| {
+                    if (kid == .none) {
+                        halves[i] = yes;
+                    } else if (t.memo_per_cell.get(.{ @backingInt(which), kid.int() })) |h| {
+                        halves[i] = .from(h);
+                    } else {
+                        missing = true;
+                        try stack.append(gpa, kid);
+                    }
+                }
+                if (missing) continue;
+                break :blk try t.canonical(gpa, charge, try t.@"and"(gpa, charge, halves[0], halves[1]));
+            } else switch (which) {
+                .summary => try t.summaryExclFlat(gpa, charge, cellt, places, x),
+                .shallow => try t.shallowFlat(gpa, charge, cellt, places, x),
+            };
+            (try t.memo_per_cell.getOrPut(gpa, .{ @backingInt(which), x.int() })).value_ptr.* = k.int();
+            _ = stack.pop();
+        }
+        return .from(t.memo_per_cell.get(.{ @backingInt(which), cells.int() }).?);
+    }
+
     fn summaryExcl(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+        return t.perCell(gpa, charge, cellt, places, .summary, cells);
+    }
+
+    fn shallow(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+        return t.perCell(gpa, charge, cellt, places, .shallow, cells);
+    }
+
+    /// `k` as the condition of its atom set (*Canonical partials*): one id per
+    /// kind and atom set, whatever `and` tree made it.
+    fn canonical(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId {
+        if (k == yes or fails(k)) return k;
+        return t.ofSet(gpa, charge, try t.flat(gpa, charge, k));
+    }
+
+    /// At a summary position: `excl c` per arrival standing for many positions.
+    fn summaryExclFlat(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
         var acc: CondId = yes;
         var it = cellt.sets.iterate(cells);
         while (it.next()) |e| {
@@ -2513,7 +2727,8 @@ pub const Table = struct {
     }
 
     /// `excl c` for every arrival in a cell set (a DEEP condition's part).
-    fn shallow(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, cells: SetId) Error!CondId {
+    fn shallowFlat(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+        _ = places;
         var acc: CondId = yes;
         var it = cellt.sets.iterate(cells);
         while (it.next()) |e| {
@@ -4417,7 +4632,10 @@ test "a positions DAG reads in linear time: depth 250, 500, 1000" {
         const before = f.account.growth;
         try testing.expectEqual(yes, try f.kappa(.none, u, true));
         const cost = f.account.growth - before;
-        try testing.expect(cost <= 16 * depth);
+        // A cold read builds the derivation's memos per radix node of the
+        // root's set (#1121): about 21 records an element, where one sorted
+        // list was 16. The doubling below is what pins linear time.
+        try testing.expect(cost <= 24 * depth);
         if (last > 0) try testing.expect(cost * 2 < last * 5);
         last = cost;
     }
