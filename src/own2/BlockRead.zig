@@ -1042,13 +1042,19 @@ const Tables = struct {
     sums: Summary.Table = .{},
     account: Ids.Account = .{},
     graph: Graph = undefined,
+    /// The views a call answers (§2.11).
+    views: Calls.Views = undefined,
 
     fn init(t: *Tables) !void {
         t.graph = .{ .table = &t.places, .account = &t.account };
         t.conds = try Cond.Table.init(testing.allocator, .growth(&t.account));
+        t.views = .{ .places = &t.places, .cells = &t.cells, .shapes = &t.shapes, .conds = &t.conds, .sums = &t.sums };
+        t.shapes.instantiation = t.views.instantiation();
+        t.conds.resolver = t.views.resolver();
     }
 
     fn deinit(t: *Tables) void {
+        t.views.deinit(testing.allocator);
         t.places.deinit(testing.allocator);
         t.cells.deinit(testing.allocator);
         t.shapes.deinit(testing.allocator);
@@ -3365,8 +3371,16 @@ fn graftedSame(t: *Tables, res: NodeId) !void {
     defer s.deinit(gpa);
     const arg = try t.shapes.leaf(gpa, &t.account, try t.place(8), .none);
     const applied = try Calls.apply(t.env(), &t.sums, c0, &.{.{ .node = arg, .kappa = .none }}, 0, &s);
-    try testing.expect(applied.result.node != res);
-    const c1 = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = applied.result.node });
+    // The call answers a view (§2.11): a class holds it forced, as read-off
+    // maps a result.
+    const Same = struct {
+        fn cells(_: void, s0: Ids.SetId) Shape.Error!Ids.SetId {
+            return s0;
+        }
+    };
+    const forced = try t.shapes.map(gpa, &t.account, applied.result.node, {}, Same.cells);
+    try testing.expect(forced != res);
+    const c1 = try t.sums.add(t.env(), .{ .params = &.{.none}, .res = forced });
     var wa: std.ArrayList(u32) = .empty;
     defer wa.deinit(gpa);
     var wb: std.ArrayList(u32) = .empty;
