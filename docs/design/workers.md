@@ -461,7 +461,7 @@ owning modules from #1278; worker wrappers do not duplicate those handles.
 
 ## 6. Native API adapters and precise failures
 
-The [research §9](research/workers-api-research.md#9-exact-native-transfer-and-deserialization-failure-predicates)
+The [research §9](research/workers-api-research.md#9-prose-defined-serialization-and-exact-native-transfer-checks)
 owns the exact native predicates. The following rules explain what the adapter
 protects; the table then names each operation's typed outcomes.
 
