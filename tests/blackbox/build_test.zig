@@ -9683,7 +9683,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 62cfae45f5ea3412\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 1aa74a369ee9b203\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {

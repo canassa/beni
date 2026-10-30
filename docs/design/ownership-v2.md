@@ -3528,8 +3528,8 @@ forward name is no block. Every member must be reached from outside by what it i
 (`Block.entered`): a cycle that nothing enters, `recast(x)` of `x` itself or `union(x, x)`, is no
 value that a constructor makes, so the writer refuses it loudly and the reader reads no block. A cycle
 that something enters, `union(leaf, x)` of `x`, is a value. This changes the format, so the version
-is 13. The order is the keys' order, so bisimilar knots write the same bytes, and write ∘ read ∘
-write is write.
+is 14 (13 is the deep-read mark's, #1328). The order is the keys' order, so bisimilar knots
+write the same bytes, and write ∘ read ∘ write is write.
 
 ### 3.7 Inputs, outputs, and where the pass runs
 
