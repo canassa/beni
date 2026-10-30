@@ -2704,47 +2704,208 @@ pub const Table = struct {
 
     /// The deep condition of a node: κ of every node of its explicit
     /// structure and `excl c` for every arrival among their cells, each
-    /// read at its own position of the snapshot (`ctx` is `n`'s). A walk
-    /// over `(node, class, position)` states, a record per state and cell,
-    /// memoised per `(position, node, class)`.
+    /// read at its own position of the snapshot (`ctx` is `n`'s) (*`deep`*).
+    /// A walk over states `(position, node, class, explicit)`, post-order on
+    /// an explicit stack: a state's answer is the `and` of its own part and
+    /// its frontier's answers. An explicit state's answer is a function of
+    /// its key, kept canonical in `memo_deep` and taken from there when met
+    /// again, in this read or a later one. A state met again while it is open
+    /// (a fold, a knot) adds nothing more, and the read then keeps no inner
+    /// entry. Below a re-root view the walk carries the crossing's pairs
+    /// (*Carried along the walk*): a node wholly of the actual's region is
+    /// read at `R_Q`, where earlier reads met it.
     pub fn deep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
-        const mkey = [3]u32{ ctx.int(), n.int(), @intFromBool(at_summary) };
-        // Reserved before the memo is read, a hit charged like a miss (§2.3).
-        try charge.reserve(gpa, .memo, 1);
-        if (t.memo_deep.get(mkey)) |hit| return .from(hit);
-        var seen: Ids.FixedDict(3) = .{};
-        defer seen.deinit(gpa);
-        const Frame = struct { next: Next, at: Kappas };
+        const epoch = v.shapes.base_epoch;
+        const from = t.pending.items.len;
+        const r = try t.deepWalk(gpa, charge, v, ctx, n, at_summary);
+        if (!r.crossed) return r.k;
+        if (v.shapes.base_epoch != epoch) {
+            t.crossed_redos += 1;
+            try t.settle(gpa, from, false);
+            const saved = t.no_cross;
+            t.no_cross = true;
+            defer t.no_cross = saved;
+            return (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k;
+        }
+        try t.settle(gpa, from, true);
+        if (std.debug.runtime_safety and full_cross_check) {
+            const saved = .{ t.no_cross, t.no_memo };
+            t.no_cross = true;
+            t.no_memo = true;
+            defer {
+                t.no_cross = saved[0];
+                t.no_memo = saved[1];
+            }
+            try t.expectSame(gpa, charge, r.k, (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k);
+        }
+        return r.k;
+    }
+
+    fn deepWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!Read {
+        const Frame = struct {
+            at: Kappas,
+            node: NodeId,
+            summary: bool,
+            explicit: bool,
+            /// The carried pairs: a range of `pairs`.
+            pairs: [2]u32,
+            expanded: bool = false,
+            /// This state's part, and where its children's answers start.
+            own: CondId = yes,
+            kids: u32 = 0,
+            crossed: bool = false,
+
+            fn key(f: @This()) [4]u32 {
+                return .{ f.at.int(), f.node.int(), @intFromBool(f.summary), @intFromBool(f.explicit) };
+            }
+        };
+        const open_mark = std.math.maxInt(u32);
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
+        var vals: std.ArrayList(Read) = .empty;
+        defer vals.deinit(gpa);
+        var pairs: std.ArrayList(Pair) = .empty;
+        defer pairs.deinit(gpa);
+        var state: Ids.FixedDict(4) = .{};
+        defer state.deinit(gpa);
+        var done: std.ArrayList(Read) = .empty;
+        defer done.deinit(gpa);
         var next: std.ArrayList(Next) = .empty;
         defer next.deinit(gpa);
-        try stack.append(gpa, .{ .next = .{ .node = n, .summary = at_summary, .step = Ids.none_int }, .at = ctx });
-        var acc: CondId = yes;
-        while (stack.pop()) |fr| {
-            const f = fr.next;
-            try charge.reserve(gpa, .memo, 1);
-            const got = try seen.getOrPut(gpa, .{ f.node.int(), @intFromBool(f.summary), fr.at.int() });
-            if (got.found_existing) continue;
-            got.value_ptr.* = 1;
-            try charge.reserve(gpa, .inspection, 1);
-            try t.traced(gpa, f.node, f.summary);
-            if (!f.explicit) {
-                // A projection the structure does not name: what the arrivals
-                // above claim (`excl` is deep) covers its derivation; only
-                // what the snapshot stores there is more.
-                if (t.kappaGet(fr.at, f.node)) |s| acc = try t.@"and"(gpa, charge, acc, s);
-            } else {
-                acc = try t.@"and"(gpa, charge, acc, try t.kappaOf(gpa, charge, v, fr.at, f.node, f.summary));
-                acc = try t.@"and"(gpa, charge, acc, try t.shallow(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, f.node))));
+        var cyclic = false;
+        var stop = false;
+        try stack.append(gpa, .{ .at = ctx, .node = n, .summary = at_summary, .explicit = true, .pairs = .{ 0, 0 } });
+        while (stack.items.len > 0) {
+            const fi = stack.items.len - 1;
+            var f = stack.items[fi];
+            if (!f.expanded) {
+                // Below a crossing, a node wholly of a carried region is read
+                // at that pair's `R_Q`, where earlier reads met it.
+                if (f.pairs[1] > 0 and !t.no_cross) {
+                    for (pairs.items[f.pairs[0]..][0..f.pairs[1]]) |p| if (try v.shapes.wholly(gpa, charge.account, f.node, p.region)) {
+                        f.at = p.r;
+                        f.pairs = .{ 0, 0 };
+                        f.crossed = true;
+                        break;
+                    };
+                }
+                try charge.reserve(gpa, .memo, 1);
+                const got = try state.getOrPut(gpa, f.key());
+                if (got.found_existing) {
+                    _ = stack.pop();
+                    if (got.value_ptr.* == open_mark) {
+                        cyclic = true;
+                        try vals.append(gpa, .{ .k = yes, .crossed = false });
+                    } else try vals.append(gpa, done.items[got.value_ptr.*]);
+                    continue;
+                }
+                // A traced read (a test's) walks every state: no answer from the memo.
+                if (f.explicit and t.trace == null) if (t.memoGet(.deep, .{ f.at.int(), f.node.int(), @as(u32, @intFromBool(f.summary)) })) |hit| {
+                    got.value_ptr.* = @intCast(done.items.len);
+                    const r: Read = .{ .k = .from(hit), .crossed = f.crossed };
+                    try done.append(gpa, r);
+                    _ = stack.pop();
+                    try vals.append(gpa, r);
+                    continue;
+                };
+                got.value_ptr.* = open_mark;
+                try charge.reserve(gpa, .inspection, 1);
+                try t.traced(gpa, f.node, f.summary);
+                const fpairs = pairs.items[f.pairs[0]..][0..f.pairs[1]];
+                if (!f.explicit) {
+                    // A projection the structure does not name: what the arrivals
+                    // above claim (`excl` is deep) covers its derivation; only
+                    // what the snapshot stores there is more.
+                    if (t.kappaGet(f.at, f.node)) |s| f.own = s;
+                } else {
+                    const k = try t.readAt(gpa, charge, v, f.at, f.node, f.summary, fpairs);
+                    f.own = try t.@"and"(gpa, charge, k, try t.shallow(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, f.node))));
+                }
+                f.expanded = true;
+                f.kids = @intCast(vals.items.len);
+                if (f.own == shared) {
+                    stop = true;
+                    stack.items[fi] = f;
+                    continue;
+                }
+                // The pairs below: those carried, a step down, and the crossings
+                // at this node's re-root views.
+                const sub_from: u32 = @intCast(pairs.items.len);
+                if (!t.no_cross) try t.crossingsAt(gpa, charge, v, f.at, f.node, &pairs);
+                const own_pairs = pairs.items.len - sub_from;
+                next.clearRetainingCapacity();
+                try t.frontier(gpa, charge, v, f.node, f.summary, &.{f.at}, &next);
+                stack.items[fi] = f;
+                for (next.items) |e| {
+                    const s = Step.fromWord(e.step);
+                    const pf: u32 = @intCast(pairs.items.len);
+                    for (0..f.pairs[1]) |i| {
+                        const p = pairs.items[f.pairs[0] + i];
+                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s) });
+                    }
+                    for (0..own_pairs) |i| {
+                        const p = pairs.items[sub_from + i];
+                        try pairs.append(gpa, .{ .region = p.region, .r = t.kappaChild(p.r, s) });
+                    }
+                    try stack.append(gpa, .{ .at = t.kappaChild(f.at, s), .node = e.node, .summary = e.summary, .explicit = e.explicit, .pairs = .{ pf, @intCast(pairs.items.len - pf) } });
+                }
+                continue;
             }
-            if (acc == shared) break;
-            next.clearRetainingCapacity();
-            try t.frontier(gpa, charge, v, f.node, f.summary, &.{fr.at}, &next);
-            for (next.items) |e| try stack.append(gpa, .{ .next = e, .at = t.kappaChild(fr.at, Step.fromWord(e.step)) });
+            // Its frontier's answers are in: this state's own.
+            var k = f.own;
+            var crossed = f.crossed;
+            for (vals.items[f.kids..]) |r| {
+                k = try t.@"and"(gpa, charge, k, r.k);
+                crossed = crossed or r.crossed;
+            }
+            vals.shrinkRetainingCapacity(f.kids);
+            if (f.pairs[1] > 0) crossed = true;
+            k = try t.canonical(gpa, charge, k);
+            _ = stack.pop();
+            if (f.explicit and !cyclic and !stop) try t.memoPut(gpa, .deep, .{ f.at.int(), f.node.int(), @intFromBool(f.summary) }, k.int(), crossed);
+            (try state.getOrPut(gpa, f.key())).value_ptr.* = @intCast(done.items.len);
+            try done.append(gpa, .{ .k = k, .crossed = crossed });
+            try vals.append(gpa, .{ .k = k, .crossed = crossed });
+            if (stop) {
+                // `shared` absorbs: the root's answer is `shared`.
+                while (stack.items.len > 0) _ = stack.pop();
+                return .{ .k = shared, .crossed = crossed };
+            }
         }
-        (try t.memo_deep.getOrPut(gpa, mkey)).value_ptr.* = acc.int();
-        return acc;
+        const r = vals.pop().?;
+        if (cyclic) try t.memoPut(gpa, .deep, .{ ctx.int(), n.int(), @intFromBool(at_summary) }, r.k.int(), r.crossed);
+        return r;
+    }
+
+    /// The crossings at `n`'s re-root views read at `ctx` (*Carried along
+    /// the walk*): the views a union, choice or positions DAG at `n`'s path
+    /// has for sides (a view that is no re-root view read at its answer),
+    /// each where `eqOn` holds, appended to `out` once per region.
+    fn crossingsAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, out: *std.ArrayList(Pair)) Error!void {
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            if (seen.contains(x)) continue;
+            try seen.put(gpa, x, {});
+            try charge.reserve(gpa, .inspection, 1);
+            if (v.shapes.kind(x) == .view) {
+                if (try t.crossAt(gpa, charge, v, ctx, x)) |c| {
+                    for (out.items) |p| {
+                        if (p.region == c.region and p.r == c.r) break;
+                    } else try out.append(gpa, .{ .region = c.region, .r = c.r });
+                    continue;
+                }
+                const answer = try v.shapes.force(gpa, charge.account, x);
+                if (isDag(v.shapes.kind(answer))) try stack.append(gpa, answer);
+                continue;
+            }
+            if (!isDag(v.shapes.kind(x))) continue;
+            const d = v.shapes.get(x);
+            try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+        }
     }
 
     /// What a cell set owes per cell (*The derivation*): `summary`, at a

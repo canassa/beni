@@ -152,6 +152,10 @@ pub const Table = struct {
     relevant: stamped.Column(NodeId, void) = .{},
     /// `inners` by forced node.
     memo_inners: stamped.Column(NodeId, SetId) = .{},
+    /// `dagHas`'s node sets: what a union's or a choice's DAG reaches, by
+    /// `(kind, node)`, until a knot is tied.
+    memo_dag_members: Ids.FixedDict(2) = .{},
+    dag_members_ties: Ids.FixedDict(2) = .{},
     track_relevance: bool = false,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
@@ -192,6 +196,8 @@ pub const Table = struct {
         t.cons_single.deinit(gpa);
         t.relevant.deinit(gpa);
         t.memo_inners.deinit(gpa);
+        t.memo_dag_members.deinit(gpa);
+        t.dag_members_ties.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -815,10 +821,15 @@ pub const Table = struct {
         return out;
     }
 
-    const Closure = enum { region, bases };
+    const Closure = enum { region, bases, union_dag, choice_dag };
 
     /// The node's own successors in `which`'s graph.
     fn closureSuccs(t: *Table, gpa: Allocator, account: *Account, which: Closure, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        if (which == .union_dag or which == .choice_dag) {
+            const d = t.get(n);
+            if (d.kind == (if (which == .choice_dag) Kind.choice else Kind.@"union")) try out.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+            return;
+        }
         if (which == .bases) {
             var it = t.node_sets.iterate(t.basesOf(n));
             while (it.next()) |e| try out.append(gpa, .from(e.key));
@@ -847,6 +858,10 @@ pub const Table = struct {
         return switch (which) {
             .region => if (t.region_ties.get(key) == t.ties) (if (t.memo_region.get(key)) |s| SetId.from(s) else null) else null,
             .bases => if (t.bstar_epoch.get(key) == t.base_epoch) (if (t.memo_bstar.get(key)) |s| SetId.from(s) else null) else null,
+            .union_dag, .choice_dag => blk: {
+                const k2: [2]u32 = .{ @intFromEnum(which), n.int() };
+                break :blk if (t.dag_members_ties.get(k2) == t.ties) (if (t.memo_dag_members.get(k2)) |s| SetId.from(s) else null) else null;
+            },
         };
     }
 
@@ -860,6 +875,11 @@ pub const Table = struct {
             .bases => {
                 (try t.memo_bstar.getOrPut(gpa, key)).value_ptr.* = s.int();
                 (try t.bstar_epoch.getOrPut(gpa, key)).value_ptr.* = t.base_epoch;
+            },
+            .union_dag, .choice_dag => {
+                const k2: [2]u32 = .{ @intFromEnum(which), n.int() };
+                (try t.memo_dag_members.getOrPut(gpa, k2)).value_ptr.* = s.int();
+                (try t.dag_members_ties.getOrPut(gpa, k2)).value_ptr.* = t.ties;
             },
         }
     }
@@ -1283,20 +1303,11 @@ pub const Table = struct {
         if (t.kind(u) != dag) return false;
         const walk = try t.dagWalk(gpa, account, u);
         defer if (walk) |k| account.leave(k);
-        t.union_seen.clear();
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, u);
-        while (stack.pop()) |n| {
-            if (n == x) return true;
-            if (t.kind(n) != dag or t.union_seen.contains(n)) continue;
-            try t.union_seen.put(gpa, n, {});
-            try account.reserve(.inspection, 1);
-            const d = t.get(n);
-            try stack.append(gpa, .from(d.a));
-            try stack.append(gpa, .from(d.b));
-        }
-        return false;
+        // The nodes `u`'s DAG of this kind reaches, a node set memoised per
+        // node (`closure`): a union built over an earlier one reads its new
+        // nodes, never the whole DAG again.
+        try account.reserve(.inspection, 1);
+        return t.node_sets.member(try t.closure(gpa, account, if (dag == .choice) .choice_dag else .union_dag, u), x.int());
     }
 
     /// `put(n, s, m)` (§2.3): the same object written (`same_object`) is a
