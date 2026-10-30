@@ -1,3 +1,3 @@
-GroupVariableOutsideCaller f: lines 14-20 (not built: recursion)
-GroupVariableOutsideCaller g: lines 23-29 (not built: recursion)
+GroupVariableOutsideCaller f: lines 14-20 (not built: call)
+GroupVariableOutsideCaller g: lines 23-29 (not built: method_call)
 GroupVariableOutsideCaller main: lines 40-41 (not built: call)

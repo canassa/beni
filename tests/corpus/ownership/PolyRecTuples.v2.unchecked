@@ -1,4 +1,4 @@
-PolyRecTuples w: lines 11-16 (not built: recursion)
+PolyRecTuples w: lines 11-16 (not built: polymorphic recursion)
 PolyRecTuples viaX: lines 29-30 (not built: call)
 PolyRecTuples local: lines 33-40 (not built: call)
 PolyRecTuples st: lines 43-52 (not built: call)

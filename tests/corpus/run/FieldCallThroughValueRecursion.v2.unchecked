@@ -1,3 +1,3 @@
-FieldCallThroughValueRecursion fa: lines 19-21 (not built: recursion)
+FieldCallThroughValueRecursion fa: lines 19-21 (not built: call)
 FieldCallThroughValueRecursion fb: lines 24-29 (not built: local)
 FieldCallThroughValueRecursion main: lines 32-33 (not built: call)

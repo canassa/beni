@@ -1,4 +1,4 @@
-PolyRecThrough wrap2: lines 25-30 (not built: recursion)
-PolyRecThrough wrap3: lines 33-38 (not built: recursion)
+PolyRecThrough wrap2: lines 25-30 (not built: polymorphic recursion)
+PolyRecThrough wrap3: lines 33-38 (not built: polymorphic recursion)
 PolyRecThrough push2: lines 41-53 (not built: call)
 PolyRecThrough push3: lines 56-68 (not built: call)
