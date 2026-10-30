@@ -155,3 +155,13 @@ tests/corpus/ownership/CmpFreshImported [node] Main 24:54 #1 :: <record>.left#In
 tests/corpus/ownership/CmpFreshImported [node] Main 28:21 #0 :: Main.viaRecord xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
 tests/corpus/ownership/CmpFreshImported [node] Main 8:41 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
 tests/corpus/ownership/CmpFreshImported [node] Main 8:41 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+# v2 writes a fresh value holding a parameter through a comparison's component under a recursive type; v1 loses the write (#1349).
+tests/corpus/ownership/CmpCycleImported [node] Main 20:41 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 20:41 #0 :: <Node …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 24:19 #0 :: Main.viaTree xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpCycleImported [node] Main 28:69 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 28:69 #0 :: <Node …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 32:23 #0 :: Main.viaDeepTree xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpCycleImported [node] Main 36:77 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 36:77 #0 :: <Up …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 40:21 #0 :: Main.viaMutual xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)

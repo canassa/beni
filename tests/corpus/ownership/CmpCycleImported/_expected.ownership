@@ -1,0 +1,13 @@
+module Inner
+  9:26 List.push l: accepted param
+  summary eq: π1 R, π1#Inner.0 RW[storage]
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  summary viaTree: π1 R
+  summary callerTree: π1 RA; res .1 π1
+  summary viaDeepTree: π1 R
+  summary callerDeepTree: π1 RA; res .1 π1
+  summary viaMutual: π1 R
+  summary callerMutual: π1 RA; res .1 π1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

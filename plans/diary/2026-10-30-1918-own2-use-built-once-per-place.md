@@ -17,9 +17,14 @@ component at a sub-place.
 **What I learned.** Linear construction was not the whole of it. With the
 build linear, a type of n fields that each hold a writing component still costs
 about 156n + 16n² in the caller: each writing *path* is a demand of its own,
-checked against every other path (`Transfer.call`, `otherPaths`). A read-only
-component is flat (138 records at n = 8, 16, 32, 64). So the use is one deep
-leaf past 8 paths that escape or write below a place (`max_write_paths`),
-which is what master did at every width; that bound is a precision choice the
-owner may want to decide, and the deep leaf there keeps #1349's hole for those
-wide types. A cycle's deep leaf has the same hole.
+checked against every other path (`Transfer.call`, `otherPaths`, #1334). A
+read-only component is flat (138 records at n = 8, 16, 32, 64). A bound on the
+width of the use was the first answer and was wrong: it is a silent precision
+merge and it left the #1349 hole open under it. The loud limit stays, and the
+wide type and the doubling DAG with a component (2^8 writing paths) wait on
+#1334. The hole itself was in the read-off: a deep demand writes `reach(base)`
+(§2.8), but `Walk.readOff` marked `W` on the cells of the base node only, so a
+fresh container holding a parameter wrote nothing of it. One line there makes
+every deep leaf sound (cycles included, at any depth), and an exact cyclic
+use was the wrong road: canonical paths of a fan-out ring are exponential and a
+six-type syntax tree hit the summary-size limit.

@@ -1,0 +1,34 @@
+module Inner
+  9:26 List.push l: accepted param
+  account eq: source 20, baseline 241, growth 0 of 65536, total 241, continuation 160 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Inner.0 RW
+  block: 472 bytes, hash 00cf5419220d02dd
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  20:41 call <Node …>: accepted param
+  20:41 call <expression>: accepted fresh
+  24:19 Main.viaTree xs: rejected later-use: xs is read again at 24:17
+  28:69 call <Node …>: accepted param
+  28:69 call <expression>: accepted fresh
+  32:23 Main.viaDeepTree xs: rejected later-use: xs is read again at 32:21
+  36:77 call <Up …>: accepted param
+  36:77 call <expression>: accepted fresh
+  40:21 Main.viaMutual xs: rejected later-use: xs is read again at 40:19
+  account viaTree: source 14, baseline 167, growth 0 of 65536, total 167, continuation 99 of 14336, demands 21, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 15
+  crossing: reads 0, redone 0, base moves 0
+  summary viaTree: π1 RS
+  account callerTree: source 15, baseline 120, growth 0 of 65536, total 120, continuation 105 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerTree: π1 RAS; res .1 π1
+  account viaDeepTree: source 19, baseline 212, growth 0 of 65536, total 212, continuation 124 of 19456, demands 34, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 20
+  summary viaDeepTree: π1 RS
+  account callerDeepTree: source 15, baseline 120, growth 0 of 65536, total 120, continuation 105 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerDeepTree: π1 RAS; res .1 π1
+  account viaMutual: source 23, baseline 241, growth 0 of 65536, total 241, continuation 141 of 23552, demands 34, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 7, transfer_settlement lanes 24
+  summary viaMutual: π1 RS
+  account callerMutual: source 15, baseline 120, growth 0 of 65536, total 120, continuation 105 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
+  summary callerMutual: π1 RAS; res .1 π1
+  block: 872 bytes, hash 7c3c41d9df3b3325
+  demands 9: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 3
