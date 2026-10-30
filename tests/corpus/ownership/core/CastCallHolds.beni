@@ -5,7 +5,9 @@
 -- approximately. A call's result keeps that reading, so the caller sees
 -- that `a` may be `l`, and an edit of it while `l` is read again is refused,
 -- as v1 refuses it. Each `fresh` twin hands the call lists that nothing else
--- holds, and its edit is accepted.
+-- holds, and its edit is accepted. A step into such a value is inside it
+-- again (`deeper`, through the call and inline): it is never the inner's
+-- own part, though their places agree.
 import Js
 
 
@@ -118,3 +120,59 @@ pub freshPair : Int → Int
 freshPair n =
     v = firstOf [ n ]
     List.length (List.push v 5)
+
+
+-- A step into a value inside a cast is still inside it: `b` may be `l`.
+deeper : List (List (List Int)) → List (List (List (List Int)))
+deeper x = Js.to (Js.from x)
+
+
+pub sharedDeeper : Int → Int
+sharedDeeper n =
+    l = [ n ]
+    r = deeper [ [ l ] ]
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ]) + List.length l
+
+                [] →
+                    0
+
+        [] →
+            0
+
+
+pub sharedDeeperInline : Int → Int
+sharedDeeperInline n =
+    l = [ n ]
+    r : List (List (List (List Int)))
+    r = Js.to (Js.from [ [ l ] ])
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ]) + List.length l
+
+                [] →
+                    0
+
+        [] →
+            0
+
+
+pub freshDeeper : Int → Int
+freshDeeper n =
+    r = deeper [ [ [ n ] ] ]
+    case r of
+        [ a, …_ ] →
+            case a of
+                [ b, …_ ] →
+                    List.length (List.push b [ 5 ])
+
+                [] →
+                    0
+
+        [] →
+            0

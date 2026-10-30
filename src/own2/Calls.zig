@@ -919,13 +919,17 @@ const Grafter = struct {
                 rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else try g.imageCells(d.cells, d.place);
             },
             .recast => {
-                var in = g.s.memo.get(.from(d.a)).?;
+                const image = g.s.memo.get(.from(d.a)).?;
+                // A cast of an image that is a whole recast stays whole,
+                // its cells that image's, as `Shape.recast` makes it (#1311).
+                const whole_image = built(pending, image) and shapes.isWhole(image);
+                var in = image;
                 if (built(pending, in) and shapes.kind(in) == .recast) in = .from(shapes.get(in).a);
                 rec.a = in.int();
-                rec.b = d.b;
+                rec.b = if (whole_image) 1 else d.b;
                 // A whole recast's cells are a reach: a parameter cell there
                 // stands for what the argument reaches (#1311).
-                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else if (d.b == 1) try g.imageReach(d.cells, shapes.place(.from(d.a))) else try g.imageCells(d.cells, shapes.place(.from(d.a)));
+                rec.cells = if (d.cells == Shape.Table.lazy_cells) d.cells else if (whole_image and d.b == 0) shapes.cells(image) else if (d.b == 1) try g.imageReach(d.cells, shapes.place(.from(d.a))) else try g.imageCells(d.cells, shapes.place(.from(d.a)));
             },
             .@"union", .choice, .positions => {
                 rec.a = g.s.memo.get(.from(d.a)).?.int();
