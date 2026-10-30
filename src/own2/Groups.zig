@@ -840,7 +840,7 @@ pub const Module = struct {
         return mod.sharedOf(md) catch null;
     }
 
-    fn isListAppend(ctx: *anyopaque, inst: u32) bool {
+    pub fn isListAppend(ctx: *anyopaque, inst: u32) bool {
         const mod = self(ctx);
         const dt = mod.in.dispatch orelse return false;
         return dt.isListAppend(@fromBackingInt(inst)) or dt.isListAppend(@fromBackingInt(mod.in.bir.instData(@fromBackingInt(inst)).lhs));
@@ -1446,7 +1446,10 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
     var g: Group = .{ .members = members };
     defer g.deinit(gpa);
     mod.group = &g;
+    // Widen opens a join on a cycle place in a group's rounds (#1363).
+    mod.shapes.widen_rounds = true;
     defer {
+        mod.shapes.widen_rounds = false;
         mod.group = null;
         charging(mod, &mod.base_account);
     }

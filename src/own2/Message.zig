@@ -56,6 +56,8 @@ pub const Frame = struct {
     decl_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
     /// The `(module, constructor index)` a constructor reference names.
     ctor_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
+    /// Whether a call is `++` on lists, which v1 names `<++>`.
+    is_append: ?*const fn (ctx: *anyopaque, inst: u32) bool = null,
 };
 
 fn birOf(f: Frame) *const Bir {
@@ -116,6 +118,10 @@ fn writtenText(f: Frame, a: Allocator, d: Demands.Demand) Allocator.Error![]cons
     pathText(f, a, &buf.writer, d.write_path) catch return error.OutOfMemory;
     return buf.written();
 }
+fn isAppend(f: Frame, i: u32) bool {
+    return if (f.is_append) |p| p(f.ctx, i) else false;
+}
+
 fn spreadRoot(f: Frame, i: u32) bool {
     for (birOf(f).spreads(f.decl)) |s| if (s.root == i) return true;
     return false;
@@ -130,7 +136,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
         // A spread literal's outermost call is the literal, as v1 names it.
-        .call => if (spreadRoot(f, i)) "<construction>" else if (f.ctor_of(f.ctx, d.lhs)) |c| try std.fmt.allocPrint(a, "<{s} …>", .{f.names.interner.slice(f.names.birs[c[0]].symbol(f.names.birs[c[0]].ctors[c[1]].name))}) else if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
+        .call => if (spreadRoot(f, i)) "<construction>" else if (isAppend(f, i)) "<++>" else if (f.ctor_of(f.ctx, d.lhs)) |c| try std.fmt.allocPrint(a, "<{s} …>", .{f.names.interner.slice(f.names.birs[c[0]].symbol(f.names.birs[c[0]].ctors[c[1]].name))}) else if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         .method_call => if (try refName(f, a, i)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         else => "<expression>",
     };

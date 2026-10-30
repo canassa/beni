@@ -1,0 +1,1 @@
+S3b slice 4a (ownership-v2.md §8): v2 accepts `f`'s calls, which write one level away from the subtree it returns (R-4.7.8); v1 refuses them `exclusive`.
