@@ -182,6 +182,52 @@ and `⟲#Node.1` is a list at some level below the root. Left and right are told
 materialisation at a match (§2.13.3), which is where the text names them. Length ≤ 2·|places|. Canonical paths
 name symbolic cells (§2.2) and block entries (§3.6); `⟲` is what folds recursive values finitely (thesis §3.1).
 
+*Amended 2026-10-30 (#1253 item 1, the owner's decision, option B): the first return stays a plain step.* The
+rule above made `l` and `r` of `Node l xs r` one path, `π1⟲`. So a write to `l`'s list met `r` as a holder
+(`both t = case t of Node l _ r → ( kids l, r )` was refused `alias`), a call's other operand at `π1⟲` read both
+subtrees of the actual (`UnusedSubtree` 36:5), and once groups were solved every tree writer's own recursive
+calls were refused (`MarkerAcross.incAll` 18:19 and 18:47, `LevelRecursiveUpdates` 15:19 …). v1 keeps the
+route: its level marker folds only *below* the region's first step (`π1#Node.0⟨Tree⟩#Node.1`, its §16.7). The
+rule is now:
+
+- **The fold** (`extend`). A step from path `p` onto a place `P` that `p`'s cycle suffix holds (the walk of
+  #1236) is a **return**. Walking up from `p`, let `q` be the deepest node at `P`:
+  - when `q` is a `⟲` node, the result is `q` (deeper levels fold onto the one marker, as before);
+  - when an earlier node at `P` lies above `q` on the walk, `q` is a **first return**, and the result is
+    `q·⟲`: the levels below a first return fold onto it;
+  - otherwise `q` is `P`'s first occurrence on the cycle, and the step is itself a first return: a **plain
+    step**, kept as it is (`PathNode.ret` marks it).
+
+  So for `Tree`, `π1#Node.0` is `l` and `π1#Node.2` is `r`, two exact paths; `π1#Node.0#Node.1` is `l`'s own
+  list; `π1#Node.0#Node.0` and `π1#Node.0#Node.2` are `π1#Node.0⟲`, one or more levels below `l`; and
+  `π1#Node.0⟲#Node.1`, every list strictly below `l`, is printed as v1 prints it, `#Node.0⟨Tree⟩#Node.1`. For
+  `Rose (List Rose)`, `π1#Rose.0[*]` is a child, exact, and `π1#Rose.0[*]#Rose.0[*]` is `π1#Rose.0[*]⟲`. A `⟲`
+  given to `extend` directly (a use's or a hold's route) folds onto a path that ends in one and is the next
+  step otherwise, as before.
+- **`⟲` keeps its meaning**, one or more levels below the node it follows, which is now a first return and not
+  the place's first occurrence. Every place of a cycle has its own first return, so a path names a place at
+  most twice and holds at most one `⟲` per first return: its length is at most 3·|places|.
+- **The closure stays linear** (§2.7's walks, `Place.hits`, `levelsOf`, the graft's levels). A K-wide type has
+  K first returns at the root, each with K recursive steps, so walking each first return's steps one by one is
+  K² (a deep read of a 32-wide tree cost 8 988 records, through a `Maybe` 19 420). A first return is **sealed**
+  when no place of its cycle above it has returned yet (`Place.sealed`, a walk of its cycle suffix). Below a
+  sealed first return every fold lands inside its own subtree and every return to its place lands on its one
+  `⟲`, so its `hits` are none and its levels are itself and its `⟲`: the walks take it whole, and the closure of
+  a K-wide type, plain or through a `Maybe`, is linear in K again (1 756 and 1 980 records at 32, the
+  *K-wide recursive type* build test).
+- **What is told apart, and what is not.** The child the route left the place by: two subtrees of one node, and
+  through intermediate places too (`type A = A B (List Int) B`, `type B = B A`: `π1#A.0#B.0` and
+  `π1#A.2#B.0`). Below a first return every route folds, as in v1: `l`'s left and right subtrees are both
+  `π1#Node.0⟲`. A `⟲` keyed by the last step back (v1's `#Node.0⟨Tree⟩#Node.2`) would tell those apart too, at
+  a `⟲` per recursive step below each first return, K² for a K-wide type; it is not built, and the corpus
+  difference it would close, `LevelRecursiveUpdates` 64:5, is a known entry owned by #1253.
+- **Who reads what.** Nothing that reads a `⟲` changes meaning: `alias`, `below`, the cycle anchors, κ's links,
+  a call's readers of a `⟲` through an actual. A first return is a plain path and is read as one. Three readers
+  learn of it: widen opens a union, choice or positions node at a first return as at a `⟲` (both are returns on
+  the cycle being folded) and keys it to its own class (§2.3); a holder's text climbs back over a first return
+  as over a `⟲` (v1's `kids holds it`, §6); and §2.7's `hits` tells what is inside a path's subtree by prefix,
+  since a fold can now land below a first return inside it.
+
 ### 2.2 Cells
 
 `Cell = (origin, kind)`; kind from the place it is made at. Every cell labels one object per occurrence (the rule below).
@@ -234,7 +280,8 @@ environments (§2.10), not merely direct declaration calls.
 things. A recursive place describes where a type reaches itself; it does not make a finite constructed
 value cyclic or make two allocations equal. An unfurled construction retains its explicit levels. A
 shape backedge is the quotient made by `widen`, not a run-time pointer cycle (cyclic values are refused by
-the language). `⟲` denotes one or more recursive levels, not one selected child. Mutual recursion folds
+the language). `⟲` denotes one or more recursive levels, not one selected child; the child is kept by the plain
+first return it follows (§2.1, as amended for #1253). Mutual recursion folds
 on the place SCC; nested applications such as `Maybe (Maybe a)` or `Tree (Tree a)` do not fold merely
 because their heads have the same name (R-4.7.3–R-4.7.4).
 
@@ -612,7 +659,12 @@ Operations, memoised on their node arguments:
   entry (so cyclic nodes compare in O(|n|·|m|) pairs at most, O(|n| + |m|) when shapes agree).
 - `widen(n)`: the place-graph quotient used by every fixpoint unknown and every read-off: a node whose descendant
   along a re-entering step sits at the same place is joined into that ancestor and the edge tied back to it, so
-  a shape has at most one node per canonical path of its place graph. Over a non-recursive type it is the
+  a shape has at most one node per canonical path of its place graph. *Amended 2026-10-30 (#1253):* a `⟲` node
+  joins the class of the node it follows, which is now a first return (§2.1), so the root and each subtree keep
+  their own parts; a first return keys its own class, and a union, choice or positions node there is opened as
+  at a `⟲` (`Place.isReturn`: both are returns on the cycle being folded), else a group's rounds would nest
+  under it. A group settles a round later: a first return's class takes the previous round's root a round
+  after the root's own does. Over a non-recursive type it is the
   identity (no re-entering step), so `w5`'s DAG is untouched. Compute the quotient by a canonical-path
   worklist and congruence closure: union node classes on re-entry, merge their step maps, enqueue the
   corresponding child pairs, and emit the quotient once. Union-by-size/path compression and smaller-to-larger
@@ -792,9 +844,14 @@ being read at which `extend` puts what the use reads.
   place's cycle, and that are not below `p`. Each is a fold target, `a⟲` for a prefix `a` of `p`, or `a`
   when it is a `⟲` already. The closure goes on from each target, because the levels below `a⟲` re-enter
   places further up. The cover below such an exit is free, as below a leaf.
+  *Amended 2026-10-30 (#1253):* a fold target is now `a⟲` for `a` a first return (§2.1), which may be below `p`
+  or above it, so `hits` tells what is below a path by prefix; and a sealed first return folds nothing
+  outside itself, so `hits` does not walk its steps.
 - **A `call` use's node is replayed in the caller's place graph**, as the graft replays it (§2.10, *Read-off*;
   `Walk.Graft`): from `q`, a step that `extend` folds out of the path being built, and a callee `⟲` at `p`,
-  which lands at `levels(p)`, are exits with the callee node they lead to, and the cursor reads on from there.
+  which lands at `levels(p)`, are exits with the callee node they lead to, and the cursor reads on from there. The
+  levels of a sealed first return `a` (§2.1) are `a` and `a⟲`, taken whole, and the graft's levels are
+  `Place.levelsOf`'s (#1253).
   `grand ts = case ts of [ Tree a ] → case a.kids of [ Tree b ] → List.length b.v` reads
   `π1⟲[*]#Tree.0.v`, which at the caller's `r.kids` is `r⟲.v`.
 
@@ -3289,6 +3346,8 @@ ctor_steps  : interned (constructor id, argument index) pairs; Step payload inde
               compare/encode the pair semantically, never the pair-table index
 by_var      : stamped column Var → PlaceId   (the type walk's memo; `stamped.zig`)
 path_bytes  : []u32 canonical path step records (`⟲` reserved); charged construction/traversal per step, no copied uncharged path string
+path ret    : bool per canonical path node: its step returned to a place of the path (a first return, kept
+              plain, or a `⟲`); widen opens there, and `sealed` reads the cycle suffix's (§2.1 as amended for #1253)
 ```
 
 ### 3.2 Cells (`Cell.zig`)
@@ -4358,7 +4417,7 @@ L0  Ids
 | File | L | Responsibility | Public API | Imports (own2) | Lines |
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 750 |
-| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 100 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path) |
+| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 150 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole) |
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 100 |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
