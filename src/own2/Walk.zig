@@ -515,6 +515,63 @@ const Graft = struct {
     }
 };
 
+/// Which source nodes of a read-off stand at each κ position (#1372's
+/// review): `(source position, image)` → how many distinct built sources
+/// at that position `Shape.map` made that image of. Two built nodes at one
+/// position that intern to one image must not let one's entry answer for
+/// the other's absence (`Cond.Relabel.present`). One walk of the value
+/// paired with its snapshot, each `(node, position)` once, a record each;
+/// a delta's base is walked at its delta's position and is no position of
+/// its own, so its children may be counted where an override hides them,
+/// which can only add `lost`.
+const Presence = struct {
+    count: Ids.FixedDict(2) = .{},
+    counted: Ids.FixedDict(2) = .{},
+    seen: Ids.FixedDict(3) = .{},
+
+    fn deinit(p: *Presence, gpa: Allocator) void {
+        p.count.deinit(gpa);
+        p.counted.deinit(gpa);
+        p.seen.deinit(gpa);
+    }
+
+    fn run(p: *Presence, env: anytype, root: NodeId, k: Cond.Kappas) Error!void {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const Item = struct { node: NodeId, at: Cond.Kappas, position: bool };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .at = k, .position = true });
+        while (stack.pop()) |it| {
+            if (it.at == .none or it.node == .none) continue;
+            const got = try p.seen.getOrPut(gpa, .{ it.node.int(), it.at.int(), @intFromBool(it.position) });
+            if (got.found_existing) continue;
+            try env.charge.reserve(gpa, .inspection, 1);
+            var x = it.node;
+            if (shapes.kind(x) == .view) x = shapes.answerOf(x) orelse continue;
+            x = shapes.eagerOf(x);
+            const d = shapes.get(x);
+            switch (d.kind) {
+                .leaf, .view => {},
+                .recast => try stack.append(gpa, .{ .node = .from(d.a), .at = it.at, .position = true }),
+                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .at = it.at, .position = true }, .{ .node = .from(d.b), .at = it.at, .position = true } }),
+                .node, .delta => {
+                    if (it.position) if (shapes.mapSource(x)) |s| if (shapes.memo_map.get(s)) |m| {
+                        const c = try p.counted.getOrPut(gpa, .{ it.at.int(), s.int() });
+                        if (!c.found_existing) {
+                            const n = try p.count.getOrPut(gpa, .{ it.at.int(), m.int() });
+                            n.value_ptr.* = if (n.found_existing) n.value_ptr.* + 1 else 1;
+                        }
+                    };
+                    var e = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (e.next()) |c| try stack.append(gpa, .{ .node = c.node, .at = env.conds.kappaChild(it.at, c.step), .position = true });
+                    if (d.kind == .delta) try stack.append(gpa, .{ .node = .from(d.a), .at = it.at, .position = false });
+                },
+            }
+        }
+    }
+};
+
 fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     const env = in.env;
     const gpa = env.gpa;
@@ -625,6 +682,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         // raw answer's, join its image's.
         const Carry = struct {
             ro: *ReadOff,
+            presence: *Presence,
             fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
                 const shapes = c.ro.env.shapes;
@@ -634,13 +692,24 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
                 const answer = shapes.answerOf(x) orelse return null;
                 return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
             }
+            fn source(ctx: *anyopaque, x: NodeId) ?NodeId {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return c.ro.env.shapes.mapSource(x);
+            }
+            fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
+            }
             fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
                 return c.ro.cond(k);
             }
         };
-        var carry: Carry = .{ .ro = &ro };
-        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
+        var presence: Presence = .{};
+        defer presence.deinit(gpa);
+        if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
+        var carry: Carry = .{ .ro = &ro, .presence = &presence };
+        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
         // Widened, its κ carried onto the image with each folded class's
         // path-multiset obligation (§2.9, #1128).
         const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);

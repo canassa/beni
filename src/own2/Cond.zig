@@ -937,6 +937,14 @@ pub const Table = struct {
         ctx: *anyopaque,
         node: *const fn (ctx: *anyopaque, n: NodeId) Error!?NodeId,
         cond: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!CondId,
+        /// Where several source nodes at one position become one image
+        /// (`Shape.map` interns, #1372): the source an entry's key stands for
+        /// (null for a key that is none), and how many distinct sources at
+        /// source position `pos` map to image `m`. A built source with no entry
+        /// reads `lost` (§2.9), so the image's entry there is `lost` unless every
+        /// one of those sources has one. Null: one source per image.
+        source: ?*const fn (ctx: *anyopaque, n: NodeId) ?NodeId = null,
+        present: ?*const fn (ctx: *anyopaque, pos: Kappas, m: NodeId) u32 = null,
     };
 
     /// Whether a snapshot stores an unresolved condition (an `inst` atom in an
@@ -1041,6 +1049,10 @@ pub const Table = struct {
     fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1)) Error!void {
         const p = t.position(ctx);
         var here: u32 = Ids.none_int;
+        // `(image, source)` of each entry whose image stands for several
+        // sources here.
+        var met: std.ArrayList([2]NodeId) = .empty;
+        defer met.deinit(gpa);
         var it = t.mapEntries(p.here);
         while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
@@ -1050,6 +1062,31 @@ pub const Table = struct {
             const v = if (old) |o| try t.join(gpa, charge, .from(o), k) else k;
             try t.keyed(gpa, charge, m);
             here = try t.mapPut(gpa, charge, here, m.int(), v.int());
+            if (r.present) |many| if (many(r.ctx, ctx, m) >= 2) {
+                if (r.source.?(r.ctx, .from(e.key))) |s| try met.append(gpa, .{ m, s });
+            };
+        }
+        // An image of several sources at this position is `lost` where one
+        // of them has no entry: that source alone reads `lost` (§2.9), and
+        // the image stands for each (#1372's review).
+        if (met.items.len > 0) {
+            std.mem.sort([2]NodeId, met.items, {}, struct {
+                fn lt(_: void, a: [2]NodeId, b: [2]NodeId) bool {
+                    return if (a[0] != b[0]) a[0].int() < b[0].int() else a[1].int() < b[1].int();
+                }
+            }.lt);
+            try charge.reserve(gpa, .inspection, @intCast(met.items.len));
+            var i: usize = 0;
+            while (i < met.items.len) {
+                const m = met.items[i][0];
+                var distinct: u32 = 0;
+                var j = i;
+                while (j < met.items.len and met.items[j][0] == m) : (j += 1) {
+                    if (j == i or met.items[j][1] != met.items[j - 1][1]) distinct += 1;
+                }
+                if (distinct < r.present.?(r.ctx, ctx, m)) here = try t.mapPut(gpa, charge, here, m.int(), lost.int());
+                i = j;
+            }
         }
         // A fold's links are the steps it saw, its sparse frontier (§2.9),
         // each leading back to itself: kept as they are, never followed (#1129).
@@ -5678,6 +5715,64 @@ test "#1063: a join keeps what is stored below a recast's inner, through a union
         try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), v, .none, other, out, j, false));
         try testing.expect(!try f.conds.kappaLeq(gpa, f.charge(), v, out, j, .none, j, false));
     }
+}
+
+test "#1372 review: two built arms a map interns to one image read lost where one has no entry" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    // `if c then a else b`, two built nodes at one position whose cells a
+    // read-off relabels alike, so `map` interns them to one image. `a`
+    // stores `shared`, `b` nothing: alone `b` reads `lost` (§2.9), so the
+    // image, which stands for both here, reads `lost` too.
+    const at = try f.placeOf(0);
+    const a = try f.shapes.node(gpa, &f.account, at, try f.set(&.{try f.param(1, 0, &.{})}), Ids.none_int);
+    const b = try f.shapes.node(gpa, &f.account, at, try f.set(&.{try f.param(2, 0, &.{})}), Ids.none_int);
+    const c = try f.shapes.choice(gpa, &f.account, &f.cells.sets, a, b);
+    const k = try f.setK(.none, a, shared);
+    try testing.expectEqual(lost, try f.kappa(k, b, false));
+    const Alike = struct {
+        fn relabel(fx: *Fixture, s: SetId) Error!SetId {
+            if (s == .none) return .none;
+            return fx.set(&.{try fx.param(3, 0, &.{})});
+        }
+    };
+    _ = try f.shapes.map(gpa, &f.account, c, &f, Alike.relabel);
+    const m = f.shapes.memo_map.get(a).?;
+    try testing.expectEqual(m, f.shapes.memo_map.get(b).?);
+    // Both sources stand at the root position: what read-off's walk finds.
+    const Carry = struct {
+        shapes: *Shape.Table,
+        root: Kappas,
+        both: bool,
+        fn node(ctx: *anyopaque, n: NodeId) Error!?NodeId {
+            const s: *@This() = @ptrCast(@alignCast(ctx));
+            return s.shapes.memo_map.get(n);
+        }
+        fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, x: CondId) Error!CondId {
+            return x;
+        }
+        fn source(ctx: *anyopaque, n: NodeId) ?NodeId {
+            const s: *@This() = @ptrCast(@alignCast(ctx));
+            return s.shapes.mapSource(n);
+        }
+        fn present(ctx: *anyopaque, pos: Kappas, _: NodeId) u32 {
+            const s: *@This() = @ptrCast(@alignCast(ctx));
+            return if (pos == s.root and s.both) 2 else 1;
+        }
+    };
+    var two: Carry = .{ .shapes = &f.shapes, .root = k, .both = true };
+    const r2: Table.Relabel = .{ .ctx = &two, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present };
+    try testing.expectEqual(lost, try f.kappa(try f.conds.kappaRelabel(gpa, f.charge(), k, r2), m, false));
+    // Both with an entry: their join, never `lost` for want of one.
+    const kb = try f.setK(k, b, shared);
+    two.root = kb;
+    try testing.expectEqual(shared, try f.kappa(try f.conds.kappaRelabel(gpa, f.charge(), kb, r2), m, false));
+    // `b` at another position: `a`'s entry is the image's here.
+    var one: Carry = .{ .shapes = &f.shapes, .root = k, .both = false };
+    const r1: Table.Relabel = .{ .ctx = &one, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present };
+    try testing.expectEqual(shared, try f.kappa(try f.conds.kappaRelabel(gpa, f.charge(), k, r1), m, false));
 }
 
 test "kappaMerge: the union of two snapshots, a shared key joined, a snapshot with itself the same" {
