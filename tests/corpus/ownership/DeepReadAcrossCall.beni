@@ -86,3 +86,43 @@ pub shallowBeside : Int → Int
 shallowBeside n =
     l = [ n ]
     showPush [ l, l ]
+
+
+-- Inside the callee: a push of `r.y`, then a deep read of `r`, inline (a
+-- leaf), through `showAll` (a node marked `D` at `π1`) and through two
+-- helpers, is refused `later-use`. A deep read of the sibling `r.y` beside
+-- a push of `r.x.a` is not a read of the pushed list.
+showY : { x : { a : List Int, b : List Int }, y : List Int } → String
+showY r = Debug.toString r.y
+
+
+showAll : { x : { a : List Int, b : List Int }, y : List Int } → String
+showAll r = Debug.toString r
+
+
+showAll2 : { x : { a : List Int, b : List Int }, y : List Int } → String
+showAll2 r = showAll r
+
+
+pub insideLeaf : { x : { a : List Int, b : List Int }, y : List Int } → Int
+insideLeaf r =
+    p = List.push r.y 1
+    String.length (Debug.toString r) + List.length p
+
+
+pub insideNode : { x : { a : List Int, b : List Int }, y : List Int } → Int
+insideNode r =
+    p = List.push r.y 1
+    String.length (showAll r) + List.length p
+
+
+pub insideTwo : { x : { a : List Int, b : List Int }, y : List Int } → Int
+insideTwo r =
+    p = List.push r.y 1
+    String.length (showAll2 r) + List.length p
+
+
+pub insideSibling : { x : { a : List Int, b : List Int }, y : List Int } → Int
+insideSibling r =
+    p = List.push r.x.a 1
+    String.length (showY r) + List.length p
