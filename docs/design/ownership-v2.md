@@ -3486,9 +3486,20 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
          `Tree = Node Tree Box Tree | Leaf`, and `bad t = (w = same t; incP (P w w))`, written at
          `π1#P.0#Node.1#Box.0`. The item inside `V = w` at `#P.0#Node.0#Node.1#Box.0` and the `#P.1`
          occurrence's item at `#P.1#Node.1#Box.0` both have the key `(u_K, N_K, off, none, …)`, because
-         `Box` is on no cycle. The tag is therefore a field of all three keys, and an item met with
-         another tag is another item. The plain `Tree` of the `P w w` witness hides this, since there
-         `K` stands directly below a cyclic place and the paths differ.
+         `Box` is on no cycle. The tag is therefore a field of every key by which the walk merges, and an
+         item met with another tag is another item. There are four such keys: `seen`, `seen_x`,
+         `seen_r`, and the read node of a held item, `arms.read(&read, .{ v, folded, path, inside })`,
+         which holds no use node either (the second re-review of #1519). A held `Box` inside `w` and the
+         held `Box` of the `#P.1` occurrence share one read node when the place above it is on no cycle:
+         `Node Tree Wrap Tree`, `Wrap = Wrap Box`, `Box = Box (List Int)` (near-miss row 17). The plain
+         `Tree` of the `P w w` witness hides all this, since there `K` stands directly below a cyclic place
+         and the paths differ.
+       - **The walk's order is never relied on.** `otherPaths` pops its stack last in, first out, and it
+         pushes the spine's child before the siblings off the spine. So today every subtree off the spine,
+         the whole `#P.1` occurrence included, is explored before the spine reaches `V`, and a merged item
+         would be made untagged, keeping `K`. That order makes rows 15 and 17 safe by accident, not by
+         the rule. The tag is needed in every order. Any order of the walk must give the same verdict,
+         and the tests below force the order in which the item inside `V` is met first.
        - An item at class `K` keeps nothing of it.
        - Where an item keeps a reach (`keepReach`), the reach of a position inside `V` is taken by class:
          the cells of every class of `C` that its class reaches in `C`'s fold, except `K`. Those cells are
@@ -3535,9 +3546,10 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      - *`runtime_safety` check* (`TransferBeside.assertCertifiedDrop`). It shares no walk with the rule.
        For every item that dropped `K`, the actual is walked again along the item's route with every view
        forced and every choice flattened, and it must meet a node of `V`'s answer at `L` (through
-       `Shape.answered`). Every edge into a dropping item in the walk's graph (`TransferArms.Arms`, one
-       edge per route that reached it, merges included) must come from the spine's item at `V` or from
-       an item with the same occurrence in its tag, so no item outside the occurrence was merged into it. `Calls.Pre`'s traced preimage of that answer, keyed by canonical path, must put
+       `Shape.answered`). Every edge into a dropping item or into the read node of one, in the walk's graph
+       (`TransferArms.Arms`, one edge per route that reached it, merges included), must come from the
+       spine's item at `V` or from an item with the same occurrence in its tag. So no item outside the
+       occurrence was merged into it. `Calls.Pre`'s traced preimage of that answer, keyed by canonical path, must put
        each dropped position in `K`'s class and each written position in `K`'s class. And C5 (`F(A) ⊑ A`,
        from the published class alone) must hold for `A(f, K)`. Inside a group the class is not
        published yet. The check is then recorded with the goal and runs at publication, against the
@@ -3549,7 +3561,9 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        class is one node, so a view's node stands at one class, and the split is one extra state per item
        per `(V, K)`. A cell-set node interned at several classes (`mix`, near-miss row 12) can stand at
        up to `|classes(C)|` of them. That is a constant of the callee's type, not of the actual's size.
-       So the walk has at most `items · (1 + arms · |classes(C)|)` items. Per `(call, V, K)`: one
+       The read map is keyed by value node rather than by use node, and the same split applies to it. So the
+       walk has at most `items · (1 + arms · |classes(C)|)` items and at most
+       `reads · (1 + arms · |classes(C)|)` read nodes, where `items` and `reads` count today's walk. Per `(call, V, K)`: one
        rule 4 instantiation per class of `C` (O(A log A) each), the reach of each class without `K` as one
        persistent union over `C`'s fold, memoised, and one κ̂. The premises on the write cost one walk of
        the spine, as `leafDepth` does (O(|q|)), and one `classAt` of its rest. So a K-wide tree writer
@@ -7272,6 +7286,7 @@ stay refused.
 | 14 | `wrapR n t = if n == 0 then same (Node t [] Leaf) else wrapR (n − 1) t`, called as `incAll (wrapR n ll)` with `ll` a grandchild (`π1#Node.0⟲`) | accepted | safe on 677 of 677 (height ≤ 4) | `A(wrapR, #Node.1)` holds `π2#Node.1` and the root join `π2⟲#Node.1`, which are alias-apart. Both image to `π1#Node.0⟲#Node.1` through `ll`, one group, so the maximum is taken. C6's alias check passes where an unrolling of `π2⟲` would have failed (the review of #1519). The fresh `[]` reaches `K` through the recursive call as a folded `ι⋆`; if that needs S4's `within` (W1–W3), the line is refused `(approx)` for that reason only, and the twin with a parameter list in place of `[]` pins rule 4 alone. |
 | 15 | `type Box = Box (List Int)`, `Tree = Node Tree Box Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag (§2.11 item 3 (d)). `Box` is on no cycle, so an item inside `w` at `#P.0` and an item of the `#P.1` occurrence have one key without it, and the first one met decided for both (the re-review of #1519). With the tag they are two items, and the `#P.1` item keeps `t#Node.1#Box.0`. |
 | 16 | Row 15 with the list in a record field, `Node Tree { xs : List Int } Tree` | refused `disjoint` | unsafe | An S5 row: a record field inside a constructor is S5's (record demands). The same tag argument applies, because a record place is on no cycle either. |
+| 17 | `Box = Box (List Int)`, `Wrap = Wrap Box`, `Tree = Node Tree Wrap Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag in the read map (§2.11 item 3 (d)). `Wrap` is on no cycle, so the held `Box` inside `w` (class `#Node.1#Wrap.0`) and the held `Box` of the `#P.1` occurrence share one read node without the tag. If the item inside `V` made that read node first, the `#P.1` route lost `t`'s lists (the second re-review of #1519). |
 
 Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
 limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
@@ -7308,7 +7323,7 @@ tree of height 4 or less, and derived on paper for the item form of (d) and the 
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
 instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
-- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14 and 15 in one module.
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17 in one module.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
   library module, so the certified mark crosses a block (C4).
 - `o/FoldedKnotCall`: reader 2. `incAll`'s `xreq excl π1#Node.0⟲#Node.1` is read at a certified view
@@ -7316,7 +7331,12 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   are refused.
 - Two test-only mutations. `cert-rule4-sum` adds the images of a group, and `cert-view-cells` drops
   (d). Each must turn the accepted witnesses red. A third, `cert-untagged`, leaves the tag out of the
-  walk's keys. It must turn row 15 green, and the C7 check must panic on it.
+  walk's four keys. Because of the walk's order (§2.11 item 3 (d)), the mutation alone changes no
+  verdict. So it is tested with a test-only switch, `otherPaths-spine-first`, which reverses the push
+  order so that the spine reaches `V` before any sibling off it. Two unit tests in `build_test.zig` run
+  rows 15 and 17 under the switch. With the tag, both are refused in either order. Under the switch with
+  `cert-untagged`, both are accepted, and C7's edge check panics. `gates` refuses both switches, as it
+  refuses every mutation.
 - Measure what #1485's stop report left open: the approximate `~…⟲` cells that `Grafter.argAt`'s
   `recastWhole` puts at `#Node.1[*]` (and at each class below `K`) in each member's own recursion
   (`same`, `incAll`, `unroll`), once rule 4 projects a leaf through `⟲` symbolically. Record which of
