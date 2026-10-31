@@ -4036,7 +4036,10 @@ const Case = struct {
             if (!std.mem.startsWith(u8, t, "unchecked ")) continue;
             if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) known: {
                 const decl = t["unchecked ".len..][0 .. std.mem.indexOfScalar(u8, t["unchecked ".len..], ':') orelse 0];
-                if ((try knownDifferences()).use(try std.fmt.allocPrint(arena, "{s} {s} limit {s}", .{ root, module, decl }))) break :known;
+                // Only the summary-size limit is ever known: an accounting
+                // invariant is a defect and always fails.
+                const size = std.mem.indexOf(u8, dump, try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size\n", .{decl})) != null;
+                if (size and (try knownDifferences()).use(try std.fmt.allocPrint(arena, "{s} {s} limit {s}", .{ root, module, decl }))) break :known;
                 detail("{s}: the checker v2 reached a limit: {s}\n", .{ name, t });
                 return error.OwnershipV2Limit;
             }

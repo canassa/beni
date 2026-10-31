@@ -1,0 +1,46 @@
+-- ownership: a recursive group's port joined over rounds keeps the weaker
+-- κ (#1395's review). `build` pushes `x` on every level, so the elements of
+-- its answer may share one list (`[*] π1{shared}` from round 2). The join of
+-- rounds 1 and 2 keys that `shared` below a choice where a caller's read of
+-- the call never meets it, so v2 accepts `readB`'s push of `a` while `b` may
+-- be the same list. v1 refuses it. `evenB`/`oddB` are the mutual twin.
+build : List Int, Int → List (List Int)
+build x n =
+    if n == 0 then
+        []
+    else
+        List.push (build x (n - 1)) x
+
+
+pub readB : Int → Int
+readB k =
+    xs = [ k ]
+    case build xs 3 of
+        [ a, b, …_ ] →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+evenB : List Int, Int → List (List Int)
+evenB x n =
+    if n == 0 then
+        []
+    else
+        List.push (oddB x (n - 1)) x
+
+
+oddB : List Int, Int → List (List Int)
+oddB x n = evenB x n
+
+
+pub readE : Int → Int
+readE k =
+    xs = [ k ]
+    case evenB xs 3 of
+        [ a, b, …_ ] →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0

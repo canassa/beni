@@ -1,4 +1,4 @@
 RecursiveGroupAnnotatedReceiver f: lines 17-21 (not built: let_def)
 RecursiveGroupAnnotatedReceiver g: lines 24-30 (not built: call)
-RecursiveGroupAnnotatedReceiver g2: lines 33-39 (not built: call)
 RecursiveGroupAnnotatedReceiver f2: lines 42-46 (not built: let_def)
+RecursiveGroupAnnotatedReceiver g2: lines 33-39 (not built: call)

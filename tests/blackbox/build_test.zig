@@ -11318,3 +11318,38 @@ test "the checker v2 publishes nothing of a recursive group a limit stops, and s
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked shift2") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.before xs: rejected later-use") != null);
 }
+
+test "the checker v2 charges a recursive group the same in either declaration order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §3.8, #1395's review: `wa` and `wb` share memos within a round, and the
+    // member walked first pays a first miss. Members are walked by name, so
+    // swapping the two declarations changes no account, and at an allowance
+    // near their cost both orders give the same answer.
+    const types = "@ownership_summary_size(module, 151100)\n\ntype A\n    = A (List Int) B B\n    | AL\n\n\ntype B\n    = B (List Int) A\n    | BL\n";
+    const wa = "\n\npub wa : A → A\nwa a =\n    case a of\n        A xs b1 b2 →\n            A (List.push xs 1) (wb b1) b2\n\n        AL →\n            AL\n";
+    const wb = "\n\npub wb : B → B\nwb b =\n    case b of\n        B ys a →\n            B ys (wa a)\n\n        BL →\n            BL\n";
+    var outs: [2][]const u8 = undefined;
+    var growth: [2]u64 = undefined;
+    for ([_]bool{ false, true }, &outs, &growth) |swapped, *out, *g| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", try std.mem.concat(w.arena.allocator(), u8, if (swapped) &.{ types, wb, wa } else &.{ types, wa, wb }));
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const limited = std.mem.indexOf(u8, dump.stdout, "limit wa:") != null or std.mem.indexOf(u8, dump.stdout, "limit wb:") != null;
+        out.* = if (limited) "limit" else "checked";
+        g.* = if (limited) 0 else try accountField(dump.stdout, "wa", "growth");
+    }
+    try testing.expectEqualStrings(outs[0], outs[1]);
+    try testing.expectEqual(growth[0], growth[1]);
+}
