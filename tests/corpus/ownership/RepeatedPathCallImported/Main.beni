@@ -1,0 +1,56 @@
+-- ownership (project): `RepeatedPathCall` with the helpers in another
+-- module (ownership-v2.md Appendix B, L×A; R-4.3.1, R-5.7.1; #1122). The
+-- block keeps `pair`'s first argument at both `.0` and `.1.0`, so the
+-- verdicts are the same-module fixture's: writing `.1.0` while `.0` is
+-- read after is refused (`refused`, `matchedWhole`); a copy, `.0` read
+-- before only, or `.1.1` read after is accepted. `both x x` under a writer
+-- of every element is refused (`oneTwice`), two lists are accepted
+-- (`twoLists`).
+import Pairs
+
+
+pub refused : List Int, List Int → List Int × List Int
+refused x y =
+    case Pairs.pair x y of
+        ( first, inner ) →
+            ( Pairs.writeFirst inner, first )
+
+
+pub matchedWhole : List Int, List Int → List Int × List Int
+matchedWhole x y =
+    case Pairs.pair x y of
+        ( first, ( a, _ ) ) →
+            ( List.push a 1, first )
+
+
+pub copied : List Int, List Int → List Int × List Int
+copied x y =
+    case Pairs.pair x y of
+        ( first, ( a, b ) ) →
+            p = ( List.copy a, b )
+            ( Pairs.writeFirst p, first )
+
+
+pub readBefore : List Int, List Int → List Int
+readBefore x y =
+    case Pairs.pair x y of
+        ( first, inner ) →
+            n = List.length first
+            List.push (Pairs.writeFirst inner) n
+
+
+pub otherRead : List Int, List Int → List Int × List Int
+otherRead x y =
+    case Pairs.pair x y of
+        ( _, inner ) →
+            case inner of
+                ( _, b ) →
+                    ( Pairs.writeFirst inner, b )
+
+
+pub oneTwice : List Int → List (List Int)
+oneTwice x = Pairs.pushAll (Pairs.both x x)
+
+
+pub twoLists : List Int, List Int → List (List Int)
+twoLists x y = Pairs.pushAll (Pairs.both x y)

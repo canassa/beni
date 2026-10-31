@@ -1,0 +1,31 @@
+module LinkedJoinCertificate
+  19:15 List.push xs: accepted param
+  19:32 call LinkedJoinCertificate.pushAll rest[*]: accepted param (LinkedJoinCertificate.pushAll writes π1[*])
+  35:5 call LinkedJoinCertificate.pushAll <expression>[*]: accepted param (LinkedJoinCertificate.pushAll writes π1[*])
+  45:5 call LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (LinkedJoinCertificate.pushAll writes π1[*])
+  54:10 call LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.two>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (LinkedJoinCertificate.pushAll writes π1[*])
+  59:5 call LinkedJoinCertificate.pushAll <expression>[*]: accepted call (LinkedJoinCertificate.pushAll writes π1[*])
+  69:5 call LinkedJoinCertificate.pushAll <expression>[*]: accepted param (LinkedJoinCertificate.pushAll writes π1[*])
+  79:5 call LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (LinkedJoinCertificate.pushAll writes π1[*])
+  89:5 call LinkedJoinCertificate.pushAll <expression>[*]: accepted param (LinkedJoinCertificate.pushAll writes π1[*])
+  99:5 call LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (LinkedJoinCertificate.pushAll writes π1[*])
+  124:17 call LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.chooseOne>[*]: accepted param (LinkedJoinCertificate.pushAll writes π1[*])
+  128:18 call LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.choose>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (LinkedJoinCertificate.pushAll writes π1[*])
+  summary pushAll: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] fresh3{excl π1} ~condition(fresh4) ~fresh4{lost} ~fresh6{lost} ~π1[*]{excl π1}, [*][*] ~condition(fresh5) ~π1[*][*]{excl π1}, fresh1{lost}r{excl π1[*][*]} ~fresh2{excl π1} ~fresh6{lost}; xreq excl π1
+  summary one: π1 RA; res [*] π1, fresh1{excl π1}
+  summary two: π1 RA; res [*] condition(fresh2) π1, fresh1{shared}
+  summary sameSingle: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost} ~π2, [*][*] ~condition(fresh2) ~fresh2{excl π2} ~π2[*]{excl π2}, ~fresh3{lost} ~fresh4{lost}; xreq excl π2
+  summary singleOrTwin: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π2{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π2[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  summary twin: π1 RAW[storage], π1[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π1{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π1[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  summary freshMembers: res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost}, [*][*] ~condition(fresh2) ~fresh2, ~fresh3{lost} ~fresh4{lost}
+  summary leafOrOne: π2 R, π2[*] AW[storage], π2[*][*] A, π3 RAW[storage], π3[*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost} ~π2[*]{excl π2, excl π3} ~π3{excl π2}, [*][*] ~condition(fresh2) ~fresh2{excl π2, excl π3} ~π2[*][*]{excl π2, excl π3} ~π3[*]{excl π2, excl π3}, ~fresh3{lost} ~fresh4{lost}; xreq excl π2, excl π3
+  summary leafOrTwin: π2 R, π2[*] AW[storage], π2[*][*] A, π3 RAW[storage], π3[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π2[*]{shared} ~π3{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π2[*][*]{shared} ~π3[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  summary emptyOrOne: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost} ~π2, [*][*] ~condition(fresh2) ~fresh2{excl π2} ~π2[*]{excl π2}, ~fresh3{lost} ~fresh4{lost}; xreq excl π2
+  summary emptyOrTwin: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π2{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π2[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  summary choose: π2 RA; res [*] condition(fresh2) π2, fresh1{shared}
+  summary chooseOne: π2 RA; res [*] π2, fresh1{excl π2}
+  summary chosenOne: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost} ~π2, [*][*] ~condition(fresh2) ~fresh2{excl π2} ~π2[*]{excl π2}, ~fresh3{lost} ~fresh4{lost}; xreq excl π2
+  summary chosenTwin: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π2{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π2[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  demands 12: accepted 7 (fresh 0, call 1, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 12: accepted 7 (fresh 0, call 1, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause exclusive 5
