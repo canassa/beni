@@ -2061,9 +2061,24 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        each step by `extend` (`Transfer.routePath`).
      - **The written positions** are the write path's canonical paths (one, or a join's level paths,
        §2.1 *one position, one name*) paired with the actual's nodes the write's path reaches there,
-       a join's sides included (`Written`). A route beside the write that arrives at one of them is the
-       written object itself, not another path; it is skipped, with what is below it, which the write's
-       own path reads (rule (b)). Its other positions at that path are the class's `excl` (step 7).
+       a join's sides included, **that stand at one position of the path** (`Written`). A route beside
+       the write that arrives at one of them is the written object itself, not another path; it is
+       skipped, with what is below it, which the write's own path reads (rule (b)).
+       *Amended 2026-10-31 (#1253's review): one position only.* A path through `⟲` names several
+       positions, and nothing makes the class owe their distinctness: `writeLL t = case t of Node (Node
+       (Node a xs b) ys c) zs d → Node (Node (Node a (List.push xs 1) b) ys c) zs d` writes one position
+       of `π1#Node.0⟲#Node.1` and owes no `excl` (the `[*]` of a list owes one; a constructor field does
+       not). Over `Node (Node s [ 2 ] s) [] Leaf` the one node `s` stands at two positions of that path,
+       so an arrival at `s`'s list may be its other position, the same list beside the write. So each
+       node there counts its **routes** from the actual, along the write's path (`Transfer.frontierAt`,
+       `routesBelow`: one walk of the value below each `⟲`, a pass in topological order, each edge a
+       `(node, step)` or a join's side, counts summed and capped at two, a node on a knot two). Every
+       route to a position at the path goes through the path's positions above it, so these are all its
+       routes. Only a node of one route is a written position; a node of two is read as another path,
+       as before. Where the class owes `excl` there (a list's elements), a node of two routes is refused
+       either way, so nothing is lost. Pinned: `FoldedOnePosition` and `FoldedOnePositionImported`
+       (one subtree twice, a parameter's list in it, two equal subtrees over one parameter list, a list
+       projected from a literal beside the literal), each refused as v1 refuses it.
      - **A value beside the write is read by position** (`Transfer.reachBeside`): from its path, each
        `(node, path)` once, its own cells kept, its children's taken by projection at their paths, a
        written position skipped. A join (`union`, `choice`, `positions`) is read side by side at its
@@ -2072,7 +2087,9 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      - **A symbolic value above the base** (rule (c)'s parameter cells, #1383's held or deep readings,
        #1386's splits): a parameter cell `d` of the value whose canonical cell is above the base's `c` holds
        the written object itself when the steps from `d`'s path down to `c`'s, taken from the value's
-       path, land on a written position (`Transfer.atWritten`). Then it holds nothing beside the write.
+       path, land on a written path (`Transfer.atWritten`). Then it holds nothing beside the write, but
+       where `c`'s path stands for several positions the frame owes `excl c` upward (rule (c)'s folded
+       case), since it is then a symbolic value whose positions only the caller's callers can tell.
      - **Linear.** A route's path is dropped (`none`) below a place on no cycle beside the write's path:
        `extend` folds only through the places of one cycle, so no step below such a place lands above
        it, on the write's path. A dropped route is read as before, by node, and a value with a dropped
@@ -2082,8 +2099,10 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        rule): K-wide `t == t` beside a write, K = 8 / 16 / 32, 1 068 / 1 316 / 1 812 → 1 070 / 1 318 /
        1 814, through a `Maybe` 1 124 / 1 428 / 2 036 → 1 126 / 1 430 / 2 038; a `T (List T)` tower
        literal written by `incT`, height 8 / 16 / 32 / 64 / 128, 3 023 / 7 721 / 23 759 / 84 131 /
-       324 921 → 2 411 / 4 709 / 10 258 / 24 578 / 65 656 (refused before, accepted now). The counted
-       families of #1325, #1329, #1352 and the 5d1 towers pass.
+       324 921 → 2 436 / 4 758 / 10 355 / 24 771 / 66 041 (refused before, accepted now); the counted
+       families of #1325, #1329, #1352 and the 5d1 towers pass. That tower is still quadratic (×3.6 a
+       doubling at 1 024, the limit at 2 048; master reaches it at 256): below a `⟲` each write route is
+       its own and walks the actual below its path again (#1446).
      So `three`, `four` and the distinct twins of 4a's plan fixtures are accepted as v1 accepts them, and
      every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`). Still apart from v1: a `choice`
      at the root is read with both arms together, so an object in one arm beside the other arm's write is
@@ -4816,7 +4835,7 @@ L0  Ids
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 710 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 240 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, §2.11 item 3) |
+| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 380 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 11 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 12 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 930 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1) |
