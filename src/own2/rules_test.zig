@@ -69,8 +69,9 @@ const layers = [_]Entry{
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
-    // 2 010 since #1335: the same-path closure by the cycle walk.
-    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2010 },
+    // 2 010 since #1335: the same-path closure by the cycle walk; 2 030 since
+    // #1366: a candidate stops at a `◆` barrier.
+    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2030 },
     // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
