@@ -12,11 +12,14 @@
 --!         Node.print "later"
 --!
 --! A primitive here is written in beni over `Task.callback` and one `impure`
---! `foreign` that starts the host's operation and returns what cancels it,
---! so that cancelling a fiber cancels what it was waiting on.
+--! function that starts the host's operation and returns what cancels it,
+--! so that cancelling a fiber cancels what it was waiting on. Since
+--! 2026-10-29 that function is beni over `Js` too (`plans/runtime-in-beni.md`
+--! step 10): the module has no sibling, and reaches `node:fs/promises`
+--! through `process.getBuiltinModule`.
 
 import Duration
-import Js
+import Js exposing (Value)
 import Log
 import Node exposing (Program)
 import Task exposing (Exit, Resume)
@@ -95,7 +98,22 @@ logLine entry =
     ⊤
 
 
-foreign impure finish : Exit Program → ⊤
+-- How the fiber `run` started ended: its program's output and exit code,
+-- or 130 when it was cancelled. `runtime.js` has already run the empty
+-- program `main` evaluated to. A `Program` is the host object `Node`'s
+-- sibling builds, read by its two properties.
+finish : Exit Program → ⊤
+finish exit =
+    case exit of
+        Task.Done program →
+            out = Js.get (Js.from program) "out"
+            if not (Js.same (Js.get out "length") (Js.from 0)) then
+                _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ out ]
+                ⊤
+            Js.set (Js.global "process") "exitCode" (Js.get (Js.from program) "code")
+
+        Task.Cancelled →
+            Js.set (Js.global "process") "exitCode" (Js.from 130)
 
 
 --| Wait `ms` milliseconds on the calling fiber's clock: `Task.sleep`. Only
@@ -139,9 +157,6 @@ pub readFile : String → Result FileError String
 readFile path = Task.callback λresume → startRead path resume
 
 
-foreign impure startRead : String, Resume (Result FileError String) → (⊤ → ⊤)
-
-
 --| What a directory entry is, as the directory reports it. A symbolic link
 --| is not followed: it is a `Symlink` whatever it points at.
 pub type EntryKind
@@ -183,3 +198,74 @@ readDir path = Task.callback λresume → startReadDir path resume
 
 
 foreign impure startReadDir : String, Resume (Result FileError (List Entry)) → (⊤ → ⊤)
+
+
+-- Start one `fs.promises.readFile`, resume the waiting fiber once with its
+-- answer, and return what aborts it. The module is asked of `process` at
+-- each call, so a platform that replaces `readFile` (`run/ReadFileDefect`)
+-- is seen. A rejection is one of three things: the abort the canceller
+-- asked for, which no one waits for; a failure Node documents, by its
+-- `code`, which is the `FileError`; or a defect, thrown again, so that it
+-- is a rejection nothing handles and Node reports it and exits 1
+-- (`CLAUDE.md` rule 9; `transparent-effects-proposal.md` §16.5).
+startRead : String, Resume (Result FileError String) → (⊤ → ⊤)
+startRead path resume =
+    abort = Js.construct (Js.global "AbortController") []
+    signal = Js.get abort "signal"
+    fs = Js.call (Js.global "process") "getBuiltinModule" [ Js.from "node:fs/promises" ]
+    reading =
+        Js.apply (Js.get fs "readFile")
+            [ Js.from path, Js.object [ ( "encoding", Js.from "utf8" ), ( "signal", signal ) ] ]
+    _ =
+        Js.call reading "then"
+            [ Js.from λtext → Task.resume resume (Ok (Js.to text))
+            , Js.from λerror → rejected signal resume error
+            ]
+    λ⊤ →
+        _ = Js.call abort "abort" []
+        ⊤
+
+
+-- The rejection handler of a read (above).
+rejected : Value, Resume (Result FileError String), Value → ⊤
+rejected signal resume error =
+    isError = Js.instanceOf error (Js.global "Error")
+    if
+        Js.same (Js.get signal "aborted") (Js.from True)
+            && isError
+            && Js.same (Js.get error "name") (Js.from "AbortError")
+    then
+        ⊤
+    else
+        code = if isError then Js.get error "code" else Js.undefined
+        if
+            Js.typeIs code "string" && Js.to (Js.call (Js.global "Object") "hasOwn" [ codes, code ])
+        then
+            Task.resume resume (Err (Js.to (Js.call (Js.global "Reflect") "get" [ codes, code ])))
+        else
+            Js.throw error
+
+
+-- `FileError`'s constructor for each failure Node documents for
+-- `fs.promises.readFile`, by the error's `code`: one object, read by its
+-- own keys alone (`Object.hasOwn`). The values are the constructors as
+-- `Js.from` gives them, which keeps `FileError`'s string tags in a release
+-- build (`backend.md` §9 item 4), as the sibling's annotation did.
+codes : Value
+codes =
+    Js.object
+        [ ( "ENOENT", Js.from NotFound )
+        , ( "EACCES", Js.from PermissionDenied )
+        , ( "EPERM", Js.from PermissionDenied )
+        , ( "EISDIR", Js.from IsADirectory )
+        , ( "ENOTDIR", Js.from NotADirectory )
+        , ( "EMFILE", Js.from TooManyOpenFiles )
+        , ( "ENFILE", Js.from TooManyOpenFiles )
+        , ( "ELOOP", Js.from SymlinkLoop )
+        , ( "ENAMETOOLONG", Js.from NameTooLong )
+        -- A TypeError: the path holds a NUL character.
+        , ( "ERR_INVALID_ARG_VALUE", Js.from InvalidPath )
+        -- A RangeError over 2 GiB, and an Error past V8's longest string.
+        , ( "ERR_FS_FILE_TOO_LARGE", Js.from TooLarge )
+        , ( "ERR_STRING_TOO_LONG", Js.from TooLarge )
+        ]

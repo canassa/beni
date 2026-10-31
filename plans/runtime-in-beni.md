@@ -23,6 +23,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
+| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 
 ## Step 1 — slot and mount (2026-10-02)
@@ -914,3 +915,45 @@ compiler and the branch's and compared as brotli 11 over each bundle: 124 061 �
 raw −212), 5 smaller — the five that reach a moved export, `HelloWorker` −35, `ObjectCounter`
 −30, `ObjectHolders` −8, `ObjectIsolation` −7, `ObjectStorage` −5 — and 8 byte for byte, none
 larger. The full lines are in the pull request's body.
+
+## Step 10 — `node`'s `Io.js` (2026-10-29)
+
+**What moved.** The two `foreign`s of `Io.beni`. `finish` reads the fiber's `Exit`: `Done program`
+writes the `Program`'s `out` to standard output when it is not empty and sets `process.exitCode`
+to its `code`, `Cancelled` sets 130; a `Program` is the host object `Node`'s sibling builds, read
+by `Js.get`. `startRead` makes an `AbortController`, asks `process.getBuiltinModule` for
+`node:fs/promises` at each call — so a platform that replaces `readFile` (`run/ReadFileDefect`) is
+seen, as the sibling saw it through `syncBuiltinESMExports` — and calls `readFile` with the
+encoding and the signal; `then` takes two lambdas, the fulfilment resuming the fiber with `Ok`,
+the rejection handler `rejected`: an `AbortError` while the signal is aborted is the canceller's
+own and resumes no one; an `Error` whose `code` is a key of the table (`codes`, one `Js.object`
+of the twelve codes to their constructors, read by its own keys with `Object.hasOwn` and
+`Reflect.get`) resumes with that `FileError`; anything else is thrown again, a rejection nothing
+handles, so Node reports it and exits 1 (`CLAUDE.md` rule 9). A `case` over the twelve strings
+was the first cut; it made the two programs that read a file 333 raw bytes larger than the
+sibling, and the table is the sibling's own shape. The canceller aborts the controller.
+Both are `impure` by inference, as the `foreign`s declared, and `startRead`'s lambdas are `sync`.
+`Io.js` keeps only the newer `startReadDir`, added on the base while this move was pending;
+its directory listing, errors, ordering and cancellation stay unchanged. The `node` platform
+also keeps `Node.js`, `Http/Server.js` and `WebSocket.js`.
+
+**What changes shape.** `Exit` and `Result FileError String` crossed the boundary through the
+`foreign` annotations; they cross nothing now, so a release build gives `Exit` and `Result`
+integer tags when no other boundary pins them. The newer `startReadDir` still exposes
+`Result FileError (List Entry)`, so `Result` keeps string tags in a build that reaches it.
+`FileError` keeps its string tags: the table holds its constructors through
+`Js.from`, a use at the type that pins it (`backend.md` §9 item 4), as the sibling's annotation
+did. `Program` stays a `foreign type` of `Node`, read by its two plain properties.
+`emit/release/app/IoReadFile` pins the shape; `run/SuspendReadFile`, `run/ReadFileErrors` (the
+code table through real failures) and `run/ReadFileDefect` (an `EIO` rejection crashes the
+program) run both builds.
+
+**Sizes.** Measured against `master` at `e359de0ff` as step 8 was (`bench/size.mjs`; the
+`browser/` corpus for the pages, which do not reach the `node` platform). The 642 node lines:
+1 344 511 → 1 341 985 B brotli (−2 526, −0.19 %), raw −7 265; 142 smaller, 483 equal, 17 larger
+— each of the 17 by 1 to 16 B at 38 fewer raw bytes, the compressor on `finish`'s shorter code,
+accepted under R47-3's reading (the owner, 2026-10-28). The three programs that read a file:
+`run/ReadFileErrors` 2 402 → 2 367 (−35, raw −54), `run/ReadFileDefect` +14 at raw −25,
+`run/SuspendReadFile` +6 at raw −23. Every page and every `size.mjs` page line is byte for byte.
+The first cut, with the code table as a `case` over twelve strings, made the two `readFile`
+programs 333 raw bytes larger; the sibling's object table put them below it.
