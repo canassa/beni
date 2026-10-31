@@ -302,6 +302,8 @@ tests/corpus/ownership/ParamLeafByNode.beni [node] ParamLeafByNode 27:10 #0 :: P
 #
 # v2 refuses where v1 accepted: two matches of one rest may take one position (ownership-v2.md §2.13.3).
 tests/corpus/ownership/PatternPositions.beni [node] PatternPositions 257:34 #0 :: PatternPositions.rightLeft <Pair …>#Pair.1#Box.0 :: accepted :: rejected  `c` and `d` are both the rest's first element, one box written and answered: v1 accepts it unsoundly
+tests/corpus/ownership/CombinePositions.beni [node] CombinePositions 82:23 #0 :: List.push a :: accepted :: rejected  `a` and `c` are both the rest's first payload, one list written and answered: v1 accepts it unsoundly
+tests/corpus/ownership/CombinePositionsImported [node] Combine 29:23 #0 :: List.push a :: accepted :: rejected  as in CombinePositions: v1 accepts it unsoundly
 #
 # v2 refuses where v1 accepted: a literal head beside its rest may be the rest's first element again (ownership-v2.md §2.13.3).
 tests/corpus/ownership/PatternPositionsStored.beni [node] PatternPositionsStored 140:21 #0 :: PatternPositionsStored.go c#Box.0 :: accepted :: rejected  `[ a, …rest ]`'s first position is `a`, written and answered: v1 accepts it unsoundly

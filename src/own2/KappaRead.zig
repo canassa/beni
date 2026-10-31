@@ -877,7 +877,7 @@ pub fn Of(comptime Table: type) type {
         /// The aggregate of a cell set (`Agg`), a use mark left out: memoised per
         /// radix node, a node's the disjoint join of its two halves' (`aggJoin`).
         /// Post-order on an explicit stack.
-        pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, cells: SetId) Error!Agg {
+        pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, cells: SetId) Error!Agg {
             if (cells == .none) return .{};
             if (cellt.sets.branches(cells) == null) {
                 var it = cellt.sets.iterate(cells);
@@ -927,7 +927,7 @@ pub fn Of(comptime Table: type) type {
         /// across them, and the pairs over a base both bind added as `aggAdd`
         /// adds them, the smaller side's cells of that base one by one. No repeat
         /// arises: the keys are disjoint.
-        pub fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             try charge.reserve(gpa, .inspection, 1);
@@ -1021,7 +1021,7 @@ pub fn Of(comptime Table: type) type {
         /// one unfolded cell twice `shared`, a folded one `lost`; `⊤`/approximate
         /// `lost`; arrivals `alias` tells apart the atom, that may be one `lost`;
         /// a split's two sides its κ; two `taken` elements the traversal rule.
-        pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
+        pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
             try charge.reserve(gpa, .inspection, 1);
             if (approx or cellt.origin(a) == .top or cellt.origin(b) == .top) return lost;
             if (a == b) return if (isFolded(cellt, places, a)) lost else shared;
@@ -1033,7 +1033,13 @@ pub fn Of(comptime Table: type) type {
                 .yes => lost,
                 .under => |s| blk: {
                     const k = cellt.splitOf(s).cond;
-                    break :blk if (k == .none) lost else k;
+                    if (k == .none) break :blk lost;
+                    if (k == yes) break :blk yes;
+                    // Two parts at one path below two positions of one list:
+                    // `excl` of their one cell, which `k` implies (§2.9 *Two
+                    // positions of one image*).
+                    if (try partsCell(gpa, charge, cellt, places, a, b)) |x| break :blk try t.excl(gpa, charge, x);
+                    break :blk k;
                 },
                 .under_kappa => |container| if (traversal) |tr| (tr.apart(tr.ctx, container, a, b) orelse lost) else lost,
             };
@@ -1042,6 +1048,33 @@ pub fn Of(comptime Table: type) type {
                 (try t.memo_sep.getOrPut(gpa, key)).value_ptr.* = out.int();
             }
             return out;
+        }
+
+        /// The one canonical cell of two parts at one path `q` below two
+        /// disjoint positions of one list (`Cell.listSides`), when `q` takes
+        /// no summary step (`[*]`, `⟲`): then each of its positions is one
+        /// position of the list's element cell, so the split's κ there, read
+        /// at the summary position, implies its `excl`. Null otherwise.
+        fn partsCell(gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId) Error!?CellId {
+            if (cellt.origin(a) != .part or cellt.origin(b) != .part) return null;
+            const sd = cellt.listSides(a, b) orelse return null;
+            try charge.reserve(gpa, .inspection, 1);
+            const x = (try cellt.unrefined(gpa, charge.account, places, a)) orelse return null;
+            if ((try cellt.unrefined(gpa, charge.account, places, b)) != x) return null;
+            const e = (try cellt.unrefined(gpa, charge.account, places, sd[0])) orelse return null;
+            if ((try cellt.unrefined(gpa, charge.account, places, sd[1])) != e) return null;
+            const ex = cellt.get(e);
+            const xx = cellt.get(x);
+            if (ex.origin != xx.origin or ex.a != xx.a or ex.c != xx.c) return null;
+            const ep: Ids.PathId = .from(ex.b);
+            var q: Ids.PathId = .from(xx.b);
+            if (q == ep) return null;
+            while (places.pathDepth(q) > places.pathDepth(ep)) : (q = places.pathParent(q)) {
+                try charge.reserve(gpa, .inspection, 1);
+                const k = places.pathStep(q).kind;
+                if (k == .elem or k == .level) return null;
+            }
+            return if (q == ep) x else null;
         }
 
         // ---- incremental apart reads (§2.9, #1121) ------------------------------------
@@ -1068,6 +1101,10 @@ pub fn Of(comptime Table: type) type {
             bases: u32 = Ids.none_int,
             pairs: CondId = yes,
             hit: bool = false,
+            /// `apartImage`'s images → the list sides that reached each (a set),
+            /// or none once one arrival was no side (§2.9 *Two positions of one
+            /// image*).
+            sides: u32 = Ids.none_int,
         };
 
         pub fn agg(t: *Table, gpa: Allocator, a: Agg) Error!u32 {
@@ -1078,7 +1115,7 @@ pub fn Of(comptime Table: type) type {
         /// `a` with one occurrence of `c` more. `multiset`: a cell met again is
         /// a repeat (two members holding it); otherwise the occurrences join as
         /// a set's do (`a` is one member's reach).
-        pub fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
+        pub fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
             var a = a0;
             try charge.reserve(gpa, .inspection, 1);
             const sets = &cellt.sets;
@@ -1187,7 +1224,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// Every cell of `from` added to `a` (`multiset` as `aggAdd`).
-        pub fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
+        pub fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
             var a = a0;
             var it = cellt.sets.iterate(from);
             while (it.next()) |e| a = try t.aggAdd(gpa, charge, cellt, places, a, .from(e.key), e.value == 1, multiset);
@@ -1195,7 +1232,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// Two aggregates as one: the smaller's cells added to the larger's.
-        pub fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
+        pub fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             // What the smaller side adds, its subtrees the larger shares
             // skipped whole (a DAG's two sides share most of their reach).
@@ -1229,14 +1266,14 @@ pub fn Of(comptime Table: type) type {
         /// a leaf against a set is one `aggAdd`. So two sets that both grew pay
         /// their changed spines, never the smaller side's size. The recursion is
         /// the key width.
-        pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
             var out = try t.aggMergeSetsAt(gpa, charge, cellt, places, a, b);
             // A member's own approximation, which `all`'s join forgets.
             out.lost_extra = out.lost_extra or try t.anyLost(gpa, charge, cellt, a) or try t.anyLost(gpa, charge, cellt, b);
             return out;
         }
 
-        pub fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        pub fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
             if (a == .none) return t.setAgg(gpa, charge, cellt, places, b);
             if (b == .none) return t.setAgg(gpa, charge, cellt, places, a);
             const sets = &cellt.sets;
@@ -1285,7 +1322,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `aggMerge` of two multisets (an atom's sides): an empty side is the
         /// other, as it is.
-        pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             return t.aggMerge(gpa, charge, cellt, places, x, y, true);
@@ -1434,7 +1471,43 @@ pub fn Of(comptime Table: type) type {
         /// The apart condition of `group`'s cells' images (`image` maps one), a
         /// multiset: each group is extended from its predecessor's image
         /// (`group_prov`), `memo` holding the images built under this `image`.
-        pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
+        /// One arrival `c` at image `m` (§2.9 *Two positions of one image*):
+        /// a repeat, as `aggAdd`'s multiset counts it, unless `m` is symbolic,
+        /// off a fold, and every earlier arrival at it is another side of one
+        /// list split (`Cell.listSide`, the sides kept per image in `a.sides`):
+        /// then `c` is another position of `m` and owes `excl m`. Constant
+        /// work per arrival.
+        fn addArrival(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, c: CellId, m: CellId) Error!Agg {
+            try charge.reserve(gpa, .inspection, 1);
+            const at_side = cellt.listSide(c);
+            const sides_now = t.mapGet(a0.sides, m.int());
+            const met = cellt.sets.get(a0.all, m.int()) != null;
+            var positions = false;
+            if (met) if (at_side) |sd| if (sides_now) |raw| if (raw != Ids.none_int) {
+                const set: SetId = .from(raw);
+                var it = cellt.sets.iterate(set);
+                const one: CellId = .from(it.next().?.key);
+                const o = cellt.origin(m);
+                positions = o.isSymbolic() and o != .top and !onFold(places, .from(cellt.get(m).b)) and
+                    cellt.sameSplit(one, sd) and !cellt.sets.member(set, sd.int());
+            };
+            var a = try t.aggAdd(gpa, charge, cellt, places, a0, m, false, !positions);
+            if (positions) {
+                a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.excl(gpa, charge, m));
+                a.sides = try t.mapPut(gpa, charge, a.sides, m.int(), (try cellt.sets.insert(gpa, charge, .from(sides_now.?), at_side.?.int(), 0)).int());
+            } else if (!met) {
+                a.sides = try t.mapPut(gpa, charge, a.sides, m.int(), if (at_side) |sd| (try cellt.sets.insert(gpa, charge, .none, sd.int(), 0)).int() else Ids.none_int);
+            }
+            return a;
+        }
+
+        fn onFold(places: *const Cell.Places, path: Ids.PathId) bool {
+            var q = path;
+            while (places.pathParent(q) != .none) : (q = places.pathParent(q)) if (places.pathStep(q).kind == .level) return true;
+            return false;
+        }
+
+        pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
             var chain: std.ArrayList([2]u32) = .empty;
             defer chain.deinit(gpa);
             var at = group;
@@ -1468,13 +1541,13 @@ pub fn Of(comptime Table: type) type {
             }
             if (base != .none) {
                 var it = cellt.sets.iterate(base);
-                while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
+                while (it.next()) |e| start = try addArrival(t, gpa, charge, cellt, places, start, .from(e.key), try image(ctx, .from(e.key)));
                 const got = try t.agg(gpa, start);
                 (try memo.getOrPut(gpa, .{base.int()})).value_ptr.* = got;
             }
             var a = start;
             while (chain.pop()) |x| {
-                a = try t.aggAdd(gpa, charge, cellt, places, a, try image(ctx, .from(x[1])), false, true);
+                a = try addArrival(t, gpa, charge, cellt, places, a, .from(x[1]), try image(ctx, .from(x[1])));
                 const got = try t.agg(gpa, a);
                 (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = got;
             }
@@ -1493,7 +1566,7 @@ pub fn Of(comptime Table: type) type {
 
         /// One key holding each of `cells` once: a source node's own contents at
         /// its position (a cell's approximation is its set value).
-        pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
+        pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
             if (cells == .none) return .{};
             const a = try t.aggAll(gpa, charge, cellt, places, .{}, cells, false);
             return .{ .map = try t.mapPut(gpa, charge, Ids.none_int, key, try t.agg(gpa, a)), .len = 1 };
@@ -1801,7 +1874,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Two arms of a choice: a cell in both is still one (the maximum), a
         /// repeat in either stays a repeat.
-        pub fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             var a = try t.aggMerge(gpa, charge, cellt, places, big, small, false);
             a.dups = try cellt.sets.unionWith(gpa, charge, a.dups, small.dups);
@@ -1833,7 +1906,7 @@ pub fn Of(comptime Table: type) type {
         /// `lost`, the arrivals form ONE `apart` group, pairs over one base are
         /// decided one by one; concrete cells are apart by construction.
         /// `items` is scratch and is reordered.
-        pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
+        pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
             try charge.reserve(gpa, .inspection, @intCast(items.len));
             std.mem.sort(Item, items, {}, struct {
                 fn lessThan(_: void, x: Item, y: Item) bool {
@@ -1891,7 +1964,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// The pairs of `arrivals` over one base that `alias` does not tell apart.
-        pub fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
+        pub fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
             var acc: CondId = yes;
             // By base, then by split: one split's members answer `sep` alike
             // (`under` it), so its run is one pair; runs pair across (linear).

@@ -774,7 +774,7 @@ pub const Expansion = struct {
     /// pairwise of one traversal (`Cond.sep` with the marks) under the
     /// container's κ. D4, everything else: `env` and `shared` exactly, the rest
     /// approximately.
-    pub fn within(ex: *Expansion, conds: *Cond.Table, cells: *const Cell.Table, places: *const Cell.Places, l: LabelId, routed: []const Routed, marks: *Marks) Error!void {
+    pub fn within(ex: *Expansion, conds: *Cond.Table, cells: *Cell.Table, places: *Cell.Places, l: LabelId, routed: []const Routed, marks: *Marks) Error!void {
         try ex.begin();
         var splits: std.ArrayList(CellId) = .empty;
         defer splits.deinit(ex.gpa);
@@ -842,7 +842,7 @@ pub const Expansion = struct {
     /// labels are two calls, apart when both families are generative; one
     /// label twice is one call (no "fresh means apart" for one invocation);
     /// anything else `Cond.sep` decides, a taken pair by `traversal`.
-    pub fn apartCalls(ex: *Expansion, conds: *Cond.Table, cells: *const Cell.Table, places: *const Cell.Places, a: SetId, b: SetId, resolve: Resolve, traversal: ?Cond.Traversal) Error!void {
+    pub fn apartCalls(ex: *Expansion, conds: *Cond.Table, cells: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId, resolve: Resolve, traversal: ?Cond.Traversal) Error!void {
         try ex.begin();
         var ia = cells.sets.iterate(a);
         while (ia.next()) |x| {
