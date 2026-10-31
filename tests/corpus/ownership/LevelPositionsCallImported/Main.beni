@@ -1,0 +1,24 @@
+-- ownership: LevelPositionsCall's callers across a block (§2.9 rule 3):
+-- one of two heads is accepted; one list at both fields of the element,
+-- given or fresh, is refused.
+import Walk exposing (B)
+
+
+pub chosen : Bool, List B → B
+chosen c bs =
+    case bs of
+        [ b1, b2, …_ ] →
+            Walk.incAll (if c then b1 else b2)
+
+        _ →
+            B [] []
+
+
+pub sharedInside : List B → B
+sharedInside k = Walk.incAll (B [ B k k ] [])
+
+
+pub freshShared : B
+freshShared =
+    l = [ B [] [] ]
+    Walk.incAll (B [ B l l ] [])

@@ -8502,6 +8502,71 @@ fn holderFamily(a: std.mem.Allocator, family: []const u8, n: u32) !struct { []co
     return .{ src.items, "edits" };
 }
 
+test "the checker v2 reads two positions of one image through a chain of n choices in records linear in n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3: at `incAll x`, condition (b) walks the
+    // actual at the split, a union or choice DAG of leaves, each node once.
+    // `xᵢ` names `xᵢ₋₁` in two arms, so without a visited set the walk
+    // would be a tree of 2ⁿ routes. The rule must fire (`f` is accepted, as
+    // in v1) and each doubling of n add at most a little over what the last
+    // one added. Measured (self-hosted Debug): 7 381 / 8 529 / 10 916
+    // records at n = 8 / 16 / 32.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 8, 16, 32 }, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a,
+            \\type B
+            \\    = B (List B) (List B)
+            \\
+            \\
+            \\incAll : B → B
+            \\incAll b =
+            \\    case b of
+            \\        B xs ys →
+            \\            B (incList (List.push xs (B [] []))) (incList ys)
+            \\
+            \\
+            \\incList : List B → List B
+            \\incList bs =
+            \\    case bs of
+            \\        [ b, …rest ] →
+            \\            [ incAll b, …incList rest ]
+            \\
+            \\        [] →
+            \\            []
+            \\
+            \\
+            \\pub f : Int, List B → B
+            \\f n bs =
+            \\    case bs of
+            \\        [ b1, b2, …_ ] →
+            \\            x0 = b1
+            \\
+        );
+        for (1..n + 1) |i| try src.print(a, "            x{d} = if n == {d} then x{d} else if n == {d} then b2 else x{d}\n", .{ i, i, i - 1, i + 100, i - 1 });
+        try src.print(a, "            incAll x{d}\n\n        _ →\n            B [] []\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+        totals[run] = try accountTotal(dump.stdout, "f");
+    }
+    try testing.expect(totals[2] - totals[1] <= 3 * (totals[1] - totals[0]));
+}
+
 test "the checker v2's holder index answers a frame's demands in records linear in its holders and uses" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
