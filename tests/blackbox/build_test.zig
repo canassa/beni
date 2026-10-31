@@ -9679,15 +9679,12 @@ test "the checker v2 charges an instruction's records to its source lanes" {
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §4.1: an instruction's transfer, a call's view, a
     // written demand's query and a holder's registration are kernels of
-    // their source atoms, baseline, never growth. What growth remains per
-    // statement of `x_k = List.push x_{k-1} k` is the graft of the
-    // callee's class at each call, named growth until S3b's call view by
-    // reference (#1097): it stays constant per statement, and twice the
-    // statements is twice the growth. Since the κ trie (#1073) the graft
-    // also relabels the class's snapshot and links the argument's at its
-    // path, about 35 records a call where it was 19 (until #1097 removes
-    // the graft's copy altogether).
-    var growth: [2]u64 = undefined;
+    // their source atoms, baseline, never growth. Since the call view by
+    // reference (#1097) a call grafts nothing: a chain of `x_k = List.push
+    // x_{k-1} k` spends no growth (G_f = 0), and its baseline is flat per
+    // statement (25 852 / 52 433 records at 100 / 200). It was about 35
+    // growth records a statement while the call grafted its callee's class.
+    var baseline: [2]u64 = undefined;
     for ([_]u32{ 100, 200 }, 0..) |n, run| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
@@ -9708,15 +9705,50 @@ test "the checker v2 charges an instruction's records to its source lanes" {
         // │ VERIFY OUTPUT                           │
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
-        growth[run] = try accountField(dump.stdout, "chain", "growth");
-        const baseline = try accountField(dump.stdout, "chain", "baseline");
-        // Since #1201 a demand's walk of its holder's value is growth too,
-        // about 4 records a statement.
-        try testing.expect(growth[run] <= 48 * n);
-        // The graft's growth (#1097) is now about a third of the baseline.
-        try testing.expect(baseline >= 2 * growth[run]);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+        baseline[run] = try accountField(dump.stdout, "chain", "baseline");
     }
-    try testing.expect(growth[1] <= 2 * growth[0] + 40);
+    try testing.expect(baseline[1] * 10 <= baseline[0] * 22);
+}
+
+test "the checker v2's wide record literal stored by a call spends no growth (ValueCellsGuards.rebuilt)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1097's done condition, §4.1: `List.push [] { f1 = w.f1, … }` over a
+    // record of N lists, the corpus's `ValueCellsGuards.rebuilt` at 130.
+    // While the call grafted its callee's class over the record it spent
+    // 12 408 growth records at 130; by reference it spends none, and twice
+    // the fields cost about twice the records.
+    var total: [2]u64 = undefined;
+    for ([_]u32{ 65, 130 }, 0..) |n, run| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub type alias Wide =\n");
+        for (1..n + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\npub rebuilt : Wide → List Wide\nrebuilt w =\n    List.push [] { f1 = w.f1");
+        for (2..n + 1) |i| try src.print(a, ", f{d} = w.f{d}", .{ i, i });
+        try src.appendSlice(a, " }\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "rebuilt", "growth"));
+        total[run] = try accountTotal(dump, "rebuilt");
+    }
+    if (total[1] * 10 > total[0] * 22) {
+        std.debug.print("65 fields: {d} records, 130: {d}\n", .{ total[0], total[1] });
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "the checker v2's summaries read each position of a value on its own (#1073): two corpus summaries pinned" {
@@ -10683,6 +10715,105 @@ test "the checker v2 counts a tower built by calls in n log n (wrap r = Rose [ r
 test "the checker v2 counts a tower built by calls of another module in n log n (Lib.wrap)" {
     // 2 394 / 9 102 / 37 144 records: 67, 42 and 32 per n·log₂(n + 2).
     try expectTowerNLogN(.wrap_imported, &.{ 10, 40, 160 }, 84, true);
+}
+
+/// `wrap (wrap … r)` as §8 S3b slice 5d2 counts it: `n` calls of `wrap r =
+/// Rose [ r ]`, each of its argument through `ident r = r` when `ident`;
+/// the helpers in `Lib` when `imported`. The last call is of `top`, and
+/// with `writer` the tower ends in one call of `growKid`, which writes the
+/// kids one level down.
+const WrapCalls = struct { ident: bool = false, imported: bool = false, top: []const u8 = "wrap", writer: bool = false };
+
+fn wrapCallsDump(n: u32, o: WrapCalls) ![]const u8 {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    const helpers = "type Rose =\n    Rose (List Rose)\n\n\nwrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n\n\nwrap2 : Rose → Rose\nwrap2 r =\n    Rose [ r, r ]\n\n\nident : Rose → Rose\nident r =\n    r\n\n\ngrow : Rose → Rose\ngrow r =\n    case r of\n        Rose kids →\n            Rose (List.push kids (Rose []))\n\n\ngrowKid : Rose → Rose\ngrowKid r =\n    case r of\n        Rose [ k, …rest ] →\n            Rose [ grow k, …rest ]\n\n        _ →\n            r\n";
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const p = if (o.imported) "Lib." else "";
+    if (o.imported) {
+        const lib = try std.mem.replaceOwned(u8, a, helpers, "\n\n\n", "\n\n\npub ");
+        defer a.free(lib);
+        try w.write("Lib.beni", try std.mem.concat(w.arena.allocator(), u8, &.{ "pub ", lib }));
+        try src.appendSlice(a, "import Lib\n\n\n");
+    } else try src.appendSlice(a, helpers);
+    try src.print(a, "\n\npub tower : ⊤ → {s}Rose\ntower ⊤ =\n    r0 = {s}Rose []\n", .{ p, p });
+    for (1..n + 1) |k| {
+        const callee = if (k == n) o.top else "wrap";
+        if (o.ident) try src.print(a, "    r{d} = {s}{s} ({s}ident r{d})\n", .{ k, p, callee, p, k - 1 }) else try src.print(a, "    r{d} = {s}{s} r{d}\n", .{ k, p, callee, k - 1 });
+    }
+    if (o.writer) try src.print(a, "    {s}growKid r{d}\n", .{ p, n }) else try src.print(a, "    r{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (o.imported) "." else "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    // Checked at the default allowance: no limit, nothing unchecked, no growth.
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+    const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+    try testing.expectEqual(@as(u64, 0), try accountField(main, "tower", "growth"));
+    return testing.allocator.dupe(u8, main);
+}
+
+/// `wrap (wrap … r)` at 10 and 100 calls: `tower`'s records per call stay
+/// flat (at most a quarter more, a log factor's room), and an identity
+/// helper around each argument adds a constant per call. 1 000 calls are
+/// measured, not gated: they take about a second each (the test budget).
+fn expectWrapCallsFlat(imported: bool) !void {
+    var per: [2]u64 = undefined;
+    var plain: [2]u64 = undefined;
+    for ([_]u32{ 10, 100 }, 0..) |n, i| {
+        const dump = try wrapCallsDump(n, .{ .imported = imported });
+        defer testing.allocator.free(dump);
+        plain[i] = try accountTotal(dump, "tower");
+        per[i] = plain[i] / n;
+        const id = try wrapCallsDump(n, .{ .imported = imported, .ident = true });
+        defer testing.allocator.free(id);
+        const with_ident = try accountTotal(id, "tower");
+        if (with_ident > plain[i] + 32 * n) {
+            std.debug.print("ident at {d}: {d} records, {d} without it\n", .{ n, with_ident, plain[i] });
+            return error.TestUnexpectedResult;
+        }
+    }
+    if (per[1] * 4 > per[0] * 5) {
+        std.debug.print("wrap: {d} records a call at 10, {d} at 100\n", .{ per[0], per[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2 counts wrap (wrap … r) flat per call, through an identity helper too" {
+    // §8 S3b slice 5d2, §4.1: 2 342 / 23 153 / 246 048 records at 10 / 100
+    // / 1 000 calls (234, 231 and 246 a call); through `ident`, 2 451 /
+    // 24 252 / 257 047 (`ident` answers its actual, about 11 a call).
+    try expectWrapCallsFlat(false);
+}
+
+test "the checker v2 counts Lib.wrap (Lib.wrap … r) flat per call, through an identity helper too" {
+    // The same tower with the helpers in `Lib` (§8 S3b slice 3).
+    try expectWrapCallsFlat(true);
+}
+
+test "the checker v2 refuses a kids writer below wrap2 at the top of a wrap tower, and accepts it below wrap" {
+    // §8 S3b slice 5d2: `growKid` writes the kids of its argument's first
+    // kid. Below `wrap` that kid is held once and the write is accepted;
+    // below `wrap2 r = Rose [ r, r ]` the list holds it twice, and the write
+    // is refused `exclusive`. Same-module at 10 and 40 calls, imported at
+    // 10. The writer's cost is above n log n in the tower's height (#1490),
+    // so only the verdicts are pinned.
+    const cases = [_]struct { n: u32, imported: bool }{ .{ .n = 10, .imported = false }, .{ .n = 40, .imported = false }, .{ .n = 10, .imported = true } };
+    for (cases) |c| {
+        const p = if (c.imported) "Lib." else "Main.";
+        var buf: [96]u8 = undefined;
+        const at = try std.fmt.bufPrint(&buf, " {s}growKid r{d}#Rose.0[*]#Rose.0: ", .{ p, c.n });
+        const ok = try wrapCallsDump(c.n, .{ .imported = c.imported, .writer = true });
+        defer testing.allocator.free(ok);
+        const i = std.mem.indexOf(u8, ok, at) orelse return error.NoDemand;
+        try testing.expect(std.mem.startsWith(u8, ok[i + at.len ..], "accepted fresh"));
+        const twin = try wrapCallsDump(c.n, .{ .imported = c.imported, .writer = true, .top = "wrap2" });
+        defer testing.allocator.free(twin);
+        const j = std.mem.indexOf(u8, twin, at) orelse return error.NoDemand;
+        try testing.expect(std.mem.startsWith(u8, twin[j + at.len ..], "rejected exclusive"));
+    }
 }
 
 test "the checker v2 counts a push chain over a parameter in n log n" {
@@ -11896,6 +12027,71 @@ test "the checker v2 solves a self-recursive fold in two walks and no growth at 
         try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "go", "growth"));
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "15:17 List.push acc: accepted param") != null or std.mem.indexOf(u8, dump.stdout, "List.push acc: accepted param") != null);
     }
+}
+
+/// R-7.4's Θ(NK) witness (§4.1's qualified row, §8 S3b slice 5d2): a ring
+/// of `k` members `m_i c = if c then T_i [] [] else T_i [] [ m_{i+1} c ]`,
+/// each over a type of its own (`T_i (List Int) (List T_{i+1})`), so the
+/// ring's `res.shape` grows one type a round before it folds; `m0` also
+/// holds `n` statements.
+fn shapeRing(w: *World, n: usize, k: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    for (0..k) |i| try src.print(a, "type T{d} =\n    T{d} (List Int) (List T{d})\n\n\n", .{ i, i, (i + 1) % k });
+    for (0..k) |i| {
+        try src.print(a, "pub m{d} : Bool → T{d}\nm{d} c =\n", .{ i, i, i });
+        if (i == 0) for (1..n + 1) |s| try src.print(a, "    s{d} = List.push [ {d} ] 0\n", .{ s, s });
+        try src.print(a, "    if c then\n        T{d} [] []\n\n    else\n        T{d} [] [ m{d} c ]\n\n\n", .{ i, i, (i + 1) % k });
+    }
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 walks a member again whole once per new res.shape of its callee, and reserves it as growth (R-7.4)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R-7.4: "K shape changes affecting N transfer nodes can require Θ(NK)
+    // tasks". The ring takes K `res.shape` versions, and each one walks
+    // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
+    // plan). Measured: `m0` walks 5 times at k = 2 and 8 at k = 3 (10 at 4),
+    // whatever n is; its records are 25 080 at (n, k) = (10, 2), 57 929 at
+    // (40, 2) and 52 128 at (10, 3). A small member's walks pass its two
+    // lanes at k = 3, and the rest is growth (11 276 records of `m1`), so a
+    // larger k exhausts R_f loudly (k = 8 is `ownership_summary_size`).
+    const cases = [_][2]usize{ .{ 10, 2 }, .{ 40, 2 }, .{ 10, 3 } };
+    const walks = [_]u64{ 5, 5, 8 };
+    var total: [cases.len]u64 = undefined;
+    for (cases, walks, 0..) |c, want, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try shapeRing(&w, c[0], c[1]);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+        try testing.expectEqual(want, try accountField(dump.stdout, "m0", "walks"));
+        total[i] = try accountTotal(dump.stdout, "m0");
+        if (c[1] == 3) {
+            // `m1`'s continuation is spent, and what is past it is growth.
+            const at = std.mem.indexOf(u8, dump.stdout, "account m1: ").?;
+            const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
+            const cont = std.mem.indexOf(u8, line, "continuation ").? + "continuation ".len;
+            const of = std.mem.indexOfPos(u8, line, cont, " of ").?;
+            const ceiling = line[of + " of ".len ..][0..std.mem.indexOfScalar(u8, line[of + " of ".len ..], ' ').?];
+            try testing.expectEqualStrings(line[cont..of], std.mem.trimEnd(u8, ceiling, ","));
+            try testing.expect(try accountField(dump.stdout, "m1", "growth") > 0);
+        }
+    }
+    // N times the statements, more records per walk; more versions, more walks.
+    try testing.expect(total[1] >= 2 * total[0]);
+    try testing.expect(total[2] * 2 >= 3 * total[0]);
 }
 
 /// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
