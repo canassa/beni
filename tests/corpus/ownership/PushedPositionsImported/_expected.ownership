@@ -1,0 +1,46 @@
+module Main
+  10:10 call Pushed.twin <literal>: accepted fresh (Pushed.twin writes π1)
+  12:15 List.push f: accepted call
+  20:10 call Pushed.twinSpread <literal>: accepted fresh (Pushed.twinSpread writes π1)
+  22:15 List.push f: accepted call
+  30:10 call Pushed.twinHead <literal>: accepted fresh (Pushed.twinHead writes π1)
+  32:15 List.push f: rejected call: r[*] may hold it through the call at 30:10, and is read at 32:30 (approx)
+  42:15 List.push f: accepted call
+  50:10 call Pushed.twin <literal>: accepted fresh (Pushed.twin writes π1)
+  54:23 List.push f: rejected call: x may hold it through the call at 50:10, and is read at 54:21 (approx)
+  64:13 call Pushed.inF <literal>: accepted fresh (Pushed.inF writes π1)
+  64:13 call Pushed.inF <literal>[*].0: accepted fresh (Pushed.inF writes π1[*].0)
+  69:10 call Pushed.pairUp <literal>: accepted fresh (Pushed.pairUp writes π1)
+  71:15 List.push f: rejected call: r[*] may hold it through the call at 69:10, and is read at 71:30 (approx)
+  summary edit: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editSpread: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editHead: res [*] fresh3{lost} ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh5) ~fresh{lost}, fresh4{lost} ~fresh2{lost}
+  summary editPrepend: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editOne: res [*] fresh ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh3) ~fresh, fresh2{lost}r{lost}
+  summary inFCall: res [*] ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh3), ~fresh2{lost}
+  summary editPair: res [*] fresh3{lost} ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh5) ~fresh{lost}, fresh4{lost} ~fresh2{lost}
+  demands 13: accepted 10 (fresh 7, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+module Pushed
+  11:13 call Pushed.collect <call List.push>: accepted param (Pushed.collect writes π2)
+  11:27 List.push acc: accepted param
+  18:18 List.push xs: accepted param
+  20:21 call Pushed.collect <literal>: accepted fresh (Pushed.collect writes π2)
+  33:20 construction xs: accepted param
+  35:21 call Pushed.collect <literal>: accepted fresh (Pushed.collect writes π2)
+  48:18 List.push xs: accepted param
+  50:21 call Pushed.collect <literal>: accepted fresh (Pushed.collect writes π2)
+  63:18 List.push xs: accepted param
+  65:26 call Pushed.collect <literal>: accepted fresh (Pushed.collect writes π2)
+  67:31 List.push f: accepted param
+  85:21 call Pushed.collect <literal>: accepted fresh (Pushed.collect writes π2)
+  98:18 List.set xs: accepted param
+  summary collect: π1 R, π1[*].0 RA, π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~π1[*].0{excl π1} ~π2[*], π2{excl π1, sep π1[*].0 π2[*]}
+  summary twin: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary twinSpread: π1 RW, π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary twinHead: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{lost}
+  summary inF: π1 RW[storage], π1[*] R, π1[*].0 RAw[storage], π1[*].0[*] A; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, [*][*] ~condition(fresh3) ~π1[*].0[*]{excl π1}, fresh4{lost}r{lost} ~fresh2{excl π1}; xreq excl π1
+  summary prepend: π1 R, π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary pairUp: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1) ~π1[*].0{excl π1}, fresh2{lost}
+  demands 13: accepted 13 (fresh 5, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 26: accepted 23 (fresh 12, call 3, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause call 3

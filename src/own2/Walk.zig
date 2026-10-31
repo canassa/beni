@@ -229,7 +229,10 @@ const ReadOff = struct {
         const r: *ReadOff = @ptrCast(@alignCast(ctx));
         const cells = r.env.cells;
         switch (a.atom) {
-            .excl => return t.excl(gpa, charge, try r.image(.from(a.a))),
+            // A refinement of a split whose list repeats a position stands for
+            // no position of its canonical cell (§2.9 *Two positions of one
+            // image*): the split's failed κ, never `excl` of the image.
+            .excl => return if (Cond.Table.repeatingSplit(cells, .from(a.a))) |k| k else t.excl(gpa, charge, try r.image(.from(a.a))),
             .sep => return t.sep(gpa, charge, cells, r.env.places, try r.image(.from(a.a)), try r.image(.from(a.b)), false, null),
             // Each group from its predecessor's image (§2.9, #1121): a tower's
             // groups share their cells, and so do their images.

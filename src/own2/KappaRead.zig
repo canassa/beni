@@ -1034,7 +1034,7 @@ pub fn Of(comptime Table: type) type {
                 .under => |s| blk: {
                     const k = cellt.splitOf(s).cond;
                     if (k == .none) break :blk lost;
-                    if (k == yes) break :blk yes;
+                    if (k == yes or fails(k)) break :blk k;
                     // Two parts at one path below two positions of one list:
                     // `excl` of their one cell, which `k` implies (§2.9 *Two
                     // positions of one image*).
@@ -1050,6 +1050,44 @@ pub fn Of(comptime Table: type) type {
             return out;
         }
 
+        /// The κ of the first split on `c`'s refinement chain that `c` stands
+        /// for many positions of (an `others` or `below` side) and whose list
+        /// may repeat one of them (§2.9 *The repeating split*): its condition
+        /// when that fails (`shared`, `lost`, or none recorded), else null.
+        /// Those positions are not one-to-one with the canonical cell's, so no
+        /// `excl` of that cell may stand for them. One position (`elem`,
+        /// `level`) is one canonical position, whatever the list holds.
+        pub fn repeatingSplit(cellt: *const Cell.Table, c: CellId) ?CondId {
+            var at = c;
+            while (cellt.origin(at).isRefinement()) : (at = cellt.parent(at)) {
+                const o = cellt.origin(at);
+                if (o != .others and o != .below) continue;
+                const x = cellt.get(at);
+                const sp = cellt.findSplit(x.parent, .from(x.b));
+                if (sp == .none) continue;
+                const k = cellt.splitOf(sp).cond;
+                if (k == .none) return lost;
+                if (fails(k)) return k;
+            }
+            return null;
+        }
+
+        /// Whether a list side's split keeps its positions apart: its κ neither
+        /// fails nor is missing (*The repeating split*).
+        fn sideHolds(cellt: *const Cell.Table, sd: CellId) bool {
+            const x = cellt.get(sd);
+            const sp = cellt.findSplit(x.parent, .from(x.b));
+            if (sp == .none) return false;
+            const k = cellt.splitOf(sp).cond;
+            return k != .none and !fails(k);
+        }
+
+        /// `excl c` for a frame cell: the failed κ of a split on its chain whose
+        /// list repeats a position (`repeatingSplit`), which no `excl` stands for.
+        pub fn exclOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, c: CellId) Error!CondId {
+            return repeatingSplit(cellt, c) orelse t.excl(gpa, charge, c);
+        }
+
         /// The one canonical cell of two parts at one path `q` below two
         /// disjoint positions of one list (`Cell.listSides`), when `q` takes
         /// no summary step (`[*]`, `⟲`): then each of its positions is one
@@ -1058,6 +1096,7 @@ pub fn Of(comptime Table: type) type {
         fn partsCell(gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId) Error!?CellId {
             if (cellt.origin(a) != .part or cellt.origin(b) != .part) return null;
             const sd = cellt.listSides(a, b) orelse return null;
+            if (!sideHolds(cellt, sd[0]) or repeatingSplit(cellt, a) != null or repeatingSplit(cellt, b) != null) return null;
             try charge.reserve(gpa, .inspection, 1);
             const x = (try cellt.unrefined(gpa, charge.account, places, a)) orelse return null;
             if ((try cellt.unrefined(gpa, charge.account, places, b)) != x) return null;
@@ -1483,7 +1522,7 @@ pub fn Of(comptime Table: type) type {
             const sides_now = t.mapGet(a0.sides, m.int());
             const met = cellt.sets.get(a0.all, m.int()) != null;
             var positions = false;
-            if (met) if (at_side) |sd| if (sides_now) |raw| if (raw != Ids.none_int) {
+            if (met and repeatingSplit(cellt, c) == null) if (at_side) |sd| if (sideHolds(cellt, sd)) if (sides_now) |raw| if (raw != Ids.none_int) {
                 const set: SetId = .from(raw);
                 var it = cellt.sets.iterate(set);
                 const one: CellId = .from(it.next().?.key);
@@ -1609,7 +1648,7 @@ pub fn Of(comptime Table: type) type {
                 try charge.reserve(gpa, .inspection, 1);
                 const c: CellId = .from(e.key);
                 const o = cellt.origin(c);
-                if (o.isSymbolic() and o != .top and places.isSummary(.from(cellt.get(c).b))) k = try t.@"and"(gpa, charge, k, try t.excl(gpa, charge, c));
+                if (o.isSymbolic() and o != .top and places.isSummary(.from(cellt.get(c).b))) k = try t.@"and"(gpa, charge, k, try t.exclOf(gpa, charge, cellt, c));
             }
             return k;
         }
@@ -2311,7 +2350,7 @@ pub fn Of(comptime Table: type) type {
                 const o = cellt.origin(c);
                 if (e.value == 1 or o == .top) return lost;
                 if (isConcrete(o) or o == .mark or !isFolded(cellt, places, c)) continue;
-                acc = try t.@"and"(gpa, charge, acc, try t.excl(gpa, charge, c));
+                acc = try t.@"and"(gpa, charge, acc, try t.exclOf(gpa, charge, cellt, c));
             }
             return acc;
         }
@@ -2327,7 +2366,7 @@ pub fn Of(comptime Table: type) type {
                 const o = cellt.origin(c);
                 if (e.value == 1 or o == .top) return lost;
                 if (isConcrete(o) or o == .mark) continue;
-                acc = try t.@"and"(gpa, charge, acc, try t.excl(gpa, charge, c));
+                acc = try t.@"and"(gpa, charge, acc, try t.exclOf(gpa, charge, cellt, c));
             }
             return acc;
         }
