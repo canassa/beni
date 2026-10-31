@@ -5569,6 +5569,165 @@ The second round (on 4844eb38e) found the following, and the plan answers each:
 - "reaches no hypothesis node" is transitive;
 - walk counts, 4a's loud n = 64, and when `propagate` runs.
 
+**S3b slice 5 (and beyond): the plan (#1016).** *Specified 2026-10-31; not built.* This is what the
+S3b row asks for that slices 1–4 do not build, the PRs that build it, and the debt that gates S3b's
+exit. The inventory below was taken on master `25ab6aac4` with a self-hosted Debug beni (`beni dump
+--stage=ownership --ownership=v2`, the `account` lines, the default allowance of 65 536 unless a row
+says otherwise). It reads PR #1395 (4a, open) at `origin/own2-s3b4a`. Slice 4's plan above owns 4a,
+4b and 4c. This block does not change it. The "PR 5: κ transport" of the earlier sequence is 5a.
+
+*Inventory: the deliverables.* Each item of the row's scope column, of slice 4's plan and of #1016's
+comments. "Done" names the merged PR. "4a/4b/4c" means slice 4's plan has it. "5x" means a PR below
+has it. "Sx" means a later slice has it.
+
+| Item | Status | Evidence |
+|---|---|---|
+| `Calls` for summarised declarations: W/E/A, `res`, κ instantiation, `xreq` and its discharge | Done: #1261 (slice 1), #1318 (imported) | `CallOtherPaths`, `CallOtherPathsImported`, `ImportedSummaries` |
+| A call's view by reference (#1097) | Done: #1279 (2a), #1309 (2b) | `CallChainShare`. #1097 stays open for its counted condition (5d). |
+| `Shape.map` on an explicit stack, a DAG kept a DAG | Done: #1142, #1372's interning in #1384 | `Shape.zig` tests (#1138, #1372) |
+| `Shape.map`'s correspondence hook: old and new node with child edges and back edges, per substitution context, κ transported through it, including grafts and projections | Not built. κ crosses by node (`kappaRelabel`'s `relabelNode`), a separate pass. #1399 and #1406 are this gap. | 5a |
+| A substitution's invocation in a κ root's key (§2.9) | Partly: 4a puts `(port, version)` in a view's `E`. Not in κ snapshot keys. Supply roots are S4's. | 5a |
+| Observable-position κ propagation and simulation (#1063/#1064) | Done in the algebra: #1078 (Cond.zig's #1063/#1064 unit tests), #1036 (`kappaLeq is a simulation over the node correspondence`). Not pinned through calls. | 5a: `KappaLeafJoin`, `KappaEmptyProjection`, `IdentityMapKappa` |
+| Full effect preservation and exact join keys (§2.11 memo keys, §2.12's version vector) | Group views: 4a (coarse read vector, `(port, version)` in `E`). Two calls of one template under different snapshots: no fixture. A selected callback's stored effects: S4. | 4a; 5a (`JoinedCallContexts`) |
+| `Groups` with the worklist `Fix` | 4a (#1395) | |
+| `Fix.propagate` and the wake rule (Q1, the owner's decision of 2026-10-31) | 4b | |
+| Fold certificates for a group's own knots (#1195) | 4c | |
+| Levels (the level marker through calls) | Done: #1261, path text #1382 | `LevelLimit`, `LevelPlacesCall`, `LevelPlacesKinds` hold v1's verdicts. 64:5 is refused (#1016's comment). The rest of the entries are path text only. |
+| Initialization transfer | S7, as `ownership-v2-known.txt` already says ("initialization transfer is S7") | Question 1 |
+| `eq`/`compare`'s `writes` bit | Done (`CmpWritesInside`, `CmpDeepWrite` are checked) | |
+| R-5.13.1: `comparison_changes_value` (§2.13.13) | Not built. v2 accepts the push in `ComparisonWrites` as `param`. The code is not in `diagnostic.Code`. | 5e |
+| Transfer equations once, only affected transfers rescheduled | Replaced by the owner's Q1 decision: a member is walked again whole, once per new `res.shape` of a callee | 4b; question 2 |
+| Initial/final source phases and direct-call lanes | Done: #1100, #1233 (lanes), #1261 (`call_view` lane) | `account` lines |
+| Singleton result-label instantiation, on the call's direct-obligation lane (§4.4) | Done in effect: #1261, #1309 | `CallChainShare`'s chains spend no growth. No test names the rule. |
+| Growth for cross-products | Done: #1369 | `build_test.zig`'s write-many-fields tests |
+| Validation of inferred records, reserved before the work | S5 (records) | |
+| R-7.4's qualified families | The recursive-function row: `GroupSelfFold` (4a), `GroupTreeRecursion` (4b). The Θ(NK) witness: not written. The update-arm and wide-`main` rows: S5, S7. | 5d |
+| Read-off keeps each pair of distinct pre-fold `sep` labels through direct calls, for S4's `within` | Not built. 4a folds a group call's fresh labels into `ι⋆` and does not record the pairs. | 5b |
+| The cold re-check sees the callees' summaries (#1016's comment of 2026-10-29) | Done: #1261 (a cold run walks its callees first), 4a (a group's cold run) | `build_test.zig`'s cold-run tests |
+| Fold-step relabelling through a call graft at source level (#1016's comment of 2026-10-28) | Not pinned at source level | 5c (`ViewFoldRoute`'s call twin is 4c's; the relabel twin is 5c's) |
+| The SCC worklist for a cyclic source's occurrence facts, and the fuller preimage walk (#1016's comment of 2026-10-29) | Preimage: done, #1196. The SCC for a group's knots: 4c. | |
+
+*Inventory: the fixtures.* `o/` is `tests/corpus/ownership/`, `p/` is `tests/pending/ownership/`.
+
+| Fixture | Status | Evidence |
+|---|---|---|
+| Split, Nest, PathCut, ParamHole, DeeperLevel | Done: #1261 | Checked. `Split.bumpHead` 22:27 is a known entry owned by #1253. |
+| MarkerAcross | 4a | `incAll`, `keepRight` are `not built: call` on master. On 4a `keepRight` is a known limit (#1372). |
+| RoseKidsHeld | 4a, blocked by #1394 | No file |
+| ReturnsFresh, ReturnsArg, MutualTypes, MutualCycles, AliasWriter | Done: #1261 | Checked, no known entry |
+| CallerSide | `twin`, `apart` wait for `record_update` (S5) | `.v2.unchecked` |
+| LevelLimit alias/disjoint; `inline xs xs`; `two` (#1016's comment of 2026-10-26) | Behaviour done: #1261. Not pinned. | Probe: `inline xs xs` is refused `disjoint`, `inline xs [ 1 ]` with `xs` read again `later-use`, distinct literals accepted. `two` over a tree holding `xs` twice is refused `disjoint`, distinct lists accepted. → 5c |
+| LevelPlacesKinds' folded W (64:5) | Done: #1261, #1382 | Refused. Known entries are path text. |
+| Recursion | 4a (`List.close` waits for S4) | `not built: call` on master |
+| `p/MutualListField` | Behaviour done | v2 accepts 21:23 `param`, the fixture's answer. It is red only for v1. → 5c moves it with a known entry. |
+| `p/WriteOneLevel` | 4a moves it to `o/` | |
+| `p/AliasWriterCall` | Not built: `writer = List.push` is `not built: ext_value`, its aliases `not built: top` | 5e |
+| R-5.13.1, `p/…/ComparisonWrites` | Not built | 5e |
+| Local ordering tests | 4a: `RecursiveGroupsPermuted`, the per-order charge test. `ordering_test.zig` has v2 only for `core/CastOrder`. No reversed twin of a call fixture. | 5c |
+| RecursiveFunctions, FoldLevels, Initialization* | S4, S7, S8, as the row says | |
+| KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa, joins under two shared-owner routes | Not written (no file of these names) | 5a |
+| Validation after a new κ constraint arrives; no stale memo after failure | 4a (`RecursiveGroupsSharedRead`, the failure twins) | |
+| `wrap (wrap … r)` at 10 / 100 / 1 000, same-module and imported | Behaviour holds. Not counted. | [M 2026-10-31] `wrap r = Rose [ r ]`, then a push into the top's kids: baseline 5 160 / 50 082 / 521 603 same-module and 5 248 / 50 014 / 519 724 imported, growth 0, the push accepted `fresh`. The identity control `ident r = r`: 831 / 2 487 / 21 693. → 5d |
+| The eight tower families, total O(n log n) | Six pass, two fail | [M 2026-10-31, #1420] At 1 000, growth 0: W 617 281, `T a_k` 243 642, mutual A/B 421 161, `Maybe` 205 433, `wrap` 521 603. `Rose [ r ]` is counted (`build_test.zig`). K is quadratic: 9 081 / 307 332 / 1 088 299 / 4 115 785 at 10 / 100 / 200 / 400, refused at 1 000. `Rose [ r, r ]`: 13 148 / 50 609 / 216 666 at 10 / 20 / 40, refused at 100. Only `Rose [ r ]`, K (10 / 20 / 40, "at most quadratic"), W and `T a_k` (10 / 100 / 300) are counted. → 5d |
+| A straight-line push chain flat (#1097) | From a fresh base: yes. From a parameter: no. | [M 2026-10-31, #1419] `x0 = []`: 54 908 / 616 764 at 100 / 1 000. `chain x0`: 3 464 / 92 708 / 324 337 / 1 238 897 at 10 / 100 / 200 / 400, refused at 1 000. Growth 0 in every row: it is the continuation. → 5d |
+| `ValueCellsGuards.rebuilt` | Done | Growth 0 (baseline 19 570). The source-lanes test still allows `growth ≤ 48 n`. → 5d tightens it. |
+| FoldedBCall (+ imported) | 4a, blocked by #1394 | `Calls.zig` has a unit test of its actual on the eager graft |
+| #1144's cyclic-record regressions | Done: #1144 | `Calls.zig`'s #1138/#1143 unit tests |
+| #1146's X_k chain at 4 … 1 024 | Done on the eager graft: #1149 | `Calls.zig`'s three #1146 tests count `Grafter.linkArgs`. Since 2b, `apply` answers views, and `Grafter.graft` is reached only by tests (#1308). The view path has no such count. → 5d |
+| Appendix B's matrix, every S3b row | 2 of 20 rows have a fixture (4a: `RecursiveCallView`, `RecursiveSummaryGeneration`) | No file of any other row's name on master or on 4a. The rows are cut below. |
+
+*Appendix B's matrix, by PR.* The 20 rows labelled S3b:
+- **4a:** C×A RecursiveCallView, C×G RecursiveSummaryGeneration (the S3b half), F×A FoldedWriteCall,
+  FoldSymbolicCall and FoldedBCall, and C×J CycleJoinRank's writer half. The last two are blocked by #1394.
+- **4c:** C×F CrossDepthKids, V×F ViewFoldRoute, J×F JoinFoldChoice, L×F LinkedFoldCoverage and
+  R×F RefinementFoldMultiplicity (each the S3b half, with a group writer).
+- **5a:** V×L ViewLinkedSnapshot, L×J LinkedJoinCertificate (the S3b half), L×A RepeatedPathCall and
+  J×A JoinedCallContexts (the S3b half). Each reads κ after a relabelling.
+- **5c:** V×C ViewCycleHolder, V×R ViewSplitStoredBack (the S3b half), V×J ViewBranchJoin, V×A
+  ViewCallArgument, C×R CycleSplitRefinement (the S3b half), C×L CycleLinkRooting and R×A
+  SplitCallSupply (the S3b half).
+- **5d:** C×J CycleJoinRank's counted half (the K tower, #1420).
+
+*The PR cut.* Each PR is green and sound on its own. Each fixture has a same-module form and an
+imported form, and each holds v1's verdicts or has a known entry that names an owner later than S3b.
+A defect that a fixture finds gets its own issue, and its fix lands in the PR that found it or before it.
+
+| PR | Builds | Fixtures | Depends on | Done when |
+|---|---|---|---|---|
+| 5a κ transport | `Shape.map`'s correspondence hook. It reports each `(old node, new node)` with its child edges and back edges, per substitution context. `Cond` transports a snapshot along it: read-off, `Calls.apply` and `BlockRead` stop relabelling by node. A κ root's key holds the invocation (§2.9). A projection of a view gives the projection of its eager image (#1313). A join of two built records reads the members' join (#1093). `Summary.eq` is `leq` both ways (#1094). Block positions close over `Cond.frontier` (#1082). #1406 is answered: a fix that keeps the groups converging, or an argument. | `o/KappaLeafJoin`, `o/KappaEmptyProjection`, `o/IdentityMapKappa`, `o/SharedOwnerRoutesJoin` (a join under two shared-owner routes), `KappaTransport`'s S3b half (relabel, projection, union, block), `ViewLinkedSnapshot`, `LinkedJoinCertificate`, `RepeatedPathCall` (closes #1122), `JoinedCallContexts`. Each compares selected κ reads, `deep` and semantic inclusion before and after `map` and `BlockRead`. | 4a merged. #1408 merged. #1308's pure split of `Cond.zig` merged first, so that the PR does not move code and change it at once. | The fixtures are green. `-Downership-full-cross-check` also checks the by-node relabelling against the correspondence. They differ only where a pinned fixture says the new read is stronger. #1093, #1094, #1082, #1122, #1313 and #1406 close. No block changes, except where a fixture pins it. |
+| 5b `sep` pairs for S4 | Read-off records each pair of distinct pre-fold `sep` labels that a fold or an `ι⋆` merges, through direct calls, instantiated through the call's substitution. The class carries the pairs. The block carries them too (a version bump), because slice 3 promises the same semantics across modules. The printer prints them. Nothing reads them before S4. | `o/SepPairsCall` and `o/SepPairsCallImported`: a pair kept through one call, through two calls, and through a group's `ι⋆`. The dumps pin the pairs. | 4a (stable labels). 5a, if the pairs move through the correspondence. | The pairs are in the dump and survive a block round trip. No verdict changes in the corpus. |
+| 5c the matrix, S3b halves | No new mechanism. The fixtures and the fixes they find. Rule (c) takes two refinements of distinct positions of one split as evidence (#1272). #1253's option B, if 4a does not finish it. | The seven 5c rows above. `o/LevelLimitCallers` (`inline xs xs`, `inline xs` with `xs` read again, `two` over a shared tree, each with a distinct twin). `p/MutualListField` moves to `o/`. `o/CallOrderReversed`: `CallOtherPaths` and its imported form with each module's declarations reversed, in `ordering_test.zig`. The source-level relabel of a fold step through a call (#1016's comment of 2026-10-28). | 4a. 5a for the rows that read κ after a call. | Every S3b row of the matrix has a fixture with its refusal and its control, same-module and imported, across 4a, 4c, 5a and 5c. No such fixture has a `not built` line, except one that a known entry gives to S4 or S5. #1253 and #1272 close. Appendix B names each fixture's path. |
+| 5d1 the counted towers | The eight families of §2.9 as counted tests at 10 / 100 / 1 000 at the default allowance, with per-category counts, read-off and codec work and published bytes, normalised against n log(n + 2). Fixes for K and `Rose [ r, r ]` (#1420) and for the push chain over a parameter (#1419). | `build_test.zig`: the eight families, each with the identity, mutual and `Maybe` forms Appendix B names, and each memo disabled in turn so that its witness fails. K's exclusive seed stays one, with `yes` at the kids path (C×J). | None: no call or group is needed. It can start now. | Each family meets its bound. #1419 and #1420 close. |
+| 5d2 the counted calls | `wrap (wrap … r)` at 10 / 100 / 1 000, same-module and imported, with the identity-helper control and a refused twin (`wrap2 r = Rose [ r, r ]` under a kids writer). #1146's X_k chain counted through `apply`'s view and the κ read, not through `Grafter`. #1289's tree-insert chain flat per call. #1097's done condition. R-7.4's Θ(NK) witness: N transfer nodes and K `res.shape` versions, measured and reserved as growth. | `build_test.zig` counted tests. The source-lanes test is tightened to G_f = 0 for the chain. | 4b for the R-7.4 witness. 5a for the X_k count, if the view path changes. | The bounds hold. #1097 and #1289 close. #1308 may then delete `Grafter.graft`. |
+| 5e the remaining call forms | R-5.13.1: a class Dispatch marks as `eq`/`compare` whose `writes` bit is set is `comparison_changes_value` at its first demand on an arrival. A derived class joins its component classes first (§2.13.13). R-5.5.6: a top-level alias of a function is a call of what it names, through any number of names (`ext_value`, `top`). | `ComparisonWrites` moves from `tests/pending/check/bad/inline/` with a v2 `.diag`. `CallbackListWords`' derived half. `p/AliasWriterCall` moves to `o/`. Each has a known entry against v1. | 4a: a derived comparison over a recursive type is a group. | Both fixtures are green under v2. The new code is in `diagnostic.Code`. `skills/beni/` changes when the code becomes visible without the hidden flag (S10), not before. |
+| 5f a use over a parameter, by node (#1412) | Manager's option 1 on #1412: a route stops at an exact leaf of the caller's parameter, and after the walk the group expands over the callee's use DAG paired with what reaches below that leaf. The spec goes into §2.11 item 3 first. | #1412's counted tests (a doubling DAG of depth 8–12 over a parameter, a K-wide type at K = 8 / 16 / 32). #1357's fan-out ring at k = 12 and its syntax tree. | 4a. | #1412 closes. #1357 closes or gets a narrower issue. |
+| 5z close-out | The *As built* notes of slices 4 and 5 in the row. The counts §8 asks for at close-out: checked against unsupported roots, the `.v2.unchecked` lines by reason, the counted-family table, B_f/G_f/N_f over the corpus. | None | Everything above, and the gating debt below. | #1016 closes. |
+
+*Order.* 4a, then #1308's split, then 4b and 5a in parallel (`Fix`/`Groups` against `Shape`/`Cond`),
+then 4c, then 5b and 5c. 5d1 can start at once. 5d2 follows 4b. 5e and 5f follow 4a. 5z is last.
+S4 needs 4c (certified knots), 5a (the transport, to which S4 adds supply roots) and 5b (the pairs
+`within` reads). S4 does not need 5c–5f to start.
+
+*What the counts say about the size of what is left* [M 2026-10-31]. Master has 2 825 lines
+`not built: call` in 1 197 `.v2.unchecked` files. They cover the calls of a function value (S4),
+the calls of an unbuilt callee (with the callee's own reason) and recursion. 4a removes the 218
+recursion lines. The other reasons belong to other slices (`local` 848, `lambda` 754, `record_update`
+469, `markup` 446, `top` 316).
+
+*Debt that gates S3b's exit.*
+
+| Issue | What | Recommendation |
+|---|---|---|
+| #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
+| #1372 | A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
+| #1368 | `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The next step is a spec proposal (saturating occurrence counts, or a home for κ under a merged positions node). | **Spec before 4b, fix before S3b closes.** It is an ordinary program, not a length family. 4b's validation walk still reads the whole class, so 4b alone does not fix it. |
+| #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
+| #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
+| #1399 | A port's joined κ below a choice is not read (unsound on 4a). | **Before 4a merges** (#1408). |
+| #1394 | 4a's fixtures that walk a list of recursive values. | **Before S3b closes**, as question 3 decides. |
+| #1253, #1272 | Call precision: canonical `⟲`, approximate answers, rule (c) over a split. | **Before S3b closes** (4a or 5c). Their known entries are S3b's own. |
+| #1362 | Widen keeps a choice above a cycle whole, so a group whose result is such a choice nests each round. The manager decided: widen each arm on its own. | **Before 4b.** A group whose `res` is a choice of trees otherwise runs to the allowance. |
+| #1373 | Widen's fold misses a child class reached twice under an opened union. | **In 4c**, with the fold certificates that read the same `fold_cond`. |
+| #1195 | The fold certificate. | 4c closes it. |
+| #1097, #1289, #1419, #1420 | Counted conditions. | 5d1 and 5d2. |
+| #1093, #1094, #1082, #1122, #1313 | Join, equality, block frontier, two paths, view projection. §8 already says S3b closes the first three. | 5a. |
+| #1308 | Split `Cond.zig`, delete or keep the eager graft. | **Does not gate the exit**, but it goes before 5a, by the owner's decision of 2026-10-31. |
+| #1317 | Re-intern every block place. | **Does not gate S3b** (S6). Every 4c fixture that crosses a block has a known entry that names S6. |
+| #1054, #1239, #1222, #1414 | Cost or message order outside calls. | **Do not gate S3b** (S9). |
+
+*Questions for the manager.*
+1. **Initialization transfer.** The row puts it in S3b. The known file and the row's own fixture list
+   ("Initialization* need S4/S7/S8") give it to S7. *Recommendation:* amend the row in place to say
+   S7. It is an entry's work (`browser-inline`'s `init`), not a call's.
+2. **The row's "build transfer equations once … never a full frame replay".** The owner's Q1 decision
+   replaces it. *Recommendation:* amend the row's text in the PR that lands 4b, which builds the
+   wake rule, and keep "never a full frame replay" for fact-caused work, as the decision says.
+3. **#1394.** The fixtures need a writer that walks a list of recursive values. In v2 that takes
+   `List.get` (unbuilt) or a callback (S4). A third form exists: mutual pattern recursion, `incAll (B l
+   r) = B (List.push (incList l) 0) r` with `incList` over `[ b, …rest ]`. It needs neither, and it is
+   a group, which 4a builds. *Recommendation:* write the fixtures in that form after 4a merges. If v2
+   leaves it unbuilt for another reason, open that reason as an issue. Move a fixture to S4 only when
+   its program cannot be written without a callback.
+4. **`comparison_changes_value` before v1 has it.** v1 accepts `ComparisonWrites`, so the new code is a
+   v2-only refusal. *Recommendation:* land it in 5e with a known entry ("v2 refuses where v1 accepted,
+   R-5.13.1"). The language rule is the owner's (R-5.13.1), and S9's parity sees it as a listed
+   difference.
+5. **Top-level function aliases (R-5.5.6).** The row puts `p/AliasWriterCall` in S3b. The reason it is
+   unbuilt is `top`/`ext_value`, which S7 also builds for values. *Recommendation:* build only the
+   alias of a function in 5e, because it is a call. Leave top-level values to S7.
+6. **#1146's count after #1308.** #1308 may delete `Grafter.graft`, and #1146's counted test counts it.
+   *Recommendation:* move the count onto the view path in 5d2 before #1308 deletes the graft, or keep
+   the graft as the differential reference until then.
+7. **The `sep` pairs in the block (5b).** S4 reads them, and an importer reads them only through the
+   block. *Recommendation:* publish them in the block now, with a version bump, so that S4 starts with
+   imported and same-module pairs alike.
+8. **Can S3b close with a core known limit?** On 4a, core's `Dict.removeMin` and `Dict.descend` are
+   known limits (#1372). Before 4a, a limit in core always failed the corpus. *Recommendation:* no. S3b
+   closes only when core has no known limit (see #1372 above).
+9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
+   above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
+   known limit names S4.
+
 The review history sets concrete acceptance obligations, not a duration estimate:
 
 | Completed or active work | Observed review/integration evidence | Consequence |
