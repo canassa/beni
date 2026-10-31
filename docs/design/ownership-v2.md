@@ -698,15 +698,47 @@ Operations, memoised on their node arguments:
     a in the domain. Projection and relabelling distribute over the sides, so this holds at every path below
     too: `proj` of the saturated node is the saturated node of the projections. The pairs of distinct
     coexisting members, over which `apart` runs, are the same set.
-  - **The members' own reads and their stored entries.** Every member stays in the tree; only an occurrence
-    goes, so each member is still read.
+  - **The members' own reads.** Every member stays in the tree; only an occurrence goes, so each member is
+    still read. The stored entries of the positions nodes a rebuild drops are another matter: below.
 
-  The positions nodes a rebuild drops are the constructor's input sides. **No snapshot of the new value keys
-  them.** `propagate` keys the nodes the value's shape holds (§2.9 *Keyed where a reader looks*) and `map` keys
-  images. A side that an operand's snapshot keys is read through that operand, as a member, under the operand's
-  own snapshot. So the question of a κ home for a removed node has an empty answer: no entry exists for it. An
-  entry a producer writes for the merged node is written on the node the constructor returns. Widen opening a
-  saturated positions node on a cycle adds the same members to the class.
+  **The entries of a dropped node** [M 2026-10-31, #1420; correcting this section's first text]. The positions
+  nodes a rebuild drops are the constructor's input sides and their counted nodes below. The first text of this
+  section said no snapshot of the new value keys them, so no κ entry needed a home. That is false. A
+  construction merges its operands' snapshots, and an operand's snapshot keys its own positions node at its own
+  position: `m4 = [ a, a ]` stores `shared` for `positions(a, a)` at `m4`'s `[*]`, and `[ a, l2, …m4 ]` drops
+  that node. The tree the constructor would have made held the node, so a read of it joined that entry. The
+  rebuilt tree's read derives its own κ instead, and the two can differ: read through a callee's summary
+  position, the repeated `a` derives `lost` (a folded duplicate), where the stored entry says `shared`. That
+  would weaken a read for a reason of representation alone, and the exactness of a failure is what a
+  diagnostic says (*is shared* against *may be*). So the entries are carried.
+
+  - **The carry.** A construction (`TransferConstruct`'s literal, construction and prepend) walks its new
+    value's snapshot from `[*]`, along the snapshot's own links, each `(position, node)` once. At each
+    position the dropped nodes are those the rebuilds of that position's node dropped (`Shape.dropsClosure`:
+    a dropped node a rebuild returned brings what it dropped in turn) and the projections of the dropped
+    nodes one step above. What the snapshot stores for a dropped node is joined onto the node the value has at
+    that position, unless a read of that node implies it already, at a plain position and at a summary one.
+    *Implies* is `⊑` with each `sep` and `apart` read as its pairs: `apart{π1, π2}` adds nothing beside
+    `apart{π1, π2, π3}`. So a block grows only by entries a read would otherwise miss. The walk stops at a
+    fold, and below a node older than the construction with nothing dropped above it: an operand's own
+    positions were carried by its own construction. It is a growth task.
+  - **It is sound.** The node the rebuild returns stands for every member of the dropped node, each at least
+    as often, at the same position. A stored entry is a condition on the value at that position: `shared`
+    (the same cell at two positions), `lost` (an approximation), `excl c` (an arrival standing for many
+    positions), `sep`/`apart` (arrivals compared), `within`, `keep` and `writes` (a callback's). Each is
+    true of a value that holds every position the dropped node held, so it still holds of every run that
+    reaches those positions through the rebuilt node. No kind fails this. Fold conditions are not snapshot
+    entries: `fold_cond` is read only where a node is read as a root, and a dropped node was a side.
+  - **It is exact, and checked.** With the carry, the read of the rebuilt node joins what the constructors'
+    tree joined. Under `runtime_safety` the read machine checks it at every read of a rebuilt node it walks:
+    each entry the position stores for a node the rebuild dropped must be implied by the read (a panic
+    otherwise). A read that relabels the node (`map`'s images) is not checked there; the carry is what
+    reaches it. Measured over about 5 400 random programs of literals, spreads, prepends, `++`, `rest`
+    views, `[*][*]` nesting, a callback and recursive accumulators: the check met `shared`, `lost`, `excl`
+    and `apart` entries, never fired, and every verdict equals master's. Without the carry it fired on five
+    `shared` entries read `lost`. Summary text can still change: a cell that occurs three times is printed
+    twice, two nodes that the rebuild made one are printed once, and fresh names follow the new order.
+    The κ read at each position does not change.
 
   **A cap in the readers would buy nothing**, so that option is not taken. The readers already aggregate in the
   finite domain, and they memoise per node: `dagFacts` per node, `Cond.machine` per (position, node),
@@ -731,13 +763,15 @@ Operations, memoised on their node arguments:
   memoised per node, a record per map. Two sides that are both members alone cannot lose a member, so their
   test reads nothing and costs nothing. A side that is one member is looked up in the other side's `twice`
   set. The test and the rebuild are a growth task (`enter(null)`), and the node itself stays on the caller's
-  kernel, so each lane of `collect` still holds its positions node alone. Under `runtime_safety`,
-  `TransferConstruct`'s literal and construction check the empty κ home: at every position of the new value's
-  snapshot, a node a rebuild dropped has the entry the operands' merged snapshot gives it, or none.
-  Measured: the 2 044 roots publish the same verdicts, demands and summaries as master, and seven blocks are
-  smaller (six as above, and `ownership/PositionsSaturate`'s 1 036 → 996). `Rose [ r, r ]` takes 5 728 /
-  32 495 / 315 927 records at 10 / 40 / 160 levels (160, 151 and 269 per n·log₂(n + 2)), so it is still
-  above n log n. The charged rebuilds put 600 spreads of one list at 20 records an item, 18 before.
+  kernel, so each lane of `collect` still holds its positions node alone. Each rebuild records the counted
+  nodes it dropped under the node it returned, a record each (`Shape.dropsOf`, `dropsClosure`): what the
+  carry and the check of *The entries of a dropped node* read.
+  Measured: of the 2 044 roots, the corpus's, all but one publish the same verdicts, demands and summaries
+  as master, and six blocks are smaller (as above). The one is `ownership/PositionsSaturate`, whose
+  `apartRest` summary prints `apart [π1] [π2] [π3]` without the pair it implies. Byte identity is a fact of
+  the corpus, not a theorem: summary text can change (above). `Rose [ r, r ]` takes 5 785 / 32 732 / 316 884
+  records at 10 / 40 / 160 levels (161, 152 and 270 per n·log₂(n + 2)), so it is still above n log n. The
+  charged rebuilds put 600 spreads of one list at 20 records an item, 18 before.
 
   **Measured** (a prototype that flattens uncharged, ReleaseSafe, self-hosted):
   - **The corpus.** All 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`) were dumped under
@@ -2197,7 +2231,7 @@ Where κ is set, always **at the selected path p**:
   parameter. Debt:
   - `Rose [r, r]` is still above n log n (#1420). It took 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
     refused at 80, because each projection of a `positions` chain of depth d made d new nodes. Since
-    positions saturate at two (§2.3) it takes 5 728 / 32 495 / 315 927 at 10 / 40 / 160 (`build_test.zig`
+    positions saturate at two (§2.3) it takes 5 785 / 32 732 / 316 884 at 10 / 40 / 160 (`build_test.zig`
     counts it). Its together-join and its widen still walk the tower's depth.
   - The block writer, `Summary.Table.add`'s view check and the printer still walk K's entries one
     by one, so their time is quadratic (#1426).
@@ -5357,11 +5391,11 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 200 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 780 (#1420: positions saturate at two, their count maps and the rebuild, §2.3; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 820 (#1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
-| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 560 (#1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
+| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 620 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 160 (4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
@@ -5373,7 +5407,7 @@ L0  Ids
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
 | `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 960 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
-| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 390 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: the check that a positions rebuild leaves no κ entry on a node it dropped, §2.3) |
+| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
 | `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |
 | `TransferGroups.zig` | 10 | a use below a parameter's leaf, by node (§2.11 item 3, #1412): the groups expanded after the walk into one demand per state (`expandGroups`), and the plain-step `sig` (`Plain`) | `Group`, `CallSnap`, `Plain`, `expandGroups` | Ids, Place, Cell, Cond, Summary, Demands, Calls, Liveness | ≤ 740 (#1457: split out of `Transfer.zig`, 727 lines: it runs after the walk and calls the other paths and the constructions' `demand`) |
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
@@ -6511,7 +6545,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
 | #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
-| #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact, whose κ home is empty. It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
+| #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact once a dropped node's entries are carried onto the node it returns (*The entries of a dropped node*). It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
 | #1399 | A port's joined κ below a choice is not read (unsound on 4a). | **Before 4a merges** (#1408). |

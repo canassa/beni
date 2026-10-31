@@ -386,6 +386,8 @@ pub fn Of(comptime Table: type) type {
                 extra: CondId = .none,
                 /// Read at a position a crossing chose.
                 crossed: bool = false,
+                /// A read of a DAG: where its dropped entries start (`drop_entries`).
+                check_from: u32 = 0,
 
                 fn key(f: @This()) [4]u32 {
                     return .{ @backingInt(f.op), f.ctx.int(), f.node.int(), @intFromBool(f.summary) };
@@ -400,6 +402,10 @@ pub fn Of(comptime Table: type) type {
             defer state.deinit(gpa);
             var done: std.ArrayList(Read) = .empty;
             defer done.deinit(gpa);
+            // Under `runtime_safety`: what each snapshot stores for a node a
+            // rebuild dropped, met below the read in progress (`dropsOf`).
+            var drop_entries: std.ArrayList(CondId) = .empty;
+            defer drop_entries.deinit(gpa);
             var cyclic = false;
             try frames.append(gpa, .{ .op = .read, .ctx = ctx0, .node = n0, .summary = s0, .carry = pairs.len > 0 });
             while (frames.items.len > 0) {
@@ -448,6 +454,7 @@ pub fn Of(comptime Table: type) type {
                                 // crossing every node of it is of the region, read at
                                 // `R`: the carried pairs are not needed there.
                                 f.stage = 1;
+                                f.check_from = @intCast(drop_entries.items.len);
                                 frames.items[fi] = f;
                                 try frames.append(gpa, .{ .op = .inner, .ctx = f.at, .node = f.answer, .summary = f.summary, .carry = f.carry and !f.crossed });
                                 continue;
@@ -459,6 +466,11 @@ pub fn Of(comptime Table: type) type {
                         const crossed = f.crossed or inner.crossed;
                         if (!cyclic) try t.memoPut(gpa, .dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) }, root.int(), crossed);
                         result = .{ .k = if (f.extra != .none) try t.join(gpa, charge, f.extra, root) else root, .crossed = crossed };
+                        if (std.debug.runtime_safety and !t.drop_check_off) {
+                            for (drop_entries.items[f.check_from..]) |e| if (!try t.impliedBy(gpa, v, e, result.?.k))
+                                std.debug.panic("ownership v2: a dropped positions node's entry {d} is not implied by the read {d} of its rebuild (§2.3 *Saturation at two*)", .{ e.int(), result.?.k.int() });
+                            drop_entries.shrinkRetainingCapacity(f.check_from);
+                        }
                     },
                     .inner => if (f.stage == 0) {
                         // The task's one record (above) covers its memo lookups.
@@ -484,6 +496,14 @@ pub fn Of(comptime Table: type) type {
                         const b = vals.pop().?;
                         var k = try t.join(gpa, charge, a.k, b.k);
                         if (t.kappaGet(f.ctx, f.node)) |st| k = try t.join(gpa, charge, st, k);
+                        if (std.debug.runtime_safety and !t.drop_check_off) {
+                            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+                            defer scratch.deinit(gpa);
+                            var drops: std.ArrayList(NodeId) = .empty;
+                            defer drops.deinit(gpa);
+                            try v.shapes.dropsClosure(gpa, &scratch, f.node, &drops);
+                            for (drops.items) |d| if (t.kappaGet(f.ctx, d)) |e| try drop_entries.append(gpa, e);
+                        }
                         const crossed = a.crossed or b.crossed or f.crossed;
                         if (!cyclic) try t.memoPut(gpa, .inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) }, k.int(), crossed);
                         result = .{ .k = k, .crossed = crossed };
@@ -2488,6 +2508,68 @@ pub fn Of(comptime Table: type) type {
 
         pub fn below(s: Step) bool {
             return s.kind == .elem or s.kind == .level;
+        }
+
+        /// Whether condition `e` adds nothing to `r` (§2.3 *Saturation at two*,
+        /// *Exactness of a dropped entry*): `e ⊑ r` in the lattice once each
+        /// `sep` and `apart` atom of `e` is read as its pairs, a pair being
+        /// covered by a `sep` or an `apart` of `r` that holds both cells. A
+        /// `runtime_safety` check's test: it walks the `and` trees itself and
+        /// writes no memo, so it changes no later read or charge.
+        pub fn impliedBy(t: *Table, gpa: Allocator, v: View, e: CondId, r: CondId) Error!bool {
+            if (e == yes or e == r or r == shared) return true;
+            if (e == shared) return false;
+            if (r == lost) return true;
+            if (e == lost or r == yes) return false;
+            var es: std.ArrayList(CondId) = .empty;
+            defer es.deinit(gpa);
+            var rs: std.ArrayList(CondId) = .empty;
+            defer rs.deinit(gpa);
+            try t.atomsOf(gpa, e, &es);
+            try t.atomsOf(gpa, r, &rs);
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const g: Charge = .growth(&scratch);
+            const sets = &v.cells.sets;
+            next: for (es.items) |a| {
+                if (std.mem.indexOfScalar(CondId, rs.items, a) != null) continue;
+                const d = t.get(a);
+                if (d.atom != .sep and d.atom != .apart) return false;
+                // One `apart` of `r` over a superset covers every pair at once.
+                if (d.atom == .apart) for (rs.items) |b| {
+                    const db = t.get(b);
+                    if (db.atom == .apart and try sets.subset(gpa, g, .from(d.a), .from(db.a))) continue :next;
+                };
+                var cells: std.ArrayList(u32) = .empty;
+                defer cells.deinit(gpa);
+                if (d.atom == .sep) try cells.appendSlice(gpa, &.{ d.a, d.b }) else {
+                    var it = sets.iterate(.from(d.a));
+                    while (it.next()) |c| try cells.append(gpa, c.key);
+                }
+                for (cells.items, 0..) |x, i| for (cells.items[i + 1 ..]) |y| {
+                    const pair = for (rs.items) |b| {
+                        const db = t.get(b);
+                        if (db.atom == .sep and db.a == @min(x, y) and db.b == @max(x, y)) break true;
+                        if (db.atom == .apart and sets.member(.from(db.a), x) and sets.member(.from(db.a), y)) break true;
+                    } else false;
+                    if (!pair) return false;
+                };
+            }
+            return true;
+        }
+
+        /// The atoms of `c`'s `and` tree, each once, read with no memo.
+        pub fn atomsOf(t: *Table, gpa: Allocator, c: CondId, out: *std.ArrayList(CondId)) Error!void {
+            var stack: std.ArrayList(CondId) = .empty;
+            defer stack.deinit(gpa);
+            try stack.append(gpa, c);
+            while (stack.pop()) |x| {
+                if (x == yes) continue;
+                const d = t.get(x);
+                if (d.kind == .@"and") {
+                    try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                } else if (std.mem.indexOfScalar(CondId, out.items, x) == null) try out.append(gpa, x);
+            }
         }
 
         /// `κ_a(a) ⊑ κ_b(b)` at every position the two structures put at one

@@ -18,6 +18,7 @@ const Cond = @import("Cond.zig");
 const Demands = @import("Demands.zig");
 const Bir = @import("../bir/Bir.zig");
 const NodeId = Ids.NodeId;
+const CondId = Ids.CondId;
 const SetId = Ids.SetId;
 const PlaceId = Ids.PlaceId;
 const Value = Demands.Value;
@@ -72,9 +73,7 @@ pub fn Of(comptime Frame: type) type {
                 for (items, lanes) |item, *l| l.* = .{ .atom = item, .role = .transfer_settlement };
                 const task = try f.account().enter(f.gpa, null);
                 defer f.account().leave(task);
-                const merged = elem_k;
-                watchDropped(f, true);
-                defer watchDropped(f, false);
+                const start = shapes.count();
                 const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells, lanes);
                 elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
                 // Each element at the literal's `[*]`: its own κ there (§2.9: the
@@ -85,7 +84,7 @@ pub fn Of(comptime Frame: type) type {
                     defer f.account().leave(kernel);
                     elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
                 }
-                try checkDropped(f, merged, elem_k);
+                elem_k = try carryDropped(f, elem_k, elems, start);
                 kids = try shapes.overPut(f.gpa, f.account(), kids, Step.elem, elems);
                 kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, kappa, Step.elem, elem_k);
             }
@@ -93,37 +92,98 @@ pub fn Of(comptime Frame: type) type {
             return .{ .node = node, .kappa = try f.kappaSet(kappa, node, Cond.yes) };
         }
 
-        /// Under `runtime_safety`: record the positions nodes a rebuild drops
-        /// (§2.3 *Saturation at two*) from here on, or stop.
-        fn watchDropped(f: *Frame, on: bool) void {
-            if (!std.debug.runtime_safety) return;
-            f.env.shapes.record_dropped = on;
-            f.env.shapes.dropped.clearRetainingCapacity();
-        }
-
-        /// §2.3 *Saturation at two*: the κ home of a node a rebuild dropped is
-        /// empty. No entry of the new value's snapshot `final`, at any position,
-        /// is keyed by a dropped node except one its operands' merged snapshot
-        /// `merged` holds there already: what the construction writes, it
-        /// writes on the nodes it returns. A check, under `runtime_safety` only.
-        fn checkDropped(f: *Frame, merged: Cond.Kappas, final: Cond.Kappas) Error!void {
-            if (!std.debug.runtime_safety) return;
-            const dropped = f.env.shapes.dropped.items;
-            if (dropped.len == 0) return;
+        /// §2.3 *Saturation at two*, *The entries of a dropped node*: the
+        /// snapshot `root` of a value at position `elems` with the entries it
+        /// stores for the nodes rebuilds dropped (`Shape.dropsClosure`, at each
+        /// position below too, their projections with them) joined onto the
+        /// node the value has there, where a read of that node does not imply
+        /// them already. The tree the constructors would have made held the
+        /// dropped nodes, so those entries were part of its reads; the rebuilt
+        /// node holds every member they hold, so each stays true of it. Only the
+        /// snapshot's own positions are walked, each `(position, node)` once,
+        /// and only to a fold. A growth task.
+        fn carryDropped(f: *Frame, root: Cond.Kappas, elems: NodeId, start: u32) Error!Cond.Kappas {
+            if (root == .none) return root;
+            const shapes = f.env.shapes;
             const conds = f.env.conds;
-            var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
-            defer seen.deinit(f.gpa);
-            var stack: std.ArrayList([2]Cond.Kappas) = .empty;
-            defer stack.deinit(f.gpa);
-            try stack.append(f.gpa, .{ final, merged });
-            while (stack.pop()) |pair| {
-                if (pair[0] == .none) continue;
-                if ((try seen.getOrPut(f.gpa, .{ pair[0].int(), pair[1].int() })).found_existing) continue;
-                for (dropped) |d| if (conds.kappaGet(pair[0], d) != conds.kappaGet(pair[1], d))
-                    std.debug.panic("ownership v2: a snapshot keys node {d}, which a positions rebuild dropped", .{d.int()});
-                var it = conds.kappaLinks(pair[0]);
-                while (it.next()) |e| try stack.append(f.gpa, .{ e.child, conds.kappaChild(pair[1], e.step) });
+            const gpa = f.gpa;
+            const task = try f.account().enter(gpa, null);
+            defer f.account().leave(task);
+            const PathRec = struct { parent: u32, step: Step };
+            var paths: std.ArrayList(PathRec) = .empty;
+            defer paths.deinit(gpa);
+            var cands: std.ArrayList(NodeId) = .empty;
+            defer cands.deinit(gpa);
+            const Fr = struct { pos: Cond.Kappas, node: NodeId, path: u32, from: u32, len: u32 };
+            var frames: std.ArrayList(Fr) = .empty;
+            defer frames.deinit(gpa);
+            var visited: Ids.FixedDict(2) = .{};
+            defer visited.deinit(gpa);
+            const Carry = struct { path: u32, node: NodeId, k: CondId };
+            var carries: std.ArrayList(Carry) = .empty;
+            defer carries.deinit(gpa);
+            var here: std.ArrayList(NodeId) = .empty;
+            defer here.deinit(gpa);
+            try frames.append(gpa, .{ .pos = root, .node = elems, .path = none, .from = 0, .len = 0 });
+            while (frames.pop()) |fr| {
+                try f.account().reserve(.shape, 1);
+                if ((try visited.getOrPut(gpa, .{ fr.pos.int(), fr.node.int() })).found_existing) continue;
+                // The dropped nodes at this position: the parent's, projected,
+                // and what the rebuilds of this position's node dropped.
+                here.clearRetainingCapacity();
+                try here.appendSlice(gpa, cands.items[fr.from..][0..fr.len]);
+                try shapes.dropsClosure(gpa, f.account(), fr.node, &here);
+                var carry: ?CondId = null;
+                if (here.items.len > 0) {
+                    const own = conds.kappaGet(fr.pos, fr.node);
+                    var reads: ?[2]CondId = null;
+                    for (here.items) |x| {
+                        const e = conds.kappaGet(fr.pos, x) orelse continue;
+                        if (e == Cond.yes) continue;
+                        if (own) |o| if (try conds.impliedBy(gpa, f.env.view(), e, o)) continue;
+                        // The node's reads, at a plain position and at a summary
+                        // one, before anything is carried: the test, unchecked.
+                        if (reads == null) {
+                            // No memo either: a later read is then made, and checked.
+                            const saved = .{ conds.drop_check_off, conds.no_memo };
+                            conds.drop_check_off = true;
+                            conds.no_memo = true;
+                            defer {
+                                conds.drop_check_off = saved[0];
+                                conds.no_memo = saved[1];
+                            }
+                            reads = .{ try conds.kappaOf(gpa, f.env.charge, f.env.view(), fr.pos, fr.node, false), try conds.kappaOf(gpa, f.env.charge, f.env.view(), fr.pos, fr.node, true) };
+                        }
+                        if (try conds.impliedBy(gpa, f.env.view(), e, reads.?[0]) and try conds.impliedBy(gpa, f.env.view(), e, reads.?[1])) continue;
+                        carry = if (carry) |c| try conds.join(gpa, f.env.charge, c, e) else e;
+                    }
+                }
+                if (carry) |k| try carries.append(gpa, .{ .path = fr.path, .node = fr.node, .k = k });
+                if (conds.isFold(fr.pos)) continue;
+                var it = conds.kappaLinks(fr.pos);
+                while (it.next()) |l| {
+                    const child = (try shapes.proj(gpa, f.account(), f.env.places, f.env.cells, fr.node, l.step)) orelse continue;
+                    const from: u32 = @intCast(cands.items.len);
+                    for (here.items) |x| if (try shapes.proj(gpa, f.account(), f.env.places, f.env.cells, x, l.step)) |px| try cands.append(gpa, px);
+                    // Below a node older than the construction and with nothing
+                    // dropped above it, every position is an operand's own: its
+                    // construction carried what it dropped there.
+                    if (child.int() < start and cands.items.len == from and shapes.dropsOf(child).at == none) continue;
+                    try paths.append(gpa, .{ .parent = fr.path, .step = l.step });
+                    try frames.append(gpa, .{ .pos = l.child, .node = child, .path = @intCast(paths.items.len - 1), .from = from, .len = @as(u32, @intCast(cands.items.len)) - from });
+                }
             }
+            var out = root;
+            var along: std.ArrayList(Step) = .empty;
+            defer along.deinit(gpa);
+            for (carries.items) |c| {
+                along.clearRetainingCapacity();
+                var p = c.path;
+                while (p != none) : (p = paths.items[p].parent) try along.append(gpa, paths.items[p].step);
+                std.mem.reverse(Step, along.items);
+                out = try conds.kappaSetAt(gpa, f.env.charge, out, along.items, c.node, c.k);
+            }
+            return out;
         }
 
         /// `v` read at place `at`: itself, or a recast when its place differs.
@@ -203,13 +263,11 @@ pub fn Of(comptime Frame: type) type {
             defer f.gpa.free(lanes);
             lanes[0] = .{ .atom = base_atom, .role = .transfer_settlement };
             for (atoms, lanes[1..]) |atom, *l| l.* = .{ .atom = atom, .role = .transfer_settlement };
-            const merged = elem_k;
-            watchDropped(f, true);
-            defer watchDropped(f, false);
+            const start = shapes.count();
             const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, Shape.Table.lazy_cells, lanes);
             const node = try shapes.put(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem, elems, true, .none);
             elem_k = try f.kappaSet(elem_k, elems, k);
-            try checkDropped(f, merged, elem_k);
+            elem_k = try carryDropped(f, elem_k, elems, start);
             var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, base.kappa, Step.elem, elem_k);
             kappa = try f.kappaSet(kappa, node, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), base.kappa, base.node, false));
             return .{ .node = node, .kappa = kappa };
@@ -329,6 +387,7 @@ pub fn Of(comptime Frame: type) type {
             defer f.gpa.free(lanes);
             for (fronts, lanes[0..fronts.len]) |it, *l| l.* = .{ .atom = it[0], .role = .transfer_settlement };
             lanes[fronts.len] = .{ .atom = base_atom, .role = .transfer_settlement };
+            const start = shapes.count();
             const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, Shape.Table.lazy_cells, lanes);
             var c = try f.set1(try cells.site(f.gpa, f.account(), root, at, .list));
             if (!fresh) {
@@ -336,6 +395,7 @@ pub fn Of(comptime Frame: type) type {
                 while (bt.next()) |e| c = try cells.sets.insert(f.gpa, f.env.charge, c, e.key, 1);
             }
             const node = try shapes.node(f.gpa, f.account(), at, c, try shapes.overPut(f.gpa, f.account(), Ids.none_int, Step.elem, elems));
+            elem_k = try carryDropped(f, elem_k, elems, start);
             var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, .none, Step.elem, elem_k);
             kappa = try f.kappaSet(kappa, node, if (fresh) Cond.yes else Cond.lost);
             return .{ .node = node, .kappa = kappa };

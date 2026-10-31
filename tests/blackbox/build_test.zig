@@ -10472,8 +10472,8 @@ test "the checker v2 counts a tower of repeated literals at the default allowanc
     // #1420: each level's `[*]` is a positions node of the level below,
     // twice. Before positions saturated at two (§2.3), projecting the tower
     // made a node per level at every depth: 14 449 / 215 175 records at 10
-    // / 40, refused at 80. Now 5 728 / 32 495 / 315 927 at 10 / 40 / 160
-    // (160, 151 and 269 per n·log₂(n + 2)): accepted, with no growth, but
+    // / 40, refused at 80. Now 5 785 / 32 732 / 316 884 at 10 / 40 / 160
+    // (161, 152 and 270 per n·log₂(n + 2)): accepted, with no growth, but
     // still above n log n, which #1420 keeps. The ceilings are a quarter over.
     const sizes = [_]u32{ 10, 40, 160 };
     const ceilings = [_]u64{ 7_200, 40_700, 395_000 };
@@ -10484,6 +10484,40 @@ test "the checker v2 counts a tower of repeated literals at the default allowanc
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "the checker v2 keeps a dropped positions node's shared entry (positions saturate at two)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The entries of a dropped node*: `[ l4, l4, …m7 ]` holds `l4`
+    // three times, so the rebuild drops `m7`'s `[*]` node, which `m7`'s
+    // snapshot stores `shared`. Read at the summary position, the rebuilt
+    // node derives `lost` alone; the carried entry keeps it `shared`, as
+    // the tree the constructors would have made reads.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub sharedLost : List Int, List (List Int), List (List (List Int)) → List (List (List Int))
+        \\sharedLost q a m =
+        \\    l1 = [ q, …a ]
+        \\    l4 = [ …a, …l1 ]
+        \\    m5 = [ …m, l4 ]
+        \\    m7 = [ …m5, l1 ]
+        \\    [ l4, l4, …m7 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "res [*] fresh2 ~π2 π2 π3[*]{shared},") != null);
 }
 
 test "the checker v2 counts a tower of two-element literals in n log n (W, Rose [ r, Rose [] ])" {

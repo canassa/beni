@@ -198,10 +198,11 @@ pub const Table = struct {
     member_counts: Ids.FixedDict(1) = .{},
     member_maps: std.ArrayList([2]SetId) = .empty,
     member_sets: Cell.Radix = .{ .category = .memo },
-    /// Under `runtime_safety`, while `record_dropped`: the positions nodes
-    /// a rebuild dropped (`TransferConstruct`'s κ-home check).
-    record_dropped: bool = false,
-    dropped: std.ArrayList(NodeId) = .empty,
+    /// The counted nodes each rebuild dropped, by the node it returned, a list
+    /// through `drop_links` (`node`, `next`): what a construction carries
+    /// entries from and the read machine checks (§2.3 *Saturation at two*).
+    drop_head: Ids.FixedDict(1) = .{},
+    drop_links: std.ArrayList([2]u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -256,7 +257,8 @@ pub const Table = struct {
         t.counted.deinit(gpa);
         t.member_maps.deinit(gpa);
         t.member_sets.deinit(gpa);
-        t.dropped.deinit(gpa);
+        t.drop_head.deinit(gpa);
+        t.drop_links.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -1595,7 +1597,7 @@ pub const Table = struct {
             if ((try seen.getOrPut(gpa, n)).found_existing) continue;
             try account.reserve(.shape, 1);
             if (t.isCounted(n)) {
-                if (std.debug.runtime_safety and t.record_dropped) try read.append(gpa, n);
+                try read.append(gpa, n);
                 const d = t.get(n);
                 try stack.appendSlice(gpa, &.{ .from(d.b), .from(d.a) });
                 continue;
@@ -1604,14 +1606,15 @@ pub const Table = struct {
             if (t.member_sets.member(twice, n.int())) try order.append(gpa, n);
         }
         const out = try t.collect(gpa, account, cellsets, order.items);
-        if (std.debug.runtime_safety and t.record_dropped) try t.recordDropped(gpa, read.items, out);
+        try t.recordDropped(gpa, account, read.items, out);
         return out;
     }
 
-    /// The positions nodes a rebuild read that its tree does not hold:
-    /// `TransferConstruct` checks no snapshot of the new value keys one
-    /// (§2.3 *Saturation at two*: the κ home of a dropped node is empty).
-    fn recordDropped(t: *Table, gpa: Allocator, read: []const NodeId, out: NodeId) Error!void {
+    /// The counted nodes a rebuild read that its tree `out` does not hold,
+    /// kept under `out` (`dropsOf`), a record each: what a construction
+    /// carries their snapshot entries from (§2.3 *Saturation at two*, *The
+    /// entries of a dropped node*) and what the read machine checks.
+    fn recordDropped(t: *Table, gpa: Allocator, account: *Account, read: []const NodeId, out: NodeId) Error!void {
         const kept = try t.marks.take(gpa);
         defer t.marks.give(kept);
         var stack: std.ArrayList(NodeId) = .empty;
@@ -1620,10 +1623,57 @@ pub const Table = struct {
         while (stack.pop()) |n| {
             if ((try kept.getOrPut(gpa, n)).found_existing) continue;
             if (!t.isCounted(n)) continue;
+            try account.reserve(.shape, 1);
             const d = t.get(n);
             try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
         }
-        for (read) |n| if (!kept.contains(n)) try t.dropped.append(gpa, n);
+        for (read) |n| if (!kept.contains(n)) {
+            try account.reserve(.memo, 1);
+            const head = try t.drop_head.getOrPut(gpa, .{out.int()});
+            if (!head.found_existing) head.value_ptr.* = Ids.none_int;
+            try t.drop_links.append(gpa, .{ n.int(), head.value_ptr.* });
+            head.value_ptr.* = @intCast(t.drop_links.items.len - 1);
+        };
+    }
+
+    /// The nodes the rebuilds that returned `n` dropped (`recordDropped`).
+    pub const Drops = struct {
+        t: *const Table,
+        at: u32,
+
+        pub fn next(it: *Drops) ?NodeId {
+            if (it.at == Ids.none_int) return null;
+            const l = it.t.drop_links.items[it.at];
+            it.at = l[1];
+            return .from(l[0]);
+        }
+    };
+
+    pub fn dropsOf(t: *const Table, n: NodeId) Drops {
+        return .{ .t = t, .at = t.drop_head.get(.{n.int()}) orelse Ids.none_int };
+    }
+
+    /// Every node a rebuild of `n` dropped, and what a dropped node that a
+    /// rebuild returned dropped in turn, each once, appended to `out`: the
+    /// counted nodes of the tree the constructors would have made that `n`
+    /// does not hold. A record per node.
+    pub fn dropsClosure(t: *Table, gpa: Allocator, account: *Account, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        if (t.drop_head.get(.{n.int()}) == null) return;
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
+        for (out.items) |x| try seen.put(gpa, x, {});
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            var it = t.dropsOf(x);
+            while (it.next()) |d| {
+                if ((try seen.getOrPut(gpa, d)).found_existing) continue;
+                try account.reserve(.memo, 1);
+                try out.append(gpa, d);
+                try stack.append(gpa, d);
+            }
+        }
     }
 
     /// How many arms `n`'s choice DAG has, an arm counted once per route,

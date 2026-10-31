@@ -51,9 +51,9 @@ const layers = [_]Entry{
     // §5 says 3 600 since #1372: map's knot test and the flattening choice
     // join (§2.3); 3 350 since #1350, a view's instantiated place and a
     // join's place.
-    // 3 780 since #1420: positions saturate at two, their count maps and the
-    // rebuild (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3780 },
+    // 3 820 since #1420: positions saturate at two, their count maps, the
+    // rebuild and the nodes it dropped (§2.3).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3820 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -64,7 +64,9 @@ const layers = [_]Entry{
     // 2 560 since #1308: κ reads (the machine, views, the crossing, the
     // aggregates, `deep`, `sep`, `apart`, `lower`, the frontier), split out of
     // Cond (§5).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2560 },
+    // 2 620 since #1420: the check that a read implies what a rebuild
+    // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2620 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -119,9 +121,9 @@ const layers = [_]Entry{
     // 340 since #1457: patterns and splits, split out of Transfer (§5).
     .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
     // 350 since #1457: constructions, split out of Transfer (§5).
-    // 390 since #1420: the check that a positions rebuild leaves no κ entry
-    // on a node it dropped (§2.3 *Saturation at two*).
-    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 390 },
+    // 450 since #1420: a construction carries what a rebuild dropped (§2.3
+    // *The entries of a dropped node*).
+    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 450 },
     // 170 since #1457: call application, split out of Transfer (§5).
     .{ .file = "TransferCall.zig", .layer = 10, .max_lines = 170 },
     // 740 since #1457: a use below a parameter's leaf, expanded after the
