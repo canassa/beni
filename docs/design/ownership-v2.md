@@ -1650,13 +1650,29 @@ paid 1.7 times master's records (#1459's review).
 - **No implied join entry is carried.** Before read-off relabels a group member's snapshot, it drops each
   union, choice or view entry that `map` did not meet and that `joinImplied` shows its sides imply at its
   position (`Cond.withoutImpliedJoins`). It moves an entry its sides do not imply onto the sides that `map` met.
-  Every read stays the same, and no projection is made for these entries. The reads are read-off's, on the
-  walk's baseline, as the block writer's are. Positions at a fold are kept as they are.
+  Every read stays the same, and no projection is made for these entries. The reads go on the walk's own
+  charge, its lanes and then growth, so a tall snapshot stops at the limit (#1459's review). Each answer is
+  memoised by `(key, condition, position)`. Positions at a fold are kept as they are. The filter is linear in the
+  entries it reads. K inside a recursive function has Θ(n²) of them (#1450), so the filter is quadratic there,
+  as is the rest of that walk (407 364 records at 40 levels without the filter, 452 124 with it). It stops at
+  the limit at 80 levels, in about 14 s on a ReleaseSafe beni. 4d alone refused it at 20.
 - **Own origins only.** A view in a group member's read-off follows only its own origins, never its template's
   (`Shape.originHead`'s `templates`). A round's view of a joined node is the previous round's class.
   `Summary.joinRes` reads each round's entries under that round's own snapshot, so the port keeps them.
   Carried onto this round's projections again, they grew every round: `rose` did not converge at an allowance
   of 2 000 000 before this rule.
+
+**A covered arm's drop keeps the join below the root** (#1459's review). 4d's `Summary.dropCovered` drops the
+arms of a port's choice that a later round covers, and joins the entry at each choice node into the kept arms at
+the root. Below the root, the join's entry is keyed on `proj(choice, q)`. After the drop, readers meet
+`proj(root, q)` instead, where `root` is the kept choice or arm. The kept arms' sides there still hold the
+certificates that the merge brought in from the dropped arms. So the drop transports the snapshot through the
+projection correspondence, with every choice node of the dropped DAG mapped to `root`. Each entry stays where it
+is, and each joined DAG's entry is keyed on `proj(root, q)` as well (`DropCarry`). The kept arms then read, at
+every position, at most what the dropped choice read there. Mapping a nested choice to `root` joins its entries
+into all kept arms, which only weakens a read. `Summary.zig`'s *a port join that drops a covered arm keeps the
+joined entries below the root* pins it: `x = [a]`, `u = [a | b]` with only `b` certified, `big = [a | c]`. Its
+`[*]` reads `yes` without the carry and fails with it.
 
 **No entry is dropped for its shape alone.** An earlier version skipped a join's entry wherever every member
 was the joined node or one of its sides. That is unsound once the members' snapshots are merged first. A
@@ -1665,9 +1681,9 @@ certificate merged in from one member can make a side read stronger than its own
 `u = union(a, b)`, one member certifying `x` and the other only `b`). So only reads decide, at the block
 (`Block.joinImplied`) and at a group's read-off.
 
-Measured on 4d's head `1610219dc` (records, 4d in brackets):
-- `rose`: 40 027 in 4 walks, growth 10 886 (10 085 in 2, growth 0);
-- `mergeSort`: 41 058 in 3 walks, growth 0 (36 853 in 3);
+Measured on 4d's head `4c96357b6` (records, 4d in brackets):
+- `rose`: 39 456 in 4 walks, growth 10 692 (10 085 in 2, growth 0);
+- `mergeSort`: 43 147 in 3 walks, growth 4 045, the filter's reads (36 853 in 3);
 - K: 13 056 / 64 744 / 138 217 / 292 195 at 10 / 40 / 80 / 160 (16 842 / 187 601 / 706 567 / refused);
 - K's importer at 40: 132 299 (123 730), with the same block bytes;
 - `build_test.zig`'s `wa`: 17 934 in 4 walks (16 616); `wb`: 27 356 in 5 (28 156).
@@ -5593,7 +5609,7 @@ L0  Ids
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 190 (#1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
-| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 870 (#1459: a class join merges its members' snapshots first; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
+| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 910 (#1459: a class join merges its members' snapshots first, and a covered arm's drop carries the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |

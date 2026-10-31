@@ -11269,7 +11269,9 @@ test "the checker v2 keeps no round of a group's port that its last round covers
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit mergeSort") == null);
     try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "mergeSort", "walks"));
-    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "mergeSort", "growth"));
+    // #1459's read-off filter reads each joined entry it may drop: growth, as
+    // the limit must see it (4 045 records).
+    try testing.expect(try accountField(dump.stdout, "mergeSort", "growth") <= 5_000);
     try testing.expect(try accountField(dump.stdout, "mergeSort", "total") < 45_000);
 }
 
@@ -12112,4 +12114,34 @@ test "the checker v2 reads a join's κ through one and two wrappers as the joine
         try testing.expectEqualStrings(t2, try summaryConds(ar, dump.stdout, "v1"));
         try testing.expectEqualStrings(t2, try summaryConds(ar, dump.stdout, "v2"));
     }
+}
+
+test "the checker v2 counts K inside a recursive function, its read-off filter seen by the limit" {
+    // #1459's review: K's tower inside a recursive group (`r0` the recursive
+    // call, `r_k = if c then Rose [ r_{k-1} ] else r_{k-1}`). Read-off's
+    // filter reads each joined entry of the round's snapshot, which K makes
+    // Θ(n²) (#1450): its reads are on the walk's lanes and growth, so a tall
+    // tower stops at the limit (80 levels: `ownership_summary_size` in about
+    // 14 s on a ReleaseSafe beni) instead of running on. 68 243 / 165 581
+    // records at 10 / 20 (Debug), growth 0; 4d alone refused it at 20.
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 10, 20 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = w.arena.allocator();
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "type Rose =\n    Rose (List Rose)\n\n\npub tower : Bool, Int → Rose\ntower c m =\n    r0 = if m == 0 then Rose [] else Rose [ tower c (m - 1) ]\n");
+        for (1..n + 1) |k| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+        try w.write("Main.beni", src.items);
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "tower", "growth"));
+        totals[i] = try accountTotal(dump.stdout, "tower");
+    }
+    // At most quadratic: twice the levels, at most 3 times the records.
+    try testing.expect(totals[1] <= 3 * totals[0]);
+    try testing.expect(totals[0] <= 75_000);
 }

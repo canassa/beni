@@ -919,13 +919,9 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // count: the relabel then maps each shared submap once (§2.9).
     // A recursive group's read-off carries no implied join entry onto a new
     // projection: each round's class would carry it into the next (#1466).
-    // Its reads are read-off's, on the walk's baseline: a function of the
-    // snapshot it publishes, as the block writer's are (`Block.joinImplied`).
-    var filter_reads: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
-    defer filter_reads.deinit(gpa);
-    const carried = if (ro.labels != null) try env.conds.withoutImpliedJoins(gpa, .growth(&filter_reads), env.view(), result.kappa, &carry, Carry.imageless) else result.kappa;
-    env.account().baseline += filter_reads.growth;
-    env.account().baseline_by[@backingInt(Ids.Category.inspection)] += filter_reads.growth;
+    // Its reads are growth, which the limit sees: a function of the
+    // snapshot it publishes (#1459's review).
+    const carried = if (ro.labels != null) try env.conds.withoutImpliedJoins(gpa, env.charge, env.view(), result.kappa, &carry, Carry.imageless) else result.kappa;
     const kappa = try env.conds.kappaRelabel(gpa, env.charge, carried, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .projected = Carry.projected, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
     // Widened, its κ carried onto the image with each folded class's
     // path-multiset obligation (§2.9, #1128).
