@@ -219,14 +219,51 @@ rule is now:
   through intermediate places too (`type A = A B (List Int) B`, `type B = B A`: `π1#A.0#B.0` and
   `π1#A.2#B.0`). Below a first return every route folds, as in v1: `l`'s left and right subtrees are both
   `π1#Node.0⟲`. A `⟲` keyed by the last step back (v1's `#Node.0⟨Tree⟩#Node.2`) would tell those apart too, at
-  a `⟲` per recursive step below each first return, K² for a K-wide type; it is not built, and the corpus
-  difference it would close, `LevelRecursiveUpdates` 64:5, is a known entry owned by #1253.
+  a `⟲` per recursive step below each first return, K² for a K-wide type; it is not built. The corpus
+  difference it was thought to close, `LevelRecursiveUpdates` 64:5, is closed instead at the call, where
+  the actual is a value and its written positions are told by path (§2.11 item 3, *the written position*,
+  #1253): the answered right subtrees below `l` there hold no list of the left spine.
 - **Who reads what.** Nothing that reads a `⟲` changes meaning: `alias`, `below`, the cycle anchors, κ's links,
   a call's readers of a `⟲` through an actual. A first return is a plain path and is read as one. Three readers
   learn of it: widen opens a union, choice or positions node at a first return as at a `⟲` (both are returns on
   the cycle being folded) and keys it to its own class (§2.3); a holder's text climbs back over a first return
   as over a `⟲` (v1's `kids holds it`, §6); and §2.7's `hits` tells what is inside a path's subtree by prefix,
   since a fold can now land below a first return inside it.
+
+*Amended 2026-10-31 (#1253): one position, one name.* On a cycle of two places or more, the rule above can
+name one set of positions twice. In `T = T (List T)` the root is `T`, `#T.0` its list, `#T.0[*]` the first
+return to `T` (a level's node) and `#T.0[*]#T.0` the first return to the list (that node's list). Built
+step by step, the lists below it are `#T.0[*]⟲#T.0`: the step from `#T.0[*]#T.0` by `[*]` folds onto
+`#T.0[*]⟲`, and its list is a step from there. A callee's `⟲` re-rooted at the list's first return
+(`incTs`'s `[*]#T.0⟲` under `incT`'s `#T.0`) was `extend`'s direct `⟲`, `#T.0[*]#T.0⟲`: the same lists
+under a second name. `incT`'s summary wrote one name and read the other (`RW` and `R`), and a call met
+the written lists at the read path as another path of the argument. The rule is now:
+
+- **A direct `⟲` names the levels as the walk does.** At a path that is not a `⟲` and not a sealed first
+  return, the levels below it are `levelsOf` of it: the paths at its place one or more steps around its
+  cycle, each as `extend` makes it. When there is one, `extend(p, ⟲)` is that path, so a callee's `⟲`
+  re-rooted at a first return lands where a step-by-step walk lands (`#T.0[*]⟲#T.0`). At a sealed first
+  return the levels are its own `⟲`, as before (`levelsOf` of it is `p⟲`), so `extend` is unchanged there,
+  and `levelsOf` reads `extend` only at sealed paths, so neither calls itself.
+- **Several level paths are a join.** Where the levels fold through more than one route,
+  `levelsOf` gives several paths (`B (List B) (List B)`: below a level's list `#B.0[*]#B.0` they are
+  `#B.0[*]⟲#B.0` and `#B.0[*]⟲#B.1`). `extend(p, ⟲)` stays `p⟲` there, the name of their **join**,
+  because a path is one id and a cell names one path. `Place.levelPaths(p)` returns them when they are
+  several, and three readers take each:
+  - a projection of a leaf by `⟲` (`Shape.projectLeaf`) makes a symbolic cell at each level path, and a
+    refinement's part one at each (`Cell.projectRefinedLevels`); a leaf's cells are a set, so the
+    projection is one leaf holding all of them;
+  - a graft of a callee's use at a join (`Walk.Graft.compose`) installs it at each level path
+    (`Place.expandLevels`, which rewrites every `⟲` on a path that is a join and takes the steps after
+    it again from each level path);
+  - a call's written positions (§2.11 item 3) are the expansion of its write path.
+  A reader that keeps one cell keeps the join (a refinement's `unrefined` cell, a demand's text, a use
+  mark at a parameter's join path). `Cell.alias` reads a `⟲` on a cycle as overlapping every path of that
+  cycle at its place, so the join is never taken as apart from the level paths it stands for.
+- **Cost.** `levelsOf` is memoised per path and walks a place's strongly connected component once, so a
+  direct `⟲` costs one memo hit after its first use; a join's expansion is the product of the joins on a
+  path, one per `⟲`, and a canonical path has at most one `⟲` per first return (above). The K-wide build
+  test is unchanged (1 814 / 2 038 records at K = 32, plain and through a `Maybe`; master 1 812 / 2 036).
 
 ### 2.2 Cells
 
@@ -2009,6 +2046,48 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      holder* reading above (#1385) reads a held cell at its canonical cell, which for another side of
      the split is the base's summary path, so it leaves a side of a split the write's path met to this
      rule: read as a hold, `t8` itself was refused `disjoint`, where v1 accepts it with `xreq excl π1`.
+     *Amended 2026-10-31 (#1253): the written position.* The walk paired a use node with a value node and
+     kept, at every value beside the write, its whole reach. Two things went wrong below a first return.
+     A route beside the write could fold back, through the use shape's knot, onto the write's own path at
+     the written object. And a value above the written positions **by position**, though not by path
+     prefix, held them in its reach. In `T = T (List T)` the level's own list `#T.0[*]#T.0` is an off
+     child of the spine's `#T.0[*]`, because the write's path `#T.0[*]⟲#T.0` pops back over it to the
+     node's `⟲`. Its reach holds the lists below it, so `incT (T [ T [ T [] ] ])` was refused `disjoint`,
+     though every list is distinct. A node does not tell the written position: use nodes are interned
+     and values are shared, so one node stands at two paths (`{ x = l, z = l }` has one use node at `.x`
+     and `.z`, and reading an arrival at the write's node as the write accepts `CallOtherPathsKeys` 16:5,
+     `CallOtherPaths` 123:5 and `LevelPlacesCall` 44:5, which v1 refuses). The rule is now:
+     - **A route carries its canonical path** in the parameter's place graph, from the root of the use,
+       each step by `extend` (`Transfer.routePath`).
+     - **The written positions** are the write path's canonical paths (one, or a join's level paths,
+       §2.1 *one position, one name*) paired with the actual's nodes the write's path reaches there,
+       a join's sides included (`Written`). A route beside the write that arrives at one of them is the
+       written object itself, not another path; it is skipped, with what is below it, which the write's
+       own path reads (rule (b)). Its other positions at that path are the class's `excl` (step 7).
+     - **A value beside the write is read by position** (`Transfer.reachBeside`): from its path, each
+       `(node, path)` once, its own cells kept, its children's taken by projection at their paths, a
+       written position skipped. A join (`union`, `choice`, `positions`) is read side by side at its
+       path. A leaf, a `recast` or a `view`'s answer that is neither (whose parts no step of the place
+       names) is read whole, as before.
+     - **A symbolic value above the base** (rule (c)'s parameter cells, #1383's held or deep readings,
+       #1386's splits): a parameter cell `d` of the value whose canonical cell is above the base's `c` holds
+       the written object itself when the steps from `d`'s path down to `c`'s, taken from the value's
+       path, land on a written position (`Transfer.atWritten`). Then it holds nothing beside the write.
+     - **Linear.** A route's path is dropped (`none`) below a place on no cycle beside the write's path:
+       `extend` folds only through the places of one cycle, so no step below such a place lands above
+       it, on the write's path. A dropped route is read as before, by node, and a value with a dropped
+       path whole. The walk's states are its pairs and their paths only on a cycle, where a value node
+       is at a path per first return it is reached under; a doubling DAG of tuples or records (#1325)
+       stays by node. Measured on the build tests (records of the call's declaration, master → this
+       rule): K-wide `t == t` beside a write, K = 8 / 16 / 32, 1 068 / 1 316 / 1 812 → 1 070 / 1 318 /
+       1 814, through a `Maybe` 1 124 / 1 428 / 2 036 → 1 126 / 1 430 / 2 038; a `T (List T)` tower
+       literal written by `incT`, height 8 / 16 / 32 / 64 / 128, 3 023 / 7 721 / 23 759 / 84 131 /
+       324 921 → 2 411 / 4 709 / 10 258 / 24 578 / 65 656 (refused before, accepted now). The counted
+       families of #1325, #1329, #1352 and the 5d1 towers pass.
+     So `three`, `four` and the distinct twins of 4a's plan fixtures are accepted as v1 accepts them, and
+     every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`). Still apart from v1: a `choice`
+     at the root is read with both arms together, so an object in one arm beside the other arm's write is
+     another path (`CycleJoinRankWriter` 56:5, #1439).
    **One demand per path of the pair graph (#1356).** The `(i, q)` are read off the use shape `S.use(i)` as
    the DAG it is, paired with the actual: each route from the root to a `W` (or, for item 4, an `E`) carries
    the actual's value there, read step by step as `cellsAt` reads a path (a missing step keeps the value
@@ -4720,8 +4799,8 @@ L0  Ids
 | File | L | Responsibility | Public API | Imports (own2) | Lines |
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 760 (S3b slice 4a: which copy of the source lanes a walk takes) |
-| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 150 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole) |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 180 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3) |
+| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 200 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 200 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
@@ -4737,7 +4816,7 @@ L0  Ids
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 710 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 050 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions) |
+| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 240 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, §2.11 item 3) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 11 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 12 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 930 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1) |
