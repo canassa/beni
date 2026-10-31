@@ -1,4 +1,4 @@
-//! L5: classes and summaries (`docs/design/ownership-v2.md` §2.10, §3.5). A
+//! L7: classes and summaries (`docs/design/ownership-v2.md` §2.10, §3.5). A
 //! class describes a function type's behaviour over `π₁…πₙ`, `ρ`; a summary
 //! is a declaration's class. A class names no declaration (#587's room).
 //!
@@ -244,6 +244,57 @@ fn pathOrder(a: PathId, b: PathId) std.math.Order {
     return std.math.order(a.int(), b.int());
 }
 
+/// Two use shapes of one place merged path by path: the marks of both at every
+/// path, a leaf standing for everything below it. `Shape.join` makes a `union`
+/// of two nodes, and a read-off of a use (`Calls.marked`) does not go into a
+/// union, so the writes below it would not be found.
+pub const UseMerge = struct {
+    env: Env,
+    memo: Ids.FixedDict(2) = .{},
+
+    pub fn deinit(m: *UseMerge) void {
+        m.memo.deinit(m.env.gpa);
+    }
+
+    pub fn merge(m: *UseMerge, a: NodeId, b: NodeId) Error!NodeId {
+        const env = m.env;
+        const gpa = env.gpa;
+        if (a == b or b == .none) return a;
+        if (a == .none) return b;
+        try env.charge.reserve(gpa, .shape, 1);
+        if (m.memo.get(.{ a.int(), b.int() })) |hit| return .from(hit);
+        const shapes = env.shapes;
+        const at = shapes.place(a);
+        const ca = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, a);
+        const cb = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, b);
+        const cells = try env.cells.sets.unionWith(gpa, env.charge, ca, cb);
+        const ka = shapes.kind(a);
+        const kb = shapes.kind(b);
+        const out: NodeId = out: {
+            if (ka == .node and kb == .node and shapes.place(b) == at) {
+                var children: u32 = Ids.none_int;
+                var it = shapes.overEntries(shapes.get(a).a);
+                while (it.next()) |e| {
+                    const other = if (shapes.overGet(shapes.get(b).a, e.step)) |o| o else NodeId.none;
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, try m.merge(e.node, other));
+                }
+                var jt = shapes.overEntries(shapes.get(b).a);
+                while (jt.next()) |e| if (shapes.overGet(shapes.get(a).a, e.step) == null) {
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, e.node);
+                };
+                break :out try shapes.node(gpa, env.account(), at, cells, children);
+            }
+            // A leaf stands for everything below it, and so does the merge of
+            // anything else: what both reach, deeply.
+            const ra = try shapes.reach(gpa, env.account(), &env.cells.sets, a);
+            const rb = try shapes.reach(gpa, env.account(), &env.cells.sets, b);
+            const deep = try Table.marksSet(env, .{ .deep = true }, &.{});
+            break :out try shapes.leaf(gpa, env.account(), at, try env.cells.sets.unionWith(gpa, env.charge, try env.cells.sets.unionWith(gpa, env.charge, ra, rb), deep));
+        };
+        (try m.memo.getOrPut(gpa, .{ a.int(), b.int() })).value_ptr.* = out.int();
+        return out;
+    }
+};
 pub const Table = struct {
     classes: std.MultiArrayList(Class) = .empty,
     uses: std.ArrayList(NodeId) = .empty,
@@ -549,7 +600,12 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
+        // `b`'s `res` under `a`'s: `a`'s shape and map are the join's. A
+        // group's later rounds often move only `xreq`, and joinRes would
+        // propagate κ over the whole unchanged `res` again (#1423).
+        const res_under = try env.shapes.leq(gpa, env.account(), env.places, env.cells, cb.res, ca.res) and
+            try env.conds.kappaLeq(gpa, env.charge, env.view(), cb.kappas, cb.res, ca.kappas, ca.res, false);
+        const joined: Joined = if (res_under) .{ .node = ca.res, .kappas = ca.kappas } else try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -699,12 +755,14 @@ pub const Table = struct {
         }
     }
 
-    /// Two use shapes joined: `.none` is the empty use.
+    /// Two use shapes joined path by path (`UseMerge`), never into a
+    /// `union`, which `Calls.marked` does not read: `.none` is the empty use.
     pub fn joinUse(env: Env, a: NodeId, b: NodeId) Error!NodeId {
         if (a == b or b == .none) return a;
         if (a == .none) return b;
-        var members = [_]NodeId{ a, b };
-        return env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
+        var mg: UseMerge = .{ .env = env };
+        defer mg.deinit();
+        return mg.merge(a, b);
     }
 
     pub const Joined = struct { node: NodeId, kappas: Kappas };
@@ -1066,6 +1124,10 @@ pub const Table = struct {
                     try n.put(d.c);
                 },
                 .top => {},
+                .part => {
+                    try n.cell(.from(d.a));
+                    try n.path(.from(d.c));
+                },
                 .elem, .others, .level, .below, .loan => {
                     try n.cell(.from(d.a));
                     try n.label(.from(d.b));
@@ -1532,13 +1594,14 @@ pub const Table = struct {
             var at = top;
             while (true) {
                 const o = env.cells.get(at).origin;
-                if (o != .elem and o != .others and o != .level and o != .below and o != .loan) break;
+                if (o != .elem and o != .others and o != .level and o != .below and o != .loan and o != .part) break;
                 chain.append(p.arena, at) catch return error.WriteFailed;
                 try w.writeAll(switch (o) {
                     .elem => "elem(",
                     .others => "others(",
                     .level => "level(",
                     .below => "below(",
+                    .part => "part(",
                     else => "loan(",
                 });
                 at = .from(env.cells.get(at).a);
@@ -1548,6 +1611,11 @@ pub const Table = struct {
             while (i > 0) {
                 i -= 1;
                 const d = env.cells.get(chain.items[i]);
+                if (d.origin == .part) {
+                    try p.path(w, .from(d.c));
+                    try w.writeAll(")");
+                    continue;
+                }
                 if (d.origin == .below) try w.print("#{d}", .{d.c});
                 try w.writeAll("·");
                 try p.label(w, .from(d.b));
@@ -1598,7 +1666,7 @@ pub const Table = struct {
                     try p.path(w, .from(d.b));
                 },
                 .top => try w.writeAll("⊤"),
-                .elem, .others, .level, .below, .loan => unreachable,
+                .elem, .others, .level, .below, .loan, .part => unreachable,
                 .mark => try w.writeAll(switch (env.cells.markOf(c)) {
                     .r, .deep_read => "R",
                     .a => "A",

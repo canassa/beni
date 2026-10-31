@@ -1572,6 +1572,15 @@ pub const Table = struct {
     /// to nothing; a recast stays a recast (approximate); a union or a
     /// positions node projects both sides, its kind kept. Null when the
     /// place has no such step.
+    /// The projection of `n` at `s` taken to be `m`, a node `BlockRead`
+    /// decoded as that projection and checked to be its DAG up to the order
+    /// of sides (§3.6): later readers then meet the node the block's κ is
+    /// keyed on.
+    pub fn setProj(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        try account.reserve(.memo, 1);
+        (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = m.int();
+    }
+
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
         // Reserved before the memo is touched, a hit charged like a miss
         // (§2.3 *Memo safety*); the memo is written only once the answer
@@ -1703,11 +1712,36 @@ pub const Table = struct {
                 out = try cellt.sets.insert(gpa, .growth(account), out, e.key, e.value);
                 continue;
             }
-            // A refinement projects through its canonical position, the
-            // split forgotten (§2.2): `elem c·ι` below is `c[*]` below.
+            // A refinement's projection keeps the position (§2.2 *Parts*):
+            // `elem c·ι` by `s` is `part (elem c·ι)·s`, not `c[*]·s`. A loan
+            // projects through its canonical position.
+            if (o.isRefinement() and o != .loan) {
+                if (s.kind == .level) {
+                    var lv: std.ArrayList(CellId) = .empty;
+                    defer lv.deinit(gpa);
+                    if (try cellt.projectRefinedLevels(gpa, account, places, cell, &lv)) {
+                        for (lv.items) |p| out = try cellt.sets.insert(gpa, .growth(account), out, p.int(), e.value);
+                        continue;
+                    }
+                }
+                const p = (try cellt.projectRefined(gpa, account, places, cell, s)) orelse continue;
+                out = try cellt.sets.insert(gpa, .growth(account), out, p.int(), e.value);
+                continue;
+            }
             const sym = if (o.isRefinement()) (try cellt.unrefined(gpa, account, places, cell)) orelse continue else cell;
             if (!cellt.origin(sym).isSymbolic()) continue;
             const rec = cellt.get(sym);
+            // A `⟲` whose levels have several canonical paths: a cell at each
+            // (§2.1, *one position, one name*, #1253).
+            if (s.kind == .level) if (try places.levelPaths(gpa, .growth(account), .from(rec.b))) |r| {
+                var k: u32 = 0;
+                while (k < r.len) : (k += 1) {
+                    const lp = places.foldPath(r.start + k);
+                    const lc = try cellt.symbolic(gpa, account, places, rec.origin, rec.a, lp, rec.c);
+                    out = try cellt.sets.insert(gpa, .growth(account), out, lc.int(), e.value);
+                }
+                continue;
+            };
             const child_path = (try places.extend(gpa, .growth(account), .from(rec.b), s)) orelse continue;
             const child = try cellt.symbolic(gpa, account, places, rec.origin, rec.a, child_path, rec.c);
             out = try cellt.sets.insert(gpa, .growth(account), out, child.int(), e.value);

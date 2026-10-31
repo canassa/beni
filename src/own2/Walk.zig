@@ -1,4 +1,4 @@
-//! L9: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
+//! L11: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
 //! a declaration's body walked once by `Transfer`, its uses indexed
 //! (`Liveness`), its demands resolved in evaluation order (`Demands`), and
 //! its class read off. S3a walks declarations one at a time, without groups
@@ -30,6 +30,7 @@ const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
 const Demands = @import("Demands.zig");
 const Transfer = @import("Transfer.zig");
+const Calls = @import("Calls.zig");
 const Bir = @import("../bir/Bir.zig");
 
 pub const ClassId = Ids.ClassId;
@@ -40,6 +41,7 @@ pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
 pub const CondId = Ids.CondId;
 pub const Env = Summary.Env;
+pub const Value = Transfer.Value;
 pub const Error = Ids.ChargeError;
 pub const none: u32 = Ids.none_int;
 
@@ -54,6 +56,31 @@ pub const Input = struct {
     /// The places of the parameters and the result, for a pessimistic class.
     param_places: []const PlaceId,
     result_place: PlaceId,
+    /// A recursive group member's stable labels (§8 S3b slice 4), or null.
+    labels: ?Labels = null,
+    /// A type's `eq` or `compare` (§2.13.13 item 13, R-5.13.1): a demand
+    /// on what it was handed is `comparison`, never accepted.
+    comparison: bool = false,
+};
+
+/// The stable labels of a recursive group member's read-off (§8 S3b slice
+/// 4, *Stable labels*): its own fresh objects numbered by key, not by the
+/// order a walk meets them, in a dictionary kept across its walks, so its
+/// label inventory is bounded by the group's instructions however many
+/// rounds run. A cell a group call ι answers fresh (`result ι·k`, any k) is
+/// one folded label `ι⋆` per place and kind; any other is its own cell.
+pub const Labels = struct {
+    fresh: *Ids.FixedDict(3),
+    ctx: *anyopaque,
+    /// Whether instruction `inst` is a call of the walk's own group.
+    group_call: *const fn (ctx: *anyopaque, inst: u32) bool,
+
+    fn key(l: Labels, cells: *const Cell.Table, c: CellId) [3]u32 {
+        const x = cells.get(c);
+        if (x.origin == .result and x.a != none and l.group_call(l.ctx, cells.labelInst(.from(x.a))))
+            return .{ 1 | (@as(u32, @backingInt(x.kind)) << 1), cells.labelInst(.from(x.a)), x.place.int() };
+        return .{ 0, c.int(), 0 };
+    }
 };
 
 /// One reported demand: what a line names (§6, R-7.15).
@@ -99,6 +126,8 @@ pub fn walk(in: Input) Error!Result {
         const last = index.lastUse(h.who);
         h.end = if (last == none or last < h.start) h.start else last;
     };
+    // A use below a parameter's leaf, by node (§2.11 item 3, #1412).
+    try frame.expandGroups(&index);
     const outcomes = try gpa.alloc(Demands.Outcome, frame.demands.items.len);
     defer gpa.free(outcomes);
     try Demands.resolve(env, .{
@@ -110,6 +139,13 @@ pub fn walk(in: Input) Error!Result {
         .regions = &regions,
         .bindings = frame.binding,
     }, outcomes);
+    // R-5.13.1: a comparison may only read its arguments. A demand the
+    // conditions accept on an arrival (`param`: a cell neither the frame
+    // nor a call made) is the language's refusal, a position rule; one they
+    // refuse keeps its own cause.
+    if (in.comparison) for (outcomes) |*o| if (o.verdict == .accepted and o.accepted == .param) {
+        o.* = .{ .verdict = .refused, .cause = .comparison, .exactness = .position };
+    };
     const lines = try gpa.alloc(Line, outcomes.len);
     errdefer gpa.free(lines);
     // The frame's `xreq` is tested here: its `inst` atoms resolved first.
@@ -136,6 +172,8 @@ const ReadOff = struct {
     env: Env,
     /// A frame cell → its `fresh k` (k from 1, first-sight order).
     fresh: Ids.FixedDict(1) = .{},
+    /// A group member's stable labels instead, when given.
+    labels: ?Labels = null,
     /// Each `apart` group → its image's aggregate (`Cond.apartImage`).
     apart_images: Ids.FixedDict(1) = .{},
 
@@ -160,6 +198,11 @@ const ReadOff = struct {
             const m: CellId = switch (x.origin) {
                 .site, .result => blk: {
                     try r.env.charge.reserve(r.env.gpa, .inspection, 1);
+                    if (r.labels) |l| {
+                        const got = try l.fresh.getOrPut(r.env.gpa, l.key(cells, src));
+                        if (!got.found_existing) got.value_ptr.* = l.fresh.count();
+                        break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
+                    }
                     const got = try r.fresh.getOrPut(r.env.gpa, .{src.int()});
                     if (!got.found_existing) got.value_ptr.* = r.fresh.count();
                     break :blk try cells.result(r.env.gpa, r.env.account(), .result, .none, got.value_ptr.*, x.place, x.kind);
@@ -303,7 +346,11 @@ const Graft = struct {
     /// parameter `k`.
     fn compose(g: *Graft, k: u32, base: PathId, u: NodeId) Error!void {
         if (k >= g.us.len or g.env.places.kind(g.places[k]) == .cross) return;
-        try g.jumps.append(g.env.gpa, .{ .u = u, .path = base });
+        // A join of several level paths is each of them (§2.1, #1253).
+        var bases: std.ArrayList(PathId) = .empty;
+        defer bases.deinit(g.env.gpa);
+        try g.env.places.expandLevels(g.env.gpa, g.env.charge, base, &bases);
+        for (bases.items) |b| try g.jumps.append(g.env.gpa, .{ .u = u, .path = b });
         while (g.jumps.pop()) |j| {
             try g.env.charge.reserve(g.env.gpa, .inspection, 1);
             const got = try g.done.getOrPut(g.env.gpa, .{ k, j.u.int(), j.path.int() });
@@ -515,6 +562,171 @@ const Graft = struct {
     }
 };
 
+/// A group's writes below its leaf, put into the class by node (§2.11 item
+/// 3, #1412): the callee's use there read at the leaf's path along plain
+/// steps (`Transfer.Plain`), with `R W` (and `S` for a deep write) at each
+/// node it marks `W`, as `Mark.at` puts them at the path of each route's
+/// base. A deep write is a leaf, which stands for everything below it, and
+/// a leaf of the class on the way takes the marks below it, as `markUse`
+/// joins them. A route through a step that is not plain has a demand of
+/// its own, which marks it. Memoised by `(callee node, class node, place,
+/// sig)`, so a use that is a DAG is grafted as a DAG, on an explicit stack
+/// (#1138).
+const GraftWrites = struct {
+    env: Env,
+    us: []NodeId,
+    places: []const PlaceId,
+    plain: Transfer.Plain = .{},
+    bits_memo: Ids.FixedDict(3) = .{},
+    below: Ids.FixedDict(1) = .{},
+    memo: Ids.FixedDict(4) = .{},
+    done: Ids.FixedDict(3) = .{},
+    stack: std.ArrayList(Fr) = .empty,
+    steps: std.ArrayList(Place.Step) = .empty,
+    way: std.ArrayList(Way) = .empty,
+
+    const Way = struct { n: NodeId, place: PlaceId, here: SetId };
+    const Fr = struct { u: NodeId, path: PathId, sig: u32, c: NodeId, cells: SetId, children: u32, it: Shape.Table.OverIterator, step: Place.Step };
+
+    fn deinit(g: *GraftWrites) void {
+        const gpa = g.env.gpa;
+        g.plain.deinit(gpa);
+        g.bits_memo.deinit(gpa);
+        g.below.deinit(gpa);
+        g.memo.deinit(gpa);
+        g.done.deinit(gpa);
+        g.stack.deinit(gpa);
+        g.steps.deinit(gpa);
+        g.way.deinit(gpa);
+    }
+
+    fn marks(g: *GraftWrites, deep: bool) Error!SetId {
+        return Summary.Table.marksSet(g.env, .{ .r = true, .w = true, .deep = deep }, &.{});
+    }
+
+    fn bitsAt(g: *GraftWrites, u: NodeId, path: PathId) Error!u32 {
+        return g.plain.bits(g.env, &g.bits_memo, &g.below, u, path);
+    }
+
+    /// `u`, a callee's use, written at `base`, parameter `k`'s path of the
+    /// group's leaf.
+    fn compose(g: *GraftWrites, k: u32, base: PathId, u: NodeId) Error!void {
+        const e = g.env;
+        const gpa = e.gpa;
+        if (k >= g.us.len or e.places.kind(g.places[k]) == .cross) return;
+        try e.charge.reserve(gpa, .memo, 1);
+        if ((try g.done.getOrPut(gpa, .{ k, u.int(), base.int() })).found_existing) return;
+        _ = try Calls.marksBelow(e, u, &g.below);
+        const b = try g.bitsAt(u, base);
+        if (b & 2 == 0) return;
+        // A path in another place graph than the parameter's marks the
+        // parameter whole, as `Mark.at` does.
+        var root = base;
+        while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
+        if (e.places.pathPlace(root) != g.places[k]) {
+            g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], &.{}, .{ .r = true, .w = true, .deep = b & 4 != 0 }, &.{});
+            return;
+        }
+        try stepsOf(e.places, base, gpa, &g.steps);
+        g.way.clearRetainingCapacity();
+        var n = g.us[k];
+        var place = g.places[k];
+        for (g.steps.items) |s| {
+            try e.charge.reserve(gpa, .shape, 1);
+            const here: SetId = if (n == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, n);
+            if (n != .none and e.shapes.kind(n) == .leaf and here != .none) {
+                // A leaf on the way holds its marks below.
+                g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], g.steps.items, .{ .r = true, .w = true, .deep = b & 4 != 0 }, &.{});
+                return;
+            }
+            try g.way.append(gpa, .{ .n = n, .place = place, .here = here });
+            var child: NodeId = .none;
+            if (n != .none and e.shapes.kind(n) == .node) {
+                if (e.shapes.overGet(e.shapes.get(n).a, s)) |c| child = c;
+            }
+            n = child;
+            place = e.places.child(place, s) orelse unreachable;
+        }
+        var out = try g.graft(u, base, try g.plain.sigOf(e, base), n);
+        var i = g.steps.items.len;
+        while (g.way.pop()) |lv| {
+            i -= 1;
+            const children: u32 = if (lv.n != .none and e.shapes.kind(lv.n) == .node) e.shapes.get(lv.n).a else Ids.none_int;
+            out = try e.shapes.node(gpa, e.account(), lv.place, lv.here, try e.shapes.overPut(gpa, e.account(), children, g.steps.items[i], out));
+        }
+        g.us[k] = out;
+    }
+
+    fn graft(g: *GraftWrites, u: NodeId, path: PathId, sig: u32, c: NodeId) Error!NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        g.stack.clearRetainingCapacity();
+        if (try g.enter(u, path, sig, c, Place.Step.level)) |hit| return hit;
+        while (g.stack.items.len > 0) {
+            const top = &g.stack.items[g.stack.items.len - 1];
+            if (top.it.next()) |ch| {
+                try e.charge.reserve(gpa, .inspection, 1);
+                if ((g.below.get(.{ch.node.int()}) orelse 3) & 1 == 0) continue;
+                // A step that is not plain: its routes' own demands mark them.
+                const next = (try Transfer.Plain.step(e, top.path, ch.step)) orelse continue;
+                if ((try g.bitsAt(ch.node, next)) & 2 == 0) continue;
+                const s = try g.plain.nextSig(e, top.sig, e.places.pathPlace(top.path), next);
+                var cc: NodeId = .none;
+                if (top.c != .none and e.shapes.kind(top.c) == .node) {
+                    if (e.shapes.overGet(e.shapes.get(top.c).a, ch.step)) |x| cc = x;
+                }
+                const step = ch.step;
+                if (try g.enter(ch.node, next, s, cc, step)) |hit| {
+                    const t = &g.stack.items[g.stack.items.len - 1];
+                    t.children = try e.shapes.overPut(gpa, e.account(), t.children, step, hit);
+                }
+                continue;
+            }
+            const done = g.stack.pop().?;
+            const place = e.places.pathPlace(done.path);
+            const node = try e.shapes.node(gpa, e.account(), place, done.cells, done.children);
+            (try g.memo.getOrPut(gpa, .{ done.u.int(), done.c.int(), place.int(), done.sig })).value_ptr.* = node.int();
+            if (g.stack.items.len == 0) return node;
+            const parent = &g.stack.items[g.stack.items.len - 1];
+            parent.children = try e.shapes.overPut(gpa, e.account(), parent.children, done.step, node);
+        }
+        unreachable;
+    }
+
+    /// Starts the graft of `u` at `path` over the class's node `c`: its
+    /// answer when it needs no descent, else a frame pushed and null.
+    fn enter(g: *GraftWrites, u: NodeId, path: PathId, sig: u32, c: NodeId, step: Place.Step) Error!?NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        const place = e.places.pathPlace(path);
+        try e.charge.reserve(gpa, .memo, 1);
+        if (g.memo.get(.{ u.int(), c.int(), place.int(), sig })) |hit| return NodeId.from(hit);
+        const here: SetId = if (c == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, c);
+        if (c != .none and e.shapes.kind(c) == .leaf and here != .none) {
+            const b = try g.bitsAt(u, path);
+            return try e.shapes.leaf(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(b & 4 != 0)));
+        }
+        var w = false;
+        var deep = false;
+        var ct = e.cells.sets.iterate(try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, u));
+        while (ct.next()) |x| {
+            const m: CellId = .from(x.key);
+            if (e.cells.origin(m) != .mark) continue;
+            switch (e.cells.markOf(m)) {
+                .w => w = true,
+                .deep => deep = true,
+                else => {},
+            }
+        }
+        if (w and deep) return try e.shapes.leaf(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(true)));
+        const cells = if (w) try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(false)) else here;
+        const children: u32 = if (c != .none and e.shapes.kind(c) == .node) e.shapes.get(c).a else Ids.none_int;
+        if (e.shapes.kind(u) != .node) return try e.shapes.node(gpa, e.account(), place, cells, children);
+        try g.stack.append(gpa, .{ .u = u, .path = path, .sig = sig, .c = c, .cells = cells, .children = children, .it = e.shapes.overEntries(e.shapes.get(u).a), .step = step });
+        return null;
+    }
+};
+
 /// Which source nodes of a read-off stand at each κ position (#1372's
 /// review): `(source position, image)` → how many distinct built sources
 /// at that position `Shape.map` made that image of. Two built nodes at one
@@ -582,23 +794,6 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     @memset(uses, .none);
     var steps: std.ArrayList(Place.Step) = .empty;
     defer steps.deinit(gpa);
-    const Mark = struct {
-        fn at(e: Env, us: []NodeId, places: []const PlaceId, k: u32, path: PathId, m: Summary.Marks, st: *std.ArrayList(Place.Step)) Error!void {
-            if (k >= us.len or e.places.kind(places[k]) == .cross) return;
-            // A path read in another place graph than the parameter's (a
-            // recast on the way) marks the parameter whole.
-            var root = path;
-            while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
-            if (e.places.pathPlace(root) != places[k]) {
-                us[k] = try Summary.Table.markUse(e, us[k], places[k], &.{}, m, &.{});
-                return;
-            }
-            try stepsOf(e.places, path, e.gpa, st);
-            // The canonical path, `⟲` included: a write below a level is at
-            // that level (`π1#Rose.0⟨List⟩`), never the outer object's storage.
-            us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items, m, &.{});
-        }
-    };
     // R: the body's reads of a local that names a parameter's object — the
     // parameter itself, or a part a pattern bound (`count ( _, ( b, _ ) )`
     // reads `π1.1.0`): at the cell's path, the use's own path below it.
@@ -646,6 +841,14 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };
     }
+    // W: what a group's call writes below its leaf, by node (§2.11 item 3,
+    // #1412): one demand stood for every route through its state, and the
+    // class marks every path of them, as a demand per path would have.
+    if (frame.groups.items.len != 0) {
+        var gw: GraftWrites = .{ .env = env, .us = uses, .places = in.param_places };
+        defer gw.deinit();
+        for (frame.groups.items) |g| if (try paramOf(env, g.leaf)) |pq| try gw.compose(pq[0], pq[1], g.node);
+    }
     // E: escaped parameter cells; A: the result's.
     for (frame.escapes.items) |esc| {
         var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, esc.node));
@@ -653,7 +856,7 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .e = true }, &steps);
         };
     }
-    var ro: ReadOff = .{ .env = env };
+    var ro: ReadOff = .{ .env = env, .labels = in.labels };
     defer ro.fresh.deinit(gpa);
     defer ro.apart_images.deinit(gpa);
     // The frame's reliance in the class's cells; one that fails there
@@ -664,62 +867,202 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         if (Cond.Table.fails(k)) return pessimistic(in);
         class_xreq = try env.conds.flat(gpa, env.charge, k);
     }
-    const result = frame.result();
-    var res: NodeId = undefined;
-    var kappa: Cond.Kappas = .none;
-    if (result.node == .none) {
-        res = try env.shapes.nothing(gpa, env.account(), in.result_place);
-    } else {
-        var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, result.node));
-        while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
-            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
-        };
-        // Published as the eager graft made it (§2.11 *κ at a view*): each
-        // view, and each node holding one, as its eager image.
-        _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
-        const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
-        // The value's κ, carried over the relabelling: each entry's node
-        // relabelled, its path unchanged (§2.9). A view's entries, and its
-        // raw answer's, join its image's.
-        const Carry = struct {
-            ro: *ReadOff,
-            presence: *Presence,
-            fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                const shapes = c.ro.env.shapes;
-                if (shapes.memo_map.get(x) orelse shapes.memo_map.get(shapes.eagerOf(x))) |m| return m;
-                // A view the map did not meet, on a chain it forced: its
-                // entries join the answer's (§2.11 *κ at a view*).
-                const answer = shapes.answerOf(x) orelse return null;
-                return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
-            }
-            /// The source `x` stands for at `pos`: one the walk found there.
-            /// A stale entry, kept for a node a join left elsewhere, counts
-            /// for none, so it cannot make up for a source with no entry.
-            fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                const s = c.ro.env.shapes.mapSource(x) orelse return null;
-                return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
-            }
-            fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
-            }
-            fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.cond(k);
-            }
-        };
-        var presence: Presence = .{};
-        defer presence.deinit(gpa);
-        if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
-        var carry: Carry = .{ .ro = &ro, .presence = &presence };
-        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
-        // Widened, its κ carried onto the image with each folded class's
-        // path-multiset obligation (§2.9, #1128).
-        const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
-        res = widened.node;
-        kappa = widened.kappas;
+    const res = try resOf(env, &ro, uses, in.param_places, in.result_place, frame.result(), &steps);
+    return in.sums.add(env, .{ .params = uses, .res = res.node, .kappas = res.kappas, .xreq = class_xreq, .origin = .inferred });
+}
+
+/// A path's marks in a use shape (§2.10's read-off): the canonical path,
+/// `⟲` included, of parameter `k`.
+const Mark = struct {
+    fn at(e: Env, us: []NodeId, places: []const PlaceId, k: u32, path: PathId, m: Summary.Marks, st: *std.ArrayList(Place.Step)) Error!void {
+        if (k >= us.len or e.places.kind(places[k]) == .cross) return;
+        // A path read in another place graph than the parameter's (a
+        // recast on the way) marks the parameter whole.
+        var root = path;
+        while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
+        if (e.places.pathPlace(root) != places[k]) {
+            us[k] = try Summary.Table.markUse(e, us[k], places[k], &.{}, m, &.{});
+            return;
+        }
+        try stepsOf(e.places, path, e.gpa, st);
+        // The canonical path, `⟲` included: a write below a level is at
+        // that level (`π1#Rose.0⟨List⟩`), never the outer object's storage.
+        us[k] = try Summary.Table.markUse(e, us[k], places[k], st.items, m, &.{});
     }
-    return in.sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = class_xreq, .origin = .inferred });
+};
+
+/// The read-off of a value as a class's `res` (§2.10): `A` at every
+/// parameter path it reaches, its objects relabelled (`ReadOff`), its κ
+/// carried over the relabelling, widened.
+fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, result_place: PlaceId, result: Value, steps: *std.ArrayList(Place.Step)) Error!Summary.Table.Joined {
+    const gpa = env.gpa;
+    if (result.node == .none) return .{ .node = try env.shapes.nothing(gpa, env.account(), result_place), .kappas = .none };
+    var it = env.cells.sets.iterate(try env.shapes.reach(gpa, env.account(), &env.cells.sets, result.node));
+    while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
+        try Mark.at(env, uses, param_places, pq[0], pq[1], .{ .a = true }, steps);
+    };
+    // Published as the eager graft made it (§2.11 *κ at a view*): each
+    // view, and each node holding one, as its eager image.
+    _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
+    const mapped = try env.shapes.map(gpa, env.account(), result.node, ro, ReadOff.relabel);
+    // The value's κ, carried over the relabelling: each entry's node
+    // relabelled, its path unchanged (§2.9).
+    var presence: Presence = .{};
+    defer presence.deinit(gpa);
+    if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
+    var carry: Carry = .{ .ro = ro, .presence = &presence };
+    // A map that interned no two sources into one image needs no presence
+    // count: the relabel then maps each shared submap once (§2.9).
+    const kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
+    // Widened, its κ carried onto the image with each folded class's
+    // path-multiset obligation (§2.9, #1128).
+    const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
+    return .{ .node = widened.node, .kappas = widened.kappas };
+}
+
+/// A κ carried over a relabelling (`ReadOff`): each entry's node the map's
+/// image, its path unchanged (§2.9). A view's entries, and its raw
+/// answer's, join its image's.
+const Carry = struct {
+    ro: *ReadOff,
+    presence: *Presence,
+    fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const shapes = c.ro.env.shapes;
+        if (shapes.memo_map.get(x) orelse shapes.memo_map.get(shapes.eagerOf(x))) |m| return m;
+        // A view the map did not meet, on a chain it forced: its entries
+        // join the answer's (§2.11 *κ at a view*).
+        const answer = shapes.answerOf(x) orelse return null;
+        return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
+    }
+    /// The source `x` stands for at `pos`: one the walk found there. A
+    /// stale entry, kept for a node a join left elsewhere, counts for none,
+    /// so it cannot make up for a source with no entry.
+    fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const s = c.ro.env.shapes.mapSource(x) orelse return null;
+        return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
+    }
+    fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
+    }
+    fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        return c.ro.cond(k);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// A recursive group's deliveries (§8 S3b slice 4b, *Fix.propagate*)
+// ---------------------------------------------------------------------------
+
+/// The member a delivery reaches: its places and its stable labels.
+pub const Receiver = struct {
+    env: Env,
+    sums: *Summary.Table,
+    param_places: []const PlaceId,
+    result_place: PlaceId,
+    labels: Labels,
+};
+
+/// The marks a call's argument `arg` gets from the callee's use `u` of it,
+/// added to `uses`, the receiver's use shapes, as its walk's read-off makes
+/// them (§8 S3b slice 4b: marks go backwards along an argument edge): `R`
+/// at every path the use reads, the callee's paths below the argument's
+/// parameter parts (`Transfer.Frame.readsOf`, the read-off's graft); `E`
+/// where an escape route reaches one; `W`, deep with `S`, where a write
+/// route's base is one (`Transfer.Frame.call`'s demands, the read-off's
+/// `W`). A mark at a parameter path the class had no node for makes it.
+pub fn argumentMarks(r: Receiver, uses: []NodeId, u: NodeId, arg: Value) Error!void {
+    const env = r.env;
+    const gpa = env.gpa;
+    if (u == .none or arg.node == .none) return;
+    const shapes = env.shapes;
+    const cells = env.cells;
+    var steps: std.ArrayList(Place.Step) = .empty;
+    defer steps.deinit(gpa);
+    var graft: Graft = .{ .env = env, .us = uses, .places = r.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}) };
+    defer graft.deinit();
+    // R: the parameter cells at the argument's root, read there with the
+    // whole use; below a built root, each pair (use node, value node) once.
+    const root = try shapes.force(gpa, env.account(), arg.node);
+    var reads: std.ArrayList(Transfer.ParamRead) = .empty;
+    defer reads.deinit(gpa);
+    try paramReads(env, &reads, try shapes.cellsOf(gpa, env.account(), &cells.sets, root), u);
+    if (shapes.kind(root) != .leaf) {
+        var stack: std.ArrayList([2]NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(gpa);
+        var frontier: std.ArrayList(NodeId) = .empty;
+        defer frontier.deinit(gpa);
+        try stack.append(gpa, .{ u, root });
+        while (stack.pop()) |it| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            if ((try seen.getOrPut(gpa, .{ it[0].int(), it[1].int() })).found_existing) continue;
+            const n = try shapes.force(gpa, env.account(), it[1]);
+            if (it[0] != u or n != root) try paramReads(env, &reads, try shapes.cellsOf(gpa, env.account(), &cells.sets, n), it[0]);
+            if (shapes.kind(n) == .leaf) continue;
+            const d = shapes.get(it[0]);
+            if (d.kind != .node) {
+                try paramReads(env, &reads, try shapes.reach(gpa, env.account(), &cells.sets, n), it[0]);
+                continue;
+            }
+            var kt = shapes.overEntries(d.a);
+            while (kt.next()) |k| if (k.step.kind == .level) {
+                frontier.clearRetainingCapacity();
+                try Calls.reentries(env, n, &frontier);
+                for (frontier.items) |x| try stack.append(gpa, .{ k.node, x });
+            } else if (try shapes.proj(gpa, env.account(), env.places, cells, n, k.step)) |x| try stack.append(gpa, .{ k.node, x });
+        }
+    }
+    for (reads.items) |rd| if (try paramOf(env, rd.cell)) |pq| {
+        try env.charge.reserve(gpa, .inspection, 1);
+        try graft.compose(pq[0], pq[1], rd.use_node);
+    };
+    // E and W: the routes of the use's pair graph with the argument.
+    var routes: Calls.Routes = .{ .env = env };
+    defer routes.deinit();
+    try routes.start(u, arg.node, .escapes);
+    while (try routes.next()) |e| if (try Calls.positionsAt(env, arg.node, e.steps)) |pos| {
+        var it = cells.sets.iterate(try shapes.reach(gpa, env.account(), &cells.sets, pos));
+        while (it.next()) |x| if (try paramOf(env, .from(x.key))) |pq| {
+            try Mark.at(env, uses, r.param_places, pq[0], pq[1], .{ .e = true }, &steps);
+        };
+    };
+    try routes.start(u, arg.node, .writes);
+    while (try routes.next()) |w| if (try Calls.positionsAt(env, arg.node, w.steps)) |base| {
+        const written = if (w.deep) try shapes.reach(gpa, env.account(), &cells.sets, base) else try shapes.cellsOf(gpa, env.account(), &cells.sets, base);
+        var it = cells.sets.iterate(written);
+        while (it.next()) |x| if (try paramOf(env, .from(x.key))) |pq| {
+            try Mark.at(env, uses, r.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = w.deep }, &steps);
+        };
+    };
+}
+
+/// Each parameter cell of `s`, read with use `u` (`Transfer.Frame.paramReads`).
+fn paramReads(env: Env, out: *std.ArrayList(Transfer.ParamRead), s: SetId, u: NodeId) Error!void {
+    const cells = env.cells;
+    var it = cells.sets.iterate(s);
+    while (it.next()) |e| {
+        try env.charge.reserve(env.gpa, .inspection, 1);
+        if (cells.origin(cells.base(.from(e.key))) != .param) continue;
+        try out.append(env.gpa, .{ .cell = .from(e.key), .use_node = u });
+    }
+}
+
+/// The class a delivery makes of the receiver's use shapes `uses` and of
+/// `result`, a value of its result's place (or none): the result read off
+/// as a walk's is (`A`, the stable labels, κ carried, widened), and no
+/// `xreq`.
+pub fn delivered(r: Receiver, uses: []NodeId, result: ?Value) Error!ClassId {
+    const env = r.env;
+    var steps: std.ArrayList(Place.Step) = .empty;
+    defer steps.deinit(env.gpa);
+    var ro: ReadOff = .{ .env = env, .labels = r.labels };
+    defer ro.fresh.deinit(env.gpa);
+    defer ro.apart_images.deinit(env.gpa);
+    const res = try resOf(env, &ro, uses, r.param_places, r.result_place, result orelse .{}, &steps);
+    return r.sums.add(env, .{ .params = uses, .res = res.node, .kappas = res.kappas, .origin = .inferred });
 }

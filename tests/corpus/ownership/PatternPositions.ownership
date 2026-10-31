@@ -1,0 +1,66 @@
+module PatternPositions
+  29:13 List.push xs: accepted param
+  36:15 call PatternPositions.kidsBox r#Box.0: accepted param (PatternPositions.kidsBox writes π1#Box.0)
+  50:18 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  61:5 call PatternPositions.ctor <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.ctor writes π1[*]#W.0#Box.0)
+  65:18 call PatternPositions.ctor <literal>[*]#W.0#Box.0: accepted fresh (PatternPositions.ctor writes π1[*]#W.0#Box.0)
+  72:18 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  83:5 call PatternPositions.tuple <literal>[*].0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.tuple writes π1[*].0#Box.0)
+  90:18 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  101:5 call PatternPositions.record <literal>[*].k#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.record writes π1[*].k#Box.0)
+  105:22 call PatternPositions.record <literal>[*].k#Box.0: accepted param (PatternPositions.record writes π1[*].k#Box.0)
+  112:18 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  133:15 List.push r.l: accepted param
+  140:18 call PatternPositions.rightLeftTwo <PairTwo …>#PairTwo.1.l: accepted param (PatternPositions.rightLeftTwo writes π1#PairTwo.1.l)
+  152:5 call PatternPositions.crossed <literal>[*].k.l: rejected disjoint: another operand of the same operation reaches it (PatternPositions.crossed writes π1[*].k.l)
+  161:26 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  175:5 call PatternPositions.nested <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.nested writes π1[*]#Box.0)
+  179:20 call PatternPositions.nested <literal>[*]#Box.0: accepted fresh (PatternPositions.nested writes π1[*]#Box.0)
+  188:26 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: rejected disjoint: another operand of the same operation reaches it (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  207:34 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  224:5 call PatternPositions.twoLevels <literal>[*]#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.twoLevels writes π1[*]#Box.0)
+  235:34 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  257:34 call PatternPositions.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositions.rightLeft writes π1#Pair.1#Box.0)
+  275:26 call PatternPositions.kidsBox a#Box.0: accepted param (PatternPositions.kidsBox writes π1#Box.0)
+  275:52 call PatternPositions.kidsBox c#Box.0: accepted param (PatternPositions.kidsBox writes π1#Box.0)
+  284:5 call PatternPositions.each <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.each writes π1[*]#W.0#Box.0)
+  291:15 List.push l: accepted param
+  301:15 call PatternPositions.inner a[*]: accepted param (PatternPositions.inner writes π1[*])
+  313:15 call PatternPositions.inner ys[*]: accepted param (PatternPositions.inner writes π1[*])
+  313:26 call PatternPositions.bumpOne rest[*][*]: accepted param (PatternPositions.bumpOne writes π1[*][*])
+  322:18 call PatternPositions.headTail <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.headTail writes π1[*][*])
+  326:35 call PatternPositions.headTail <literal>[*][*]: accepted fresh (PatternPositions.headTail writes π1[*][*])
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary ctor: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  summary ctorShared: unused
+  summary ctorDistinct: unused
+  summary tuple: π1 R, π1[*].0 R, π1[*].0#Box.0 RW[storage], π1[*].0#Box.0[*] R; xreq excl π1
+  summary tupleShared: unused
+  summary record: π1 R, π1[*].k R, π1[*].k#Box.0 RW[storage], π1[*].k#Box.0[*] R; xreq excl π1
+  summary recordShared: unused
+  summary recordDistinct: π1 R, π1#Box.0 W[storage], π2 R, π2#Box.0 W[storage]; xreq excl π1, excl π2, sep π1 π2
+  summary same: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  summary rightLeftTwo: π1 R, π1#PairTwo.0 RA, π1#PairTwo.1.l RAW[storage], π1#PairTwo.1.l[*] A; res .0 condition(fresh2) π1#PairTwo.1.l, .0[*] ~condition(fresh3) ~π1#PairTwo.1.l[*], .1 ~condition(fresh4) π1#PairTwo.0, condition(fresh1){sep π1#PairTwo.0 π1#PairTwo.1.l, sep π1#PairTwo.0 π1#PairTwo.1.l[*]}r{sep π1#PairTwo.0 π1#PairTwo.1.l[*]}
+  summary crossed: π1 R, π1[*].k R, π1[*].k.l RW[storage], π1[*].k.l[*] R, π1[*].k.m R; xreq excl π1
+  summary crossedShared: unused
+  summary nested: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary nestedShared: unused
+  summary nestedDistinct: unused
+  summary nestedSame: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary twoLevels: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary twoLevelsShared: unused
+  summary twoLevelsInner: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary twoMatches: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary each: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
+  summary eachShared: unused
+  summary inner: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] π1[*]{excl π1}, [*][*] ~π1[*][*]{excl π1}, fresh1{excl π1}; xreq excl π1
+  summary bumpOne: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] π1[*][*]{excl π1}, [*][*][*] ~π1[*][*][*]{excl π1}, fresh2{excl π1}; xreq excl π1
+  summary headTail: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{lost}r{lost}; xreq excl π1
+  summary headTailShared: unused
+  summary headTailDistinct: unused
+  demands 31: accepted 21 (fresh 3, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 31: accepted 21 (fresh 3, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause disjoint 3
+cause exclusive 7

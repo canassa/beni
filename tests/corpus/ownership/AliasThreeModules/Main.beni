@@ -1,0 +1,15 @@
+-- ownership (v2; R-5.5.6): an alias chain through three modules to a
+-- private function. `Lib.a1` names `Mid.a2`, which names `Mid`'s private
+-- `priv`: `Main` cannot see `priv`, and `Lib` publishes no class for `a1`,
+-- whose function is not its own; `Mid` publishes `priv`'s class as `a2`'s,
+-- and the call applies it. `kept` reads `xs` after the call and is refused
+-- `later-use`; `owned` reads nothing after and is accepted.
+import Lib
+
+
+pub kept : List Int → List Int × List Int
+kept xs = ( Lib.a1 xs, xs )
+
+
+pub owned : List Int → List Int
+owned xs = Lib.a1 xs

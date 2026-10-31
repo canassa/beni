@@ -1,0 +1,11 @@
+module MessageWords
+  31:17 List.push l: rejected element: r.kids[*]#Tree.0⟨Tree⟩.v holds it and is read at 32:44 (approx)
+  36:21 List.push r.x: accepted param
+  42:5 MessageWords.wx <record>.x: rejected disjoint: another path of the same argument reaches it
+  56:31 List.push s.kept: accepted param
+  60:27 MessageWords.g3 <call MessageWords.g3>.kept: rejected disjoint: another path of the same argument reaches it
+  60:33 MessageWords.g3 <record>.kept: rejected disjoint: another path of the same argument reaches it
+  demands 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 3
+cause element 1

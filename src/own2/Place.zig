@@ -550,10 +550,11 @@ pub const Table = struct {
     }
 
     /// The strongly connected components of the places from `first` on:
-    /// an iterative Tarjan over the child edges, O(E), numbering each
-    /// component after the table's count so ids never collide across
-    /// builds. Edges into older places are followed for membership but
-    /// those places keep their own component.
+    /// an iterative Tarjan over the child edges, O(E), each component named
+    /// by its root's place id plus one (0 is a place not settled), so ids
+    /// never collide across builds (a count at a build's start did, #1452).
+    /// Edges into older places are followed for membership but those
+    /// places keep their own component.
     fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
@@ -575,7 +576,6 @@ pub const Table = struct {
         var frames: std.ArrayList(Visit) = .empty;
         defer frames.deinit(gpa);
         var next: u32 = 0;
-        var component: u32 = t.count(); // ids past every place id
         var root: u32 = first;
         while (root < t.count()) : (root += 1) {
             if (index[root - first] != none) continue;
@@ -614,10 +614,9 @@ pub const Table = struct {
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
-                    sccs[m] = component;
+                    sccs[m] = p + 1;
                     if (m == p) break;
                 }
-                component += 1;
             }
         }
     }
@@ -630,6 +629,12 @@ pub const Table = struct {
         const s = t.steps(p);
         for (s.children) |c| if (c == p) return true;
         return false;
+    }
+
+    /// The strongly connected component of `p`: two places of one
+    /// component are on one cycle (`sameCycle`) when they are distinct.
+    pub fn sccOf(t: *const Table, p: PlaceId) u32 {
+        return t.places.items(.scc)[p.int()];
     }
 
     /// Whether `p` lies on a cycle of the place graph: one of its steps
@@ -712,6 +717,19 @@ pub const Table = struct {
             // A `⟲` given directly (a use's or a hold's route): inside a
             // level already it folds onto it, else it is the next step.
             if (t.pathParent(path) != .none and t.pathStep(path).kind == .level) out = path;
+            // At a first return that is not sealed, the levels below are not
+            // `path⟲`: a place of the cycle above has returned already, so a
+            // step-by-step walk folds them onto that return's `⟲` (in
+            // `T = T (List T)`, the lists below `#T.0[*]#T.0` are
+            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single
+            // level path is that path; several (`B (List B) (List B)`) are
+            // `levelPaths`', and `path⟲` stays only as the name of their join
+            // where one cell must stand for them (`Cell.alias` reads it on
+            // the cycle as overlapping every level path).
+            if (out == null and t.pathParent(path) != .none and !(try t.sealed(charge, gpa, path))) {
+                const r = try t.levelsOf(gpa, charge, path);
+                if (r.len == 1) out = t.fold_paths.items[r.start];
+            }
         } else if (t.sameCycle(here, target)) {
             var at = path;
             while (at != .none) : (at = t.pathParent(at)) {
@@ -737,6 +755,63 @@ pub const Table = struct {
         if (out == null and deepest != .none) t.paths.items(.ret)[result.int()] = true;
         (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
         return result;
+    }
+
+    /// The canonical paths a `⟲` at `path` stands for when they are several
+    /// (§2.1, *one position, one name*): `levelsOf` at a first return that is
+    /// not sealed, whose levels fold through more than one route
+    /// (`B (List B) (List B)`: `…⟲#B.0` and `…⟲#B.1`). Null when `extend`'s
+    /// one path names them. A projection of a symbolic cell by `⟲` makes a
+    /// cell at each (`Shape.projectLeaf`); a reader that keeps one cell keeps
+    /// `extend`'s join name.
+    pub fn levelPaths(t: *Table, gpa: Allocator, charge: Charge, path: PathId) Error!?Ids.Range {
+        if (t.pathParent(path) == .none or t.pathStep(path).kind == .level) return null;
+        if (try t.sealed(charge, gpa, path)) return null;
+        const r = try t.levelsOf(gpa, charge, path);
+        return if (r.len > 1) r else null;
+    }
+
+    /// The canonical paths `p` stands for (§2.1, *one position, one
+    /// name*): `p` itself, unless a `⟲` on it is a join of several level
+    /// paths (`levelPaths`), which is then each of them, with the steps
+    /// after it taken again from each. Appended to `out`, each once.
+    pub fn expandLevels(t: *Table, gpa: Allocator, charge: Charge, p: PathId, out: *std.ArrayList(PathId)) Error!void {
+        var route: std.ArrayList(Step) = .empty;
+        defer route.deinit(gpa);
+        var at = p;
+        var join = false;
+        while (t.pathParent(at) != .none) : (at = t.pathParent(at)) {
+            try charge.reserve(gpa, .path, 1);
+            const s = t.pathStep(at);
+            try route.append(gpa, s);
+            if (s.kind == .level and (try t.levelPaths(gpa, charge, t.pathParent(at))) != null) join = true;
+        }
+        if (!join) return out.append(gpa, p);
+        std.mem.reverse(Step, route.items);
+        var cur: std.ArrayList(PathId) = .empty;
+        defer cur.deinit(gpa);
+        var next: std.ArrayList(PathId) = .empty;
+        defer next.deinit(gpa);
+        try cur.append(gpa, at);
+        for (route.items) |s| {
+            next.clearRetainingCapacity();
+            for (cur.items) |c| {
+                try charge.reserve(gpa, .path, 1);
+                if (s.kind == .level) if (try t.levelPaths(gpa, charge, c)) |r| {
+                    var k: u32 = 0;
+                    while (k < r.len) : (k += 1) try appendNew(gpa, &next, t.foldPath(r.start + k));
+                    continue;
+                };
+                if (try t.extend(gpa, charge, c, s)) |e| try appendNew(gpa, &next, e);
+            }
+            std.mem.swap(std.ArrayList(PathId), &cur, &next);
+        }
+        for (cur.items) |c| try appendNew(gpa, out, c);
+    }
+
+    fn appendNew(gpa: Allocator, list: *std.ArrayList(PathId), p: PathId) Allocator.Error!void {
+        for (list.items) |x| if (x == p) return;
+        try list.append(gpa, p);
     }
 
     fn node(t: *Table, gpa: Allocator, account: *Account, parent: PathId, step: Step, place: PlaceId) Error!PathId {
@@ -1071,6 +1146,8 @@ pub const Table = struct {
             try t.places.append(gpa, .{ .kind = kd, .head = h, .steps = .{ .start = start, .len = len }, .holds = @bitCast(@as(u8, @intCast(hb))), .class = .none, .scc = 0 });
         }
         if (at != words.len) return error.Malformed;
+        // Settled as a build is: at 0, any two places would be one cycle.
+        try t.settleCycles(gpa, 0);
     }
 
     /// Structural equality of `a` in `ta` and `b` in `tb`: a graph-pair
@@ -1424,6 +1501,13 @@ test "encode writes a cycle once through the names table, and decode reads an eq
     var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
     defer decoded.deinit(gpa);
     try testing.expectEqual(@as(u32, 100), decoded.head(.from(3)));
+    // Its cycles are settled: the record is on none, `Tree` on its own.
+    try testing.expect(!decoded.cyclic(.from(0)));
+    var on: u32 = 0;
+    for (0..decoded.count()) |i| on += @intFromBool(decoded.cyclic(.from(@intCast(i))));
+    var on_built: u32 = 0;
+    for (0..f.table.count()) |i| on_built += @intFromBool(f.table.cyclic(.from(@intCast(i))));
+    try testing.expectEqual(on_built, on);
     try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account)));
     // A different graph at the same place count is not equal, and the
     // comparison was charged per pair.

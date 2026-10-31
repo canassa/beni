@@ -1,0 +1,79 @@
+-- ownership (project): `GroupAnswerCover` with the recursive group in
+-- another module (ownership-v2.md §2.10, §3.6, #1451). The block publishes
+-- `q`'s class with `A` at `π1` only and `p`'s with `A` at `π1[*]` too; the
+-- callers here read each through its class as v1 does. Refused: a write
+-- through the answer while the input is held, a write of the answer's
+-- elements while the input is held (through either parameter, and through
+-- `p` itself), a write of the input while the answer is held, and a read of
+-- the answer's elements after a push of one of the input's. Accepted: the
+-- same writes with nothing held.
+import Group
+
+
+pub writeAnswer : List Int → List Int × List Int
+writeAnswer xs = ( List.push (Group.q xs [] 3) 1, xs )
+
+
+pub owned : List Int → List Int
+owned xs = List.push (Group.q xs [] 3) 1
+
+
+pub writeElem : List (List Int) → List Int × List (List Int)
+writeElem xs =
+    case Group.qq xs [] 3 of
+        [ a, …_ ] →
+            ( List.push a 1, xs )
+
+        [] →
+            ( [], xs )
+
+
+pub writeElemSecond : List (List Int) → List Int × List (List Int)
+writeElemSecond xs =
+    case Group.qq [] xs 3 of
+        [ a, …_ ] →
+            ( List.push a 1, xs )
+
+        [] →
+            ( [], xs )
+
+
+pub ownedElem : List (List Int) → List Int
+ownedElem xs =
+    case Group.qq xs [] 3 of
+        [ a, …_ ] →
+            List.push a 1
+
+        [] →
+            []
+
+
+pub writeInput : List (List Int) → List (List Int) × List (List Int)
+writeInput xs =
+    r = Group.qq xs [] 3
+    ( List.push xs [], r )
+
+
+pub readAfter : List (List Int) → Int
+readAfter xs =
+    case xs of
+        [ a, …_ ] →
+            pushed = List.push a 1
+            List.length pushed + String.length (Debug.toString (Group.qq xs [] 3))
+
+        [] →
+            0
+
+
+pub writeElemViaP : List (List Int) → List Int × List (List Int)
+writeElemViaP xs =
+    case Group.pp xs [] 3 of
+        [ a, …_ ] →
+            ( List.push a 1, xs )
+
+        [] →
+            ( [], xs )
+
+
+pub writeAnswerViaP : List Int → List Int × List Int
+writeAnswerViaP xs = ( List.push (Group.p xs [] 3) 1, xs )

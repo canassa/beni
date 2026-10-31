@@ -1,0 +1,52 @@
+-- ownership: a call's writes below a leaf of the caller's own parameter
+-- (§2.11 item 3, #1412). In v2 the routes below the leaf are one demand
+-- per state of the callee's use paired with what the frame names below
+-- the leaf, so a route keeps its own demand only where something tells it
+-- apart. `alone` and `deep` name nothing below `p`: one demand stands for
+-- every path. In `held`, `x` holds `p.0` and a call reads it later: `t1
+-- p.0` is refused, `t1 p.1` accepted. In `kept`, `x` is read later at its
+-- own path, and in `other` it is the call's other argument: the routes
+-- through `p.0` and `p.1` stay apart, and only `p.0` is refused.
+touch : List Int → Int
+touch xs = List.length (List.push xs 1)
+
+
+t1 : List Int × List Int → Int
+t1 ( a, b ) = touch a + touch b
+
+
+t2 : (List Int × List Int) × (List Int × List Int) → Int
+t2 ( a, b ) = t1 a + t1 b
+
+
+pub alone : List Int × List Int → Int
+alone p = t1 p
+
+
+pub deep : (List Int × List Int) × (List Int × List Int) → Int
+deep p = t2 p
+
+
+pub held : List Int × List Int → Int
+held p =
+    case p of
+        ( x, _ ) →
+            t1 p + List.length x
+
+
+pub kept : List Int × List Int → Int × List Int
+kept p =
+    case p of
+        ( x, _ ) →
+            ( t1 p, x )
+
+
+two : List Int × List Int, List Int → Int
+two ( a, b ) ys = touch a + touch b + List.length ys
+
+
+pub other : List Int × List Int → Int
+other p =
+    case p of
+        ( x, _ ) →
+            two p x

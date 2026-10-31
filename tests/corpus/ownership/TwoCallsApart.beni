@@ -1,0 +1,147 @@
+-- ownership: two calls that write the elements of two positions of one
+-- split rely on the positions being apart (ownership-v2.md §2.2 *Parts*,
+-- §2.11 item 3 and step 7, #1409). `[ a, b ]` binds two positions of `xs`;
+-- `inner a` writes `a`'s element while `b` is held, and `inner b` writes
+-- `b`'s while `inner a`'s result holds `a`'s. A projection of a position
+-- keeps its split, so `a[*]` and `b[*]` are apart under the split's κ: the
+-- calls are accepted, and the class publishes `xreq excl π1[*]`, which a
+-- caller discharges at its call. Refused over one list twice, fresh or a
+-- parameter (`r3`, `rf`), over two lists that share an element (`rs`), and
+-- for three calls, two calls bound in a `let`, a call beside a direct
+-- push, and a head beside its rest (`[ ys, …rest ]`); accepted over two
+-- distinct parameters, which owe the requirement in turn (`rd`), and
+-- over lists distinct by construction (`r6`). v2 refuses `rf` `disjoint`,
+-- where v1 says `exclusive`: one fresh list is both items (§2.8).
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [ l ] →
+            [ List.push l 1 ]
+
+        _ →
+            []
+
+
+bumpAll : List (List (List Int)) → List (List (List Int))
+bumpAll xs =
+    case xs of
+        [ a, b ] →
+            [ inner a, inner b ]
+
+        _ →
+            []
+
+
+pub r3 : List (List Int) → Int
+r3 x = List.length (bumpAll [ x, x ])
+
+
+pub r6 : ⊤ → Int
+r6 ⊤ = r3 [ [ 3 ] ]
+
+
+pub rf : ⊤ → Int
+rf ⊤ =
+    x = [ [ 3 ] ]
+    List.length (bumpAll [ x, x ])
+
+
+pub rs : List Int → Int
+rs l = List.length (bumpAll [ [ l ], [ l ] ])
+
+
+pub rd : List (List Int), List (List Int) → Int
+rd x y = List.length (bumpAll [ x, y ])
+
+
+pub rdf : ⊤ → Int
+rdf ⊤ = List.length (bumpAll [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+bump3 : List (List (List Int)) → List (List (List Int))
+bump3 xs =
+    case xs of
+        [ a, b, c ] →
+            [ inner a, inner b, inner c ]
+
+        _ →
+            []
+
+
+pub t3 : List (List Int) → Int
+t3 x = List.length (bump3 [ x, [ [ 1 ] ], x ])
+
+
+pub t3d : ⊤ → Int
+t3d ⊤ = List.length (bump3 [ [ [ 1 ] ], [ [ 2 ] ], [ [ 3 ] ] ])
+
+
+bumpLet : List (List (List Int)) → List (List (List Int))
+bumpLet xs =
+    case xs of
+        [ a, b ] →
+            p = inner a
+            q = inner b
+            [ p, q ]
+
+        _ →
+            []
+
+
+pub tl : List (List Int) → Int
+tl x = List.length (bumpLet [ x, x ])
+
+
+pub tld : ⊤ → Int
+tld ⊤ = List.length (bumpLet [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+bumpMix : List (List (List Int)) → List (List (List Int))
+bumpMix xs =
+    case xs of
+        [ a, b ] →
+            case b of
+                [ l ] →
+                    [ inner a, [ List.push l 2 ] ]
+
+                _ →
+                    []
+
+        _ →
+            []
+
+
+pub tm : List (List Int) → Int
+tm x = List.length (bumpMix [ x, x ])
+
+
+pub tmd : ⊤ → Int
+tmd ⊤ = List.length (bumpMix [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+bumpOne : List (List (List Int)) → List (List (List Int))
+bumpOne xs =
+    case xs of
+        [ ys ] →
+            [ inner ys ]
+
+        _ →
+            []
+
+
+headTail : List (List (List Int)) → List (List (List Int))
+headTail xs =
+    case xs of
+        [ ys, …rest ] →
+            [ inner ys, …bumpOne rest ]
+
+        _ →
+            []
+
+
+pub th : List (List Int) → Int
+th x = List.length (headTail [ x, x ])
+
+
+pub thd : ⊤ → Int
+thd ⊤ = List.length (headTail [ [ [ 1 ] ], [ [ 2 ] ] ])

@@ -1,1 +1,0 @@
-[{"code":"comparison_changes_value","severity":"error","span":{"file":"tests/pending/check/bad/inline/ComparisonWrites.beni","start":{"line":13,"col":31},"end":{"line":13,"col":44}},"title":"COMPARISON CHANGES A VALUE","message":"(placeholder: the message is blessed by the slice that adds the code; ownership-requirements.md R-5.13.1)"}]

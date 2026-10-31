@@ -1,0 +1,326 @@
+-- ownership: a position a list pattern takes keeps its split below it, and
+-- a match on a rest splits the rest's own positions (ownership-v2.md §2.2
+-- *Parts*, §2.13.3, #1390). `[ W a _, W c _ ]` binds parts of two
+-- positions, `a` at `#W.0` of the first and `c` of the second, so a callee
+-- that writes `c`'s list while it answers `a` relies on the positions being
+-- apart and owes `excl π1[*]`; a tuple's `.0` and a record's `.k` likewise.
+-- `[ a, …rest ] → case rest of [ c ]` takes `c` from the rest, which is
+-- another side of the first split, so it relies on the same condition,
+-- through two levels of rests as well. Refused: one position twice (`same`,
+-- `nestedSame`), two matches of one rest, which may take one position
+-- (`twoMatches`), and every caller whose positions share a box, by a
+-- constructor, a tuple, a record, or two lists of a record crossed.
+type Box
+    = Box (List Int)
+
+
+type Pair
+    = Pair Box Box
+
+
+type W
+    = W Box Int
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+pub ctor : List W → Int × Int
+ctor ws =
+    case ws of
+        [ W a _, W c _ ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub ctorShared : ⊤ → Int × Int
+ctorShared ⊤ =
+    b = Box [ 0 ]
+    ctor [ W b 1, W b 2 ]
+
+
+pub ctorDistinct : ⊤ → Int × Int
+ctorDistinct ⊤ = ctor [ W (Box [ 1 ]) 1, W (Box [ 2 ]) 2 ]
+
+
+pub tuple : List (Box × Int) → Int × Int
+tuple ws =
+    case ws of
+        [ ( a, _ ), ( c, _ ) ] →
+            case rightLeft (Pair a c) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub tupleShared : ⊤ → Int × Int
+tupleShared ⊤ =
+    b = Box [ 0 ]
+    tuple [ ( b, 1 ), ( b, 2 ) ]
+
+
+pub record : List { k : Box } → Int × Int
+record ws =
+    case ws of
+        [ x, y ] →
+            case rightLeft (Pair x.k y.k) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+pub recordShared : ⊤ → Int × Int
+recordShared ⊤ =
+    b = Box [ 0 ]
+    record [ { k = b }, { k = b } ]
+
+
+pub recordDistinct : Box, Box → Int × Int
+recordDistinct a b = record [ { k = a }, { k = b } ]
+
+
+pub same : List W → Int × Int
+same ws =
+    case ws of
+        [ W a _, _ ] →
+            case rightLeft (Pair a a) of
+                ( ys, l ) →
+                    ( List.length ys, sizeBox l )
+
+        _ →
+            ( 0, 0 )
+
+
+type alias Two =
+    l : List Int
+    m : List Int
+
+
+type PairTwo
+    = PairTwo Two Two
+
+
+rightLeftTwo : PairTwo → List Int × Two
+rightLeftTwo p =
+    case p of
+        PairTwo l r →
+            ( List.push r.l 1, l )
+
+
+pub crossed : List { k : Two } → Int
+crossed ws =
+    case ws of
+        [ x, y ] →
+            case rightLeftTwo (PairTwo x.k y.k) of
+                ( ys, l ) →
+                    List.length ys + List.length l.m
+
+        _ →
+            0
+
+
+pub crossedShared : ⊤ → Int
+crossedShared ⊤ =
+    z = [ 1 ]
+    w = [ 2 ]
+    crossed [ { k = { l = w, m = z } }, { k = { l = z, m = w } } ]
+
+
+pub nested : List Box → Int × Int
+nested bs =
+    case bs of
+        [ a, …rest ] →
+            case rest of
+                [ c ] →
+                    case rightLeft (Pair a c) of
+                        ( ys, l ) →
+                            ( List.length ys, sizeBox l )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub nestedShared : ⊤ → Int × Int
+nestedShared ⊤ =
+    b = Box [ 0 ]
+    nested [ b, b ]
+
+
+pub nestedDistinct : ⊤ → Int × Int
+nestedDistinct ⊤ = nested [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub nestedSame : List Box → Int × Int
+nestedSame bs =
+    case bs of
+        [ _, …rest ] →
+            case rest of
+                [ c ] →
+                    case rightLeft (Pair c c) of
+                        ( ys, l ) →
+                            ( List.length ys, sizeBox l )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub twoLevels : List Box → Int × Int
+twoLevels bs =
+    case bs of
+        [ a, …r1 ] →
+            case r1 of
+                [ _, …r2 ] →
+                    case r2 of
+                        [ c ] →
+                            case rightLeft (Pair a c) of
+                                ( ys, l ) →
+                                    ( List.length ys, sizeBox l )
+
+                        _ →
+                            ( 0, 0 )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub twoLevelsShared : ⊤ → Int × Int
+twoLevelsShared ⊤ =
+    b = Box [ 0 ]
+    twoLevels [ b, Box [ 1 ], b ]
+
+
+pub twoLevelsInner : List Box → Int × Int
+twoLevelsInner bs =
+    case bs of
+        [ _, …r1 ] →
+            case r1 of
+                [ a, …r2 ] →
+                    case r2 of
+                        [ c ] →
+                            case rightLeft (Pair a c) of
+                                ( ys, l ) →
+                                    ( List.length ys, sizeBox l )
+
+                        _ →
+                            ( 0, 0 )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub twoMatches : List Box → Int × Int
+twoMatches bs =
+    case bs of
+        [ _, …rest ] →
+            case rest of
+                [ c, …_ ] →
+                    case rest of
+                        [ d, …_ ] →
+                            case rightLeft (Pair c d) of
+                                ( ys, l ) →
+                                    ( List.length ys, sizeBox l )
+
+                        _ →
+                            ( 0, 0 )
+
+                _ →
+                    ( 0, 0 )
+
+        _ →
+            ( 0, 0 )
+
+
+pub each : List W → Int
+each ws =
+    case ws of
+        [ W a _, W c _ ] →
+            List.length (kidsBox a) + List.length (kidsBox c)
+
+        _ →
+            0
+
+
+pub eachShared : ⊤ → Int
+eachShared ⊤ =
+    b = Box [ 0 ]
+    each [ W b 1, W b 2 ]
+
+
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [ l ] →
+            [ List.push l 1 ]
+
+        _ →
+            []
+
+
+bumpOne : List (List (List Int)) → List (List (List Int))
+bumpOne xs =
+    case xs of
+        [ a ] →
+            [ inner a ]
+
+        _ →
+            []
+
+
+-- A head beside a call on the rest: `inner ys` and `bumpOne rest` take two
+-- sides of one split, so both calls are accepted and `excl π1[*]` is owed.
+pub headTail : List (List (List Int)) → List (List (List Int))
+headTail xs =
+    case xs of
+        [ ys, …rest ] →
+            [ inner ys, …bumpOne rest ]
+
+        _ →
+            []
+
+
+pub headTailShared : ⊤ → Int
+headTailShared ⊤ =
+    l = [ 3 ]
+    List.length (headTail [ [ l ], [ l ] ])
+
+
+pub headTailDistinct : ⊤ → Int
+headTailDistinct ⊤ = List.length (headTail [ [ [ 3 ] ], [ [ 4 ] ] ])

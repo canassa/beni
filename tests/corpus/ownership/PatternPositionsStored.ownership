@@ -1,0 +1,35 @@
+module PatternPositionsStored
+  25:13 List.push xs: accepted param
+  32:15 call PatternPositionsStored.kidsBox r#Box.0: accepted param (PatternPositionsStored.kidsBox writes π1#Box.0)
+  44:10 call PatternPositionsStored.rightLeft <Pair …>#Pair.1#Box.0: accepted param (PatternPositionsStored.rightLeft writes π1#Pair.1#Box.0)
+  56:21 call PatternPositionsStored.go c#Box.0: rejected disjoint: another operand of the same operation reaches it (PatternPositionsStored.go writes π2#Box.0)
+  66:11 call PatternPositionsStored.joinLit <literal>[*]#Box.0: accepted fresh (PatternPositionsStored.joinLit writes π2[*]#Box.0)
+  73:18 List.push rest: accepted param
+  75:21 call PatternPositionsStored.go c#Box.0: rejected call: another operand may be it, through the call at 73:18 (PatternPositionsStored.go writes π2#Box.0) (approx)
+  88:18 List.set rest: accepted param
+  90:21 call PatternPositionsStored.go c#Box.0: rejected call: another operand may be it, through the call at 88:18 (PatternPositionsStored.go writes π2#Box.0) (approx)
+  103:23 ++ rest: accepted param
+  105:21 call PatternPositionsStored.go c#Box.0: rejected disjoint: another operand of the same operation reaches it (PatternPositionsStored.go writes π2#Box.0)
+  120:26 List.push r2: accepted param
+  122:29 call PatternPositionsStored.go c#Box.0: rejected call: another operand may be it, through the call at 120:26 (PatternPositionsStored.go writes π2#Box.0) (approx)
+  140:21 call PatternPositionsStored.go c#Box.0: accepted param (PatternPositionsStored.go writes π2#Box.0)
+  153:15 call PatternPositionsStored.kidsBox a#Box.0: accepted param (PatternPositionsStored.kidsBox writes π1#Box.0)
+  162:10 call PatternPositionsStored.headRest <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositionsStored.headRest writes π1[*]#W.0#Box.0)
+  summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
+  summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
+  summary sizeBox: π1 R, π1#Box.0 R
+  summary go: π1 R, π1#Box.0 R, π2 R, π2#Box.0 RW[storage], π2#Box.0[*] R
+  summary joinLit: π2 R, π2[*] R, π2[*]#Box.0 RW[storage], π2[*]#Box.0[*] R; xreq excl π2
+  summary relay: unused
+  summary pushRest: π1 RW[storage], π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary setRest: π1 RW[storage], π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary appendRest: π1 RW, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary pushRestRest: π1 RW[storage], π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary literal: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
+  summary headRest: π1 RA, π1[*]#W.0 R, π1[*]#W.0#Box.0 RAW[storage], π1[*]#W.0#Box.0[*] RA; res .0 condition(fresh2) fresh2 π1[*]#W.0#Box.0{excl π1}r{excl π1}, .0[*] ~condition(fresh3) ~π1[*]#W.0#Box.0[*]{excl π1}r{excl π1}, .1 fresh5 ~condition(fresh4) π1, condition(fresh1){lost}r{lost}; xreq excl π1
+  summary headRestShared: unused
+  demands 16: accepted 10 (fresh 1, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 16: accepted 10 (fresh 1, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause disjoint 2
+cause call 3
+cause exclusive 1

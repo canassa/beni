@@ -1,0 +1,11 @@
+module ComparisonWrites
+  14:31 List.push a: accepted param
+  18:11 List.push xs: accepted param
+  23:21 call ComparisonWrites.grow a: accepted param (ComparisonWrites.grow writes π1)
+  30:14 call ComparisonWrites.compare x#T.0: accepted param (ComparisonWrites.compare writes π1#T.0)
+  summary eq: π1#T.0 RW[storage], π2#T.0 R
+  summary grow: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary compare: π1#T.0 RW[storage], π1#T.0[*] R, π2#T.0 R
+  summary less: π1#T.0 RW[storage], π1#T.0[*] R, π2#T.0 R
+  demands 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

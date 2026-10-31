@@ -1,0 +1,2 @@
+pub w : List Int → List Int
+w xs = List.push xs 1

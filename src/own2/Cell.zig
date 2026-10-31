@@ -76,6 +76,11 @@ pub const Origin = enum(u8) {
     /// `⊤` is — a LEAF of marks stands for every path below it (a deep read
     /// or write), a `node` of marks for its own path alone.
     mark,
+    /// `part r·q` (§2.2 *Parts*): the object at canonical path `q` below
+    /// the refinement `r`, its anchor, so a projection keeps the position.
+    /// `a` the anchor, `b` no label, `c` the path, rooted at `r`'s place.
+    /// Last: a block writes an origin by its number.
+    part,
 
     /// Symbolic origins stand for everything under them: projecting appends
     /// a step (§2.2).
@@ -89,7 +94,7 @@ pub const Origin = enum(u8) {
     /// A refinement has a parent cell and a split (§2.2).
     pub fn isRefinement(o: Origin) bool {
         return switch (o) {
-            .elem, .others, .level, .below, .loan => true,
+            .elem, .others, .level, .below, .loan, .part => true,
             else => false,
         };
     }
@@ -389,6 +394,93 @@ pub const Table = struct {
         return t.internCell(gpa, account, o, k, c.int(), l.int(), step, at, c);
     }
 
+    /// `part r·path` (§2.2 *Parts*): `path` rooted at the anchor `r`'s
+    /// place; its trie parent the part at the path's parent, or `r` at the
+    /// root, interned on the way as `symbolic` does. `r` itself at the root.
+    pub fn part(t: *Table, gpa: Allocator, account: *Account, places: *const Place.Table, anchor: CellId, path: PathId) Error!CellId {
+        std.debug.assert(t.origin(anchor).isRefinement() and t.origin(anchor) != .part and t.origin(anchor) != .loan);
+        var missing: [max_symbolic_depth]PathId = undefined;
+        var n: usize = 0;
+        var at = path;
+        var found = anchor;
+        while (places.pathParent(at) != .none) {
+            const pl = places.pathPlace(at);
+            const key = [5]u32{ (@as(u32, @backingInt(Origin.part)) << 8) | @backingInt(Kind.ofPlace(places.kind(pl))), anchor.int(), Ids.none_int, at.int(), pl.int() };
+            if (t.intern.get(key)) |hit| {
+                found = .from(hit);
+                break;
+            }
+            if (n == missing.len) return error.OwnershipLimit;
+            missing[n] = at;
+            n += 1;
+            at = places.pathParent(at);
+        }
+        var p = found;
+        while (n > 0) {
+            n -= 1;
+            const q = missing[n];
+            const pl = places.pathPlace(q);
+            p = try t.internCell(gpa, account, .part, Kind.ofPlace(places.kind(pl)), anchor.int(), Ids.none_int, q.int(), pl, p);
+        }
+        return p;
+    }
+
+    /// The refinement `r` projected by `s` (§2.2 *Parts*): the part of its
+    /// anchor one step further. Null for a `loan` (it projects as its
+    /// contents cell does), a refinement of a concrete base (its contents are
+    /// explicit children), or no such step.
+    pub fn projectRefined(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, r: CellId, s: Place.Step) Error!?CellId {
+        const x = t.get(r);
+        if (x.origin == .loan) return null;
+        const root = t.get(t.base(r)).origin;
+        if (!root.isSymbolic() or root == .top) return null;
+        var at = r;
+        while (t.origin(at).isRefinement()) : (at = t.parent(at)) if (t.origin(at) == .loan) return null;
+        const anchor: CellId = if (x.origin == .part) .from(x.a) else r;
+        const from: PathId = if (x.origin == .part) .from(x.c) else try places.rootPath(gpa, x.place);
+        const path = (try places.extend(gpa, .growth(account), from, s)) orelse return null;
+        return try t.part(gpa, account, places, anchor, path);
+    }
+
+    /// `projectRefined` by `⟲` where the levels have several canonical paths
+    /// (`Place.levelPaths`): the part at each, appended to `out`. False when
+    /// `projectRefined`'s one cell answers (§2.1, *one position, one name*).
+    pub fn projectRefinedLevels(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, r: CellId, out: *std.ArrayList(CellId)) Error!bool {
+        const x = t.get(r);
+        if (x.origin == .loan) return false;
+        const root = t.get(t.base(r)).origin;
+        if (!root.isSymbolic() or root == .top) return false;
+        var at = r;
+        while (t.origin(at).isRefinement()) : (at = t.parent(at)) if (t.origin(at) == .loan) return false;
+        const anchor: CellId = if (x.origin == .part) .from(x.a) else r;
+        const from: PathId = if (x.origin == .part) .from(x.c) else try places.rootPath(gpa, x.place);
+        const lr = (try places.levelPaths(gpa, .growth(account), from)) orelse return false;
+        var k: u32 = 0;
+        while (k < lr.len) : (k += 1) try out.append(gpa, try t.part(gpa, account, places, anchor, places.foldPath(lr.start + k)));
+        return true;
+    }
+
+    /// The bit of an `elem`/`others` refinement's `c` that marks a split of
+    /// positions (§2.13.3, a match on a rest): it refines an `others`, not a
+    /// list, and adds no step to the canonical position. A flag, not a
+    /// place comparison: a cell may stand at a place not its own (a cast).
+    pub const positions_bit: u32 = 1 << 31;
+
+    /// Whether the refinement `c` splits positions (`positions_bit`).
+    pub fn splitsPositions(t: *const Table, c: CellId) bool {
+        const x = t.get(c);
+        return (x.origin == .elem or x.origin == .others) and x.c & positions_bit != 0;
+    }
+
+    /// The list whose positions the `elem`/`others` refinement `x` stands
+    /// for, through splits of positions (§2.13.3); `none` for another cell.
+    pub fn positionsOf(t: *const Table, x: CellId) CellId {
+        var at = x;
+        while (t.splitsPositions(at)) at = t.parent(at);
+        const o = t.origin(at);
+        return if (o == .elem or o == .others) t.parent(at) else .none;
+    }
+
     /// The split of `container` at the chain `l` (§2.2's `taken` set), made
     /// with `cond` on first sight.
     pub fn split(t: *Table, gpa: Allocator, account: *Account, container: CellId, inst: u32, l: LabelId, cond: CondId) Error!SplitId {
@@ -473,55 +565,49 @@ pub const Table = struct {
         const base_b = t.base(b);
         if (!t.basesMayAlias(places, base_a, base_b)) return .no;
         if (base_a != base_b) return .yes;
-        // One base: walk both refinement chains from the base out.
-        var ca = t.chainFrom(base_a, a);
-        var cb = t.chainFrom(base_b, b);
-        while (true) {
-            const ra = ca.next() orelse return .yes;
-            const rb = cb.next() orelse return .yes;
-            if (ra == rb) continue;
-            const xa = t.get(ra);
-            const xb = t.get(rb);
-            if (xa.b == xb.b) {
-                // One split, two sides.
-                // Two positions one list pattern takes (`[ a, b, …rest ]`)
-                // are two sides as well: `c` is the position.
-                const sides = (xa.origin == .elem and xb.origin == .others) or (xa.origin == .others and xb.origin == .elem) or
-                    (xa.origin == .level and xb.origin == .below) or (xa.origin == .below and xb.origin == .level) or
-                    (xa.origin == .below and xb.origin == .below and xa.c != xb.c) or
-                    (xa.origin == .elem and xb.origin == .elem and xa.c != xb.c);
-                if (!sides) return .yes;
-                const s = t.findSplit(xa.parent, .from(xa.b));
-                return if (s == .none) .yes else .{ .under = s };
-            }
-            // Two splits of one container.
-            if (xa.origin == .elem and xb.origin == .elem) return .{ .under_kappa = xa.parent };
-            return .yes;
+        // One base: the first cells below the two chains' deepest common
+        // cell, found by climbing both to one depth, then together (§2.2).
+        var ra = a;
+        var rb = b;
+        var da = t.refinementDepth(a);
+        var db = t.refinementDepth(b);
+        while (da > db) : (da -= 1) ra = t.parent(ra);
+        while (db > da) : (db -= 1) rb = t.parent(rb);
+        // One chain is a prefix of the other: an object and one below it.
+        if (ra == rb) return .yes;
+        while (t.parent(ra) != t.parent(rb)) {
+            ra = t.parent(ra);
+            rb = t.parent(rb);
         }
+        const xa = t.get(ra);
+        const xb = t.get(rb);
+        // Two parts of one anchor (§2.2 *Parts*): their paths, as two
+        // symbolic cells'; a part beside a split of one cell may be in it.
+        if (xa.origin == .part and xb.origin == .part) return if (pathsMayAlias(places, .from(xa.c), .from(xb.c))) .yes else .no;
+        if (xa.origin == .part or xb.origin == .part) return .yes;
+        if (xa.b == xb.b) {
+            // One split, two sides.
+            // Two positions one list pattern takes (`[ a, b, …rest ]`)
+            // are two sides as well: `c` is the position.
+            const sides = (xa.origin == .elem and xb.origin == .others) or (xa.origin == .others and xb.origin == .elem) or
+                (xa.origin == .level and xb.origin == .below) or (xa.origin == .below and xb.origin == .level) or
+                (xa.origin == .below and xb.origin == .below and xa.c != xb.c) or
+                (xa.origin == .elem and xb.origin == .elem and xa.c != xb.c);
+            if (!sides) return .yes;
+            const s = t.findSplit(xa.parent, .from(xa.b));
+            return if (s == .none) .yes else .{ .under = s };
+        }
+        // Two splits of one container.
+        if (xa.origin == .elem and xb.origin == .elem) return .{ .under_kappa = xa.parent };
+        return .yes;
     }
 
-    /// The refinements between `base` (exclusive) and `c` (inclusive), from
-    /// the base outwards. Depth is a few splits; a fixed stack of 64.
-    const Chain = struct {
-        items: [64]CellId,
-        len: usize,
-        i: usize = 0,
-
-        fn next(ch: *Chain) ?CellId {
-            if (ch.i == ch.len) return null;
-            ch.i += 1;
-            return ch.items[ch.len - ch.i];
-        }
-    };
-
-    fn chainFrom(t: *const Table, base_cell: CellId, c: CellId) Chain {
-        var ch: Chain = .{ .items = undefined, .len = 0 };
+    /// How many refinements, parts included, lie between `c` and its base.
+    fn refinementDepth(t: *const Table, c: CellId) u32 {
+        var n: u32 = 0;
         var at = c;
-        while (at != base_cell and ch.len < ch.items.len) : (at = t.parent(at)) {
-            ch.items[ch.len] = at;
-            ch.len += 1;
-        }
-        return ch;
+        while (t.origin(at).isRefinement()) : (at = t.parent(at)) n += 1;
+        return n;
     }
 
     /// Whether `d` stands only for objects strictly BELOW `c` (§2.8): a trie
@@ -576,8 +662,9 @@ pub const Table = struct {
             }
             const x = t.get(at);
             switch (x.origin) {
-                .elem, .others => try out.append(gpa, Place.Step.elem),
+                .elem, .others => if (!t.splitsPositions(at)) try out.append(gpa, Place.Step.elem),
                 .level, .loan => {},
+                .part => try out.append(gpa, places.pathStep(.from(x.c))),
                 .below => try out.append(gpa, Place.Step.fromWord(x.c)),
                 else => if (x.origin.isSymbolic()) try out.append(gpa, places.pathStep(.from(x.b))),
             }
@@ -605,8 +692,9 @@ pub const Table = struct {
             const x = t.get(r);
             const y = t.get(inner);
             const step: ?Place.Step = switch (x.origin) {
-                .elem, .others => Place.Step.elem,
+                .elem, .others => if (t.splitsPositions(r)) null else Place.Step.elem,
                 .below => Place.Step.fromWord(x.c),
+                .part => places.pathStep(.from(x.c)),
                 .level => null,
                 .loan => continue,
                 else => unreachable,
@@ -1428,6 +1516,78 @@ test "alias on refinements answers the split, and two taken elements the contain
     try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, b0, b2));
     try testing.expectEqual(Alias{ .under = st }, f.cells.alias(&f.places, lv, b2));
     try testing.expectEqual(b0, try f.cells.refine(gpa, &f.account, .below, tree, l1, 0, .none, .none));
+}
+
+test "a part keeps its position: two sides' parts answer the split, one anchor's compare paths" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree_place = try f.places.of(gpa, &f.account, f.graph.source(), 3);
+    const tree = try f.param(1, 3, &.{});
+    const l = try f.cells.label(gpa, &f.account, 40, .none, false);
+    const split = try f.cells.split(gpa, &f.account, tree, 40, l, .none);
+    const left = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const kids = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const right = try f.places.ctorStep(gpa, &f.account, 0, 2);
+    const b0 = try f.cells.refine(gpa, &f.account, .below, tree, l, left.word(), tree_place, .none);
+    const b2 = try f.cells.refine(gpa, &f.account, .below, tree, l, right.word(), tree_place, .none);
+    const k0 = (try f.cells.projectRefined(gpa, &f.account, &f.places, b0, kids)).?;
+    const k2 = (try f.cells.projectRefined(gpa, &f.account, &f.places, b2, kids)).?;
+    try testing.expectEqual(Origin.part, f.cells.origin(k0));
+    try testing.expectEqual(b0, f.cells.parent(k0));
+    try testing.expectEqual(k0, (try f.cells.projectRefined(gpa, &f.account, &f.places, b0, kids)).?);
+    // Parts below two sides of a split are its sides; a part and its anchor
+    // one object and one below it; two fields of one anchor apart.
+    try testing.expectEqual(Alias{ .under = split }, f.cells.alias(&f.places, k0, k2));
+    try testing.expectEqual(Alias{ .under = split }, f.cells.alias(&f.places, k0, b2));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, k0, b0));
+    const l0 = (try f.cells.projectRefined(gpa, &f.account, &f.places, b0, left)).?;
+    try testing.expectEqual(Alias.no, f.cells.alias(&f.places, k0, l0));
+    // A part of a part is anchored at the refinement, one step further.
+    const k0e = (try f.cells.projectRefined(gpa, &f.account, &f.places, k0, Place.Step.elem)).?;
+    try testing.expectEqual(k0, f.cells.parent(k0e));
+    try testing.expectEqual(b0, CellId.from(f.cells.get(k0e).a));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, k0e, k0));
+    try testing.expectEqual(Alias{ .under = split }, f.cells.alias(&f.places, k0e, k2));
+    // Its canonical position is the anchor's followed by its path.
+    try testing.expectEqual(try f.param(1, 3, &.{ left, kids }), (try f.cells.unrefined(gpa, &f.account, &f.places, k0)).?);
+    try testing.expectEqual(try f.param(1, 3, &.{ left, kids, Place.Step.elem }), (try f.cells.unrefined(gpa, &f.account, &f.places, k0e)).?);
+    // A concrete base's refinement projects to nothing.
+    const s = try f.cells.site(gpa, &f.account, 7, tree_place, .none);
+    const bs = try f.cells.refine(gpa, &f.account, .below, s, l, left.word(), tree_place, .none);
+    try testing.expectEqual(@as(?CellId, null), try f.cells.projectRefined(gpa, &f.account, &f.places, bs, kids));
+}
+
+test "a split of a rest's positions is another side of the rest's split, at the same canonical position" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const xs = try f.param(1, 1, &.{});
+    const elem_place = try f.places.of(gpa, &f.account, f.graph.source(), 2);
+    const l1 = try f.cells.label(gpa, &f.account, 40, .none, false);
+    const l2 = try f.cells.label(gpa, &f.account, 41, .none, false);
+    const l3 = try f.cells.label(gpa, &f.account, 42, .none, false);
+    const split1 = try f.cells.split(gpa, &f.account, xs, 40, l1, .none);
+    const a = try f.cells.refine(gpa, &f.account, .elem, xs, l1, 0, elem_place, .none);
+    const rest = try f.cells.refine(gpa, &f.account, .others, xs, l1, 0, elem_place, .none);
+    const bit = Table.positions_bit;
+    const split2 = try f.cells.split(gpa, &f.account, rest, 41, l2, .none);
+    _ = try f.cells.split(gpa, &f.account, rest, 42, l3, .none);
+    const c = try f.cells.refine(gpa, &f.account, .elem, rest, l2, bit, elem_place, .none);
+    const d = try f.cells.refine(gpa, &f.account, .elem, rest, l2, 1 | bit, elem_place, .none);
+    const e = try f.cells.refine(gpa, &f.account, .elem, rest, l3, bit, elem_place, .none);
+    try testing.expect(f.cells.splitsPositions(c) and !f.cells.splitsPositions(a) and !f.cells.splitsPositions(rest));
+    try testing.expectEqual(xs, f.cells.positionsOf(c));
+    try testing.expectEqual(xs, f.cells.positionsOf(rest));
+    const canon = (try f.cells.unrefined(gpa, &f.account, &f.places, a)).?;
+    try testing.expectEqual(canon, (try f.cells.unrefined(gpa, &f.account, &f.places, c)).?);
+    try testing.expectEqual(Alias{ .under = split1 }, f.cells.alias(&f.places, a, c));
+    try testing.expectEqual(Alias{ .under = split2 }, f.cells.alias(&f.places, c, d));
+    // Two matches of one rest may take one position.
+    try testing.expectEqual(Alias{ .under_kappa = rest }, f.cells.alias(&f.places, c, e));
+    try testing.expectEqual(Alias.yes, f.cells.alias(&f.places, rest, c));
 }
 
 /// Recursive types whose cycle passes through another place: 0 `type Rose =

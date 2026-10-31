@@ -1,0 +1,79 @@
+-- ownership (project): see Main.beni. The callees of `TwoCallsApart`:
+-- each writes the elements of two positions of one split of its list, by
+-- two calls, three, a `let`, a call beside a direct push, or a head beside
+-- its rest.
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [ l ] →
+            [ List.push l 1 ]
+
+        _ →
+            []
+
+
+pub bumpAll : List (List (List Int)) → List (List (List Int))
+bumpAll xs =
+    case xs of
+        [ a, b ] →
+            [ inner a, inner b ]
+
+        _ →
+            []
+
+
+pub bump3 : List (List (List Int)) → List (List (List Int))
+bump3 xs =
+    case xs of
+        [ a, b, c ] →
+            [ inner a, inner b, inner c ]
+
+        _ →
+            []
+
+
+pub bumpLet : List (List (List Int)) → List (List (List Int))
+bumpLet xs =
+    case xs of
+        [ a, b ] →
+            p = inner a
+            q = inner b
+            [ p, q ]
+
+        _ →
+            []
+
+
+pub bumpMix : List (List (List Int)) → List (List (List Int))
+bumpMix xs =
+    case xs of
+        [ a, b ] →
+            case b of
+                [ l ] →
+                    [ inner a, [ List.push l 2 ] ]
+
+                _ →
+                    []
+
+        _ →
+            []
+
+
+bumpOne : List (List (List Int)) → List (List (List Int))
+bumpOne xs =
+    case xs of
+        [ ys ] →
+            [ inner ys ]
+
+        _ →
+            []
+
+
+pub headTail : List (List (List Int)) → List (List (List Int))
+headTail xs =
+    case xs of
+        [ ys, …rest ] →
+            [ inner ys, …bumpOne rest ]
+
+        _ →
+            []

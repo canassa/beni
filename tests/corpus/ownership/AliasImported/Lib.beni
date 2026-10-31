@@ -1,0 +1,13 @@
+import Deep
+
+
+pub writer : List Int, Int → List Int
+writer = List.push
+
+
+pub push1 : List Int → List Int
+push1 = Deep.w
+
+
+pub chain : List Int → List Int
+chain = push1

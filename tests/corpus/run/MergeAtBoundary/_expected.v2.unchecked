@@ -1,2 +1,2 @@
-Main f: lines 22-31 (not built: method_call)
 Main eq: lines 34-36 (not built: local)
+Main f: lines 22-31 (not built: call)

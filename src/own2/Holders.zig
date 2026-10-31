@@ -1,12 +1,13 @@
-//! L6: the holder index (`docs/design/ownership-v2.md` §2.8 *The holder
+//! L8: the holder index (`docs/design/ownership-v2.md` §2.8 *The holder
 //! index*, #1214): condition 5 of every demand of a frame, answered offline
 //! by one in-order sweep, after the walk has seen every holder, use and
 //! demand.
 //!
 //! **Pairs from each holder's life.** A demand on base cell `c` (its
 //! *target*, with the demand's depth) reads the holders of `c`'s candidates:
-//! `c` and its trie ancestors, its canonical cell's, its descendants for a
-//! deep demand, and the cells its refinement and cycle-anchor keys name.
+//! `c` and its trie ancestors up to a `◆` barrier, its canonical cell's,
+//! its descendants for a deep demand, and the cells its refinement and
+//! cycle-anchor keys name.
 //! Each holder walks its value's cells once, looks each one up by cell and
 //! by key, and pairs with a target only when one of the target's demands
 //! lies in `(start, end]`, where it is registered. A `⊤` holder pairs only
@@ -84,7 +85,10 @@ pub const Demand = struct {
     operands: Ids.Range = .empty,
 };
 
-pub const Operand = struct { value: Value, inst: u32 };
+/// `other_paths`: the operand is the rest of the written argument itself, the
+/// paths a call's class does not write (`Transfer.otherPaths`), not another
+/// operand of the operation: what the message says it reaches (#1380).
+pub const Operand = struct { value: Value, inst: u32, other_paths: bool = false };
 
 pub const HolderKind = enum(u8) { binding, pending };
 
@@ -367,6 +371,21 @@ const Index = struct {
     /// answer `under` it), never member by member (§2.8).
     const Look = struct { key: Key, self: CellId };
 
+    /// `c`'s trie parent as a candidate, none across a `◆` barrier (§2.13.7:
+    /// a holder of a `Ref` holds none of its contents; their only outside
+    /// holders are loans, below the contents cell, never above it; #1366).
+    fn upCell(ix: *Index, c: CellId) CellId {
+        const cells = ix.env.cells;
+        const p = cells.parent(c);
+        if (p == .none or cells.origin(c).isRefinement()) return p;
+        return if (ix.env.places.kind(cells.place(p)) == .ref) .none else p;
+    }
+
+    /// `path`'s parent as a candidate's position, as `upCell`.
+    fn upPath(ix: *Index, path: PathId) PathId {
+        return if (ix.env.places.pathStep(path).kind == .contents) .none else ix.env.places.pathParent(path);
+    }
+
     /// Every key a target `(c, deep)` reads: its static candidates by cell
     /// and its anchors' other class in `out`, its refinement chains by
     /// canonical position in `looks` (§2.8).
@@ -374,18 +393,18 @@ const Index = struct {
         const cells = ix.env.cells;
         const gpa = ix.gpa;
         var at = c;
-        while (at != .none) : (at = cells.parent(at)) try out.append(gpa, cellKey(at));
+        while (at != .none) : (at = ix.upCell(at)) try out.append(gpa, cellKey(at));
         const unrefined = try cells.unrefined(gpa, ix.env.account(), ix.env.places, c);
         if (unrefined) |u| {
             if (u != c) {
                 at = u;
-                while (at != .none) : (at = cells.parent(at)) try out.append(gpa, cellKey(at));
+                while (at != .none) : (at = ix.upCell(at)) try out.append(gpa, cellKey(at));
             }
             var path: PathId = .from(cells.get(u).b);
-            while (path != .none) : (path = ix.env.places.pathParent(path)) try looks.append(gpa, .{ .key = ix.pathKey(u, path), .self = c });
+            while (path != .none) : (path = ix.upPath(path)) try looks.append(gpa, .{ .key = ix.pathKey(u, path), .self = c });
         }
-        at = cells.parent(c);
-        while (at != .none and cells.origin(at).isRefinement()) : (at = cells.parent(at)) {
+        at = ix.upCell(c);
+        while (at != .none and cells.origin(at).isRefinement()) : (at = ix.upCell(at)) {
             const ua = (try cells.unrefined(gpa, ix.env.account(), ix.env.places, at)) orelse continue;
             try looks.append(gpa, .{ .key = ix.pathKey(ua, .from(cells.get(ua).b)), .self = at });
         }

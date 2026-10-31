@@ -1,0 +1,42 @@
+module WriteOneLevel
+  18:23 List.push ys: accepted param
+  28:10 WriteOneLevel.f <Node …>#Node.0#Node.1: accepted param
+  34:5 WriteOneLevel.f <Node …>#Node.0#Node.1: accepted fresh
+  41:18 List.push xs: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.2⟨Tree⟩#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.2#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.0⟨Tree⟩#Node.1: accepted param
+  42:19 WriteOneLevel.incAll2 l#Node.0#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.2⟨Tree⟩#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.2#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.0⟨Tree⟩#Node.1: accepted param
+  42:34 WriteOneLevel.incAll2 r#Node.0#Node.1: accepted param
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1: accepted fresh
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.2#Node.1: accepted fresh
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.1: accepted fresh
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  49:9 WriteOneLevel.incAll2 <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.2⟨Tree⟩#Node.1: accepted fresh
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.2#Node.1: accepted fresh
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.1: rejected disjoint: another path of the same argument reaches it
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.0⟨Tree⟩#Node.1: accepted fresh
+  53:9 WriteOneLevel.incAll2 <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  account f: source 42, baseline 1490, growth 0 of 65536, total 1490, continuation 1209 of 43008, demands 52, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 47
+  crossing: reads 0, redone 0, base moves 29
+  summary f: π1 R, π1#Node.0 R, π1#Node.0#Node.1 RAW, π1#Node.0#Node.1[*] A, π1#Node.2 RA; res .0 fresh1, .0 fresh2, .0 π1#Node.0#Node.1, .0[*] π1#Node.0#Node.1[*]{excl π1#Node.0#Node.1[*]}, .1 π1#Node.2
+  account run: source 30, baseline 815, growth 0 of 65536, total 815, continuation 725 of 30720, demands 24, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 31
+  summary run: π1 RAW, π1[*] RA; res .0 fresh1, .0 fresh2, .0 π1, .0[*] π1[*]{excl π1[*]}, .1#Node.1 fresh3, .1#Node.2 = .1#Node.0
+  account runFresh: source 32, baseline 839, growth 0 of 65536, total 839, continuation 730 of 32768, demands 24, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 34
+  summary runFresh: res .0 fresh1, .0 fresh2, .0 fresh4, .0[*] ~fresh4{lost}, .1#Node.1 fresh3, .1#Node.2 = .1#Node.0
+  account incAll2: source 31, baseline 32070, growth 21076 of 65536, total 53146, continuation 31744 of 31744, demands 2819, hold listings 26, walks 5, cell 53, label 6, set 1070, shape 1181, cond 1719, use 20, class 7, memo 6084, task 31, edge 306, path 2363, region 4, inspection 8229, other 3, direct_data lanes 2, liveness_index lanes 10, direct_demand_query lanes 4, call_view lanes 8, transfer_settlement lanes 70
+  summary incAll2: π1 R, π1#Node.0 R, π1#Node.0#Node.1 RAW, π1#Node.0#Node.1[*] RA, π1#Node.0⟲ RA, π1#Node.0⟲#Node.1 RAW, π1#Node.0⟲#Node.1[*] RA, π1#Node.1 RAW, π1#Node.1[*] A, π1#Node.2 R, π1#Node.2#Node.1 RAW, π1#Node.2#Node.1[*] RA, π1#Node.2⟲ RA, π1#Node.2⟲#Node.1 RAW, π1#Node.2⟲#Node.1[*] RA; res #Node.0 {lost}, #Node.0#Node.1 π1#Node.0#Node.1 π1#Node.0⟲#Node.1 π1#Node.1 π1#Node.2#Node.1 π1#Node.2⟲#Node.1{lost}, #Node.0#Node.1 π1#Node.0#Node.1 π1#Node.1 π1#Node.2#Node.1{lost}, #Node.0#Node.1[*] ~π1#Node.0⟲ ~π1#Node.2⟲ π1#Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.0⟲#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2⟲#Node.1[*]{lost}, #Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.0⟲#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2⟲#Node.1[*]{lost}, #Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*]{apart [π1#Node.0#Node.1[*]] [π1#Node.1[*]] [π1#Node.2#Node.1[*]], excl π1#Node.0#Node.1[*], excl π1#Node.1[*], excl π1#Node.2#Node.1[*]}, #Node.1 π1#Node.0#Node.1 π1#Node.0⟲#Node.1 π1#Node.1 π1#Node.2#Node.1 π1#Node.2⟲#Node.1{lost}, #Node.1 π1#Node.0#Node.1 π1#Node.1 π1#Node.2#Node.1{lost}, #Node.1 π1#Node.1, #Node.1[*] ~π1#Node.0⟲ ~π1#Node.2⟲ π1#Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.0⟲#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2⟲#Node.1[*]{lost}, #Node.1[*] π1#Node.0#Node.1[*] π1#Node.0#Node.1[*] π1#Node.0⟲#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2#Node.1[*] π1#Node.2⟲#Node.1[*]{lost}, #Node.1[*] π1#Node.0#Node.1[*] π1#Node.1[*] π1#Node.2#Node.1[*]{apart [π1#Node.0#Node.1[*]] [π1#Node.1[*]] [π1#Node.2#Node.1[*]], excl π1#Node.0#Node.1[*], excl π1#Node.1[*], excl π1#Node.2#Node.1[*]}, #Node.1[*] π1#Node.1[*]{excl π1#Node.1[*]}, #Node.2 = #Node.0, {lost}; xreq excl π1#Node.0⟲, excl π1#Node.0⟲#Node.1, excl π1#Node.2⟲, excl π1#Node.2⟲#Node.1
+  account c1: source 21, baseline 3579, growth 0 of 65536, total 3579, continuation 3513 of 21504, demands 52, direct_data lanes 1, liveness_index lanes 2, call_view lanes 4, transfer_settlement lanes 22
+  summary c1: π1 RAW, π1[*] RA; res #Node.0 {lost}, #Node.0#Node.1 fresh1 π1{lost}, #Node.0#Node.1[*] ~π1 π1[*]{lost}, #Node.0#Node.1[*] π1[*]{excl π1[*]}, #Node.1 = #Node.0#Node.1, #Node.1 fresh1{lost}, #Node.2 = #Node.0, {lost}; xreq excl π1
+  account c2: source 17, baseline 3169, growth 0 of 65536, total 3169, continuation 3127 of 17408, demands 35, direct_data lanes 1, liveness_index lanes 2, call_view lanes 3, transfer_settlement lanes 18
+  summary c2: π1 RAW, π1[*] RA; res #Node.0 {lost}, #Node.0#Node.1 π1{lost}, #Node.0#Node.1[*] ~π1 π1[*]{lost}, #Node.0#Node.1[*] π1[*]{excl π1[*]}, #Node.1 = #Node.0#Node.1, #Node.1 π1{lost}, #Node.1[*] π1[*]{excl π1[*]}, #Node.2 = #Node.0, {lost}; xreq excl π1
+  block: 5604 bytes, hash 905f6ae3247caac1
+  demands 24: accepted 20 (fresh 7, call 0, param 13, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 24: accepted 20 (fresh 7, call 0, param 13, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 4

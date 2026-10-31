@@ -1,0 +1,84 @@
+-- ownership: the levels below the first return of a cycle of two places
+-- (#1253, ownership-v2.md §2.1 *one position, one name*, §2.11 item 3 *the
+-- written position*). `incT` writes the kids list of every `T` at every
+-- depth through `incTs`. `three` and `four` hand it fresh literals three
+-- and four levels deep, whose lists are all distinct: accepted. The rest
+-- put one list or one subtree at two positions and are refused: two
+-- positions at one path (`samePath`), the first return's level and the
+-- level below it (`twoLevels`, `nodeTwice`, `deep`), one node twice in
+-- one list (`twiceInList`). `held` answers a level-2 list beside the
+-- write, which the write edits in place: refused.
+type T
+    = T (List T)
+
+
+incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+pub three : T
+three = incT (T [ T [ T [] ] ])
+
+
+pub four : T
+four = incT (T [ T [ T [ T [] ], T [] ], T [ T [] ] ])
+
+
+pub samePath : T
+samePath =
+    k = [ T [] ]
+    incT (T [ T [ T k, T k ] ])
+
+
+pub twoLevels : T
+twoLevels =
+    k = [ T [] ]
+    incT (T [ T k, T [ T k ] ])
+
+
+pub nodeTwice : T
+nodeTwice =
+    x = T [ T [] ]
+    incT (T [ x, T [ x ] ])
+
+
+pub deep : T
+deep =
+    k = [ T [] ]
+    incT (T [ T [ T [ T k ] ], T [ T k ] ])
+
+
+pub twiceInList : T
+twiceInList =
+    x = T []
+    incT (T [ T [ x, x ] ])
+
+
+pub held : T → List T × T
+held t =
+    case t of
+        T kids →
+            case kids of
+                [ T inner, …_ ] →
+                    case inner of
+                        [ T lower, …_ ] →
+                            ( lower, incT t )
+
+                        [] →
+                            ( [], t )
+
+                [] →
+                    ( [], t )

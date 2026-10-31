@@ -1,0 +1,61 @@
+-- ownership (v2; R-5.5.6, the owner's 2026-10-25 decision; ownership-v2.md
+-- §8 S3b slice 5e): a top-level alias of a writer is a call of the writer,
+-- through alias chains of any length, never pending. `direct` calls
+-- `writer = List.push` and reads `xs` after: `later-use` at the call, as a
+-- direct `List.push` is. `nine` reaches `w1` through nine names, each an
+-- alias of the one before: also `later-use`. v1 pins the opposite
+-- (o/AliasWriter): it makes both aliases `pending: it is returned`, and past
+-- its eight-name cap `nine` calls a function it cannot identify and makes no
+-- line at all.
+writer : List Int, Int → List Int
+writer = List.push
+
+
+pub direct : List Int → List Int × List Int
+direct xs =
+    ys = writer xs 1
+    ( ys, xs )
+
+
+w1 : List Int → List Int
+w1 xs = List.push xs 1
+
+
+a1 : List Int → List Int
+a1 = w1
+
+
+a2 : List Int → List Int
+a2 = a1
+
+
+a3 : List Int → List Int
+a3 = a2
+
+
+a4 : List Int → List Int
+a4 = a3
+
+
+a5 : List Int → List Int
+a5 = a4
+
+
+a6 : List Int → List Int
+a6 = a5
+
+
+a7 : List Int → List Int
+a7 = a6
+
+
+a8 : List Int → List Int
+a8 = a7
+
+
+a9 : List Int → List Int
+a9 = a8
+
+
+pub nine : List Int → List Int × List Int
+nine xs = ( a9 xs, xs )

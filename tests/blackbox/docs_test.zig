@@ -29,7 +29,7 @@
 //! `() → Bool` and not `Bool` so that nothing is forced at module load.
 //!
 //! **The skip list.** An example the mechanism cannot take is named in
-//! `skips` with a reason, the whole list is printed on every run, and the
+//! `skips` with a reason, the whole list is printed when the gate fails, and the
 //! gate FAILS when an entry matches no example — so the list cannot outlive
 //! the lines it excuses. Fixing the doc is preferred to adding an entry:
 //! `isEven`, `animals` and `Cat` were names the docs never defined, and they
@@ -282,10 +282,16 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         if (!std.mem.eql(u8, module, "Basics")) try imports.print(arena, "import {s}\n", .{module});
     }
 
-    std.debug.print("doc examples: {d} found, {d} assertions checked, {d} prose, {d} skipped\n", .{ examples.items.len, checked, prose, skipped });
+    // The report is kept, not printed: Zig's build runner echoes any stderr a
+    // step wrote, passing or not, and follows it with `failed command: …`,
+    // which reads as a failure of a step that exited 0 (#1400). It is written
+    // only when the gate fails, as context; the skip list is `skips` above.
+    var report: std.ArrayList(u8) = .empty;
+    try report.print(arena, "doc examples: {d} found, {d} assertions checked, {d} prose, {d} skipped\n", .{ examples.items.len, checked, prose, skipped });
     for (examples.items) |e| {
-        if (e.skipped) |reason| std.debug.print("  SKIP core/{s}.beni:{d}  {s}\n    reason: {s}\n", .{ e.module, e.line, e.text, reason });
+        if (e.skipped) |reason| try report.print(arena, "  SKIP core/{s}.beni:{d}  {s}\n    reason: {s}\n", .{ e.module, e.line, e.text, reason });
     }
+    errdefer std.debug.print("{s}", .{report.items});
 
     // A skip that matches nothing is a stale excuse, and an extractor that
     // suddenly finds a handful of examples is a broken extractor. Both are
@@ -354,11 +360,4 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         if (ran.exit_code != 0) std.debug.print("the doc-example program exited {d}:\n{s}\n", .{ ran.exit_code, ran.stderr });
         return error.DocExampleIsWrong;
     }
-    // Zig's build runner echoes the step's stderr — and, after it, `failed
-    // command: …` — for ANY step that wrote to stderr, passing or not
-    // (`build_runner.zig`: "No matter the result, we want to display
-    // error/warning messages"). The skip list above is written there on
-    // purpose, so this line says which it was; the exit code is what
-    // decides the gate.
-    std.debug.print("doc-example gate: OK — everything above is informational.\n", .{});
 }

@@ -331,6 +331,10 @@ pub const Account = struct {
     /// (`none_int`): where a reservation naming no lane goes (`enter`).
     lane_slot: u32 = none_int,
     lane: Lane = .{ .atom = 0, .role = .direct_data },
+    /// Which copy of the source lanes a walk takes (§4.1): a recursive
+    /// group member's second walk the validation one, any later walk none,
+    /// its lanes growth (§8 S3b slice 4, *Charging*).
+    walk: enum(u8) { inference, validation, growth } = .inference,
 
     pub const default_allowance: u32 = 65_536;
     /// K (§4.1, *The source continuation*): the records each source atom
@@ -361,10 +365,15 @@ pub const Account = struct {
     pub fn enter(a: *Account, gpa: Allocator, lane: ?Lane) ChargeError!Kernel {
         const prev: Kernel = .{ .slot = a.lane_slot, .lane = a.lane };
         if (a.failed) |f| return f.err();
-        const l = lane orelse {
+        var l = lane orelse {
             a.lane_slot = none_int;
             return prev;
         };
+        if (a.walk == .growth) {
+            a.lane_slot = none_int;
+            return prev;
+        }
+        if (a.walk == .validation) l.phase = .validation;
         const got = try a.lanes.getOrPut(gpa, .{ l.atom, @backingInt(l.role), @backingInt(l.phase), l.step });
         if (!got.found_existing) got.value_ptr.* = 0;
         a.lane_slot = got.index;
@@ -421,8 +430,11 @@ pub const Account = struct {
     /// Reserve `n` baseline records in `lane`. The ceiling is the role's;
     /// the 513th (or 33rd) record is the implementation defect
     /// `ownership_accounting_invariant`, never growth (§4.1).
-    pub fn reserveLane(a: *Account, gpa: Allocator, lane: Lane, category: Category, n: u32) ChargeError!void {
+    pub fn reserveLane(a: *Account, gpa: Allocator, lane_: Lane, category: Category, n: u32) ChargeError!void {
         if (a.in_demands) a.demands += n;
+        if (a.walk == .growth) return a.reserveGrowth(category, n);
+        var lane = lane_;
+        if (a.walk == .validation) lane.phase = .validation;
         if (a.failed) |f| return f.err();
         const slot = try a.lanes.getOrPut(gpa, .{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase), lane.step });
         if (!slot.found_existing) slot.value_ptr.* = 0;

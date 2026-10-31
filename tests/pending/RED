@@ -194,7 +194,6 @@ tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 
 # CK-281: a write in a type's `eq` is accepted as a write of its own
 # parameter; `comparison_changes_value` does not exist yet; R-5.13.1.
-tests/pending/check/bad/inline/ComparisonWrites.beni exit=0 codes=none
 
 # CK-282: a prepend whose front item is a fresh constructor value or record
 # literal is taken as maybe its base; R-4.4.3.
@@ -207,7 +206,6 @@ tests/pending/ownership/RecordIndexExchange.beni exit=0 ownership-differs
 
 # CK-284: a top-level alias of a writer is called as the writer, through any
 # number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
-tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
 
 # CK-285: `Task.resume` is read from its body over `Js`, so the list it
 # hands on is not given up and a later read is silent; R-5.10.12.
@@ -330,6 +328,11 @@ tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
 # `Demands.resolve` inspects the push's alternatives on its own lane, so v2
 # reports an accounting invariant; ownership-v2.md §4.1.
 tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
+
+# CK-315 (#1435): a local bound to `[]` inside a constructor, handed to a
+# writer of its elements' lists, is refused `disjoint` (approx) by v2; the
+# literal written inline is accepted; R-8.1.
+tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
 
 # CK-314 (#1097): a call costs its argument's width, the graft walking it;
 # the call view by reference makes it the callee's size; ownership-v2.md §2.11.

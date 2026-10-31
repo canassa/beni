@@ -1,0 +1,50 @@
+-- CK-315: #1435. A local bound to `[]`, wrapped in a constructor and handed
+-- to a writer of the list's elements, is refused by v2 `disjoint` (approx)
+-- at `#V.0[*]#W.0`, although `writeInner` writes that one path. `inline`,
+-- the same literal written at the call, and `localDirect`, the local passed
+-- with no constructor, are accepted by both checkers. The golden is v1's:
+-- all three calls accepted `fresh`.
+type W
+    = W (List Int)
+
+
+type V
+    = V (List W)
+
+
+writeInner : V → List Int
+writeInner v =
+    case v of
+        V ws →
+            case ws of
+                [ W xs, …_ ] →
+                    List.push xs 1
+
+                [] →
+                    []
+
+
+pub inline : List Int
+inline = writeInner (V [])
+
+
+pub local : List Int
+local =
+    k = []
+    writeInner (V k)
+
+
+pub direct : List W → List Int
+direct ws =
+    case ws of
+        [ W xs, …_ ] →
+            List.push xs 1
+
+        [] →
+            []
+
+
+pub localDirect : List Int
+localDirect =
+    k = []
+    direct k

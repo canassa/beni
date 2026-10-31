@@ -1,4 +1,4 @@
-//! L14: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
+//! L16: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
 //! §3.7, §8 S3a): the per-module inputs built from the session, the
 //! `dump --stage=ownership --ownership=v2` report, and the Driver's hook,
 //! all behind the hidden `--ownership=v2`.
@@ -469,6 +469,7 @@ fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module,
             const code: @import("diagnostic").Code = switch (l.cause) {
                 .top_level => .top_level_list_changed,
                 .read_only => .view_changes_model,
+                .comparison => .comparison_changes_value,
                 .limit => .ownership_limit,
                 else => if (l.approx) .list_may_be_shared else .list_still_used,
             };
@@ -477,7 +478,7 @@ fn diagnostics(gpa: Allocator, arena: Allocator, reports: []const Report.Module,
                 l.base,
                 Facts.causeText(l.cause),
                 if (l.detail.len != 0) try std.fmt.allocPrint(arena, ": {s}", .{l.detail}) else "",
-                if (l.approx) "This is a limit of the checker, not proof of sharing." else "This is sharing the checker can see.",
+                if (l.approx) "This is a limit of the checker, not proof of sharing." else if (l.cause == .comparison) "This is a rule of the language: `==` and `<` call a type's `eq` and `compare`, which only read. Change a copy (`List.copy`)." else "This is sharing the checker can see.",
             });
             try dest.append(gpa, .{ .ownership = true, .code = code, .module = @fromBackingInt(r.module), .region = @fromBackingInt(0), .token = l.token, .message = message });
         }

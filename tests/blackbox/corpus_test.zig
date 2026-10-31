@@ -457,7 +457,7 @@ fn coreParity(arena: std.mem.Allocator, cfg: *const Config) !void {
     // Core's unchecked declarations are pinned as a fixture's are, and a
     // limit in core is a failure (§7.2).
     const golden = try std.fmt.allocPrint(arena, "{s}/ownership/core.v2.unchecked", .{cfg.root});
-    const text = try Case.uncheckedText(arena, "core", both[1], false);
+    const text = try Case.uncheckedText(arena, "core", "core", both[1], false);
     const bless = blessing(arena) and (blessOnly(arena) == null or std.mem.indexOf(u8, golden, blessOnly(arena).?) != null);
     if (bless) {
         try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = golden, .data = text });
@@ -2246,7 +2246,7 @@ const Case = struct {
     }
 
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -3978,6 +3978,10 @@ const Case = struct {
                 return error.OwnershipErrorsDisagree;
             }
         } else try expectExit(0, checked);
+        // A `.v2.diag` pins that check's diagnostics whole, code, span and
+        // message, where v2 refuses with a code of its own
+        // (`comparison_changes_value`, R-5.13.1).
+        if (c.goldenExists("v2.diag")) try c.expectGolden("v2.diag", checked.stderr);
         // A `.v2.ownership` is v2's own verdict lines where they differ from
         // v1's on purpose (a red twin v1 gets wrong, a holder named more
         // precisely), the `.v2` file saying why.
@@ -4013,7 +4017,8 @@ const Case = struct {
     /// the parity never passes on an over-reported "not built". A limit is
     /// a failure, never an exemption, unless the fixture is about limits.
     fn v2Unchecked(c: Case, ext: []const u8, dump: []const u8, limits_allowed: bool) !void {
-        const text = try uncheckedText(c.arena, c.fixture.name, dump, limits_allowed);
+        const root = try std.fmt.allocPrint(c.arena, "{s}/{s}", .{ c.fixture.dir, c.fixture.name });
+        const text = try uncheckedText(c.arena, c.fixture.name, root, dump, limits_allowed);
         // Nothing unchecked is no golden at all: blessing removes one that
         // empties.
         if (text.len == 0 and c.bless and c.goldenExists(ext)) try Io.Dir.cwd().deleteFile(testing.io, try c.goldenPath(ext));
@@ -4022,8 +4027,10 @@ const Case = struct {
     }
 
     /// A v2 dump's `unchecked` lines as a `.v2.unchecked` golden holds them,
-    /// `<module> <name>: lines a-b (<why>)`; a limit fails unless allowed.
-    fn uncheckedText(arena: std.mem.Allocator, name: []const u8, dump: []const u8, limits_allowed: bool) ![]const u8 {
+    /// `<module> <name>: lines a-b (<why>)`; a limit fails unless allowed,
+    /// or unless `tests/blackbox/ownership-v2-known.txt` lists it as
+    /// `<root> <module> limit <name>` with its owner: a known limit.
+    fn uncheckedText(arena: std.mem.Allocator, name: []const u8, root: []const u8, dump: []const u8, limits_allowed: bool) ![]const u8 {
         var text: std.ArrayList(u8) = .empty;
         var lines = std.mem.splitScalar(u8, dump, '\n');
         var module: []const u8 = "";
@@ -4031,7 +4038,12 @@ const Case = struct {
             if (std.mem.startsWith(u8, l, "module ")) module = l["module ".len..];
             const t = std.mem.trim(u8, l, " ");
             if (!std.mem.startsWith(u8, t, "unchecked ")) continue;
-            if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) {
+            if (!limits_allowed and std.mem.endsWith(u8, t, "(limit)")) known: {
+                const decl = t["unchecked ".len..][0 .. std.mem.indexOfScalar(u8, t["unchecked ".len..], ':') orelse 0];
+                // Only the summary-size limit is ever known: an accounting
+                // invariant is a defect and always fails.
+                const size = std.mem.indexOf(u8, dump, try std.fmt.allocPrint(arena, "limit {s}: ownership_summary_size\n", .{decl})) != null;
+                if (size and (try knownDifferences()).use(try std.fmt.allocPrint(arena, "{s} {s} limit {s}", .{ root, module, decl }))) break :known;
                 detail("{s}: the checker v2 reached a limit: {s}\n", .{ name, t });
                 return error.OwnershipV2Limit;
             }

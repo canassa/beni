@@ -1,4 +1,4 @@
-//! L7: a call of a class (`docs/design/ownership-v2.md` §2.11). S3a applies
+//! L9: a call of a class (`docs/design/ownership-v2.md` §2.11). S3a applies
 //! the classes the rows give (`Rows.fromWords`, built at the call's own
 //! instantiation, so the class's places are the caller's); S3b adds the
 //! summaries of declarations, S4 callbacks.
@@ -182,7 +182,7 @@ const Pre = struct {
         switch (cells.origin(c)) {
             .site, .result, .esc, .mark => return,
             .top => {},
-            .elem, .others, .level, .below, .loan => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
+            .elem, .others, .level, .below, .loan, .part => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
             .param, .env, .shared, .cb, .msg => sym = c,
         }
         if (sym) |s| if (!cells.origin(s).isSymbolic() or cells.origin(s) == .top or places.pathPlace(.from(cells.get(s).b)) != places.pathPlace(path)) {
@@ -1351,7 +1351,7 @@ pub const Views = struct {
 /// Per node of a use shape, what is at or below it: 1 a `W`, 2 an `E`.
 /// Memoised per node, on an explicit stack (#1138), so a use shape that is
 /// a DAG costs its nodes.
-fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
+pub fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
     const Frame = struct { node: NodeId, expanded: bool };
     var stack: std.ArrayList(Frame) = .empty;
     defer stack.deinit(env.gpa);
@@ -1389,6 +1389,70 @@ fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
     return memo.get(.{use.int()}).?;
 }
 
+/// The positions one `⟲` step stands for below `x`: each node reached by
+/// one step or more whose place is `x`'s (`positionsAt`).
+pub fn reentries(env: Env, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+    const gpa = env.gpa;
+    const shapes = env.shapes;
+    const places = env.places;
+    const p = shapes.place(x);
+    var seen: stamped.Column(NodeId, void) = .{};
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(NodeId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, x);
+    while (stack.pop()) |y| {
+        for (places.steps(shapes.place(y)).steps) |c| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            if (c.kind == .level) continue;
+            const n = (try shapes.proj(gpa, env.account(), places, env.cells, y, c)) orelse continue;
+            if (seen.contains(n)) continue;
+            try seen.put(gpa, n, {});
+            if (shapes.place(n) == p) try out.append(gpa, n);
+            try stack.append(gpa, n);
+        }
+    }
+}
+
+/// The value `n` at a class's parameter path `steps`, as `Transfer`'s
+/// `positionsAt` reads an argument there: every position the path stands
+/// for, joined; a `⟲` step every re-entry of the place below the value so
+/// far (`reentries`). Without one, a missing step keeps the value reached.
+/// Null when no position is left.
+pub fn positionsAt(env: Env, n: NodeId, steps: []const Step) Error!?NodeId {
+    const gpa = env.gpa;
+    const shapes = env.shapes;
+    const places = env.places;
+    var has_level = false;
+    for (steps) |s| has_level = has_level or s.kind == .level;
+    if (!has_level) {
+        var at = n;
+        for (steps) |s| at = (try shapes.proj(gpa, env.account(), places, env.cells, at, s)) orelse return at;
+        return at;
+    }
+    const task = try env.account().enter(gpa, null);
+    defer env.account().leave(task);
+    var frontier: std.ArrayList(NodeId) = .empty;
+    defer frontier.deinit(gpa);
+    var next: std.ArrayList(NodeId) = .empty;
+    defer next.deinit(gpa);
+    try frontier.append(gpa, n);
+    for (steps) |s| {
+        next.clearRetainingCapacity();
+        for (frontier.items) |x| {
+            if (s.kind != .level) {
+                if (try shapes.proj(gpa, env.account(), places, env.cells, x, s)) |m| try next.append(gpa, m);
+                continue;
+            }
+            try reentries(env, x, &next);
+        }
+        std.mem.swap(std.ArrayList(NodeId), &frontier, &next);
+    }
+    if (frontier.items.len == 0) return null;
+    if (frontier.items.len == 1) return frontier.items[0];
+    return try shapes.join(gpa, env.account(), places, env.cells, frontier.items);
+}
+
 /// A parameter's routes to what its use shape writes (`W`, deep with `S`)
 /// or lets escape (`E`), one at a time, each with its steps from the root
 /// (§2.11 items 3 and 4): a walk of the shape's explicit structure (a leaf's
@@ -1406,6 +1470,13 @@ fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
 /// A value is projected when its route is popped, in the order a caller
 /// that reads the routes one by one and projects each made it. Each pair
 /// popped is a record. A write's other paths are `Transfer`'s (#1325).
+///
+/// **A stop at a parameter's leaf (#1412).** With `stops`, a write route
+/// whose value becomes an exact, unrefined leaf of the caller's own
+/// parameter through an exact prefix (no `[*]` or `⟲`) is not walked on:
+/// it is returned once as a `stop`, with its use node and the leaf, and
+/// the caller expands what is below it after its walk, paired with what
+/// its frame names below that leaf (`Transfer.Frame.expandGroups`).
 pub const Routes = struct {
     env: Env,
     below: Ids.FixedDict(1) = .{},
@@ -1414,13 +1485,17 @@ pub const Routes = struct {
     stack: std.ArrayList(Item) = .empty,
     steps: std.ArrayList(Step) = .empty,
     want: u32 = 0,
+    stops: bool = false,
 
     const Entry = struct { step: Step, parent: u32 };
     /// A use node, its route's entry, and the argument's value: the
     /// parent's until the item is popped, then its own. `stuck` once a step
-    /// is missing; `free`, no value, below a `⟲` or with no argument.
-    const Item = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool };
-    pub const Route = struct { steps: []const Step, deep: bool };
+    /// is missing; `free`, no value, below a `⟲` or with no argument;
+    /// `exact` while no step is a `[*]` or a `⟲`.
+    const Item = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool, exact: bool = true };
+    /// `stop`: the route stopped at a parameter's leaf (`stops`).
+    pub const Route = struct { steps: []const Step, deep: bool, stop: ?Stop = null };
+    pub const Stop = struct { node: NodeId, leaf: CellId, value: NodeId };
     pub const Want = enum(u2) { writes = 1, escapes = 2 };
 
     pub fn deinit(r: *Routes) void {
@@ -1435,10 +1510,15 @@ pub const Routes = struct {
     /// (`.none`: no argument).
     /// `below` is a node's own and stays: one memo for every walk of the call.
     pub fn start(r: *Routes, use: NodeId, arg: NodeId, want: Want) Error!void {
+        return r.startStops(use, arg, want, false);
+    }
+
+    /// `start`, stopping at a parameter's leaf when `stops` (writes only).
+    pub fn startStops(r: *Routes, use: NodeId, arg: NodeId, want: Want, stops: bool) Error!void {
         const below = r.below;
         r.below = .{};
         r.deinit();
-        r.* = .{ .env = r.env, .below = below, .want = @backingInt(want) };
+        r.* = .{ .env = r.env, .below = below, .want = @backingInt(want), .stops = stops and want == .writes };
         // The use's size: growth chosen before the walk, never the call's
         // lane (§4.1; #1369's review: a use of 600 nodes passed it).
         const walk = try r.env.account().enter(r.env.gpa, null);
@@ -1461,7 +1541,15 @@ pub const Routes = struct {
                     if (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, it.value, e.step)) |n| it.value = n else it.stuck = true;
                 }
                 if (!it.free and (try r.seen.getOrPut(env.gpa, .{ e.parent, it.node.int(), it.value.int(), @intFromBool(it.stuck) })).found_existing) continue;
+                if (e.step.kind == .level or e.step.kind == .elem) it.exact = false;
             }
+            if (r.stops and !it.free and !it.stuck and it.exact) if (try stopLeaf(env, it.value)) |c| {
+                r.steps.clearRetainingCapacity();
+                var at = it.entry;
+                while (at != Ids.none_int) : (at = r.entries.items[at].parent) try r.steps.append(env.gpa, r.entries.items[at].step);
+                std.mem.reverse(Step, r.steps.items);
+                return .{ .steps = r.steps.items, .deep = false, .stop = .{ .node = it.node, .leaf = c, .value = it.value } };
+            };
             var w = false;
             var e = false;
             var deep = false;
@@ -1482,7 +1570,7 @@ pub const Routes = struct {
                     if ((r.below.get(.{k.node.int()}) orelse 3) & r.want == 0) continue;
                     const id: u32 = @intCast(r.entries.items.len);
                     try r.entries.append(env.gpa, .{ .step = k.step, .parent = it.entry });
-                    try r.stack.append(env.gpa, .{ .node = k.node, .entry = id, .value = it.value, .stuck = it.stuck, .free = it.free });
+                    try r.stack.append(env.gpa, .{ .node = k.node, .entry = id, .value = it.value, .stuck = it.stuck, .free = it.free, .exact = it.exact });
                 }
             }
             if (!(if (r.want == 1) w else e)) continue;
@@ -1495,6 +1583,17 @@ pub const Routes = struct {
         return null;
     }
 };
+
+/// The cell of `n` when it is a leaf of exactly one exact, unrefined
+/// parameter cell: where a write route stops (`Routes.stops`, #1412).
+pub fn stopLeaf(env: Env, n: NodeId) Error!?CellId {
+    if (n == .none or env.shapes.kind(n) != .leaf) return null;
+    var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n));
+    const e = it.next() orelse return null;
+    if (it.next() != null or e.value != 0) return null;
+    const c: CellId = .from(e.key);
+    return if (env.cells.origin(c) == .param) c else null;
+}
 
 /// Apply class `class` at call instruction `inst` to `args` (§2.11). The
 /// answer's slices live in `s` until its next call.
@@ -1591,7 +1690,7 @@ pub const Beside = struct {
     heads: Ids.FixedDict(5) = .{},
     /// `(kid, next link)`.
     links: std.ArrayList([2]u32) = .empty,
-    /// `(value node, key)` → its reach's cells of that key (`keyed`).
+    /// `(reach, key)` → that reach's cells of that key (`keyed`).
     sets: Ids.FixedDict(5) = .{},
     keyed_done: Ids.FixedDict(1) = .{},
 
@@ -1681,25 +1780,25 @@ pub const Beside = struct {
         return any;
     }
 
-    /// The cells of `v`'s reach of alias key `key`, none if it has none;
-    /// the reach is split by key once per value node.
-    pub fn keyed(b: *Beside, env: Env, v: NodeId, reach: SetId, key: [4]u32) Error!SetId {
+    /// The cells of `reach` of alias key `key`, none if it has none; split by
+    /// key once per reach, since a value is read at its path (`Transfer.reachBeside`).
+    pub fn keyed(b: *Beside, env: Env, reach: SetId, key: [4]u32) Error!SetId {
         const gpa = env.gpa;
         const cells = env.cells;
         try env.charge.reserve(gpa, .memo, 1);
-        if (!(try b.keyed_done.getOrPut(gpa, .{v.int()})).found_existing) {
+        if (!(try b.keyed_done.getOrPut(gpa, .{reach.int()})).found_existing) {
             var it = cells.sets.iterate(reach);
             while (it.next()) |e| {
                 try env.charge.reserve(gpa, .inspection, 1);
                 const c: CellId = .from(e.key);
                 if (cells.origin(cells.base(c)) == .param) continue;
                 const k = aliasKey(cells, c);
-                const prev: SetId = if (b.sets.get(.{ v.int(), k[0], k[1], k[2], k[3] })) |s| .from(s) else .none;
+                const prev: SetId = if (b.sets.get(.{ reach.int(), k[0], k[1], k[2], k[3] })) |s| .from(s) else .none;
                 const next = try cells.sets.insert(gpa, env.charge, prev, e.key, e.value);
-                (try b.sets.getOrPut(gpa, .{ v.int(), k[0], k[1], k[2], k[3] })).value_ptr.* = next.int();
+                (try b.sets.getOrPut(gpa, .{ reach.int(), k[0], k[1], k[2], k[3] })).value_ptr.* = next.int();
             }
         }
-        return if (b.sets.get(.{ v.int(), key[0], key[1], key[2], key[3] })) |s| .from(s) else .none;
+        return if (b.sets.get(.{ reach.int(), key[0], key[1], key[2], key[3] })) |s| .from(s) else .none;
     }
 };
 
@@ -3382,4 +3481,73 @@ test "a view's cells through a level free the grafter's memos, however far a lim
             try testing.expect(extra != std.math.maxInt(u32) - 1);
         };
     }
+}
+
+/// A class whose `res` is `joinRes(a, ka, b, kb)`, applied with no
+/// argument, and κ at `[*]` read through the call's view as a caller reads
+/// it, beside the same read in the class itself (#1399).
+fn joinedElemThroughCall(x: *KnotFixture, a: NodeId, ka: Cond.Kappas, b: NodeId, kb: Cond.Kappas) !struct { class: CondId, caller: CondId } {
+    const gpa = testing.allocator;
+    const env = x.env();
+    const e = Place.Step.elem;
+    const j = try Summary.Table.joinRes(env, a, ka, b, kb, .choice);
+    const class_k = try x.conds.kappaOf(gpa, env.charge, env.view(), x.conds.kappaChild(j.kappas, e), (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, j.node, e)).?, true);
+    const c = try x.sums.add(env, .{ .params = &.{}, .res = j.node, .kappas = j.kappas });
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const r = (try apply(env, &x.sums, c, &.{}, 1, &s)).result;
+    const child = (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, r.node, e)).?;
+    const caller_k = try x.conds.kappaOf(gpa, env.charge, env.view(), x.conds.kappaChild(r.kappa, e), child, true);
+    return .{ .class = class_k, .caller = caller_k };
+}
+
+fn joinList(x: *KnotFixture, site_id: u32, elem: ?NodeId) !NodeId {
+    const gpa = testing.allocator;
+    const c = try x.cells.site(gpa, &x.account, site_id, x.list, .list);
+    const cells = try x.cells.sets.insert(gpa, x.env().charge, .none, c.int(), 0);
+    const over = if (elem) |el| try x.one(Place.Step.elem, el) else Ids.none_int;
+    return x.shapes.node(gpa, &x.account, x.list, cells, over);
+}
+
+test "#1399: a joined κ below a choice whose rounds intern to one arm is read through the call" {
+    // GroupJoinShared's rounds: one choice `c = choice([], [x])` in both, its
+    // element `x` read `yes` in round 1 and `shared` in round 2. The join
+    // keys `shared` on `proj(c, [*]) = choice(nothing, x)`, which no part of
+    // `c` names; a caller descends the view's arms and meets `x`.
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const env = x.env();
+    const e = Place.Step.elem;
+    const elem = try x.site(10, x.t_place);
+    const choice = try x.shapes.choice(gpa, &x.account, &x.cells.sets, try joinList(&x, 11, null), try joinList(&x, 12, elem));
+    const root = (try x.conds.kappaSet(gpa, env.charge, .none, choice, Cond.yes)).ctx;
+    const k1 = try x.conds.kappaSetAt(gpa, env.charge, root, &.{e}, elem, Cond.yes);
+    const k2 = try x.conds.kappaSetAt(gpa, env.charge, root, &.{e}, elem, Cond.shared);
+    const got = try joinedElemThroughCall(&x, choice, k1, choice, k2);
+    try testing.expectEqual(Cond.shared, got.class);
+    try testing.expectEqual(Cond.shared, got.caller);
+}
+
+test "#1399: a joined κ keyed on an interned union below a choice is read through the call" {
+    // `a = [x]` reads `yes` at `[*]`; `b`'s element is the union `u = x ∪ y`,
+    // `shared` there. The join keys `shared` on `choice(x, u)`, a node no part
+    // of the choice names; a caller meets `x` and `u`'s sides.
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const env = x.env();
+    const e = Place.Step.elem;
+    const ex = try x.site(10, x.t_place);
+    const ey = try x.site(13, x.t_place);
+    const u = try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, ex, ey);
+    const a = try joinList(&x, 11, ex);
+    const b = try joinList(&x, 12, u);
+    const ka = try x.conds.kappaSetAt(gpa, env.charge, (try x.conds.kappaSet(gpa, env.charge, .none, a, Cond.yes)).ctx, &.{e}, ex, Cond.yes);
+    const kb = try x.conds.kappaSetAt(gpa, env.charge, (try x.conds.kappaSet(gpa, env.charge, .none, b, Cond.yes)).ctx, &.{e}, u, Cond.shared);
+    const got = try joinedElemThroughCall(&x, a, ka, b, kb);
+    try testing.expectEqual(Cond.shared, got.class);
+    try testing.expectEqual(Cond.shared, got.caller);
 }

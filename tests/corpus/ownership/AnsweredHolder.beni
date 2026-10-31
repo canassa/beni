@@ -1,0 +1,119 @@
+-- ownership: a callee that answers the record holding the list it writes
+-- (ownership-v2.md §2.11 item 3, rule (a), as amended for #1367). `g`
+-- answers `s` whole in one branch and writes `s.kept` in the other, so the
+-- record is above the write and answered. It holds the written list as
+-- that list itself, not as a second object written: `f` (the issue's
+-- probe), `viaParam`, `once`, `nested` and `chained` (the record another
+-- call of `g` answers, a choice of its arms) are accepted, as v1 accepts
+-- them. The record still counts for what it holds beside the written list:
+-- `twice` puts the list at a second field, `nestedTwice` at a field of the
+-- outer record, `innerTwice` at a second field of the inner record and
+-- `pickTwice` in one arm of a choice, all refused `disjoint`. `readAfter`
+-- reads the old record after the call, refused `later-use`. Before #1367
+-- v2 refused every one of these calls `disjoint`.
+type alias Stack =
+    top : List Int
+    kept : List (List Int)
+
+
+g : Int, Stack → Stack
+g i s =
+    if i ≥ 10 then
+        s
+    else
+        { top = s.top, kept = List.push s.kept s.top }
+
+
+pub f : Int, Stack → Stack
+f i s =
+    top = [ i, …s.top ]
+    kept = List.push s.kept top
+    g (i + 1) { top = top, kept = kept }
+
+
+pub viaParam : Stack → Stack
+viaParam s = g 0 s
+
+
+pub readAfter : Int, List Int, List (List Int) → Int
+readAfter i top kept =
+    r = { top = top, kept = kept }
+    out = g (i + 1) r
+    List.length out.kept + List.length r.kept
+
+
+type alias Three =
+    top : List Int
+    kept : List (List Int)
+    extra : List (List Int)
+
+
+g3 : Int, Three → Three
+g3 i s =
+    if i ≥ 10 then
+        s
+    else
+        { top = s.top, kept = List.push s.kept s.top, extra = [] }
+
+
+pub twice : Int, List Int, List (List Int) → Three
+twice i top kept = g3 (i + 1) { top = top, kept = kept, extra = kept }
+
+
+pub once : Int, List Int, List (List Int) → Three
+once i top kept = g3 (i + 1) { top = top, kept = kept, extra = [] }
+
+
+type alias Outer =
+    inner : Stack
+    other : List (List Int)
+
+
+h : Int, Outer → Outer
+h i o =
+    if i ≥ 10 then
+        o
+    else
+        { inner = { top = o.inner.top, kept = List.push o.inner.kept o.inner.top }, other = [] }
+
+
+pub nested : Int, List Int, List (List Int) → Outer
+nested i top kept = h i { inner = { top = top, kept = kept }, other = [] }
+
+
+pub nestedTwice : Int, List Int, List (List Int) → Outer
+nestedTwice i top kept = h i { inner = { top = top, kept = kept }, other = kept }
+
+
+type alias Deep =
+    inner : Three
+    other : List (List Int)
+
+
+h3 : Int, Deep → Deep
+h3 i o =
+    if i ≥ 10 then
+        o
+    else
+        { inner = { top = o.inner.top, kept = List.push o.inner.kept o.inner.top, extra = [] }
+        , other = []
+        }
+
+
+pub innerTwice : Int, List Int, List (List Int) → Deep
+innerTwice i top kept = h3 i { inner = { top = top, kept = kept, extra = kept }, other = [] }
+
+
+pub chained : Int, List Int, List (List Int) → Stack
+chained i top kept = g i (g 0 { top = top, kept = kept })
+
+
+pub pickTwice : Bool, List Int, List (List Int) → Three
+pickTwice c top kept =
+    g3
+        0
+        (if c then
+            { top = top, kept = kept, extra = [] }
+         else
+            { top = top, kept = kept, extra = kept }
+        )

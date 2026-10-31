@@ -1,4 +1,4 @@
-//! L8: the transfer rules (`docs/design/ownership-v2.md` §2.6), one case per
+//! L10: the transfer rules (`docs/design/ownership-v2.md` §2.6), one case per
 //! BIR tag, over one declaration's instructions in evaluation order. A
 //! value is a shape root with its own κ snapshot (§2.9); the frame records,
 //! for `Walk` and `Demands`, the uses (at the consumer, R-4.1.1), the
@@ -43,6 +43,7 @@ const Summary = @import("Summary.zig");
 const Regions = @import("Regions.zig");
 const Demands = @import("Demands.zig");
 const Calls = @import("Calls.zig");
+const Liveness = @import("Liveness.zig");
 const Bir = @import("../bir/Bir.zig");
 
 pub const NodeId = Ids.NodeId;
@@ -65,7 +66,7 @@ pub const Error = Ids.ChargeError;
 pub const none: u32 = Ids.none_int;
 const Inst = Bir.Inst;
 
-/// What a call runs, as the module adapter resolves it (L10).
+/// What a call runs, as the module adapter resolves it (L12).
 pub const Callee = union(enum) {
     /// A class to apply, at this call's instantiation.
     class: ClassId,
@@ -96,6 +97,9 @@ pub const Context = struct {
     sharedIndex: *const fn (ctx: *anyopaque, ref: u32) ?u32,
     /// A `++` the checker resolved to `List.append` (`Dispatch`).
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
+    /// Told of every call a class answered, with its arguments: a
+    /// recursive group records its edges (§8 S3b slice 4b).
+    onCall: ?*const fn (ctx: *anyopaque, inst: u32, args: []const Value) Error!void = null,
 };
 
 /// One instruction's value, and the local and path it reads when it is a
@@ -109,6 +113,184 @@ const Val = struct {
 /// A parameter cell a consumed value holds (`Frame.readsOf`): read at its
 /// path (`use_node` none), or there with a callee's use below it.
 pub const ParamRead = struct { cell: CellId, use_node: NodeId };
+
+/// A write route that stopped at an exact, unrefined leaf `leaf` of the
+/// caller's own parameter (`Calls.Routes.stops`, §2.11 item 3, #1412): the
+/// call it is of (`Frame.call_snaps`), the argument, that argument's whole
+/// use, the use node at the leaf and the argument's value there, the steps
+/// from the argument down to it, and the place among the frame's demands
+/// its demands take (`slot`: the count when it stopped).
+pub const Group = struct {
+    call: u32,
+    param: u32,
+    use: NodeId,
+    node: NodeId,
+    leaf: CellId,
+    value: NodeId,
+    prefix: Ids.Range,
+    slot: u32,
+    /// Its demands' run while they are expanded, at the end of `demands`.
+    out: Ids.Range = .empty,
+};
+
+/// A call with a group: what its demands need after the walk, and its
+/// `xreq`, owed by its first demand (§2.11 step 7).
+pub const CallSnap = struct {
+    point: u32,
+    callee_inst: u32,
+    /// Its arguments, a run of `Frame.call_args`.
+    args: Ids.Range,
+    /// Its demands made during the walk: `[first_slot, orig_end)`.
+    first_slot: u32,
+    orig_end: u32 = 0,
+    xreq: CondId = Cond.yes,
+};
+
+/// The canonical paths a route walks below a parameter's leaf, and whether
+/// a step is plain there (§2.11 item 3, #1412): a step whose `extend` is
+/// the path with the step appended, never a fold, a `[*]` or a `⟲`. What
+/// `extend` reads to fold is the run of the path's last places on one
+/// strongly connected component of the place graph, with which of their
+/// steps are `⟲` and which is the root (`sig`, interned): two paths with
+/// one `sig` take every step alike, plain or folded.
+pub const Plain = struct {
+    sigs: Ids.FixedDict(3) = .{},
+    sig_of: Ids.FixedDict(1) = .{},
+    scratch: std.ArrayList(PathId) = .empty,
+
+    pub fn deinit(p: *Plain, gpa: Allocator) void {
+        p.sigs.deinit(gpa);
+        p.sig_of.deinit(gpa);
+        p.scratch.deinit(gpa);
+    }
+
+    fn flags(places: *const Place.Table, at: PathId) u32 {
+        if (places.pathParent(at) == .none) return 2;
+        return @intFromBool(places.pathStep(at).kind == .level);
+    }
+
+    fn intern(p: *Plain, env: Env, parent: u32, at: PathId) Error!u32 {
+        try env.charge.reserve(env.gpa, .memo, 1);
+        const got = try p.sigs.getOrPut(env.gpa, .{ parent, env.places.pathPlace(at).int(), flags(env.places, at) });
+        if (!got.found_existing) got.value_ptr.* = p.sigs.count();
+        return got.value_ptr.*;
+    }
+
+    /// `path`'s `sig`: 0 off every cycle.
+    pub fn sigOf(p: *Plain, env: Env, path: PathId) Error!u32 {
+        const places = env.places;
+        const here = places.pathPlace(path);
+        if (!places.cyclic(here)) return 0;
+        if (p.sig_of.get(.{path.int()})) |s| return s;
+        p.scratch.clearRetainingCapacity();
+        var at = path;
+        while (at != .none and places.sccOf(places.pathPlace(at)) == places.sccOf(here)) : (at = places.pathParent(at)) {
+            try env.charge.reserve(env.gpa, .path, 1);
+            try p.scratch.append(env.gpa, at);
+        }
+        var s: u32 = 0;
+        var i = p.scratch.items.len;
+        while (i > 0) {
+            i -= 1;
+            s = try p.intern(env, s, p.scratch.items[i]);
+        }
+        (try p.sig_of.getOrPut(env.gpa, .{path.int()})).value_ptr.* = s;
+        return s;
+    }
+
+    /// The `sig` of `next`, a plain step below a path of `sig` at `here`.
+    pub fn nextSig(p: *Plain, env: Env, sig: u32, here: PlaceId, next: PathId) Error!u32 {
+        const places = env.places;
+        const there = places.pathPlace(next);
+        if (!places.cyclic(there)) return 0;
+        const s = if (places.cyclic(here) and places.sccOf(here) == places.sccOf(there)) sig else 0;
+        const n = try p.intern(env, s, next);
+        (try p.sig_of.getOrPut(env.gpa, .{next.int()})).value_ptr.* = n;
+        return n;
+    }
+
+    /// `path · s` when that is a plain step, else null.
+    pub fn step(env: Env, path: PathId, s: Step) Error!?PathId {
+        if (s.kind == .level or s.kind == .elem) return null;
+        const next = (try env.places.extend(env.gpa, env.charge, path, s)) orelse return null;
+        if (env.places.pathParent(next) != path or env.places.pathStep(next).word() != s.word()) return null;
+        return next;
+    }
+
+    /// Bits of the use node `u` read at `path` (§2.11 item 3, #1412),
+    /// memoised by `(u, place, sig)` in `memo`: 1 when every route below it
+    /// to a `W` (`below`'s bit 1) takes plain steps only; 2 when one reached
+    /// by plain steps writes; 4 when one reached so writes deeply (`S`).
+    /// On an explicit stack (#1138); a node met again before it is settled
+    /// is no plain route.
+    pub fn bits(p: *Plain, env: Env, memo: *Ids.FixedDict(3), below: *Ids.FixedDict(1), u: NodeId, path: PathId) Error!u32 {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const Fr = struct { u: NodeId, path: PathId, sig: u32, expanded: bool };
+        var stack: std.ArrayList(Fr) = .empty;
+        defer stack.deinit(gpa);
+        const sig0 = try p.sigOf(env, path);
+        const key0: [3]u32 = .{ u.int(), env.places.pathPlace(path).int(), sig0 };
+        if (memo.get(key0)) |b| if (b & 16 != 0) return b & 15;
+        try stack.append(gpa, .{ .u = u, .path = path, .sig = sig0, .expanded = false });
+        while (stack.pop()) |fr| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            const here = env.places.pathPlace(fr.path);
+            const key: [3]u32 = .{ fr.u.int(), here.int(), fr.sig };
+            const got = try memo.getOrPut(gpa, key);
+            if (got.found_existing and (got.value_ptr.* & 16 != 0 or !fr.expanded)) continue;
+            const kids = shapes.kind(fr.u) == .node;
+            if (!fr.expanded) {
+                got.value_ptr.* = 0;
+                try stack.append(gpa, .{ .u = fr.u, .path = fr.path, .sig = fr.sig, .expanded = true });
+                if (kids) {
+                    var kt = shapes.overEntries(shapes.get(fr.u).a);
+                    while (kt.next()) |k| {
+                        if ((below.get(.{k.node.int()}) orelse 3) & 1 == 0) continue;
+                        const next = (try step(env, fr.path, k.step)) orelse continue;
+                        const s = try p.nextSig(env, fr.sig, here, next);
+                        if (memo.get(.{ k.node.int(), env.places.pathPlace(next).int(), s }) == null)
+                            try stack.append(gpa, .{ .u = k.node, .path = next, .sig = s, .expanded = false });
+                    }
+                }
+                continue;
+            }
+            var b: u32 = 1;
+            var ct = env.cells.sets.iterate(try shapes.cellsOf(gpa, env.account(), &env.cells.sets, fr.u));
+            var w = false;
+            var deep = false;
+            while (ct.next()) |x| {
+                const c: CellId = .from(x.key);
+                if (env.cells.origin(c) != .mark) continue;
+                switch (env.cells.markOf(c)) {
+                    .w => w = true,
+                    .deep => deep = true,
+                    else => {},
+                }
+            }
+            if (w) b |= if (deep) 6 else 2;
+            if (kids) {
+                var kt = shapes.overEntries(shapes.get(fr.u).a);
+                while (kt.next()) |k| {
+                    if ((below.get(.{k.node.int()}) orelse 3) & 1 == 0) continue;
+                    const next = (try step(env, fr.path, k.step)) orelse {
+                        b &= ~@as(u32, 1);
+                        continue;
+                    };
+                    const s = try p.nextSig(env, fr.sig, here, next);
+                    const kb = memo.get(.{ k.node.int(), env.places.pathPlace(next).int(), s }) orelse 0;
+                    if (kb & 16 == 0) {
+                        b &= ~@as(u32, 1);
+                        continue;
+                    }
+                    b = (b & ~@as(u32, 1)) | (b & kb & 1) | (kb & 6);
+                }
+            }
+            got.value_ptr.* = b | 16;
+        }
+        return (memo.get(key0) orelse 0) & 15;
+    }
+};
 
 pub const Frame = struct {
     gpa: Allocator,
@@ -154,6 +336,12 @@ pub const Frame = struct {
     unbuilt: u32 = none,
     calls: Calls.Scratch = .{},
     scratch: std.ArrayList(Inst.Index) = .empty,
+    /// The write routes that stopped at a parameter's leaf, and the calls
+    /// they are of (§2.11 item 3, #1412): expanded after the walk.
+    groups: std.ArrayList(Group) = .empty,
+    group_steps: std.ArrayList(Step) = .empty,
+    call_snaps: std.ArrayList(CallSnap) = .empty,
+    call_args: std.ArrayList(Inst.Index) = .empty,
 
     pub fn deinit(f: *Frame) void {
         const gpa = f.gpa;
@@ -176,6 +364,10 @@ pub const Frame = struct {
         f.escapes.deinit(gpa);
         f.calls.deinit(gpa);
         f.scratch.deinit(gpa);
+        f.groups.deinit(gpa);
+        f.group_steps.deinit(gpa);
+        f.call_snaps.deinit(gpa);
+        f.call_args.deinit(gpa);
     }
 
     fn rel(f: *const Frame, i: u32) u32 {
@@ -627,6 +819,46 @@ pub const Frame = struct {
         return .{ .node = n, .kappa = f.env.conds.kappaChild(v.kappa, s) };
     }
 
+    /// The cells a list pattern on `n` splits (§2.13.3), into `out`: each
+    /// symbolic container cell of `n`, or, where `n` is a rest of a split of
+    /// it — its `[*]` (`contents`) holds `others` of that cell's positions —
+    /// those `others`, so the match splits the rest's own positions. A
+    /// container is split too when the contents hold anything else at its
+    /// `[*]`'s canonical position: its plain projection, or a position a
+    /// push, literal or join stored beside the rest (`[ a, …rest ]`'s `a`),
+    /// which no split of the rest's positions stands for.
+    fn splitTargets(f: *Frame, n: NodeId, contents: NodeId, out: *std.ArrayList(Cell.Radix.Iterator.Entry)) Error!void {
+        const cells = f.env.cells;
+        const places = f.env.places;
+        const at = try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, contents);
+        var it = cells.sets.iterate(try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, n));
+        while (it.next()) |e| {
+            const c: CellId = .from(e.key);
+            const o = cells.origin(c);
+            if (o == .site or o == .result or o == .esc or o == .top) continue;
+            // `c[*]`'s canonical cell, null over a concrete base.
+            const canon: ?CellId = blk: {
+                const cu = (try cells.unrefined(f.gpa, f.account(), places, c)) orelse break :blk null;
+                const x = cells.get(cu);
+                const path = (try places.extend(f.gpa, f.env.charge, .from(x.b), Step.elem)) orelse break :blk null;
+                break :blk try cells.symbolic(f.gpa, f.account(), places, x.origin, x.a, path, x.c);
+            };
+            const first = out.items.len;
+            var plain = false;
+            var ct = cells.sets.iterate(at);
+            while (ct.next()) |x| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                const xc: CellId = .from(x.key);
+                if (cells.origin(xc) == .others and cells.positionsOf(xc) == c) {
+                    try out.append(f.gpa, .{ .key = x.key, .value = e.value | x.value });
+                } else if (canon) |cn| {
+                    if ((try cells.unrefined(f.gpa, f.account(), places, xc)) == cn) plain = true;
+                } else if (cells.parent(xc) == c) plain = true;
+            }
+            if (out.items.len == first or plain) try out.append(f.gpa, e);
+        }
+    }
+
     /// `[ a, b, …rest ]` (§2.13.3): per container cell, the positions taken
     /// at this split are `elem` refinements, the rest `others`; a concrete
     /// container's contents are its explicit elements, on both sides.
@@ -659,15 +891,17 @@ pub const Frame = struct {
         // containers' projections.
         var containers: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
         defer containers.deinit(f.gpa);
+        try f.splitTargets(v.node, contents, &containers);
+        // A rest's positions split as positions (`Cell.positions_bit`).
+        var bits: std.ArrayList(u32) = .empty;
+        defer bits.deinit(f.gpa);
+        const own = try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, v.node);
+        for (containers.items) |e| try bits.append(f.gpa, if (cells.origin(.from(e.key)) == .others and cells.sets.member(own, cells.positionsOf(.from(e.key)).int())) Cell.Table.positions_bit else 0);
         var projections: SetId = .none;
-        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
-        while (it.next()) |e| {
+        for (containers.items, bits.items) |e, bit| {
             const c: CellId = .from(e.key);
-            const o = cells.origin(c);
-            if (o == .site or o == .result or o == .esc or o == .top) continue;
-            try containers.append(f.gpa, e);
             _ = try cells.split(f.gpa, f.account(), c, p, label, split_kappa);
-            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, try cells.refine(f.gpa, f.account(), .elem, c, label, 0, elem_place, elem_kind))) orelse continue;
+            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, try cells.refine(f.gpa, f.account(), .elem, c, label, bit, elem_place, elem_kind))) orelse continue;
             projections = try cells.sets.insert(f.gpa, f.env.charge, projections, u.int(), 0);
         }
         var drop: SetId = .none;
@@ -684,7 +918,7 @@ pub const Frame = struct {
         // position bound to a variable records which it is, under one split
         // of the container whose κ is the contents' (`Demands.Taken`).
         var taken_split: Ids.SplitId = .none;
-        it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
+        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         while (it.next()) |e| {
             const o = cells.origin(.from(e.key));
             if (o != .site and o != .result and o != .esc) continue;
@@ -701,9 +935,9 @@ pub const Frame = struct {
             defer f.account().leave(kernel);
             const spread = f.tag(item.int()) == .pat_spread;
             var refined: SetId = .none;
-            for (containers.items) |e| {
+            for (containers.items, bits.items) |e, bit| {
                 const c: CellId = .from(e.key);
-                const r = if (spread) try cells.refine(f.gpa, f.account(), .others, c, label, 0, elem_place, elem_kind) else try cells.refine(f.gpa, f.account(), .elem, c, label, position, elem_place, elem_kind);
+                const r = if (spread) try cells.refine(f.gpa, f.account(), .others, c, label, bit, elem_place, elem_kind) else try cells.refine(f.gpa, f.account(), .elem, c, label, position | bit, elem_place, elem_kind);
                 refined = try cells.sets.insert(f.gpa, f.env.charge, refined, r.int(), e.value);
             }
             var node = try shapes.leaf(f.gpa, f.account(), elem_place, refined);
@@ -1090,6 +1324,7 @@ pub const Frame = struct {
                     return e;
                 };
                 f.account().leave(graft);
+                if (f.ctx.onCall) |on| try on(f.ctx.ctx, i, argv.items);
                 // The callee's `xreq` is discharged on the call's first write, and
                 // reported there (§2.11 step 7); a call that writes nothing owes
                 // it as the frame's.
@@ -1112,14 +1347,30 @@ pub const Frame = struct {
                 // every write of this call (#1334).
                 var beside: Beside = .{};
                 defer beside.deinit(f.gpa);
+                // A route that stops at the caller's own parameter leaf is a
+                // group, expanded after the walk (§2.11 item 3, #1412).
+                var snap: u32 = none;
                 for (uses[0..n_args], 0..) |use, param| {
-                    try routes.start(use, argv.items[param].node, .writes);
+                    try routes.startStops(use, argv.items[param].node, .writes, true);
                     while (true) {
                         // The callee's path is value-sized: growth chosen before its
                         // walks, never the call's lane (§4.1, *call view and direct
                         // obligation*; a write `depth` steps below its argument).
                         const base_walk = try f.account().enter(f.gpa, null);
                         const w = (try routes.next()) orelse break f.account().leave(base_walk);
+                        if (w.stop) |st| {
+                            f.account().leave(base_walk);
+                            if (snap == none) {
+                                snap = @intCast(f.call_snaps.items.len);
+                                const args_at: u32 = @intCast(f.call_args.items.len);
+                                try f.call_args.appendSlice(f.gpa, arg_insts);
+                                try f.call_snaps.append(f.gpa, .{ .point = i, .callee_inst = callee_inst, .args = .{ .start = args_at, .len = @intCast(arg_insts.len) }, .first_slot = @intCast(first_demand) });
+                            }
+                            const start: u32 = @intCast(f.group_steps.items.len);
+                            try f.group_steps.appendSlice(f.gpa, w.steps);
+                            try f.groups.append(f.gpa, .{ .call = snap, .param = @intCast(param), .use = use, .node = st.node, .leaf = st.leaf, .value = st.value, .prefix = .{ .start = start, .len = @intCast(w.steps.len) }, .slot = @intCast(f.demands.items.len) });
+                            continue;
+                        }
                         const wsteps = w.steps;
                         const pos = try f.positionsAt(argv.items[param], wsteps);
                         f.account().leave(base_walk);
@@ -1146,12 +1397,526 @@ pub const Frame = struct {
                         }
                     }
                 }
-                if (f.demands.items.len > first_demand) {
+                if (snap != none) {
+                    // Discharged on the call's first demand once its groups
+                    // are expanded (`expandGroups`).
+                    const s = &f.call_snaps.items[snap];
+                    s.xreq = applied.xreq;
+                    s.orig_end = @intCast(f.demands.items.len);
+                } else if (f.demands.items.len > first_demand) {
                     const dm = &f.demands.items[first_demand];
                     dm.relies = try f.env.conds.@"and"(f.gpa, f.env.charge, dm.relies, applied.xreq);
                 } else f.xreq = try f.env.conds.@"and"(f.gpa, f.env.charge, f.xreq, applied.xreq);
                 return answer;
             },
+        }
+    }
+
+    // ---- a use below a parameter's leaf, by node (§2.11 item 3, #1412) ----------
+
+    /// What the expansion of a frame's groups reads (`expandGroups`).
+    const Expand = struct {
+        /// `(parameter, j, path)` of every canonical path at or above a
+        /// parameter cell the frame's escapes or live holders reach: what
+        /// may tell two routes below a leaf apart.
+        named: Ids.FixedDict(3) = .{},
+        /// One group's own: the paths below its leaf that the call's other
+        /// arguments reach and that the later uses of a holder of it read.
+        extra: Ids.FixedDict(1) = .{},
+        /// The holders with a parameter cell at a path (`at`) and below it
+        /// (`under`), by `(parameter, j, path)`: lists in `links`.
+        at: Ids.FixedDict(3) = .{},
+        under: Ids.FixedDict(3) = .{},
+        /// `(holder, next)`.
+        links: std.ArrayList([2]u32) = .empty,
+        /// Per holder, the last group that read it.
+        stamp: []u32 = &.{},
+        index: *const Liveness.Index = undefined,
+        below: Ids.FixedDict(1) = .{},
+        plain_memo: Ids.FixedDict(3) = .{},
+        plain: Plain = .{},
+        /// A route below the leaf merged into one state:
+        /// `(use node, trie node, class, sig, place)`.
+        seen: Ids.FixedDict(5) = .{},
+        /// `Calls.Routes`' own reading, unmerged.
+        exact_seen: Ids.FixedDict(4) = .{},
+        entries: std.ArrayList(XEntry) = .empty,
+        stack: std.ArrayList(XItem) = .empty,
+        steps: std.ArrayList(Step) = .empty,
+        use_steps: std.ArrayList(Step) = .empty,
+        read_steps: std.ArrayList(Step) = .empty,
+        others: std.ArrayList(u32) = .empty,
+        /// Whether routes of the group being expanded may be merged.
+        merge: bool = true,
+
+        fn deinit(x: *Expand, gpa: Allocator) void {
+            x.named.deinit(gpa);
+            x.extra.deinit(gpa);
+            x.at.deinit(gpa);
+            x.under.deinit(gpa);
+            x.links.deinit(gpa);
+            gpa.free(x.stamp);
+            x.below.deinit(gpa);
+            x.plain_memo.deinit(gpa);
+            x.plain.deinit(gpa);
+            x.seen.deinit(gpa);
+            x.exact_seen.deinit(gpa);
+            x.entries.deinit(gpa);
+            x.stack.deinit(gpa);
+            x.steps.deinit(gpa);
+            x.use_steps.deinit(gpa);
+            x.read_steps.deinit(gpa);
+            x.others.deinit(gpa);
+        }
+    };
+    const XEntry = struct { step: Step, parent: u32 };
+    /// A route below a group's leaf. Unmerged, `Calls.Routes`' item (value,
+    /// `stuck`, `free`) with its canonical path (`none` once free); merged,
+    /// its state: the deepest trie node it passed (`t`), how it lies to it
+    /// (`class`: 0 on it, else 1 + the place of the step that left it), and
+    /// the path's `sig`, its path a representative's. `path` is the
+    /// parent's until the item is popped, then its own.
+    const XItem = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool, path: PathId, merged: bool = false, t: PathId = .none, class: u32 = 0, sig: u32 = 0 };
+
+    /// After the walk: each group's routes below its leaf, made into
+    /// demands as the call would have made them, one per state of the pair
+    /// graph of the callee's use there with what the frame names below the
+    /// leaf (§2.11 item 3, *One demand per state below a parameter's leaf*),
+    /// each group's put at its place among the demands, so they stay in
+    /// evaluation order, and each call's `xreq` on its first demand.
+    pub fn expandGroups(f: *Frame, index: *const Liveness.Index) Error!void {
+        if (f.groups.items.len == 0) return;
+        const gpa = f.gpa;
+        var x: Expand = .{ .index = index };
+        defer x.deinit(gpa);
+        try f.namedPaths(&x);
+        const n0 = f.demands.items.len;
+        var beside: Beside = .{};
+        defer beside.deinit(gpa);
+        var at_call: u32 = none;
+        for (f.groups.items) |*g| {
+            // The children beside the writes' paths, indexed once per call.
+            if (g.call != at_call) {
+                beside.deinit(gpa);
+                beside = .{};
+                at_call = g.call;
+            }
+            const start = f.demands.items.len;
+            const kernel = try f.account().enter(gpa, .{ .atom = f.call_snaps.items[g.call].point, .role = .call_view });
+            defer f.account().leave(kernel);
+            try f.expandGroup(&x, g, &beside);
+            g.out = .{ .start = @intCast(start), .len = @intCast(f.demands.items.len - start) };
+        }
+        // Each group's run at its slot, before the demand made there.
+        const all = f.demands.items;
+        const out = try gpa.alloc(Demands.Demand, all.len);
+        defer gpa.free(out);
+        const orig_at = try gpa.alloc(u32, n0);
+        defer gpa.free(orig_at);
+        const group_at = try gpa.alloc(u32, f.groups.items.len);
+        defer gpa.free(group_at);
+        var w: u32 = 0;
+        var gi: usize = 0;
+        var j: u32 = 0;
+        while (j <= n0) : (j += 1) {
+            while (gi < f.groups.items.len and f.groups.items[gi].slot == j) : (gi += 1) {
+                const g = f.groups.items[gi];
+                group_at[gi] = w;
+                @memcpy(out[w..][0..g.out.len], all[g.out.start..][0..g.out.len]);
+                w += g.out.len;
+            }
+            if (j < n0) {
+                orig_at[j] = w;
+                out[w] = all[j];
+                w += 1;
+            }
+        }
+        @memcpy(all, out);
+        // Each call's `xreq` on its first demand, or the frame's.
+        gi = 0;
+        for (f.call_snaps.items, 0..) |s, si| {
+            var first: u32 = none;
+            if (s.first_slot < s.orig_end) first = orig_at[s.first_slot];
+            while (gi < f.groups.items.len and f.groups.items[gi].call == si) : (gi += 1) {
+                if (f.groups.items[gi].out.len != 0) first = @min(first, group_at[gi]);
+            }
+            if (first != none) {
+                const dm = &f.demands.items[first];
+                dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, s.xreq);
+            } else f.xreq = try f.env.conds.@"and"(gpa, f.env.charge, f.xreq, s.xreq);
+        }
+    }
+
+    /// `x.named`: the canonical paths at and above every parameter cell
+    /// the frame's escapes reach, and the holders live at a group's call;
+    /// and those holders by the paths of their cells (`x.at`, `x.under`).
+    /// Another demand's operands are no interferer of a group's demand.
+    fn namedPaths(f: *Frame, x: *Expand) Error!void {
+        const gpa = f.gpa;
+        const shapes = f.env.shapes;
+        const task = try f.account().enter(gpa, null);
+        defer f.account().leave(task);
+        for (f.escapes.items) |e| try f.addNamed(x, try shapes.reach(gpa, f.account(), &f.env.cells.sets, e.node));
+        const cells = f.env.cells;
+        for (f.holders.items, 0..) |h, hi| {
+            // Only a holder live at a group's call holds against its demands
+            // (§2.8: `(start, end]`); another's value is not read, so no view
+            // is forced that the resolver would not force.
+            if (!f.aliveAtGroup(h)) continue;
+            if (h.value.node == .none) continue;
+            const r = try shapes.reach(gpa, f.account(), &cells.sets, h.value.node);
+            try f.addNamed(x, r);
+            var it = cells.sets.iterate(r);
+            while (it.next()) |e| {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                const c: CellId = .from(e.key);
+                if (cells.origin(cells.base(c)) != .param) continue;
+                const u = (try cells.unrefined(gpa, f.account(), f.env.places, c)) orelse continue;
+                const p = cells.get(u);
+                if (p.origin != .param) continue;
+                try f.linkHolder(x, &x.at, .{ p.a, p.c, p.b }, @intCast(hi));
+                var path = f.env.places.pathParent(.from(p.b));
+                while (path != .none) : (path = f.env.places.pathParent(path)) try f.linkHolder(x, &x.under, .{ p.a, p.c, path.int() }, @intCast(hi));
+            }
+        }
+        x.stamp = try gpa.alloc(u32, f.holders.items.len);
+        @memset(x.stamp, none);
+    }
+
+    /// Whether a call with a group is in holder `h`'s life `(start, end]`:
+    /// the calls are in walk order, so a binary search.
+    fn aliveAtGroup(f: *const Frame, h: Demands.Holder) bool {
+        const snaps = f.call_snaps.items;
+        const first = std.sort.partitionPoint(CallSnap, snaps, h.start, struct {
+            fn below(start: u32, s: CallSnap) bool {
+                return s.point <= start;
+            }
+        }.below);
+        return first < snaps.len and snaps[first].point <= h.end;
+    }
+
+    /// Holder `hi` in `d`'s list at `key`, once: a holder's cells are
+    /// listed one after another, so a repeat is the list's head.
+    fn linkHolder(f: *Frame, x: *Expand, d: *Ids.FixedDict(3), key: [3]u32, hi: u32) Error!void {
+        try f.env.charge.reserve(f.gpa, .memo, 1);
+        const got = try d.getOrPut(f.gpa, key);
+        if (got.found_existing and x.links.items[got.value_ptr.*][0] == hi) return;
+        const prev = if (got.found_existing) got.value_ptr.* else none;
+        got.value_ptr.* = @intCast(x.links.items.len);
+        try x.links.append(f.gpa, .{ hi, prev });
+    }
+
+    fn addNamed(f: *Frame, x: *Expand, s: SetId) Error!void {
+        const cells = f.env.cells;
+        var it = cells.sets.iterate(s);
+        while (it.next()) |e| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const c: CellId = .from(e.key);
+            if (cells.origin(cells.base(c)) != .param) continue;
+            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse continue;
+            const p = cells.get(u);
+            if (p.origin != .param) continue;
+            var path: PathId = .from(p.b);
+            while (path != .none) : (path = f.env.places.pathParent(path)) {
+                try f.env.charge.reserve(f.gpa, .memo, 1);
+                if ((try x.named.getOrPut(f.gpa, .{ p.a, p.c, path.int() })).found_existing) break;
+            }
+        }
+    }
+
+    /// The canonical cell of a parameter cell `c` of parameter `a`, `j`, or
+    /// null for another's.
+    fn paramCell(f: *Frame, c: CellId, a: u32, j: u32) Error!?Cell.Cell {
+        const cells = f.env.cells;
+        if (cells.origin(cells.base(c)) != .param) return null;
+        const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse return null;
+        const p = cells.get(u);
+        if (p.origin != .param or p.a != a or p.c != j) return null;
+        return p;
+    }
+
+    fn snapArgs(f: *const Frame, snap: u32) []const Inst.Index {
+        const r = f.call_snaps.items[snap].args;
+        return f.call_args.items[r.start..][0..r.len];
+    }
+
+    /// Add `path` to `x.extra` with its ancestors down to `leaf`'s path.
+    fn addExtra(f: *Frame, x: *Expand, leaf: PathId, path: PathId) Error!void {
+        var at = path;
+        while (at != .none) : (at = f.env.places.pathParent(at)) {
+            try f.env.charge.reserve(f.gpa, .memo, 1);
+            if ((try x.extra.getOrPut(f.gpa, .{at.int()})).found_existing or at == leaf) break;
+        }
+    }
+
+    /// Whether `path` is a node of the group's trie: named by the frame
+    /// or by the group.
+    fn inTrie(x: *const Expand, a: u32, j: u32, path: PathId) bool {
+        return x.named.get(.{ a, j, path.int() }) != null or x.extra.get(.{path.int()}) != null;
+    }
+
+    /// One group's trie (`x.extra`, beside the frame's `x.named`) and
+    /// whether its routes may be merged (`x.merge`): the paths below the
+    /// leaf that the call's other arguments reach, and those the later
+    /// uses of a holder of the leaf, of a cell above it or of one below it
+    /// read. A later use whose reading of the leaf's paths no path tells
+    /// (a call's, which reads through its callee's use; one of a holder
+    /// that is no leaf; a pending value that is no leaf) keeps every route
+    /// its own, as the call would have made them.
+    fn groupTrie(f: *Frame, x: *Expand, g: *const Group) Error!void {
+        const gpa = f.gpa;
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        const cells = f.env.cells;
+        x.extra.deinit(gpa);
+        x.extra = .{};
+        x.merge = true;
+        const lc = cells.get(g.leaf);
+        const lpath: PathId = .from(lc.b);
+        try f.addExtra(x, lpath, lpath);
+        const arg_insts = f.snapArgs(g.call);
+        for (arg_insts, 0..) |a, k| {
+            if (k == g.param) continue;
+            const v = f.val(a.int()).value;
+            if (v.node == .none) continue;
+            var it = cells.sets.iterate(try shapes.reach(gpa, f.account(), &cells.sets, v.node));
+            while (it.next()) |e| {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                const p = (try f.paramCell(.from(e.key), lc.a, lc.c)) orelse continue;
+                if (places.isPrefix(lpath, .from(p.b))) try f.addExtra(x, lpath, .from(p.b));
+            }
+        }
+        // The holders with a cell on the leaf's line: at or above it, or below it.
+        const gi: u32 = @intCast((@intFromPtr(g) - @intFromPtr(f.groups.items.ptr)) / @sizeOf(Group));
+        var at = lpath;
+        while (at != .none) : (at = places.pathParent(at)) {
+            try f.env.charge.reserve(gpa, .memo, 1);
+            if (x.at.get(.{ lc.a, lc.c, at.int() })) |head| try f.holdersOn(x, g, gi, head);
+            if (!x.merge) return;
+        }
+        if (x.under.get(.{ lc.a, lc.c, lpath.int() })) |head| try f.holdersOn(x, g, gi, head);
+    }
+
+    /// The holders of a list of `x.links` from `head`, for group `g`
+    /// (`groupTrie`), each once a group.
+    fn holdersOn(f: *Frame, x: *Expand, g: *const Group, gi: u32, head: u32) Error!void {
+        var link = head;
+        while (link != none) : (link = x.links.items[link][1]) {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const hi = x.links.items[link][0];
+            if (x.stamp[hi] == gi) continue;
+            x.stamp[hi] = gi;
+            try f.holderOn(x, g, f.holders.items[hi]);
+            if (!x.merge) return;
+        }
+    }
+
+    /// Holder `h`, whose value holds a cell on group `g`'s leaf's line
+    /// (`groupTrie`): the paths below the leaf its later uses read, or
+    /// `x.merge` off when no path tells how they read it.
+    fn holderOn(f: *Frame, x: *Expand, g: *const Group, h: Demands.Holder) Error!void {
+        const gpa = f.gpa;
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        const cells = f.env.cells;
+        const lc = cells.get(g.leaf);
+        const lpath: PathId = .from(lc.b);
+        const point = f.call_snaps.items[g.call].point;
+        const n = try shapes.force(gpa, f.account(), h.value.node);
+        const leaf = shapes.kind(n) == .leaf;
+        if (h.kind == .pending) {
+            if (!leaf and h.start < point and h.end >= point) x.merge = false;
+            return;
+        }
+        if (!leaf) {
+            // Where a built value holds the leaf, a use reads it through the
+            // value's structure: any later use keeps every route its own. A
+            // binding lives to its last use, so its end tells.
+            if (h.end > point) x.merge = false;
+            return;
+        }
+        var ct = cells.sets.iterate(try shapes.cellsOf(gpa, f.account(), &cells.sets, n));
+        while (ct.next()) |e| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            const p = (try f.paramCell(.from(e.key), lc.a, lc.c)) orelse continue;
+            const xp: PathId = .from(p.b);
+            // The leaf's position in the holder's value: the steps from its
+            // cell down to the leaf, when the cell is above it.
+            x.use_steps.clearRetainingCapacity();
+            const above = places.isPrefix(xp, lpath);
+            if (!above and !places.isPrefix(lpath, xp)) continue;
+            if (above) {
+                var q = lpath;
+                while (q != xp) : (q = places.pathParent(q)) try x.use_steps.append(gpa, places.pathStep(q));
+                std.mem.reverse(Step, x.use_steps.items);
+            }
+            const depth = x.use_steps.items.len;
+            // The uses on the way down to the leaf hold all of it alike; one
+            // that is a call's reads through its callee's use.
+            var d: usize = 0;
+            while (d <= depth) : (d += 1) {
+                const r = x.index.rangeOf(places, h.who, x.use_steps.items[0..d], d == depth);
+                // The uses of one path and group are one run sorted by point
+                // (`Liveness`): a run is read by its first use and its last
+                // point, never use by use, so a group costs the runs on its
+                // leaf's line, not the holder's earlier uses.
+                var i = r.start;
+                const end = r.start + r.len;
+                while (i < end) {
+                    try f.env.charge.reserve(gpa, .inspection, 1);
+                    const run_end = x.index.groupEnd(i, end);
+                    const u = x.index.get(.from(i));
+                    const last = x.index.get(.from(run_end - 1)).point;
+                    i = run_end;
+                    if (last <= point) continue;
+                    if (u.kind == .call and u.use_node != .none) {
+                        x.merge = false;
+                        return;
+                    }
+                    if (places.pathDepth(u.path) <= depth) continue;
+                    // Below the leaf: the path it reads there.
+                    x.read_steps.clearRetainingCapacity();
+                    var up = u.path;
+                    while (places.pathParent(up) != .none) : (up = places.pathParent(up)) try x.read_steps.append(gpa, places.pathStep(up));
+                    var q = xp;
+                    var k = x.read_steps.items.len;
+                    while (k > 0) {
+                        k -= 1;
+                        q = (try places.extend(gpa, f.env.charge, q, x.read_steps.items[k])) orelse {
+                            x.merge = false;
+                            return;
+                        };
+                    }
+                    if (places.isPrefix(lpath, q)) try f.addExtra(x, lpath, q);
+                }
+            }
+        }
+    }
+
+    /// Group `g`'s routes below its leaf (`expandGroups`): `Calls.Routes`'
+    /// own walk of the use node there paired with the argument's value,
+    /// each route a demand, except that a route at a path on no `[*]` or
+    /// `⟲` whose every route below to a `W` takes plain steps (`Plain`) is
+    /// merged by state: the deepest node of the trie it passed and how it
+    /// lies to it. Every route through one state lies to everything the
+    /// frame names below the leaf as the others do, so its demand would have
+    /// the verdict theirs have; the first met in the walk's order is the
+    /// witness, and the others are skipped with what is below them.
+    fn expandGroup(f: *Frame, x: *Expand, g: *const Group, beside: *Beside) Error!void {
+        const gpa = f.gpa;
+        const env = f.env;
+        const shapes = env.shapes;
+        const places = env.places;
+        const task = try f.account().enter(gpa, null);
+        defer f.account().leave(task);
+        try f.groupTrie(x, g);
+        const lc = env.cells.get(g.leaf);
+        if (try Calls.marksBelow(env, g.node, &x.below) & 1 == 0) return;
+        x.seen.deinit(gpa);
+        x.seen = .{};
+        x.exact_seen.deinit(gpa);
+        x.exact_seen = .{};
+        x.entries.clearRetainingCapacity();
+        x.stack.clearRetainingCapacity();
+        try x.stack.append(gpa, .{ .node = g.node, .entry = none, .value = g.value, .stuck = false, .free = false, .path = .from(lc.b) });
+        while (x.stack.pop()) |it0| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            var it = it0;
+            if (it.entry != none) {
+                const e = x.entries.items[it.entry];
+                if (it.merged) {
+                    const next = (try Plain.step(env, it.path, e.step)) orelse unreachable; // `bits` read it plain
+                    it.sig = try x.plain.nextSig(env, it.sig, places.pathPlace(it.path), next);
+                    if (it.class == 0) {
+                        if (inTrie(x, lc.a, lc.c, next)) it.t = next else it.class = 1 + places.pathPlace(next).int();
+                    }
+                    it.path = next;
+                    if ((try x.seen.getOrPut(gpa, .{ it.node.int(), it.t.int(), it.class, it.sig, places.pathPlace(next).int() })).found_existing) continue;
+                } else {
+                    if (!it.free) {
+                        if (e.step.kind == .level) {
+                            it.free = true;
+                        } else if (!it.stuck) {
+                            if (try shapes.proj(gpa, f.account(), places, env.cells, it.value, e.step)) |n| it.value = n else it.stuck = true;
+                        }
+                        if (!it.free and (try x.exact_seen.getOrPut(gpa, .{ e.parent, it.node.int(), it.value.int(), @intFromBool(it.stuck) })).found_existing) continue;
+                    }
+                    it.path = if (it.free or it.path == .none) .none else (try places.extend(gpa, env.charge, it.path, e.step)) orelse .none;
+                }
+            }
+            if (!it.merged and x.merge and !it.free and !it.stuck and it.path != .none and !places.isSummary(it.path) and
+                places.isPrefix(.from(lc.b), it.path) and (try x.plain.bits(env, &x.plain_memo, &x.below, it.node, it.path)) & 1 != 0)
+            {
+                // Merged from here: every route below is plain.
+                it.merged = true;
+                it.sig = try x.plain.sigOf(env, it.path);
+                var t = it.path;
+                var child: PathId = .none;
+                while (!inTrie(x, lc.a, lc.c, t)) {
+                    child = t;
+                    t = places.pathParent(t);
+                }
+                it.t = t;
+                it.class = if (child == .none) 0 else 1 + places.pathPlace(child).int();
+                if ((try x.seen.getOrPut(gpa, .{ it.node.int(), it.t.int(), it.class, it.sig, places.pathPlace(it.path).int() })).found_existing) continue;
+            }
+            var wr = false;
+            var deep = false;
+            var ct = env.cells.sets.iterate(try shapes.cellsOf(gpa, f.account(), &env.cells.sets, it.node));
+            while (ct.next()) |c| {
+                const cell: CellId = .from(c.key);
+                if (env.cells.origin(cell) != .mark) continue;
+                switch (env.cells.markOf(cell)) {
+                    .w => wr = true,
+                    .deep => deep = true,
+                    else => {},
+                }
+            }
+            if (shapes.kind(it.node) == .node) {
+                var kt = shapes.overEntries(shapes.get(it.node).a);
+                while (kt.next()) |k| {
+                    if ((x.below.get(.{k.node.int()}) orelse 3) & 1 == 0) continue;
+                    const id: u32 = @intCast(x.entries.items.len);
+                    try x.entries.append(gpa, .{ .step = k.step, .parent = it.entry });
+                    var next = it;
+                    next.node = k.node;
+                    next.entry = id;
+                    try x.stack.append(gpa, next);
+                }
+            }
+            if (!wr) continue;
+            x.steps.clearRetainingCapacity();
+            try x.steps.appendSlice(gpa, f.group_steps.items[g.prefix.start..][0..g.prefix.len]);
+            const mark = x.steps.items.len;
+            var at = it.entry;
+            while (at != none) : (at = x.entries.items[at].parent) try x.steps.append(gpa, x.entries.items[at].step);
+            std.mem.reverse(Step, x.steps.items[mark..]);
+            try f.groupDemand(x, g, x.steps.items, deep, beside);
+        }
+    }
+
+    /// One demand of a group, at the call, as the call makes one per route
+    /// (`call`): its base the argument at `ws`, the call's other arguments
+    /// and the argument's other paths its operands.
+    fn groupDemand(f: *Frame, x: *Expand, g: *const Group, ws: []const Step, deep: bool, beside: *Beside) Error!void {
+        const s = f.call_snaps.items[g.call];
+        const arg_insts = f.snapArgs(g.call);
+        const arg = arg_insts[g.param].int();
+        const argv = f.val(arg).value;
+        const base_walk = try f.account().enter(f.gpa, null);
+        const pos = try f.positionsAt(argv, ws);
+        f.account().leave(base_walk);
+        const base = pos orelse return;
+        x.others.clearRetainingCapacity();
+        for (arg_insts, 0..) |a, k| if (k != g.param) try x.others.append(f.gpa, a.int());
+        try f.demand(s.point, if (deep) .consumed else .writer, arg, base, x.others.items, s.callee_inst);
+        try f.otherPaths(beside, g.use, argv, ws, base, arg, deep);
+        if (ws.len != 0) {
+            const dm = &f.demands.items[f.demands.items.len - 1];
+            const path_walk = try f.account().enter(f.gpa, null);
+            defer f.account().leave(path_walk);
+            dm.write_path = try f.extendPath(try f.env.places.rootPath(f.gpa, try f.placeOf(arg)), ws);
+            if (dm.base_path != .none) dm.base_path = try f.extendPath(dm.base_path, ws);
         }
     }
 
@@ -1251,17 +2016,30 @@ pub const Frame = struct {
         var relied: CondId = Cond.yes;
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(gpa);
-        var seen: Ids.FixedDict(3) = .{};
+        var seen: Ids.FixedDict(4) = .{};
         defer seen.deinit(gpa);
-        var read: Ids.FixedDict(2) = .{};
+        // The written positions, by canonical path (#1253): the base's nodes
+        // at the write's own path. A route beside the write that folds back
+        // onto that path through the use shape's knot, or a reach that holds
+        // them from above, meets the written object itself, not another path
+        // of the argument; its other positions there are the `excl` it owes.
+        // Never a node alone: use nodes and values are shared, so one node
+        // stands at two paths (`{ x = l, z = l }`).
+        var written: Written = .{};
+        defer written.ends.deinit(gpa);
+        defer written.paths.deinit(gpa);
+        try f.env.places.expandLevels(gpa, f.env.charge, try f.extendPath(try f.env.places.rootPath(gpa, shapes.place(use)), ws), &written.paths);
+        try f.frontierAt(arg.node, ws, &written);
+        var read: Ids.FixedDict(3) = .{};
         defer read.deinit(gpa);
         var kept: SetId = .none;
         var excl: SetId = .none;
-        try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false });
+        try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false, .path = try f.env.places.rootPath(gpa, shapes.place(use)) });
         while (stack.pop()) |it| {
             try f.env.charge.reserve(gpa, .inspection, 1);
-            const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | (if (it.mode == .spine) it.depth << 5 else 0);
-            if ((try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state })).found_existing) continue;
+            const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
+            if ((try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int() })).found_existing) continue;
+            if (it.mode != .spine and written.holds(it.path, it.v)) continue;
             if (try f.unreached(it.v, own)) continue;
             const d = shapes.get(it.u);
             var marks: u8 = 0; // 1 any mark, 2 held (`A` or `E`)
@@ -1273,34 +2051,44 @@ pub const Frame = struct {
                 const m = cells.markOf(c);
                 if (m == .a or m == .e) marks |= 2;
             }
-            if (marks & 1 != 0) {
+            // Held on the exact write path: what it holds beside the write (#1367).
+            var held_below = it.held;
+            if (marks & 1 != 0 or it.held) {
                 const beside, const folded = switch (it.mode) {
-                    .spine => .{ it.depth < ws.len and marks & 2 != 0, leaf != null and leaf.? < it.depth },
+                    .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
                     .below, .off => .{ true, it.folded },
                 };
-                if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
-                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), refs.items, &kept, &excl, &relied);
+                if (beside and it.mode == .spine and exact) {
+                    // A stuck value is from above, where `ws[depth..]` is not its
+                    // rest: whole, unless a held item already read it there.
+                    if (!it.stuck)
+                        try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied)
+                    else if (!it.held and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded), it.path.int() })).found_existing)
+                        try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &kept, &excl, &relied, null);
+                    held_below = true;
+                } else if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded), it.path.int() })).found_existing)
+                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), null, refs.items, &kept, &excl, &relied, .{ .path = it.path, .written = &written });
             }
             if (d.kind != .node) continue;
             if (it.mode == .spine and it.depth < ws.len) {
                 // On the write's path: its next step, and the children
                 // beside it that may hold a cell of the base (`Beside`).
                 if (shapes.overGet(d.a, ws[it.depth])) |child| {
-                    const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level };
+                    const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level, .held = held_below, .path = .none };
                     try f.advance(it, ws[it.depth], next, &stack);
                 }
                 const folded = leaf != null and leaf.? <= it.depth;
                 const sp = try f.spineOf(bs, it);
                 if (want.all) {
                     const r = bs.ranges.items[sp];
-                    for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, &stack);
+                    for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, it.path, &stack);
                     continue;
                 }
                 for (want.keys.items) |k| {
                     var link = bs.head(sp, k);
                     while (link != none) : (link = bs.links.items[link][1]) {
                         try f.env.charge.reserve(gpa, .inspection, 1);
-                        try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, &stack);
+                        try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, it.path, &stack);
                     }
                 }
                 continue;
@@ -1314,6 +2102,7 @@ pub const Frame = struct {
                     // Inside the written object: beside it only when the
                     // write's path stands for several positions.
                     next.mode = .below;
+                    next.held = false;
                     next.folded = leaf != null;
                     next.depth = 0;
                 }
@@ -1322,17 +2111,40 @@ pub const Frame = struct {
         }
         const dm = &f.demands.items[f.demands.items.len - 1];
         dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, relied);
+        excl = try cells.sets.unionWith(gpa, f.env.charge, excl, written.owed);
         var xt = cells.sets.iterate(excl);
         while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.excl(gpa, f.env.charge, .from(x.key)));
         if (kept == .none) return;
-        try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst });
+        try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst, .other_paths = true });
         dm.operands.len += 1;
     }
 
     /// One item of `otherPaths`' walk: a use node, the argument's value
     /// there, and how the path it stands for lies to the write's.
     const Mode = enum(u2) { spine, below, off };
-    const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool };
+    /// `held`: on the write's exact path below a value the class answers
+    /// or lets escape (`keepAnswered`).
+    /// `path`: the canonical path the route stands at in the use's place
+    /// graph (`routePath`), `none` where no fold can bring it back onto the
+    /// write's path.
+    const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId };
+
+    /// The written positions of one write (`otherPaths`): its canonical
+    /// path and the argument's nodes there.
+    /// A write path that is a join of several level paths (`Place.levelPaths`)
+    /// is written at each.
+    const Written = struct {
+        paths: std.ArrayList(PathId) = .empty,
+        ends: stamped.Column(NodeId, void) = .{},
+        /// The canonical cells a symbolic value above the base holds at a
+        /// written position of several (`atWritten`): their `excl` is owed.
+        owed: SetId = .none,
+        fn holds(w: *const Written, path: PathId, v: NodeId) bool {
+            return path != .none and std.mem.indexOfScalar(PathId, w.paths.items, path) != null and w.ends.contains(v);
+        }
+    };
+    /// Where a value beside a write stands (`keepBeside`).
+    const Where = struct { path: PathId, written: *Written };
 
     /// `next`, a child of `it` at step `s`, with the argument's value there
     /// as `positionsAt` reads a path: a missing step keeps the value
@@ -1340,6 +2152,7 @@ pub const Frame = struct {
     /// position.
     fn advance(f: *Frame, it: Item, s: Step, next0: Item, out: *std.ArrayList(Item)) Error!void {
         var next = next0;
+        next.path = try f.routePath(it.path, it.mode, s);
         if (it.stuck) {
             if (s.kind == .level) return;
             try out.append(f.gpa, next);
@@ -1359,6 +2172,262 @@ pub const Frame = struct {
             next.stuck = true;
             try out.append(f.gpa, next);
         }
+    }
+
+    /// The canonical path a route at `from` stands at one step `s` further
+    /// (`Item.path`, §2.11 item 3, *the written position*): `none` below a
+    /// place on no cycle beside the write's path. `Place.extend` folds only
+    /// through the places of one cycle, so no step below such a place comes
+    /// back above it, onto the write's path; dropping the path there keeps
+    /// the walk's states its nodes' (#1325) over doubling types.
+    fn routePath(f: *Frame, from: PathId, mode: Mode, s: Step) Error!PathId {
+        if (from == .none) return .none;
+        const places = f.env.places;
+        if (mode != .spine and !places.cyclic(places.pathPlace(from))) return .none;
+        return (try places.extend(f.gpa, f.env.charge, from, s)) orelse .none;
+    }
+
+    /// The argument's nodes at the end of the write's path `steps` that
+    /// stand at **one** position there (§2.11 item 3, *the written
+    /// position*), as `otherPaths`' walk reaches them along it (`advance`):
+    /// a `⟲` every re-entry below, a missing step the value reached unless
+    /// past a `⟲`, and the sides of a join there. Each node counts its
+    /// routes from the argument (saturating at two): a node reached by two
+    /// routes, or on a knot, stands at two positions of the path, and an
+    /// arrival there may be its other position, which only the class's
+    /// `excl` would cover, and a callee writing one position of a folded path
+    /// owes none (`writeLL`, `FoldedOnePosition`). Every route to a position
+    /// at the path goes through the path's positions above it, so counting
+    /// along the path counts them all.
+    fn frontierAt(f: *Frame, v: NodeId, steps: []const Step, w: *Written) Error!void {
+        const gpa = f.gpa;
+        var frontier: std.ArrayList(Pos) = .empty;
+        defer frontier.deinit(gpa);
+        var next: std.ArrayList(Pos) = .empty;
+        defer next.deinit(gpa);
+        var counts: Routes = .{};
+        defer counts.deinit(gpa);
+        try frontier.append(gpa, .{ .n = v, .routes = 1 });
+        for (steps) |s| {
+            next.clearRetainingCapacity();
+            if (s.kind == .level) {
+                // Every re-entry below the frontier, each node of the value
+                // below it once, its routes summed over all of them.
+                var roots: std.ArrayList(Pos) = .empty;
+                defer roots.deinit(gpa);
+                for (frontier.items) |x| if (!x.stuck) try roots.append(gpa, x);
+                try f.routesBelow(roots.items, .steps, &counts);
+                const p = if (roots.items.len == 0) null else f.env.shapes.place(roots.items[0].n);
+                for (counts.order.items) |i| {
+                    const n = counts.keys.items[i];
+                    if (p == null or f.env.shapes.place(n) != p.?) continue;
+                    if (counts.root.items[i]) continue;
+                    try next.append(gpa, .{ .n = n, .level = true, .routes = counts.get(i) });
+                }
+                std.mem.swap(std.ArrayList(Pos), &frontier, &next);
+                continue;
+            }
+            for (frontier.items) |x| {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                if (x.stuck) {
+                    try next.append(gpa, x);
+                } else if (try f.env.shapes.proj(gpa, f.account(), f.env.places, f.env.cells, x.n, s)) |n| {
+                    try next.append(gpa, .{ .n = n, .level = x.level, .routes = x.routes });
+                } else if (!x.level) try next.append(gpa, .{ .n = x.n, .stuck = true, .routes = x.routes });
+            }
+            std.mem.swap(std.ArrayList(Pos), &frontier, &next);
+        }
+        // The routes of each node there, a join's sides with their join's.
+        try f.routesBelow(frontier.items, .sides, &counts);
+        for (counts.order.items) |i| if (counts.get(i) == 1) try w.ends.put(gpa, counts.keys.items[i], {});
+    }
+
+    const Pos = struct { n: NodeId, level: bool = false, stuck: bool = false, routes: u8 };
+
+    /// The nodes below some roots, each once, with its routes from them
+    /// (`routesBelow`): the roots' routes carried down every edge (one per
+    /// `(node, step)` or join side), summed where edges meet, two at most.
+    const Routes = struct {
+        index: stamped.Column(NodeId, u32) = .{},
+        keys: std.ArrayList(NodeId) = .empty,
+        order: std.ArrayList(u32) = .empty,
+        runs: std.ArrayList([2]u32) = .empty,
+        kids: std.ArrayList(u32) = .empty,
+        acc: std.ArrayList(u8) = .empty,
+        indeg: std.ArrayList(u32) = .empty,
+        done: std.ArrayList(bool) = .empty,
+        root: std.ArrayList(bool) = .empty,
+        fn deinit(r: *Routes, gpa: Allocator) void {
+            r.index.deinit(gpa);
+            r.keys.deinit(gpa);
+            r.order.deinit(gpa);
+            r.runs.deinit(gpa);
+            r.kids.deinit(gpa);
+            r.acc.deinit(gpa);
+            r.indeg.deinit(gpa);
+            r.done.deinit(gpa);
+            r.root.deinit(gpa);
+        }
+        fn clear(r: *Routes) void {
+            r.index.clear();
+            r.keys.clearRetainingCapacity();
+            r.order.clearRetainingCapacity();
+            r.runs.clearRetainingCapacity();
+            r.kids.clearRetainingCapacity();
+        }
+        fn intern(r: *Routes, gpa: Allocator, n: NodeId) Allocator.Error!struct { index: u32, found_existing: bool } {
+            const got = try r.index.getOrPut(gpa, n);
+            if (!got.found_existing) {
+                got.value_ptr.* = @intCast(r.keys.items.len);
+                try r.keys.append(gpa, n);
+            }
+            return .{ .index = got.value_ptr.*, .found_existing = got.found_existing };
+        }
+        /// A node on a knot of the value is never settled: two.
+        fn get(r: *const Routes, i: u32) u8 {
+            return if (r.done.items[i]) r.acc.items[i] else 2;
+        }
+    };
+
+    /// `out` the nodes below `roots`, by their place's steps (`.steps`, a
+    /// `⟲`'s re-entries) or by a join's sides and a view's answer
+    /// (`.sides`), with their routes: one walk of the value, then one pass in
+    /// topological order (Kahn's). Value-sized, each node and edge once.
+    fn routesBelow(f: *Frame, roots: []const Pos, by: enum { steps, sides }, out: *Routes) Error!void {
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        const gpa = f.gpa;
+        out.clear();
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        for (roots) |x| if (!(try out.intern(gpa, x.n)).found_existing) try stack.append(gpa, x.n);
+        while (stack.pop()) |y| {
+            const yi = out.index.get(y).?;
+            try out.order.append(gpa, yi);
+            const start: u32 = @intCast(out.kids.items.len);
+            switch (by) {
+                .steps => for (places.steps(shapes.place(y)).steps) |c| {
+                    try f.env.charge.reserve(gpa, .inspection, 1);
+                    if (c.kind == .level) continue;
+                    const n = (try shapes.proj(gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
+                    const got = try out.intern(gpa, n);
+                    try out.kids.append(gpa, got.index);
+                    if (!got.found_existing) try stack.append(gpa, n);
+                },
+                .sides => {
+                    try f.env.charge.reserve(gpa, .inspection, 1);
+                    const m = try shapes.force(gpa, f.account(), y);
+                    var buf: [3]NodeId = undefined;
+                    var k: usize = 0;
+                    if (m != y) {
+                        buf[k] = m;
+                        k += 1;
+                    }
+                    switch (shapes.kind(m)) {
+                        .@"union", .choice, .positions => {
+                            buf[k] = .from(shapes.get(m).a);
+                            buf[k + 1] = .from(shapes.get(m).b);
+                            k += 2;
+                        },
+                        else => {},
+                    }
+                    for (buf[0..k]) |n| {
+                        const got = try out.intern(gpa, n);
+                        try out.kids.append(gpa, got.index);
+                        if (!got.found_existing) try stack.append(gpa, n);
+                    }
+                },
+            }
+            while (out.runs.items.len <= yi) try out.runs.append(gpa, .{ 0, 0 });
+            out.runs.items[yi] = .{ start, @as(u32, @intCast(out.kids.items.len)) - start };
+        }
+        const n_nodes = out.keys.items.len;
+        while (out.runs.items.len < n_nodes) try out.runs.append(gpa, .{ 0, 0 });
+        try out.acc.resize(gpa, n_nodes);
+        try out.indeg.resize(gpa, n_nodes);
+        try out.done.resize(gpa, n_nodes);
+        try out.root.resize(gpa, n_nodes);
+        @memset(out.acc.items, 0);
+        @memset(out.indeg.items, 0);
+        @memset(out.done.items, false);
+        @memset(out.root.items, false);
+        for (out.kids.items) |k| out.indeg.items[k] += 1;
+        for (roots) |x| {
+            const i = out.index.get(x.n).?;
+            // A root no edge reaches is no re-entry of another.
+            out.root.items[i] = out.indeg.items[i] == 0;
+            out.acc.items[i] = @min(2, out.acc.items[i] + x.routes);
+        }
+        var queue: std.ArrayList(u32) = .empty;
+        defer queue.deinit(gpa);
+        for (0..n_nodes) |i| if (out.indeg.items[i] == 0) try queue.append(gpa, @intCast(i));
+        while (queue.pop()) |i| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            out.done.items[i] = true;
+            const r = out.runs.items[i];
+            for (out.kids.items[r[0]..][0..r[1]]) |k| {
+                out.acc.items[k] = @min(2, out.acc.items[k] + out.acc.items[i]);
+                out.indeg.items[k] -= 1;
+                if (out.indeg.items[k] == 0) try queue.append(gpa, k);
+            }
+        }
+    }
+
+    /// The reach of `v`, a value beside a write at the canonical path
+    /// `where.path`, but for the written positions (§2.11 item 3, *the
+    /// written position*, #1253): read by position, each `(node, path)`
+    /// once, a node at the write's own path that the write's path reaches
+    /// skipped with what is below it, which is the written object and its
+    /// contents, not another path. Where the path is dropped (`routePath`),
+    /// or at a leaf, the node's whole reach. A value above the write by
+    /// position though not by path prefix (the level's own list
+    /// `#T.0[*]#T.0` above the lists `#T.0[*]⟲#T.0` below it) so keeps what
+    /// it holds beside them only.
+    fn reachBeside(f: *Frame, v: NodeId, where: Where) Error!SetId {
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        const cells = f.env.cells;
+        if (where.path == .none) return shapes.reach(f.gpa, f.account(), &cells.sets, v);
+        const task = try f.account().enter(f.gpa, null);
+        defer f.account().leave(task);
+        const Fr = struct { n: NodeId, path: PathId };
+        var stack: std.ArrayList(Fr) = .empty;
+        defer stack.deinit(f.gpa);
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(f.gpa);
+        var acc: SetId = .none;
+        try stack.append(f.gpa, .{ .n = v, .path = where.path });
+        while (stack.pop()) |fr| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            if ((try seen.getOrPut(f.gpa, .{ fr.n.int(), fr.path.int() })).found_existing) continue;
+            if (where.written.holds(fr.path, fr.n)) continue;
+            const n = try shapes.force(f.gpa, f.account(), fr.n);
+            switch (shapes.kind(n)) {
+                // Coexisting or alternative values at this one position.
+                .@"union", .choice, .positions => if (fr.path != .none) {
+                    const d = shapes.get(n);
+                    try stack.append(f.gpa, .{ .n = .from(d.a), .path = fr.path });
+                    try stack.append(f.gpa, .{ .n = .from(d.b), .path = fr.path });
+                    continue;
+                },
+                .node, .delta => {},
+                // A leaf, a recast (its inner read at another type, whose
+                // parts no step of this place names): whole.
+                else => {},
+            }
+            if (fr.path == .none or (shapes.kind(n) != .node and shapes.kind(n) != .delta)) {
+                acc = try cells.sets.unionWith(f.gpa, f.env.charge, acc, try shapes.reach(f.gpa, f.account(), &cells.sets, n));
+                continue;
+            }
+            acc = try cells.sets.unionWith(f.gpa, f.env.charge, acc, try shapes.cellsOf(f.gpa, f.account(), &cells.sets, n));
+            for (places.steps(shapes.place(n)).steps) |s| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if (s.kind == .level) continue;
+                const c = (try shapes.proj(f.gpa, f.account(), places, cells, n, s)) orelse continue;
+                try stack.append(f.gpa, .{ .n = c, .path = try f.routePath(fr.path, .off, s) });
+            }
+        }
+        return acc;
     }
 
     /// The `Beside` index of the children of `it`, a node on a write's
@@ -1383,9 +2452,9 @@ pub const Frame = struct {
     }
 
     /// A child of a node on the write's path, off it unless at its step.
-    fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, out: *std.ArrayList(Item)) Error!void {
+    fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, from: PathId, out: *std.ArrayList(Item)) Error!void {
         if (k.step.word() == on.word()) return;
-        try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level });
+        try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false, .path = try f.routePath(from, .spine, k.step) });
     }
 
     /// The cells of `v` beside the base that may be one of its objects,
@@ -1405,7 +2474,12 @@ pub const Frame = struct {
     /// (`Cell.below`: a trie ancestor, or levels through `⟲`). What a callee
     /// relied on when it found two paths of one parameter apart, discharged
     /// here (§2.11 item 3, rule (c), #1383).
-    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool, refs: []const CellId) Error!?u1 {
+    /// With `rest`, `reach` is a leaf on the write's exact path whose
+    /// position is `rest` above the base's (`keepAnswered`): a cell whose
+    /// position `rest` below is `cu` holds the written object as the
+    /// object itself there, and its other paths are distinct objects of
+    /// this frame (rule (c)), so it holds nothing beside the write (#1367).
+    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool, rest: ?[]const Step, refs: []const CellId, where: ?Where) Error!?u1 {
         const cells = f.env.cells;
         var it = cells.sets.iterate(reach);
         while (it.next()) |e| {
@@ -1417,9 +2491,57 @@ pub const Frame = struct {
             // (#1386), though its canonical cell is the base's.
             if (try f.otherSide(d, refs)) continue;
             const du = (try cells.unrefined(f.gpa, f.account(), f.env.places, d)) orelse continue;
-            if (du == cu or (held and cells.below(f.env.places, cu, du))) return @intCast(e.value);
+            if (rest) |r| if (try f.pathBelow(du, r, cu)) continue;
+            if (du == cu) return @intCast(e.value);
+            if (held and cells.below(f.env.places, cu, du) and !(try f.atWritten(where, du, cu))) return @intCast(e.value);
         }
         return null;
+    }
+
+    /// Whether the symbolic cell `c` is `d`'s position `steps` below it.
+    fn pathBelow(f: *Frame, d: CellId, steps: []const Step, c: CellId) Error!bool {
+        if (steps.len == 0) return false;
+        const cells = f.env.cells;
+        const x = cells.get(d);
+        const y = cells.get(c);
+        if (x.origin != y.origin or !x.origin.isSymbolic() or x.origin == .top or x.a != y.a or x.c != y.c) return false;
+        var p: PathId = .from(x.b);
+        for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse return false;
+        return p == PathId.from(y.b);
+    }
+
+    /// What a value on the write's exact path that the class answers or
+    /// lets escape, or that is below one, holds beside the written object
+    /// (§2.11 item 3, rule (a), #1367). A node: its own cells and its
+    /// children off the path (`rest`'s first step), each wholly; the child
+    /// on the path is read at the path's next node, and the written object
+    /// at its end is the object written, not a second one. A leaf: as
+    /// `holdsCanonical` reads it with `rest`. A choice or a union: each
+    /// arm, its projections being the arms' (§2.3). Any other value whole.
+    fn keepAnswered(f: *Frame, bs: *Beside, want: *const Want, v0: NodeId, rest: []const Step, folded: bool, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
+        const shapes = f.env.shapes;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(f.gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(f.gpa);
+        try stack.append(f.gpa, v0);
+        while (stack.pop()) |x| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const v = try shapes.force(f.gpa, f.account(), x);
+            if ((try seen.getOrPut(f.gpa, .{v.int()})).found_existing) continue;
+            const d = shapes.get(v);
+            switch (d.kind) {
+                .node => {
+                    if (d.cells != .none) try f.keepBeside(bs, want, try shapes.leaf(f.gpa, f.account(), d.place, d.cells), folded, true, null, refs, kept, excl, relied, null);
+                    var kt = shapes.overEntries(d.a);
+                    while (kt.next()) |k| if (k.step.word() != rest[0].word())
+                        try f.keepBeside(bs, want, k.node, folded, true, null, refs, kept, excl, relied, null);
+                },
+                .choice, .@"union" => try stack.appendSlice(f.gpa, &.{ .from(d.a), .from(d.b) }),
+                .leaf => try f.keepBeside(bs, want, v, folded, true, rest, refs, kept, excl, relied, null),
+                else => try f.keepBeside(bs, want, v, folded, true, null, refs, kept, excl, relied, null),
+            }
+        }
     }
 
     /// `keepBeside`: a refinement of `v` whose canonical position holds
@@ -1430,10 +2552,10 @@ pub const Frame = struct {
     /// `excl` of a parameter's elements — into `relied`, and from the
     /// demand into the class's `xreq` (step 7). The same position holds
     /// the base's object: its cell is kept.
-    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
+    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, rest: ?[]const Step, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId, where: ?Where) Error!void {
         const cells = f.env.cells;
-        const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
-        if (refs.len != 0) try f.splitBeside(want, reach, refs, kept, relied);
+        const reach = if (where) |w| try f.reachBeside(v, w) else try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
+        if (refs.len != 0) try f.splitBeside(want, reach, refs, folded, kept, excl, relied, where);
         for (want.params.items) |c| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             // The base's cell, or its canonical cell when a pattern refined it
@@ -1441,9 +2563,12 @@ pub const Frame = struct {
             // above the base's holds it, a symbolic leaf's reach being its own
             // cell (#1383).
             const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
-            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, refs) orelse continue;
-            if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
-                excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
+            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, rest, refs, where) orelse continue;
+            // Two paths folding through one leaf at a summary path: the
+            // parameter's, or a part's canonical one (§2.2 *Parts*), owed as
+            // `excl` of the canonical cell.
+            if (folded and cells.origin(cu) == .param and try f.summaryPath(.from(cells.get(cu).b))) {
+                excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, cu.int(), 0);
                 continue;
             }
             kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), value);
@@ -1460,7 +2585,7 @@ pub const Frame = struct {
         for (want.keys.items) |k| {
             if (k[0] == key_param or k[0] == key_always or k[0] == key_param_leaf) continue;
             try f.env.charge.reserve(f.gpa, .inspection, 1);
-            const s = try bs.keyed(f.env, v, reach, k);
+            const s = try bs.keyed(f.env, reach, k);
             if (s != .none) kept.* = try cells.sets.unionWith(f.gpa, f.env.charge, kept.*, s);
         }
     }
@@ -1509,7 +2634,44 @@ pub const Frame = struct {
     /// against each refinement `r` of one base the write's path met: a
     /// side of `r`'s split relies on its κ, `r` itself keeps the base's
     /// cell (`Cell.alias`).
-    fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, kept: *SetId, relied: *CondId) Error!void {
+    /// Whether `cu`, the base's canonical cell below `du`, the canonical cell
+    /// of a value beside the write at `where.path`, is that value's object at
+    /// the written position itself (§2.11 item 3, *the written position*,
+    /// #1253): the steps from `du`'s path down to `cu`'s, taken from the
+    /// value's path, land on the write's path. The value holds the written
+    /// object there, not at another path: in `T = T (List T)` an element of
+    /// the level's list `[*]#T.0[*]` holds the lists `[*]#T.0⟲` below it.
+    fn atWritten(f: *Frame, where: ?Where, du: CellId, cu: CellId) Error!bool {
+        const w = where orelse return false;
+        if (w.path == .none) return false;
+        const cells = f.env.cells;
+        const places = f.env.places;
+        const x = cells.get(du);
+        const y = cells.get(cu);
+        if (x.origin != y.origin or !x.origin.isSymbolic() or x.origin == .top or x.a != y.a or x.c != y.c) return false;
+        const top: PathId = .from(x.b);
+        const bottom: PathId = .from(y.b);
+        if (!places.isPrefix(top, bottom) or top == bottom) return false;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(f.gpa);
+        var at = bottom;
+        while (at != top) : (at = places.pathParent(at)) {
+            try f.env.charge.reserve(f.gpa, .path, 1);
+            try steps.append(f.gpa, places.pathStep(at));
+        }
+        var p = w.path;
+        var i = steps.items.len;
+        while (i > 0) {
+            i -= 1;
+            p = (try places.extend(f.gpa, f.env.charge, p, steps.items[i])) orelse return false;
+        }
+        if (std.mem.indexOfScalar(PathId, w.written.paths.items, p) == null) return false;
+        // At a path of several positions the value's object there is the
+        // written one only if they hold distinct objects: owed upward.
+        if (places.isSummary(bottom)) w.written.owed = try cells.sets.insert(f.gpa, f.env.charge, w.written.owed, cu.int(), 0);
+        return true;
+    }
+    fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, folded: bool, kept: *SetId, excl: *SetId, relied: *CondId, where: ?Where) Error!void {
         const cells = f.env.cells;
         const places = f.env.places;
         var it = cells.sets.iterate(reach);
@@ -1525,12 +2687,18 @@ pub const Frame = struct {
                 const cu = (try cells.unrefined(f.gpa, f.account(), places, c)) orelse c;
                 const cp = cells.get(cu);
                 if (cp.a != dp.a or !places.isPrefix(.from(dp.b), .from(cp.b))) continue;
+                if (try f.atWritten(where, du, cu)) continue;
                 for (refs) |r| {
                     try f.env.charge.reserve(f.gpa, .inspection, 1);
                     if (cells.base(r) != db) continue;
                     switch (cells.alias(places, d, r)) {
                         .no => {},
-                        .yes => kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), e.value),
+                        // Met again in a fold through one leaf: `excl` (§2.2).
+                        .yes => if (folded and cp.origin == .param and try f.summaryPath(.from(cp.b))) {
+                            excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, cu.int(), 0);
+                        } else {
+                            kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), e.value);
+                        },
                         .under => |s| {
                             const k = cells.splitOf(s).cond;
                             relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, if (k == .none) Cond.lost else k);
@@ -1589,28 +2757,9 @@ pub const Frame = struct {
         return true;
     }
 
-    /// The positions one `⟲` step stands for below `x`: each node reached
-    /// by one step or more whose place is `x`'s (`positionsAt`).
+    /// The positions one `⟲` step stands for below `x` (`Calls.reentries`).
     fn reentries(f: *Frame, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
-        const shapes = f.env.shapes;
-        const places = f.env.places;
-        const p = shapes.place(x);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(f.gpa);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(f.gpa);
-        try stack.append(f.gpa, x);
-        while (stack.pop()) |y| {
-            for (places.steps(shapes.place(y)).steps) |c| {
-                try f.env.charge.reserve(f.gpa, .inspection, 1);
-                if (c.kind == .level) continue;
-                const n = (try shapes.proj(f.gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
-                if (seen.contains(n)) continue;
-                try seen.put(f.gpa, n, {});
-                if (shapes.place(n) == p) try out.append(f.gpa, n);
-                try stack.append(f.gpa, n);
-            }
-        }
+        return Calls.reentries(f.env, x, out);
     }
 
     /// How many exact steps of `steps` read `v` before a leaf, when the path meets
@@ -1642,48 +2791,8 @@ pub const Frame = struct {
         var has_level = false;
         for (steps) |s| has_level = has_level or s.kind == .level;
         if (!has_level) return try f.along(v, steps);
-        const task = try f.account().enter(f.gpa, null);
-        defer f.account().leave(task);
-        const shapes = f.env.shapes;
-        const places = f.env.places;
-        var frontier: std.ArrayList(NodeId) = .empty;
-        defer frontier.deinit(f.gpa);
-        var next: std.ArrayList(NodeId) = .empty;
-        defer next.deinit(f.gpa);
-        try frontier.append(f.gpa, v.node);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(f.gpa);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(f.gpa);
-        for (steps) |s| {
-            next.clearRetainingCapacity();
-            for (frontier.items) |x| {
-                if (s.kind != .level) {
-                    if (try shapes.proj(f.gpa, f.account(), places, f.env.cells, x, s)) |n| try next.append(f.gpa, n);
-                    continue;
-                }
-                const p = shapes.place(x);
-                seen.deinit(f.gpa);
-                seen = .{};
-                stack.clearRetainingCapacity();
-                try stack.append(f.gpa, x);
-                while (stack.pop()) |y| {
-                    for (places.steps(shapes.place(y)).steps) |c| {
-                        try f.env.charge.reserve(f.gpa, .inspection, 1);
-                        if (c.kind == .level) continue;
-                        const n = (try shapes.proj(f.gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
-                        if (seen.contains(n)) continue;
-                        try seen.put(f.gpa, n, {});
-                        if (shapes.place(n) == p) try next.append(f.gpa, n);
-                        try stack.append(f.gpa, n);
-                    }
-                }
-            }
-            std.mem.swap(std.ArrayList(NodeId), &frontier, &next);
-        }
-        if (frontier.items.len == 0) return null;
-        if (frontier.items.len == 1) return .{ .node = frontier.items[0] };
-        return .{ .node = try shapes.join(f.gpa, f.account(), places, f.env.cells, frontier.items) };
+        const n = (try Calls.positionsAt(f.env, v.node, steps)) orelse return null;
+        return .{ .node = n };
     }
 
     /// Whether a path goes through `[*]` or `⟲`: it names several positions.

@@ -1,0 +1,101 @@
+-- ownership: a recursive group whose classes are equal by `Summary.leq`
+-- at `res` but are read off with different `A` marks (ownership-v2.md
+-- §2.10, #1451). `p` calls `q a b (n - 1)` (not a tail call) and
+-- `q b a (n - 2)` (a tail call), and `q` answers what `p` answers.
+-- `p`'s own walk sees the list it pushes onto, so its class has `A` at
+-- `π1[*]`; `q` reads `p`'s published `res`, a leaf `π1 π2` that
+-- covers that path, so its class has `A` at `π1` only. The readers these
+-- calls meet read a node marked `A` as holding every path below it (the
+-- caller's liveness, §2.7, and a write's other paths above an answered
+-- one, §2.11 item 3 (a)), so both give v1's verdicts. Refused: a write
+-- through the answer while the input is held (`writeAnswer`), a write of
+-- the answer's elements while the input is held (`writeElem`, through
+-- either parameter), a write of the input while the answer is held
+-- (`writeInput`), and a read of the answer's elements after a push of
+-- one of the input's (`readAfter`). Accepted: the same writes with
+-- nothing held (`owned`, `ownedElem`).
+q : List Int, List Int, Int → List Int
+q a b n = p a b n
+
+
+p : List Int, List Int, Int → List Int
+p a b n =
+    if n ≤ 0 then
+        a
+    else
+        r = q a b (n - 1)
+        if List.length r > 3 then
+            [ …r, 0 ]
+        else
+            q b a (n - 2)
+
+
+qq : List (List Int), List (List Int), Int → List (List Int)
+qq a b n = pp a b n
+
+
+pp : List (List Int), List (List Int), Int → List (List Int)
+pp a b n =
+    if n ≤ 0 then
+        a
+    else
+        r = qq a b (n - 1)
+        if List.length r > 3 then
+            [ …r, [] ]
+        else
+            qq b a (n - 2)
+
+
+pub writeAnswer : List Int → List Int × List Int
+writeAnswer xs = ( List.push (q xs [] 3) 1, xs )
+
+
+pub owned : List Int → List Int
+owned xs = List.push (q xs [] 3) 1
+
+
+pub writeElem : List (List Int) → List Int × List (List Int)
+writeElem xs =
+    case qq xs [] 3 of
+        [ a, …_ ] →
+            ( List.push a 1, xs )
+
+        [] →
+            ( [], xs )
+
+
+pub writeElemSecond : List (List Int) → List Int × List (List Int)
+writeElemSecond xs =
+    case qq [] xs 3 of
+        [ a, …_ ] →
+            ( List.push a 1, xs )
+
+        [] →
+            ( [], xs )
+
+
+pub ownedElem : List (List Int) → List Int
+ownedElem xs =
+    case qq xs [] 3 of
+        [ a, …_ ] →
+            List.push a 1
+
+        [] →
+            []
+
+
+pub writeInput : List (List Int) → List (List Int) × List (List Int)
+writeInput xs =
+    r = qq xs [] 3
+    ( List.push xs [], r )
+
+
+pub readAfter : List (List Int) → Int
+readAfter xs =
+    case xs of
+        [ a, …_ ] →
+            pushed = List.push a 1
+            List.length pushed + String.length (Debug.toString (qq xs [] 3))
+
+        [] →
+            0

@@ -1,0 +1,50 @@
+-- ownership: the coarse read vector of a recursive group (ownership-v2.md §8
+-- S3b slice 4, *Ports*). `f`, `g` and `h` are one group, and `f` and `g`
+-- both call `h` on the same actuals, reading one view of its result. Only
+-- `g` has a demand on what it reads: it pushes onto `h`'s answer. `h` swaps
+-- its lists on each call, so its answer gains `b` only in a later round.
+-- `g`'s walk must read that late cell, and its push is refused, since `b`
+-- is read after it. `hSame`, `gSame` and `fSame` are the twin whose `h`
+-- never swaps: its answer is `a` alone, and the push is accepted.
+h : List Int, List Int, Int → List Int
+h a b n =
+    if n == 0 then
+        a
+    else if f a b + g a b n == 0 then
+        a
+    else
+        h b a (n - 1)
+
+
+f : List Int, List Int → Int
+f a b = List.length (h a b 0)
+
+
+g : List Int, List Int, Int → Int
+g a b n =
+    if n < 0 then
+        0
+    else
+        List.length (List.push (h a b (n - 1)) 0) + List.length b
+
+
+hSame : List Int, List Int, Int → List Int
+hSame a b n =
+    if n == 0 then
+        a
+    else if fSame a b + gSame a b n == 0 then
+        a
+    else
+        hSame a b (n - 1)
+
+
+fSame : List Int, List Int → Int
+fSame a b = List.length (hSame a b 0)
+
+
+gSame : List Int, List Int, Int → Int
+gSame a b n =
+    if n < 0 then
+        0
+    else
+        List.length (List.push (hSame a b (n - 1)) 0) + List.length b

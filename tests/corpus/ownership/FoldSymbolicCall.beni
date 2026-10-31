@@ -1,0 +1,107 @@
+-- ownership: #1199's Repro A and B and #1196's decision-1 probe through
+-- real calls (ownership-v2.md §8, slice 4's plan, 4a), written as mutual
+-- pattern recursion (#1394). `incT` writes the kids list of every `T` at
+-- every depth, so it relies on `excl π1·⟲·arg`; `incTs` walks a list of
+-- `T` with `[ t, …rest ]`. A middle function builds the `T` it writes from
+-- its parameters: `midA p k` builds `T [ p, T k ]` (Repro A) and
+-- `midB p q` builds `T [ T p, T q ]` (Repro B). `sharedA` shares `k`
+-- between `p` and `k`, `sharedB` one kids list between `p` and `q`: both
+-- refused; `distinctA` and `distinctB` pass distinct lists and are
+-- accepted. The probe: `deepThenShallow` writes the lists below each
+-- element of an `R2` (`0·[*]·⟲·arg`, through `incTs kids`) and then reads
+-- the element's own kids list (`0·[*]·arg`). Over
+-- `R2 [ T [ T k ], T k ]` the push of `k` below the first element is seen
+-- by the read of the second's `k`: `probeShared` is refused, and
+-- `probeDistinct`, with distinct lists, is accepted. Under v2 the middle
+-- functions' own calls of `incT` and `probeDistinct` are refused until
+-- #1253 tells apart the levels below the first return; v2 accepts
+-- `lengths`'s `incTs kids`, which v1 refuses `later-use`, because
+-- `List.length kids` reads the outer list only (R-4.3.5; known entries).
+type T
+    = T (List T)
+
+
+type R2
+    = R2 (List T)
+
+
+incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+midA : T, List T → T
+midA p k = incT (T [ p, T k ])
+
+
+pub sharedA : T
+sharedA =
+    k = [ T [] ]
+    midA (T k) k
+
+
+pub distinctA : T
+distinctA =
+    k1 = [ T [] ]
+    k2 = [ T [] ]
+    midA (T k1) k2
+
+
+midB : List T, List T → T
+midB p q = incT (T [ T p, T q ])
+
+
+pub sharedB : T
+sharedB =
+    kids = [ T [] ]
+    midB kids kids
+
+
+pub distinctB : T
+distinctB =
+    p = [ T [] ]
+    q = [ T [] ]
+    midB p q
+
+
+deepThenShallow : R2 → Int
+deepThenShallow r =
+    case r of
+        R2 ts →
+            lengths ts
+
+
+lengths : List T → Int
+lengths ts =
+    case ts of
+        [ T kids, …rest ] →
+            n = List.length (incTs kids)
+            n + List.length kids + lengths rest
+
+        [] →
+            0
+
+
+pub probeShared : Int
+probeShared =
+    k = [ T [] ]
+    deepThenShallow (R2 [ T [ T k ], T k ])
+
+
+pub probeDistinct : Int
+probeDistinct =
+    k1 = [ T [] ]
+    k2 = [ T [] ]
+    deepThenShallow (R2 [ T [ T k1 ], T k2 ])

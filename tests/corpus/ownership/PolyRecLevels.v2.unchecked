@@ -1,5 +1,5 @@
-PolyRecLevels wrap: lines 12-17 (not built: call)
+PolyRecLevels wrap: lines 12-17 (not built: polymorphic recursion)
 PolyRecLevels innerLive: lines 20-37 (not built: call)
 PolyRecLevels innerLive2: lines 40-52 (not built: call)
-PolyRecLevels count: lines 81-88 (not built: call)
+PolyRecLevels count: lines 81-88 (not built: polymorphic recursion)
 PolyRecLevels deepParam: lines 55-78 (not built: call)

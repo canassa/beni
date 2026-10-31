@@ -1,5 +1,3 @@
-Keep recursive: lines 16-20 (not built: call)
-Keep relay: lines 23-24 (not built: call)
 Main readOnly: lines 7-8 (not built: local)
 Main shared: lines 11-12 (not built: local)
 Main recursiveReadOnly: lines 15-16 (not built: local)

@@ -1,0 +1,15 @@
+-- ownership (v2; R-5.13.1): a type's `eq` whose second parameter is a
+-- type variable. The checker takes `T, b → Bool` for `T`'s `eq` (a
+-- variable fits the well-known shape, `fitsWellKnown`), and `==` on `T`
+-- calls it, so its push onto the list it is handed is
+-- `comparison_changes_value`. v1 has no such code and accepts it.
+pub type T
+    = T (List Int)
+
+
+pub eq : T, b → Bool
+eq (T a) _ = List.length (List.push a 0) > 0
+
+
+pub same : T, T → Bool
+same x y = x == y
