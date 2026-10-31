@@ -755,26 +755,3 @@ const Carry = struct {
         return c.ro.cond(k);
     }
 };
-
-/// Class `c` with its fresh labels renumbered in the order its `res` meets
-/// them, its κ and `xreq` carried over: a recursive group member's class at
-/// publication (§8 S3b slice 4, *Stable labels*), canonical whatever its
-/// rounds numbered.
-pub fn renumber(env: Env, sums: *Summary.Table, c: ClassId) Error!ClassId {
-    const gpa = env.gpa;
-    const cls = sums.get(c);
-    var ro: ReadOff = .{ .env = env };
-    defer ro.fresh.deinit(gpa);
-    defer ro.apart_images.deinit(gpa);
-    const res = try env.shapes.map(gpa, env.account(), cls.res, &ro, ReadOff.relabel);
-    // Two built sources sharing an image count as #1384's read-off counts them.
-    var presence: Presence = .{};
-    defer presence.deinit(gpa);
-    if (env.shapes.map_shared) try presence.run(env, cls.res, cls.kappas);
-    var carry: Carry = .{ .ro = &ro, .presence = &presence };
-    const kappa = try env.conds.kappaRelabel(gpa, env.charge, cls.kappas, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
-    const xreq: SetId = if (cls.xreq == .none) .none else try env.conds.flat(gpa, env.charge, try ro.cond(try env.conds.ofSet(gpa, env.charge, cls.xreq)));
-    const uses = try gpa.dupe(NodeId, sums.paramUses(c));
-    defer gpa.free(uses);
-    return sums.add(env, .{ .params = uses, .res = res, .kappas = kappa, .xreq = xreq, .origin = cls.origin });
-}

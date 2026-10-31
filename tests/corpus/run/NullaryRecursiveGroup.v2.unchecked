@@ -1,3 +1,3 @@
-NullaryRecursiveGroup read: lines 7-7 (not built: call)
 NullaryRecursiveGroup invoke: lines 10-10 (not built: call)
+NullaryRecursiveGroup read: lines 7-7 (not built: call)
 NullaryRecursiveGroup main: lines 13-19 (not built: local)

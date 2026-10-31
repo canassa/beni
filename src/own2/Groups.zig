@@ -1095,7 +1095,7 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     var members: std.ArrayList(u32) = .empty;
     defer members.deinit(gpa);
     for (0..prepass.starts.len - 1) |gi| {
-        try groupMembers(gpa, in.bir, &prepass, gi, null, &members);
+        try groupMembers(gpa, in, &prepass, gi, null, &members);
         if (members.items.len == 0) continue;
         const start = mod.results.items.len;
         for (members.items) |di| {
@@ -1158,13 +1158,23 @@ fn allowanceOf(bir: *const Bir, di: u32) u32 {
     return if (d.summary_size != 0) d.summary_size else if (bir.summary_size != 0) bir.summary_size else Ids.Account.default_allowance;
 }
 
-/// Group `gi`'s walked declarations not yet in `skip`, in text order (§3.8).
-fn groupMembers(gpa: Allocator, bir: *const Bir, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
+/// Group `gi`'s walked declarations not yet in `skip`, by name (§3.8).
+fn groupMembers(gpa: Allocator, in: *const Input, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
     out.clearRetainingCapacity();
     for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |di| {
-        if (isWalked(bir, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
+        if (isWalked(in.bir, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
     }
-    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    // By name, not position (§3.8): the first walked pays a shared memo's miss.
+    std.mem.sort(u32, out.items, in, struct {
+        fn lessThan(x: *const Input, a: u32, b: u32) bool {
+            return nameRank(x, a) < nameRank(x, b);
+        }
+    }.lessThan);
+}
+
+fn nameRank(in: *const Input, di: u32) u32 {
+    const s = @backingInt(in.bir.symbol(in.bir.decls[di].name));
+    return if (s < in.ranks.len) in.ranks[s] else s;
 }
 
 /// A group's declarations walked into `rs`: one walk, or a recursive group
@@ -1245,7 +1255,7 @@ fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prep
     for (0..g0) |gi| {
         const first = prepass.order[prepass.starts[gi]];
         if (!reached[first]) continue;
-        try groupMembers(gpa, bir, prepass, gi, pool.walked, &ms);
+        try groupMembers(gpa, in, prepass, gi, pool.walked, &ms);
         for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |x| pool.walked[x] = true;
         if (ms.items.len == 0) continue;
         const start = alone.results.items.len;
@@ -1542,7 +1552,8 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
     }
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
-        r.class = try Walk.renumber(mod.env(), &mod.sums, g.ports.items[k].class);
+        // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
+        r.class = g.ports.items[k].class;
         r.walks = g.walks[k];
         r.lines = g.lines[k];
         g.lines[k] = &.{};

@@ -5192,8 +5192,9 @@ walk per member per pass of the stop rule. The rule applies in 4a too.
 - **Stable labels.** Inside a group, read-off numbers fresh cells by stable keys, not in the order
   they are met (§2.12): an own allocation by its instruction, and anything that a group call ι answers
   fresh (`result ι·k`, for any k and any chain below it) by one folded label `ι⋆`. The pairs of
-  distinct pre-fold `sep` labels it merges are recorded for S4. The renumbering by result path runs
-  once, at publication. So the label inventory is bounded by the group's instructions, however many
+  distinct pre-fold `sep` labels it merges are recorded for S4. *As built (4a):* the class is published with its stable labels. A relabelling through `map` at
+  publication dropped the κ that a join keys below a choice (#1395's review), and the stable keys
+  already depend on no declaration order. So the label inventory is bounded by the group's instructions, however many
   rounds run. *A note, not built in slice 4:* keying the fold by `(ι, the callee's top label)` would
   keep `sep` between a callee's two own allocations. It makes the inventory calls × allocations, a
   product of source, so it waits for S4, whose `within` needs those labels anyway.
@@ -5241,7 +5242,7 @@ The check is performed, never argued from the wake rule: a delivered fact wakes 
 yet it changes what the walk's demands and call obligations decide. When the loop stops, each
 member's last walk saw x* exactly. That walk is the member's final source validation walk (§2.12),
 its read-off is F(x*) ⊑ x*, and its demands are the ones reported. No acceptance from an earlier
-generation is published (§2.12). Then every member publishes at once, renumbered canonically:
+generation is published (§2.12). Then every member publishes at once, with its stable labels (*Stable labels*):
 `results` receive the classes and the lines together.
 
 The general rule follows. **An inference walk that records a new edge is followed by a validation
@@ -5425,7 +5426,7 @@ deliveries into its class, the Prover goals keyed by it, and its validation.
   depend on order; its order (SCCs topologically, then target rank, call instruction and path rank)
   fixes ids only;
 - the Prover's Tarjan visits goals in key order;
-- labels have stable keys, and publication renumbers them canonically.
+- labels have stable keys, which no declaration order changes; publication keeps them.
 
 Declaration order does not change a verdict or a printed line (`ordering_test`;
 RecursiveSummaryGeneration's reorderings).
@@ -5577,8 +5578,8 @@ allowance, with no limit line.
     owned by S6.
 
 *Decisions and the open amendment* (the manager, 2026-10-30, on #1351).
-- **Q1: a change to a part a walk read re-walks the member. Proposed amendment, pending the owner.**
-  The S3b row and §2.12 would say the following.
+- **Q1, decided (the owner, 2026-10-31): a change to a part a walk read re-walks the member.**
+  The S3b row and §2.12 say the following.
   - A member is walked again whole, as growth, once per new `res.shape` of a member it calls:
     §4.1's qualified Θ(NK) row.
   - "Never a full frame replay" stays for work that facts cause. A delivered fact (cells, marks,
@@ -5590,8 +5591,7 @@ allowance, with no limit line.
     rebuild it (holders, liveness, regions) as an equation graph, and the saving would be confined
     to long bodies with several versions of the parts they read. The proved fixed-topology family
     has no such walk.
-  - *Decided for 4a:* 4a lands with every change waking its readers, all charged as growth. The
-    rule for 4b waits for the owner.
+  - *4a* lands with every change waking its readers, all charged as growth; 4b builds the rule above.
 - **Q2, decided:** each member pays from its own account, charged to the member that receives the
   work, and the group fails whole. This follows from §4.4's per-declaration owners.
 - **Q3, decided:** the block publishes a certified mark per fold certificate, with the aggregate's
