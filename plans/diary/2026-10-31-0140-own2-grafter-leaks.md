@@ -4,8 +4,8 @@
 
 - #1391: `Calls.Grafter` holds three memo dictionaries (`folded`, `deeps`,
   `prefix_args`). Only the grafters of `apply` and `resolveImage` freed
-  them; the six grafters `Views` makes for `leafImage`, `partsImage`,
-  `cellsImage`, `reachImage`-style reads and `placeOfCell` callers did not.
+  them; the six grafters `Views` makes for `placeImage`, `leafImage`, `partsImage`,
+  `cellsImage` and the two reads of a cell's kappa and reach did not.
   Once `foldedCells` began to memoise `prefixArg` (#1159), every such read
   leaked the dictionary. `Grafter.deinit` now frees all three and every
   grafter, the tests' included, defers it. `LevelPlacesCall`,
