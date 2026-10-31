@@ -1,0 +1,164 @@
+-- ownership: a view of a call's answer held across a write of the list it
+-- views (#1491; ownership-v2.md §2.8 *Holders across a cycle*). `kidsOf t`
+-- answers `t`'s kids list at its canonical cell, so `rest`, a view of the
+-- answer, holds that list, and a second match's `ks` is it. `List.push
+-- ks` while `rest` lives is refused: the answer bound first
+-- (`calleeKids`), matched in place (`caseKids`), through a second call
+-- (`throughTwo`) and through an answer that is a choice (`choiceAnswer`).
+-- A writer call (`callWrites`), the grandchildren's list answered from
+-- below the first return (`belowLevel`) and a second match two levels down
+-- (`twoLevelMatch`) are refused too. The controls accept: the view dead
+-- (`deadControl`) and the label written instead (`labelControl`). v1
+-- accepts `twoLevelMatch`, unsoundly: a known entry for v1.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose _ ks →
+            ks
+
+
+pub calleeKids : Rose → List Rose × List Rose
+calleeKids t =
+    v = kidsOf t
+    case v of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pub caseKids : Rose → List Rose × List Rose
+caseKids t =
+    case kidsOf t of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+ident : Rose → Rose
+ident t = t
+
+
+pub throughTwo : Rose → List Rose × List Rose
+throughTwo t =
+    case kidsOf (ident t) of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+kidsOrNone : Bool, Rose → List Rose
+kidsOrNone c t = if c then kidsOf t else []
+
+
+pub choiceAnswer : Bool, Rose → List Rose × List Rose
+choiceAnswer c t =
+    case kidsOrNone c t of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pushKids : Rose → Rose
+pushKids t =
+    case t of
+        Rose l ks →
+            Rose l (List.push ks (Rose [] []))
+
+
+pub callWrites : Rose → Rose × List Rose
+callWrites t =
+    case kidsOf t of
+        [ _, …rest ] →
+            ( pushKids t, rest )
+
+        [] →
+            ( t, [] )
+
+
+grandKids : Rose → List Rose
+grandKids t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            gs
+
+        _ →
+            []
+
+
+pub belowLevel : Rose → List Rose × List Rose
+belowLevel t =
+    case grandKids t of
+        [ _, …rest ] →
+            case t of
+                Rose _ [ Rose _ gs2, …_ ] →
+                    ( List.push gs2 (Rose [] []), rest )
+
+                _ →
+                    ( [], [] )
+
+        [] →
+            ( [], [] )
+
+
+pub twoLevelMatch : Rose → List Rose × List Rose
+twoLevelMatch t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    case t of
+                        Rose _ [ Rose _ gs2, …_ ] →
+                            ( List.push gs2 (Rose [] []), rest )
+
+                        _ →
+                            ( [], [] )
+
+                [] →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub deadControl : Rose → List Rose
+deadControl t =
+    case kidsOf t of
+        [ _, …_ ] →
+            case t of
+                Rose _ ks →
+                    List.push ks (Rose [] [])
+
+        [] →
+            []
+
+
+pub labelControl : Rose → List Int × List Rose
+labelControl t =
+    case kidsOf t of
+        [ _, …rest ] →
+            case t of
+                Rose l _ →
+                    ( List.push l 1, rest )
+
+        [] →
+            ( [], [] )

@@ -904,15 +904,14 @@ const Index = struct {
         return !(approx or summary or cellt.origin(x) == .top or (alt and !places.isSummary(f)));
     }
 
-    /// The steps from a hold of `x` down to `c` (§2.8): a `⟲` first when `x`
-    /// is a level, then `stepsTo`; empty when `x` is `c` or not above it.
-    /// True when the first step is that `⟲`, which a place without it skips.
-    /// Whether the refinement `x` stands at `c`'s canonical position, with
-    /// neither on the other's chain (`Cell.stepsTo`): two splits' sides of one
-    /// recursive value, or a side and the canonical cell a call writes.
+    /// Whether `x` and `c` stand at one canonical position, one of them a
+    /// refinement, with neither on the other's chain (`Cell.stepsTo`): two
+    /// splits' sides of one recursive value; a side and the canonical cell a
+    /// call writes; a side of a call's answer, relabelled to that canonical
+    /// cell, and a match's refinement of it (#1491).
     fn samePosition(ix: *Index, x: CellId, c: CellId) Error!bool {
         const cellt = ix.env.cells;
-        if (x == c or !cellt.origin(x).isRefinement()) return false;
+        if (x == c or !(cellt.origin(x).isRefinement() or cellt.origin(c).isRefinement())) return false;
         try ix.rec(2);
         const ux = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, x)) orelse return false;
         const uc = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, c)) orelse return false;
@@ -922,6 +921,9 @@ const Index = struct {
         return !(try cellt.stepsTo(ix.env.places, x, c, ix.gpa, &steps)) and !(try cellt.stepsTo(ix.env.places, c, x, ix.gpa, &steps));
     }
 
+    /// The steps from a hold of `x` down to `c` (§2.8): a `⟲` first when `x`
+    /// is a level, then `stepsTo`; empty when `x` is `c` or not above it.
+    /// True when the first step is that `⟲`, which a place without it skips.
     fn extSteps(ix: *Index, x: CellId, c: CellId, out: *std.ArrayList(Step)) Error!bool {
         out.clearRetainingCapacity();
         if (x == c) return false;
