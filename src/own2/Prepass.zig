@@ -9,7 +9,7 @@
 //! (§2.13.2) and the `withDefault (map m f) d` shapes (§2.13.12).
 //!
 //! **No name is compared to text here.** The `withDefault`/`map` targets
-//! arrive resolved in `Input.joins` — the caller (L10) resolves them once
+//! arrive resolved in `Input.joins` — the caller (L12) resolves them once
 //! through the interner and the interfaces, which is §5's one allowlisted
 //! name comparison — and are matched by instruction tag and payload. A
 //! type's method is told by its symbol against the interner's fixed

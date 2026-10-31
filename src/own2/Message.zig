@@ -1,4 +1,4 @@
-//! L11: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
+//! L13: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
 //! §6, R-6.1–R-6.7, R-7.15): the operation, the base as written, the
 //! verdict, its cause and the detail naming the holder and its later use —
 //! v1's texts (`src/own/Ownership.zig`'s `resolveRaw`), so a golden compares

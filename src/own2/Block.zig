@@ -1,4 +1,4 @@
-//! L11: the ownership block (`docs/design/ownership-v2.md` §3.6), minimal:
+//! L13: the ownership block (`docs/design/ownership-v2.md` §3.6), minimal:
 //! classes to words and back, with places written structurally. S2b builds
 //! the class table and its records, written here — a header (`OWN2`, the version), the
 //! place table, the record table, the root classes — and nothing of S6's:

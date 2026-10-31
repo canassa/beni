@@ -1,4 +1,4 @@
-//! L8: the transfer rules (`docs/design/ownership-v2.md` §2.6), one case per
+//! L10: the transfer rules (`docs/design/ownership-v2.md` §2.6), one case per
 //! BIR tag, over one declaration's instructions in evaluation order. A
 //! value is a shape root with its own κ snapshot (§2.9); the frame records,
 //! for `Walk` and `Demands`, the uses (at the consumer, R-4.1.1), the
@@ -65,7 +65,7 @@ pub const Error = Ids.ChargeError;
 pub const none: u32 = Ids.none_int;
 const Inst = Bir.Inst;
 
-/// What a call runs, as the module adapter resolves it (L10).
+/// What a call runs, as the module adapter resolves it (L12).
 pub const Callee = union(enum) {
     /// A class to apply, at this call's instantiation.
     class: ClassId,

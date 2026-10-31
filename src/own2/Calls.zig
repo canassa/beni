@@ -1,4 +1,4 @@
-//! L7: a call of a class (`docs/design/ownership-v2.md` §2.11). S3a applies
+//! L9: a call of a class (`docs/design/ownership-v2.md` §2.11). S3a applies
 //! the classes the rows give (`Rows.fromWords`, built at the call's own
 //! instantiation, so the class's places are the caller's); S3b adds the
 //! summaries of declarations, S4 callbacks.

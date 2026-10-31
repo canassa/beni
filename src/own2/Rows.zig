@@ -1,4 +1,4 @@
-//! L6: rows as data (`docs/design/ownership-v2.md` §2.13.1, §2.13.6,
+//! L8: rows as data (`docs/design/ownership-v2.md` §2.13.1, §2.13.6,
 //! §2.13.13; oc §24.2): the classes that are not read off a body. A worded
 //! constructor's from its type (`ctorClass`), a derived `eq`/`compare`'s
 //! composed of its components' (`derivedClass`). Nothing here names a declaration, a type or
