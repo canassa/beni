@@ -110,8 +110,9 @@ const layers = [_]Entry{
     // answered value on the write's path, read beside the path.
     // 2 050 since #1390: a match on a rest splits its positions, unless a
     // head is stored beside the rest.
-    // 2 240 since #1253: the written position, by canonical path.
-    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 2240 },
+    // 2 380 since #1253: the written position, by canonical path, and the
+    // routes that tell a node at one position of it.
+    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 2380 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },
