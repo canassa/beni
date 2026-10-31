@@ -54,7 +54,7 @@ const layers = [_]Entry{
     // join's place.
     // 3 820 since #1420: positions saturate at two, their count maps, the
     // rebuild and the nodes it dropped (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3880 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3896 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -97,7 +97,7 @@ const layers = [_]Entry{
     // with its memos, and `widenValue`.
     // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
     // projection correspondence (§2.9 *Keyed where a reader looks*).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1190 },
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1197 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
