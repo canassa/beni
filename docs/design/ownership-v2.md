@@ -1736,9 +1736,9 @@ Where κ is set, always **at the selected path p**:
   ancestor, so the heights name distinct positions in both places. The walk below `P'` is then the walk
   below `P` with `P` renamed to `P'` and each ancestor renamed by its height. Its states, their order,
   their deduplication and their folds are the same. Two positions with one run and different signatures
-  are two entries, which are chained under the run. A position that holds a clean state is not an entry,
-  because the clean memo above owns it. A position whose states are all duplicates is not an entry
-  either.
+  are two entries, which are chained under the run. A position that holds a clean state neither records
+  an entry nor looks one up, because the clean memo above owns it: a hit there would skip the clean
+  states' candidates. A position whose states are all duplicates is not an entry either.
 
   *The entry, and its replay.* The entry keeps the following:
   - The **internal records** of the walk: the positions below `P`, the entries, the linked member
@@ -1751,7 +1751,13 @@ Where κ is set, always **at the selected path p**:
   height `h`. A folded state delivered there is then walked there, and is deduplicated there, like any
   folded state. The hit also adds `Q` to the `Q` of the position that encloses it. And it records `P'` as
   a hit of the entry. When the enclosing entry is recorded, its own external effects are the effects of
-  its records and hits whose ancestor is above its root. So each effect rises once per height.
+  its records and hits whose ancestor is above its root, **deduplicated**: a fold by `h`, a step by
+  `(h, step)`, a folded state by `(h, node, bits, run)`. This is exact: at the ancestor a second fold
+  mark or step changes nothing, a second folded state with the key is a duplicate there, and the order
+  of folded states at a position changes nothing. Without it, two hits of one entry under one parent
+  copy its effects twice into the parent's entry, and the copies double at each level (the review of
+  #1465). So an entry holds at most one effect for each distinct target and key, and each rises once
+  per height.
 
   *The snapshot.* At the end of the call, a hit position stands for the subwalk of its entry:
   - If `P'` is its own owner (`propagate` collapses each position below a fold into the highest fold on
@@ -1772,9 +1778,10 @@ Where κ is set, always **at the selected path p**:
 
   *Failure, rollback and the cross-check.* Every table of the memo (runs, entries, `Q`, signatures, logs,
   local snapshots, bundles) belongs to one call. A call that exhausts its account fails whole and leaves
-  nothing that another call reads. Outside the call, the memo writes only what the walk writes: run
-  interning keys, the clean memo's candidates at real positions, and the merge and map memos of the
-  snapshot it builds. It needs no validation and no fallback walk, because nothing outside the subwalk
+  nothing that another call reads. Outside the call, the memo writes run interning keys, the clean memo's
+  candidates at real positions, and interned conditions, positions and merge and map memo entries for
+  the snapshot and bundles it builds. These are content-addressed, so a later reader gets the same
+  answer whether or not they exist. It needs no validation and no fallback walk, because nothing outside the subwalk
   of a position can change that subwalk. `-Downership-full-cross-check` walks every call again with
   `no_memo`, so with no cyclic memo either, and compares the snapshots. A memo across calls would also
   need the versions of `fold_cond`, the bases and the knots in its key, as `leafEntries`' versioned key
@@ -1802,7 +1809,20 @@ Where κ is set, always **at the selected path p**:
   - `O(|effects| × h)` for the replay of a hit.
 
   The call's snapshot costs `O(real positions)`, plus each entry's local snapshot or bundle once, plus
-  each bundle's size once per `(O, entry)`. All of it is charged.
+  each bundle's size once per `(O, entry)`. An entry's range contains the ranges of the entries
+  recorded inside it, so local snapshots and bundles together cost the sum of their ranges, which for
+  a chain of nested entries is depth × size. A key met again below a position that is still open
+  cannot hit (its entry is recorded when the position closes), so it is walked again. Each node is on
+  a route once, so this repeats a key at most once per open ancestor. All of it is charged.
+
+  *What exactness relies on.* The bundle groups contributions differently from the walk. It joins by
+  node within the entry, merges the linked positions before they meet `O`, and is applied once per
+  `(O, entry)` where the walk adds a contribution once per collapsed position. So the design needs
+  `join` and `kappaMerge` to be associative, commutative and idempotent on interned ids:
+  - `join`'s result depends only on the set of its inputs;
+  - `kappaMerge` interns by content and takes the larger fold kind;
+  - `kappaFold` of a merge is the union of the separate `kappaFold`s.
+  All three hold today. A change to either operation must keep them, or the bundle stops being exact.
 
   *Measured* (a prototype in a scratch copy, Debug self-hosted, `dump --stage=ownership --ownership=v2
   --jobs=1`, module allowance 4 194 304; growth records). The first two columns are on master
