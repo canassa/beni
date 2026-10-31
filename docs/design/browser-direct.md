@@ -1718,7 +1718,7 @@ not compared is listed, never what is**.
   `$$pointercancel`, `$$pointerenter` or `$$pointerleave`, which the page walk reports), three
   in ten view events are a `pointer` step on such an element: a random name (a move three times
   as often as each other), a point from -10 to 110 CSS pixels in its box, a pointer id from 1 to
-  3, a type (mouse, touch, pen or none) and, one in seven times, a secondary pointer. A page with
+  3, a type (mouse, touch, pen or none) and, three times in twenty, a secondary pointer. A page with
   no pointer handler draws no extra number, so it draws the sequences it drew before.
 - **The comparison**, after the load and after every step, of everything a step may change:
   - the body as `serialise` prints it (every element, attribute, text, comment, a control's
