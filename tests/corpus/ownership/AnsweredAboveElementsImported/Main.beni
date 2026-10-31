@@ -1,0 +1,44 @@
+-- ownership (project): `AnsweredAboveElements` with `bumpHead` in another
+-- module (#1253). Its answer `~π1` holds the written positions as the
+-- objects written, so distinct lists accept: two literals, two
+-- parameters, a bound list and the caller's parameter. One list twice and
+-- a list read after the edit are refused. Lists bound to names first are
+-- refused by v2 only (#1492).
+import Rows
+
+
+pub literals : ⊤ → Int
+literals ⊤ = List.length (Rows.bumpHead [ [ 1 ], [ 2 ] ])
+
+
+pub params : List Int, List Int → Int
+params a b = List.length (Rows.bumpHead [ a, b ])
+
+
+pub bound : ⊤ → Int
+bound ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    List.length (Rows.bumpHead rows)
+
+
+pub passedOn : List (List Int) → Int
+passedOn xs = List.length (Rows.bumpHead xs)
+
+
+pub repeated : ⊤ → Int
+repeated ⊤ =
+    r = [ 1 ]
+    List.length (Rows.bumpHead [ r, r ])
+
+
+pub readAfter : ⊤ → Int
+readAfter ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    List.length (Rows.bumpHead rows) + Rows.firstLength rows
+
+
+pub named : ⊤ → Int
+named ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    List.length (Rows.bumpHead [ a, b ])
