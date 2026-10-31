@@ -1,0 +1,128 @@
+-- ownership: joins of built lists that calls return, read by a writer of
+-- every element (ownership-v2.md Appendix B, L×J, the S3b half; R-4.6.2,
+-- R-4.6.4). `pushAll` pushes onto each list of a list, so it needs the
+-- elements apart. `one x` builds `[ x ]` and `two x` builds `[ x, x ]`.
+-- Joined with itself, `[ x ]` stays one alternative and is accepted
+-- (`sameSingle`); `[ x ]` with `[ x, x ]` holds the duplicate twin and is
+-- refused (`singleOrTwin`), and so is `[ x, x ]` alone (`twin`). Two
+-- distinct fresh members, each under its own snapshot, keep yes
+-- (`freshMembers`). The same joins with a parameter leaf (`leafOrOne`,
+-- accepted, owing the parameter's elements apart; `leafOrTwin`, refused),
+-- with an empty list (`emptyOrOne`, accepted; `emptyOrTwin`, refused) and
+-- with the join in a helper whose answer the writer is handed
+-- (`chosenOne`, `[ x ]` or `[]`, accepted; `chosenTwin`, `[ x ]` or
+-- `[ x, x ]`, refused).
+pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+one : List Int → List (List Int)
+one x = [ x ]
+
+
+two : List Int → List (List Int)
+two x = [ x, x ]
+
+
+pub sameSingle : Bool, List Int → List (List Int)
+sameSingle c x =
+    pushAll
+        (if c then
+            one x
+         else
+            one x
+        )
+
+
+pub singleOrTwin : Bool, List Int → List (List Int)
+singleOrTwin c x =
+    pushAll
+        (if c then
+            one x
+         else
+            two x
+        )
+
+
+pub twin : List Int → List (List Int)
+twin x = pushAll (two x)
+
+
+pub freshMembers : Bool → List (List Int)
+freshMembers c =
+    pushAll
+        (if c then
+            one [ 1 ]
+         else
+            [ [ 2 ], [ 3 ] ]
+        )
+
+
+pub leafOrOne : Bool, List (List Int), List Int → List (List Int)
+leafOrOne c xss x =
+    pushAll
+        (if c then
+            xss
+         else
+            one x
+        )
+
+
+pub leafOrTwin : Bool, List (List Int), List Int → List (List Int)
+leafOrTwin c xss x =
+    pushAll
+        (if c then
+            xss
+         else
+            two x
+        )
+
+
+pub emptyOrOne : Bool, List Int → List (List Int)
+emptyOrOne c x =
+    pushAll
+        (if c then
+            []
+         else
+            one x
+        )
+
+
+pub emptyOrTwin : Bool, List Int → List (List Int)
+emptyOrTwin c x =
+    pushAll
+        (if c then
+            []
+         else
+            two x
+        )
+
+
+choose : Bool, List Int → List (List Int)
+choose c x =
+    if c then
+        one x
+    else
+        two x
+
+
+chooseOne : Bool, List Int → List (List Int)
+chooseOne c x =
+    if c then
+        one x
+    else
+        []
+
+
+pub chosenOne : Bool, List Int → List (List Int)
+chosenOne c x = pushAll (chooseOne c x)
+
+
+pub chosenTwin : Bool, List Int → List (List Int)
+chosenTwin c x = pushAll (choose c x)
