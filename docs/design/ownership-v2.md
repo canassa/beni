@@ -1934,8 +1934,8 @@ Where κ is set, always **at the selected path p**:
   where the states are all distinct.
 
   Exactness: on all 2 039 roots of `allOwnership`, under `--ownership-everywhere --ownership=v2`, the
-  verdict and summary lines are byte for byte those of the base. This holds on master and on #1459. A
-  `-Downership-full-cross-check` build panics on none of these roots. On master, its lines are those of
+  verdict, summary and block-hash lines are byte for byte those of the base. This holds on master and on
+  #1459. A `-Downership-full-cross-check` build panics on none of these roots. On master, its lines are those of
   the base. On #1459 they are too, except `DerivedDeepPaths`' `rose`, which is a limit under the
   cross-check with and without the memo (#1458). Against #1459's own cross-check build, one root
   differs: `MarkerAcross.keepRight`, a limit there (#1458), settles under the cross-check with the memo
