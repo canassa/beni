@@ -143,6 +143,10 @@ pub const Table = struct {
     /// `propagate`'s runs, interned across calls: `(member, its position,
     /// the rest)` → a run id. Keys only, never published.
     prop_runs: Ids.FixedDict(3) = .{},
+    /// Per run id, `(call, slice)`: the slice a `propagate` call made for
+    /// it, read only by that call (each call its own number, #1372).
+    prop_slice: std.ArrayList([2]u32) = .empty,
+    prop_calls: u32 = 0,
     /// `propagate`'s join memo (§2.9, *The join memo*): a state `(joined
     /// node, class and mode bits, run)` whose walk is the same wherever it is
     /// met → the snapshot its walk puts at its position. Written only once
@@ -259,6 +263,7 @@ pub const Table = struct {
         t.memo_deep.deinit(gpa);
         t.memo_sep.deinit(gpa);
         t.prop_runs.deinit(gpa);
+        t.prop_slice.deinit(gpa);
         t.memo_prop.deinit(gpa);
         t.memo_leaf.deinit(gpa);
         t.leaf_spans.deinit(gpa);
@@ -3643,7 +3648,20 @@ pub const Table = struct {
 
     /// `propagate`, the members read at their own class (a literal's `vᵢ`, §2.9).
     pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
+        const r = try t.propagateWalk(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal);
+        if (!(std.debug.runtime_safety and full_cross_check and !t.no_memo)) return r;
+        // Walked again with no memo (*Cross-check*): the same snapshot.
+        t.no_memo = true;
+        defer t.no_memo = false;
+        if (r != try t.propagateWalk(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal)) std.debug.panic("ownership v2: a memoised propagation differs from its walk", .{});
+        return r;
+    }
+
+    fn propagateWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
+        const memo = !t.no_memo;
+        const call = t.prop_calls;
+        t.prop_calls += 1;
         var runs: std.ArrayList(NodeId) = .empty;
         defer runs.deinit(gpa);
         var run_ctxs: std.ArrayList(Kappas) = .empty;
@@ -3710,7 +3728,7 @@ pub const Table = struct {
         // the n frames one step below n inners at one place share one run.
         // The frames themselves, their order and each node's state are
         // the walk's as before.
-        const Slice = struct { run: u32, m0: NodeId, c0: Kappas, one: bool, k: [4]u32, words: u32, words_len: u32, fold: bool };
+        const Slice = struct { run: u32, m0: NodeId, c0: Kappas, one: bool, k: [4]u32, words: u32, words_len: u32, fold: bool, front: [3]u32 = .{ Ids.none_int, 0, 0 } };
         var slices: std.ArrayList(Slice) = .empty;
         defer slices.deinit(gpa);
         var slice_at: Ids.FixedDict(1) = .{};
@@ -3721,11 +3739,19 @@ pub const Table = struct {
         defer below_at.deinit(gpa);
         var belows: std.ArrayList([2]u32) = .empty;
         defer belows.deinit(gpa);
+        // Per call, by content (#1372): a run met again through another
+        // parent reads the slice made for it, and a frontier is made once
+        // per (node, class, slice): exact memos of pure functions, read by
+        // this call alone, so a failed call leaves nothing another reads.
+        var front_at: Ids.FixedDict(3) = .{};
+        defer front_at.deinit(gpa);
+        var fronts: std.ArrayList(Next) = .empty;
+        defer fronts.deinit(gpa);
         while (stack.pop()) |f| {
             try charge.reserve(gpa, .memo, 1);
+            var fresh: ?u32 = null;
             const sg = try slice_at.getOrPut(gpa, .{f.first});
             if (!sg.found_existing) {
-                sg.value_ptr.* = @intCast(slices.items.len);
                 var run: u32 = Ids.none_int;
                 var r = f.len;
                 while (r > 0) {
@@ -3735,6 +3761,15 @@ pub const Table = struct {
                     if (!got.found_existing) got.value_ptr.* = got.index;
                     run = got.value_ptr.*;
                 }
+                fresh = run;
+                if (memo and run != Ids.none_int) {
+                    if (t.prop_slice.items.len <= run) try t.prop_slice.appendNTimes(gpa, .{ Ids.none_int, 0 }, run + 1 - t.prop_slice.items.len);
+                    const e = &t.prop_slice.items[run];
+                    if (e[0] == call) fresh = null else e.* = .{ call, @intCast(slices.items.len) };
+                    sg.value_ptr.* = e[1];
+                } else sg.value_ptr.* = @intCast(slices.items.len);
+            }
+            if (fresh) |run| {
                 var m0: NodeId = .none;
                 var c0: Kappas = .none;
                 var one = true;
@@ -3800,7 +3835,7 @@ pub const Table = struct {
             if (f.clean) {
                 const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined), run };
                 try charge.reserve(gpa, .memo, 1);
-                if (t.memo_prop.get(key)) |hit| {
+                if (if (t.no_memo) null else t.memo_prop.get(key)) |hit| {
                     try linked.append(gpa, .{ .path = f.path, .at = .from(hit) });
                     continue;
                 }
@@ -3873,7 +3908,6 @@ pub const Table = struct {
             }
             // Children: the joined node's frontier, the members projected
             // along each step of it, each at its position one step below.
-            next.clearRetainingCapacity();
             if (slices.items[si].words_len == Ids.none_int) {
                 const at: u32 = @intCast(words.items.len);
                 const fold = try t.cursorSteps(gpa, charge, run_ctxs.items[f.first..][0..f.len], &words);
@@ -3882,15 +3916,32 @@ pub const Table = struct {
                 slices.items[si].fold = fold;
             }
             const sl = slices.items[si];
-            try t.frontierWith(gpa, charge, v, f.node, f.summary, .{ .words = words.items[sl.words..][0..sl.words_len], .fold = sl.fold }, &next);
-            for (next.items) |e| {
+            // The slice's first frontier is kept on it; another of its
+            // frontiers is in `front_at`, looked up only when one may be.
+            const fkey: [2]u32 = .{ f.node.int(), @intFromBool(f.summary) };
+            var at: ?u32 = if (memo and sl.front[0] == fkey[0] and sl.front[1] == fkey[1]) sl.front[2] else null;
+            if (at == null and memo and sl.front[0] != Ids.none_int) {
+                try charge.reserve(gpa, .memo, 1);
+                const fg = try front_at.getOrPut(gpa, .{ fkey[0], fkey[1], si });
+                if (fg.found_existing) at = fg.value_ptr.* else fg.value_ptr.* = @intCast(fronts.items.len);
+            }
+            if (at == null) {
+                next.clearRetainingCapacity();
+                try t.frontierWith(gpa, charge, v, f.node, f.summary, .{ .words = words.items[sl.words..][0..sl.words_len], .fold = sl.fold }, &next);
+                at = @intCast(fronts.items.len);
+                if (sl.front[0] == Ids.none_int) slices.items[si].front = .{ fkey[0], fkey[1], at.? };
+                try fronts.appendSlice(gpa, next.items);
+                try fronts.append(gpa, .{ .node = .none, .summary = false, .step = Ids.none_int });
+            }
+            for (fronts.items[at.?..]) |e| {
+                if (e.node == .none) break;
                 const s = Step.fromWord(e.step);
                 const child = e.node;
                 // The run one step below, made once per (run, step, inner
                 // place, class).
                 try charge.reserve(gpa, .memo, 1);
                 const place: u32 = if (e.via == .none) Ids.none_int else v.shapes.place(e.via).int();
-                const bg = try below_at.getOrPut(gpa, .{ f.first, e.step, place, @intFromBool(e.summary) });
+                const bg = try below_at.getOrPut(gpa, .{ if (memo) run else f.first, e.step, place, @intFromBool(e.summary) });
                 if (!bg.found_existing) {
                     bg.value_ptr.* = @intCast(belows.items.len);
                     const first: u32 = @intCast(runs.items.len);
@@ -4620,6 +4671,11 @@ const TestGraph = struct {
             // 11 a record `{ a, b : List (List Int) }`.
             11 => {
                 inline for (.{ 10, 11 }) |name| try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, name) catch unreachable), .@"var" = 3 });
+                return .{ .kind = .record };
+            },
+            // 14 a record `{ p, q }` of two records 0: a repeated substructure.
+            14 => {
+                inline for (.{ 15, 16 }) |name| try out.append(g.gpa, .{ .step = (Place.Step.field(g.account, name) catch unreachable), .@"var" = 0 });
                 return .{ .kind = .record };
             },
             // `type T = T (List Int) (List T)`: 12 the constructor, 13 its list.
@@ -5942,6 +5998,68 @@ test "#1064: two contexts at one node in one propagation are two states, each on
     try testing.expectEqual(lost, try f.kappaPath(out, &.{steps[2]}, cc, false));
     // Three positions of `C` (the paths `.a`, `.b`, `.c`), each read once.
     try testing.expectEqual(@as(usize, 3), traceCount(trace.items, cc, false));
+}
+
+/// `{ p = { a = C, b = C }, q = … }` joined over one member of the same
+/// shape, `X`'s snapshot `lost` at `.p.a` only: three frames below `.p.b`,
+/// `.q.a` and `.q.b` read one run through three parents (#1372).
+const RepeatedRuns = struct {
+    joined: NodeId,
+    member: NodeId,
+    ctx: Kappas,
+    c: NodeId,
+    steps: [4]Place.Step,
+
+    fn build(f: *Fixture) !RepeatedRuns {
+        const gpa = testing.allocator;
+        var r: RepeatedRuns = undefined;
+        for (&r.steps, [_]u32{ 15, 16, 10, 11 }) |*s, name| s.* = try Place.Step.field(&f.account, name);
+        const l = try f.placeOf(1);
+        r.c = try f.shapes.node(gpa, &f.account, l, try f.set(&.{try f.cells.site(gpa, &f.account, 1, l, .list)}), try f.shapes.overPut(gpa, &f.account, Ids.none_int, Place.Step.elem, try f.leaf(2, &.{})));
+        const x = try f.leaf(1, &.{try f.param(0, 1, &.{})});
+        var outer: [2]NodeId = undefined;
+        for (&outer, [_]NodeId{ r.c, x }, 0..) |*o, kid, i| {
+            const inner_p = try f.placeOf(0);
+            const inner = try f.shapes.node(gpa, &f.account, inner_p, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(2 + i), inner_p, .record)}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, r.steps[2], kid), r.steps[3], kid));
+            const p = try f.placeOf(14);
+            o.* = try f.shapes.node(gpa, &f.account, p, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(4 + i), p, .record)}), try f.shapes.overPut(gpa, &f.account, try f.shapes.overPut(gpa, &f.account, Ids.none_int, r.steps[0], inner), r.steps[1], inner));
+        }
+        r.joined = outer[0];
+        r.member = outer[1];
+        r.ctx = try f.setKPath(.none, &.{ r.steps[0], r.steps[2] }, x, lost);
+        return r;
+    }
+
+    /// The walk's snapshot, its records and the states it read.
+    fn run(memo: bool) !struct { out: [4]CondId, records: u32, states: usize } {
+        var f: Fixture = .{};
+        try f.init();
+        defer f.deinit();
+        const r = try build(&f);
+        var trace: std.ArrayList(u32) = .empty;
+        defer trace.deinit(testing.allocator);
+        f.conds.trace = &trace;
+        f.conds.no_memo = !memo;
+        const before = f.account.growth;
+        const out = try f.propagate(.none, r.joined, &.{r.member}, &.{r.ctx}, .alternatives, false);
+        const records = f.account.growth - before;
+        f.conds.no_memo = false;
+        var ks: [4]CondId = undefined;
+        for (&ks, [_][2]u32{ .{ 0, 2 }, .{ 0, 3 }, .{ 1, 2 }, .{ 1, 3 } }) |*k, at| k.* = try f.kappaPath(out, &.{ r.steps[at[0]], r.steps[at[1]] }, r.c, false);
+        return .{ .out = ks, .records = records, .states = traceCount(trace.items, r.c, false) };
+    }
+};
+
+test "#1372: propagate's per-call memos are exact, and a run met through three parents is read once" {
+    const memo = try RepeatedRuns.run(true);
+    const walk = try RepeatedRuns.run(false);
+    // The same snapshot: `lost` at `.p.a` alone, and the same four states of `C`.
+    try testing.expectEqualSlices(CondId, &.{ lost, yes, yes, yes }, &walk.out);
+    try testing.expectEqualSlices(CondId, &walk.out, &memo.out);
+    try testing.expectEqual(@as(usize, 4), walk.states);
+    try testing.expectEqual(walk.states, memo.states);
+    // Two of the three frames of `(X, none)` reuse its slice and `C`'s frontier.
+    try testing.expect(memo.records < walk.records);
 }
 
 test "#1064: a cyclic place with two contexts ends at the revisited exact states" {

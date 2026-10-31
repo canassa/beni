@@ -9800,25 +9800,16 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §4.1: a value whose type's positions are not the declaration's source,
-    // re-read at a count that grows, is uses × positions: past K·I_f it is
-    // growth, and past the allowance the loud `ownership_summary_size`.
+    // §4.1: a value whose type's positions are not the declaration's source
+    // is work past K·I_f, which is growth, and past the allowance the loud
+    // `ownership_summary_size`. `doublingProduct` with no extra list costs
+    // about 126 000.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
-    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..200) |i| try src.print(a, "\n    , r{d} : S", .{i});
-    try src.appendSlice(a, "\n    }\n\n\npub g : List Int → List R\ng xs =\n    s = { s0 = xs");
-    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
-    try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..200) |i| try src.print(a, ", r{d} = s", .{i});
-    try src.appendSlice(a, " }\n    [ r");
-    for (1..16) |_| try src.appendSlice(a, ", r");
-    try src.appendSlice(a, " ]\n");
+    try doublingProduct(a, &src, "g", 0);
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -10840,31 +10831,58 @@ test "the checker v2 prints a summary of shared positions once per node, not onc
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: π1 RAW, π1[*] A; res [*] fresh1 π1[*]{shared}, π1\n") != null);
 }
 
+test "the checker v2's branch join reads a repeated run once per call, whatever parent it is met through" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1372: `propagate` walks the joined value path by path, so a record
+    // that doubles at each of 8 levels is 2⁸ paths of one list. The runs
+    // below `.l` and `.r` are equal; a frame read its run's slice (κ from
+    // the members, the cursors' steps, the run one step below) and its
+    // frontier again for every parent. Per call they are memoised by
+    // content: 20 883 records without the memos, 12 975 with them. The states
+    // are still one per path, so the cost still doubles per level.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    const n = 8;
+    try src.appendSlice(a, "type alias R0 =\n    List Int\n\n\n");
+    for (1..n + 1) |k| try src.print(a, "type alias R{d} =\n    {{ l : R{d}, r : R{d} }}\n\n\n", .{ k, k - 1, k - 1 });
+    try src.print(a, "pub f : Bool, List Int, List Int → R{d}\nf c xs ys =\n    s0 = xs\n    t0 = ys\n", .{n});
+    for (1..n + 1) |k| try src.print(a, "    s{d} = {{ l = s{d}, r = s{d} }}\n    t{d} = {{ l = t{d}, r = t{d} }}\n", .{ k, k - 1, k - 1, k, k - 1, k - 1 });
+    try src.print(a, "    if c then\n        s{d}\n\n    else\n        t{d}\n", .{ n, n });
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary f: π2 RA, π3 RA; res .l fresh10, .l fresh3,") != null);
+    try testing.expect(try accountField(dump.stdout, "f", "total") <= 14_000);
+}
+
 test "the checker v2 says why a summary is not printed" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // #1182: the summary print reads the class on the declaration's account,
     // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing. A 190-field
-    // record of 10-field records re-read 16 times checks at growth 65 357 (re-sized for 2b's crossing records),
-    // and its print passes 65 536: the dump says so.
+    // that error, and the `summary` line was simply missing.
+    // `doublingProduct` with 64 lists checks at growth 65 227, and its print
+    // passes 65 536: the dump says so.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try src.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try src.print(a, "\n    , s{d} : List Int", .{i});
-    try src.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..190) |i| try src.print(a, "\n    , r{d} : S", .{i});
-    try src.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..10) |i| try src.print(a, ", s{d} = xs", .{i});
-    try src.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..190) |i| try src.print(a, ", r{d} = s", .{i});
-    try src.appendSlice(a, " }\n    [ r");
-    for (1..16) |_| try src.appendSlice(a, ", r");
-    try src.appendSlice(a, " ]\n");
+    try doublingProduct(a, &src, "h", 64);
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -10938,26 +10956,33 @@ test "the checker v2 joins a group's port without its unchanged res again" {
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  18:16 List.push xs: accepted param\n") != null);
 }
 
+/// `name`'s module text: a record that doubles at each of 11 levels, three
+/// fields of it and `wide` more lists in `T`, read twice in a list literal.
+/// Its positions, 3·2¹¹ paths, are not its source: a genuine product, so its
+/// work past the source continuation is growth (§4.1, #1188). Each extra
+/// list adds source and takes about 960 records off the growth. A record of
+/// records re-read at many positions was the product until #1372's memos
+/// made a repeated run cost once per call.
+fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8, wide: usize) !void {
+    try src.appendSlice(a, "type alias R0 =\n    List Int\n\n\n");
+    for (1..12) |k| try src.print(a, "type alias R{d} =\n    {{ l : R{d}, r : R{d} }}\n\n\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "type alias T =\n    { t0 : R11\n    , t1 : R11\n    , t2 : R11");
+    for (0..wide) |i| try src.print(a, "\n    , w{d} : List Int", .{i});
+    try src.print(a, "\n    }}\n\n\npub {s} : List Int → List T\n{s} xs =\n    s0 = xs\n", .{ name, name });
+    for (1..12) |k| try src.print(a, "    s{d} = {{ l = s{d}, r = s{d} }}\n", .{ k, k - 1, k - 1 });
+    try src.appendSlice(a, "    t = { t0 = s11, t1 = s11, t2 = s11");
+    for (0..wide) |i| try src.print(a, ", w{d} = xs", .{i});
+    try src.appendSlice(a, " }\n    [ t, t ]\n");
+}
+
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 62 200 of 65 536), after another (`g`) or before it:
-/// its dump in that order (#1104). Its growth is a genuine product, a
-/// 210-field record of records (re-sized for 2b's crossing records) re-read at 15 positions: source-shaped work
-/// spends the source continuation, never the allowance (§4.1, #1188).
+/// cold growth about 62 300 of 65 536, `doublingProduct` with 67 lists),
+/// after another (`g`) or before it: its dump in that order (#1104).
 fn nearLimitDump(w: *World, h_first: bool) !world.Result {
     const a = testing.allocator;
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(a);
-    try h.appendSlice(a, "type alias S =\n    { s0 : List Int");
-    for (1..10) |i| try h.print(a, "\n    , s{d} : List Int", .{i});
-    try h.appendSlice(a, "\n    }\n\n\ntype alias R =\n    { r0 : S");
-    for (1..210) |i| try h.print(a, "\n    , r{d} : S", .{i});
-    try h.appendSlice(a, "\n    }\n\n\npub h : List Int → List R\nh xs =\n    s = { s0 = xs");
-    for (1..10) |i| try h.print(a, ", s{d} = xs", .{i});
-    try h.appendSlice(a, " }\n    r = { r0 = s");
-    for (1..210) |i| try h.print(a, ", r{d} = s", .{i});
-    try h.appendSlice(a, " }\n    [ r");
-    for (1..15) |_| try h.appendSlice(a, ", r");
-    try h.appendSlice(a, " ]\n");
+    try doublingProduct(a, &h, "h", 67);
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
     try w.write("Main.beni", src);

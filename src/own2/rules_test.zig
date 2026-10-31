@@ -66,8 +66,10 @@ const layers = [_]Entry{
     // looks (`leafEntries`, memoised) and checks it under `runtime_safety`;
     // 4 500 with the memo.
     // 4 560 since #1419: a read at another position takes its home's
-    // entry, and read-off maps κ per submap (`relabelMap`).
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4560 },
+    // entry, and read-off maps κ per submap (`relabelMap`). 4 620 since
+    // #1372: propagate's per-call memos of a run's slice and a frontier,
+    // and their cross-check.
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4620 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
