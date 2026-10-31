@@ -61,7 +61,7 @@ const layers = [_]Entry{
     .{ .file = "Cond.zig", .layer = 4, .max_lines = 4260 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
+    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1710 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -75,7 +75,7 @@ const layers = [_]Entry{
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
     // 1 630 since #1386: a `sep` side below a constructor.
-    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1680 },
+    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1710 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write.
     .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1940 },

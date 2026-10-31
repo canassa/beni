@@ -512,10 +512,13 @@ const Grafter = struct {
     /// A row's taken result `elem(πᵢ·q·ρ)` (§2.13.6) at this call, null for
     /// any other cell: materialised out of the actual as a list pattern does
     /// (§2.13.3, `Transfer.bindList`), `elem(c·ι)` per symbolic container
-    /// cell `c` under the split this call makes, κ the contents' at `q[*]`;
-    /// the other contents there as they are (§2.11 item 6, #1393).
-    fn takenImage(g: *Grafter, c: CellId) Error!?SetId {
+    /// cell `c` under the split this call makes, κ the contents' at `q[*]`,
+    /// joined with the other contents' node there, whole, so what a
+    /// literal's element or a stored value holds below it is kept (§2.11
+    /// item 6, #1393).
+    fn takenImage(g: *Grafter, c: CellId) Error!?NodeId {
         const cells = g.env.cells;
+        const shapes = g.env.shapes;
         const x = cells.get(c);
         if (x.origin != .elem or LabelId.from(x.b) != .none or g.label == .none) return null;
         const px = cells.get(.from(x.a));
@@ -527,31 +530,51 @@ const Grafter = struct {
         const path = (try places.extend(gpa_, g.env.charge, .from(px.b), Step.elem)) orelse return null;
         const contents = try g.argAt(px.a, path, at);
         const kappa = try g.env.conds.kappaOf(gpa_, g.env.charge, g.env.view(), try g.argKappa(px.a, path), contents, true);
-        var out: SetId = .none;
+        var refined: SetId = .none;
         var projections: SetId = .none;
-        var it = cells.sets.iterate(try g.env.shapes.cellsOf(gpa_, g.account(), &cells.sets, try g.argAt(px.a, .from(px.b), list_at)));
+        var it = cells.sets.iterate(try shapes.cellsOf(gpa_, g.account(), &cells.sets, try g.argAt(px.a, .from(px.b), list_at)));
         while (it.next()) |e| {
             try g.env.charge.reserve(gpa_, .inspection, 1);
             const k: CellId = .from(e.key);
             if (!cells.origin(k).isSymbolic() and !cells.origin(k).isRefinement() or cells.origin(k) == .top) continue;
             _ = try cells.split(gpa_, g.account(), k, cells.labelInst(g.label), g.label, kappa);
             const r = try cells.refine(gpa_, g.account(), .elem, k, g.label, 0, at, Cell.Kind.ofPlace(places.kind(at)));
-            out = try cells.sets.insert(gpa_, g.env.charge, out, r.int(), e.value);
+            refined = try cells.sets.insert(gpa_, g.env.charge, refined, r.int(), e.value);
             if (try cells.unrefined(gpa_, g.account(), places, r)) |u| projections = try cells.sets.insert(gpa_, g.env.charge, projections, u.int(), 0);
         }
-        var ct = cells.sets.iterate(try g.env.shapes.cellsOf(gpa_, g.account(), &cells.sets, contents));
-        while (ct.next()) |e| {
-            try g.env.charge.reserve(gpa_, .inspection, 1);
-            if (projections != .none) if (try cells.unrefined(gpa_, g.account(), places, .from(e.key))) |u| if (cells.sets.member(projections, u.int())) continue;
-            out = try cells.sets.insert(gpa_, g.env.charge, out, e.key, e.value);
+        // The contents without the containers' own projections, which the
+        // refinements stand for: one position's value, node and all.
+        var drop: SetId = .none;
+        if (projections != .none) {
+            var ct = cells.sets.iterate(try shapes.cellsOf(gpa_, g.account(), &cells.sets, contents));
+            while (ct.next()) |e| {
+                try g.env.charge.reserve(gpa_, .inspection, 1);
+                const u = (try cells.unrefined(gpa_, g.account(), places, .from(e.key))) orelse continue;
+                if (cells.sets.member(projections, u.int())) drop = try cells.sets.insert(gpa_, g.env.charge, drop, e.key, 0);
+            }
         }
-        return out;
+        const explicit = try shapes.without(gpa_, g.account(), &cells.sets, contents, drop, true);
+        const node = try shapes.leaf(gpa_, g.account(), at, refined);
+        if (explicit == .none) return node;
+        if (refined == .none) return explicit;
+        var two = [_]NodeId{ node, explicit };
+        return try shapes.join(gpa_, g.account(), places, cells, &two);
     }
 
-    /// `c`, no parameter's, mapped into `into`: a taken element as
-    /// `takenImage` materialises it, any other cell by `mapCell`.
+    /// `takenImage`'s cells at `ε` for a reader of a set (a view node's own
+    /// cells, an atom's side): a built value below them is `⊤` there,
+    /// approximately, since a set cannot hold it (#1393).
+    fn takenCells(g: *Grafter, n: NodeId) Error!SetId {
+        const sets = &g.env.cells.sets;
+        const s = try g.env.shapes.cellsOf(g.gpa(), g.account(), sets, n);
+        if (g.env.shapes.kind(n) == .leaf) return s;
+        return sets.insert(g.gpa(), g.env.charge, s, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
+    }
+
+    /// `c`, no parameter's, mapped into `into`: a taken element's cells
+    /// (`takenCells`), any other cell by `mapCell`.
     fn mapInto(g: *Grafter, into: SetId, c: CellId, at: PlaceId, approx: u1) Error!SetId {
-        if (try g.takenImage(c)) |t| return g.env.cells.sets.unionWith(g.gpa(), g.env.charge, into, t);
+        if (try g.takenImage(c)) |t| return g.env.cells.sets.unionWith(g.gpa(), g.env.charge, into, try g.takenCells(t));
         return g.env.cells.sets.insert(g.gpa(), g.env.charge, into, (try g.mapCell(c, at)).int(), approx);
     }
 
@@ -886,7 +909,11 @@ const Grafter = struct {
                 try out.append(g.gpa(), .{ .node = try g.argAt(x.a, .from(x.b), at), .approx = e.value == 1 });
                 continue;
             }
-            rest = try g.mapInto(rest, cell, at, e.value);
+            if (try g.takenImage(cell)) |t| {
+                try out.append(g.gpa(), .{ .node = t, .approx = e.value == 1 });
+                continue;
+            }
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
         }
         if (rest != .none or out.items.len == first) try out.append(g.gpa(), .{ .node = try g.env.shapes.leaf(g.gpa(), g.account(), at, rest), .approx = false });
     }
@@ -923,7 +950,12 @@ const Grafter = struct {
                 try members.append(g.gpa(), try g.env.shapes.view(g.gpa(), g.account(), one, g.view_env));
                 continue;
             }
-            rest = try g.mapInto(rest, cell, at, e.value);
+            // A taken element is a value of its own, its node whole.
+            if (try g.takenImage(cell)) |t| {
+                try members.append(g.gpa(), if (e.value == 1) try g.env.shapes.recast(g.gpa(), g.account(), at, t) else t);
+                continue;
+            }
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
         }
         if (rest != .none or members.items.len == first) try members.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, rest));
         return g.env.shapes.joinRaw(g.gpa(), g.account(), at, members.items[first..]);
@@ -978,7 +1010,7 @@ const Grafter = struct {
             // (`argCells`, #1199, #1219).
             return g.argCells(x.a, .from(x.b), at);
         }
-        if (try g.takenImage(c)) |t| return t;
+        if (try g.takenImage(c)) |t| return g.takenCells(t);
         if (x.origin.isSymbolic() and x.origin != .top) return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
         return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c, at)).int(), 0);
     }
@@ -1298,7 +1330,7 @@ pub const Views = struct {
         const x = v.cells.get(c);
         if (x.origin == .param) return t.reach(gpa_, account_, &v.cells.sets, try g.argAt(x.a, .from(x.b), g.placeOfCell(c)));
         // A taken element, the call's materialisation (`takenImage`).
-        if (try g.takenImage(c)) |s| return t.reach(gpa_, account_, &v.cells.sets, try t.leaf(gpa_, account_, g.placeOfCell(c), s));
+        if (try g.takenImage(c)) |n| return t.reach(gpa_, account_, &v.cells.sets, n);
         // What the call does not interpret is `⊤`, approximately, as a
         // grafted atom reads it (`Grafter.cellsOf`).
         if (x.origin.isSymbolic() and x.origin != .top) return v.cells.sets.insert(gpa_, .growth(account_), .none, (try v.cells.top(gpa_, account_)).int(), 1);
