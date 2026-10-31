@@ -1,0 +1,10 @@
+module LocalEmptyInCtor
+  21:21 List.push xs: accepted param
+  28:10 call LocalEmptyInCtor.writeInner <V …>#V.0[*]#W.0: accepted fresh (LocalEmptyInCtor.writeInner writes π1#V.0[*]#W.0)
+  34:5 call LocalEmptyInCtor.writeInner <V …>#V.0[*]#W.0: accepted fresh (LocalEmptyInCtor.writeInner writes π1#V.0[*]#W.0)
+  41:13 List.push xs: accepted param
+  50:5 call LocalEmptyInCtor.direct k[*]#W.0: accepted fresh (LocalEmptyInCtor.direct writes π1[*]#W.0)
+  summary writeInner: π1 R, π1#V.0 R, π1#V.0[*]#W.0 RAW[storage], π1#V.0[*]#W.0[*] A; res [*] ~π1#V.0[*]#W.0[*]{excl π1#V.0}r{excl π1#V.0}, fresh1 π1#V.0[*]#W.0{excl π1#V.0}; xreq excl π1#V.0
+  summary direct: π1 R, π1[*]#W.0 RAW[storage], π1[*]#W.0[*] A; res [*] ~π1[*]#W.0[*]{excl π1}r{excl π1}, fresh1 π1[*]#W.0{excl π1}; xreq excl π1
+  demands 5: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 5: accepted 5 (fresh 3, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
