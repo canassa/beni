@@ -1043,6 +1043,135 @@ const Grafter = struct {
         return g.env.shapes.reach(g.gpa(), g.account(), &g.env.cells.sets, n);
     }
 
+    /// §2.9 *Two positions of one image*, rule 3: a callee's `apart`/`sep`
+    /// over `πᵢ·P` and `πᵢ·Q`, both through `⟲`, whose images share a cell
+    /// `X`. The pair is two positions of `X` when (a) `P` and `Q` end in
+    /// different named steps, so no route is in both; (b) the actual at
+    /// their common prefix, cut before the first `⟲`, is one position
+    /// (`onePosition`), so its positions below are its cells', route for
+    /// route; (c) `X` is exact, symbolic and at a summary path. Then `X`
+    /// leaves side 1 and the pair owes `exclOf(X)`, which is returned; it is
+    /// `yes`, with the sides unchanged, when the rule does not apply.
+    fn positionsThroughLevels(g: *Grafter, t: *Cond.Table, callee: [2]CellId, sides: *[2]SetId) Error!CondId {
+        const cells = g.env.cells;
+        const places = g.env.places;
+        const x = cells.get(callee[0]);
+        const y = cells.get(callee[1]);
+        if (x.origin != .param or y.origin != .param or x.a != y.a) return Cond.yes;
+        const p: PathId = .from(x.b);
+        const q: PathId = .from(y.b);
+        if (p == q or firstLevel(places, p) == .none or firstLevel(places, q) == .none) return Cond.yes;
+        // (a) Apart by route.
+        const sp = places.pathStep(p);
+        const sq = places.pathStep(q);
+        if (!mutated("rule3-route") and (!namedStep(sp) or !namedStep(sq) or @as(u32, @bitCast(sp)) == @as(u32, @bitCast(sq)))) return Cond.yes;
+        // (b) One position at the common prefix.
+        var ps: std.ArrayList(Place.Step) = .empty;
+        defer ps.deinit(g.gpa());
+        var qs: std.ArrayList(Place.Step) = .empty;
+        defer qs.deinit(g.gpa());
+        try g.stepsOf(p, &ps);
+        try g.stepsOf(q, &qs);
+        var lcp = p;
+        while (places.pathParent(lcp) != .none) lcp = places.pathParent(lcp);
+        for (ps.items, 0..) |s, k| {
+            if (k >= qs.items.len or s.kind == .level or @as(u32, @bitCast(s)) != @as(u32, @bitCast(qs.items[k]))) break;
+            try g.env.charge.reserve(g.gpa(), .path, 1);
+            lcp = (try places.extend(g.gpa(), g.env.charge, lcp, s)) orelse return Cond.yes;
+        }
+        if (!mutated("rule3-one-position") and !try g.onePosition(try g.prefixArg(x.a, lcp))) return Cond.yes;
+        // (c) The shared images that name positions.
+        var extra: CondId = Cond.yes;
+        var rest: SetId = .none;
+        var shared_images: SetId = .none;
+        var it = cells.sets.iterate(sides[1]);
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const c: CellId = .from(e.key);
+            const o = cells.origin(c);
+            const names = mutated("rule3-exact") or (e.value == 0 and o.isSymbolic() and o != .top and places.isSummary(.from(cells.get(c).b)));
+            const both = if (mutated("rule3-exact")) cells.sets.member(sides[0], e.key) else cells.sets.get(sides[0], e.key) == @as(?u1, 0);
+            if (names and both) {
+                extra = try t.@"and"(g.gpa(), g.env.charge, extra, try t.exclOf(g.gpa(), g.env.charge, cells, c));
+                shared_images = try cells.sets.insert(g.gpa(), g.env.charge, shared_images, e.key, 0);
+                continue;
+            }
+            rest = try cells.sets.insert(g.gpa(), g.env.charge, rest, e.key, e.value);
+        }
+        if (shared_images == .none) return Cond.yes;
+        sides[1] = rest;
+        if (std.debug.runtime_safety) try g.assertOnePosition(x.a, .{ p, q }, shared_images);
+        return extra;
+    }
+
+    /// Rule 3's check by a reader that shares none of its walk (Lemma R3):
+    /// the call's preimage of the actual at each path's `⟲` prefix, a
+    /// multiset keyed by canonical path, holds each shared image at that
+    /// path's key once, never as a repeat. A representation (b) misjudged as
+    /// one position shows here as a duplicate.
+    fn assertOnePosition(g: *Grafter, i: u32, paths: [2]PathId, shared_images: SetId) Error!void {
+        const places = g.env.places;
+        const cells = g.env.cells;
+        for (paths) |path| {
+            const prefix = places.pathParent(firstLevel(places, path));
+            const pre = try preimage(g.env, try g.prefixArg(i, prefix), prefix);
+            const ai = g.env.conds.mapGet(pre.map, path.int()) orelse continue;
+            const dups = g.env.conds.aggs.items[ai].dups;
+            var it = cells.sets.iterate(shared_images);
+            while (it.next()) |e| if (cells.sets.member(dups, e.key))
+                std.debug.panic("ownership v2: §2.9 rule 3 read two positions of one image where the call's preimage holds a repeat", .{});
+        }
+    }
+
+    /// The forced node is one position's possible contents: a leaf, or a
+    /// union or choice DAG whose every member is a leaf, each node visited
+    /// once. A leaf holding an approximate cell, or a cell under a repeating
+    /// split (§2.9 *The repeating split*), is not: two of its parameter
+    /// positions may be one object. A node, delta, recast or positions node
+    /// is not either: two of its children may hold one object.
+    fn onePosition(g: *Grafter, n0: NodeId) Error!bool {
+        const shapes = g.env.shapes;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(g.gpa());
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(g.gpa());
+        try stack.append(g.gpa(), n0);
+        while (stack.pop()) |m| {
+            if (seen.contains(m)) continue;
+            try seen.put(g.gpa(), m, {});
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            const n = try shapes.force(g.gpa(), g.account(), m);
+            switch (shapes.kind(n)) {
+                .leaf => {
+                    var it = g.env.cells.sets.iterate(shapes.cells(n));
+                    while (it.next()) |e| {
+                        try g.env.charge.reserve(g.gpa(), .inspection, 1);
+                        if (e.value == 1 or Cond.Table.repeatingSplit(g.env.cells, .from(e.key)) != null) return false;
+                    }
+                },
+                .@"union", .choice => try stack.appendSlice(g.gpa(), &.{ .from(shapes.get(n).a), .from(shapes.get(n).b) }),
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// A field, a tuple index or a constructor argument: a step every route
+    /// of a path ending in it ends in.
+    fn namedStep(s: Place.Step) bool {
+        return s.kind == .field or s.kind == .index or s.kind == .ctor_arg;
+    }
+
+    /// The path's first `⟲` node, `none` when it has none.
+    fn firstLevel(places: *Place.Table, p0: PathId) PathId {
+        var lv: PathId = .none;
+        var p = p0;
+        while (places.pathParent(p) != .none) : (p = places.pathParent(p)) {
+            if (places.pathStep(p).kind == .level) lv = p;
+        }
+        return lv;
+    }
+
     fn foldedCells(g: *Grafter, i: u32, p: PathId) Error!?SetId {
         const places = g.env.places;
         var lv: PathId = .none;
@@ -1097,32 +1226,38 @@ const Grafter = struct {
                 // (*The derivation*), never a sorted list of them all.
                 var sides: std.ArrayList(SetId) = .empty;
                 defer sides.deinit(gpa_);
+                var callee: [2]CellId = .{ .none, .none };
                 if (a.atom == .sep) {
                     for ([_]u32{ a.a, a.b }) |side| {
                         const c: CellId = .from(side);
+                        if (sides.items.len < 2) callee[sides.items.len] = c;
                         try sides.append(gpa_, try g.sideCells(c));
                     }
                 } else {
                     var it = g.env.cells.sets.iterate(.from(a.a));
                     while (it.next()) |e| {
                         const c: CellId = .from(e.key);
+                        if (sides.items.len < 2) callee[sides.items.len] = c;
                         try sides.append(gpa_, try g.sideCells(c));
                     }
                 }
                 // Two sides (a `sep`, or an `apart` of two): merged along their
                 // tries, memoised per node pair; more, one into the other.
+                // Two positions of one image through `⟲` (§2.9 rule 3).
+                var extra: CondId = Cond.yes;
+                if (sides.items.len == 2) extra = try g.positionsThroughLevels(t, callee, sides.items[0..2]);
                 var acc: Cond.Table.Agg = .{};
                 if (sides.items.len == 2) {
                     acc = try t.aggMergeSets(gpa_, g.env.charge, g.env.cells, g.env.places, sides.items[0], sides.items[1]);
                 } else for (sides.items) |s| {
                     acc = try t.aggMergeMulti(gpa_, g.env.charge, g.env.cells, g.env.places, acc, try t.setAgg(gpa_, g.env.charge, g.env.cells, g.env.places, s));
                 }
-                const k = try t.aggCond(gpa_, g.env.charge, g.env.cells, g.env.places, acc);
+                const k = try t.@"and"(gpa_, g.env.charge, try t.aggCond(gpa_, g.env.charge, g.env.cells, g.env.places, acc), extra);
                 if (std.debug.runtime_safety and Cond.full_cross_check) {
                     var items: std.ArrayList(Cond.Item) = .empty;
                     defer items.deinit(gpa_);
                     for (sides.items) |s| try g.addItems(s, &items);
-                    try t.expectSame(gpa_, g.env.charge, k, try t.apart(gpa_, g.env.charge, g.env.cells, g.env.places, items.items, null));
+                    try t.expectSame(gpa_, g.env.charge, k, try t.@"and"(gpa_, g.env.charge, try t.apart(gpa_, g.env.charge, g.env.cells, g.env.places, items.items, null), extra));
                 }
                 return k;
             },
@@ -3618,4 +3753,11 @@ test "#1399: a joined κ keyed on an interned union below a choice is read throu
     const got = try joinedElemThroughCall(&x, a, ka, b, kb);
     try testing.expectEqual(Cond.shared, got.class);
     try testing.expectEqual(Cond.shared, got.caller);
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }

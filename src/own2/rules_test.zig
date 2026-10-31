@@ -118,7 +118,7 @@ const layers = [_]Entry{
     // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
     // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
     // `Beside` spine's children are listed under (`keysOf`).
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1830 },
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1960 },
     // 260 since #1457: the frame's accessors, value helpers and uses, split
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
