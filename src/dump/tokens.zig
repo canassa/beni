@@ -33,8 +33,9 @@ pub fn write(
     line_starts: []const u32,
 ) std.Io.Writer.Error!void {
     const s = tokens.slice();
+    var cursor: diagnostic.ColumnCursor = .{};
     for (s.items(.tag), s.items(.start), s.items(.line)) |tag, start, line| {
-        const col = diagnostic.column(source, line_starts[line], start);
+        const col = cursor.at(source, line_starts[line], start);
         const text = Tokenizer.slice(source, tag, start);
         try w.print("{d}:{d} {t}", .{ line + 1, col, tag });
         if (tag == .markup_text) {
