@@ -1,0 +1,45 @@
+-- ownership (project): `FoldedBCall` with the recursive group in another
+-- module (ownership-v2.md §8, slice 4's plan, 4a; #1394). A call of an
+-- imported member applies the class its block publishes, so the verdicts
+-- are the same-module fixture's: `shared`, `viaHelper` and `viaWrapper`
+-- hand `incAll` `k` at `.0[*].0` and at `.1[*].0` and are refused;
+-- `distinct` is accepted; `chosen`, `k` in one placement or the other, is
+-- refused by v1. Under v2 `distinct` is refused until #1253, and `Walk`'s
+-- `incAll b` until 4c, as in `FoldedBCall` (known entries).
+import Walk exposing (B)
+
+
+pub shared : B
+shared =
+    k = [ B [] [] ]
+    Walk.incAll (B [ B k [] ] [ B k [] ])
+
+
+pub viaHelper : B
+viaHelper =
+    k = [ B [] [] ]
+    Walk.incAll (Walk.both k)
+
+
+pub viaWrapper : B
+viaWrapper =
+    k = [ B [] [] ]
+    Walk.wrapper (B [ B k [] ] [ B k [] ])
+
+
+pub distinct : B
+distinct =
+    k1 = [ B [] [] ]
+    k2 = [ B [] [] ]
+    Walk.incAll (B [ B k1 [] ] [ B k2 [] ])
+
+
+pub chosen : Bool → B
+chosen c =
+    k = [ B [] [] ]
+    v =
+        if c then
+            B [ B k [] ] []
+        else
+            B [] [ B k [] ]
+    Walk.incAll v

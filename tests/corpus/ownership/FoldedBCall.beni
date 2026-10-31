@@ -1,0 +1,77 @@
+-- ownership: Appendix B's FoldedBCall (ownership-v2.md §8, slice 4's
+-- plan, 4a), written as mutual pattern recursion (#1394). `incAll` writes
+-- every `.0` list of a `B` at every depth, and `incList` walks a list of
+-- `B` with `[ b, …rest ]`; they are one recursive group. `shared` hands
+-- `incAll` the unwidened actual `B [ B k [] ] [ B k [] ]`: `k` is at
+-- `.0[*].0` and at `.1[*].0`, two paths whose least common ancestor is a
+-- constructor, both written, so in place `k` is pushed twice where value
+-- semantics push each copy once: refused. `viaHelper` builds the same
+-- actual in a helper and `viaWrapper` writes through a wrapper: both
+-- refused as `shared` is. `distinct` puts separate `k1` and `k2` there and
+-- is accepted. `chosen` puts `k` in one placement or the other in two
+-- whole-value arms, once per arm; v1 refuses it. Under v2 `distinct` is
+-- refused until #1253 tells apart the levels below the first return, and
+-- `incList`'s own `incAll b` until 4c's fold certificate (known entries).
+type B
+    = B (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+both : List B → B
+both k = B [ B k [] ] [ B k [] ]
+
+
+wrapper : B → B
+wrapper v = incAll v
+
+
+pub shared : B
+shared =
+    k = [ B [] [] ]
+    incAll (B [ B k [] ] [ B k [] ])
+
+
+pub viaHelper : B
+viaHelper =
+    k = [ B [] [] ]
+    incAll (both k)
+
+
+pub viaWrapper : B
+viaWrapper =
+    k = [ B [] [] ]
+    wrapper (B [ B k [] ] [ B k [] ])
+
+
+pub distinct : B
+distinct =
+    k1 = [ B [] [] ]
+    k2 = [ B [] [] ]
+    incAll (B [ B k1 [] ] [ B k2 [] ])
+
+
+pub chosen : Bool → B
+chosen c =
+    k = [ B [] [] ]
+    v =
+        if c then
+            B [ B k [] ] []
+        else
+            B [] [ B k [] ]
+    incAll v

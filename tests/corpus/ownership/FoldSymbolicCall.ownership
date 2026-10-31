@@ -1,0 +1,35 @@
+module FoldSymbolicCall
+  32:16 call FoldSymbolicCall.incTs <call List.push>[*]#T.0: accepted param (FoldSymbolicCall.incTs writes π1[*]#T.0)
+  32:16 call FoldSymbolicCall.incTs <call List.push>[*]⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.incTs writes π1[*]⟨T⟩⁺#T.0)
+  32:23 List.push kids: accepted param
+  39:15 call FoldSymbolicCall.incT t#T.0: accepted param (FoldSymbolicCall.incT writes π1#T.0)
+  39:15 call FoldSymbolicCall.incT t⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.incT writes π1⟨T⟩⁺#T.0)
+  39:24 call FoldSymbolicCall.incTs rest[*]#T.0: accepted param (FoldSymbolicCall.incTs writes π1[*]#T.0)
+  39:24 call FoldSymbolicCall.incTs rest[*]⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.incTs writes π1[*]⟨T⟩⁺#T.0)
+  46:12 call FoldSymbolicCall.incT <T …>#T.0: accepted fresh (FoldSymbolicCall.incT writes π1#T.0)
+  46:12 call FoldSymbolicCall.incT <T …>⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.incT writes π1⟨T⟩⁺#T.0)
+  52:5 call FoldSymbolicCall.midA <T …>: rejected exclusive: the elements of <T …> may share one list
+  52:5 call FoldSymbolicCall.midA k: rejected disjoint: another operand of the same operation reaches it (FoldSymbolicCall.midA writes π2)
+  59:5 call FoldSymbolicCall.midA k2: accepted fresh (FoldSymbolicCall.midA writes π2)
+  63:12 call FoldSymbolicCall.incT <T …>#T.0: accepted fresh (FoldSymbolicCall.incT writes π1#T.0)
+  63:12 call FoldSymbolicCall.incT <T …>⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.incT writes π1⟨T⟩⁺#T.0)
+  69:5 call FoldSymbolicCall.midB kids: rejected disjoint: another operand of the same operation reaches it (FoldSymbolicCall.midB writes π1)
+  76:5 call FoldSymbolicCall.midB p: accepted fresh (FoldSymbolicCall.midB writes π1)
+  76:5 call FoldSymbolicCall.midB q: accepted fresh (FoldSymbolicCall.midB writes π2)
+  83:13 call FoldSymbolicCall.lengths ts[*]⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.lengths writes π1[*]⟨T⟩⁺#T.0)
+  90:30 call FoldSymbolicCall.incTs kids[*]#T.0: rejected later-use: kids[*]⟨T⟩#T.0 is read again at 91:17 (FoldSymbolicCall.incTs writes π1[*]#T.0)
+  90:30 call FoldSymbolicCall.incTs kids[*]⟨T⟩⁺#T.0: rejected later-use: kids[*]⟨T⟩#T.0 is read again at 91:17 (FoldSymbolicCall.incTs writes π1[*]⟨T⟩⁺#T.0)
+  91:36 call FoldSymbolicCall.lengths rest[*]⟨T⟩⁺#T.0: accepted param (FoldSymbolicCall.lengths writes π1[*]⟨T⟩⁺#T.0)
+  100:5 call FoldSymbolicCall.deepThenShallow <R2 …>#R2.0[*]⟨T⟩⁺#T.0: rejected exclusive: the callee needs the list's elements not to share, and they may (FoldSymbolicCall.deepThenShallow writes π1#R2.0[*]⟨T⟩⁺#T.0)
+  107:5 call FoldSymbolicCall.deepThenShallow <R2 …>#R2.0[*]⟨T⟩⁺#T.0: accepted fresh (FoldSymbolicCall.deepThenShallow writes π1#R2.0[*]⟨T⟩⁺#T.0)
+  summary incT: π1 R, π1#T.0 RW[storage], π1⟨T⟩⁺#T.0 W[storage]; res #T.0 fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh5{shared}r{lost} ~fresh7{shared}r{lost}, #T.0[*] fresh2 ~condition(fresh4) ~condition(fresh6) ~fresh3{shared}r{lost} ~fresh5{shared}r{lost}, ⟨T⟩#T.0[*] ~condition(fresh6) ~fresh7{shared}r{lost}, ⟨T⟩⁺#T.0 fresh2 fresh3{shared}r{lost} ~condition(fresh4) ~condition(fresh6) ~fresh5{shared}r{lost} ~fresh7{shared}r{lost}, ⟨T⟩⁺#T.0[*] fresh3{shared}r{lost} fresh5{shared}r{lost} ~condition(fresh6); xreq excl π1#T.0
+  summary incTs: π1 R, π1[*] R, π1[*]#T.0 RW[storage], π1[*]⟨T⟩⁺#T.0 RW[storage]; res [*] fresh4 fresh6 ~condition(fresh12) ~condition(fresh18) ~condition(fresh23) ~condition(fresh25) ~condition(fresh7) ~fresh11{shared}r{lost} ~fresh17{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh7{shared}r{lost}, [*]#T.0 fresh2 fresh6 ~condition(fresh12) ~condition(fresh18) ~condition(fresh23) ~condition(fresh25) ~condition(fresh8) ~fresh11{shared}r{lost} ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh5 ~fresh9{shared}r{lost}, [*]#T.0[*] fresh11{shared}r{lost} fresh5 ~condition(fresh10) ~condition(fresh14) ~condition(fresh16) ~condition(fresh18) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh9{shared}r{lost}, [*]⟨T⟩#T.0[*] ~condition(fresh21) ~condition(fresh25) ~condition(fresh26) ~fresh20{shared}r{lost} ~fresh24{shared}r{lost}, [*]⟨T⟩⁺#T.0 fresh11{shared}r{lost} fresh5 ~condition(fresh10) ~condition(fresh13) ~condition(fresh16) ~condition(fresh18) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh9{shared}r{lost}, [*]⟨T⟩⁺#T.0[*] fresh17{shared}r{lost} fresh9{shared}r{lost} ~condition(fresh16) ~condition(fresh19) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost}, fresh1{shared}r{lost} ~fresh11{shared}r{lost} ~fresh17{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh3 ~fresh6; xreq excl π1
+  summary midA: π1 R, π2 RW[storage]; res #T.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #T.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨T⟩#T.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨T⟩⁺#T.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨T⟩⁺#T.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}; xreq excl π1, excl π2, sep π1 π2
+  summary midB: π1 RW[storage], π2 RW[storage]; res #T.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #T.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨T⟩#T.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨T⟩⁺#T.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨T⟩⁺#T.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}; xreq excl π1, excl π2, sep π1 π2
+  summary deepThenShallow: π1 R, π1#R2.0 R, π1#R2.0[*]#T.0 R, π1#R2.0[*]#T.0[*] R, π1#R2.0[*]⟨T⟩⁺#T.0 RW[storage]; xreq excl π1#R2.0
+  summary lengths: π1 R, π1[*]#T.0 R, π1[*]#T.0[*] R, π1[*]⟨T⟩⁺#T.0 RW[storage]; xreq excl π1
+  demands 23: accepted 17 (fresh 6, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 23: accepted 17 (fresh 6, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause disjoint 2
+cause later-use 2
+cause exclusive 2

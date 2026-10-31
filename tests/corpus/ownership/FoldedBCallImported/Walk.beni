@@ -1,0 +1,30 @@
+-- ownership (project): see Main.beni. The recursive group: `incAll`
+-- writes every `.0` list of a `B` at every depth, and `incList` walks a
+-- list of `B` with `[ b, …rest ]`.
+pub type B
+    = B (List B) (List B)
+
+
+pub incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+pub incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub both : List B → B
+both k = B [ B k [] ] [ B k [] ]
+
+
+pub wrapper : B → B
+wrapper v = incAll v
