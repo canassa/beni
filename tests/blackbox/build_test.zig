@@ -9093,6 +9093,58 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     }
 }
 
+test "the checker v2's call over a choice whose arms share a subtree costs each arm its own part" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439's review):
+    // D arms `Rose [ sN, Rose a_i ]` share a tower `sN` of N levels, handed
+    // to `incAll` as one `else if` chain. A part arms share is walked once,
+    // so six more arms cost the call about the same over a tower four times
+    // as tall: at most 1.5 times as much. Walking the tower per arm cost
+    // 26 458 / 46 942 records for six more arms at N = 8 / 32 (×1.8); read
+    // once, 22 874 / 27 779 (×1.2). The declaration's own records count, not
+    // a twin's without the call: one module stays under a second.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const shapes = [_][2]u32{ .{ 8, 2 }, .{ 8, 8 }, .{ 32, 2 }, .{ 32, 8 } };
+    for (shapes) |nd| {
+        const n = nd[0];
+        const d = nd[1];
+        try src.print(a, "\n\npub c{d}x{d} : Bool → Rose\nc{d}x{d} c =\n    s0 = Rose []\n", .{ n, d, n, d });
+        for (1..n + 1) |i| try src.print(a, "    s{d} = Rose [ s{d} ]\n", .{ i, i - 1 });
+        for (1..d + 1) |i| try src.print(a, "    a{d} = [ Rose [] ]\n", .{i});
+        try src.appendSlice(a, "    v =\n");
+        for (1..d + 1) |i| try src.print(a, "        {s} c then\n            Rose [ s{d}, Rose a{d} ]\n", .{ if (i == 1) "if" else "else if", n, i });
+        try src.appendSlice(a, "        else\n            Rose []\n");
+        try src.appendSlice(a, "    incAll v\n");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try ownDumpNoLimit(&w, src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    var costs: [shapes.len]u64 = undefined;
+    for (shapes, 0..) |nd, i| {
+        var cn: [16]u8 = undefined;
+        costs[i] = try accountTotal(dump, try std.fmt.bufPrint(&cn, "c{d}x{d}", .{ nd[0], nd[1] }));
+    }
+    const short = costs[1] - costs[0];
+    const tall = costs[3] - costs[2];
+    if (2 * tall > 3 * short) {
+        std.debug.print("six more arms at N = 8 / 32: {d} / {d} records\n", .{ short, tall });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2's write deep below a chain of field wrappers is linear in its depth" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

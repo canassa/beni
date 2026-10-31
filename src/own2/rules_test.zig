@@ -114,15 +114,19 @@ const layers = [_]Entry{
     // 1 630 since #1386: a `sep` side below a constructor.
     // 1 780 since S3b slice 4b: `positionsAt` and `reentries`, moved from
     // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
-    // route's stop at a parameter's leaf.
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1810 },
+    // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
+    // `Beside` spine's children are listed under (`keysOf`).
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1830 },
     // 260 since #1457: the frame's accessors, value helpers and uses, split
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
     // 960 since #1457: a write's other paths and what is beside it
-    // (§2.11 item 3), split out of Transfer (§5); 1 060 since #1439: a
-    // choice's arms, each read in a context of its own.
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1060 },
+    // (§2.11 item 3), split out of Transfer (§5); 1 140 since #1439: the
+    // walk as a graph of items and reads, its runs in `TransferArms`.
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1140 },
+    // 690 since #1439: the runs of a write's other-paths walk, a choice's
+    // arms apart (§2.11 item 3, *a choice's arms*).
+    .{ .file = "TransferArms.zig", .layer = 10, .max_lines = 690 },
     // 340 since #1457: patterns and splits, split out of Transfer (§5).
     .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
     // 350 since #1457: constructions, split out of Transfer (§5).
@@ -234,7 +238,7 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "TransferFrame.zig", "TransferBeside.zig", "TransferPattern.zig", "TransferConstruct.zig", "TransferCall.zig", "TransferGroups.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
+const no_name_compare = [_][]const u8{ "Transfer.zig", "TransferFrame.zig", "TransferBeside.zig", "TransferArms.zig", "TransferPattern.zig", "TransferConstruct.zig", "TransferCall.zig", "TransferGroups.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -465,7 +469,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 37), layers.len);
+    try testing.expectEqual(@as(usize, 38), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
