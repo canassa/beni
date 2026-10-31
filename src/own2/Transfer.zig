@@ -631,16 +631,27 @@ pub const Frame = struct {
     /// symbolic container cell of `n`, or, where `n` is a rest of a split of
     /// it — its `[*]` (`contents`) holds `others` of that cell's positions —
     /// those `others`, so the match splits the rest's own positions. A
-    /// container whose plain projection the contents also hold is split too.
+    /// container is split too when the contents hold anything else at its
+    /// `[*]`'s canonical position: its plain projection, or a position a
+    /// push, literal or join stored beside the rest (`[ a, …rest ]`'s `a`),
+    /// which no split of the rest's positions stands for.
     fn splitTargets(f: *Frame, n: NodeId, contents: NodeId, out: *std.ArrayList(Cell.Radix.Iterator.Entry)) Error!void {
         const cells = f.env.cells;
+        const places = f.env.places;
         const at = try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, contents);
         var it = cells.sets.iterate(try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, n));
         while (it.next()) |e| {
             const c: CellId = .from(e.key);
             const o = cells.origin(c);
             if (o == .site or o == .result or o == .esc or o == .top) continue;
-            var rests: usize = 0;
+            // `c[*]`'s canonical cell, null over a concrete base.
+            const canon: ?CellId = blk: {
+                const cu = (try cells.unrefined(f.gpa, f.account(), places, c)) orelse break :blk null;
+                const x = cells.get(cu);
+                const path = (try places.extend(f.gpa, f.env.charge, .from(x.b), Step.elem)) orelse break :blk null;
+                break :blk try cells.symbolic(f.gpa, f.account(), places, x.origin, x.a, path, x.c);
+            };
+            const first = out.items.len;
             var plain = false;
             var ct = cells.sets.iterate(at);
             while (ct.next()) |x| {
@@ -648,10 +659,11 @@ pub const Frame = struct {
                 const xc: CellId = .from(x.key);
                 if (cells.origin(xc) == .others and cells.positionsOf(xc) == c) {
                     try out.append(f.gpa, .{ .key = x.key, .value = e.value | x.value });
-                    rests += 1;
-                } else if (cells.parent(xc) == c and cells.origin(xc) != .elem and cells.origin(xc) != .others) plain = true;
+                } else if (canon) |cn| {
+                    if ((try cells.unrefined(f.gpa, f.account(), places, xc)) == cn) plain = true;
+                } else if (cells.parent(xc) == c) plain = true;
             }
-            if (rests == 0 or plain) try out.append(f.gpa, e);
+            if (out.items.len == first or plain) try out.append(f.gpa, e);
         }
     }
 
