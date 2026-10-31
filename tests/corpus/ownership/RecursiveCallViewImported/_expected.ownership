@@ -1,0 +1,13 @@
+module Main
+  11:15 call Trees.pushRoot <call Trees.leftmost>#Node.1: rejected call: t#Node.0⟨Tree⟩#Node.1 may hold it through the call at 11:31, and is read at 11:13 (Trees.pushRoot writes π1#Node.1) (approx)
+  15:18 call Trees.pushRoot <call Trees.leftmost>#Node.1: accepted param (Trees.pushRoot writes π1#Node.1)
+  summary refused: π1 RA, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.0 R, π1#Node.0⟨Tree⟩#Node.1 Aw[storage], π1#Node.0⟨Tree⟩#Node.1[*] A, π1#Node.1 Aw[storage], π1#Node.1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1#Node.0⟨Tree⟩#Node.1 ~π1#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*] ~π1#Node.1[*], .1 ~condition(fresh4) π1, condition(fresh2){lost}r{lost}
+  summary accepted: π1 R, π1#Node.0 R, π1#Node.0⟨Tree⟩#Node.0 R, π1#Node.0⟨Tree⟩#Node.1 Aw[storage], π1#Node.0⟨Tree⟩#Node.1[*] A, π1#Node.1 Aw[storage], π1#Node.1[*] A, π2 RA; res .0 ~condition(fresh1) ~fresh1 ~π1#Node.0⟨Tree⟩#Node.1 ~π1#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*] ~π1#Node.1[*], .1 ~condition(fresh4) π2, condition(fresh2){sep π1#Node.0⟨Tree⟩#Node.1 π2, sep π1#Node.0⟨Tree⟩#Node.1[*] π2, sep π1#Node.1 π2, sep π1#Node.1[*] π2}r{sep π1#Node.0⟨Tree⟩#Node.1 π2, sep π1#Node.0⟨Tree⟩#Node.1[*] π2, sep π1#Node.1 π2, sep π1#Node.1[*] π2}
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Trees
+  28:13 List.push xs: accepted param
+  summary leftmost: π1 RA, π1#Node.0 RA, π1#Node.0⟨Tree⟩#Node.0 RA; res ~π1#Node.0 ~π1#Node.0⟨Tree⟩#Node.0 π1
+  summary pushRoot: π1 R, π1#Node.1 RAW[storage], π1#Node.1[*] A; res [*] ~π1#Node.1[*], fresh1 π1#Node.1
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

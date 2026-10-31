@@ -1,0 +1,37 @@
+module Calls
+  9:15 List.push xs: accepted param
+  9:32 call Calls.pushAll rest[*]: accepted param (Calls.pushAll writes π1[*])
+  28:14 call Calls.pushAll <call Calls.ident>[*]: accepted param (Calls.pushAll writes π1[*])
+  summary pushAll: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] fresh3{excl π1} ~condition(fresh4) ~fresh4{lost} ~fresh6{lost} ~π1[*]{excl π1}, [*][*] ~condition(fresh5) ~π1[*][*]{excl π1}, fresh1{lost}r{excl π1[*][*]} ~fresh2{excl π1} ~fresh6{lost}; xreq excl π1
+  summary ident: π1 RA; res π1
+  summary sharedOf: π1 RA; res [*] condition(fresh2) π1, fresh1{shared}
+  summary freshOf: π1 R, π1[*] RA; res [*] fresh1{lost}, [*][*] condition(fresh3) π1[*], fresh2{lost}r{lost}
+  summary pairOf: π1 RAW[storage], π1[*] A, π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1){excl π1, excl π2, sep π1 π2} ~fresh1{lost} ~fresh4{lost} ~π1{excl π2, sep π1 π2} ~π2{excl π1, sep π1 π2}, [*][*] ~condition(fresh2){excl π1, excl π2, sep π1 π2} ~π1[*]{excl π1, excl π2, sep π1 π2} ~π2[*]{excl π1, excl π2, sep π1 π2}, ~fresh3{lost} ~fresh4{lost}; xreq excl π1, excl π2, sep π1 π2
+  summary keep: π1 RA, π2 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π2, condition(fresh1){sep π1 π2}
+  demands 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  14:16 call Calls.pushAll <call Calls.ident>[*]: accepted fresh (Calls.pushAll writes π1[*])
+  14:62 call Calls.pushAll <call Calls.ident>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Calls.pushAll writes π1[*])
+  19:5 call Calls.pushAll <expression>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Calls.pushAll writes π1[*])
+  29:5 call Calls.pushAll <expression>[*]: accepted fresh (Calls.pushAll writes π1[*])
+  38:18 call Calls.pushAll <call Calls.ident>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Calls.pushAll writes π1[*])
+  42:17 call Calls.pushAll <call Calls.ident>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Calls.pushAll writes π1[*]) (approx)
+  49:5 call Calls.pairOf a: accepted fresh (Calls.pairOf writes π1)
+  49:5 call Calls.pairOf b: accepted fresh (Calls.pairOf writes π2)
+  53:16 call Calls.pairOf x: rejected disjoint: another operand of the same operation reaches it (Calls.pairOf writes π1)
+  60:15 List.push a: rejected alias: b holds it and is read at 60:13
+  67:15 List.push a: accepted param
+  summary twoCalls: π1 RAW[storage], π1[*] A; res .0 ~fresh2{lost} ~fresh4{lost}, .0[*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost}, .0[*][*] ~condition(fresh3), .1 ~fresh6{shared} ~fresh8{lost}, .1[*] ~condition(fresh5){shared} ~fresh5{shared} ~fresh8{lost} ~π1{shared}, .1[*][*] ~condition(fresh7) ~π1[*]{shared}
+  summary joined: π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π2{shared}, [*][*] ~condition(fresh3) ~π2[*]{shared}, ~fresh2{shared} ~fresh4{lost}
+  summary bothFresh: res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost}, [*][*] ~condition(fresh3), ~fresh2{lost} ~fresh4{lost}
+  summary sharedActual: π1 RAW[storage], π1[*] A; res [*] ~condition(fresh1){shared} ~fresh1{shared} ~fresh4{lost} ~π1{shared}, [*][*] ~condition(fresh2) ~fresh2{shared} ~π1[*]{shared}, ~fresh3{shared} ~fresh4{lost}
+  summary freshActual: π1 R, π1[*] RA; res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost}, [*][*] ~condition(fresh2){lost} ~fresh2{lost} ~π1[*]{lost}, ~fresh3{lost} ~fresh4{lost}
+  summary apartParams: res [*] ~condition(fresh1) ~fresh1{lost} ~fresh4{lost}, [*][*] ~condition(fresh2), ~fresh3{lost} ~fresh4{lost}
+  summary sameParams: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1){shared} ~fresh1{lost} ~fresh4{lost} ~π1{shared}, [*][*] ~condition(fresh2){shared} ~π1[*]{shared}, ~fresh3{lost} ~fresh4{lost}; xreq excl π1
+  summary aliasedKeep: π1 RAW[storage], π1[*] A; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*], .1 condition(fresh3) ~condition(fresh5) π1, condition(fresh4){shared}
+  summary distinctKeep: π1 RAW[storage], π1[*] A, π2 RA; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*], .1 condition(fresh3) ~condition(fresh5) π2, condition(fresh4){sep π1 π2, sep π1[*] π2}
+  demands 11: accepted 5 (fresh 4, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 14: accepted 8 (fresh 4, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause disjoint 1
+cause alias 1
+cause exclusive 4

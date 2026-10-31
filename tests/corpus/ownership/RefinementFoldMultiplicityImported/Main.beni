@@ -1,0 +1,71 @@
+-- ownership (project): `RefinementFoldMultiplicity` with the recursive
+-- writer and the helpers in another module (ownership-v2.md Appendix B,
+-- R×F, the S3b half with a group writer; R-4.6.9, R-4.7.5). The verdicts
+-- are the same-module fixture's: a taken element written while its tree
+-- is read after is refused (v1 accepts it, a known entry for v1), and
+-- accepted with the tree dead; one element twice, a regrafted first kid
+-- and a tree whose two kids are one value are refused; two distinct taken
+-- elements are refused by both checkers (#1503).
+import Splits exposing (Rose)
+
+
+pub freshOne : ⊤ → Rose
+freshOne ⊤ = Splits.nestOne (Rose [ Rose [] ])
+
+
+pub takenOneBeside : ⊤ → Rose × Rose
+takenOneBeside ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            ( Splits.nestOne a, t )
+
+        _ →
+            ( t, t )
+
+
+pub takenOne : ⊤ → Rose
+takenOne ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            Splits.nestOne a
+
+        _ →
+            t
+
+
+pub takenTwice : ⊤ → Rose
+takenTwice ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            Splits.nestTwo a a
+
+        _ →
+            t
+
+
+pub takenTwo : ⊤ → Rose
+takenTwo ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ], Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, b, …_ ], …_ ] →
+            Splits.nestTwo a b
+
+        _ →
+            t
+
+
+pub regraftShared : ⊤ → Rose
+regraftShared ⊤ = Splits.incAll (Splits.regraft (Rose [ Rose [ Rose [] ] ]))
+
+
+pub apartFresh : ⊤ → Rose
+apartFresh ⊤ = Splits.incAll (Splits.apartKids (Rose [ Rose [ Rose [] ], Rose [ Rose [] ] ]))
+
+
+pub apartShared : ⊤ → Rose
+apartShared ⊤ =
+    s = Rose [ Rose [] ]
+    Splits.incAll (Splits.apartKids (Rose [ s, s ]))

@@ -1,0 +1,26 @@
+module Boxes
+  summary ident: π1 RA; res π1
+  summary box: π1 RA; res [*] π1, fresh1{excl π1}
+  summary cursors: π1 RA; res .0 fresh1{excl π1}, .0[*] condition(fresh3) π1, .1 condition(fresh4) π1, condition(fresh2){shared}
+  summary orEmpty: π2 RA; res [*] π2, fresh1{excl π2}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  17:15 List.push xs: rejected alias: b[*] holds it and is read at 17:13
+  28:13 List.push xs: accepted param
+  39:15 List.push xs: accepted param
+  51:23 List.push xs: rejected alias: b[*] holds it and is read at 51:21
+  63:23 List.push xs: rejected alias: v holds it and is read at 63:21
+  75:21 List.push xs: accepted param
+  86:15 List.push xs: rejected alias: b[*] holds it and is read at 86:13
+  97:15 List.push xs: accepted param
+  summary readAfter: π1 RAW[storage], π1[*] A; res .0 condition(fresh3) π1, .0[*] ~condition(fresh4) ~π1[*], .1 fresh1{excl π1}, .1[*] ~condition(fresh5) π1, condition(fresh2){shared}
+  summary deadView: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary copiedView: π1 RAW[storage], π1[*] RA; res .0 condition(fresh4) π1, .0[*] ~condition(fresh5) ~π1[*], .1 fresh2{lost}, .1[*] fresh1{lost}, .1[*][*] ~condition(fresh6) π1[*], condition(fresh3){lost}r{lost}
+  summary firstCursor: π1 RAW[storage], π1[*] A; res .0 condition(fresh4) π1, .0[*] ~condition(fresh5) ~π1[*], .1 fresh1{excl π1}, .1[*] condition(fresh2) ~condition(fresh6) π1, condition(fresh3){shared}
+  summary secondCursor: π1 RAW[storage], π1[*] A; res .0 condition(fresh3) π1, .0[*] ~condition(fresh4) ~π1[*], .1 condition(fresh1) fresh1 ~condition(fresh5) π1, condition(fresh2){shared}
+  summary noCursor: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary emptyJoin: π2 RAW[storage], π2[*] A; res .0 condition(fresh3) π2, .0[*] ~condition(fresh4) ~π2[*], .1 fresh1{excl π2}, .1[*] ~condition(fresh5) π2, condition(fresh2){shared}
+  summary emptyJoinCopy: π2 RAW[storage], π2[*] RA; res .0 condition(fresh4) π2, .0[*] ~condition(fresh5) ~π2[*], .1 fresh2{lost}, .1[*] fresh1{lost}, .1[*][*] ~condition(fresh6) π2[*], condition(fresh3){lost}r{lost}
+  demands 8: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 8: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4
