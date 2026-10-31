@@ -498,6 +498,11 @@ pub fn Of(comptime Table: type) type {
             /// per image.
             source: ?*const fn (ctx: *anyopaque, pos: Kappas, n: NodeId) ?NodeId = null,
             present: ?*const fn (ctx: *anyopaque, pos: Kappas, m: NodeId) u32 = null,
+            /// The projection correspondence (§2.9 *Keyed where a reader looks*):
+            /// for a DAG node a projection made, the node a reader of the image
+            /// meets there, the projection of its origin's image; null for none.
+            /// The entry is keyed there too.
+            projected: ?*const fn (ctx: *anyopaque, n: NodeId) Error!?NodeId = null,
         };
 
         /// Whether a snapshot stores an unresolved condition (an `inst` atom in an
@@ -612,10 +617,23 @@ pub fn Of(comptime Table: type) type {
             const n = t.mapNode(m);
             const out: u32 = if (n.mask == 0) blk: {
                 try charge.reserve(gpa, .inspection, 1);
-                const img = (try r.node(r.ctx, .from(n.prefix))) orelse break :blk Ids.none_int;
+                const img = try r.node(r.ctx, .from(n.prefix));
+                // The node a reader meets for a DAG made as a projection (§2.9
+                // *Keyed where a reader looks*): the projection of its origin's image.
+                const via: ?NodeId = if (r.projected) |f| try f(r.ctx, .from(n.prefix)) else null;
+                if (img == null and via == null) break :blk Ids.none_int;
                 const k = try r.cond(r.ctx, t, gpa, charge, .from(n.left));
-                try t.keyed(gpa, charge, img);
-                break :blk try t.mapPut(gpa, charge, Ids.none_int, img.int(), k.int());
+                var one: u32 = Ids.none_int;
+                if (img) |x| {
+                    try t.keyed(gpa, charge, x);
+                    one = try t.mapPut(gpa, charge, one, x.int(), k.int());
+                }
+                if (via) |x| if (img == null or x != img.?) {
+                    try t.keyed(gpa, charge, x);
+                    const old = t.mapGet(one, x.int());
+                    one = try t.mapPut(gpa, charge, one, x.int(), if (old) |o| (try t.join(gpa, charge, .from(o), k)).int() else k.int());
+                };
+                break :blk one;
             } else try t.mapUnion(gpa, charge, .cond, try t.relabelMap(gpa, charge, n.left, r, maps), try t.relabelMap(gpa, charge, n.right, r, maps));
             (try maps.getOrPut(gpa, .{m})).value_ptr.* = out;
             return out;

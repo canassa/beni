@@ -832,7 +832,10 @@ const Reader = struct {
                         if (places.child(p.place, e.step) != r.env.shapes.place(child)) return error.Malformed;
                     } else if (pass == 1 and e.made) {
                         const made = (try r.env.shapes.proj(r.env.gpa, r.env.account(), places, r.env.cells, p.node, e.step)) orelse return error.Malformed;
-                        if (made == child) continue;
+                        if (made == child) {
+                            try r.env.shapes.noteOrigin(r.env.gpa, r.env.account(), p.node, e.step, child);
+                            continue;
+                        }
                         // A projection below a union, choice or positions node
                         // is that kind's DAG over its sides' projections, and the
                         // block's order of a DAG's two sides need not be the
@@ -849,33 +852,52 @@ const Reader = struct {
     }
 
     /// Whether `a` and `b` are one union, choice and positions DAG over the
-    /// same other nodes, each such node's two sides in either order. A
-    /// record per pair compared.
+    /// same other nodes, each such node's two sides in either order, at every
+    /// level (a block's group of two sides keeps no order, so a projection the
+    /// writer made of a mirrored DAG decodes mirrored). Each DAG node of either
+    /// gets a canonical id, its kind, place and its sides' ids unordered, so
+    /// the test is linear in the two DAGs. A record per node.
     fn sameDag(r: *Reader, a: NodeId, b: NodeId) Failure!bool {
+        if (a == b) return true;
         const shapes = r.env.shapes;
         const gpa = r.env.gpa;
-        const Pair = struct { a: NodeId, b: NodeId };
-        var stack: std.ArrayList(Pair) = .empty;
+        const isDagNode = struct {
+            fn of(s: *const Shape.Table, n: NodeId) bool {
+                const k = s.kind(n);
+                return k == .@"union" or k == .choice or k == .positions;
+            }
+        }.of;
+        // Canonical ids: a node no DAG node is its own id; a DAG node's is
+        // `base + i` for the i-th distinct `(kind, place, low, high)`.
+        const base: u32 = 1 << 31;
+        var canon: Ids.FixedDict(1) = .{};
+        defer canon.deinit(gpa);
+        var keys: Ids.FixedDict(4) = .{};
+        defer keys.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
-        try stack.append(gpa, .{ .a = a, .b = b });
-        while (stack.pop()) |x| {
+        try stack.appendSlice(gpa, &.{ .{ .node = a, .expanded = false }, .{ .node = b, .expanded = false } });
+        while (stack.pop()) |f| {
             try r.env.charge.reserve(gpa, .inspection, 1);
-            if (x.a == x.b) continue;
-            const da = shapes.get(x.a);
-            const db = shapes.get(x.b);
-            if (da.kind != db.kind or da.place != db.place) return false;
-            if (da.kind != .@"union" and da.kind != .choice and da.kind != .positions) return false;
-            const aa: NodeId = .from(da.a);
-            const ab: NodeId = .from(da.b);
-            const ba: NodeId = .from(db.a);
-            const bb: NodeId = .from(db.b);
-            // A side equal to one of the other's first, so the order is chosen
-            // by what is equal, never searched.
-            if (aa == bb or ab == ba) {
-                try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = bb }, .{ .a = ab, .b = ba } });
-            } else try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = ba }, .{ .a = ab, .b = bb } });
+            if (canon.get(.{f.node.int()}) != null) continue;
+            if (!isDagNode(shapes, f.node)) {
+                (try canon.getOrPut(gpa, .{f.node.int()})).value_ptr.* = f.node.int();
+                continue;
+            }
+            const d = shapes.get(f.node);
+            if (!f.expanded) {
+                try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
+                continue;
+            }
+            // A side still open is a cycle: no DAG `proj` makes holds one.
+            const x = canon.get(.{d.a}) orelse return false;
+            const y = canon.get(.{d.b}) orelse return false;
+            const got = try keys.getOrPut(gpa, .{ @backingInt(d.kind), d.place.int(), @min(x, y), @max(x, y) });
+            if (!got.found_existing) got.value_ptr.* = base + @as(u32, @intCast(keys.count() - 1));
+            (try canon.getOrPut(gpa, .{f.node.int()})).value_ptr.* = got.value_ptr.*;
         }
-        return true;
+        return canon.get(.{a.int()}).? == canon.get(.{b.int()}).?;
     }
 
     fn record(r: *Reader, kind: Kind) Failure!u32 {
@@ -4216,4 +4238,52 @@ test "#1399: a block keeps a κ keyed on the projection of a positions node, its
         const back = b.sums.get(try roundTrip(&a, &b, c));
         try testing.expectEqual(Cond.shared, try kappaAt(&b, back.kappas, back.res, &.{ Step.elem, Step.elem }));
     };
+}
+
+test "a join's κ on its DAG node round-trips: the block writes the projection where a reader looks (#1082)" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    const gpa = testing.allocator;
+    const lists = try a.place(2);
+    const list = try a.place(0);
+    const root = try a.places.rootPath(gpa, lists);
+    const elem = (try a.places.extend(gpa, env.charge, root, Step.elem)).?;
+    const set1 = struct {
+        fn of(t: *Tables, c: CellId) !SetId {
+            return t.cells.sets.insert(testing.allocator, t.env().charge, .none, c.int(), 0);
+        }
+    }.of;
+    // `choice(a, b)`: `a`'s element a parameter's, `b`'s a fresh list. The
+    // join's κ is keyed on `d = proj(choice, [*])` alone, which no part of
+    // the class names (§2.9 *Keyed where a reader looks*).
+    const held = try a.shapes.leaf(gpa, &a.account, list, try set1(&a, try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, elem, 0)));
+    const fresh = try a.shapes.leaf(gpa, &a.account, list, try set1(&a, try a.cells.site(gpa, &a.account, 7, list, .list)));
+    const na = try a.shapes.node(gpa, &a.account, lists, try set1(&a, try a.cells.site(gpa, &a.account, 8, lists, .list)), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, held));
+    const nb = try a.shapes.node(gpa, &a.account, lists, try set1(&a, try a.cells.site(gpa, &a.account, 9, lists, .list)), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, fresh));
+    const res = try a.shapes.choice(gpa, &a.account, &a.cells.sets, na, nb);
+    const d = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, Step.elem)).?;
+    const kappas = try a.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, d, Cond.shared);
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = kappas });
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(gpa);
+    try write(env, &a.sums, &.{c}, .identity, &words);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    var back: std.ArrayList(ClassId) = .empty;
+    defer back.deinit(gpa);
+    try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+    // A reader that projects the decoded `res` meets the node the entry is
+    // keyed on, and that node is a projection the transport can follow.
+    const cb = b.sums.get(back.items[0]);
+    const db = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, cb.res, Step.elem)).?;
+    try testing.expectEqual(Cond.shared, b.conds.kappaGet(b.conds.kappaAlong(cb.kappas, &.{Step.elem}), db).?);
+    try testing.expect(b.shapes.hasOrigin(db));
+    try testing.expectEqual(Cond.shared, try b.conds.kappaOf(gpa, b.env().charge, b.env().view(), b.conds.kappaAlong(cb.kappas, &.{Step.elem}), db, true));
+    var again: std.ArrayList(u32) = .empty;
+    defer again.deinit(gpa);
+    try write(b.env(), &b.sums, back.items, .identity, &again);
+    try testing.expectEqualSlices(u32, words.items, again.items);
 }

@@ -914,9 +914,10 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     defer presence.deinit(gpa);
     if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
     var carry: Carry = .{ .ro = ro, .presence = &presence };
+    defer carry.projected_memo.deinit(gpa);
     // A map that interned no two sources into one image needs no presence
     // count: the relabel then maps each shared submap once (§2.9).
-    const kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
+    const kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .projected = Carry.projected, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
     // Widened, its κ carried onto the image with each folded class's
     // path-multiset obligation (§2.9, #1128).
     const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
@@ -929,6 +930,15 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
 const Carry = struct {
     ro: *ReadOff,
     presence: *Presence,
+    projected_memo: Ids.FixedDict(1) = .{},
+    /// The image of a DAG a projection made: the projection of its origin's
+    /// image (§2.9 *Keyed where a reader looks*), as a reader of the
+    /// published value meets it.
+    fn projected(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const env = c.ro.env;
+        return Cond.projectedImage(env.shapes, env.gpa, env.account(), env.places, env.cells, x, &c.projected_memo, ctx, node);
+    }
     fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
         const c: *@This() = @ptrCast(@alignCast(ctx));
         const shapes = c.ro.env.shapes;

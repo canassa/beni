@@ -1991,7 +1991,10 @@ test "#1138: a call grafts a cyclic result (a widened knot) into a cyclic image,
     try testing.expectEqual(Shape.Kind.node, shapes.kind(try shapes.force(gpa, &account, r)));
     const ul = (try shapes.proj(gpa, &account, &places, &cells, r, arg)).?;
     const back = (try shapes.proj(gpa, &account, &places, &cells, ul, Place.Step.elem)).?;
-    try testing.expect(back == r or (shapes.kind(back) == .@"union" and (shapes.get(back).a == r.int() or shapes.get(back).b == r.int())));
+    // A view of a DAG template projects to the view of its projection (§2.9
+    // *Keyed where a reader looks*): its answer holds the image again.
+    const bf = try shapes.force(gpa, &account, back);
+    try testing.expect(bf == r or (shapes.kind(bf) == .@"union" and (shapes.get(bf).a == r.int() or shapes.get(bf).b == r.int())));
 }
 
 test "#1143: a back edge onto a union's side is grafted once the knot is tied" {
@@ -2148,11 +2151,13 @@ test "#1143: a back edge under a delta's override inside a union's side is never
     const r = applied.result.node;
     const lr = (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, r, x.arg)).?;
     const ur = (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, lr, Place.Step.elem)).?;
-    const at = (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, ur, x.arg)).?;
+    // A view of a DAG template projects to the view of its projection (§2.9
+    // *Keyed where a reader looks*): its answer is the union.
+    const at = try x.shapes.force(gpa, &x.account, (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, ur, x.arg)).?);
     try testing.expectEqual(Shape.Kind.@"union", x.shapes.kind(at));
     const sides = x.shapes.get(at);
     try testing.expect(sides.a == lr.int() or sides.b == lr.int());
-    try testing.expect(x.cells.sets.member(x.shapes.cells(at), (try x.cells.site(gpa, &x.account, 5, x.list, .list)).int()));
+    try testing.expect(x.cells.sets.member(try x.shapes.cellsOf(gpa, &x.account, &x.cells.sets, at), (try x.cells.site(gpa, &x.account, 5, x.list, .list)).int()));
 }
 
 test "#1143: a cycle with no node on it, a delta over the union it sits in, is grafted" {

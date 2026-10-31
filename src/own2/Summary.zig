@@ -703,7 +703,7 @@ pub const Table = struct {
                 var s = sa.?;
                 s.owned = s.owned and sb.?.owned;
                 // The two snapshots of one handed value joined into a new one.
-                s.kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                s.kappa = try env.conds.propagate(gpa, env.charge, env.view(), try env.conds.kappaMerge(gpa, env.charge, sa.?.kappa, sb.?.kappa), s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
                 try sup.append(gpa, s);
                 i += 1;
                 j += 1;
@@ -771,7 +771,11 @@ pub const Table = struct {
         if (a == b and ka == kb) return .{ .node = a, .kappas = ka };
         var members = [_]NodeId{ a, b };
         const j = if (mode == .choice) try env.shapes.joinAlternatives(env.gpa, env.account(), env.places, env.cells, &members) else try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
-        const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
+        // The members' snapshots first, as a branch join merges its arms': each
+        // side of the joined DAG keeps its own entries (§2.9 *Keyed where a
+        // reader looks*, #1093).
+        const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
+        const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
         return .{ .node = w.node, .kappas = w.kappas };
     }
@@ -976,16 +980,13 @@ pub const Table = struct {
         try n.class(c);
     }
 
-    /// Byte equality of the normal forms (§3.5).
+    /// Equality as `leq` both ways (§2.10, #1094): what every reader observes
+    /// of the two classes is the same. A walk over parts (the normal form)
+    /// would miss a κ stored past the parts, which `leq` compares along the
+    /// observable frontier (§2.9).
     pub fn eq(t: *Table, env: Env, a: ClassId, b: ClassId) Error!bool {
         if (a == b) return true;
-        var wa: std.ArrayList(u32) = .empty;
-        defer wa.deinit(env.gpa);
-        var wb: std.ArrayList(u32) = .empty;
-        defer wb.deinit(env.gpa);
-        try t.normalize(env, a, &wa);
-        try t.normalize(env, b, &wb);
-        return std.mem.eql(u32, wa.items, wb.items);
+        return try t.leq(env, a, b) and try t.leq(env, b, a);
     }
 
     const Normalizer = struct {
@@ -1547,7 +1548,10 @@ pub const Table = struct {
             // In the recursion's order on an explicit stack (#1138: a value is
             // as deep as the source): a node's line, then the lines below it,
             // a union's sides in turn, a node's steps in order.
-            const Act = struct { line: bool, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas };
+            // `dag`: the outermost union, choice or positions node on the way,
+            // projected along the steps since (§2.9 *Keyed where a reader
+            // looks*): what a join keyed at this path, read with each node.
+            const Act = struct { line: bool, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, dag: NodeId = .none };
             var stack: std.ArrayList(Act) = .empty;
             defer stack.deinit(env.gpa);
             var below: std.ArrayList(Act) = .empty;
@@ -1579,10 +1583,13 @@ pub const Table = struct {
                     const w = &buf.writer;
                     if (a.prefix.len > 0) try w.print("{s} ", .{a.prefix});
                     try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
-                    const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
+                    var k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
+                    if (a.dag != .none and a.dag != n) if (env.conds.kappaGet(a.cur, a.dag)) |s| {
+                        k = try env.conds.join(env.gpa, env.charge, k, s);
+                    };
                     try p.cond(w, k);
                     if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-                    try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                    try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = a.dag });
                     continue;
                 }
                 // The children of the explicit structure under `n`: a node's
@@ -1602,8 +1609,9 @@ pub const Table = struct {
                         try stack.append(env.gpa, b);
                     },
                     .@"union", .choice, .positions => {
-                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
-                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                        const dag = if (a.dag != .none or d.kind == .positions) a.dag else n;
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = dag });
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = dag });
                     },
                     .node, .delta => {
                         below.clearRetainingCapacity();
@@ -1614,7 +1622,8 @@ pub const Table = struct {
                             var sb: std.Io.Writer.Allocating = .init(p.arena);
                             try sb.writer.writeAll(a.prefix);
                             try p.step(&sb.writer, d.place, s);
-                            try below.append(env.gpa, .{ .line = true, .n = c, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory, .at_summary = a.at_summary or s.kind == .elem or s.kind == .level, .cur = env.conds.kappaChild(a.cur, s) });
+                            const dag = if (a.dag == .none) NodeId.none else (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, a.dag, s)) orelse NodeId.none;
+                            try below.append(env.gpa, .{ .line = true, .n = c, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory, .at_summary = a.at_summary or s.kind == .elem or s.kind == .level, .cur = env.conds.kappaChild(a.cur, s), .dag = dag });
                         }
                         var i = below.items.len;
                         while (i > 0) {
@@ -2361,4 +2370,27 @@ fn deepSummary() !void {
     var buf: std.Io.Writer.Allocating = .init(f.arena.allocator());
     try f.sums.print(env, f.arena.allocator(), &buf.writer, c, "deep", test_names);
     try testing.expect(std.mem.count(u8, buf.written(), "[*]") > depth);
+}
+
+test "#1094: two classes that differ only in a κ stored below a leaf `res` are not equal" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    // Q7: `res` a leaf at `List (List Int)`, one class storing `shared` at
+    // `res[*]`, the other nothing. Their parts are the same; the stored κ is
+    // observable at the projection (§2.9), so `eq` (`leq` both ways) tells
+    // them apart.
+    const p1 = try f.param(0, 3, &.{});
+    const u = try Table.markUse(env, .none, try f.placeOf(3), &.{}, .{ .r = true }, &.{});
+    const r = try f.leaf(3, &.{p1});
+    const below = (try f.shapes.proj(gpa, env.account(), &f.places, &f.cells, r, Place.Step.elem)).?;
+    const k = try f.conds.kappaSetAt(gpa, env.charge, .none, &.{Place.Step.elem}, below, Cond.shared);
+    const stored = try f.sums.add(env, .{ .params = &.{u}, .res = r, .kappas = k });
+    const plain = try f.sums.add(env, .{ .params = &.{u}, .res = r, .kappas = .none });
+    try testing.expect(try f.sums.leq(env, plain, stored));
+    try testing.expect(!try f.sums.leq(env, stored, plain));
+    try testing.expect(!try f.sums.eq(env, stored, plain));
+    try testing.expect(try f.sums.eq(env, stored, stored));
 }
