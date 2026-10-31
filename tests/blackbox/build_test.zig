@@ -11140,6 +11140,79 @@ test "the checker v2 joins a group's port without its unchanged res again" {
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  18:16 List.push xs: accepted param\n") != null);
 }
 
+test "the checker v2 keeps no round of a group's port that its last round covers" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1368, §2.3 *A port keeps no round that its last round covers*: each
+    // round of `mergeSort`'s port joined the last one in again, though the
+    // new round covered it, so the port held the history of its rounds. It
+    // took 4 walks and passed the default allowance (168 829 records with
+    // the allowance raised). The join keeps only the round that covers the
+    // other: 3 walks, about 37 000 records, no growth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import List
+        \\
+        \\
+        \\pub mergeSort : List Int → List Int
+        \\mergeSort xs =
+        \\    case xs of
+        \\        [] →
+        \\            []
+        \\
+        \\        [ x ] →
+        \\            [ x ]
+        \\
+        \\        _ →
+        \\            case split xs [] [] of
+        \\                ( left, right ) →
+        \\                    merge (mergeSort left) (mergeSort right)
+        \\
+        \\
+        \\split : List a, List a, List a → List a × List a
+        \\split xs left right =
+        \\    case xs of
+        \\        [] →
+        \\            ( left, right )
+        \\
+        \\        [ x, …rest ] →
+        \\            split rest right [ …left, x ]
+        \\
+        \\
+        \\merge : List Int, List Int → List Int
+        \\merge xs ys =
+        \\    case ( xs, ys ) of
+        \\        ( [], _ ) →
+        \\            ys
+        \\
+        \\        ( _, [] ) →
+        \\            xs
+        \\
+        \\        ( [ x, …xt ], [ y, …yt ] ) →
+        \\            if x ≤ y then
+        \\                [ x, …merge xt [ y, …yt ] ]
+        \\            else
+        \\                [ y, …merge [ x, …xt ] yt ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit mergeSort") == null);
+    try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "mergeSort", "walks"));
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "mergeSort", "growth"));
+    try testing.expect(try accountField(dump.stdout, "mergeSort", "total") < 45_000);
+}
+
 /// `name`'s module text: a record that doubles at each of 11 levels, three
 /// fields of it and `wide` more lists in `T`, read twice in a list literal.
 /// Its positions, 3·2¹¹ paths, are not its source: a genuine product, so its
