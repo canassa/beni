@@ -9,8 +9,8 @@
 -- rule's conditions failing. `sharedInside` builds the element in the
 -- caller with one list `k` at both fields, so the actual at the split is
 -- two positions of one object (condition (b)): refused. `freshShared` does
--- that with one fresh list, whose image is one concrete object at both
--- (conditions (b) and (c)): refused.
+-- that with one fresh list, one concrete object at both fields
+-- (condition (b)): refused.
 type B
     = B (List B) (List B)
 

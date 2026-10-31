@@ -8567,6 +8567,119 @@ test "the checker v2 reads two positions of one image through a chain of n choic
     try testing.expect(totals[2] - totals[1] <= 3 * (totals[1] - totals[0]));
 }
 
+test "the checker v2 reads two positions of one image over k list fields, its cost the class's" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3 over k sides: `type B = B (List B) …`
+    // with k list fields publishes `apart` groups of k level paths, and
+    // `incList`'s own `incAll b` images them to shared cells. The rule
+    // takes the group as one set of distinct positions, so the call is
+    // accepted at every k, as in v1. Its own work is linear in the sides'
+    // cells; the class it reads holds about k² paths, so the account grows
+    // with that, as on master (master 65 068 / 175 023 / 649 017 records at
+    // k = 2 / 4 / 8, refused; here 100 452 / 283 156 / 1 109 590, self-hosted
+    // Debug). The allowance is raised for the class, not for the rule.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 2, 4, 8 }, 0..) |k, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "@ownership_summary_size(module, 16777216)\n\ntype B\n    = B");
+        for (0..k) |_| try src.appendSlice(a, " (List B)");
+        try src.appendSlice(a, "\n\n\nincAll : B → B\nincAll b =\n    case b of\n        B");
+        for (1..k + 1) |i| try src.print(a, " x{d}", .{i});
+        try src.appendSlice(a, " →\n            B (incList (List.push x1 (B");
+        for (0..k) |_| try src.appendSlice(a, " []");
+        try src.appendSlice(a, ")))");
+        for (2..k + 1) |i| try src.print(a, " (incList x{d})", .{i});
+        try src.appendSlice(a, "\n\n\nincList : List B → List B\nincList bs =\n    case bs of\n        [ b, …rest ] →\n            [ incAll b, …incList rest ]\n\n        [] →\n            []\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+        totals[run] = try accountTotal(dump.stdout, "incAll") + try accountTotal(dump.stdout, "incList");
+    }
+    // Each doubling of k at most quadruples the work: the class's k².
+    try testing.expect(totals[1] * 2 <= totals[0] * 9);
+    try testing.expect(totals[2] * 2 <= totals[1] * 9);
+}
+
+test "the checker v2's rule 3 atoms cross a block unchanged" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 3: `incList`'s class owes `excl X` for the
+    // cells its own `incAll b` reads as positions. A caller that forwards
+    // to it reads that class from the block when `incList` is imported,
+    // and from the module's tables when it is not: the forwarder's `xreq`
+    // is the same text both ways, the rule's atoms included.
+    const group =
+        \\pub type B
+        \\    = B (List B) (List B)
+        \\
+        \\
+        \\pub incAll : B → B
+        \\incAll b =
+        \\    case b of
+        \\        B xs ys →
+        \\            B (incList (List.push xs (B [] []))) (incList ys)
+        \\
+        \\
+        \\pub incList : List B → List B
+        \\incList bs =
+        \\    case bs of
+        \\        [ b, …rest ] →
+        \\            [ incAll b, …incList rest ]
+        \\
+        \\        [] →
+        \\            []
+        \\
+    ;
+    var one = try World.init(testing.allocator, testing.io);
+    defer one.deinit();
+    try one.write("Main.beni", group ++ "\n\npub via : List B → List B\nvia bs = incList bs\n");
+    var two = try World.init(testing.allocator, testing.io);
+    defer two.deinit();
+    try two.write("Walk.beni", group);
+    try two.write("Main.beni", "import Walk exposing (B)\n\n\npub via : List B → List B\nvia bs = Walk.incList bs\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const same = try one.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const imported = try two.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const a = try viaXreq(same.stdout);
+    const b = try viaXreq(imported.stdout);
+    try testing.expect(std.mem.indexOf(u8, a, "excl π1[*]#B.0⟲,") != null);
+    try testing.expectEqualStrings(a, b);
+}
+
+/// The `xreq` of `via`'s summary line.
+fn viaXreq(dump: []const u8) ![]const u8 {
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        const t = std.mem.trim(u8, l, " ");
+        if (!std.mem.startsWith(u8, t, "summary via:")) continue;
+        const at = std.mem.indexOf(u8, t, "xreq ") orelse return error.NoXreq;
+        return t[at..];
+    }
+    return error.NoSummary;
+}
+
 test "the checker v2's holder index answers a frame's demands in records linear in its holders and uses" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

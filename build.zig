@@ -237,7 +237,7 @@ pub fn build(b: *std.Build) void {
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     // The v2 checker broken one way on purpose, to show that a `runtime_safety`
     // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
-    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, rule3-exact); `gates` refuses it") orelse "none";
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the

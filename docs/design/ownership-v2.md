@@ -2619,102 +2619,120 @@ claims they may be one object. Three rules use this.
   still enough. A `q` with `[*]` breaks this: two positions of `X` inside one element are kept apart by
   no `k` about elements, so `excl X` would ask for something `k` does not give. That case keeps `k`.
   `sep` is memoised per pair, and the pair fixes `q`.
-- **Rule 3, through a level, at a call** [specified 2026-10-31, #1195, slice 4c; not built]. A callee's
-  `apart` or `sep` over two cells `πᵢ·P` and `πᵢ·Q` of one parameter, where `P` and `Q` both cross `⟲`, is
-  read at a call from each side's image (`Grafter.sideCells`, which through `⟲` is the image cell set
-  of the parameter cell). When the actual's first return lies deeper than the callee's, both images can
-  be one summary cell `X` of the caller's frame. `FoldedBCall`'s `incList` calls `incAll b` with `b` an
-  element of its parameter: `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]` images both sides to
-  `π1[*]#B.0⟲`, because in `incList`'s frame `[*]#B.0` is the first return and every list below it folds
-  onto its `⟲`. Read as a repeat, the call is refused `exclusive (approx)`, where v1 accepts it `param`.
-  The pair is two positions of `X`, and owes `excl X` instead of a repeat, when all of these hold:
-  - **(a) The callee's positions are apart by route.** `P ≠ Q`, and the last steps of `P` and `Q` are
-    named steps (a field, a tuple index, a constructor argument) that differ. Every concrete route that
-    `P` stands for ends in `P`'s last step, and every route of `Q` ends in `Q`'s, so no route is in both.
-    A last step `[*]`, `⟲`, `◆`, `◇` or `⟨n⟩` does not qualify, and nor does a pair whose routes part only
-    above a `⟲`. That case is not apart by route.
-  - **(b) The actual is one position there.** Let `L` be the longest common prefix of `P` and `Q`, cut
-    before the first `⟲` of either. The actual at `L` (`argAt`, forced) is a leaf, or a union or choice
-    DAG whose every member is a leaf: the possible contents of one position. Below `L`, each route of the
-    actual is then the same route below that one object, so the actual's positions under `L` correspond
-    one-to-one to positions of the cells it holds, and so to positions of `X`. A built node, a delta, a
-    recast or a `positions` node at `L` fails (b), because two of its children may hold one object
-    (`B [ v ] [ v ]`). So does a leaf that holds an approximate cell, or a cell under a repeating split
-    (*The repeating split*, below: `KappaRead.repeatingSplit`), because then two parameter positions can be
-    one object.
-  - **(c) `X` is a position name.** `X` is in both images exactly (not approximate), and it is symbolic
-    and at a summary path. A concrete cell (`site`, `result`, `esc`) in both images is one object at both
-    positions, and stays a repeat.
+- **Rule 3, through a level, at a call** [specified 2026-10-31, #1195, slice 4c; built in #1500, revised
+  after its review]. A callee's `apart` or `sep` over k ≥ 2 cells `πᵢ·P₁ … πᵢ·Pₖ` of one parameter, each
+  crossing `⟲`, is read at a call from each side's image (`Grafter.sideCells`, which through `⟲` is the
+  image cell set of the parameter cell). When the actual's first return lies deeper than the callee's,
+  several images can be one summary cell `X` of the caller's frame. `FoldedBCall`'s `incList` calls
+  `incAll b` with `b` an element of its parameter: `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]`
+  images both sides to `π1[*]#B.0⟲`, because in `incList`'s frame `[*]#B.0` is the first return and every
+  list below it folds onto its `⟲`. Read as a repeat, the call is refused `exclusive (approx)`, where v1
+  accepts it `param`. With k list fields the callee publishes k-sided groups (`LevelPositionsWide`), and the
+  same holds of them. An image that two or more sides share is several positions of `X`, and owes `excl X`
+  instead of a repeat, when all of these hold:
+  - **(a) The callee's positions are apart by route.** The last steps of `P₁ … Pₖ` are named steps (a
+    field, a tuple index, a constructor argument), pairwise different. Every concrete route that `Pⱼ`
+    stands for ends in `Pⱼ`'s last step, so no route is in two of them. A last step `[*]`, `⟲`, `◆`, `◇`
+    or `⟨n⟩` does not qualify. *Reached, and kept strict:* the review of #1500 counted 28 attempts in
+    `LevelRecursiveUpdates`, `MarkerAcross`, `WriteOneLevel` and `MutualWritersMutualTypes` that (a)
+    stops: pairs that end in `[*]` and part at different constructor arguments before `⟲`. Those are
+    distinct by route too (they part at a named step above every `⟲`), so relaxing (a) to "the paths part
+    at a named step above every `⟲`, or end in different named steps" would be sound. The `rule3-route`
+    mutant, which lets every such pair through, changes no verdict and no line over the ownership
+    corpus. So the relaxation has no fixture that pins it, and (a) stays as written until one does.
+  - **(b) The actual is one position there.** Let `L` be the longest common prefix of `P₁ … Pₖ`, cut
+    before the first `⟲`. Walk the actual down `L`'s steps, built nodes and deltas projected one step at a
+    time (`Grafter.onePositionAlong`). The first node that is not built must be one position's possible
+    contents, and it must be met **before any summary step** (`[*]`). That means a leaf, or a union or
+    choice DAG whose every member is a leaf, none holding an approximate cell or a cell under a repeating
+    split (*The repeating split*, below: `KappaRead.repeatingSplit`). Each route of the actual below that
+    node is then the same route below one object, and so one position of the cells it holds and of `X`.
+    - *Below `[*]` nothing is one position* (the review of #1500). A node met after a `[*]` step stands for
+      a list's coexisting elements. A union there is two elements (`List.push [ x ] y`: `x` and `y`), not
+      one position's possible contents, and a leaf there can be one object at two indices
+      (`List.push [ x ] x` dedupes to the leaf `x`). The first version of this rule tested only the node
+      at `L` and read that union as one position. Its own check then panicked on `viaPush`, `viaAppend`
+      and `viaPushes` (`o/LevelPositionsElems`), and its verdict there was right only because another atom
+      also failed. Those programs are now refused by rule 3 not applying, `exclusive (approx)`, where v1
+      accepts them `param` (known entries). A literal `[ x, y ]` is a `positions` node, which was never
+      one position.
+    - A built node, a delta, a recast or a `positions` node at the end of the walk fails (b), because two
+      of its children may hold one object (`B [ v ] [ v ]`).
+  - **(c) `X` is a position name.** A shared image is exact, symbolic and at a summary path. Given (b),
+    every shared image is a symbolic projection of the one leaf (or one union of leaves) that (b) found,
+    so (c) cannot fail. It is a `runtime_safety` assert (`Grafter.namesPositions`). A release build keeps
+    an image that fails it as a repeat, so a broken assumption reads `lost`, never `yes`.
 
-  Then `X` is taken out of one side before the multiset is read, and the pair owes `exclOf(X)` (the
-  repeating split's failed κ in place of `excl X`, as everywhere). Each other cell of the two images is
-  read as before.
-  - *Why `excl X` is enough.* By (a) the two callee positions are distinct routes, and by (b) they are
-    distinct positions under one object of the actual, so distinct positions of `X`. `excl X` says that
-    no two positions of `X` hold one object, which is what `apart` asks of them. `X`'s own callers
-    discharge it by the preimage multiset across depths (§2.9 *As built for a call's folded read*), as
-    they discharge every `summaryExcl`.
-  - *Why each condition is needed.* Without (a), `P` and `Q` can share a route, and the object at it is
-    on both sides, which is one object twice. Without (b), the actual `B [ v ] [ v ]` has distinct actual
-    positions at one parameter position, so `excl X` holds while both sides hold one object. Without
-    (c), a concrete cell on both sides is one object.
-  - *Measured* (scratch prototype, `Grafter.positionsThroughLevels`, on 4d's head `74fbcc61e`). Over the
-    ownership corpus (324 files and 49 projects), verdicts change in `FoldedBCall`, `FoldedBCallImported`
-    and `LevelsApartRoutes`, and nowhere else. The whole `test-blackbox` run (`run/`, `browser/` and core's v2
-    parity too) fails only on those three known entries. Each change is the 4c-owned refusal, now accepted `param`
-    as in v1, which leaves only a canonical-path-text entry (§2.2). Summaries change in the same three
-    roots only: `incList` gains `excl π1[*]#B.0⟲[*]`, `excl π1[*]#B.1`, `excl π1[*]#B.1⟲` and
-    `excl π1[*]#B.1⟲[*]`, and `incAll` gains `excl π1#B.1[*]#B.1`. Their callers discharge them and keep
-    v1's verdicts. *Corrected 2026-10-31 (4c, as built):* this note said that a first prototype without
-    a visited set ran `run/EvidenceDagBuildDepth32` past the 120-second guard. That is not so. Rule 3 is
-    never reached on that program, and with the visited set removed it passes in about a minute of
-    `test-blackbox` with the rest. The one failure seen was a run during which the sources were edited.
-    The walk keeps its visited set all the same, and a counted test pins its cost (*As built*, below).
-  - *The read does not depend on the representation* (Lemma R3). Write `Pos(n)` for (b)'s test. `Pos` is
-    the same on `n` and on every node of the same denotation that `Shape` can make for it. A view and its
-    answer are the same, because the test forces. A union that `join` has merged into one set leaf and the
-    unmerged union are the same, because both are one position's possible contents, and so is a choice of
-    leaves before and after it is flattened (`joinAlternatives`) or a covered arm is dropped (4d). A
-    `positions` node is never one position, whether #1471 keeps a member once or twice. Then (a) reads
-    paths only, and (c) reads the image's cell set, which is a set function. So the answer is a function of
-    the denotation. The rule is also monotone. A representation that over-approximates more (a node in
-    place of a leaf) can only fail (b), and then the pair reads `lost`, which is weaker.
-    *`runtime_safety` check.* When the rule fires, the call's preimage of the actual at each path's `⟲`
-    prefix (`Calls.preimage`, keyed by canonical path, defined on the denotation) holds `X` at that path's
-    key once, never in `dups`. A shared image that the preimage counts twice is a panic. The check reads
-    nothing that the rule's own walk reads, so a representation the rule misjudges is caught by a
-    different reader. The prototype runs it on every firing in the corpus, and it holds.
-  - *As built (4c, #1195).* `Grafter.positionsThroughLevels`, `onePosition` (with a visited set) and
-    `assertOnePosition` in `Calls.zig`, called from the `apart`/`sep` interpretation of a call. The
-    `runtime_safety` check is also run under `full_cross_check`'s `expectSame`, with rule 3's `excl X`
-    conjoined.
-    - *Verdicts.* Over the 2 056 roots of `bench/ownership-roots.mjs` (`allOwnership`, master
-      `a4accd406` against this branch, self-hosted Debug), verdicts change in five roots and on one line
-      each, all from refused `exclusive (approx)` to accepted `param`. They are `FoldedBCall` 30:15,
-      `FoldedBCallImported` 19:15, `LevelsApartRoutes` 23:15, and the new `o/LevelPositionsCall` 29:15 and
-      39:13 with its imported form. Every one is v1's verdict. The three known entries that 4a gave to 4c
-      are gone: their remaining lines are canonical-path text.
-    - *Cost.* Records change in those five roots only: about +34 000 each (`FoldedBCall`: 90 291 →
-      124 408). The new `excl` atoms move each member's class once more, so `incAll` takes 7 walks
-      where it took 5, and `incList` 9 where it took 7. The check itself costs 24 records. All 2 056
-      roots: 6 959 040 → 7 131 278 records (+2.5 %).
-    - *Fixtures.* `o/LevelPositionsCall` and `o/LevelPositionsCallImported` hold `incList`'s call and a
-      choice of two heads (accepted), and two twins that must stay refused: one list `k` at both fields
-      of the element (`sharedInside`, condition (b)) and one fresh list there (`freshShared`, (b) and
-      (c)). `o/MutualWritersMutualTypes` is #1429's program, accepted `param`. Its `wb` stops at the
-      summary-size limit at the default allowance since 5a (90 408 records), so the module raises its
-      allowance (#1487). The counted test *two positions of one image through a chain of n choices*
-      (`build_test.zig`) checks that the rule fires and that its cost is linear at n = 8 / 16 / 32
-      (7 381 / 8 529 / 10 916 records).
-    - *Mutations* (`-Downership-v2-mutation`, test-only, which `gates` refuses). `rule3-one-position`
-      drops (b). The `runtime_safety` check then panics on both `o/LevelPositionsCall` forms, and nothing
-      else in the ownership corpus changes. `rule3-route` drops (a) and `rule3-exact` drops (c). Over
-      the ownership corpus neither mutant changes a verdict or fires the check. With a leaf at `L` whose
-      cells are exact and not under a repeating split, which (b) requires, every image is a symbolic
-      projection of that one leaf. That leaves (c) nothing to refuse. Two distinct canonical paths that
-      end in one named step overlap only through a join path (§2.1 *Several level paths are a join*),
-      and no class in the corpus publishes an `apart` over a join path. So (a) and (c) are kept as
-      guards that the corpus cannot reach today, and no fixture pins them (#1496).
+  Then each shared `X` stays on the first side that holds it, leaves every later side, and the group owes
+  `exclOf(X)` (the repeating split's failed κ in place of `excl X`, as everywhere). When two or more images
+  are shared, the group also owes `apart` among them, so that the pair `X₁` on one side and `X₂` on another
+  is not lost when both leave the later sides. Every other cell is read in the multiset as before. The
+  work is one pass over the sides' cells with a persistent set of those seen, linear in them.
+  - *Why `excl X` is enough.* By (a) the callee positions on different sides are distinct routes, and by
+    (b) they are distinct positions under one object of the actual, so distinct positions of `X`. `excl X`
+    says that no two positions of `X` hold one object, which is what `apart` asks of them. `X`'s own callers
+    discharge it by the preimage multiset across depths (§2.9 *As built for a call's folded read*), as they
+    discharge every `summaryExcl`.
+  - *Why each condition is needed.* Without (a), two paths can share a route, and the object at it is on
+    both sides: one object twice. Without (b), the actual `B [ v ] [ v ]`, or a list of `[ x, y ]` at the
+    split, has distinct actual positions at one parameter position, or at positions of two parameter
+    cells that the canonical names identify, so `excl X` holds while two sides may hold one object.
+  - *Measured* (scratch prototype on 4d's head `74fbcc61e`, before the review): over the ownership corpus,
+    verdicts change in `FoldedBCall`, `FoldedBCallImported` and `LevelsApartRoutes` only. *Corrected
+    2026-10-31:* this note said that a prototype without a visited set ran `run/EvidenceDagBuildDepth32`
+    past the 120-second guard. That is not so. Rule 3 is never reached on that program, and with the
+    visited set removed it passes. The one failure seen was a run during which the sources were edited.
+  - *The read does not depend on the representation* (Lemma R3). (b)'s test is the same on every node of
+    one denotation that `Shape` can make: a view and its answer, because the walk forces; a union merged
+    into one set leaf and the unmerged union, and a choice of leaves before and after `joinAlternatives` or
+    4d's drop, because each is one position's possible contents above every `[*]`. Below a `[*]` it fails
+    whatever the representation. A `positions` node is never one position, whether #1471 keeps a member
+    once or twice. Then (a) reads paths only, and the shared images are a set function of the sides. The
+    rule is also monotone: a representation that over-approximates more (a node in place of a leaf) can only
+    fail (b), and then the group reads `lost`, which is weaker.
+    *`runtime_safety` check* (`Grafter.assertOnePosition`). When the rule fires, a fresh preimage walk of
+    the whole actual (`Calls.Pre`, keyed by canonical path, on the denotation) is traced: every source state
+    that brings a shared image to any of the callee's paths must stand at one and the same path, and that
+    path must have no summary step. Two positions of one object show as two paths, whether their arrivals
+    land at one callee path or at two (the cross case), and two elements of a list show as a summary path.
+    The check shares none of the rule's walk.
+  - *As built (#1500, after its review).* `Grafter.positionsThroughLevels`, `onePositionAlong`,
+    `onePosition` (with a visited set), `namesPositions` and `assertOnePosition` in `Calls.zig`, called from
+    the `apart`/`sep` interpretation of a call for any k ≥ 2 sides. The `full_cross_check` comparison
+    conjoins rule 3's atoms too.
+    - *Verdicts.* Over the 2 107 roots of `bench/ownership-roots.mjs` (`allOwnership`, master against this
+      branch, self-hosted Debug), verdicts change in nine roots. At each group's own calls they go from refused `exclusive
+      (approx)` to accepted `param` or `fresh`, v1's verdict, and in `o/PushedTwiceLevels` two callers go
+      from accepted to refused, exactly (the side effect below). The roots are `FoldedBCall` 30:15,
+      `FoldedBCallImported` 19:15, `LevelsApartRoutes` 23:15, and the new `o/LevelPositionsCall` (and its
+      imported form), `o/LevelPositionsWide`, `o/LevelPositionsElems` (and its imported form) and
+      `o/PushedTwiceLevels` at their groups' own calls. The three known entries that 4a gave to 4c are gone.
+    - *A side effect, pinned.* In `o/PushedTwiceLevels`, `g ys = incAll (B ys [])` now publishes
+      `excl` atoms over the lists below `ys`'s elements. So `pushedTwice` (`g (List.push bs x)` with `x`
+      taken from `bs`) and `pushedRest` (the rest of a pattern over that list) are refused `exclusive`,
+      exactly. That is right: the list holds `x` twice, and `g` would write `x`'s lists twice in place.
+      Master and v1 accept both, which is the #1478 class (known entries).
+    - *Cost.* Records change in 119 roots. Nine of them carry the rule's fixpoint: +36 000 to +66 000 each
+      (`FoldedBCall` 92 417 → 128 537), because the new `excl` atoms move each member's class once more
+      (`incAll` 7 walks where it took 5, `incList` 9 where it took 7). The other 110 change by at most 67
+      records, the attempts that (a) or (b) stops. Over all 2 107 roots (master `13e2cb61c`): 9 956 773 → 10 318 429 records (+3.6 %),
+      most of it in the five new fixtures, which master checks too.
+    - *Counted tests* (`build_test.zig`). *Through a chain of n choices*: the rule fires and its cost is
+      linear at n = 8 / 16 / 32. *Over k list fields*: the rule fires at k = 2 / 4 / 8 (master refuses), and
+      each doubling of k at most quadruples the work, which is the class's k² paths. The rule adds 1.5–1.7×
+      to master's records there (100 452 / 283 156 / 1 109 590 against 65 068 / 175 023 / 649 017).
+      *Rule 3's atoms cross a block unchanged*: a forwarder's `xreq` is the same text whether `incList` is
+      in its module or imported, with `excl π1[*]#B.0⟲` in it.
+    - *Fixtures.* `o/LevelPositionsCall` and its imported form (accepted: `incList`'s call, a choice of two
+      heads; refused: one list at both fields of the element, given or fresh). `o/LevelPositionsWide` (three
+      fields; a shared list refused). `o/LevelPositionsElems` and its imported form (the heads below `[*]`:
+      refused, as above). `o/PushedTwiceLevels`. `o/MutualWritersMutualTypes` is #1429's program, accepted
+      `param`. Its `wb` passes the default allowance since 5a (90 408 records), so the module raises it
+      (#1487).
+    - *Mutations* (`-Downership-v2-mutation`, test-only, which `gates` refuses). `rule3-one-position` drops
+      (b). The traced check then panics on five fixtures: both forms of `o/LevelPositionsCall` and of
+      `o/LevelPositionsElems`, and `o/LevelPositionsWide`. `rule3-route` drops (a) and changes nothing
+      (above). (c) has no mutant, since it is an assert.
 
 *The cases.*
 - *Parts below two heads, and below a head and its rest.* The sides are two disjoint index ranges, and
@@ -6006,7 +6024,7 @@ L0  Ids
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
-| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 960 (1 830 until #1195: §2.9 rule 3, `positionsThroughLevels`, `onePosition` and its check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
+| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 050 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
 | `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 160 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines) |
