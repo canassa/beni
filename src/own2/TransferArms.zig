@@ -220,6 +220,21 @@ pub fn Of(comptime Frame: type) type {
                 };
             }
 
+            /// The runs of the ends of the write's path whose reach holds the
+            /// parameter cell `c` (`keptAll`), once per cell.
+            fn paramRuns(a: *const Arms, f: *Frame, c: CellId, memo: *Ids.FixedDict(1)) Error!SetId {
+                if (memo.get(.{c.int()})) |v| return .from(v);
+                const sets = &f.env.cells.sets;
+                var r: SetId = .none;
+                for (a.ends.items) |e| {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    if (!sets.member(try f.env.shapes.reach(f.gpa, f.account(), sets, .from(e[1])), c.int())) continue;
+                    r = try sets.unionWith(f.gpa, f.env.charge, r, a.sets.items[e[0]]);
+                }
+                (try memo.getOrPut(f.gpa, .{c.int()})).value_ptr.* = r.int();
+                return r;
+            }
+
             /// `s` with every arm's parents, and arm 0.
             fn closure(a: *const Arms, f: *Frame, s0: SetId) Error!SetId {
                 const sets = &f.env.cells.sets;
@@ -291,6 +306,8 @@ pub fn Of(comptime Frame: type) type {
                 }
                 var closed: Ids.FixedDict(1) = .{};
                 defer closed.deinit(gpa);
+                var by_param: Ids.FixedDict(1) = .{};
+                defer by_param.deinit(gpa);
                 for (gk.items) |g| {
                     const cs = try a.closure(f, g[0]);
                     var it = sets.iterate(g[1]);
@@ -298,8 +315,11 @@ pub fn Of(comptime Frame: type) type {
                         try f.env.charge.reserve(gpa, .inspection, 1);
                         const c: CellId = .from(x.key);
                         const k = aliasKey(cells, c);
-                        if (cells.origin(cells.base(c)) != .param and k[0] != key_top) {
-                            const r: SetId = .from(based.get(k) orelse continue);
+                        if (k[0] != key_top) {
+                            // A parameter's cell is the base's where an end
+                            // reaches it; any other cell, by its key.
+                            const r: SetId = if (cells.origin(cells.base(c)) == .param) try a.paramRuns(f, c, &by_param) else .from(based.get(k) orelse continue);
+                            if (r == .none) continue;
                             const cr = blk: {
                                 if (closed.get(.{r.int()})) |v| break :blk SetId.from(v);
                                 const v = try a.closure(f, r);
@@ -496,7 +516,9 @@ pub fn Of(comptime Frame: type) type {
                     for (out.order.items) |i| {
                         const n = out.keys.items[i];
                         if (p == null or shapes.place(n) != p.?) continue;
-                        if (out.root.items[i]) continue;
+                        // A join or a view stands for its sides or its answer,
+                        // which are re-entries of their own: never both.
+                        if (out.root.items[i] or out.join.items[i]) continue;
                         try next.append(gpa, .{ .n = n, .level = true, .sum = out.get(i) });
                     }
                     std.mem.swap(std.ArrayList(MPos), &frontier, &next);
@@ -530,6 +552,8 @@ pub fn Of(comptime Frame: type) type {
             indeg: std.ArrayList(u32) = .empty,
             done: std.ArrayList(bool) = .empty,
             root: std.ArrayList(bool) = .empty,
+            /// A join or a view, walked as its sides or its answer.
+            join: std.ArrayList(bool) = .empty,
             fn deinit(r: *MRoutes, gpa: Allocator) void {
                 r.index.deinit(gpa);
                 r.keys.deinit(gpa);
@@ -540,6 +564,7 @@ pub fn Of(comptime Frame: type) type {
                 r.indeg.deinit(gpa);
                 r.done.deinit(gpa);
                 r.root.deinit(gpa);
+                r.join.deinit(gpa);
             }
             fn intern(r: *MRoutes, gpa: Allocator, n: NodeId) Allocator.Error!struct { index: u32, found_existing: bool } {
                 const got = try r.index.getOrPut(gpa, n);
@@ -568,6 +593,7 @@ pub fn Of(comptime Frame: type) type {
             out.order.clearRetainingCapacity();
             out.runs.clearRetainingCapacity();
             out.kids.clearRetainingCapacity();
+            out.join.clearRetainingCapacity();
             var stack: std.ArrayList(NodeId) = .empty;
             defer stack.deinit(gpa);
             for (roots) |x| if (!(try out.intern(gpa, x.n)).found_existing) try stack.append(gpa, x.n);
@@ -604,10 +630,13 @@ pub fn Of(comptime Frame: type) type {
                     if (!got.found_existing) try stack.append(gpa, n);
                 };
                 while (out.runs.items.len <= yi) try out.runs.append(gpa, .{ 0, 0 });
+                while (out.join.items.len <= yi) try out.join.append(gpa, false);
+                out.join.items[yi] = k != 0;
                 out.runs.items[yi] = .{ start, @as(u32, @intCast(out.kids.items.len)) - start };
             }
             const n_nodes = out.keys.items.len;
             while (out.runs.items.len < n_nodes) try out.runs.append(gpa, .{ 0, 0 });
+            while (out.join.items.len < n_nodes) try out.join.append(gpa, false);
             try out.acc.resize(gpa, n_nodes);
             try out.indeg.resize(gpa, n_nodes);
             try out.done.resize(gpa, n_nodes);

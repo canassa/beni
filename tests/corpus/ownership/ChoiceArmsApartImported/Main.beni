@@ -88,3 +88,48 @@ unionTwin ⊤ =
 
         [] →
             Rose []
+
+
+-- Two leaves in one list of one arm, as in `ChoiceArmsApart`: accepted.
+pub twoLeaves : Bool → Rose
+twoLeaves d =
+    Walk.incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose [], Rose [] ] ]
+        )
+
+
+pub leafBesideK : Bool → Rose
+leafBesideK d =
+    k = [ Rose [] ]
+    Walk.incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose k, Rose [] ] ]
+        )
+
+
+pub leafBesideKTwice : Bool → Rose
+leafBesideKTwice d =
+    k = [ Rose [] ]
+    Walk.incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose k, Rose [] ], Rose [] ]
+        )
+
+
+pub sameArms : Bool → Rose
+sameArms c =
+    k = [ Rose [] ]
+    s0 = Rose [ Rose [], Rose k ]
+    Walk.incAll
+        (if c then
+            Rose [ s0 ]
+         else
+            Rose [ s0 ]
+        )

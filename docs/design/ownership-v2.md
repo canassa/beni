@@ -2718,14 +2718,17 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        choices it is a side of. Every node is read by the whole argument's base (`want`) and keeps per
        node. At the end a cell a node keeps is another path only where its key is a base's in a run the
        node is in too: the arms of the base's ends of the write's path and the node's arms, one set
-       meeting the other's closure under parents; a parameter's or a `⊤` cell is kept always. This is
+       meeting the other's closure under parents. A parameter's cell is the base's in the runs of the ends
+       whose reach holds it, and is read the same way; a `⊤` cell is kept always. This is
        sound because a run that takes an arm has that arm's whole value below its depth: a node none of
        whose arms a base's run shares is in no run with it. A deep demand's base, a `⊤` base, or a route
        of the write's path that stops above its end keeps every node's cells, as before.
      - **The written positions, per run** (`TransferArms.frontierMax`). With a split, a node's routes are
        counted per leaf arm: a node stands at one position when no arm has two routes to it, so a list
        two arms share at the written path is written in each (`chosen`'s inner `[]`). A join's sides and
-       a view's answer are walked as edges, so a part arms share is counted once.
+       a view's answer are walked as edges, so a part arms share is counted once, and a join or a view
+       is never a re-entry of a `⟲` itself: its sides or its answer are, and counting both would give the
+       list below two routes in one arm (`ChoiceArmsApart`'s `twoLeaves`, two `Rose []` in one list).
      - **Coexistence is unchanged.** A `union` (possible contents at one position) and a `positions` node
        (coexisting elements) are never split: their sides are read together, as `reachBeside` and §2.9
        read them. Pinned by `ChoiceArmsApart`'s `unionTwin`, the shape of `chosen` with a pattern's two
@@ -5558,7 +5561,7 @@ L0  Ids
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
 | `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 140 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines) |
-| `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 690 (#1439: 675 lines; it and `TransferBeside` call each other, the walk and its runs) |
+| `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 710 (#1439: 704 lines; it and `TransferBeside` call each other, the walk and its runs) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
 | `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
 | `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |
