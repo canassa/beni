@@ -1572,6 +1572,15 @@ pub const Table = struct {
     /// to nothing; a recast stays a recast (approximate); a union or a
     /// positions node projects both sides, its kind kept. Null when the
     /// place has no such step.
+    /// The projection of `n` at `s` taken to be `m`, a node `BlockRead`
+    /// decoded as that projection and checked to be its DAG up to the order
+    /// of sides (§3.6): later readers then meet the node the block's κ is
+    /// keyed on.
+    pub fn setProj(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        try account.reserve(.memo, 1);
+        (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = m.int();
+    }
+
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
         // Reserved before the memo is touched, a hit charged like a miss
         // (§2.3 *Memo safety*); the memo is written only once the answer

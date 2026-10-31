@@ -832,11 +832,50 @@ const Reader = struct {
                         if (places.child(p.place, e.step) != r.env.shapes.place(child)) return error.Malformed;
                     } else if (pass == 1 and e.made) {
                         const made = (try r.env.shapes.proj(r.env.gpa, r.env.account(), places, r.env.cells, p.node, e.step)) orelse return error.Malformed;
-                        if (made != child) return error.Malformed;
+                        if (made == child) continue;
+                        // A projection below a union, choice or positions node
+                        // is that kind's DAG over its sides' projections, and the
+                        // block's order of a DAG's two sides need not be the
+                        // writer's: the decoded node is the projection when the
+                        // two are one DAG up to that order. It is then the
+                        // projection, so a reader meets the node its κ is keyed
+                        // on (§3.6, #1399).
+                        if (!try r.sameDag(made, child)) return error.Malformed;
+                        try r.env.shapes.setProj(r.env.gpa, r.env.account(), p.node, e.step, child);
                     }
                 }
             }
         }
+    }
+
+    /// Whether `a` and `b` are one union, choice and positions DAG over the
+    /// same other nodes, each such node's two sides in either order. A
+    /// record per pair compared.
+    fn sameDag(r: *Reader, a: NodeId, b: NodeId) Failure!bool {
+        const shapes = r.env.shapes;
+        const gpa = r.env.gpa;
+        const Pair = struct { a: NodeId, b: NodeId };
+        var stack: std.ArrayList(Pair) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .a = a, .b = b });
+        while (stack.pop()) |x| {
+            try r.env.charge.reserve(gpa, .inspection, 1);
+            if (x.a == x.b) continue;
+            const da = shapes.get(x.a);
+            const db = shapes.get(x.b);
+            if (da.kind != db.kind or da.place != db.place) return false;
+            if (da.kind != .@"union" and da.kind != .choice and da.kind != .positions) return false;
+            const aa: NodeId = .from(da.a);
+            const ab: NodeId = .from(da.b);
+            const ba: NodeId = .from(db.a);
+            const bb: NodeId = .from(db.b);
+            // A side equal to one of the other's first, so the order is chosen
+            // by what is equal, never searched.
+            if (aa == bb or ab == ba) {
+                try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = bb }, .{ .a = ab, .b = ba } });
+            } else try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = ba }, .{ .a = ab, .b = bb } });
+        }
+        return true;
     }
 
     fn record(r: *Reader, kind: Kind) Failure!u32 {
@@ -4139,5 +4178,42 @@ test "#1335 review: a knot through a whole recast round-trips, its cells read on
             }
             try testing.expectEqual(try kappaAt(&a, orig.kappas, orig.res, path), try kappaAt(&b, back.kappas, back.res, path));
         }
+    };
+}
+
+test "#1399: a block keeps a κ keyed on the projection of a positions node, its sides in either order" {
+    // A joined port keys κ on the projection of its DAG (§2.9 *Keyed where a
+    // reader looks*). The block orders a DAG's two sides by its records, so
+    // the decoded projection may name its sides the other way round from
+    // the writer's; the reader takes the decoded node as the projection.
+    const gpa = testing.allocator;
+    for (0..2) |swap| for (0..2) |deep| {
+        var a: Tables = .{};
+        try a.init();
+        defer a.deinit();
+        const env = a.env();
+        const lists = try a.place(2);
+        const list = try a.place(0);
+        const elem = try a.place(1);
+        var ns: [2]NodeId = undefined;
+        for (0..2) |i| {
+            const site = try a.cells.site(gpa, &a.account, @intCast(10 + i), list, .list);
+            const inner_site = try a.cells.site(gpa, &a.account, @intCast(20 + i), elem, .record);
+            var child = try a.shapes.leaf(gpa, &a.account, elem, try a.cells.sets.insert(gpa, env.charge, .none, inner_site.int(), 0));
+            if (deep == 1 and i == 0) child = try a.shapes.choice(gpa, &a.account, &a.cells.sets, child, try a.shapes.leaf(gpa, &a.account, elem, try a.cells.sets.insert(gpa, env.charge, .none, (try a.cells.site(gpa, &a.account, 30, elem, .record)).int(), 0)));
+            ns[i] = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, child));
+        }
+        const p = try a.shapes.collect(gpa, &a.account, &a.cells.sets, if (swap == 0) &.{ ns[0], ns[1] } else &.{ ns[1], ns[0] });
+        const top = try a.shapes.node(gpa, &a.account, lists, .none, try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, p));
+        const below_p = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, p, Step.elem)).?;
+        var m = (try a.conds.kappaSet(gpa, env.charge, .none, top, Cond.yes)).ctx;
+        m = try a.conds.kappaSetAt(gpa, env.charge, m, &.{ Step.elem, Step.elem }, below_p, Cond.shared);
+        const c = try a.sums.add(env, .{ .params = &.{.none}, .res = top, .kappas = m });
+        try testing.expectEqual(Cond.shared, try kappaAt(&a, m, top, &.{ Step.elem, Step.elem }));
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        const back = b.sums.get(try roundTrip(&a, &b, c));
+        try testing.expectEqual(Cond.shared, try kappaAt(&b, back.kappas, back.res, &.{ Step.elem, Step.elem }));
     };
 }

@@ -62,8 +62,9 @@ const layers = [_]Entry{
     // 4 320 since #1390: a part runs with its anchor's split, and a part below
     // another cell is `covered`.
     // 4 460 since #1399: a join keys the members' entries where a reader
-    // looks (`leafEntries`) and checks it under `runtime_safety`.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4460 },
+    // looks (`leafEntries`, memoised) and checks it under `runtime_safety`;
+    // 4 500 with the memo.
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4500 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1710 },
@@ -115,7 +116,9 @@ const layers = [_]Entry{
     // 1 050 since S3b slice 3: the commit re-interns the block's places.
     // 1 235 since #1335: a knot's members tied raw, set once it is read,
     // a forward name only on a cycle, and the safety check of each reach.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1235 },
+    // 1 280 since #1399: a projection decoded with its DAG's sides the other
+    // way round is the reader's projection (`sameDag`).
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1280 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
