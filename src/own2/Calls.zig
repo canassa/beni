@@ -2545,6 +2545,50 @@ test "#1146: a chain of knots as deep as the source is linked on a small stack" 
     try testing.expect(try result != .none);
 }
 
+/// #1146's chain as a class's `res`, applied (`ownership-v2.md` §8 S3b
+/// slice 5d2): the records `apply` spends answering its view and linking
+/// the argument's snapshot, and a κ read of the answer (`kappaOf`). No
+/// `Grafter` is built by hand: this is the path every call takes. The
+/// answer's `deep` read is not counted here: it is quadratic on this chain,
+/// with or without the view (#1488).
+fn applyChainCost(n: usize, params: bool) !u64 {
+    const gpa = testing.allocator;
+    const x = try gpa.create(KnotFixture);
+    defer gpa.destroy(x);
+    x.* = .{};
+    try x.init();
+    defer x.deinit();
+    x.account.allowance = std.math.maxInt(u32) - 1;
+    const lf = try x.site(7, x.t_place);
+    const root = try linkChain(x, n, params, lf);
+    const c = try x.sums.add(x.env(), .{ .params = &.{.none}, .res = root, .kappas = .none });
+    const arg: Value = .{ .node = lf, .kappa = try linkArgKappa(x, lf) };
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const before = x.account.total();
+    const v = (try apply(x.env(), &x.sums, c, &.{arg}, 1, &s)).result;
+    try testing.expectEqual(Shape.Kind.view, x.shapes.kind(v.node));
+    try testing.expect(v.kappa != .none);
+    _ = try x.conds.kappaOf(gpa, x.env().charge, x.env().view(), v.kappa, v.node, false);
+    return x.account.total() - before;
+}
+
+test "#1146: the chain of knots applied as a class, its view linked and read, costs each knot its own records" {
+    // The count of `linkArgs` above, on the path `apply` takes since the
+    // call view (§2.11): 197 / 799 / 3 429 / 14 891 / 64 561 records at
+    // 4 … 1 024 knots (254 … 89 186 with parameters).
+    for ([_]bool{ false, true }) |params| {
+        var cost: [5]u64 = undefined;
+        for ([_]usize{ 4, 16, 64, 256, 1_024 }, 0..) |n, i| cost[i] = try applyChainCost(n, params);
+        // Four times the knots, about four times the records (n log n at
+        // most), never sixteen.
+        for (1..5) |i| if (cost[i] > 6 * cost[i - 1]) {
+            std.debug.print("params {}: {any}\n", .{ params, cost });
+            return error.TestUnexpectedResult;
+        };
+    }
+}
+
 // ---- the review's random differential (#1149) ---------------------------------------
 
 /// How a new snapshot `b` differs from the root-path replay's `a`: 0 the

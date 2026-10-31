@@ -7103,6 +7103,19 @@ then 4c, then 5c. 5d1 can start at once. 5d2 follows 4b. 5e and 5f follow 4a. 5z
 S4 needs 4c (certified knots) and 5a (the transport, to which S4 adds supply roots). 5b moved into S4
 (#1441): the pairs first exist there and are published as the certificate (P, ℓ, M), §2.12. S4 does not need 5c–5f to start.
 
+*As built, 5d2* [M 2026-10-31, Debug]. **Holds.**
+- `wrap (wrap … r)`: 234 / 231 / 246 records a call at 10 / 100 / 1 000, and about 11 more a call through `ident`. Imported, it costs the same. The gates count 10 and 100, because 1 000 takes about a second.
+- The refused twin: `growKid` below `wrap2` at the top is `exclusive`, and below `wrap` it is accepted.
+- #1146's X_k chain through `apply` and `kappaOf`: 197 / 799 / 3 429 / 14 891 / 64 561 records at 4 … 1 024. No `Grafter` is built by hand. `Grafter.graft` itself was deleted on 2026-10-30, so #1308 owes nothing more for it. `linkArgs` stays, because `apply` uses it.
+- #1097's done condition: the push chain has G_f = 0 at 100 and 200, and the source-lanes test says so. `rebuilt` has G_f = 0 at 65 and 130 fields.
+- R-7.4's Θ(NK) witness is a ring of k types. `m0` walks 5 times at k = 2 and 8 times at k = 3, whatever n is. A small member's walks pass its lanes into growth at k = 3, and k = 8 is loud.
+
+**Open findings.** These have no ceiling pinned:
+- The `deep` read of the X_k answer is Θ(n²), with or without a view (#1488).
+- `growKid` below a wrap tower costs about n^1.6 (#1490).
+- #1289's tree-insert chain is Θ(n²) when read and exponential when published (#1289's comment of 2026-10-31).
+- The two-branch tree insert is itself past the allowance (#1489).
+
 *What the counts say about the size of what is left* [M 2026-10-31]. Master has 2 825 lines
 `not built: call` in 1 197 `.v2.unchecked` files. They cover the calls of a function value (S4),
 the calls of an unbuilt callee (with the callee's own reason) and recursion. 4a removes the 218
