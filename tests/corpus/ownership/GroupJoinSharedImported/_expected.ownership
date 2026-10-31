@@ -1,0 +1,10 @@
+module Builds
+  8:9 List.push <call Builds.h3>: accepted call
+  summary h3: π1 RA; res [*] ~condition(fresh2) ~fresh2{lost} ~fresh3{lost} ~fresh4{lost} ~π1, fresh1{lost} fresh3{lost} ~fresh4{lost}
+  demands 1: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  12:26 List.push p: rejected call: q may hold it through the call at 10:10, and is read at 12:43 (approx)
+  summary r3: unused
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

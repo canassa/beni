@@ -1,9 +1,9 @@
 -- ownership: a recursive group's port joined over rounds keeps the weaker
 -- κ (#1395's review). `build` pushes `x` on every level, so the elements of
 -- its answer may share one list (`[*] π1{shared}` from round 2). The join of
--- rounds 1 and 2 keys that `shared` below a choice where a caller's read of
--- the call never meets it, so v2 accepts `readB`'s push of `a` while `b` may
--- be the same list. v1 refuses it. `evenB`/`oddB` are the mutual twin.
+-- rounds 1 and 2 keys that `shared` below a choice, and every reader of the
+-- call meets it (#1399): `readB`'s push of `a` while `b` may be the same
+-- list is refused, as by v1. `evenB`/`oddB` are the mutual twin.
 build : List Int, Int → List (List Int)
 build x n =
     if n == 0 then

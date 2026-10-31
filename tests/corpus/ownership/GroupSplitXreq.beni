@@ -1,11 +1,9 @@
 -- ownership: #1409 through a recursive group (#1408's review). `bumpR`
 -- writes its head's elements (`inner ys`) and recurses on the rest: two
--- calls on split positions of one list. v2 refuses both inside `bumpR` on
--- the canonical paths and publishes no `xreq`, so `useR`'s doubled literal
--- is accepted fresh where v1 refuses it `exclusive`. The mutual twin
--- `evenR`/`oddR` is refused, but only because `oddR`'s forwarding call
--- accepts and publishes `excl π1[*][*]`. The same loss happens with no recursion (#1409's
--- `bumpAll`), so this is #1409's, not the group solver's.
+-- calls on split positions of one list (#1409). Each call relies on its
+-- argument's elements being exclusive, so `bumpR` publishes `xreq
+-- excl π1[*][*]` and `useR`'s doubled literal is refused `exclusive`, as by
+-- v1. `evenR`/`oddR` are the mutual twin.
 inner : List (List Int) → List (List Int)
 inner ys =
     case ys of
