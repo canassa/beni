@@ -1730,16 +1730,9 @@ pub const Frame = struct {
         }
         if (!leaf) {
             // Where a built value holds the leaf, a use reads it through the
-            // value's structure: any later use keeps every route its own.
-            const r = x.index.rangeOf(places, h.who, &.{}, true);
-            var i = r.start;
-            while (i < r.start + r.len) : (i += 1) {
-                try f.env.charge.reserve(gpa, .inspection, 1);
-                if (x.index.get(.from(i)).point > point) {
-                    x.merge = false;
-                    return;
-                }
-            }
+            // value's structure: any later use keeps every route its own. A
+            // binding lives to its last use, so its end tells.
+            if (h.end > point) x.merge = false;
             return;
         }
         var ct = cells.sets.iterate(try shapes.cellsOf(gpa, f.account(), &cells.sets, n));
@@ -1763,11 +1756,19 @@ pub const Frame = struct {
             var d: usize = 0;
             while (d <= depth) : (d += 1) {
                 const r = x.index.rangeOf(places, h.who, x.use_steps.items[0..d], d == depth);
+                // The uses of one path and group are one run sorted by point
+                // (`Liveness`): a run is read by its first use and its last
+                // point, never use by use, so a group costs the runs on its
+                // leaf's line, not the holder's earlier uses.
                 var i = r.start;
-                while (i < r.start + r.len) : (i += 1) {
+                const end = r.start + r.len;
+                while (i < end) {
                     try f.env.charge.reserve(gpa, .inspection, 1);
+                    const run_end = x.index.groupEnd(i, end);
                     const u = x.index.get(.from(i));
-                    if (u.point <= point) continue;
+                    const last = x.index.get(.from(run_end - 1)).point;
+                    i = run_end;
+                    if (last <= point) continue;
                     if (u.kind == .call and u.use_node != .none) {
                         x.merge = false;
                         return;
