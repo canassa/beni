@@ -79,6 +79,13 @@ pub fn Of(comptime Frame: type) type {
         /// A node of the write's path finds its children beside the write by
         /// those keys (`Beside`, built once per call and shared by its
         /// writes): `n` writes of `n` fields of one argument cost n, not n².
+        ///
+        /// **A choice's arms apart (#1439).** One run has one arm of a `choice`
+        /// (§2.9). A choice the write's path meets above its first `[*]` or `⟲`
+        /// is split, and each arm is read against its own base and written
+        /// positions (`Ctx`, `armCtx`): what one arm holds beside the write is
+        /// never another path of the other arm's write. A `union` or
+        /// `positions` coexists and is read together, as before.
         pub fn otherPaths(f: *Frame, bs: *Beside, use: NodeId, arg: Value, ws: []const Step, base: Value, inst: u32, deep: bool) Error!void {
             if (use == .none) return;
             const task = try f.account().enter(f.gpa, null);
@@ -86,14 +93,256 @@ pub fn Of(comptime Frame: type) type {
             const gpa = f.gpa;
             const shapes = f.env.shapes;
             const cells = f.env.cells;
-            const own = try shapes.reach(gpa, f.account(), &cells.sets, base.node);
-            // What may be the base: its cells as Demands reads them (a deep
-            // demand's reach, whose symbolic cells' descendants share their
-            // keys), by alias key; and the parameter cells of `own`, by the
-            // paths a parameter leaf beside them may sit at (`unreached`).
-            var want: Want = .{};
-            defer want.deinit(gpa);
-            var bt = cells.sets.iterate(if (deep) own else try shapes.cellsOf(gpa, f.account(), &cells.sets, base.node));
+            // What may be the base, and what is beside it, per context: the
+            // whole argument's (context 0) and each arm's of a choice on the
+            // write's exact prefix (`Ctx`, #1439).
+            var ctxs: Ctxs = .{};
+            defer ctxs.deinit(gpa);
+            try ctxs.list.append(gpa, .{});
+            const own = try f.wantOf(base.node, deep, &ctxs.list.items[0].want);
+            ctxs.list.items[0].own = own;
+            // Two paths fold through one leaf when both meet it through one
+            // exact prefix: the write's path meets one at
+            // depth `leaf`, and another path does at that depth when it is still
+            // the write's path there.
+            const leaf = try f.leafDepth(arg, ws);
+            const exact = exactPath(ws);
+            // The refinements the write's path meets in the argument along its
+            // exact prefix: the position of a split the base is, which its
+            // projection forgot (§2.2: `elem c·ι` below is `c[*]` below).
+            var refs: std.ArrayList(CellId) = .empty;
+            defer refs.deinit(gpa);
+            try f.spineRefinements(arg.node, ws, &refs);
+            var relied: CondId = Cond.yes;
+            var stack: std.ArrayList(Item) = .empty;
+            defer stack.deinit(gpa);
+            var seen: Ids.FixedDict(4) = .{};
+            defer seen.deinit(gpa);
+            // The written positions, by canonical path (#1253): the base's nodes
+            // at the write's own path. A route beside the write that folds back
+            // onto that path through the use shape's knot, or a reach that holds
+            // them from above, meets the written object itself, not another path
+            // of the argument; its other positions there are the `excl` it owes.
+            // Never a node alone: use nodes and values are shared, so one node
+            // stands at two paths (`{ x = l, z = l }`).
+            try f.env.places.expandLevels(gpa, f.env.charge, try f.extendPath(try f.env.places.rootPath(gpa, shapes.place(use)), ws), &ctxs.paths);
+            try f.frontierAt(arg.node, ws, &ctxs.list.items[0].written);
+            // The write's exact prefix: a choice met there is one arm per run.
+            var exact_to: usize = 0;
+            while (exact_to < ws.len and ws[exact_to].kind != .elem and ws[exact_to].kind != .level) exact_to += 1;
+            var read: Ids.FixedDict(3) = .{};
+            defer read.deinit(gpa);
+            var kept: SetId = .none;
+            var excl: SetId = .none;
+            try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false, .path = try f.env.places.rootPath(gpa, shapes.place(use)), .ctx = 0 });
+            while (stack.pop()) |it0| {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                var it = it0;
+                const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
+                it.ctx = (try visit(gpa, &seen, .{ it.u.int(), it.v.int(), state, it.path.int() }, it.ctx)) orelse continue;
+                if (it.mode == .spine and !it.stuck and !it.level and it.depth <= exact_to) {
+                    // A choice on the exact prefix: one arm per run, each read
+                    // against its own base and written positions (#1439).
+                    const m = try shapes.force(gpa, f.account(), it.v);
+                    if (shapes.kind(m) == .choice) {
+                        for ([_]NodeId{ .from(shapes.get(m).a), .from(shapes.get(m).b) }) |arm| {
+                            var next = it;
+                            next.v = arm;
+                            if (shapes.kind(try shapes.force(gpa, f.account(), arm)) != .choice)
+                                next.ctx = try f.armCtx(&ctxs, arm, ws[it.depth..], deep);
+                            try stack.append(gpa, next);
+                        }
+                        continue;
+                    }
+                }
+                const cx = &ctxs.list.items[it.ctx];
+                const want = &cx.want;
+                const written = &cx.written;
+                if (it.mode != .spine and written.holds(ctxs.paths.items, it.path, it.v)) continue;
+                if (try f.unreached(it.v, cx.own)) continue;
+                const d = shapes.get(it.u);
+                var marks: u8 = 0; // 1 any mark, 2 held (`A` or `E`)
+                var ct = cells.sets.iterate(d.cells);
+                while (ct.next()) |x| {
+                    const c: CellId = .from(x.key);
+                    if (cells.origin(c) != .mark) continue;
+                    marks |= 1;
+                    const m = cells.markOf(c);
+                    if (m == .a or m == .e) marks |= 2;
+                }
+                // Held on the exact write path: what it holds beside the write (#1367).
+                var held_below = it.held;
+                if (marks & 1 != 0 or it.held) {
+                    const beside, const folded = switch (it.mode) {
+                        .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
+                        .below, .off => .{ true, it.folded },
+                    };
+                    if (beside and it.mode == .spine and exact) {
+                        // A stuck value is from above, where `ws[depth..]` is not its
+                        // rest: whole, unless a held item already read it there.
+                        if (!it.stuck)
+                            try f.keepAnswered(bs, want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied)
+                        else if (!it.held) if (try visit(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int() }, it.ctx)) |rc|
+                            try f.keepBeside(bs, &ctxs.list.items[rc].want, it.v, folded, true, null, refs.items, &kept, &excl, &relied, null);
+                        held_below = true;
+                    } else if (beside) if (try visit(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int() }, it.ctx)) |rc| {
+                        const rx = &ctxs.list.items[rc];
+                        try f.keepBeside(bs, &rx.want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), null, refs.items, &kept, &excl, &relied, .{ .path = it.path, .written = &rx.written, .paths = ctxs.paths.items });
+                    };
+                }
+                if (d.kind != .node) continue;
+                if (it.mode == .spine and it.depth < ws.len) {
+                    // On the write's path: its next step, and the children
+                    // beside it that may hold a cell of the base (`Beside`).
+                    if (shapes.overGet(d.a, ws[it.depth])) |child| {
+                        const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level, .held = held_below, .path = .none, .ctx = it.ctx };
+                        try f.advance(it, ws[it.depth], next, &stack);
+                    }
+                    const folded = leaf != null and leaf.? <= it.depth;
+                    const sp = try f.spineOf(bs, it);
+                    if (want.all) {
+                        const r = bs.ranges.items[sp];
+                        for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, it.path, it.ctx, &stack);
+                        continue;
+                    }
+                    for (want.keys.items) |k| {
+                        var link = bs.head(sp, k);
+                        while (link != none) : (link = bs.links.items[link][1]) {
+                            try f.env.charge.reserve(gpa, .inspection, 1);
+                            try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, it.path, it.ctx, &stack);
+                        }
+                    }
+                    continue;
+                }
+                if (it.mode == .spine and exact) continue;
+                var kt = shapes.overEntries(d.a);
+                while (kt.next()) |k| {
+                    var next = it;
+                    next.u = k.node;
+                    if (it.mode == .spine) {
+                        // Inside the written object: beside it only when the
+                        // write's path stands for several positions.
+                        next.mode = .below;
+                        next.held = false;
+                        next.folded = leaf != null;
+                        next.depth = 0;
+                    }
+                    try f.advance(it, k.step, next, &stack);
+                }
+            }
+            const dm = &f.demands.items[f.demands.items.len - 1];
+            dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, relied);
+            for (ctxs.list.items) |*c| excl = try cells.sets.unionWith(gpa, f.env.charge, excl, c.written.owed);
+            var xt = cells.sets.iterate(excl);
+            while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.exclOf(gpa, f.env.charge, f.env.cells, .from(x.key)));
+            if (kept == .none) return;
+            try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst, .other_paths = true });
+            dm.operands.len += 1;
+        }
+
+        /// One item of `otherPaths`' walk: a use node, the argument's value
+        /// there, and how the path it stands for lies to the write's.
+        const Mode = enum(u2) { spine, below, off };
+        /// `held`: on the write's exact path below a value the class answers
+        /// or lets escape (`keepAnswered`).
+        /// `path`: the canonical path the route stands at in the use's place
+        /// graph (`routePath`), `none` where no fold can bring it back onto the
+        /// write's path.
+        /// `ctx`: the context it is read in (`Ctx`).
+        const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId, ctx: u32 };
+
+        /// The written positions of one write (`otherPaths`): its canonical
+        /// path and the argument's nodes there.
+        /// A write path that is a join of several level paths (`Place.levelPaths`)
+        /// is written at each.
+        /// The paths are the write's, one list for every context (`Ctxs.paths`).
+        const Written = struct {
+            ends: stamped.Column(NodeId, void) = .{},
+            /// The canonical cells a symbolic value above the base holds at a
+            /// written position of several (`atWritten`): their `excl` is owed.
+            owed: SetId = .none,
+            fn holds(w: *const Written, paths: []const PathId, path: PathId, v: NodeId) bool {
+                return path != .none and std.mem.indexOfScalar(PathId, paths, path) != null and w.ends.contains(v);
+            }
+        };
+        /// Where a value beside a write stands (`keepBeside`): its path, and
+        /// the written positions of its context.
+        const Where = struct { path: PathId, written: *Written, paths: []const PathId };
+
+        /// What a write's base may be, read in one context (`otherPaths`,
+        /// #1439): the whole argument's, or one arm's of a `choice` on the
+        /// write's exact prefix. A choice is exclusive (§2.9): one run has one
+        /// arm, so what an arm holds beside the write is read against that
+        /// arm's base and written positions, never the other arm's.
+        const Ctx = struct {
+            want: Want = .{},
+            own: SetId = .none,
+            written: Written = .{},
+        };
+        /// The contexts of one write: 0 the whole argument's, then one per
+        /// `(arm, depth)` (`armCtx`).
+        const Ctxs = struct {
+            list: std.ArrayList(Ctx) = .empty,
+            by_arm: Ids.FixedDict(2) = .{},
+            /// The write path's canonical paths (`Written`).
+            paths: std.ArrayList(PathId) = .empty,
+            fn deinit(c: *Ctxs, gpa: Allocator) void {
+                for (c.list.items) |*x| {
+                    x.want.deinit(gpa);
+                    x.written.ends.deinit(gpa);
+                }
+                c.list.deinit(gpa);
+                c.by_arm.deinit(gpa);
+                c.paths.deinit(gpa);
+            }
+        };
+
+        /// The context to read an item of key `key` in, null when it is read
+        /// already in one that covers `ctx`. A key met in one context is read
+        /// in it; met again in another, it is read once more in context 0,
+        /// the whole argument's, which covers every arm's: so an item is read
+        /// at most twice, however many arms share it.
+        fn visit(gpa: Allocator, dict: anytype, key: anytype, ctx: u32) Allocator.Error!?u32 {
+            const got = try dict.getOrPut(gpa, key);
+            if (!got.found_existing) {
+                got.value_ptr.* = ctx;
+                return ctx;
+            }
+            if (got.value_ptr.* == ctx or got.value_ptr.* == 0) return null;
+            got.value_ptr.* = 0;
+            return 0;
+        }
+
+        /// The context of `arm`, a side of a choice on the write's exact
+        /// prefix with `rest` of the write's path still to go (`Ctx`): its
+        /// base, the arm's positions at `rest`, and its written positions
+        /// there. Built once per `(arm, depth)`; an arm with no position at
+        /// `rest` writes nothing, and nothing beside it is kept.
+        pub fn armCtx(f: *Frame, ctxs: *Ctxs, arm: NodeId, rest: []const Step, deep: bool) Error!u32 {
+            const gpa = f.gpa;
+            const got = try ctxs.by_arm.getOrPut(gpa, .{ arm.int(), @intCast(rest.len) });
+            if (got.found_existing) return got.value_ptr.*;
+            const id: u32 = @intCast(ctxs.list.items.len);
+            got.value_ptr.* = id;
+            try ctxs.list.append(gpa, .{});
+            const cx = &ctxs.list.items[id];
+            const base = (try f.positionsAt(.{ .node = arm }, rest)) orelse return id;
+            cx.own = try f.wantOf(base.node, deep, &cx.want);
+            try f.frontierAt(arm, rest, &cx.written);
+            return id;
+        }
+
+        /// `want` what a base `base` may be: its cells as Demands reads them
+        /// (a deep demand's reach, whose symbolic cells' descendants share
+        /// their keys), by alias key; and the parameter cells of its reach, by
+        /// the paths a parameter leaf beside them may sit at (`unreached`).
+        /// Returns that reach.
+        pub fn wantOf(f: *Frame, base: NodeId, deep: bool, want: *Want) Error!SetId {
+            const gpa = f.gpa;
+            const shapes = f.env.shapes;
+            const cells = f.env.cells;
+            const own = try shapes.reach(gpa, f.account(), &cells.sets, base);
+            var bt = cells.sets.iterate(if (deep) own else try shapes.cellsOf(gpa, f.account(), &cells.sets, base));
             while (bt.next()) |e| {
                 try f.env.charge.reserve(gpa, .inspection, 1);
                 const c: CellId = .from(e.key);
@@ -124,150 +373,8 @@ pub fn Of(comptime Frame: type) type {
             try want.keys.append(gpa, .{ key_top, 0, 0, 0 });
             try want.keys.append(gpa, .{ key_always, 0, 0, 0 });
             if (want.any_param_leaf) try want.keys.append(gpa, .{ key_param_leaf, 0, 0, 0 });
-            // Two paths fold through one leaf when both meet it through one
-            // exact prefix: the write's path meets one at
-            // depth `leaf`, and another path does at that depth when it is still
-            // the write's path there.
-            const leaf = try f.leafDepth(arg, ws);
-            const exact = exactPath(ws);
-            // The refinements the write's path meets in the argument along its
-            // exact prefix: the position of a split the base is, which its
-            // projection forgot (§2.2: `elem c·ι` below is `c[*]` below).
-            var refs: std.ArrayList(CellId) = .empty;
-            defer refs.deinit(gpa);
-            try f.spineRefinements(arg.node, ws, &refs);
-            var relied: CondId = Cond.yes;
-            var stack: std.ArrayList(Item) = .empty;
-            defer stack.deinit(gpa);
-            var seen: Ids.FixedDict(4) = .{};
-            defer seen.deinit(gpa);
-            // The written positions, by canonical path (#1253): the base's nodes
-            // at the write's own path. A route beside the write that folds back
-            // onto that path through the use shape's knot, or a reach that holds
-            // them from above, meets the written object itself, not another path
-            // of the argument; its other positions there are the `excl` it owes.
-            // Never a node alone: use nodes and values are shared, so one node
-            // stands at two paths (`{ x = l, z = l }`).
-            var written: Written = .{};
-            defer written.ends.deinit(gpa);
-            defer written.paths.deinit(gpa);
-            try f.env.places.expandLevels(gpa, f.env.charge, try f.extendPath(try f.env.places.rootPath(gpa, shapes.place(use)), ws), &written.paths);
-            try f.frontierAt(arg.node, ws, &written);
-            var read: Ids.FixedDict(3) = .{};
-            defer read.deinit(gpa);
-            var kept: SetId = .none;
-            var excl: SetId = .none;
-            try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false, .path = try f.env.places.rootPath(gpa, shapes.place(use)) });
-            while (stack.pop()) |it| {
-                try f.env.charge.reserve(gpa, .inspection, 1);
-                const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
-                if ((try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int() })).found_existing) continue;
-                if (it.mode != .spine and written.holds(it.path, it.v)) continue;
-                if (try f.unreached(it.v, own)) continue;
-                const d = shapes.get(it.u);
-                var marks: u8 = 0; // 1 any mark, 2 held (`A` or `E`)
-                var ct = cells.sets.iterate(d.cells);
-                while (ct.next()) |x| {
-                    const c: CellId = .from(x.key);
-                    if (cells.origin(c) != .mark) continue;
-                    marks |= 1;
-                    const m = cells.markOf(c);
-                    if (m == .a or m == .e) marks |= 2;
-                }
-                // Held on the exact write path: what it holds beside the write (#1367).
-                var held_below = it.held;
-                if (marks & 1 != 0 or it.held) {
-                    const beside, const folded = switch (it.mode) {
-                        .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
-                        .below, .off => .{ true, it.folded },
-                    };
-                    if (beside and it.mode == .spine and exact) {
-                        // A stuck value is from above, where `ws[depth..]` is not its
-                        // rest: whole, unless a held item already read it there.
-                        if (!it.stuck)
-                            try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied)
-                        else if (!it.held and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded), it.path.int() })).found_existing)
-                            try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &kept, &excl, &relied, null);
-                        held_below = true;
-                    } else if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded), it.path.int() })).found_existing)
-                        try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), null, refs.items, &kept, &excl, &relied, .{ .path = it.path, .written = &written });
-                }
-                if (d.kind != .node) continue;
-                if (it.mode == .spine and it.depth < ws.len) {
-                    // On the write's path: its next step, and the children
-                    // beside it that may hold a cell of the base (`Beside`).
-                    if (shapes.overGet(d.a, ws[it.depth])) |child| {
-                        const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level, .held = held_below, .path = .none };
-                        try f.advance(it, ws[it.depth], next, &stack);
-                    }
-                    const folded = leaf != null and leaf.? <= it.depth;
-                    const sp = try f.spineOf(bs, it);
-                    if (want.all) {
-                        const r = bs.ranges.items[sp];
-                        for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, it.path, &stack);
-                        continue;
-                    }
-                    for (want.keys.items) |k| {
-                        var link = bs.head(sp, k);
-                        while (link != none) : (link = bs.links.items[link][1]) {
-                            try f.env.charge.reserve(gpa, .inspection, 1);
-                            try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, it.path, &stack);
-                        }
-                    }
-                    continue;
-                }
-                if (it.mode == .spine and exact) continue;
-                var kt = shapes.overEntries(d.a);
-                while (kt.next()) |k| {
-                    var next = it;
-                    next.u = k.node;
-                    if (it.mode == .spine) {
-                        // Inside the written object: beside it only when the
-                        // write's path stands for several positions.
-                        next.mode = .below;
-                        next.held = false;
-                        next.folded = leaf != null;
-                        next.depth = 0;
-                    }
-                    try f.advance(it, k.step, next, &stack);
-                }
-            }
-            const dm = &f.demands.items[f.demands.items.len - 1];
-            dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, relied);
-            excl = try cells.sets.unionWith(gpa, f.env.charge, excl, written.owed);
-            var xt = cells.sets.iterate(excl);
-            while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.exclOf(gpa, f.env.charge, f.env.cells, .from(x.key)));
-            if (kept == .none) return;
-            try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst, .other_paths = true });
-            dm.operands.len += 1;
+            return own;
         }
-
-        /// One item of `otherPaths`' walk: a use node, the argument's value
-        /// there, and how the path it stands for lies to the write's.
-        const Mode = enum(u2) { spine, below, off };
-        /// `held`: on the write's exact path below a value the class answers
-        /// or lets escape (`keepAnswered`).
-        /// `path`: the canonical path the route stands at in the use's place
-        /// graph (`routePath`), `none` where no fold can bring it back onto the
-        /// write's path.
-        const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId };
-
-        /// The written positions of one write (`otherPaths`): its canonical
-        /// path and the argument's nodes there.
-        /// A write path that is a join of several level paths (`Place.levelPaths`)
-        /// is written at each.
-        const Written = struct {
-            paths: std.ArrayList(PathId) = .empty,
-            ends: stamped.Column(NodeId, void) = .{},
-            /// The canonical cells a symbolic value above the base holds at a
-            /// written position of several (`atWritten`): their `excl` is owed.
-            owed: SetId = .none,
-            fn holds(w: *const Written, path: PathId, v: NodeId) bool {
-                return path != .none and std.mem.indexOfScalar(PathId, w.paths.items, path) != null and w.ends.contains(v);
-            }
-        };
-        /// Where a value beside a write stands (`keepBeside`).
-        const Where = struct { path: PathId, written: *Written };
 
         /// `next`, a child of `it` at step `s`, with the argument's value there
         /// as `positionsAt` reads a path: a missing step keeps the value
@@ -523,7 +630,7 @@ pub fn Of(comptime Frame: type) type {
             while (stack.pop()) |fr| {
                 try f.env.charge.reserve(f.gpa, .inspection, 1);
                 if ((try seen.getOrPut(f.gpa, .{ fr.n.int(), fr.path.int() })).found_existing) continue;
-                if (where.written.holds(fr.path, fr.n)) continue;
+                if (where.written.holds(where.paths, fr.path, fr.n)) continue;
                 const n = try shapes.force(f.gpa, f.account(), fr.n);
                 switch (shapes.kind(n)) {
                     // Coexisting or alternative values at this one position.
@@ -575,9 +682,9 @@ pub fn Of(comptime Frame: type) type {
         }
 
         /// A child of a node on the write's path, off it unless at its step.
-        pub fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, from: PathId, out: *std.ArrayList(Item)) Error!void {
+        pub fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, from: PathId, ctx: u32, out: *std.ArrayList(Item)) Error!void {
             if (k.step.word() == on.word()) return;
-            try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false, .path = try f.routePath(from, .spine, k.step) });
+            try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false, .path = try f.routePath(from, .spine, k.step), .ctx = ctx });
         }
 
         /// The cells of `v` beside the base that may be one of its objects,
@@ -788,7 +895,7 @@ pub fn Of(comptime Frame: type) type {
                 i -= 1;
                 p = (try places.extend(f.gpa, f.env.charge, p, steps.items[i])) orelse return false;
             }
-            if (std.mem.indexOfScalar(PathId, w.written.paths.items, p) == null) return false;
+            if (std.mem.indexOfScalar(PathId, w.paths, p) == null) return false;
             // At a path of several positions the value's object there is the
             // written one only if they hold distinct objects: owed upward.
             if (places.isSummary(bottom)) w.written.owed = try cells.sets.insert(f.gpa, f.env.charge, w.written.owed, cu.int(), 0);

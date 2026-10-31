@@ -8,9 +8,9 @@
 -- one kids list `k` at two coexisting depths, `Rose [ Rose k, Rose
 -- [ Rose k ] ]`, and is refused. `chosen` puts `k` at one depth or the
 -- other in two whole-value arms: the choice alone does not make `k`
--- repeated, and it is accepted. Under v2 the three heights and `chosen`
--- are refused until #1253 tells apart the levels below the first return
--- (known entries).
+-- repeated, and it is accepted. v2 gives the same verdicts: it tells
+-- the levels below the first return apart (#1253) and reads a choice's
+-- arms apart (#1439).
 type Rose
     = Rose (List Rose)
 

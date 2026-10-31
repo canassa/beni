@@ -1809,7 +1809,8 @@ paths, so every depth a template path through `⟲` stands for meets at one key.
 position is a state `(node, canonical path)`.
 
 - A node's parts and a `positions` node's sides add.
-- A `choice`'s arms take the maximum.
+- A `choice`'s arms take the maximum. A call's other-paths walk keeps them apart in the same way
+  (§2.11 item 3, *a choice's arms*, #1439).
 - A `union` holds its cells at its position as a set, and its sides' structure below it adds.
 - A leaf's symbolic cells and refinements contribute their projections at every canonical path
   below, found by a pair walk over the argument's path and the cell's own path. A `⊤` cell, a recast,
@@ -2878,9 +2879,52 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        doubling at 1 024, the limit at 2 048; master reaches it at 256): below a `⟲` each write route is
        its own and walks the actual below its path again (#1446).
      So `three`, `four` and the distinct twins of 4a's plan fixtures are accepted as v1 accepts them, and
-     every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`). Still apart from v1: a `choice`
-     at the root is read with both arms together, so an object in one arm beside the other arm's write is
-     another path (`CycleJoinRankWriter` 56:5, #1439).
+     every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`).
+     *Amended 2026-10-31 (#1439): a choice's arms.* The walk read a `choice` on the write's path with both
+     arms together, as `reachBeside` reads a join's sides at one path. In `chosen c = incAll (if c then
+     Rose [ Rose k ] else Rose [ Rose [ Rose k ] ])` the list `k` is the first level's list in one arm and
+     the level below in the other, so each arm's `k` was another path of the other arm's write, though no
+     run has both (§2.9: one execution has exactly one arm's value). The rule is now:
+     - **A choice on the write's exact prefix is split.** Where the walk's route on the write's own path
+       (`spine`) meets a value that is a `choice` (after `force`), at a depth up to the write path's first
+       `[*]` or `⟲`, it goes on as one route per arm, the arms of a nested choice each. Above the first
+       `[*]` or `⟲` the route names one position, so one run has one arm there. Below one it names
+       several, which may take different arms in one run, and a choice is read whole, as before.
+     - **An arm is its own context.** An arm `a` at depth `d` is read against its own base, the arm's
+       positions at the write's remaining steps (`positionsAt(a, q[d..])`, the keys and parameter cells
+       of `want` and its reach for `unreached`), and its own written positions (`frontierAt(a, q[d..])`,
+       its routes counted inside the arm). Everything the route reaches below the split, on the write's
+       path and beside it, is read in that context (`TransferBeside.Ctx`). What is beside the write
+       above the split coexists with every arm and is read in the enclosing context, the whole
+       argument's (context 0) at the top. An arm with no position at `q[d..]` writes nothing in its runs,
+       and nothing beside it is kept. This is sound because a run that takes `a` has `a`'s whole value
+       below depth `d`: the written object is one of `a`'s positions, and a value of another arm is in no
+       such run.
+     - **Coexistence is unchanged.** A `union` (possible contents at one position) and a `positions` node
+       (coexisting elements) are never split: their sides are read together, as `reachBeside` and §2.9
+       read them. Pinned by `ChoiceArmsApart`'s `unionTwin`, the shape of `chosen` with a pattern's two
+       descriptions of one element in place of the `if`: refused, where v1 accepts it.
+     - **Linear.** A context is built once per `(arm, depth)`, its base and written positions a walk of
+       the arm's value along the write's path: the choice arms on the exact prefix, each once, and never
+       their combinations, since an item's context is the innermost arm above it only. A walk state met
+       in one context is read in it; met again in another, it is read once more in context 0, which
+       covers every arm (its base is all of theirs, and a node it reads as written has one route in the
+       whole argument, so one in any arm that holds it), so arms that share a part read it at most twice
+       (`visit`, for the walk's items and for `reachBeside`'s reads alike). Measured on an `else if`
+       chain of D nested choices handed to `incAll`, D = 8 / 16 / 32 / 64: the call's three other-paths
+       walks cost 1 460 / 2 891 / 6 939 / 17 889 records on master and 2 781 / 5 570 / 12 165 / 28 385
+       here, 1 321 / 2 679 / 5 226 / 10 496 more, linear; the call as a whole (the declaration's records
+       less the same chain's without the call, the build test's measure) 3 401 / 6 081 / 15 961 / 37 358
+       → 5 631 / 10 993 / 27 508 / 68 111, the rest of the rise being what its accepted demands go on to
+       read. The chain's own cost, and the walk of the `π1#Rose.0` write on master, grow faster than
+       linear already (#1467). A value with no choice on the exact prefix has one context, and costs what
+       it did: the K-wide family at K = 8 / 16 / 32, 1 071 / 1 319 / 1 815, and the `T (List T)` tower
+       at height 8 / 16 / 32 / 64, 2 775 / 5 162 / 10 894 / 25 820, unchanged.
+     So `chosen` is accepted as v1 accepts it, as is a choice at a record's field (`ChoiceArmsApart`'s
+     `field`), and `FoldedBCall`'s `chosen`, `k` at `.0[*].0` in one arm and at `.1[*].0` in the other,
+     which v1 refuses. An arm that holds `k` at two levels itself (`sharedArm`, `nestedShared`), and `k`
+     beside the choice in every run (`fieldShared`), stay refused (`ChoiceArmsApart`,
+     `ChoiceArmsApartImported`).
    **One demand per path of the pair graph (#1356).** The `(i, q)` are read off the use shape `S.use(i)` as
    the DAG it is, paired with the actual: each route from the root to a `W` (or, for item 4, an `E`) carries
    the actual's value there, read step by step as `cellsAt` reads a path (a missing step keeps the value
@@ -5694,7 +5738,7 @@ L0  Ids
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 810 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
-| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 960 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 060 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 060 since #1439: a choice's arms on the write's exact prefix, each read in a context of its own, `Ctx` and `armCtx`, 1 043 lines) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
 | `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
 | `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |

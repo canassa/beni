@@ -1,0 +1,127 @@
+-- ownership: a choice's arms are read apart in a call's other-paths walk
+-- (#1439, ownership-v2.md §2.11 item 3 *a choice's arms*, §2.9). `incAll`
+-- writes the kids list of every `Rose` at every depth; `incLeft` writes
+-- the `left` tree of a record. A choice on the write's exact prefix is one
+-- arm per run, so what one arm holds beside the write is never another
+-- path of the other arm's write. `levels` puts one list `k` at the first
+-- level in one arm and the level below in the other: accepted, as is a
+-- choice of three arms (`nested`) and a choice below the root, at a field
+-- (`field`). Each arm is still read against its own write: an arm that
+-- holds `k` at two levels (`sharedArm`, `nestedShared`) is refused, and so
+-- is `k` beside the choice, in every run's `right` (`fieldShared`). A
+-- `union` (`unionTwin`, a pattern's two descriptions of one element) is
+-- possible contents at one position, its sides read together: v2 refuses
+-- it where v1 accepts.
+type Rose
+    = Rose (List Rose)
+
+
+type alias Pair =
+    left : Rose
+    right : List Rose
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+incLeft : Pair → Pair
+incLeft p = { left = incAll p.left, right = p.right }
+
+
+pub levels : Bool → Rose
+levels c =
+    k = [ Rose [] ]
+    incAll
+        (if c then
+            Rose [ Rose k ]
+         else
+            Rose [ Rose [ Rose k ] ]
+        )
+
+
+pub nested : Bool, Bool → Rose
+nested c d =
+    k = [ Rose [] ]
+    incAll
+        (if c then
+            Rose [ Rose k ]
+         else if d then
+            Rose [ Rose [ Rose k ] ]
+         else
+            Rose [ Rose [ Rose [ Rose k ] ] ]
+        )
+
+
+pub field : Bool → Pair
+field c =
+    k = [ Rose [] ]
+    incLeft
+        { left =
+            if c then
+                Rose k
+            else
+                Rose [ Rose k ]
+        , right = []
+        }
+
+
+pub sharedArm : Bool → Rose
+sharedArm c =
+    k = [ Rose [] ]
+    incAll
+        (if c then
+            Rose [ Rose k, Rose [ Rose k ] ]
+         else
+            Rose [ Rose [ Rose k ] ]
+        )
+
+
+pub nestedShared : Bool, Bool → Rose
+nestedShared c d =
+    k = [ Rose [] ]
+    incAll
+        (if c then
+            Rose [ Rose k ]
+         else if d then
+            Rose [ Rose [ Rose k ], Rose k ]
+         else
+            Rose [ Rose [ Rose [ Rose k ] ] ]
+        )
+
+
+pub fieldShared : Bool → Pair
+fieldShared c =
+    k = [ Rose [] ]
+    incLeft
+        { left =
+            if c then
+                Rose k
+            else
+                Rose []
+        , right = k
+        }
+
+
+pub unionTwin : ⊤ → Rose
+unionTwin ⊤ =
+    k = [ Rose [] ]
+    case [ Rose [ Rose k ], Rose [ Rose [ Rose k ] ] ] of
+        [ r, …_ ] →
+            incAll r
+
+        [] →
+            Rose []

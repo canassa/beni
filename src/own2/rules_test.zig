@@ -122,8 +122,9 @@ const layers = [_]Entry{
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
     // 960 since #1457: a write's other paths and what is beside it
-    // (§2.11 item 3), split out of Transfer (§5).
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 960 },
+    // (§2.11 item 3), split out of Transfer (§5); 1 060 since #1439: a
+    // choice's arms, each read in a context of its own.
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1060 },
     // 340 since #1457: patterns and splits, split out of Transfer (§5).
     .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
     // 350 since #1457: constructions, split out of Transfer (§5).

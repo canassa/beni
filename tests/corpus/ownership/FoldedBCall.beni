@@ -9,8 +9,8 @@
 -- actual in a helper and `viaWrapper` writes through a wrapper: both
 -- refused as `shared` is. `distinct` puts separate `k1` and `k2` there and
 -- is accepted. `chosen` puts `k` in one placement or the other in two
--- whole-value arms, once per arm; v1 refuses it. Under v2 `distinct` is
--- refused until #1253 tells apart the levels below the first return, and
+-- whole-value arms, once per arm; v1 refuses it, v2 reads the arms apart
+-- and accepts it (#1439). Under v2 `distinct` is refused until #1253, and
 -- `incList`'s own `incAll b` until 4c's fold certificate (known entries).
 type B
     = B (List B) (List B)

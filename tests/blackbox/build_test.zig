@@ -9046,6 +9046,53 @@ test "the checker v2's write beside a doubling DAG of read paths costs its calle
     }
 }
 
+test "the checker v2's call over a chain of nested choices is linear in its depth and reads each arm apart" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439): an
+    // `else if` chain of D arms is D nested choices at the root of the
+    // argument. Each arm puts `k` at the first level or the level below,
+    // as `CycleJoinRankWriter`'s `chosen` does, so the call is accepted only
+    // when each arm is read apart. The call costs its arms, each once: its
+    // records (the declaration's less the same chain's without the call)
+    // at depth 16 are at most 2.5 times depth 8's. Past 16 the chain's own
+    // cost, and its base's at the call, grow faster than linear on master
+    // as well (#1467).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var costs: [2]u64 = undefined;
+    for ([_]u32{ 8, 16 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+        for ([_][]const u8{ "called", "plain" }) |name| {
+            try src.print(a, "\n\npub {s} : Bool → Rose\n{s} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, name });
+            for (1..n + 1) |i| {
+                try src.appendSlice(a, if (i == 1) "        if c then\n" else "        else if c then\n");
+                try src.appendSlice(a, if (i % 2 == 0) "            Rose [ Rose k, Rose [] ]\n" else "            Rose [ Rose [ Rose k ], Rose [] ]\n");
+            }
+            try src.appendSlice(a, "        else\n            Rose []\n");
+            try src.appendSlice(a, if (std.mem.eql(u8, name, "called")) "    incAll v\n" else "    v\n");
+        }
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        if (std.mem.indexOf(u8, dump, ": rejected") != null) {
+            std.debug.print("depth {d}: the call is refused\n{s}\n", .{ n, dump });
+            return error.TestUnexpectedResult;
+        }
+        costs[run] = try accountTotal(dump, "called") - try accountTotal(dump, "plain");
+    }
+    if (costs[1] * 10 > costs[0] * 25) {
+        std.debug.print("the call's records at depth 8 / 16: {d} / {d}\n", .{ costs[0], costs[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2's write deep below a chain of field wrappers is linear in its depth" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

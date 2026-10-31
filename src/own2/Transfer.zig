@@ -233,6 +233,8 @@ pub const Frame = struct {
     // TransferBeside.zig
     pub const extendPath = beside_part.extendPath;
     pub const otherPaths = beside_part.otherPaths;
+    pub const armCtx = beside_part.armCtx;
+    pub const wantOf = beside_part.wantOf;
     pub const advance = beside_part.advance;
     pub const routePath = beside_part.routePath;
     pub const frontierAt = beside_part.frontierAt;
