@@ -1,5 +1,5 @@
 Main update: lines 18-22 (not built: call)
 Main view: lines 25-28 (not built: call)
-Main main: lines 32-36 (not built: call)
+Main main: lines 32-36 (not built: lambda)
 Texts update: lines 22-34 (not built: record_update)
 Texts view: lines 37-44 (not built: markup)

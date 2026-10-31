@@ -181,6 +181,10 @@ const ImportReader = struct {
     ins: *const Inputs,
     types: *const Types,
     interfaces: []const Interface,
+    /// Blocks this run computed itself, by module, read in place of the
+    /// interface's: under `--ownership-both` the interface carries v1's
+    /// block (#1398).
+    blocks: ?[]const ?[]const u8 = null,
 
     fn imports(r: *ImportReader) Groups.Imports {
         return .{ .ctx = r, .read = read };
@@ -189,7 +193,7 @@ const ImportReader = struct {
     fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]Groups.ClassId {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
-        const bytes = r.interfaces[m].ownership;
+        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else r.interfaces[m].ownership;
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;
         const words = try gpa.alloc(u32, bytes.len / 4);
@@ -348,7 +352,18 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
     var reports: std.ArrayList(Report.Module) = .empty;
     defer reports.deinit(gpa);
     var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
-    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces };
+    // No check of this session ran v2 (`--ownership-both`): the interfaces
+    // hold v1's blocks, so each module is checked after the modules it
+    // imports and the blocks it publishes are what an importer reads, as
+    // `checkModule` publishes them in the module DAG (#1398).
+    const own_blocks = try gpa.alloc(?[]const u8, session.graph.count());
+    defer gpa.free(own_blocks);
+    @memset(own_blocks, null);
+    const done = try gpa.alloc(Done, session.graph.count());
+    defer gpa.free(done);
+    @memset(done, .{});
+    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces, .blocks = own_blocks };
+    var run: DumpRun = .{ .gpa = gpa, .arena = arena, .session = session, .ins = &ins, .nc = &nc, .reader = &reader, .mods = &mods, .blocks = own_blocks, .done = done, .totals_only = options.totals_only };
     for (targets) |m| {
         // The session's check ran v2 on the module and kept its report
         // (#1193): print it, never run v2 again.
@@ -360,19 +375,42 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
             try reports.append(gpa, .{ .module = m, .checked = false });
             continue;
         }
-        var mi = moduleInput(gpa, session, &ins, .{ .modules = session.checked.modules, .types = &session.checked.types, .dispatch = session.checked.dispatch }, m) orelse {
-            try reports.append(gpa, .{ .module = m, .checked = false });
-            continue;
-        };
-        mi.imports = reader.imports();
-        try mods.append(gpa, mi);
-        const token = session.profile.begin();
-        defer session.profile.end(0, token, .ownership2_module, @backingInt(session.graph.moduleFile(@fromBackingInt(m))), 0);
-        const one = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = mods.items[mods.items.len - 1 ..], .format_summaries = !options.totals_only });
-        try reports.appendSlice(gpa, one);
+        if (try run.module(m)) |one| try reports.appendSlice(gpa, one) else try reports.append(gpa, .{ .module = m, .checked = false });
     }
     try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
 }
+
+const Done = struct { started: bool = false, reports: ?[]const Report.Module = null };
+
+/// The dump's own run of v2 over a module and, first, the modules it imports.
+const DumpRun = struct {
+    gpa: Allocator,
+    arena: Allocator,
+    session: *Session,
+    ins: *Inputs,
+    nc: *NameCtx,
+    reader: *ImportReader,
+    mods: *std.ArrayList(Groups.Input),
+    blocks: []?[]const u8,
+    done: []Done,
+    totals_only: bool,
+
+    fn module(r: *DumpRun, m: u32) (Allocator.Error || std.Io.Writer.Error)!?[]const Report.Module {
+        if (m >= r.done.len) return null;
+        if (r.done[m].started) return r.done[m].reports;
+        r.done[m].started = true;
+        for (r.session.graph.dependencies(@fromBackingInt(m))) |dep| _ = try r.module(dep.int());
+        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse return null;
+        mi.imports = r.reader.imports();
+        try r.mods.append(r.gpa, mi);
+        const token = r.session.profile.begin();
+        defer r.session.profile.end(0, token, .ownership2_module, @backingInt(r.session.graph.moduleFile(@fromBackingInt(m))), 0);
+        const one = try Ownership.run(r.gpa, r.arena, .{ .names = r.nc.names(), .modules = r.mods.items[r.mods.items.len - 1 ..], .publish = true, .format_summaries = !r.totals_only });
+        if (one[0].block) |b| r.blocks[m] = b;
+        r.done[m].reports = one;
+        return one;
+    }
+};
 
 /// Read-only session metadata prepared before the DAG starts.
 pub const Context = struct {

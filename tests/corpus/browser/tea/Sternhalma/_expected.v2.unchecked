@@ -1,5 +1,4 @@
 Board centralHexagon: lines 61-69 (not built: call)
-Board triangleCoords: lines 88-188 (not built: call)
 Board allTriangleCoords: lines 73-75 (not built: top)
 Board init: lines 44-55 (not built: call)
 Board triangleOf: lines 193-208 (not built: call)

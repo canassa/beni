@@ -1,6 +1,6 @@
 Main update: lines 23-30 (not built: call)
 Main view: lines 33-37 (not built: call)
-Main main: lines 41-50 (not built: call)
+Main main: lines 41-50 (not built: lambda)
 W2 update: lines 20-24 (not built: record_update)
 W2 view: lines 27-33 (not built: markup)
 W1 update: lines 19-26 (not built: record_update)

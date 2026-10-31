@@ -1,5 +1,5 @@
 Main update: lines 20-24 (not built: call)
 Main view: lines 27-28 (not built: call)
-Main main: lines 31-35 (not built: call)
+Main main: lines 31-35 (not built: lambda)
 Name update: lines 18-22 (not built: record_update)
 Name view: lines 25-29 (not built: ctor)
