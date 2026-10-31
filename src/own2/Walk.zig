@@ -713,7 +713,9 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         defer presence.deinit(gpa);
         if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
         var carry: Carry = .{ .ro = &ro, .presence = &presence };
-        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
+        // A map that interned no two sources into one image needs no presence
+        // count: the relabel then maps each shared submap once (§2.9).
+        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
         // Widened, its κ carried onto the image with each folded class's
         // path-multiset obligation (§2.9, #1128).
         const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);

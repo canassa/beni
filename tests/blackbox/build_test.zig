@@ -10228,6 +10228,166 @@ test "the checker v2's growth over a tower of one-element literals with a new pa
     try expectNLogN(&.{ 10, 100, 300 }, &growth);
 }
 
+/// One of §2.9's fixed-place tower families (Appendix B *Counted recursive
+/// families*) at `n` written levels, as `tower` in `Main`, or a push chain
+/// of `n` statements over a parameter, as `chain` (#1419).
+const TowerFamily = enum { one, wide, param, mutual, maybe, wrap, wrap_imported, push_param };
+
+/// `family`'s program at `n` levels: `Main.beni`, and `Lib.beni` for an
+/// imported helper.
+fn towerProgram(w: *World, family: TowerFamily, n: u32) !void {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    const rose = "type Rose =\n    Rose (List Rose)\n\n\n";
+    switch (family) {
+        .one, .wide => {
+            try src.print(a, "{s}pub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| if (family == .one)
+                try src.print(a, "    r{d} = Rose [ r{d} ]\n", .{ k, k - 1 })
+            else
+                try src.print(a, "    r{d} = Rose [ r{d}, Rose [] ]\n", .{ k, k - 1 });
+        },
+        .param => {
+            try src.appendSlice(a, "type T =\n    T (List Int) (List T)\n\n\npub tower : ");
+            for (0..n) |_| try src.appendSlice(a, "List Int, ");
+            try src.appendSlice(a, "⊤ → T\ntower ");
+            for (1..n + 1) |k| try src.print(a, "a{d} ", .{k});
+            try src.appendSlice(a, "⊤ =\n    r0 = T [] []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = T a{d} [ r{d} ]\n", .{ k, k, k - 1 });
+        },
+        .mutual => {
+            // `A` and `B` alternate: one SCC of two constructors.
+            try src.appendSlice(a, "type A =\n    A (List B)\n\n\ntype B =\n    B (List A)\n\n\npub tower : ⊤ → A\ntower ⊤ =\n    r0 = A []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = {s} [ r{d} ]\n", .{ k, if (k % 2 == 1) "B" else "A", k - 1 });
+            if (n % 2 == 1) {
+                try src.print(a, "    A [ r{d} ]\n", .{n});
+                return w.write("Main.beni", src.items);
+            }
+        },
+        .maybe => {
+            try src.appendSlice(a, "type M =\n    M (List Int) (Maybe M)\n\n\npub tower : ⊤ → M\ntower ⊤ =\n    r0 = M [] Nothing\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = M [ {d} ] (Just r{d})\n", .{ k, k, k - 1 });
+        },
+        .wrap => {
+            try src.print(a, "{s}wrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n\n\npub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| try src.print(a, "    r{d} = wrap r{d}\n", .{ k, k - 1 });
+        },
+        .wrap_imported => {
+            try w.write("Lib.beni", "pub type Rose =\n    Rose (List Rose)\n\n\npub wrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n");
+            try src.appendSlice(a, "import Lib\n\n\npub tower : ⊤ → Lib.Rose\ntower ⊤ =\n    r0 = Lib.Rose []\n");
+            for (1..n + 1) |k| try src.print(a, "    r{d} = Lib.wrap r{d}\n", .{ k, k - 1 });
+        },
+        .push_param => {
+            try src.appendSlice(a, "pub chain : List Int → List Int\nchain x0 =\n");
+            for (1..n + 1) |k| try src.print(a, "    x{d} = List.push x{d} {d}\n", .{ k, k - 1, k });
+            try src.print(a, "    x{d}\n", .{n});
+            return w.write("Main.beni", src.items);
+        },
+    }
+    try src.print(a, "    r{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+}
+
+/// What the checker v2 spent on `family` at `n` levels at the default
+/// allowance: `Main`'s owner's records (N_f), the source continuation they
+/// took, and the published block's bytes. It is checked: no limit, no
+/// unchecked declaration, no growth (§4.1: a tower's height spends none).
+fn towerWork(family: TowerFamily, n: u32) !struct { total: u64, continuation: u64, block: u64 } {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try towerProgram(&w, family, n);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (family == .wrap_imported) "." else "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const main = dump.stdout[std.mem.indexOf(u8, dump.stdout, "module Main").?..];
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "unchecked") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+    const owner = if (family == .push_param) "chain" else "tower";
+    try testing.expectEqual(@as(u64, 0), try accountField(main, owner, "growth"));
+    const at = std.mem.indexOf(u8, main, "  block: ").? + "  block: ".len;
+    const end = std.mem.indexOfScalarPos(u8, main, at, ' ').?;
+    return .{ .total = try accountTotal(main, owner), .continuation = try accountField(main, owner, "continuation"), .block = try std.fmt.parseInt(u64, main[at..end], 10) };
+}
+
+/// `family` at `sizes` meets §4.1's total O(n log n) bound: its records per
+/// n·log₂(n + 2) are at most `per`, a quarter over the most measured, and
+/// they do not rise (`expectNLogN`); so does the source continuation, and,
+/// with `bytes`, the block (#1419, #1420).
+fn expectTowerNLogN(family: TowerFamily, sizes: []const u32, per: u64, bytes: bool) !void {
+    var totals: [3]u64 = undefined;
+    var continuations: [3]u64 = undefined;
+    var blocks: [3]u64 = undefined;
+    for (sizes, 0..) |n, i| {
+        const work = try towerWork(family, n);
+        totals[i] = work.total;
+        continuations[i] = work.continuation;
+        blocks[i] = work.block;
+        const x: f64 = @floatFromInt(n);
+        if (@as(f64, @floatFromInt(work.total)) > @as(f64, @floatFromInt(per)) * x * std.math.log2(x + 2)) {
+            std.debug.print("{t} at {d}: {d} records, past {d} per n·log₂(n + 2)\n", .{ family, n, work.total, per });
+            return error.TestUnexpectedResult;
+        }
+    }
+    try expectNLogN(sizes, totals[0..sizes.len]);
+    try expectNLogN(sizes, continuations[0..sizes.len]);
+    if (bytes) try expectNLogN(sizes, blocks[0..sizes.len]);
+}
+
+// §2.9's tower families counted at the default allowance (§4.1, Appendix B
+// *Counted recursive families*). Each size runs twice (the warm and the cold
+// walk), so the sizes are what a test budget of 1 s holds: 10 / 40 / 160
+// levels (#1426). Their records per n·log₂(n + 2) fall with n in every
+// family. Two families are not here. K is quadratic again since its joins
+// key every node of the joined DAG (#1428). `Rose [ r, r ]` is still
+// quadratic (#1420).
+
+test "the checker v2 counts a tower of one-element literals in n log n (Rose [ r ])" {
+    // 1 834 / 7 174 / 30 352 records: 51, 33 and 26 per n·log₂(n + 2).
+    try expectTowerNLogN(.one, &.{ 10, 40, 160 }, 64, true);
+}
+
+test "the checker v2 counts a tower of two-element literals in n log n (W, Rose [ r, Rose [] ])" {
+    // 5 523 / 22 826 / 95 412 records: 154, 106 and 81 per n·log₂(n + 2).
+    try expectTowerNLogN(.wide, &.{ 10, 40, 160 }, 192, true);
+}
+
+test "the checker v2 counts a tower with a new parameter per level in n log n (T a_k [ r ])" {
+    // 3 989 / 17 186 / 75 524 records: 111, 80 and 64 per n·log₂(n + 2).
+    // The block is 1 940 / 7 520 / 65 840 bytes, past n log n: it is not
+    // checked here (#1427).
+    try expectTowerNLogN(.param, &.{ 10, 40, 160 }, 137, false);
+}
+
+test "the checker v2 counts a tower of two mutually recursive constructors in n log n (A, B)" {
+    // 1 912 / 7 206 / 30 136 records: 53, 33 and 26 per n·log₂(n + 2).
+    try expectTowerNLogN(.mutual, &.{ 10, 40, 160 }, 67, true);
+}
+
+test "the checker v2 counts a tower of Maybe children in n log n (M (List Int) (Maybe M))" {
+    // 2 472 / 9 116 / 37 126 records: 69, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.maybe, &.{ 10, 40, 160 }, 86, true);
+}
+
+test "the checker v2 counts a tower built by calls in n log n (wrap r = Rose [ r ])" {
+    // 2 334 / 9 076 / 37 526 records: 65, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.wrap, &.{ 10, 40, 160 }, 81, true);
+}
+
+test "the checker v2 counts a tower built by calls of another module in n log n (Lib.wrap)" {
+    // 2 394 / 9 102 / 37 144 records: 67, 42 and 32 per n·log₂(n + 2).
+    try expectTowerNLogN(.wrap_imported, &.{ 10, 40, 160 }, 84, true);
+}
+
+test "the checker v2 counts a push chain over a parameter in n log n" {
+    // #1419: each call's argument is the view of the call before, and each
+    // read of the chain joined its views again at the read's new position:
+    // 3 464 / 21 444 / 214 792 records, 97, 99 and 183 per n·log₂(n + 2),
+    // and refused at 1 000. A chain join takes the one stored at the
+    // view's last position where the two read alike (§2.11 *A read at
+    // another position*): 3 363 / 14 613 / 62 601, 94, 68 and 53 (424 909
+    // at 1 000, accepted), the continuation 2 756 / 12 124 / 52 350.
+    try expectTowerNLogN(.push_param, &.{ 10, 40, 160 }, 117, true);
+}
+
 test "the checker v2 counts a branch's arms once at a fold, and coexisting occurrences twice" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
