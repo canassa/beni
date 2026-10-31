@@ -514,7 +514,7 @@ Structurally interned per owning summary with deterministic comparison trees (th
 | `delta` | `base: NodeId` (never a delta), `over: OverId` — a persistent sorted tree of `(step, NodeId)`, path-copied, O(log F) insert and lookup, structure shared along a chain of updates | the base written: at `ε` the base's cells, at `s` the override or the base's child; a chain of k updates costs O(k log F) |
 | `recast` | `place`, `inner: NodeId` | `inner` read at another type (§2.13.9); projection selects the built inner's matching part when its step/place agrees, otherwise retains the whole inner, approximate |
 | `union` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | the lazy join of a value's **possible contents**, not provably exclusive (a call's leaf over its arguments, a pattern's two descriptions of one element, widen's class side): `cellsAt` the union, `proj` the union of projections, both memoised per `(union, step)`; a cell repeated across sides is one position. The path-multiset primitive reads its sides as coexisting. Exclusive alternatives (branch and fixpoint joins) are `choice`, below |
-| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened); root cell-set reference when requested by `collect` | coexisting element positions, preserving both edges even when they name one node; `proj` preserves the kind. `cellsAt` is a set; κ separately reads occurrence multiplicity (§2.9). `collect` accumulates the root set by per-item inserts; internal sets are lazy, never eagerly unioned at every tree level. |
+| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened, except that its constructors keep a member at most twice: *Saturation at two*, below); root cell-set reference when requested by `collect` | coexisting element positions, preserving both edges even when they name one node; `proj` preserves the kind. `cellsAt` is a set; κ separately reads occurrence multiplicity (§2.9). `collect` accumulates the root set by per-item inserts; internal sets are lazy, never eagerly unioned at every tree level. |
 | `view` | `place`, `template: NodeId`, `env: EnvId` | a call's result by reference (§2.11 *Representation of a view*, #1097): the callee class's `res` node `template` read under the call's environment; forced one step at a time, never copied |
 | `cyclic` | a `node` whose child names an ancestor | a widened recursive value (§2.12); no special kind, the knot is in the table |
 
@@ -663,7 +663,7 @@ Operations, memoised on their node arguments:
   the set union; the groups left (one per distinct base, plus leaves) → a balanced `union` DAG over them,
   O(groups) outer nodes; inner work uses §4.1 accounting. A join can have product query work; a projection through a union costs O(groups) once per `(union, step)`.
 - `collect(n₁…nₖ)` (`Shape.collect`): a built value's elements under `[*]` → a balanced `positions` DAG, never
-  deduplicated or absorbed, built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
+  deduplicated or absorbed below two occurrences (*Saturation at two*), built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
   `union`. `map` and `propagate` preserve the kind. Accumulate the requested root cell set by
   inserting each item's cells on its own lane, sharing persistent predecessors. Internal sets stay
   lazy: a request pays for visited radix nodes and changed spines. Identical hash-consed subtrees are
@@ -677,6 +677,90 @@ Operations, memoised on their node arguments:
   both sides of a positions node once more (`Radix.intersection` of the sides' cell sets, one descent per node).
   Reading a positions node as a union would drop a repeated argument's second arrival and accept
   `PositionsRepeatArg` (unsound).
+- **Saturation at two** [M 2026-10-31, #1368]. Multiplicity is read in `{absent, one, repeated}` (§2.9), so a
+  third occurrence of a member says nothing a second does not. The representation saturates where the domain
+  does. A `positions` constructor (`collect`, `proj`'s image of a positions node, `without`'s and `eager`'s
+  rebuilds: every caller of `Shape.positions`) reads the multiset of **members** its two sides reach through
+  positions nodes. A member is any node of another kind, so a union, a choice, a view or a recast is one member.
+  Each member is counted once per route. When a member occurs three times or more, the result is the balanced
+  positions tree over the members, in left-to-right order of first occurrence, each at most twice. Otherwise
+  it is the binary record as written, so a node with no third occurrence is the node it always was. So
+  `positions(positions(x, x), x)` is `positions(x, x)`, and `[ x, x, x ]` collects to `positions(x, x)`.
+  The order is the sides' own, never a hash order (§3.8). `map`, a view's expansion and `BlockRead` keep the
+  record they map, as they keep a union's (*An image no back edge can name*). A relabelling that gives two
+  members one image can thus make a member occur four times, and every reader counts that as twice. The cap is
+  a property of what the constructors make, not an invariant a reader may assume.
+
+  **It is exact: no verdict and no κ answer changes.** Every reader of a positions node reads one of three things:
+  - **The set of cells** (`cellsAt`, `reach`, `leq`'s γ, `rank`, `deep`'s frontier): a set has no multiplicity.
+  - **The multiplicity**: `dagFacts`' repeats (the intersection of the sides' cells), `Cond.arrivalAggs`,
+    `Calls.preimage` and `dagKappa`. Coexistence adds with saturation, so k·a = 2·a for every k ≥ 2 and every
+    a in the domain. Projection and relabelling distribute over the sides, so this holds at every path below
+    too: `proj` of the saturated node is the saturated node of the projections. The pairs of distinct
+    coexisting members, over which `apart` runs, are the same set.
+  - **The members' own reads and their stored entries.** Every member stays in the tree; only an occurrence
+    goes, so each member is still read.
+
+  The positions nodes a rebuild drops are the constructor's input sides. **No snapshot of the new value keys
+  them.** `propagate` keys the nodes the value's shape holds (§2.9 *Keyed where a reader looks*) and `map` keys
+  images. A side that an operand's snapshot keys is read through that operand, as a member, under the operand's
+  own snapshot. So the question of a κ home for a removed node has an empty answer: no entry exists for it. An
+  entry a producer writes for the merged node is written on the node the constructor returns. Widen opening a
+  saturated positions node on a cycle adds the same members to the class.
+
+  **A cap in the readers would buy nothing**, so that option is not taken. The readers already aggregate in the
+  finite domain, and they memoise per node: `dagFacts` per node, `Cond.machine` per (position, node),
+  `arrivalAggs` per node and fold, `preimage` per (node, canonical path). So a reader visits each node of the DAG
+  once, never each occurrence. It cannot stop early once every cell reads `repeated`, because a DAG's read joins
+  the stored entry of every DAG node below it (`machine`'s inner join). The work is per node, and only the
+  representation removes nodes.
+
+  **Cost.** The test is not a walk. Each positions node keeps a memoised count map, member → `{once, twice}`, a
+  persistent radix map (§3.2). A parent merges its sides' maps by saturating sum, on the changed spine. A member is
+  lost exactly when it is `twice` on one side and present on the other. That is the radix intersection of one
+  side's `twice` set with the other side's keys, with identical subtrees skipped by identity. Only then is the
+  tree rebuilt, over at most twice its distinct members. The rebuild is charged as a task of its own, not on
+  the item's lane of `collect`: a lane holds only its item's constant work. A prototype that flattened the sides
+  on each construction and charged that on the lane broke the `transfer_settlement` lane invariant at
+  `LimitSpine` and `WideDeepCondition`.
+
+  **Measured** (a prototype that flattens uncharged, ReleaseSafe, self-hosted):
+  - **The corpus.** All 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`) were dumped under
+    `--ownership-everywhere --ownership=v2`, on master `f8ec23cbe` and on master with #1459, each with and
+    without the cap. The verdicts, demands, `unchecked` lines and summaries are byte-identical, `account` and
+    `crossing` lines left out. Six roots publish smaller blocks: `OneValueManySites` 1 696 → 1 456 bytes,
+    `StepLanesInGrowth` 31 104 → 30 864, `Recursion` 1 244 → 1 124, `BikeWars` (two roots) 1 460 → 1 380,
+    `bench/corpus` 5 336 → 5 256 (master's figures). `-Downership-full-cross-check` over the ownership corpus fails the same set
+    with and without the cap: v1's five panics and eight counting tests of `build_test`.
+  - **`Rose [ r, r ]` (#1420).** A projection of a `positions` chain of depth d made d new nodes. Saturated, it
+    makes one: 14 449 / 54 449 / 215 175 records at 10 / 20 / 40 levels, refused at 80, become 5 523 / 12 495 /
+    31 620 / 92 295 (312 388 at 160), with byte-identical blocks. It is still above n log n, and #1420 keeps it.
+  - **`run/TailModConsMerge`'s `mergeSort` stays loud** (#1368).
+    - On master the cap never fires. Since read-off interns its images (#1372), no positions node made in
+      `mergeSort`'s walks holds a member three times. The positions multiset under `res` now nests through
+      choices and unions, which are members.
+    - On master with #1459 it fires: 255 549 → 227 295 records, and the round-3 port goes from 297 to 251
+      nodes.
+
+  **What is left of #1368 is not multiplicity** (measured on master `67739df07`, the allowance raised).
+  - `mergeSort` costs 168 829 records (growth 129 727 of 65 536), over walks of 4 946 / 15 099 / 37 479 /
+    88 640.
+  - About half of walk 4 is one `propagate`: the branch join of `mergeSort`'s `case`, whose third member is
+    the view of `merge`'s `res` over two views of the port. It costs 46 644 records over two states, the root
+    and `[*]` (71 296 of 142 186 on #1459). So the cost is the size of the DAG each state reads, not the number
+    of positions.
+  - That DAG grows about 3× a round: the port is 15 / 67 / 183 nodes after rounds 1 / 2 / 3 (15 / 95 / 297
+    on #1459). Of round 3's 183 nodes, 86 are distinct when every choice is read as the set of its arms, and
+    82 when unions are sets and the cap applies too (#1459: 297 → 181 / 132 / 112).
+  - Two causes remain:
+    1. **A choice that a projection or a relabelling makes is not flattened.** *A choice member is
+       flattened*, above, covers joins only. So equal arm sets in two arrangements are two nodes: the
+       projections of the two views of one port at `[*]` are read off as two trees.
+    2. **Rounds nest in place.** Even with every node in canonical form, round 3's port has 82 nodes
+       against round 1's 15. A group's rounds nest `res[*]`'s DAG inside itself at a place that lies on no
+       cycle, and no widen folds that.
+  - Neither cause needs S4's labels: no callback, `cb` label, `sep` or `within` is involved. So the fix stays
+    in S3b (§8, question 9).
 - `leq` is **γ-inclusion and kind-blind**: `n ≤ m` iff `cells(n) ⊆ cells(m)` and `proj(n, s) ≤ proj(m, s)` at
   every step `s` of n's place, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
   below `y` when both its sides are (every member is below its join, O4), and two `positions` nodes compare by
@@ -1411,6 +1495,11 @@ Three concrete structures implement the operation (§3.4):
   across coexisting operands, not between exclusive alternatives. Any unresolved correlation
   conservatively adds obligations; it cannot justify a stronger read. In particular the required
   JoinFoldChoice and K controls below retain their correlation, not conservative `lost`.
+  The representation saturates where this domain does [M 2026-10-31, #1368]: a `positions`
+  constructor keeps a member at most twice (§2.3 *Saturation at two*). That changes no read, because
+  `k · a = 2 · a` for every `k ≥ 2`. A reader may still meet a member more than twice, in an image that
+  `map` or `BlockRead` made, and it counts it as twice. The readers' own aggregates are this domain
+  already and are memoised per node, so the saturation removes work only by removing nodes.
 
 The multiplicity map finds repeated identities. The shared expression and apart index additionally
 retain comparisons between **different symbolic** arrivals which substitution may alias. The condition
@@ -6073,7 +6162,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
 | #1372 | A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
-| #1368 | `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The next step is a spec proposal (saturating occurrence counts, or a home for κ under a merged positions node). | **Spec before 4b, fix before S3b closes.** It is an ordinary program, not a length family. 4b's validation walk still reads the whole class, so 4b alone does not fix it. |
+| #1368 | `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact, whose κ home is empty. It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
 | #1399 | A port's joined κ below a choice is not read (unsound on 4a). | **Before 4a merges** (#1408). |
@@ -6118,7 +6207,10 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    closes only when core has no known limit (see #1372 above).
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
-   known limit names S4.
+   known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
+   exact, but it is not the fix. The two causes that remain (choices that projection and relabelling do
+   not flatten, and rounds that nest `res[*]` in place) involve no callback, `cb` label, `sep` or
+   `within`. So the known limit stays S3b's, owned by #1368.
 
 The review history sets concrete acceptance obligations, not a duration estimate:
 
