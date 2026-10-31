@@ -810,7 +810,7 @@ Operations, memoised on their node arguments:
        cycle, and no widen folds that.
   - Neither cause needs S4's labels: no callback, `cb` label, `sep` or `within` is involved. So the fix stays
     in S3b (§8, question 9).
-- **A port keeps no round that its last round covers** [M 2026-10-31, #1368, #1372; proposed, not built].
+- **A port keeps no round that its last round covers** [M 2026-10-31, #1368, #1372; built 2026-10-31 as option (a), #1470, §8 *As built, 4d*].
   A group's port is `x_{k+1} = widen(x_k ⊔ F(x_k))`, a choice (`Summary.join`, mode `choice`). The rounds
   are Kleene iterates: `x_k ⊑ x_{k+1}`, and F is monotone, so `F(x_{k−1}) ⊑ F(x_k)`. So every arm that an
   earlier round put into the port is covered by the arms of the latest round. The join keeps them all the
@@ -5397,7 +5397,7 @@ L0  Ids
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 620 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 160 (4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
-| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
+| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 860 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
@@ -6256,6 +6256,38 @@ RecursiveSummaryGeneration's reorderings).
   directions with 4a's class (checked in one process, 4a's rounds run again over the same tables):
   fewer rounds keep fewer alternatives (§2.3), and a delivered use is grafted call by call, so the
   mark of a `⟲` path is spelled out.
+
+*As built, 4d (#1470).* §2.3 *A port keeps no round that its last round covers*, option (a).
+- **The rule.** `Summary.joinClassRes`: `b` under `a` keeps `a` as it is (#1423, both modes). In
+  `choice` mode, `a` under `b` takes `b`, widened by `widenValue`. Otherwise `dropCovered` takes off
+  `a`'s covered arms against the whole of `b`, and then `b`'s against what is left of `a`, so a value
+  that both sides hold never leaves both. A side whose arms are all covered is the first case. Every
+  test is `Shape.leq` and `kappaLeq` on the caller's charge, and every node of the top choice DAG and
+  every arm is a charged record.
+- **κ home.** The entry that the side's snapshot stores at a choice node of its top DAG, joined with
+  what is carried to that node, is carried to its sides, parents first. Each kept arm takes that join
+  into its own entry (`kappaSet`). The kept arms are a balanced choice in the order the walk met them.
+- **Departure.** A side whose root owes a fold condition (`fold_cond`, which a read `and`s at the
+  root and no snapshot stores) is kept whole. Over the corpus it never fires.
+- **Measured** (self-hosted Debug, `dump --stage=ownership --ownership=v2 --jobs=1`, the leq work
+  charged). `mergeSort`: a limit → 36 853 records in 3 walks, growth 0. DerivedDeepPaths' `rose`:
+  16 644 → 10 085. `descend` (copied, allowance 10⁸): 437 829 → 178 999. Over the 2 043 roots of
+  `bench/ownership-roots.mjs` (`allOwnership`, `--ownership-everywhere`): 6 415 320 → 6 040 556 records
+  (−5.8 %), and the only verdict change is `mergeSort`, a limit that is now checked. `wa`/`wb`,
+  `removeMin`, `descend` and `incAs` stay limits.
+- **Checked.** Every member of every solved group walked again against the final ports (a scratch
+  build, 1 652 walks over the roots): every walk is built, its read-off is under its port, its
+  verdicts are the validation walk's, and every edge delivers under its receiver's port. The same check
+  with the read check removed fails 283 of 1 668. `-Downership-full-cross-check` over the ownership
+  corpus fails only v1's five panics, as on master.
+- **Summaries.** They move in 42 roots, 138 summaries. Most drop alternatives that another one
+  covers: an `excl` beside a `lost` at one path, a cell repeated under `{lost}`, an unrolled level a
+  fold already covers. Nine `res` paths read weaker (`excl` → `lost`): core's `Result.combine`,
+  `combineHelp`, `partition` and `partitionHelp`, `LevelRecursiveUpdates.c2`,
+  `MarkerAcross.keepRight` and `WriteOneLevel.c2`. The port of the first case equals master's under
+  `leq`, but the tail call's delivery over it reads `lost` where master's reads `excl`, so it is
+  not exact for the fixpoint in the direction that loses precision. No corpus verdict depends on it.
+  A caller that edits an element of `combine`'s result is refused (#1472).
 
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
