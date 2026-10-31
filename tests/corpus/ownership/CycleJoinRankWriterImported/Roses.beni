@@ -1,0 +1,22 @@
+-- ownership (project): see Main.beni. `incAll` writes the kids list of
+-- every `Rose` at every depth, and `incList` walks a list of `Rose` with
+-- `[ s, …rest ]`.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []

@@ -1,0 +1,36 @@
+-- ownership (project): `CycleJoinRankWriter` with the recursive group in
+-- another module (ownership-v2.md Appendix B, C×J, the writer half; §8,
+-- slice 4's plan, 4a; #1394). The verdicts are the same-module fixture's:
+-- from an exclusive seed the writer is accepted at every height; `reused`,
+-- one kids list at two coexisting depths, is refused; `chosen`, one depth
+-- or the other in two whole-value arms, is accepted.
+import Roses exposing (Rose)
+
+
+pub height1 : Rose → Rose
+height1 seed = Roses.incAll (Rose [ seed ])
+
+
+pub height2 : Rose → Rose
+height2 seed = Roses.incAll (Rose [ Rose [ seed ] ])
+
+
+pub height3 : Rose → Rose
+height3 seed = Roses.incAll (Rose [ Rose [ Rose [ seed ] ] ])
+
+
+pub reused : Rose
+reused =
+    k = [ Rose [] ]
+    Roses.incAll (Rose [ Rose k, Rose [ Rose k ] ])
+
+
+pub chosen : Bool → Rose
+chosen c =
+    k = [ Rose [] ]
+    Roses.incAll
+        (if c then
+            Rose [ Rose k ]
+         else
+            Rose [ Rose [ Rose k ] ]
+        )
