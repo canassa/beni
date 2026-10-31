@@ -1,0 +1,28 @@
+pub type Rose
+    = Rose (List Rose)
+
+
+pub type alias Pair =
+    left : Rose
+    right : List Rose
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub incLeft : Pair → Pair
+incLeft p = { left = incAll p.left, right = p.right }
