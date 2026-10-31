@@ -2179,6 +2179,31 @@ pub const Table = struct {
             return out;
         }
 
+        /// A join whose `ε` cells its sides' reaches hold, so `run` leaves
+        /// them out (§2.3, #1467): its sides' cells (`unionMake`, `choiceMake`,
+        /// a positions node's parts), unless a side is a view (`viewReach`).
+        fn ownInSides(r: *const Reach, m: NodeId) bool {
+            const d = r.t.get(m);
+            if (d.kind != .@"union" and d.kind != .choice and d.kind != .positions) return false;
+            return r.t.kind(.from(d.a)) != .view and r.t.kind(.from(d.b)) != .view;
+        }
+
+        /// Whether `set` holds join `m`'s own cells (`own`'s filter applied)
+        /// at values its `and` keeps. Uncharged, for runtime safety.
+        fn covers(r: *Reach, set: SetId, m: NodeId) bool {
+            if (r.t.isLazy(m)) return true;
+            var it = r.sets.iterate(r.t.cells(m));
+            while (it.next()) |e| {
+                if (r.filter) |cellt| {
+                    const o = cellt.origin(.from(e.key));
+                    if (e.value == 0 and (o == .site or o == .result or o == .esc)) continue;
+                }
+                const v = r.sets.get(set, e.key) orelse return false;
+                if (v & e.value != v) return false;
+            }
+            return true;
+        }
+
         fn push(r: *Reach, n: NodeId) Error!void {
             try r.account.reserve(.memo, 1);
             try r.s.index.put(r.gpa, n, r.next_index);
@@ -2228,7 +2253,9 @@ pub const Table = struct {
                 while (i > 0) {
                     i -= 1;
                     const m = r.s.scc_stack.items[i];
-                    set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
+                    // A chain of D nested choices has D, D − 1, … own cells:
+                    // their unions were O(D²) records (`ownInSides`).
+                    if (!r.ownInSides(m)) set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
                     const first: u32 = @intCast(r.s.kids.items.len);
                     try r.children(m);
                     for (r.s.kids.items[first..]) |k| {
@@ -2238,6 +2265,8 @@ pub const Table = struct {
                     r.s.kids.shrinkRetainingCapacity(first);
                     if (m == n) break;
                 }
+                // The set is the one the joins' own cells would give.
+                if (std.debug.runtime_safety) for (r.s.scc_stack.items[i..]) |m| if (r.ownInSides(m)) std.debug.assert(r.covers(set, m));
                 while (r.s.scc_stack.items.len > 0) {
                     const m = r.s.scc_stack.pop().?;
                     r.s.on_stack.remove(m);

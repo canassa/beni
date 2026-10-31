@@ -9224,51 +9224,134 @@ test "the checker v2's write beside a doubling DAG of read paths costs its calle
     }
 }
 
+/// An `else if` chain of D arms (D nested `choice`s) at the root of `v`, for
+/// D = 8, 16 and 32, one module and one dump. Alone (`called` false), each
+/// `plainD` is #1467's: its arms `Rose [ Rose k, Rose [] ]` and
+/// `Rose [ Rose [ Rose k ], Rose [] ]` in turn. With `called`, `calledD`
+/// hands the chain to `incAll` (`CycleJoinRankWriter`'s writer) and
+/// `plainD` is the same chain without the call, each arm `chosen`'s, `k` at
+/// the first level or the level below, so the call is accepted only when
+/// each arm is read apart (§2.11 item 3, #1439).
+fn chainDump(w: *World, called: bool) ![3][3]u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n");
+    if (called) try src.appendSlice(a, "\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const depths = [_]u32{ 8, 16, 32 };
+    const arms: [2][]const u8 = if (called) .{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" } else .{ "Rose [ Rose k, Rose [] ]", "Rose [ Rose [ Rose k ], Rose [] ]" };
+    for (depths) |n| {
+        for ([_][]const u8{ "called", "plain" }) |name| {
+            if (!called and name[0] == 'c') continue;
+            try src.print(a, "\n\npub {s}{d} : Bool → Rose\n{s}{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, n, name, n });
+            for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
+            try src.appendSlice(a, "        else\n            Rose []\n");
+            try src.appendSlice(a, if (name[0] == 'c') "    incAll v\n" else "    v\n");
+        }
+    }
+    const dump = try ownDumpNoLimit(w, src.items);
+    if (std.mem.indexOf(u8, dump, ": rejected") != null) {
+        std.debug.print("a call over the chain is refused\n{s}\n", .{dump});
+        return error.TestUnexpectedResult;
+    }
+    // Per depth: the plain chain's records; the call's, less the plain
+    // chain's and the call's demands; the call's demands.
+    var out: [3][3]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var pn: [16]u8 = undefined;
+        var cn: [16]u8 = undefined;
+        const plain = try accountTotal(dump, try std.fmt.bufPrint(&pn, "plain{d}", .{n}));
+        out[i] = .{ plain, 0, 0 };
+        if (!called) continue;
+        const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
+        const demands = try accountField(dump, name, "demands");
+        out[i][1] = try accountTotal(dump, name) - plain - demands;
+        out[i][2] = demands;
+    }
+    return out;
+}
+
+/// Each doubling of D costs at most `num / den` times the last, and D = 32
+/// at most `ceiling` records.
+fn expectChainGrowth(what: []const u8, costs: [3]u64, num: u64, den: u64, ceiling: u64) !void {
+    if (costs[1] * den > costs[0] * num or costs[2] * den > costs[1] * num or costs[2] > ceiling) {
+        std.debug.print("{s} at D = 8 / 16 / 32: {d} / {d} / {d} records\n", .{ what, costs[0], costs[1], costs[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's else-if chain of D arms costs its records about linear in D" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §4.1 (#1467): the chain's own records, with no
+    // call. 13 210 / 27 163 / 55 932 at D = 8 / 16 / 32, ×2.06 a doubling:
+    // each arm inserts into persistent sets of O(D) members (the choice
+    // DAG's node set, κ's keys), a spine of O(log D) nodes copied, so
+    // D log D. At most 2.2 times a doubling, and 1.7 times D = 32's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainDump(&w, false);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the chain", .{ costs[0][0], costs[1][0], costs[2][0] }, 22, 10, 95_000);
+}
+
 test "the checker v2's call over a chain of nested choices is linear in its depth and reads each arm apart" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439): an
-    // `else if` chain of D arms is D nested choices at the root of the
-    // argument. Each arm puts `k` at the first level or the level below,
-    // as `CycleJoinRankWriter`'s `chosen` does, so the call is accepted only
-    // when each arm is read apart. The call costs its arms, each once: its
-    // records (the declaration's less the same chain's without the call)
-    // at depth 16 are at most 2.5 times depth 8's. Past 16 the chain's own
-    // cost, and its base's at the call, grow faster than linear on master
-    // as well (#1467).
+    // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439, #1467): the
+    // call costs its arms, each once. Its records (the declaration's less
+    // the same chain's without the call, and less its demands) at D = 8 /
+    // 16 / 32 were 1 314 / 1 583 / 2 548 on master, 1 201 / 1 213 / 1 225
+    // now: the other-paths walk reads the reach of the chain's root, and
+    // each choice unioned its own cells (all its arms' roots) into it
+    // again, O(D) records a choice. At most 1.5 times a doubling, and 1.7
+    // times D = 32's.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const a = testing.allocator;
-    var costs: [2]u64 = undefined;
-    for ([_]u32{ 8, 16 }, 0..) |n, run| {
-        var src: std.ArrayList(u8) = .empty;
-        defer src.deinit(a);
-        try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
-        for ([_][]const u8{ "called", "plain" }) |name| {
-            try src.print(a, "\n\npub {s} : Bool → Rose\n{s} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, name });
-            for (1..n + 1) |i| {
-                try src.appendSlice(a, if (i == 1) "        if c then\n" else "        else if c then\n");
-                try src.appendSlice(a, if (i % 2 == 0) "            Rose [ Rose k, Rose [] ]\n" else "            Rose [ Rose [ Rose k ], Rose [] ]\n");
-            }
-            try src.appendSlice(a, "        else\n            Rose []\n");
-            try src.appendSlice(a, if (std.mem.eql(u8, name, "called")) "    incAll v\n" else "    v\n");
-        }
-        const dump = try ownDumpNoLimit(&w, src.items);
 
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        if (std.mem.indexOf(u8, dump, ": rejected") != null) {
-            std.debug.print("depth {d}: the call is refused\n{s}\n", .{ n, dump });
-            return error.TestUnexpectedResult;
-        }
-        costs[run] = try accountTotal(dump, "called") - try accountTotal(dump, "plain");
-    }
-    if (costs[1] * 10 > costs[0] * 25) {
-        std.debug.print("the call's records at depth 8 / 16: {d} / {d}\n", .{ costs[0], costs[1] });
-        return error.TestUnexpectedResult;
-    }
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainDump(&w, true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the call", .{ costs[0][1], costs[1][1], costs[2][1] }, 15, 10, 2_080);
+}
+
+test "the checker v2's demands over a chain of nested choices cost records linear in its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8 *The build* (#1467): the call's demands
+    // (its `demands` records) at D = 8 / 16 / 32 were 1 038 / 2 430 /
+    // 6 704 on master, 235 / 427 / 861 now. `v` holds each arm's cells and
+    // is used last at the call, and its cover for each arm's target walked
+    // the chain down to that arm: O(D²). A holder with no use after the
+    // pair's first demand has nothing to cover. At most 2.2 times a
+    // doubling, and 1.7 times D = 32's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const costs = try chainDump(&w, true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectChainGrowth("the demands", .{ costs[0][2], costs[1][2], costs[2][2] }, 22, 10, 1_460);
 }
 
 test "the checker v2's call over a choice whose arms share a subtree costs each arm its own part" {
