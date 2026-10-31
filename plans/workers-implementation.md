@@ -46,12 +46,16 @@ The typed Inline queue remains unlanded pending performance acceptance. The
 frozen candidate passes individual release-byte limits, browser behavior and
 focused compiler checks. The complete UI validation requirements and the existing
 keyed-renderer prerequisites are recorded in [workers-ui-validation.md](workers-ui-validation.md).
-No byte or performance budget is waived. Scalar String-class lowering follows
-the existing Html contract and is under independent review and validation.
+No byte or performance budget is waived. Checkpoint 67f7e61a9 adds scalar
+String-class lowering under the existing Html contract; browser behavior,
+prerendering, forced run hashes and full gates passed.
 
-Symbolic continuation metadata and diagnostic-only static entry discovery are
-being implemented in isolated agent lanes. The former preserves checker evidence
-before stores expire; the latter plans finite entry graphs and initializers.
+The next checkpoint preserves partial symbolic continuation metadata and nominal
+declaration heads before checker stores expire, with validated private cache rows.
+It does not yet check generated continuation bodies. The entry-discovery prototype
+remains unlanded: its replacement must use compact summaries and a delta fixed
+point rather than multiplying caller contexts. Complete-handler tail-write facts
+are being validated separately, including shared-work and path-limit fallback.
 Neither changes production Task or authorizes worker execution. Remaining native
 callback consumers, per-entry realm and Wire proofs, and public launching stay
 gated. Every further accepted checkpoint stays on PR #1304.

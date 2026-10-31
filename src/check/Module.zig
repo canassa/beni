@@ -250,7 +250,7 @@ pub fn check(in: Input) Error!Check.Counters {
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.
         try Decl.attachWhere(&cx, d, &b, @intCast(i));
-        effects.schemeReading(@intCast(i), reading_start, store.count());
+        try effects.schemeReading(@intCast(i), annotation, reading_start, store.count(), b.scope.items);
         // An Elm curried annotation over a definition of as many
         // parameters is one mistake, reported at the body; its callers are
         // not held to a promise the author did not mean (checker.md §8.7).
@@ -521,6 +521,59 @@ pub fn check(in: Input) Error!Check.Counters {
     } else .empty;
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
+    // Private/inferred entry discovery needs outer value heads, not closed keys.
+    gpa.free(in.dispatch.decl_heads);
+    in.dispatch.decl_heads = &.{};
+    if (!quiet and report.errors == 0) {
+        const heads = try gpa.alloc(TypeStore.TypeId, bir.decls.len);
+        @memset(heads, .none);
+        for (bir.decls, decl_scheme, heads) |decl, scheme, *head| {
+            if (!decl.kind.isValue()) continue;
+            const value_type = scheme.unwrap() orelse continue;
+            switch (store.resolvedContent(value_type)) {
+                .structure => |flat| switch (flat) {
+                    .app => |app| head.* = app.type,
+                    else => {},
+                },
+                else => {},
+            }
+        }
+        in.dispatch.decl_heads = heads;
+    }
+    // Preserve only reachable symbolic site roots before the solved store dies.
+    in.dispatch.continuations.deinit(gpa);
+    if (!quiet and report.errors == 0) {
+        in.dispatch.continuations = @import("ContinuationPlan.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .effects = &effects,
+            .dispatch = in.dispatch,
+            .crossing = if (type_keys) |t| t.crossing else &.{},
+            .decl_scheme = decl_scheme,
+            .decl_body = decl_display,
+            .inst_type = inst_type,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                gpa.free(in.dispatch.decl_heads);
+                in.dispatch.decl_heads = &.{};
+                const message = try std.fmt.allocPrint(scratch, "this clean module's symbolic continuation evidence could not be published ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
+    if (report.errors != 0) {
+        in.dispatch.continuations.deinit(gpa);
+        gpa.free(in.dispatch.decl_heads);
+        in.dispatch.decl_heads = &.{};
+    }
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
 
     // A declaration with no body shows its scheme.

@@ -31,6 +31,7 @@ const testing = std.testing;
 const File = struct { path: []const u8, text: []const u8 };
 
 const files = [_]File{
+    .{ .path = "AnnotationReadings.zig", .text = @embedFile("AnnotationReadings.zig") },
     .{ .path = "Boundary.zig", .text = @embedFile("Boundary.zig") },
     .{ .path = "Category.zig", .text = @embedFile("Category.zig") },
     .{ .path = "Check.zig", .text = @embedFile("Check.zig") },
@@ -40,6 +41,7 @@ const files = [_]File{
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },
     .{ .path = "ContextUnits.zig", .text = @embedFile("ContextUnits.zig") },
     .{ .path = "Contexts.zig", .text = @embedFile("Contexts.zig") },
+    .{ .path = "ContinuationPlan.zig", .text = @embedFile("ContinuationPlan.zig") },
     .{ .path = "Convention.zig", .text = @embedFile("Convention.zig") },
     .{ .path = "Cycles.zig", .text = @embedFile("Cycles.zig") },
     .{ .path = "DebugShape.zig", .text = @embedFile("DebugShape.zig") },
@@ -95,6 +97,7 @@ const files = [_]File{
     .{ .path = "SchemaPlan.zig", .text = @embedFile("SchemaPlan.zig") },
     .{ .path = "SchemaPlanBuild.zig", .text = @embedFile("SchemaPlanBuild.zig") },
     .{ .path = "Schemes.zig", .text = @embedFile("Schemes.zig") },
+    .{ .path = "ScopedTerms.zig", .text = @embedFile("ScopedTerms.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
     .{ .path = "LetTexts.zig", .text = @embedFile("LetTexts.zig") },
     .{ .path = "StatementTexts.zig", .text = @embedFile("StatementTexts.zig") },

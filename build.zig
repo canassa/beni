@@ -170,6 +170,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/abuse_wide_test.zig", 3 },
     .{ "tests/blackbox/build_test.zig", 3 },
     .{ "tests/blackbox/cache_test.zig", 4 },
+    .{ "tests/blackbox/continuation_test.zig", 1 },
     .{ "tests/blackbox/check_test.zig", 1 },
     .{ "tests/blackbox/cutoff_test.zig", 3 },
     .{ "tests/blackbox/devloop_test.zig", 1 },

@@ -463,7 +463,9 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             const bir = d.artifacts.bir(file);
             const token_count: u32 = @intCast(d.artifacts.spans(file).len());
             if (loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
-                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types))
+                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
+                (try loaded.sidecar.table.continuations.verifyAgainstBir(d.gpa, bir, &loaded.sidecar.table, d.graph, d.types)) and
+                loaded.sidecar.verifyDeclHeads(bir, d.graph, d.types))
                 return d.install(m, loaded);
             // A malformed or stale sidecar is a cache miss. Release the
             // entry here because the normal check below replaces it. The

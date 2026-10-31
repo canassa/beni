@@ -185,7 +185,7 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
     // class position by position (transparent-effects-proposal.md §14.3
     // rule 5); a `let`'s, whose scheme was read just before, is zipped.
     if (g.cx.effects) |e| {
-        if (top != null) try e.checkReading(@backingInt(g.decl), mark, g.storeMark(), scheme, check) else try e.zip(scheme, check);
+        if (top != null) try e.checkReading(@backingInt(g.decl), annotation, mark, g.storeMark(), scheme, check, b.scope.items) else try e.zip(scheme, check);
     }
     try g.adoptSince(mark);
     const rigids_start: u32 = @intCast(g.tree.extra.items.len);

@@ -40,6 +40,8 @@ const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const Scc = @import("Scc.zig");
 
+const AnnotationReadings = @import("AnnotationReadings.zig");
+
 const Effects = @This();
 
 pub const Var = TypeStore.Var;
@@ -169,6 +171,8 @@ block_first: std.ArrayList(u32) = .empty,
 /// `none`: each class's sites in order, for a walk of a class's deps.
 block_next: std.ArrayList(u32) = .empty,
 
+annotation_readings: AnnotationReadings = .{},
+
 pub const Readings = struct {
     scheme_start: u32 = none,
     scheme_end: u32 = none,
@@ -181,13 +185,15 @@ pub fn init(gpa: Allocator, store: *TypeStore, types: *const Types, interner: *c
     errdefer gpa.free(eval);
     @memset(eval, .none);
     const readings = try gpa.alloc(Readings, decls);
+    errdefer gpa.free(readings);
     @memset(readings, .{});
-    return .{ .gpa = gpa, .store = store, .types = types, .interner = interner, .eval = eval, .readings = readings };
+    return .{ .gpa = gpa, .store = store, .types = types, .interner = interner, .eval = eval, .readings = readings, .annotation_readings = try .init(gpa, decls) };
 }
 
 /// The variables `[start, end)` P2 made reading `decl`'s annotation and its
 /// `where` clause into the scheme.
-pub fn schemeReading(e: *Effects, decl: u32, start: u32, end: u32) void {
+pub fn schemeReading(e: *Effects, decl: u32, annotation: Bir.Inst.Index, start: u32, end: u32, scope: []const Types.Builder.Scoped) Error!void {
+    try e.annotation_readings.scheme(e.gpa, decl, annotation, scope);
     if (decl >= e.readings.len) return;
     e.readings[decl].scheme_start = start;
     e.readings[decl].scheme_end = end;
@@ -198,7 +204,8 @@ pub fn schemeReading(e: *Effects, decl: u32, start: u32, end: u32) void {
 /// `scheme`. Two readings of one length are paired by position; any other
 /// pair (never seen: it would be a reader that read one text two ways) is
 /// zipped by structure.
-pub fn checkReading(e: *Effects, decl: u32, start: u32, end: u32, scheme: Var, check: Var) Error!void {
+pub fn checkReading(e: *Effects, decl: u32, annotation: Bir.Inst.Index, start: u32, end: u32, scheme: Var, check: Var, scope: []const Types.Builder.Scoped) Error!void {
+    e.annotation_readings.checked(e.store, decl, annotation, scope);
     if (decl < e.readings.len) {
         const rd = &e.readings[decl];
         if (rd.scheme_start != none and rd.scheme_end - rd.scheme_start == end - start) {
@@ -212,6 +219,7 @@ pub fn checkReading(e: *Effects, decl: u32, start: u32, end: u32, scheme: Var, c
 
 pub fn deinit(e: *Effects) void {
     const gpa = e.gpa;
+    e.annotation_readings.deinit(gpa);
     e.edges.deinit(gpa);
     e.seeds.deinit(gpa);
     e.joins.deinit(gpa);

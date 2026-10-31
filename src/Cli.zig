@@ -108,7 +108,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// `typekeys` is hidden, as `--stage=ownership`'s flags are: the checker's
 /// type keys (checker-v2.md §36), an artifact only the points-to analysis
 /// reads, printed for the corpus.
-pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership, typekeys };
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership, typekeys, continuations };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -292,6 +292,8 @@ pub const Cache = struct {
     /// fixture asserts that a module installed from the cache has the keys a
     /// fresh check gives it.
     type_keys: bool = false,
+    /// Hidden cached-artifact inspector, check only; no default output change.
+    continuations: bool = false,
 };
 
 pub const Check = struct {
@@ -866,6 +868,12 @@ const CheckSpecific = struct {
         if (std.mem.eql(u8, name, "--cutoff-compare")) {
             if (value != null) return noValue(name);
             self.cache.cutoff_compare = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--continuations")) {
+            if (value != null) return noValue(name);
+            self.cache.continuations = true;
             self.consumed = true;
             return null;
         }
@@ -1471,7 +1479,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 pub fn stageResolvesImports(stage: Stage) bool {
     return switch (stage) {
         .tokens, .ast, .bir => false,
-        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership, .typekeys => true,
+        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership, .typekeys, .continuations => true,
     };
 }
 

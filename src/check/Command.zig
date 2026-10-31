@@ -33,6 +33,7 @@ const Key = @import("../cache/Key.zig");
 const CacheDir = @import("../cache/Dir.zig");
 const Digest = @import("../cache/Digest.zig");
 const TypeKeysDump = @import("../dump/typekeys.zig");
+const ContinuationsDump = @import("../dump/continuations.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -135,6 +136,9 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // After the key blocks, for the same reason.
     if (check.cache.type_keys) {
         printTypeKeys(stdout, &session) catch return 2;
+    }
+    if (check.cache.continuations) {
+        printContinuations(stdout, &session) catch return 2;
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -383,6 +387,20 @@ fn printTypeKeys(stdout: *Io.Writer, session: *Session) !void {
                 &session.checked.types,
                 &session.interner,
             );
+        }
+    }
+    try stdout.flush();
+}
+
+/// Hidden inspector of published source-module artifacts, including cache hits.
+fn printContinuations(stdout: *Io.Writer, session: *Session) !void {
+    for (session.store.byPath()) |file| {
+        if (session.store.isEmbedded(file)) continue;
+        for (0..session.graph.count()) |i| {
+            const module: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
+            if (session.graph.moduleFile(module) != file or session.graph.modulePackage(module) != .app) continue;
+            if (i >= session.checked.dispatch.len) continue;
+            try ContinuationsDump.write(stdout, session.store.moduleName(file), session.artifacts.bir(file), &session.checked.dispatch[i], &session.checked.types, &session.interner);
         }
     }
     try stdout.flush();

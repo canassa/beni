@@ -420,6 +420,10 @@ markup: []const Markup = &.{},
 effect_sites: []const EffectSite = &.{},
 /// One per `Bir.Decl`, or empty when no declaration has an answer.
 effect_decls: []const EffectDecl = &.{},
+/// Partial symbolic site evidence; never a completed continuation proof.
+continuations: @import("ContinuationPlan.zig").Artifact = .empty,
+/// Alias-expanded OUTERMOST nominal value head, one per declaration.
+decl_heads: []const TypeStore.TypeId = &.{},
 /// Sorted by `decl`, then kind, then the field's text or the type's
 /// `(package, module, name)`; no row twice (checker-v2.md §28).
 boundary: []const Boundary = &.{},
@@ -473,6 +477,8 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.render_links);
     gpa.free(d.effect_sites);
     gpa.free(d.effect_decls);
+    d.continuations.deinit(gpa);
+    gpa.free(d.decl_heads);
     gpa.free(d.boundary);
     gpa.free(d.debug);
     gpa.free(d.debug_nodes);

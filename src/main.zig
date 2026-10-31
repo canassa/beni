@@ -243,7 +243,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // With `--platform`, a platform's own modules are lowered as the
         // session that checks them lowers them (the platform's rules).
         .bir => if (dump.platform != null) Session.check_phases else Session.lower_phases,
-        .interface, .raw, .types, .dispatch, .writes, .ownership, .typekeys => Session.check_phases,
+        .interface, .raw, .types, .dispatch, .writes, .ownership, .typekeys, .continuations => Session.check_phases,
         // The graph is what `resolve_phases` builds first, and nothing
         // after it changes an edge (`static-dispatch-spike.md` §6.8), so
         // this dump stops before a single module is checked.
@@ -283,6 +283,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // project's tables in path order are what a corpus golden is.
         if (dump.stage == .dispatch) return dumpExit(summary, dumpProjectDispatch(gpa, &session, stdout, stderr, dump.file));
         if (dump.stage == .typekeys) return dumpExit(summary, dumpProjectTypeKeys(&session, stdout, stderr, dump.file));
+        if (dump.stage == .continuations) return dumpExit(summary, dumpProjectContinuations(&session, stdout, stderr, dump.file));
         // `--stage=bir` over a directory: every module's lowering in path
         // order, each headed `module M` (the ownership words' gate reads a
         // whole package this way, check_test.zig).
@@ -376,6 +377,11 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 &session.checked.types,
                 &session.interner,
             ) catch return 2;
+        },
+        .continuations => {
+            const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
+            if (m.int() >= session.checked.dispatch.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
+            beni.dump.continuations.write(stdout, session.store.moduleName(file), session.artifacts.bir(file), &session.checked.dispatch[m.int()], &session.checked.types, &session.interner) catch return 2;
         },
         .graph, .writes, .ownership => unreachable, // handled above: none is one file's
         .types => {
@@ -526,6 +532,22 @@ fn dumpProjectDispatch(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Wr
             &session.checked.types,
             &session.interner,
         ) catch return 2;
+        printed += 1;
+    }
+    if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    return 0;
+}
+
+/// Partial symbolic evidence without retaining the checker store.
+fn dumpProjectContinuations(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const dir = storePath(&buffer, arg);
+    var printed: u32 = 0;
+    for (session.store.byPath()) |f| {
+        if (session.store.isEmbedded(f) or !underDir(session.store.path(f), dir)) continue;
+        const m = moduleOf(session, f) orelse continue;
+        if (m.int() >= session.checked.dispatch.len) continue;
+        beni.dump.continuations.write(stdout, session.store.moduleName(f), session.artifacts.bir(f), &session.checked.dispatch[m.int()], &session.checked.types, &session.interner) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
