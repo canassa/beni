@@ -1654,6 +1654,10 @@ call's view, it is projected onto a new node of the published class at every rou
 `rose` reached the allowance that way (with a raised allowance: 175 376 records in 3 walks, against master's
 72 701 in 4). With the skip it costs 47 498 in 2. A local join keeps its entry: without it, K's reads of the
 members' DAGs grow with the height (343 210 records at 160 levels, 292 195 with it).
+Read-off still carries every join entry it meets onto the projection of the published `res`, implied or not,
+because `relabelMap` has no positions to test the implication. That costs `run/TailModConsMerge`'s `mergeSort`
+246 119 records against master's 168 829, with the allowance raised (157 897 without the hook, which is
+unsound for #1406's cases). #1466 owns it.
 
 A block that a limit stops is that limit, said: `limit block: <limit> (the module's summaries are not published)`,
 one of the module's limits, and an `ownership_limit` error under enforcement (#1450). Before, the module published
