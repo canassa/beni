@@ -1520,3 +1520,87 @@ test "complete-handler probe omits command summaries while retaining command ope
     try testing.expect(std.mem.indexOf(u8, facts.stdout, "tails joined (unproved)") != null);
     try testing.expect(std.mem.indexOf(u8, facts.stdout, "    tail call ") == null);
 }
+
+test "generic runtime suspension cannot hide behind function type aliases" {
+    const cases = [_]struct { annotation: []const u8, aliases: []const u8, imported: bool = false }{
+        .{ .annotation = "Runner", .aliases = "pub type alias Runner = Program → ⊤\n" },
+        .{ .annotation = "Program → ⊤", .aliases = "" },
+        .{ .annotation = "Runner", .aliases = "pub type alias Inner a = a → ⊤\npub type alias Middle a = Inner a\npub type alias Runner = Middle Program\n" },
+        .{ .annotation = "Runner", .aliases = "pub type alias Identity a = a\npub type alias Runner = Identity (Program → ⊤)\n" },
+        .{ .annotation = "Types.Runner", .aliases = "", .imported = true },
+    };
+    for (cases) |scenario| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const runtime = try std.fmt.allocPrint(w.arena.allocator(), "import Start exposing (Program)\nimport Task\n{s}\n{s}\npub run : {s}\nrun _ = Task.yieldNow ⊤\n", .{ if (scenario.imported) "import Types\n" else "", scenario.aliases, scenario.annotation });
+        try writeGenericRuntime(&w, runtime);
+        if (scenario.imported) try w.write("platform/Types.beni", "import Start exposing (Program)\npub type alias Identity a = a\npub type alias Arrow a = a → ⊤\npub type alias Runner = Identity (Arrow Program)\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=cold.json", "Main.beni" },
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=warm.json", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.entry_runtime_suspends, result.diagnostics[0].code);
+            try testing.expectEqualStrings("platform/Rt.beni", result.diagnostics[0].span.file);
+            try testing.expectEqualStrings("ENTRY RUNTIME SUSPENDS", result.diagnostics[0].title);
+            try testing.expect(!w.exists("out"));
+        }
+        const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+        for ([_][]const u8{ "cold.json", "warm.json" }, 0..) |name, index| {
+            const parsed = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read(name), .{ .ignore_unknown_fields = true });
+            var found = false;
+            for (parsed.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+                if (index == 0) try testing.expect(count > 0) else try testing.expectEqual(@as(u64, 0), count);
+                found = true;
+            };
+            try testing.expect(found);
+        }
+    }
+}
+
+test "generic aliased runtime may store a suspending callback without calling it" {
+    for ([_]bool{ false, true }) |impure| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w, try std.fmt.allocPrint(w.arena.allocator(), "import Start exposing (Program)\n{s}\npub type alias Runner = Program → ⊤\npub run : Runner\nrun _ =\n{s}    ⊤\n", .{ if (impure) "import Js\n" else "", if (impure) "    _ = Js.call (Js.global \"console\") \"log\" [ Js.from \"ready\" ]\n" else "" }));
+        try w.write("platform/Start.beni",
+            \\pub type alias Callback = ⊤ → ⊤
+            \\pub type Program = Program Callback
+            \\pub make : Callback → Program
+            \\make body = Program body
+            \\pub invoke : Program → ⊤
+            \\invoke (Program body) = body ⊤
+            \\
+        );
+        try w.write("Main.beni", "import Start\nimport Task\nmain : Start.Program\nmain = Start.make Task.yieldNow\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }, 0..) |args, index| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+            if (index >= 2) try w.expectProgram("out/_main.mjs", .{ .stdout = if (impure) "ready\n" else "", .exit_code = 0 });
+        }
+        // Merely retaining the callback is synchronous; invoking its unresolved
+        // effect dependency through the same aliased arrow is not.
+        try w.write("platform/Rt.beni", "import Start exposing (Program)\npub type alias Runner = Program → ⊤\npub run : Runner\nrun program = Start.invoke program\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=refused", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.entry_runtime_suspends, result.diagnostics[0].code);
+            try testing.expect(!w.exists("refused"));
+        }
+    }
+}

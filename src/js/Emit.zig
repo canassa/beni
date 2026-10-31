@@ -2631,7 +2631,14 @@ const Emitter = struct {
             if (runner.iface.effectBlock(runner.scheme)) |effects| {
                 var sites = effects.sites();
                 while (sites.next()) |site| {
-                    if (site.root != 0 or site.steps.len != 0) continue;
+                    if (site.root != 0) continue;
+                    // Alias expansions still name run's own arrow. Structural
+                    // steps enter a parameter/result or another nested value.
+                    const own_arrow = for (site.steps) |step| {
+                        if (Interface.EffectBlock.stepKind(step) != @backingInt(@import("../check/Walk.zig").StepKind.expansion) or
+                            Interface.EffectBlock.stepIndex(step) != 0) break false;
+                    } else true;
+                    if (!own_arrow) continue;
                     const class = effects.class(site.class);
                     may_suspend = may_suspend or class.rung == 2 or (class.deps.len != 0 and !class.sync);
                 }

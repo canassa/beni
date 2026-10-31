@@ -54,7 +54,12 @@ using their checked interface bodies. Generic type arguments remain generic;
 the runtime cannot silently specialize a universal Program contract to Int.
 
 Run must not suspend. Read its inferred effect summary, rather than trusting a
-name or a source annotation. A suspending root reports entry_runtime_suspends
+name or a source annotation. Alias expansion is transparent to this check:
+a body-root effect site reached through only zero-index alias-expansion steps is
+still the runtime's own arrow. Parameter, result, field and other structural
+steps name nested sites and must not be mistaken for the runtime arrow. Apply
+the same inferred suspension/dependency rule to direct, nested, parameterized
+and imported aliases, including warm cached schemes. A suspending root reports entry_runtime_suspends
 at run, naming the selected runtime and pointing to the deferred-root pattern:
 install listeners, start an owned root fiber, then return. Init may suspend
 inside that fiber. A wrong signature, missing run or missing module reports
