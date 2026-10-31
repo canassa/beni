@@ -484,6 +484,12 @@ tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:19 #0 :: MarkerA
 tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
 tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
 tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 18:47 #0 :: MarkerAcross.incAll r#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t#Node.0⟨Tree⟩#Node.1 :: absent :: rejected  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
+tests/corpus/ownership/MarkerAcross.beni [node] MarkerAcross 30:23 #0 :: MarkerAcross.incAll t#Node.0#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's (keepRight settles since #1372's propagate memos)
 tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
 tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.2#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
 tests/corpus/ownership/LevelRecursiveUpdates.beni [node] LevelRecursiveUpdates 15:19 #0 :: LevelRecursiveUpdates.incAll l#Node.2⟨Tree⟩#Node.1 :: absent :: accepted  canonical path text (#1253 option B): the same writes and verdict as v1's
@@ -526,7 +532,6 @@ tests/corpus/ownership/LevelFresh.beni [node] LevelFresh 46:23 #0 :: List.push x
 tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 31:9 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `bumpRacily` is checked since S3b slice 4a
 tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 32:9 #0 :: RefUpdateAcrossFibers.bumpRacily cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `bumpRacily` is checked since S3b slice 4a
 # Slice 4a: known limits.
-tests/corpus/ownership/MarkerAcross.beni MarkerAcross limit keepRight  #1372: applying `incAll`'s class costs 85 222 growth (memo, inspection); refused at 30:23 as v1 with the allowance raised
 tests/corpus/run/TailModConsMerge.beni TailModConsMerge limit mergeSort  #1368: 4 walks, the last about 167 000 growth; v1's verdicts with the allowance raised
 core Dict limit removeMin  #1372: a red-black removal that settles in 7 walks, the later ones about 130 000 growth each
 core Dict limit descend  #1372: the cursor walk settles in 6 walks with 176 480 growth (memo 88 161, inspection 66 653)

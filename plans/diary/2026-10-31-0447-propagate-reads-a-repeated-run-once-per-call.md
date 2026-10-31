@@ -47,6 +47,14 @@
   62 300.
 - `Cond.zig`'s §5 target is now 4 540. It was 4 500 after #1408. The memos and
   their cross-check take 38 lines.
+- Review fix: the cross-check's walk with no memo still read the join memo,
+  `memo_prop`. So for many calls it compared the result with itself (288 of
+  3 389 re-checks on 150 fixtures were vacuous at the root). It no longer
+  reads it under `no_memo`. I rebased onto master with 4a in it. There,
+  `MarkerAcross.keepRight` settles: its `.v2.unchecked` golden is gone, its
+  `limit` entry is gone, and its six call lines join #1253's canonical-path
+  entries. Its verdict is v1's. Under the cross-check build, v1's `check`
+  panics on `LevelPlacesKinds` (#1307) and `QuadChildren` (#1432, new).
 
 **What I learned**
 
