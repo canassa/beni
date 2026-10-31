@@ -1,0 +1,29 @@
+module Main
+  13:18 call Rows.k <literal>[*]: accepted fresh (Rows.k writes π1[*])
+  19:18 call Rows.k <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Rows.k writes π1[*])
+  25:18 call Rows.k <literal>[*]: rejected alias: a holds it and is read at 25:34 (Rows.k writes π1[*])
+  31:16 call Rows.elems <literal>[*]: accepted fresh (Rows.elems writes π1[*])
+  38:16 call Rows.elems <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Rows.elems writes π1[*])
+  45:16 call Rows.elems <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Rows.elems writes π1[*])
+  53:16 call Rows.kT <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Rows.kT writes π1[*])
+  61:16 call Rows.kT <literal>[*]: accepted fresh (Rows.kT writes π1[*])
+  summary local: unused
+  summary twice: unused
+  summary readAgain: unused
+  summary elemsBound: unused
+  summary elemsShared: unused
+  summary elemsTwice: unused
+  summary heldInside: unused
+  summary heldApart: unused
+  demands 8: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+module Rows
+  10:15 List.push r: accepted param
+  22:23 List.push a: accepted param
+  37:25 List.push r: accepted param
+  summary k: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] π1[*]{excl π1}, [*][*] ~π1[*][*]{excl π1}, fresh1{excl π1}; xreq excl π1
+  summary elems: π1 R, π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh1) ~fresh1 ~π1[*][*]{excl π1}, .1 fresh5 ~condition(fresh4) π1[*][*]{excl π1}, condition(fresh2){sep π1[*] π1[*][*], sep π1[*][*] π1[*][*]}; xreq excl π1
+  summary kT: π1 R, π1[*] RAW[storage], π1[*][*] A, π1[*][*]#T.0 RA; res .0 fresh2{excl π1}r{excl π1}, .0[*] condition(fresh4) π1[*]{excl π1}r{excl π1}, .0[*][*] ~condition(fresh6) ~π1[*][*]{excl π1}r{excl π1}, .0[*][*]#T.0 ~fresh1, .1 fresh7 ~condition(fresh5) π1[*][*]#T.0{excl π1}r{excl π1}, condition(fresh3){sep π1[*] π1[*][*]#T.0, sep π1[*][*] π1[*][*]#T.0}r{sep π1[*] π1[*][*]#T.0, sep π1[*][*] π1[*][*]#T.0}; xreq excl π1
+  demands 3: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 11: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 1
+cause exclusive 4

@@ -3,7 +3,7 @@
 -- objects written, so distinct lists accept: two literals, two
 -- parameters, a bound list and the caller's parameter. One list twice and
 -- a list read after the edit are refused. Lists bound to names first are
--- refused by v2 only (#1492).
+-- refused by v2 only (#1508).
 import Rows
 
 

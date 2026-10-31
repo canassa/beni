@@ -126,11 +126,11 @@ pub fn Of(comptime Frame: type) type {
             var relied: CondId = Cond.yes;
             var stack: std.ArrayList(Push) = .empty;
             defer stack.deinit(gpa);
-            var seen: Ids.FixedDict(4) = .{};
+            var seen: Ids.FixedDict(5) = .{};
             defer seen.deinit(gpa);
-            var seen_x: Ids.FixedDict(5) = .{};
+            var seen_x: Ids.FixedDict(6) = .{};
             defer seen_x.deinit(gpa);
-            var seen_r: Ids.FixedDict(4) = .{};
+            var seen_r: Ids.FixedDict(5) = .{};
             defer seen_r.deinit(gpa);
             // The written positions, by canonical path (#1253): the base's nodes
             // at the write's own path. A route beside the write that folds back
@@ -159,7 +159,7 @@ pub fn Of(comptime Frame: type) type {
             // A deep demand's base is a reach, which no end of the write's
             // path names alone, and a `⊤` base may be anything: kept whole.
             arms.whole = deep or want.all or !split;
-            var read: Ids.FixedDict(3) = .{};
+            var read: Ids.FixedDict(4) = .{};
             defer read.deinit(gpa);
             var excl: SetId = .none;
             try stack.append(gpa, .{ .it = .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false, .path = try f.env.places.rootPath(gpa, shapes.place(use)) } });
@@ -168,7 +168,7 @@ pub fn Of(comptime Frame: type) type {
                 const it = p.it;
                 const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
                 if (it.mode == .read) {
-                    const rg = try seen_r.getOrPut(gpa, .{ it.v.int(), @as(u32, @intFromBool(it.folded)) | @as(u32, @intFromBool(it.held)) << 1, it.path.int(), it.top.int() });
+                    const rg = try seen_r.getOrPut(gpa, .{ it.v.int(), @as(u32, @intFromBool(it.folded)) | @as(u32, @intFromBool(it.held)) << 1, it.path.int(), it.top.int(), it.inside.int() });
                     if (rg.found_existing) {
                         try arms.edge(gpa, p.from, rg.value_ptr.*, none);
                         continue;
@@ -179,13 +179,13 @@ pub fn Of(comptime Frame: type) type {
                     const mark = stack.items.len;
                     const local = try f.readStep(it, &written, where_paths, &stack);
                     for (stack.items[mark..]) |*x| x.from = ri;
-                    if (local != .none) try f.keepReach(bs, &want, local, it.folded, it.held, null, refs.items, &arms.kept.items[ri], &excl, &relied, .{ .path = it.top, .written = &written, .paths = where_paths });
+                    if (local != .none) try f.keepReach(bs, &want, try f.without(local, it.inside), it.folded, it.held, null, refs.items, &arms.kept.items[ri], &excl, &relied, .{ .path = it.top, .written = &written, .paths = where_paths });
                     continue;
                 }
                 const got = if (it.expand != none)
-                    try seen_x.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.expand })
+                    try seen_x.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.expand, it.inside.int() })
                 else
-                    try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int() });
+                    try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.inside.int() });
                 if (got.found_existing) {
                     try arms.edge(gpa, p.from, got.value_ptr.*, p.arm);
                     continue;
@@ -247,17 +247,18 @@ pub fn Of(comptime Frame: type) type {
                         // rest: whole, unless a held item already read it there.
                         if (!it.stuck)
                             try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied)
-                        else if (!it.held) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int() }, idx)) |r|
+                        else if (!it.held) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int() }, idx)) |r|
                             try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &arms.kept.items[r], &excl, &relied, null);
                         held_below = true;
-                    } else if (beside) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int() }, idx)) |r| {
+                    } else if (beside) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int() }, idx)) |r| {
                         const held = marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells));
                         if (!split or it.path == .none) {
-                            try f.keepBeside(bs, &want, it.v, folded, held, null, refs.items, &arms.kept.items[r], &excl, &relied, .{ .path = it.path, .written = &written, .paths = where_paths });
+                            const w: Where = .{ .path = it.path, .written = &written, .paths = where_paths };
+                            try f.keepReach(bs, &want, try f.without(try f.reachBeside(it.v, w), it.inside), folded, held, null, refs.items, &arms.kept.items[r], &excl, &relied, w);
                         } else {
                             // By position, one state at a time (`reachBeside`): a
                             // part arms share is read once.
-                            try stack.append(gpa, .{ .it = .{ .u = .none, .v = it.v, .mode = .read, .depth = 0, .folded = folded, .stuck = false, .level = false, .held = held, .path = it.path, .top = it.path }, .from = r });
+                            try stack.append(gpa, .{ .it = .{ .u = .none, .v = it.v, .mode = .read, .depth = 0, .folded = folded, .stuck = false, .level = false, .held = held, .path = it.path, .top = it.path, .inside = it.inside }, .from = r });
                         }
                     };
                 }
@@ -318,6 +319,10 @@ pub fn Of(comptime Frame: type) type {
                     continue;
                 }
                 if (it.mode == .spine and exact) continue;
+                // Below a written position of one route: what only its own
+                // approximation finds in its contents is that object, not
+                // another (#1492).
+                const inside = if (it.mode == .spine and !it.stuck) try f.ownContents(it.v, &written, where_paths, it.path) else it.inside;
                 var kt = shapes.overEntries(d.a);
                 while (kt.next()) |k| {
                     var next = it;
@@ -329,6 +334,7 @@ pub fn Of(comptime Frame: type) type {
                         next.held = false;
                         next.folded = leaf != null;
                         next.depth = 0;
+                        next.inside = inside;
                     }
                     try f.advancePush(it, k.step, next, &stack);
                 }
@@ -355,8 +361,10 @@ pub fn Of(comptime Frame: type) type {
         /// `ctx`: 1 below a choice split, where a `⟲` is re-entered one node
         /// at a time. `expand`: not an item but the re-entries of that place
         /// below `v` (`expandOne`), or none. `top`: of a `.read` state, the
-        /// path its read started at (`readStep`).
-        pub const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId, ctx: u32 = 0, expand: u32 = none, top: PathId = .none };
+        /// path its read started at (`readStep`). `inside`: below a written
+        /// position of one route, the cells only its approximation finds in
+        /// its contents (`ownContents`, #1492), none elsewhere.
+        pub const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId, ctx: u32 = 0, expand: u32 = none, top: PathId = .none, inside: SetId = .none };
 
         /// The written positions of one write (`otherPaths`): its canonical
         /// path and the argument's nodes there.
@@ -730,6 +738,75 @@ pub fn Of(comptime Frame: type) type {
                 }
             }
             return acc;
+        }
+
+        /// The cells that the contents of the written positions at `v`, the
+        /// value at the write's end, hold only by approximation (§2.11 item 3
+        /// (b), #1492). A value has no cycle, so no object inside a written
+        /// object is that object; yet a place-only recast of a built value (an
+        /// element bound to a name, at another place than the literal's
+        /// element) projects past a step its inner's place does not share as a
+        /// whole recast of the inner, whose reach holds the inner's own cells.
+        /// So the own cells of each side of `v` (a join's, each side) that is a
+        /// written position of one route (`Written`) over a built value are
+        /// dropped below `v`, but for those any side's parts may hold: a built
+        /// side's parts, whole any other side (a leaf, a whole recast, a delta,
+        /// a side of two routes), whose contents are not known apart from it.
+        /// Everything found below `v` other than through that recast is in
+        /// some side's parts, so no object the parts may hold is dropped: one
+        /// side's contents still hold another side (`[ em, [ em ] ]`).
+        pub fn ownContents(f: *Frame, v: NodeId, written: *const Written, paths: []const PathId, path: PathId) Error!SetId {
+            const shapes = f.env.shapes;
+            const cells = f.env.cells;
+            var own: SetId = .none;
+            var held: SetId = .none;
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(f.gpa);
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(f.gpa);
+            try stack.append(f.gpa, v);
+            while (stack.pop()) |x| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if ((try seen.getOrPut(f.gpa, .{x.int()})).found_existing) continue;
+                const m = try shapes.force(f.gpa, f.account(), x);
+                switch (shapes.kind(m)) {
+                    .@"union", .positions, .choice => {
+                        try stack.appendSlice(f.gpa, &.{ .from(shapes.get(m).a), .from(shapes.get(m).b) });
+                        continue;
+                    },
+                    else => {},
+                }
+                // A built inner below place-only recasts, at one route.
+                var n = m;
+                while (shapes.kind(n) == .recast and !shapes.isWhole(n)) {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    n = try shapes.force(f.gpa, f.account(), .from(shapes.get(n).a));
+                }
+                if (shapes.kind(n) != .node or !written.holds(paths, path, x)) {
+                    held = try cells.sets.unionWith(f.gpa, f.env.charge, held, try shapes.reach(f.gpa, f.account(), &cells.sets, m));
+                    continue;
+                }
+                own = try cells.sets.unionWith(f.gpa, f.env.charge, own, try shapes.cellsOf(f.gpa, f.account(), &cells.sets, n));
+                var kt = shapes.overEntries(shapes.get(n).a);
+                while (kt.next()) |k| {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    held = try cells.sets.unionWith(f.gpa, f.env.charge, held, try shapes.reach(f.gpa, f.account(), &cells.sets, k.node));
+                }
+            }
+            return f.without(own, held);
+        }
+
+        /// `reach` without the cells of `drop` (`ownContents`).
+        pub fn without(f: *Frame, reach: SetId, drop: SetId) Error!SetId {
+            if (drop == .none or reach == .none) return reach;
+            const cells = f.env.cells;
+            var out: SetId = .none;
+            var it = cells.sets.iterate(reach);
+            while (it.next()) |e| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if (!cells.sets.member(drop, e.key)) out = try cells.sets.insert(f.gpa, f.env.charge, out, e.key, e.value);
+            }
+            return out;
         }
 
         /// The `Beside` index of the children of `it`, a node on a write's
