@@ -1540,7 +1540,7 @@ pub const Frame = struct {
     fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, rest: ?[]const Step, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
         const cells = f.env.cells;
         const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
-        if (refs.len != 0) try f.splitBeside(want, reach, refs, kept, relied);
+        if (refs.len != 0) try f.splitBeside(want, reach, refs, folded, kept, excl, relied);
         for (want.params.items) |c| {
             try f.env.charge.reserve(f.gpa, .inspection, 1);
             // The base's cell, or its canonical cell when a pattern refined it
@@ -1549,8 +1549,11 @@ pub const Frame = struct {
             // cell (#1383).
             const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
             const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, rest, refs) orelse continue;
-            if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
-                excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
+            // Two paths folding through one leaf at a summary path: the
+            // parameter's, or a part's canonical one (§2.2 *Parts*), owed as
+            // `excl` of the canonical cell.
+            if (folded and cells.origin(cu) == .param and try f.summaryPath(.from(cells.get(cu).b))) {
+                excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, cu.int(), 0);
                 continue;
             }
             kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), value);
@@ -1616,7 +1619,7 @@ pub const Frame = struct {
     /// against each refinement `r` of one base the write's path met: a
     /// side of `r`'s split relies on its κ, `r` itself keeps the base's
     /// cell (`Cell.alias`).
-    fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, kept: *SetId, relied: *CondId) Error!void {
+    fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, folded: bool, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
         const cells = f.env.cells;
         const places = f.env.places;
         var it = cells.sets.iterate(reach);
@@ -1637,7 +1640,15 @@ pub const Frame = struct {
                     if (cells.base(r) != db) continue;
                     switch (cells.alias(places, d, r)) {
                         .no => {},
-                        .yes => kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), e.value),
+                        // The write's own position, met again where two paths
+                        // fold through one leaf (`a` projected by every
+                        // `#QN.k` is `part a·⟲`): owed as `excl` of the
+                        // canonical cell, as `keepBeside` owes a parameter's.
+                        .yes => if (folded and cp.origin == .param and try f.summaryPath(.from(cp.b))) {
+                            excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, cu.int(), 0);
+                        } else {
+                            kept.* = try cells.sets.insert(f.gpa, f.env.charge, kept.*, c.int(), e.value);
+                        },
                         .under => |s| {
                             const k = cells.splitOf(s).cond;
                             relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, if (k == .none) Cond.lost else k);

@@ -1,0 +1,16 @@
+-- ownership (project): `QuadChildren` with the callees in another module
+-- (ownership-v2.md §2.2 *Parts*, #1422): `Quad.f` writes each grandchild's
+-- list through `Quad.h` and owes `excl π1#QN.k⟲#QL.0` in its block, which a
+-- call here discharges: refused over grandchildren sharing one list,
+-- accepted over distinct ones.
+import Quad exposing (Q, QN, QL)
+
+
+pub fShared : ⊤ → Q
+fShared ⊤ =
+    l = QL [ 1 ]
+    Quad.f (QN (QN l l l l) (QL []) (QL []) (QL []))
+
+
+pub fDistinct : ⊤ → Q
+fDistinct ⊤ = Quad.f (QN (QN (QL [ 1 ]) (QL [ 2 ]) (QL [ 3 ]) (QL [ 4 ])) (QL []) (QL []) (QL []))
