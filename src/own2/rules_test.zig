@@ -54,7 +54,7 @@ const layers = [_]Entry{
     // join's place.
     // 3 820 since #1420: positions saturate at two, their count maps, the
     // rebuild and the nodes it dropped (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3820 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3880 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -95,6 +95,8 @@ const layers = [_]Entry{
     // 1 160 since #1308: the four-file split (§5) leaves here the columns,
     // `init`/`deinit`, the bindings of the three parts' methods, `propagate`
     // with its memos, and `widenValue`.
+    // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
+    // projection correspondence (§2.9 *Keyed where a reader looks*).
     .{ .file = "Cond.zig", .layer = 6, .max_lines = 1160 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
@@ -186,7 +188,7 @@ const layers = [_]Entry{
     // a forward name only on a cycle, and the safety check of each reach.
     // 1 280 since #1399: a projection decoded with its DAG's sides the other
     // way round is the reader's projection (`sameDag`).
-    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1280 },
+    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
     .{ .file = "Ownership.zig", .layer = 16, .max_lines = 305 },
     // 500 since #1398: the dump checks a module after its imports and reads

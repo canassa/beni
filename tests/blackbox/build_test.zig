@@ -10352,7 +10352,7 @@ test "the checker v2's growth over a tower of one-element literals with a new pa
 /// One of §2.9's fixed-place tower families (Appendix B *Counted recursive
 /// families*) at `n` written levels, as `tower` in `Main`, or a push chain
 /// of `n` statements over a parameter, as `chain` (#1419).
-const TowerFamily = enum { one, wide, twin, param, mutual, maybe, wrap, wrap_imported, push_param };
+const TowerFamily = enum { one, wide, twin, param, mutual, maybe, wrap, wrap_imported, push_param, choice };
 
 /// `family`'s program at `n` levels: `Main.beni`, and `Lib.beni` for an
 /// imported helper.
@@ -10399,6 +10399,11 @@ fn towerProgram(w: *World, family: TowerFamily, n: u32) !void {
             try w.write("Lib.beni", "pub type Rose =\n    Rose (List Rose)\n\n\npub wrap : Rose → Rose\nwrap r =\n    Rose [ r ]\n");
             try src.appendSlice(a, "import Lib\n\n\npub tower : ⊤ → Lib.Rose\ntower ⊤ =\n    r0 = Lib.Rose []\n");
             for (1..n + 1) |k| try src.print(a, "    r{d} = Lib.wrap r{d}\n", .{ k, k - 1 });
+        },
+        .choice => {
+            // K: a choice of a level and the level below (§2.9 *Choice controls*).
+            try src.print(a, "{s}pub tower : Bool → Rose\ntower c =\n    r0 = Rose []\n", .{rose});
+            for (1..n + 1) |k| try src.print(a, "    r{d} = if c then Rose [ r{d} ] else r{d}\n", .{ k, k - 1, k - 1 });
         },
         .push_param => {
             try src.appendSlice(a, "pub chain : List Int → List Int\nchain x0 =\n");
@@ -10459,9 +10464,7 @@ fn expectTowerNLogN(family: TowerFamily, sizes: []const u32, per: u64, bytes: bo
 // *Counted recursive families*). Each size runs twice (the warm and the cold
 // walk), so the sizes are what a test budget of 1 s holds: 10 / 40 / 160
 // levels (#1426). Their records per n·log₂(n + 2) fall with n in every
-// family. Two families are not here. K is quadratic again since its joins
-// key every node of the joined DAG (#1428). `Rose [ r, r ]` is counted
-// below, but not in n log n (#1420).
+// family. `Rose [ r, r ]` is counted below, but not in n log n (#1420).
 
 test "the checker v2 counts a tower of one-element literals in n log n (Rose [ r ])" {
     // 1 834 / 7 174 / 30 352 records: 51, 33 and 26 per n·log₂(n + 2).
@@ -10518,6 +10521,17 @@ test "the checker v2 keeps a dropped positions node's shared entry (positions sa
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "res [*] fresh2 ~π2 π2 π3[*]{shared},") != null);
+}
+
+test "the checker v2 counts a tower of joins of a level and the level below in n log n (K)" {
+    // K keys a join's κ on the joined DAG node, which a reader meets by the
+    // projection correspondence (§2.9 *Keyed where a reader looks*, #1428):
+    // 13 056 / 64 744 / 138 217 records at 10 / 40 / 80, 363, 300 and 272
+    // per n·log₂(n + 2); 292 195 (249) at 160. Keying every node of the DAG
+    // below it made K quadratic (706 567 at 80, refused at 160). 160 is not
+    // gated: its block writes Θ(n²) positions, past the allowance (#1450), and
+    // its dump prints a 7 MB summary (#1426).
+    try expectTowerNLogN(.choice, &.{ 10, 40, 80 }, 454, true);
 }
 
 test "the checker v2 counts a tower of two-element literals in n log n (W, Rose [ r, Rose [] ])" {

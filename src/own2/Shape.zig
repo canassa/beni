@@ -91,6 +91,12 @@ pub const Table = struct {
     overs: std.MultiArrayList(OverNode) = .empty,
     over_intern: Ids.FixedDict(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
+    /// The projection correspondence (§2.9 *Keyed where a reader looks*): a
+    /// union, choice or positions node that `proj` made as the projection of
+    /// a DAG node → the head of its origins in `proj_origins`, each `(that
+    /// node, the step's word, the next origin)` (`projectedImage`).
+    proj_origin: Ids.FixedDict(1) = .{},
+    proj_origins: std.ArrayList([3]u32) = .empty,
     memo_join: Ids.FixedDict(3) = .{},
     memo_leq: Ids.FixedDict(2) = .{},
     /// `leq`'s answers that rest on a coinductive assumption of the query
@@ -216,6 +222,8 @@ pub const Table = struct {
         t.overs.deinit(gpa);
         t.over_intern.deinit(gpa);
         t.memo_proj.deinit(gpa);
+        t.proj_origin.deinit(gpa);
+        t.proj_origins.deinit(gpa);
         t.memo_join.deinit(gpa);
         t.memo_leq.deinit(gpa);
         t.leq_provisional.deinit(gpa);
@@ -1790,6 +1798,13 @@ pub const Table = struct {
     pub fn setProj(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
         try account.reserve(.memo, 1);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = m.int();
+        try t.noteOrigin(gpa, account, n, s, m);
+    }
+
+    /// `m`, decoded as the projection of `n` at `s` (`BlockRead`), takes that
+    /// origin as one `proj` made does (§2.9 *Keyed where a reader looks*).
+    pub fn noteOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        return t.addOrigin(gpa, account, n, s, m);
     }
 
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
@@ -1824,6 +1839,16 @@ pub const Table = struct {
         return if (hit == Ids.none_int) null else NodeId.from(hit);
     }
 
+    /// Whether view `v` projects at `s` to the view of its template's
+    /// projection: a union or choice template (a join's) at the view's own
+    /// place with the step, where a call relabels a join's κ (§2.9 *Keyed
+    /// where a reader looks*). Elsewhere it projects as its answer does (#1350).
+    fn viewProjectsTemplate(t: *const Table, places: *const Place.Table, v: NodeId, s: Step) bool {
+        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        if (!isJoinKind(t.kind(template))) return false;
+        return t.place(v) == t.place(template) and places.child(t.place(template), s) != null;
+    }
+
     /// The nodes `n`'s projection at `s` reads the projections of.
     fn projBelow(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
@@ -1831,8 +1856,10 @@ pub const Table = struct {
             .recast => if (try t.recastPart(gpa, account, places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
             .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
-            // A view projects as its answer does.
-            .view => try stack.append(gpa, .{ .node = try t.force(gpa, account, n), .expanded = false }),
+            // A view projects as its answer does; the view of a DAG template
+            // projects to the view of the template's projection, the node a
+            // call's κ is keyed on (§2.9 *Keyed where a reader looks*).
+            .view => if (t.viewProjectsTemplate(places, n, s)) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }) else try stack.append(gpa, .{ .node = try t.force(gpa, account, n), .expanded = false }),
             else => {},
         }
     }
@@ -1860,6 +1887,12 @@ pub const Table = struct {
         // A view projects as its answer does, whose place may have a step
         // the template's has not: the actual at a type variable's place
         // (§2.11 *Re-rooting at a parameter*, #1350).
+        if (d.kind == .view and t.viewProjectsTemplate(places, n, s)) {
+            const tp: NodeId = .from(t.memo_proj.get(.{ d.a, s.word() }).?);
+            const out = try t.view(gpa, account, tp, d.b);
+            (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
+            return;
+        }
         if (d.kind == .view) {
             const hit = t.memo_proj.get(.{ t.memo_force.get(n).?.int(), s.word() }).?;
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = hit;
@@ -1907,7 +1940,36 @@ pub const Table = struct {
             .delta, .view => false,
         };
         if (made) try t.addConstruction(gpa, account, out, &.{n}, out.int() >= before);
+        // A DAG made as a DAG's projection may be no part of any value: a
+        // transport finds it through its origins (§2.9 *Keyed where a reader looks*).
+        try t.addOrigin(gpa, account, n, s, out);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
+    }
+
+    /// A union or a choice: the kinds a join of alternatives makes (§2.3).
+    fn isJoinKind(k: Kind) bool {
+        return k == .@"union" or k == .choice;
+    }
+
+    /// `m`, the projection of DAG `n` at `s`, takes that origin, each of a DAG's
+    /// kept, the latest first (§2.9 *Keyed where a reader looks*).
+    fn addOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        if (!isJoinKind(t.kind(n)) or !isJoinKind(t.kind(m))) return;
+        try account.reserve(.memo, 1);
+        const got = try t.proj_origin.getOrPut(gpa, .{m.int()});
+        const next: u32 = if (got.found_existing) got.value_ptr.* else Ids.none_int;
+        var i = next;
+        while (i != Ids.none_int) : (i = t.proj_origins.items[i][2]) {
+            if (t.proj_origins.items[i][0] == n.int() and t.proj_origins.items[i][1] == s.word()) return;
+        }
+        got.value_ptr.* = @intCast(t.proj_origins.items.len);
+        try t.proj_origins.append(gpa, .{ n.int(), s.word(), next });
+    }
+
+    /// Whether DAG node `n` is the projection of a DAG node (§2.9 *Keyed
+    /// where a reader looks*).
+    pub fn hasOrigin(t: *const Table, n: NodeId) bool {
+        return t.proj_origin.get(.{n.int()}) != null;
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`
@@ -5114,6 +5176,9 @@ test "#1158 review: a recast or a delta over a lazy node is one node before and 
 pub const TestInstantiation = struct {
     cellt: *Cell.Table,
     arg: NodeId,
+    /// When set, a parameter cell below the root is the argument projected
+    /// along its path; otherwise the argument whole.
+    places: ?*Place.Table = null,
 
     pub fn inst(x: *TestInstantiation) Table.Instantiation {
         return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot, .parts = parts };
@@ -5132,7 +5197,25 @@ pub const TestInstantiation = struct {
     fn leaf(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!NodeId {
         _ = env;
         const x = of(ctx);
-        return if (x.isParam(t.cells(template))) x.arg else t.leaf(gpa, account, t.place(template), t.cells(template));
+        if (!x.isParam(t.cells(template))) return t.leaf(gpa, account, t.place(template), t.cells(template));
+        const places = x.places orelse return x.arg;
+        // A parameter cell below the root stands for the argument there, as
+        // `Views`' `argAt` reads it: the argument projected along its path.
+        var it = x.cellt.sets.iterate(t.cells(template));
+        const p = while (it.next()) |e| {
+            if (x.cellt.origin(.from(e.key)) == .param) break x.cellt.get(.from(e.key));
+        } else unreachable;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(gpa);
+        var at: Ids.PathId = .from(p.b);
+        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try steps.append(gpa, places.pathStep(at));
+        var out = x.arg;
+        var k = steps.items.len;
+        while (k > 0) {
+            k -= 1;
+            out = (try t.proj(gpa, account, places, x.cellt, out, steps.items[k])) orelse return t.nothing(gpa, account, t.place(template));
+        }
+        return out;
     }
 
     fn parts(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId, out: *std.ArrayList(Table.LeafPart)) Error!void {
@@ -5235,7 +5318,7 @@ test "a view of every kind forces to its eager image: map, widen and join read i
     const arg = try f.shapes.leaf(gpa, &f.account, list, try f.site(20, list, .list));
     const template = try everyKind(&f, p1, a_site, b_site);
     const eager = try everyKind(&f, arg, a_site, b_site);
-    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg, .places = &f.places };
     f.shapes.instantiation = ti.inst();
     const v = try f.shapes.view(gpa, &f.account, template, 0);
     const Id = struct {

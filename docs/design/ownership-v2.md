@@ -1594,30 +1594,67 @@ relative to the value's root, and the argument's snapshot is linked under the ar
 back to it): they are its sparse frontier, the routes by which `deep`, `kappaLeq` and a block find what is stored below it
 (#1129).
 
-**Keyed where a reader looks** [M 2026-10-31, #1399]. A join of alternatives (`propagate`'s `.alternatives`:
-a branch join, `Summary.joinRes`, a supplies join, `widenValue`'s carry) sets κ at every position of the joined
-node from the members, keyed by the node it walks there: `proj(joined, q)`. Below a `choice` or a `union` that
-node is a new DAG (`proj` of a choice is the choice of its arms' projections), and no part of the value names
-it. A reader that descends the value's own structure never meets it. A call's view expands a choice into the
-choice of its arms' views and projects arm by arm (`expandView`), so a caller at `q` meets the views of the arms'
-nodes, never the view of `proj(joined, q)`. `map`'s relabelling (`kappaRelabel`) and the printer walk the arms
-too. Only an in-walk reader that projects the joined node itself meets it. So each node of the DAG below
-`proj(joined, q)` (its union, choice and positions sides, recursively) that a member holds is keyed at the same
-position too, with what the members store for it at their own positions, joined: a built node a member holds
-with no entry gives `lost` (the built-node rule above), a recast gives the member's read of it. A leaf's entry
-that is no stronger than its derivation is left out, as everywhere else. This only weakens a node's read,
-because each value written is a member's own reading there. A reader at `q` joins the reads of the nodes it
-meets, which are the members' nodes, so through the view it reads what the members read. The entry on
-`proj(joined, q)` stays, for the in-walk reader and the block (§3.6). A node that no member holds (an image that
-`widen` made, a set leaf that `join` merged from the members' leaves) is left as it reads (#1406). Keying it
-with the joined κ makes a recursive group's rounds diverge: `kappaLeq` projects the port along a round's
-frontier and meets a node that no `propagate` frame walked. A `runtime_safety` build checks at the end of each
-such join that every built side (a node, a delta or a recast) that a member keys is keyed at that position.
-The branch join was already right by accident. It merges its arms' snapshots into the output first, so the
-arms' nodes keep their own entries. `Summary.joinRes` (a recursive group's port, #1395) starts from nothing.
-There, a caller of `build x n = if n == 0 then [] else List.push (build x (n − 1)) x` read `yes` where the
-port stores `shared` (`GroupJoinShared`). On master no program reached this, because only a group's rounds
-build a class join.
+**Keyed where a reader looks** [M 2026-10-31, #1399; rebuilt by S3b slice 5a, #1447]. A join of alternatives
+(`propagate`'s `.alternatives`: a branch join, `Summary.joinRes`, a supplies join, `widenValue`'s carry) sets κ
+at every position of the joined node from the members, keyed by the node it walks there: `D = proj(joined, q)`.
+Below a `choice` or a `union` that node is a new DAG (`proj` of a choice is the choice of its arms'
+projections), and no part of the value names it. The join keys `D` and nothing below it, and every reader
+reaches `D`:
+
+- **An in-walk reader** projects from the value's root (a demand, `deep`, `kappaLeq`, `propagate`'s frames, the
+  block's `successors`), so it meets `D` itself. Its read of a DAG node joins the node's own entry with its
+  sides' reads (the read machine's *inner* task).
+- **A call** relabels the class's entry on `D` onto `view(D, E)`, as it relabels every class node (`Calls.apply`).
+  A caller projects the call's view, and **the view of a union or choice template projects to the
+  view of the template's projection** (`Shape.proj`, `viewProjectsTemplate`): `proj(view(C, E), s) =
+  view(proj(C, s), E)`, which is `view(D, E)`. Its answer is the template DAG's own expansion, the views of
+  `D`'s sides. Nothing is computed at the call. A view of any other template projects as its answer does, and so
+  does a view at another place than its template's, or a template whose place lacks the step (a type variable's
+  place, instantiated, #1350).
+- **Read-off** (`map`, then `kappaRelabel` one radix node of an entry map at a time, `relabelMap`) never meets
+  `D`. The **projection correspondence** carries it there. `Shape.proj` records each union or choice
+  node it makes from another, with that node and the step (`proj_origins`, every such origin kept). `BlockRead`
+  records the projections it decodes (`noteOrigin`). The image of `D` is `proj(image(o), s)` for the first
+  origin `(o, s)` that leads to an image: `o`'s own, when `map` met it, or, up `o`'s origins, the image of
+  another such projection (`Cond.projectedImage`, memoised per relabel, on an explicit stack). That is the node a
+  reader of the published class meets when it projects `res`. The entry is keyed there. A `relabelMap` leaf
+  costs one memoised lookup more, so the transport stays per submap and source-sized.
+- **The printer** descends the value's own structure. It carries the outermost union or choice on its way, projected
+  along each step since, and joins the entry stored for that projection into each node's read: what a reader at
+  that path reads.
+
+These three readers act on unions and choices only, the kinds a join of alternatives makes (§2.3). A
+`positions` node is a literal's (`together`). No transport carried its entries before #1447, and none does now.
+
+**The members' snapshots are merged first.** Every join of alternatives starts from the members' snapshots
+merged (`kappaMerge`). The branch join always did, and `Summary.joinRes` and the supplies join do so too.
+`widenValue` has one member, the value it widens, and merging its snapshot whole would fold its unfolded
+positions into the image's folds, collapsing them. So `propagate` keeps a lone member's entries at each position
+it walks outside a fold (a widened image keeps the parts off its cycle as they are). Each side of `D` that a member
+holds then keeps that
+member's entries, and a built side keeps its certificate (#1093: a join of two built records reads the members'
+join, not `lost`). Where two members store one key, `kappaMerge` joins them. A built side that one member
+certifies, and another holds with none, reads that certificate as a side. Read alone, that would be too strong.
+But no reader reads a side of `D` alone, and `D`'s entry `k` is the members' reads joined, which holds that
+member's `lost`.
+
+**A side that no member holds** (#1406): an image that `widen` made, or a set leaf that `Shape.join` merged from the
+members' leaves. It reads its own derivation as a side. It is never read alone: every reader at `q` reaches `D`
+or its image, whose read joins `k` with the sides' reads. So what a reader reads there is `k` joined with the
+side's derivation, never stronger than `k`. That is the argument #1406 asked for. `Cond.zig` pins it (*a side no
+member holds reads the join's κ joined with its derivation, never stronger*). Nothing is keyed on such a side,
+so `kappaLeq`'s projection of a group's port meets the same entries in every round. 4a's `MarkerAcross.incAll`,
+`LevelRecursiveUpdates.incAll`/`incAll2` and `WriteOneLevel.incAll2` converge in 5 walks, as on master
+[M 2026-10-31].
+
+**Why the eager rule went** (#1428). #1408 keyed every node of the DAG below `D` that a member holds, with the
+members' entries for it (`leafEntries`). That is Θ(|DAG|) per position. In K, the DAG at level k holds every
+earlier level's choice and `Rose` nodes, so K was quadratic: 16 842 / 187 601 / 706 567 records at
+10 / 40 / 80, refused at 160 [M 2026-10-31]. Through the correspondence, K is 13 056 / 64 744 / 138 217 at
+10 / 40 / 80, 292 195 at 160 and 2 069 326 at 1 000. That is 363, 300, 272, 249 and 207 records per
+n·log₂(n + 2), falling (`build_test.zig` counts 10 / 40 / 80). K's block still writes Θ(n²) positions, past the
+allowance at 160 (#1450). Its time is #1426's. `GroupJoinShared` and `GroupJoinSharedImported` keep v1's refusals.
+A caller of `build x n = if n == 0 then [] else List.push (build x (n − 1)) x` reads the port's `shared`.
 
 **Recursive folds and their read.** `widen` identifies distinct recursive levels in the stored shape.
 Its shape quotient and snapshot quotient are one value operation, at read-off and at a fixpoint unknown.
@@ -2861,6 +2898,14 @@ cannot share an interpretation memo; repeated uses under the same immutable inpu
 preserves every observable read. Callback-result labels are freshened only by invocation; captured cells
 are never freshened. Cyclic grafts follow the tie-before-read protocol below; nested substitutions
 cannot reset an outer call's memo.
+*As built (S3b slice 5a, #1447):* the hook is a correspondence of nodes, not of positions. A transport maps an
+entry map one radix node at a time (`relabelMap`), so a submap that many positions share is mapped once. Walking
+`(old node, κ position)` pairs would be Θ(n²) on K, whose snapshot holds Θ(n²) entries in O(n log n) map nodes.
+The correspondence has two parts. A node's image is the transport's own (a view at a call, `map`'s image at
+read-off). A DAG that a projection made, which no part of the value names, maps through its origin: at a call,
+to the view of the template's projection, and at read-off, to the projection of its origin's image (§2.9
+*Keyed where a reader looks*). A per-position count stays only where `map` interns two sources into one image
+(`map_shared`).
 
 **Views meeting cycles, links, and folds (S3b).** A call view contains the callee template reference,
 actual value roots (shape **and** κ), one invocation identity and a constant-width substitution link.
@@ -2982,9 +3027,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   relabelled through `force`, so the published summary is keyed by forced ids. A read below a
   call's re-rooted actual may cross into the actual's own snapshot, and the class's conditions are
   instantiated when read
-  (*κ across a call*, below; #1265). The view of a choice projects arm by arm, so the view of a joined node's
-  projection is never met: a join keys the members' entries on that node's DAG sides too, which the arms' views meet
-  (§2.9 *Keyed where a reader looks*, #1399).
+  (*κ across a call*, below; #1265). The view of a union or choice template projects to the view of
+  the template's projection, so a caller at `q` meets `view(proj(joined, q), E)`, the node the class's entry
+  for a joined DAG is relabelled onto (§2.9 *Keyed where a reader looks*, #1399, #1447).
 - **`fold_cond` never keys a view.** `widen` forces as it descends, so its fold certificates
   (`Cond.fold_cond`) are made over forced nodes and keyed by them; Block reads them there (§3.6).
 - **Cycles, links and folds.** A widened class's knot needs no tie protocol. `view(T, E)` of a cyclic
@@ -4536,6 +4581,10 @@ set_summary: side table (SetId, MapId, immutable context/dependency vector, summ
 memo_merge: (choice | together, unordered immutable cursor pair, map/correlation context) →
             completed content-interned merge; no choice/coexistence result sharing
 memo_prop : §2.9's clean rank-qualified state → completed subtree; no ancestor-dependent fold result
+transport: a node's image, and a DAG a projection made by its origin (Shape's proj_origins: node → its
+            (DAG, step) origins, every one kept; projectedImage, memoised per relabel): the projection of
+            the origin's image (§2.9 *Keyed where a reader looks*, #1447); a join of alternatives starts
+            from its members' snapshots merged and keys the joined DAG node alone
 ```
 
 ### 3.4a The liveness index (`Liveness.zig`)
@@ -5488,7 +5537,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 240 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 820 (#1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 880 (#1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
@@ -5514,7 +5563,7 @@ L0  Ids
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
-| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
+| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 300 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
 | `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
 | `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
@@ -6659,7 +6708,7 @@ A defect that a fixture finds gets its own issue, and its fix lands in the PR th
 
 | PR | Builds | Fixtures | Depends on | Done when |
 |---|---|---|---|---|
-| 5a κ transport | `Shape.map`'s correspondence hook. It reports each `(old node, new node)` with its child edges and back edges, per substitution context. `Cond` transports a snapshot along it: read-off, `Calls.apply` and `BlockRead` stop relabelling by node. A κ root's key holds the invocation (§2.9). A projection of a view gives the projection of its eager image (#1313). A join of two built records reads the members' join (#1093). `Summary.eq` is `leq` both ways (#1094). Block positions close over `Cond.frontier` (#1082). #1406 is answered: a fix that keeps the groups converging, or an argument. | `o/KappaLeafJoin`, `o/KappaEmptyProjection`, `o/IdentityMapKappa`, `o/SharedOwnerRoutesJoin` (a join under two shared-owner routes), `KappaTransport`'s S3b half (relabel, projection, union, block), `ViewLinkedSnapshot`, `LinkedJoinCertificate`, `RepeatedPathCall` (closes #1122), `JoinedCallContexts`. Each compares selected κ reads, `deep` and semantic inclusion before and after `map` and `BlockRead`. | 4a merged. #1408 merged. #1308's pure split of `Cond.zig` merged first, so that the PR does not move code and change it at once. | The fixtures are green. `-Downership-full-cross-check` also checks the by-node relabelling against the correspondence. They differ only where a pinned fixture says the new read is stronger. #1093, #1094, #1082, #1122, #1313 and #1406 close. No block changes, except where a fixture pins it. |
+| 5a κ transport | `Shape.map`'s correspondence hook. It reports each `(old node, new node)` with its child edges and back edges, per substitution context. *Amended (#1447, the manager's decision of 2026-10-31):* the transport stays per submap (`relabelMap`), and the correspondence gives node images and projection origins only, since a walk of `(node, position)` pairs is Θ(n²) on K (§2.11 *Instantiation boundary*). `Rose [ r, r ]` is not 5a's: it is not a transport problem, and it moves to #1420's own PR. `Cond` transports a snapshot along it: read-off, `Calls.apply` and `BlockRead` stop relabelling by node. A κ root's key holds the invocation (§2.9). A projection of a view gives the projection of its eager image (#1313). A join of two built records reads the members' join (#1093). `Summary.eq` is `leq` both ways (#1094). Block positions close over `Cond.frontier` (#1082). #1406 is answered: a fix that keeps the groups converging, or an argument. | `o/KappaLeafJoin`, `o/KappaEmptyProjection`, `o/IdentityMapKappa`, `o/SharedOwnerRoutesJoin` (a join under two shared-owner routes), `KappaTransport`'s S3b half (relabel, projection, union, block), `ViewLinkedSnapshot`, `LinkedJoinCertificate`, `RepeatedPathCall` (closes #1122), `JoinedCallContexts`. Each compares selected κ reads, `deep` and semantic inclusion before and after `map` and `BlockRead`. | 4a merged. #1408 merged. #1308's pure split of `Cond.zig` merged first, so that the PR does not move code and change it at once. | The fixtures are green. `-Downership-full-cross-check` also checks the by-node relabelling against the correspondence. They differ only where a pinned fixture says the new read is stronger. #1093, #1094, #1082, #1122, #1313 and #1406 close. No block changes, except where a fixture pins it. **As built (#1447):** a joined DAG node is keyed alone, and every reader reaches it (§2.9 *Keyed where a reader looks*): a caller through the view of the template's projection, read-off through the projection correspondence, the printer through its context. Every join of alternatives starts from its members' snapshots merged; widen keeps its one member's entries outside its folds. `leafEntries` is gone. K is 13 056 / 64 744 / 138 217 / 292 195 records at 10 / 40 / 80 / 160, counted at 10 / 40 / 80; its block is #1450. `GroupJoinShared` and its imported twin hold v1's refusals. The 4a groups converge in 5 walks, as on master. Over the 2 039 roots of `bench/ownership-roots.mjs`, no verdict changed; 100 roots differ in summary text or block bytes. `Summary.eq` is `leq` both ways (#1094). #1093, #1094, #1406 and #1428 close. #1082 is partly done (the block writes `D` where readers look, pinned by a round trip), and #1122 and #1313 stay open. |
 | 5b `sep` pairs for S4 | Moved to S4 (#1441). In S3b no stored atom has two sides that `ι⋆` merges, so there are no pairs to record. They first exist in S4 with the `cb` labels and `foldWithin`'s members, and §2.12 publishes them as the certificate (P, ℓ, M), with no separate provenance store. S4's read-off, block (a version bump) and printer carry them; `o/SepPairsCall` and `o/SepPairsCallImported` move there. | None in S3b. | S4. | Closed in S3b. |
 | 5c the matrix, S3b halves | No new mechanism. The fixtures and the fixes they find. Rule (c) takes two refinements of distinct positions of one split as evidence (#1272). #1253's option B, if 4a does not finish it. | The seven 5c rows above. `o/LevelLimitCallers` (`inline xs xs`, `inline xs` with `xs` read again, `two` over a shared tree, each with a distinct twin). `p/MutualListField` moves to `o/`. `o/CallOrderReversed`: `CallOtherPaths` and its imported form with each module's declarations reversed, in `ordering_test.zig`. The source-level relabel of a fold step through a call (#1016's comment of 2026-10-28). | 4a. 5a for the rows that read κ after a call. | Every S3b row of the matrix has a fixture with its refusal and its control, same-module and imported, across 4a, 4c, 5a and 5c. No such fixture has a `not built` line, except one that a known entry gives to S4 or S5. #1253 and #1272 close. Appendix B names each fixture's path. |
 | 5d1 the counted towers | The eight families of §2.9 as counted tests at the default allowance (gated at 10 / 40 / 160, which the 1 s test budget holds and which separates n log n from n²; 1 000 is measured in the pull request, not gated: the manager's decision, 2026-10-31), with per-category counts, read-off and codec work and published bytes, normalised against n log(n + 2). Fixes for K and `Rose [ r, r ]` (#1420) and for the push chain over a parameter (#1419). | `build_test.zig`: the eight families, each with the identity, mutual and `Maybe` forms Appendix B names, and each memo disabled in turn so that its witness fails. K's exclusive seed stays one, with `yes` at the kids path (C×J). | None: no call or group is needed. It can start now. | Each family meets its bound. #1419 and #1420 close. |
