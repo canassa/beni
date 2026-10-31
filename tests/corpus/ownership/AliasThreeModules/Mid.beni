@@ -1,0 +1,6 @@
+priv : List Int → List Int
+priv xs = List.push xs 1
+
+
+pub a2 : List Int → List Int
+a2 = priv

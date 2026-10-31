@@ -1,0 +1,1 @@
+v2 refuses a write in a type's `eq` whose parameter is a type variable, as the checker's well-known shape allows (R-5.13.1); v1 has no such code.

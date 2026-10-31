@@ -1,0 +1,22 @@
+module Lib
+  block: 356 bytes, hash 4a6e60c477c3d187
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  11:13 Mid.priv xs: rejected later-use: xs is read again at 11:11
+  15:12 Mid.priv xs: accepted param
+  account kept: source 17, baseline 373, growth 0 of 65536, total 373, continuation 252 of 17408, demands 22, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 18
+  crossing: reads 0, redone 0, base moves 1
+  summary kept: π1 RAW, π1[*] RA; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account owned: source 11, baseline 321, growth 0 of 65536, total 321, continuation 211 of 11264, demands 18, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 12
+  summary owned: π1 RAW, π1[*] RA; res [*] π1[*]{excl π1[*]}, π1
+  block: 844 bytes, hash dbc4cb68ac520719
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Mid
+  2:11 List.push xs: accepted param
+  account priv: source 12, baseline 263, growth 0 of 65536, total 263, continuation 206 of 12288, demands 22, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 13
+  crossing: reads 0, redone 0, base moves 1
+  summary priv: π1 RAW, π1[*] A; res [*] π1[*]{excl π1[*]}, π1
+  block: 620 bytes, hash 3129c6c132b24402
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1
