@@ -420,6 +420,12 @@ const Grafter = struct {
     root: NodeId = .none,
     answer: NodeId = .none,
 
+    fn deinit(g: *Grafter) void {
+        g.folded.deinit(g.env.gpa);
+        g.deeps.deinit(g.env.gpa);
+        g.prefix_args.deinit(g.env.gpa);
+    }
+
     fn gpa(g: *Grafter) Allocator {
         return g.env.gpa;
     }
@@ -1206,6 +1212,7 @@ pub const Views = struct {
                 if (v.places.kind(at) != .@"var") return at;
                 var none: Scratch = .{};
                 var g = v.grafter(gpa_, account_, e, &none);
+                defer g.deinit();
                 return g.instantiatedPlace(at, d.cells);
             },
             .recast => return at,
@@ -1268,6 +1275,7 @@ pub const Views = struct {
         const v = of(ctx);
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
+        defer g.deinit();
         return g.viewLeaf(&v.members, t.place(template), t.cells(template));
     }
 
@@ -1275,6 +1283,7 @@ pub const Views = struct {
         const v = of(ctx);
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
+        defer g.deinit();
         return g.eagerParts(t.place(template), t.cells(template), out);
     }
 
@@ -1282,6 +1291,7 @@ pub const Views = struct {
         const v = of(ctx);
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
+        defer g.deinit();
         return g.imageCells(s, at);
     }
 
@@ -1296,9 +1306,7 @@ pub const Views = struct {
         const v = of(ctx);
         var none: Scratch = .{};
         var g = v.grafter(gpa_, charge.account, e, &none);
-        defer g.folded.deinit(gpa_);
-        defer g.deeps.deinit(gpa_);
-        defer g.prefix_args.deinit(gpa_);
+        defer g.deinit();
         if (!set) return t.instantiate(gpa_, charge, .from(k), .{ .ctx = &g, .atom = Grafter.atom });
         // An atom set (a class's `xreq`): each atom answered here, conjoined.
         var acc: CondId = Cond.yes;
@@ -1319,6 +1327,7 @@ pub const Views = struct {
         const cell = rerootCell(v.cells, t.cells(template)) orelse return null;
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
+        defer g.deinit();
         const x = v.cells.get(cell);
         return try g.argKappa(x.a, .from(x.b));
     }
@@ -1327,6 +1336,7 @@ pub const Views = struct {
         const v = of(ctx);
         var none: Scratch = .{};
         var g = v.grafter(gpa_, account_, e, &none);
+        defer g.deinit();
         const x = v.cells.get(c);
         if (x.origin == .param) return t.reach(gpa_, account_, &v.cells.sets, try g.argAt(x.a, .from(x.b), g.placeOfCell(c)));
         // A taken element, the call's materialisation (`takenImage`).
@@ -1495,9 +1505,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
     const cls = sums.get(class);
     const label = try env.cells.label(gpa, env.account(), inst, .none, false);
     var g: Grafter = .{ .env = env, .sums = sums, .args = args, .label = label, .s = s };
-    defer g.folded.deinit(gpa);
-    defer g.deeps.deinit(gpa);
-    defer g.prefix_args.deinit(gpa);
+    defer g.deinit();
     // 4: the result, by reference (§2.11 *Representation of a view*): the
     // view of `res` under this call's environment, or at an identity class
     // the actual itself. Nothing of the arguments is read or copied.
@@ -2261,6 +2269,7 @@ fn linkChainCost(n: usize, params: bool) !u64 {
     defer s.deinit(gpa);
     const label = try x.cells.label(gpa, &x.account, 0, .none, false);
     var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(x, lf) }}, .label = label, .s = &s };
+    defer g.deinit();
     const before = x.account.total();
     try testing.expect(try g.linkArgs(.none, root) != .none);
     return x.account.total() - before;
@@ -2385,6 +2394,7 @@ test "#1146: linking at each knot's own cursor builds the snapshot replaying roo
         const label = try x.cells.label(gpa, &x.account, 0, .none, false);
         const args = [_]Value{ .{ .node = lf, .kappa = ak }, .{ .node = lf, .kappa = ak } };
         var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+        defer g.deinit();
         const seed = (try x.conds.kappaSet(gpa, x.env().charge, .none, lf, Cond.yes)).ctx;
         try testing.expectEqual(try linkByRootPaths(&g, seed, root), try g.linkArgs(seed, root));
     }
@@ -2405,9 +2415,7 @@ test "#1146: a chain of knots as deep as the source is linked on a small stack" 
     defer s.deinit(gpa);
     const label = try x.cells.label(gpa, &x.account, 0, .none, false);
     var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &.{.{ .node = lf, .kappa = try linkArgKappa(x, lf) }}, .label = label, .s = &s };
-    defer g.folded.deinit(gpa);
-    defer g.deeps.deinit(gpa);
-    defer g.prefix_args.deinit(gpa);
+    defer g.deinit();
     var result: anyerror!Cond.Kappas = .none;
     const th = try std.Thread.spawn(.{ .stack_size = 64 << 10 }, struct {
         fn run(gr: *Grafter, r: NodeId, out: *anyerror!Cond.Kappas) void {
@@ -2566,6 +2574,7 @@ fn linkRandom(seed_: u64, flags: u32) !u8 {
     defer s.deinit(gpa);
     const label = try x.cells.label(gpa, &x.account, 0, .none, false);
     var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+    defer g.deinit();
     const want = try linkByRootPaths(&g, seed, knots[0]);
     const got = try g.linkArgs(seed, knots[0]);
     return linkDiff(&x.conds, want, got, 0);
@@ -2639,6 +2648,7 @@ test "#1149 review: a merge after a backedge's fold is a step the collapsed fold
     defer s.deinit(gpa);
     const label = try x.cells.label(gpa, &x.account, 0, .none, false);
     var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = label, .s = &s };
+    defer g.deinit();
     const want = try linkByRootPaths(&g, .none, n0);
     const got = try g.linkArgs(.none, n0);
     // The same conditions and fold kind; the cursor walk's fold also saw `[*]`.
@@ -3341,5 +3351,35 @@ test "#1219: an actual below a level stands for a value inside it, so its sep an
             x.account.allowance = std.math.maxInt(u32) - 1;
             try testing.expectEqual(kind != 0, x.cells.sets.member(cells, kc));
         }
+    }
+}
+
+test "a view's cells through a level free the grafter's memos, however far a limit lets it get" {
+    // `π0` at `arg·[*]·arg·⟲·arg` read through a view's grafter
+    // (`Views.cellsImage`) reaches `foldedCells`, whose memos the testing
+    // allocator must see freed (#1391). Read again with the allowance
+    // `extra` records past the start, the read stops at each reservation in
+    // turn, and a walk stopped by its limit frees what it allocated (#1381).
+    const gpa = testing.allocator;
+    for ([_]u32{ 0, 1, 2, 3, 4, 6, 9, 14, 30, std.math.maxInt(u32) - 1 }) |extra| {
+        var x: KnotFixture = .{};
+        try x.init();
+        defer x.deinit();
+        x.account.allowance = std.math.maxInt(u32) - 1;
+        const T = x.t_place;
+        const L = x.list;
+        const k = try listAt(&x, L, 20, null);
+        const a = try ctorOf(&x, T, x.arg, try listAt(&x, L, 21, try ctorOf(&x, T, x.arg, try listAt(&x, L, 22, try ctorOf(&x, T, x.arg, k)))));
+        var fp = try x.places.rootPath(gpa, T);
+        for ([_]Step{ x.arg, Place.Step.elem, x.arg, Place.Step.elem, x.arg }) |st| fp = (try x.places.extend(gpa, .growth(&x.account), fp, st)).?;
+        const fcell = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, fp, 0);
+        const label = try x.cells.label(gpa, &x.account, 0, .none, false);
+        const env_id = try x.views.add(x.env(), .from(0), &.{.{ .node = a }}, label);
+        const template = try x.shapes.leaf(gpa, &x.account, L, try x.cells.sets.insert(gpa, x.env().charge, .none, fcell.int(), 0));
+        x.account.allowance = @intCast(@min(@as(u64, x.account.growth) + extra, std.math.maxInt(u32) - 1));
+        _ = Views.cellsImage(&x.views, &x.shapes, gpa, &x.account, env_id, x.shapes.cells(template), L) catch |err| {
+            try testing.expectEqual(error.OwnershipLimit, err);
+            try testing.expect(extra != std.math.maxInt(u32) - 1);
+        };
     }
 }
