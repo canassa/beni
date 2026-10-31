@@ -1,0 +1,14 @@
+-- ownership: a member met three times or more in one positions tree
+-- (ownership-v2.md §2.3 *Saturation at two*). The constructor rebuilds the
+-- tree with each member at most twice, which changes no verdict, and no
+-- snapshot of the new value keys a node the rebuild dropped: the
+-- ReleaseSafe compiler checks it. `[ x, y, x, x ]` drops `[ x, x ]`'s
+-- node, and so does the spread over `[ x, y ]`.
+pub literal : List Int, List Int → List (List Int)
+literal x y = [ x, y, x, x ]
+
+
+pub spread : List Int, List Int → List (List Int)
+spread x y =
+    a = [ x, y ]
+    [ …a, x, x ]

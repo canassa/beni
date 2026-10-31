@@ -190,6 +190,18 @@ pub const Table = struct {
     memo_dag_members: Ids.FixedDict(2) = .{},
     dag_members_ties: Ids.FixedDict(2) = .{},
     track_relevance: bool = false,
+    /// §2.3 *Saturation at two*: the positions nodes `positions` made
+    /// (`counted`, a bit of each node's record), and their count maps once
+    /// asked for, by node, an index into `member_maps` (the members' keys and
+    /// those met twice, sets over `member_sets`).
+    counted: std.DynamicBitSetUnmanaged = .{},
+    member_counts: Ids.FixedDict(1) = .{},
+    member_maps: std.ArrayList([2]SetId) = .empty,
+    member_sets: Cell.Radix = .{ .category = .memo },
+    /// Under `runtime_safety`, while `record_dropped`: the positions nodes
+    /// a rebuild dropped (`TransferConstruct`'s κ-home check).
+    record_dropped: bool = false,
+    dropped: std.ArrayList(NodeId) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -240,6 +252,11 @@ pub const Table = struct {
         t.born.deinit(gpa);
         t.memo_dag_members.deinit(gpa);
         t.dag_members_ties.deinit(gpa);
+        t.member_counts.deinit(gpa);
+        t.counted.deinit(gpa);
+        t.member_maps.deinit(gpa);
+        t.member_sets.deinit(gpa);
+        t.dropped.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -1337,8 +1354,9 @@ pub const Table = struct {
     }
 
     /// `collect(n₁…nₖ)` (§2.3): a built value's elements under `[*]` as a
-    /// balanced `positions` DAG — never deduplicated or absorbed: the same
-    /// node on both sides is two positions, which κ reads as `shared`. One
+    /// balanced `positions` DAG — never deduplicated or absorbed below two
+    /// occurrences (*Saturation at two*, `positions`): the same node on both
+    /// sides is two positions, which κ reads as `shared`. One
     /// element is itself, so `[ x ]` joined with `[ x ]` stays one position.
     /// `collect` with the root's cell set its caller accumulated by one
     /// insertion per item, on the item's lane (§2.3, §4.1, #1098): the
@@ -1446,23 +1464,166 @@ pub const Table = struct {
         t.ties +%= 1;
     }
 
-    /// Two positions at one place (`collect`'s node, `proj`'s image of one).
+    /// Two positions at one place (`collect`'s node, `proj`'s image of one,
+    /// `without`'s and `eager`'s rebuilds), each member at most twice (§2.3
+    /// *Saturation at two*): when a member would occur three times or more,
+    /// the balanced tree over the members in first-occurrence order, each
+    /// once or twice.
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         const before = t.nodes.len;
-        const out = try t.positionsMake(gpa, account, cellsets, l, r);
+        // A side that is nothing (an empty leaf) is no position: no object
+        // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
+        // `[*]` past the empty list is `x`'s alone, not a new node per level.
+        const nothing_side: ?NodeId = if (try t.isNothing(gpa, account, r)) l else if (try t.isNothing(gpa, account, l)) r else null;
+        if (nothing_side) |out| {
+            try t.joinBases(gpa, account, out, &.{ l, r }, before);
+            return out;
+        }
+        // The count maps' test and the rebuild are a task of their own, never
+        // the caller's lane (a lane of `collect` holds only its item's
+        // constant work, §4.1). Two sides that are members alone cannot lose
+        // one: their test reads nothing.
+        const lost = if (!t.isCounted(l) and !t.isCounted(r)) false else blk: {
+            const task = try account.enter(gpa, null);
+            defer account.leave(task);
+            break :blk try t.losesOne(gpa, account, l, r);
+        };
+        if (lost) {
+            const out = try t.saturate(gpa, account, cellsets, l, r);
+            try t.joinBases(gpa, account, out, &.{ l, r }, before);
+            return out;
+        }
+        // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
+        const out = try t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
+        // A node made here is counted, from its birth and never later: a
+        // positions node another reader made (`map`'s, a view's expansion's,
+        // a knot's) is not, and stays one member to a parent. The mark is a
+        // bit of the node's record; its count map is made when a parent asks.
+        if (out.int() >= before) {
+            try t.counted.resize(gpa, t.nodes.len, false);
+            t.counted.set(out.int());
+        }
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
         return out;
     }
 
-    fn positionsMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
-        // A side that is nothing (an empty leaf) is no position: no object
-        // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
-        // `[*]` past the empty list is `x`'s alone, not a new node per level.
-        if (try t.isNothing(gpa, account, r)) return l;
-        if (try t.isNothing(gpa, account, l)) return r;
-        _ = cellsets;
-        // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
-        return t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
+    /// Whether `positions` made `n`: a node whose members a parent counts
+    /// (§2.3 *Saturation at two*). Every other node is one member.
+    fn isCounted(t: *const Table, n: NodeId) bool {
+        return n.int() < t.counted.bit_length and t.counted.isSet(n.int());
+    }
+
+    /// The members `n` stands for as a side, as `(keys, twice)` sets over
+    /// `member_sets`: a counted node's count map, or `n` alone.
+    fn sideCounts(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![2]SetId {
+        if (t.isCounted(n)) return t.countMap(gpa, account, n);
+        return .{ try t.member_sets.insert(gpa, .growth(account), .none, n.int(), 1), .none };
+    }
+
+    /// A counted node's count map, member → `{once, twice}` as the members
+    /// (`keys`) and those met twice or more (`twice`), memoised per node and
+    /// made on request, its counted sides first on an explicit stack. A
+    /// parent's map is its sides' merged by saturating sum (§2.3 *Cost*):
+    /// identical subtrees are skipped by identity, so a merge pays for its
+    /// changed spine. A record per map made.
+    fn countMap(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![2]SetId {
+        if (t.member_counts.get(.{n.int()})) |i| return t.member_maps.items[i];
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            if (t.member_counts.get(.{f.node.int()}) != null) continue;
+            const d = t.get(f.node);
+            if (!f.expanded) {
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                for ([_]u32{ d.a, d.b }) |s| if (t.isCounted(.from(s)) and t.member_counts.get(.{s}) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
+                continue;
+            }
+            const m = try t.mergeCounts(gpa, account, .from(d.a), .from(d.b));
+            try account.reserve(.memo, 1);
+            (try t.member_counts.getOrPut(gpa, .{f.node.int()})).value_ptr.* = @intCast(t.member_maps.items.len);
+            try t.member_maps.append(gpa, m);
+        }
+        return t.member_maps.items[t.member_counts.get(.{n.int()}).?];
+    }
+
+    /// The count map of `positions(l, r)`: the keys' union, and twice what
+    /// either side holds twice or both hold.
+    fn mergeCounts(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error![2]SetId {
+        const sets = &t.member_sets;
+        const g: Ids.Charge = .growth(account);
+        const cl = try t.sideCounts(gpa, account, l);
+        const cr = try t.sideCounts(gpa, account, r);
+        const both = try sets.intersection(gpa, g, cl[0], cr[0]);
+        return .{ try sets.unionWith(gpa, g, cl[0], cr[0]), try sets.unionWith(gpa, g, try sets.unionWith(gpa, g, cl[1], cr[1]), both) };
+    }
+
+    /// Whether `positions(l, r)` would hold a member three times: one side
+    /// holds it twice and the other holds it. A side that is one member is
+    /// looked up in the other's `twice`.
+    fn losesOne(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error!bool {
+        const sets = &t.member_sets;
+        if (!t.isCounted(r)) return sets.member((try t.countMap(gpa, account, l))[1], r.int());
+        if (!t.isCounted(l)) return sets.member((try t.countMap(gpa, account, r))[1], l.int());
+        const g: Ids.Charge = .growth(account);
+        const cl = try t.countMap(gpa, account, l);
+        const cr = try t.countMap(gpa, account, r);
+        return try sets.intersects(gpa, g, cl[1], cr[0]) or try sets.intersects(gpa, g, cl[0], cr[1]);
+    }
+
+    /// `positions(l, r)` with a member met three times or more: the
+    /// balanced positions tree over its members in left-to-right order of
+    /// first occurrence, each met twice or more twice (§2.3 *Saturation at
+    /// two*). Charged as a task of its own. Each counted node of the sides
+    /// is read once, so the work is the sides' distinct structure.
+    fn saturate(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        const twice = (try t.mergeCounts(gpa, account, l, r))[1];
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
+        // The counted nodes read, for the κ-home check (`recordDropped`).
+        var read: std.ArrayList(NodeId) = .empty;
+        defer read.deinit(gpa);
+        var order: std.ArrayList(NodeId) = .empty;
+        defer order.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.appendSlice(gpa, &.{ r, l });
+        while (stack.pop()) |n| {
+            if ((try seen.getOrPut(gpa, n)).found_existing) continue;
+            try account.reserve(.shape, 1);
+            if (t.isCounted(n)) {
+                if (std.debug.runtime_safety and t.record_dropped) try read.append(gpa, n);
+                const d = t.get(n);
+                try stack.appendSlice(gpa, &.{ .from(d.b), .from(d.a) });
+                continue;
+            }
+            try order.append(gpa, n);
+            if (t.member_sets.member(twice, n.int())) try order.append(gpa, n);
+        }
+        const out = try t.collect(gpa, account, cellsets, order.items);
+        if (std.debug.runtime_safety and t.record_dropped) try t.recordDropped(gpa, read.items, out);
+        return out;
+    }
+
+    /// The positions nodes a rebuild read that its tree does not hold:
+    /// `TransferConstruct` checks no snapshot of the new value keys one
+    /// (§2.3 *Saturation at two*: the κ home of a dropped node is empty).
+    fn recordDropped(t: *Table, gpa: Allocator, read: []const NodeId, out: NodeId) Error!void {
+        const kept = try t.marks.take(gpa);
+        defer t.marks.give(kept);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, out);
+        while (stack.pop()) |n| {
+            if ((try kept.getOrPut(gpa, n)).found_existing) continue;
+            if (!t.isCounted(n)) continue;
+            const d = t.get(n);
+            try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+        }
+        for (read) |n| if (!kept.contains(n)) try t.dropped.append(gpa, n);
     }
 
     /// How many arms `n`'s choice DAG has, an arm counted once per route,
@@ -4527,6 +4688,41 @@ test "#1372: map interns an image on no knot: a value relabelled again is the no
     try testing.expectEqual(c, try f.shapes.map(gpa, &f.account, c, {}, Same.same));
     // Two records of two sites that relabel alike are one image.
     try testing.expectEqual(once, try f.shapes.map(gpa, &f.account, try record2(&f, 9), &f, OneCell.relabel));
+}
+
+test "positions saturate at two: a third occurrence rebuilds the tree in first-occurrence order, off the item's lane" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const fa = try Place.Step.field(&f.account, 10);
+    const x = try f.shapes.leaf(gpa, &f.account, rec, try f.param(1, rec));
+    const y = try f.shapes.leaf(gpa, &f.account, rec, try f.param(2, rec));
+    const xx = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x });
+    // `[ x, x, x ]` is `[ x, x ]`, and so is `positions(positions(x, x), x)`
+    // (§2.3 *Saturation at two*).
+    try testing.expectEqual(xx, try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x, x }));
+    try testing.expectEqual(xx, try f.shapes.positions(gpa, &f.account, &f.cells.sets, xx, x));
+    try testing.expectEqual(xx, try f.shapes.positions(gpa, &f.account, &f.cells.sets, xx, xx));
+    // Two occurrences are the record as written: no rebuild.
+    const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y });
+    const xyx = try f.shapes.positions(gpa, &f.account, &f.cells.sets, xy, x);
+    try testing.expectEqual(xy.int(), f.shapes.nodes.items(.a)[xyx.int()]);
+    // `[ x, y, x, x ]`: the members in first-occurrence order, each at most
+    // twice, is `[ x, x, y ]`.
+    const g = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y, x, x });
+    try testing.expectEqual(try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x, y }), g);
+    // Projection distributes over the sides, so it saturates as well: the
+    // image of `positions(xx, xx)` is `xx`'s.
+    try testing.expectEqual(try f.proj(xx, fa), try f.proj(try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ xx, x }), fa));
+    // The count maps and the rebuild are their own task: a collection on the
+    // items' lanes charges each lane its positions node alone (§4.1).
+    var lanes: [6]Ids.Lane = undefined;
+    for (&lanes, 0..) |*l, i| l.* = .{ .atom = 100 + @as(u32, @intCast(i)), .role = .transfer_settlement };
+    const z = try f.shapes.leaf(gpa, &f.account, rec, try f.param(3, rec));
+    _ = try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &.{ z, y, z, x, z, z }, Table.lazy_cells, &lanes);
+    for (lanes) |l| try testing.expect(f.account.laneUsed(l) <= 1);
 }
 
 test "#1372: a positions node whose sides map to one node keeps both edges" {

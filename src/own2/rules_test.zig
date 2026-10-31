@@ -51,7 +51,9 @@ const layers = [_]Entry{
     // §5 says 3 600 since #1372: map's knot test and the flattening choice
     // join (§2.3); 3 350 since #1350, a view's instantiated place and a
     // join's place.
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3600 },
+    // 3 780 since #1420: positions saturate at two, their count maps and the
+    // rebuild (§2.3).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3780 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -117,7 +119,9 @@ const layers = [_]Entry{
     // 340 since #1457: patterns and splits, split out of Transfer (§5).
     .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
     // 350 since #1457: constructions, split out of Transfer (§5).
-    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 350 },
+    // 390 since #1420: the check that a positions rebuild leaves no κ entry
+    // on a node it dropped (§2.3 *Saturation at two*).
+    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 390 },
     // 170 since #1457: call application, split out of Transfer (§5).
     .{ .file = "TransferCall.zig", .layer = 10, .max_lines = 170 },
     // 740 since #1457: a use below a parameter's leaf, expanded after the
