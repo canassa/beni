@@ -77,8 +77,9 @@ const layers = [_]Entry{
     // 1 630 since #1386: a `sep` side below a constructor.
     .{ .file = "Calls.zig", .layer = 7, .max_lines = 1710 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
-    // #1386: two positions of one split beside a write.
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1940 },
+    // #1386: two positions of one split beside a write; 2 000 since #1367: an
+    // answered value on the write's path, read beside the path.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 2000 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },

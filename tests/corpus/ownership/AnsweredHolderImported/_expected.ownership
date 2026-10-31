@@ -1,0 +1,35 @@
+module Holder
+  13:31 List.push s.kept: accepted param
+  27:31 List.push s.kept: accepted param
+  40:47 List.push o.inner.kept: accepted param
+  53:47 List.push o.inner.kept: accepted param
+  summary g: π2 RA, π2.kept RAW[storage], π2.kept[*] A, π2.top RA; res .kept condition(fresh4) π2.kept{excl π2.top, sep π2.top π2.kept[*]}, .kept[*] ~condition(fresh1) ~π2.kept[*] ~π2.top, .top ~condition(fresh3) π2.top, condition(fresh2){lost} fresh501◦ π2
+  summary g3: π2 RA, π2.kept RAW[storage], π2.kept[*] A, π2.top RA; res .extra fresh2, .kept condition(fresh5) π2.kept{excl π2.top, sep π2.top π2.kept[*]}, .kept[*] ~condition(fresh1) ~π2.kept[*] ~π2.top, .top ~condition(fresh4) π2.top, condition(fresh3){lost} fresh501◦ π2
+  summary h: π2 RA, π2.inner.kept RAW[storage], π2.inner.kept[*] A, π2.inner.top RA; res .inner condition(fresh2){lost} fresh502◦, .inner.kept condition(fresh4) π2.inner.kept{excl π2.inner.top, sep π2.inner.top π2.inner.kept[*]}, .inner.kept[*] ~condition(fresh1) ~π2.inner.kept[*] ~π2.inner.top, .inner.top ~condition(fresh3) π2.inner.top, .other fresh5, fresh501◦ π2
+  summary h3: π2 RA, π2.inner.kept RAW[storage], π2.inner.kept[*] A, π2.inner.top RA; res .inner condition(fresh3){lost} fresh502◦, .inner.extra fresh2, .inner.kept condition(fresh5) π2.inner.kept{excl π2.inner.top, sep π2.inner.top π2.inner.kept[*]}, .inner.kept[*] ~condition(fresh1) ~π2.inner.kept[*] ~π2.inner.top, .inner.top ~condition(fresh4) π2.inner.top, .other fresh6, fresh501◦ π2
+  demands 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  15:12 List.push s.kept: accepted param
+  16:5 call Holder.g <record>.kept: accepted param (Holder.g writes π2.kept)
+  20:14 call Holder.g s.kept: accepted param (Holder.g writes π2.kept)
+  26:11 call Holder.g r.kept: rejected later-use: r.kept is read again at 27:28 (Holder.g writes π2.kept)
+  31:20 call Holder.g3 <record>.kept: rejected disjoint: another operand of the same operation reaches it (Holder.g3 writes π2.kept)
+  35:19 call Holder.g3 <record>.kept: accepted param (Holder.g3 writes π2.kept)
+  39:21 call Holder.h <record>.inner.kept: accepted param (Holder.h writes π2.inner.kept)
+  43:26 call Holder.h <record>.inner.kept: rejected disjoint: another operand of the same operation reaches it (Holder.h writes π2.inner.kept)
+  47:25 call Holder.h3 <record>.inner.kept: rejected disjoint: another operand of the same operation reaches it (Holder.h3 writes π2.inner.kept)
+  51:22 call Holder.g <call Holder.g>.kept: accepted param (Holder.g writes π2.kept)
+  51:34 call Holder.g <record>.kept: accepted param (Holder.g writes π2.kept)
+  summary f: π2.kept RAW[storage], π2.kept[*] RA, π2.top RA; res .kept condition(fresh7) ~condition(fresh5){lost} π2.kept{lost}, .kept[*] ~condition(fresh2) ~condition(fresh4) ~fresh1{excl π2.top} ~π2.kept[*] ~π2.top, .top fresh1{excl π2.top} ~condition(fresh4) ~condition(fresh6) ~π2.top, fresh502◦ ~condition(fresh3){lost} ~fresh501◦
+  summary viaParam: π1 RA, π1.kept RAW[storage], π1.kept[*] RA, π1.top RA; res .kept condition(fresh4) π1.kept{excl π1.top, sep π1.top π1.kept[*]}, .kept[*] ~condition(fresh1) ~π1.kept[*] ~π1.top, .top ~condition(fresh3) π1.top, fresh501◦ ~condition(fresh2){lost} ~π1
+  summary readAfter: π2 R, π3 RW[storage], π3[*] R
+  summary twice: π2 RA, π3 RAW[storage], π3[*] A; res .extra fresh6 ~condition(fresh5) ~π3{excl π2, sep π2 π3[*]}, .kept condition(fresh3){excl π2, sep π2 π3[*]} π3{excl π2, sep π2 π3[*]}, .kept[*] ~condition(fresh2) ~condition(fresh4) ~π2 ~π3[*], .top condition(fresh2) ~condition(fresh7) π2, fresh502◦ ~condition(fresh1){shared} ~fresh501◦
+  summary once: π2 RA, π3 RAW[storage], π3[*] A; res .extra fresh6 ~fresh1, .kept condition(fresh4){excl π2, sep π2 π3[*]} π3{excl π2, sep π2 π3[*]}, .kept[*] ~condition(fresh3) ~condition(fresh5) ~π2 ~π3[*], .top condition(fresh3) ~condition(fresh7) π2, fresh502◦ ~condition(fresh2){lost} ~fresh501◦
+  summary nested: π2 RA, π3 RAW[storage], π3[*] A; res .inner condition(fresh1){lost} fresh503◦ fresh504◦, .inner.kept condition(fresh3){excl π2, sep π2 π3[*]} π3{excl π2, sep π2 π3[*]}, .inner.kept[*] ~condition(fresh2) ~condition(fresh4) ~π2 ~π3[*], .inner.top condition(fresh2) ~condition(fresh6) π2, .other fresh5, fresh501◦ fresh502◦
+  summary nestedTwice: π2 RA, π3 RAW[storage], π3[*] A; res .inner condition(fresh1){lost} fresh503◦ fresh504◦, .inner.kept condition(fresh3){excl π2, sep π2 π3[*]} π3{excl π2, sep π2 π3[*]}, .inner.kept[*] ~condition(fresh2) ~condition(fresh4) ~π2 ~π3[*], .inner.top condition(fresh2) ~condition(fresh7) π2, .other condition(fresh6) fresh6 π3{excl π2, sep π2 π3[*]}, condition(fresh5){shared} fresh501◦ fresh502◦
+  summary innerTwice: π2 RA, π3 RAW[storage], π3[*] A; res .inner condition(fresh1){shared} fresh503◦ fresh504◦, .inner.extra condition(fresh5) fresh5 π3{excl π2, sep π2 π3[*]}, .inner.kept condition(fresh3){excl π2, sep π2 π3[*]} π3{excl π2, sep π2 π3[*]}, .inner.kept[*] ~condition(fresh2) ~condition(fresh4) ~π2 ~π3[*], .inner.top condition(fresh2) ~condition(fresh7) π2, .other fresh6, fresh501◦ fresh502◦
+  summary chained: π2 RA, π3 RAW[storage], π3[*] A; res .kept condition(fresh3){lost} π3{lost}, .kept[*] ~condition(fresh2) ~condition(fresh4) ~condition(fresh5) ~π2 ~π3[*], .top condition(fresh2) ~condition(fresh5) ~condition(fresh6) π2, fresh503◦ ~condition(fresh1){lost} ~fresh501◦ ~fresh502◦
+  demands 11: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 15: accepted 11 (fresh 0, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 3
+cause later-use 1

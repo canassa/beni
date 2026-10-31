@@ -1823,6 +1823,25 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      The cost is a precision loss where the approximation is the summary's, not the value's
      (`Split.bumpHead`'s `~π1`, #1253). A path above that is only read (`R`, to reach `q`) holds
      nothing beside the write.
+     *Amended 2026-10-31 (#1367): what an answered path holds beside the write.* At an exact `q`, the
+     answered path holds the written object through `q`'s own steps, as that object itself, and that
+     is the write, not a second object. It counts for what it holds beside `q`: at each node of the
+     actual from the answered path down to `q`'s last step, the node's own cells and its children off
+     `q`, each whole. A path between the answered one and `q` counts so even where the class marks
+     it `R` only, because the answer holds it. A leaf there holds the base as itself when the base's
+     cell is the leaf's parameter cell `q`'s remaining steps below it; the leaf's other paths are
+     distinct objects of the caller (rule (c)). A `choice` or a `union` is read arm by arm, since its
+     projections are its arms' (§2.3). Any other value (a `delta`, a `recast`, `positions`) is read
+     whole, as before. This is sound because the callee's own walk checks its answer against its
+     own write: `keepAll`'s push is refused `alias` in `keepAll`. What a call can add is an alias
+     that the callee cannot see: the written object at another path of the actual. That alias stays
+     a conflict: `keepAll`'s other subtree, `{ top = top, kept = kept, extra = kept }`. A caller that
+     reads the old holder after the call is refused by the base's later use (§2.8 condition 5), not
+     by this rule. So `g i s = if i ≥ 10 then s else { top = s.top, kept = List.push s.kept s.top }`
+     over `{ top = top, kept = kept }`, over the caller's own `s` and over another call of `g` is
+     accepted, as v1 accepts it. Through `[*]` or `⟲`, `q` stands for several positions, and the
+     answered path is read whole as before: their distinctness is the class's `xreq` (step 7).
+     Pinned: `AnsweredHolder` and `AnsweredHolderImported`, every line v1's.
    - **(b) A path below `q` counts when `q` goes through `[*]` or `⟲`.** Such a `q` names several
      positions, and a path below it may be below another of them: `f ys = case ys of [ a, b ] → case b
      of [ c ] → ( List.push a [], c )` writes `π1[*]` and answers `π1[*][*]`, and over `[ em, [ em ] ]`
@@ -4550,7 +4569,7 @@ L0  Ids
 | `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 010 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk) |
 | `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 710 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
 | `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 1 940 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write) |
+| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 000 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path) |
 | `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
 | `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 330 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places) |
