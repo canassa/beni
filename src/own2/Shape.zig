@@ -1988,10 +1988,11 @@ pub const Table = struct {
     /// with origins, its template's, each origin's node then viewed under the
     /// view's environment (`env`, none for its own): a call relabels a
     /// class's join entry onto the view of its node (§2.9 *Keyed where a
-    /// reader looks*).
-    pub fn originHead(t: *const Table, n: NodeId) ?struct { head: u32, env: u32 } {
+    /// reader looks*). `templates` false: own origins only (a recursive group's
+    /// read-off, whose rounds the port join carries, #1466).
+    pub fn originHead(t: *const Table, n: NodeId, templates: bool) ?struct { head: u32, env: u32 } {
         if (t.proj_origin.get(.{n.int()})) |h| return .{ .head = h, .env = Ids.none_int };
-        if (t.kind(n) != .view) return null;
+        if (!templates or t.kind(n) != .view) return null;
         const h = t.proj_origin.get(.{t.nodes.items(.a)[n.int()]}) orelse return null;
         return .{ .head = h, .env = t.nodes.items(.b)[n.int()] };
     }

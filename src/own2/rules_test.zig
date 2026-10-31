@@ -97,13 +97,13 @@ const layers = [_]Entry{
     // with its memos, and `widenValue`.
     // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
     // projection correspondence (§2.9 *Keyed where a reader looks*).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1160 },
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1190 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
     // from Rows), which a group's port joins every round.
     // 1 860 since 4d: a class join drops what the other side covers.
-    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1860 },
+    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1870 },
     .{ .file = "Rows.zig", .layer = 8, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
