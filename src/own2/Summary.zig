@@ -600,7 +600,12 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        const joined = try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
+        // `b`'s `res` under `a`'s: `a`'s shape and map are the join's. A
+        // group's later rounds often move only `xreq`, and joinRes would
+        // propagate κ over the whole unchanged `res` again (#1423).
+        const res_under = try env.shapes.leq(gpa, env.account(), env.places, env.cells, cb.res, ca.res) and
+            try env.conds.kappaLeq(gpa, env.charge, env.view(), cb.kappas, cb.res, ca.kappas, ca.res, false);
+        const joined: Joined = if (res_under) .{ .node = ca.res, .kappas = ca.kappas } else try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
