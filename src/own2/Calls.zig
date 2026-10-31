@@ -2578,11 +2578,15 @@ test "#1146: the chain of knots applied as a class, its view linked and read, co
     // call view (§2.11): 197 / 799 / 3 429 / 14 891 / 64 561 records at
     // 4 … 1 024 knots (254 … 89 186 with parameters).
     for ([_]bool{ false, true }) |params| {
+        const sizes = [_]usize{ 4, 16, 64, 256, 1_024 };
         var cost: [5]u64 = undefined;
-        for ([_]usize{ 4, 16, 64, 256, 1_024 }, 0..) |n, i| cost[i] = try applyChainCost(n, params);
+        for (sizes, 0..) |n, i| cost[i] = try applyChainCost(n, params);
         // Four times the knots, about four times the records (n log n at
-        // most), never sixteen.
-        for (1..5) |i| if (cost[i] > 6 * cost[i - 1]) {
+        // most), never sixteen; and at most about 1.7 times the most
+        // measured per knot (63, 87 with parameters), so a doubled
+        // constant fails too.
+        const per: u64 = if (params) 150 else 110;
+        for (1..5) |i| if (cost[i] > 6 * cost[i - 1] or cost[i] > per * sizes[i]) {
             std.debug.print("params {}: {any}\n", .{ params, cost });
             return error.TestUnexpectedResult;
         };
