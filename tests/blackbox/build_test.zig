@@ -10720,6 +10720,64 @@ test "the checker v2 says why a summary is not printed" {
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
 }
 
+test "the checker v2 joins a group's port without its unchanged res again" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1423: two mutual writers whose late rounds move only `xreq`. Each
+    // port join propagated κ over the whole unchanged `res`: `wa` cost
+    // 289 574 growth in 10 walks. Kept when the round's `res` is under the
+    // port's, `wa` costs 35 273 and `wb` 62 393, under this module's 100 000.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\@ownership_summary_size(module, 100000)
+        \\
+        \\
+        \\type A
+        \\    = A (List Int) B B
+        \\    | AL
+        \\
+        \\
+        \\type B
+        \\    = B A
+        \\    | BL
+        \\
+        \\
+        \\pub wa : A → A
+        \\wa a =
+        \\    case a of
+        \\        A xs b1 b2 →
+        \\            A (List.push xs 1) (wb b1) b2
+        \\
+        \\        AL →
+        \\            AL
+        \\
+        \\
+        \\pub wb : B → B
+        \\wb b =
+        \\    case b of
+        \\        B a →
+        \\            B (wa a)
+        \\
+        \\        BL →
+        \\            BL
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  18:16 List.push xs: accepted param\n") != null);
+}
+
 /// A declaration a few hundredths below the default summary-size limit (`h`, its
 /// cold growth about 62 200 of 65 536), after another (`g`) or before it:
 /// its dump in that order (#1104). Its growth is a genuine product, a

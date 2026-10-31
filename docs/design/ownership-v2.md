@@ -5171,7 +5171,10 @@ walk per member per pass of the stop rule. The rule applies in 4a too.
   memo entry (§2.11 *Only settled classes*). The walk records the call's edges (*Fix.propagate*,
   below).
 - **The new value.** Read-off gives `F_f`. The new value is `widen(x_f ⊔ F_f)`: `Summary.join`, then
-  `res` and its κ through `Cond.widenValue`.
+  `res` and its κ through `Cond.widenValue`. When `F_f`'s `res` and κ are under `x_f`'s
+  (`Shape.leq`, `kappaLeq`), `x_f`'s are the join's and nothing is propagated: a late round that
+  moves only `xreq` joined the whole unchanged `res` again, 120 000 to 135 000 records a round
+  for 4a's mutual writers `wa`/`wb` (#1423).
 - **Who wakes.** In 4a, any change of a callee's port wakes its callers. From 4b, only a new
   `res.shape` of a callee wakes them (the wake rule, *Ports*). Every other fact is delivered by
   `Fix.propagate` and wakes no inference walk. Such a fact can still change what a walk's demands
