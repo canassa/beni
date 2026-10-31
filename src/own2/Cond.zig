@@ -124,6 +124,9 @@ pub const Table = struct {
     /// it, read only by that call (each call its own number, #1372).
     prop_slice: std.ArrayList([2]u32) = .empty,
     prop_calls: u32 = 0,
+    /// Set by `Summary` while it joins two classes' results or supplies: a
+    /// join whose entry a call relabels for every caller (`propagate`'s skip).
+    class_join: bool = false,
     /// `propagate`'s join memo (§2.9, *The join memo*): a state `(joined
     /// node, class and mode bits, run)` whose walk is the same wherever it is
     /// met → the snapshot its walk puts at its position. Written only once
@@ -458,6 +461,24 @@ pub const Table = struct {
     pub const impliedBy = reads.impliedBy;
     pub const atomsOf = reads.atomsOf;
 
+    /// Whether the entry `k` on union or choice `n` at `cur` adds nothing to
+    /// its read: what `n`'s sides read there, joined, is no stronger than `k`
+    /// in either class (§2.9 *Keyed where a reader looks*: a join keys its DAG
+    /// node, its members' snapshots merged first, so its sides usually imply
+    /// it). A fold's obligation is never implied.
+    pub fn joinImplied(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, cur: Kappas, k: CondId) Error!bool {
+        const nk = v.shapes.kind(n);
+        if (nk != .@"union" and nk != .choice) return false;
+        if (t.fold_cond.get(n) != null) return false;
+        const d = v.shapes.get(n);
+        for ([_]bool{ false, true }) |summary| {
+            const a = try t.kappaOf(gpa, charge, v, cur, .from(d.a), summary);
+            const b = try t.kappaOf(gpa, charge, v, cur, .from(d.b), summary);
+            if (!try t.leq(gpa, charge, k, try t.join(gpa, charge, a, b))) return false;
+        }
+        return true;
+    }
+
     /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
     /// folded class's obligation from §2.9's one path-multiset primitive:
     /// the source occurrences μ maps into the class as a multiset — choice
@@ -520,6 +541,11 @@ pub const Table = struct {
     fn propagateWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
         const memo = !t.no_memo;
+        // A walk whose members are its joined node's own sides (no member
+        // flattened or merged into another node) stores no join entry its
+        // sides imply, at any position: each frame below is the projection of
+        // that root (§2.9 *Keyed where a reader looks*, `sidesHoldMembers`).
+        const skip = mode == .alternatives and members.len > 1 and (t.class_join or anyView(v, members)) and try t.sidesHoldMembers(gpa, charge, v, joined, members);
         const call = t.prop_calls;
         t.prop_calls += 1;
         var runs: std.ArrayList(NodeId) = .empty;
@@ -696,7 +722,7 @@ pub const Table = struct {
             // is the same, so its position is the snapshot that walk made,
             // linked as it is (§2.9, *The join memo*).
             if (f.clean) {
-                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined), run };
+                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined) | @as(u32, @intFromBool(skip)) << 4, run };
                 try charge.reserve(gpa, .memo, 1);
                 if (if (t.no_memo) null else t.memo_prop.get(key)) |hit| {
                     try linked.append(gpa, .{ .path = f.path, .at = .from(hit) });
@@ -752,7 +778,7 @@ pub const Table = struct {
             // (Against the read without its fold obligation, so the snapshot
             // stores the obligation itself, #1128.)
             const plain = try v.shapes.force(gpa, charge.account, f.node);
-            const redundant = v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, f.summary, null));
+            const redundant = (v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, f.summary, null))) or (skip and try t.sidesHoldMembers(gpa, charge, v, f.node, runs.items[f.first..][0..f.len]));
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
@@ -931,6 +957,34 @@ pub const Table = struct {
         return r >= 1 and r != Shape.Table.rank_unbounded;
     }
 
+    /// Whether a member is a call's view: a join whose entry would cross the
+    /// call's caller and its callers again (§2.9).
+    fn anyView(v: View, members: []const NodeId) bool {
+        for (members) |m| if (v.shapes.kind(m) == .view) return true;
+        return false;
+    }
+
+    /// Whether a join of alternatives' entry on union or choice `d` adds
+    /// nothing (§2.9 *Keyed where a reader looks*): every member node at its
+    /// position is `d` or one of its two sides, or holds nothing, and no fold
+    /// obligation rides on it. Each member's snapshot is merged into the
+    /// output first, so each side reads at most as strong as its member's
+    /// read, and `d`'s read, its sides' join, is at most the entry, the
+    /// members' reads joined. A record per member.
+    fn sidesHoldMembers(t: *Table, gpa: Allocator, charge: Charge, v: View, d: NodeId, members: []const NodeId) Error!bool {
+        const dk = v.shapes.kind(d);
+        if (dk != .@"union" and dk != .choice) return false;
+        if (members.len == 0 or t.fold_cond.get(d) != null) return false;
+        if ((try t.foldCondOf(gpa, charge, v, d)) != yes) return false;
+        const n = v.shapes.get(d);
+        for (members) |m| {
+            try charge.reserve(gpa, .inspection, 1);
+            if (m == d or m.int() == n.a or m.int() == n.b) continue;
+            if (try nothingAt(gpa, charge, v, m)) continue;
+            return false;
+        }
+        return true;
+    }
     /// An empty leaf: no object can be there.
     fn nothingAt(gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!bool {
         return v.shapes.isNothing(gpa, charge.account, n);
