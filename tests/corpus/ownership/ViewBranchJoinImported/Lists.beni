@@ -1,0 +1,23 @@
+-- ownership (project): see Main.beni. The callees.
+pub pushList : List Int → List Int
+pushList xs = List.push xs 1
+
+
+pub restOrSelf : Bool, List Int → List Int
+restOrSelf c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then rest else xs
+
+        [] →
+            xs
+
+
+pub copies : Bool, List Int → List Int
+copies c xs =
+    case xs of
+        [ _, …rest ] →
+            if c then List.copy rest else List.copy xs
+
+        [] →
+            []

@@ -1,0 +1,26 @@
+module ViewSplitStoredBack
+  15:13 List.push xs: accepted param
+  25:15 List.push x: accepted param
+  25:31 call ViewSplitStoredBack.incEach rest[*]: accepted param (ViewSplitStoredBack.incEach writes π1[*])
+  35:15 List.push x: accepted param
+  42:29 call ViewSplitStoredBack.incEach <call ViewSplitStoredBack.pushBack>[*]: accepted fresh (ViewSplitStoredBack.incEach writes π1[*])
+  42:38 call ViewSplitStoredBack.pushBack <literal>: accepted fresh (ViewSplitStoredBack.pushBack writes π1)
+  46:32 call ViewSplitStoredBack.incEach <literal>[*]: accepted fresh (ViewSplitStoredBack.incEach writes π1[*])
+  51:16 call ViewSplitStoredBack.editTaken <literal>[*]: accepted fresh (ViewSplitStoredBack.editTaken writes π1[*])
+  58:16 call ViewSplitStoredBack.editTaken <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (ViewSplitStoredBack.editTaken writes π1[*])
+  73:31 call ViewSplitStoredBack.incEach <call List.copy>[*]: rejected element: ys[*] holds it and is read at 73:57 (ViewSplitStoredBack.incEach writes π1[*]) (approx)
+  77:35 call ViewSplitStoredBack.incEach <call List.copy>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (ViewSplitStoredBack.incEach writes π1[*]) (approx)
+  summary pushBack: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*]{excl π1}, π1
+  summary incEach: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] fresh3{excl π1} ~condition(fresh4) ~fresh4{lost} ~fresh6{lost} ~π1[*]{excl π1}, [*][*] ~condition(fresh5) ~π1[*][*]{excl π1}, fresh1{lost}r{excl π1[*][*]} ~fresh2{excl π1} ~fresh6{lost}; xreq excl π1
+  summary editTaken: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh1{lost}, .1[*] ~condition(fresh5) π1[*], condition(fresh2){lost}; xreq excl π1
+  summary storedBack: unused
+  summary notStoredBack: unused
+  summary takenDistinct: unused
+  summary takenShared: unused
+  summary firstLength: π1 R, π1[*] R
+  summary copiedOuter: π1 R, π1[*] RW[storage]
+  summary copiedOuterOnly: π1 R, π1[*] RW[storage]
+  demands 11: accepted 8 (fresh 4, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 11: accepted 8 (fresh 4, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause element 1
+cause exclusive 2

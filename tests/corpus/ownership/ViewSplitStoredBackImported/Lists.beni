@@ -1,0 +1,39 @@
+-- ownership (project): see Main.beni. The callees.
+pub pushBack : List (List Int) → List (List Int)
+pushBack xs =
+    case xs of
+        [ x, …_ ] →
+            List.push xs x
+
+        [] →
+            xs
+
+
+pub incEach : List (List Int) → List (List Int)
+incEach xs =
+    case xs of
+        [ x, …rest ] →
+            [ List.push x 0, …incEach rest ]
+
+        [] →
+            []
+
+
+pub editTaken : List (List Int) → List Int × List (List Int)
+editTaken xs =
+    case xs of
+        [ x, …rest ] →
+            ( List.push x 1, List.copy rest )
+
+        [] →
+            ( [], [] )
+
+
+pub firstLength : List (List Int) → Int
+firstLength ys =
+    case ys of
+        [ y, …_ ] →
+            List.length y
+
+        [] →
+            0

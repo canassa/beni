@@ -1,0 +1,20 @@
+module Lists
+  3:15 List.push xs: accepted param
+  summary pushList: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary restOrSelf: π2 RA; res π2
+  summary copies: π2 R, π2[*] RA; res [*] π2[*], fresh1{lost}
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  14:15 call Lists.pushList xs: rejected alias: v holds it and is read at 14:13 (Lists.pushList writes π1)
+  23:7 call Lists.pushList xs: rejected alias: v holds it and is read at 23:5 (Lists.pushList writes π1)
+  31:15 call Lists.pushList xs: accepted param (Lists.pushList writes π1)
+  40:7 call Lists.pushList xs: accepted param (Lists.pushList writes π1)
+  47:36 call Lists.pushList xs: accepted param (Lists.pushList writes π1)
+  summary joinedHere: π2 RAW[storage], π2[*] RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 fresh5 ~condition(fresh4) π2, condition(fresh1){shared}
+  summary joinedByCall: π2 RAW[storage], π2[*] RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 ~condition(fresh4) π2, condition(fresh1){shared}
+  summary copiesHere: π2 RAW[storage], π2[*] RA; res .0 condition(fresh3) π2, .0[*] ~condition(fresh4) ~π2[*], .1 fresh1{lost}, .1[*] ~condition(fresh5) π2[*], condition(fresh2){lost}r{lost}
+  summary copiesByCall: π2 RAW[storage], π2[*] RA; res .0 condition(fresh3) π2, .0[*] ~condition(fresh4) ~π2[*], .1 fresh1{lost}, .1[*] ~condition(fresh5) π2[*], condition(fresh2){lost}r{lost}
+  summary siblingArm: π2 RW[storage], π2[*] R
+  demands 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

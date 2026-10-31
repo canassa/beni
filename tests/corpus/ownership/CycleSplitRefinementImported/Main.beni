@@ -1,0 +1,58 @@
+-- ownership (project): `CycleSplitRefinement` with the types and callees
+-- in another module (ownership-v2.md Appendix B, C×R, the S3b half).
+-- Writing the label of the `A` one match took while another match's `y`
+-- (the same `A`) lives is refused; the siblings held, the next position of
+-- a nested split and one traversal of a `P`/`Q` value accept; one list at
+-- two depths is refused. v1 accepts `twoChains` (a known entry for v1) and
+-- refuses `nestedSplit`.
+import Mutual exposing (A, B, P, Q)
+
+
+pub twoChains : A → A × A
+twoChains a =
+    case a of
+        A _ [ B [ x, …_ ], …_ ] →
+            case a of
+                A _ [ B [ y, …_ ], …_ ] →
+                    ( Mutual.pushLabel x, y )
+
+                _ →
+                    ( a, a )
+
+        _ →
+            ( a, a )
+
+
+pub siblingsHeld : A → A × List A
+siblingsHeld a =
+    case a of
+        A _ [ B [ x, …others ], …_ ] →
+            ( Mutual.pushLabel x, others )
+
+        _ →
+            ( a, [] )
+
+
+pub nestedSplit : A → A × A
+nestedSplit a =
+    case a of
+        A _ [ B [ x, …r1 ], …_ ] →
+            case r1 of
+                [ z, …_ ] →
+                    ( Mutual.pushLabel x, z )
+
+                [] →
+                    ( a, a )
+
+        _ →
+            ( a, a )
+
+
+pub traversed : ⊤ → P
+traversed ⊤ = Mutual.incP (P [] (Just (Q (P [] Nothing))))
+
+
+pub traversedShared : ⊤ → P
+traversedShared ⊤ =
+    l = [ 1 ]
+    Mutual.incP (P l (Just (Q (P l Nothing))))

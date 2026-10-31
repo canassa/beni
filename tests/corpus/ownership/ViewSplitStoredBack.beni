@@ -1,0 +1,77 @@
+-- ownership: an element taken by a split and stored back, through calls
+-- (ownership-v2.md Appendix B, V×R, the S3b half; R-4.5.3, R-4.6.9).
+-- `pushBack` takes the head and stores it back at the end, so its result
+-- holds one list twice: `incEach` over it is refused `exclusive`.
+-- `editTaken` edits the taken head while only a copied remainder lives:
+-- accepted under the argument's κ, so a caller passing distinct lists
+-- accepts and one passing one list twice is refused. Copying the outer
+-- list alone does not separate its elements: `incEach (List.copy ys)`
+-- with `ys` read again is refused, and so is the copy alone. v1 accepts
+-- `storedBack` (a known entry for v1, as #1478).
+pushBack : List (List Int) → List (List Int)
+pushBack xs =
+    case xs of
+        [ x, …_ ] →
+            List.push xs x
+
+        [] →
+            xs
+
+
+incEach : List (List Int) → List (List Int)
+incEach xs =
+    case xs of
+        [ x, …rest ] →
+            [ List.push x 0, …incEach rest ]
+
+        [] →
+            []
+
+
+editTaken : List (List Int) → List Int × List (List Int)
+editTaken xs =
+    case xs of
+        [ x, …rest ] →
+            ( List.push x 1, List.copy rest )
+
+        [] →
+            ( [], [] )
+
+
+pub storedBack : ⊤ → Int
+storedBack ⊤ = List.length (incEach (pushBack [ [ 1 ], [ 2 ] ]))
+
+
+pub notStoredBack : ⊤ → Int
+notStoredBack ⊤ = List.length (incEach [ [ 1 ], [ 2 ] ])
+
+
+pub takenDistinct : ⊤ → Int
+takenDistinct ⊤ =
+    ( l, _ ) = editTaken [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub takenShared : ⊤ → Int
+takenShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = editTaken [ r, r ]
+    List.length l
+
+
+firstLength : List (List Int) → Int
+firstLength ys =
+    case ys of
+        [ y, …_ ] →
+            List.length y
+
+        [] →
+            0
+
+
+pub copiedOuter : List (List Int) → Int
+copiedOuter ys = List.length (incEach (List.copy ys)) + firstLength ys
+
+
+pub copiedOuterOnly : List (List Int) → Int
+copiedOuterOnly ys = List.length (incEach (List.copy ys))
