@@ -1823,7 +1823,9 @@ The states settle by component (Tarjan, explicit stack). A cycle makes every occ
 parts hold repeated, which is the least solution of these equations in {absent, one, repeated}. The
 result is kept in the condition table by `(argument node, prefix)` across reads and calls, so many
 template paths under one prefix walk the argument once. A widened image's own fold certificate does
-not yet stand for its cycle's multiset; that question is open (#1159). The conservative `lost` for an
+not yet stand for its cycle's multiset; that question is open (#1159). *Measured 2026-10-31:* over the
+ownership corpus this Tarjan walk never meets a cycle (0 of 373 roots), so no corpus verdict waits on it (§8,
+slice 4, *The fold certificate, specified*). The conservative `lost` for an
 unopened node is gone. One consequence: an occurrence at another canonical path under the same
 prefix (`0·[*]·arg` beside `0·[*]·⟲·arg`) is outside the preimage. The caller's Disjoint across the
 callee's W paths compares it, and this read does not (§2.11 item 3).
@@ -2381,7 +2383,7 @@ refinement is its canonical cell), or, in the frame itself, both are parts at on
 sides of one split. Whether the pair is **one object twice** or **two positions of `X`** decides the
 condition. One object twice is a repeat, and a repeat reads `lost`. Two positions of `X` are kept apart
 exactly by `excl X`: that `X`'s positions share nothing. They must not be read as a repeat, which
-claims they may be one object. Two rules use this.
+claims they may be one object. Three rules use this.
 - **The test** is `Cell.positionsApart(a, b)` (`listSides`). Each cell's side (`Cell.listSide`) is the
   first cell up its chain past its parts, when that is an `elem` or an `others` of a recorded split. The
   two sides are two distinct sides of one *list* split: a pattern's head and its rest (`elem`/`others`),
@@ -2411,6 +2413,69 @@ claims they may be one object. Two rules use this.
   still enough. A `q` with `[*]` breaks this: two positions of `X` inside one element are kept apart by
   no `k` about elements, so `excl X` would ask for something `k` does not give. That case keeps `k`.
   `sep` is memoised per pair, and the pair fixes `q`.
+- **Rule 3, through a level, at a call** [specified 2026-10-31, #1195, slice 4c; not built]. A callee's
+  `apart` or `sep` over two cells `πᵢ·P` and `πᵢ·Q` of one parameter, where `P` and `Q` both cross `⟲`, is
+  read at a call from each side's image (`Grafter.sideCells`, which through `⟲` is the image cell set
+  of the parameter cell). When the actual's first return lies deeper than the callee's, both images can
+  be one summary cell `X` of the caller's frame. `FoldedBCall`'s `incList` calls `incAll b` with `b` an
+  element of its parameter: `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]` images both sides to
+  `π1[*]#B.0⟲`, because in `incList`'s frame `[*]#B.0` is the first return and every list below it folds
+  onto its `⟲`. Read as a repeat, the call is refused `exclusive (approx)`, where v1 accepts it `param`.
+  The pair is two positions of `X`, and owes `excl X` instead of a repeat, when all of these hold:
+  - **(a) The callee's positions are apart by route.** `P ≠ Q`, and the last steps of `P` and `Q` are
+    named steps (a field, a tuple index, a constructor argument) that differ. Every concrete route that
+    `P` stands for ends in `P`'s last step, and every route of `Q` ends in `Q`'s, so no route is in both.
+    A last step `[*]`, `⟲`, `◆`, `◇` or `⟨n⟩` does not qualify, and nor does a pair whose routes part only
+    above a `⟲`. That case is not apart by route.
+  - **(b) The actual is one position there.** Let `L` be the longest common prefix of `P` and `Q`, cut
+    before the first `⟲` of either. The actual at `L` (`argAt`, forced) is a leaf, or a union or choice
+    DAG whose every member is a leaf: the possible contents of one position. Below `L`, each route of the
+    actual is then the same route below that one object, so the actual's positions under `L` correspond
+    one-to-one to positions of the cells it holds, and so to positions of `X`. A built node, a delta, a
+    recast or a `positions` node at `L` fails (b), because two of its children may hold one object
+    (`B [ v ] [ v ]`). So does a leaf that holds an approximate cell, or a cell under a repeating split
+    (*The repeating split*, below: `KappaRead.repeatingSplit`), because then two parameter positions can be
+    one object.
+  - **(c) `X` is a position name.** `X` is in both images exactly (not approximate), and it is symbolic
+    and at a summary path. A concrete cell (`site`, `result`, `esc`) in both images is one object at both
+    positions, and stays a repeat.
+
+  Then `X` is taken out of one side before the multiset is read, and the pair owes `exclOf(X)` (the
+  repeating split's failed κ in place of `excl X`, as everywhere). Each other cell of the two images is
+  read as before.
+  - *Why `excl X` is enough.* By (a) the two callee positions are distinct routes, and by (b) they are
+    distinct positions under one object of the actual, so distinct positions of `X`. `excl X` says that
+    no two positions of `X` hold one object, which is what `apart` asks of them. `X`'s own callers
+    discharge it by the preimage multiset across depths (§2.9 *As built for a call's folded read*), as
+    they discharge every `summaryExcl`.
+  - *Why each condition is needed.* Without (a), `P` and `Q` can share a route, and the object at it is
+    on both sides, which is one object twice. Without (b), the actual `B [ v ] [ v ]` has distinct actual
+    positions at one parameter position, so `excl X` holds while both sides hold one object. Without
+    (c), a concrete cell on both sides is one object.
+  - *Measured* (scratch prototype, `Grafter.positionsThroughLevels`, on 4d's head `74fbcc61e`). Over the
+    ownership corpus (324 files and 49 projects), verdicts change in `FoldedBCall`, `FoldedBCallImported`
+    and `LevelsApartRoutes`, and nowhere else. The whole `test-blackbox` run (`run/`, `browser/` and core's v2
+    parity too) fails only on those three known entries. Each change is the 4c-owned refusal, now accepted `param`
+    as in v1, which leaves only a canonical-path-text entry (§2.2). Summaries change in the same three
+    roots only: `incList` gains `excl π1[*]#B.0⟲[*]`, `excl π1[*]#B.1`, `excl π1[*]#B.1⟲` and
+    `excl π1[*]#B.1⟲[*]`, and `incAll` gains `excl π1#B.1[*]#B.1`. Their callers discharge them and keep
+    v1's verdicts. The first prototype
+    walked (b)'s union DAG without a visited set. `run/EvidenceDagBuildDepth32` then ran past the
+    120-second guard. Every DAG walk this rule adds is memoised per node.
+  - *The read does not depend on the representation* (Lemma R3). Write `Pos(n)` for (b)'s test. `Pos` is
+    the same on `n` and on every node of the same denotation that `Shape` can make for it. A view and its
+    answer are the same, because the test forces. A union that `join` has merged into one set leaf and the
+    unmerged union are the same, because both are one position's possible contents, and so is a choice of
+    leaves before and after it is flattened (`joinAlternatives`) or a covered arm is dropped (4d). A
+    `positions` node is never one position, whether #1471 keeps a member once or twice. Then (a) reads
+    paths only, and (c) reads the image's cell set, which is a set function. So the answer is a function of
+    the denotation. The rule is also monotone. A representation that over-approximates more (a node in
+    place of a leaf) can only fail (b), and then the pair reads `lost`, which is weaker.
+    *`runtime_safety` check.* When the rule fires, the call's preimage of the actual at each path's `⟲`
+    prefix (`Calls.preimage`, keyed by canonical path, defined on the denotation) holds `X` at that path's
+    key once, never in `dups`. A shared image that the preimage counts twice is a panic. The check reads
+    nothing that the rule's own walk reads, so a representation the rule misjudges is caught by a
+    different reader. The prototype runs it on every firing in the corpus, and it holds.
 
 *The cases.*
 - *Parts below two heads, and below a head and its rest.* The sides are two disjoint index ranges, and
@@ -2422,6 +2487,9 @@ claims they may be one object. Two rules use this.
   multiset (rule 1), and a `q` with `⟲` keeps `k` (rule 2). A fold identifies depths that coexist
   (*Recursive folds and their read*), so two arrivals at one folded class are a repeat by that rule. The
   sides `level`/`below` of a recursive split are not list positions, so `positionsApart` is false.
+  Rule 3 is the one exception, and it assumes no disjointness of objects either. It proves that two
+  positions are distinct by route, (a), and one-to-one with `X`'s, (b), and then asks `excl X` of the
+  objects.
 - *A part under a recast.* A recast changes a node's place, not its cells (§2.13.9), so the pair is the
   same pair of cells and the rules apply unchanged. A cast that loses facts loses them in the shape,
   before any read.
@@ -2432,7 +2500,7 @@ claims they may be one object. Two rules use this.
 - *A part whose object is also held outside the list.* The rules change only the condition between `a`
   and `b`. A third holder is a cell of its own, and the holder check (§2.8) compares it with each of `a`
   and `b` as before (`o/CombinePositions` `held`, refused `alias`).
-- *Disjointness must not be assumed* for a concrete image, an image or `q` through `⟲` or a summary step,
+- *Disjointness must not be assumed* for a concrete image, an image or `q` through `⟲` (outside rule 3) or a summary step,
   two splits of one container, a part beside its own anchor (`alias` reads its path), a cell under a
   split whose κ fails (*The repeating split*), or one cell met
   twice.
@@ -6355,6 +6423,167 @@ a call's folded read (`Calls.preimage`). It stays so for every knot except a gro
   allocation owes W1–W3, and it reads `lost` until S4 emits `within`. The certificate gives a
   parameter-derived fold, such as `incAll`'s `res⟲#Node.1`, the actual's κ instead of `lost`.
 
+*The fold certificate, specified (4c, #1195)* [M 2026-10-31, measured on 4d's head `74fbcc61e`, self-hosted
+Debug, `dump --stage=ownership --ownership=v2 --jobs=1`; not built]. This note measures the plan above
+first, then specifies the certificate fully, and ends with a fork that the manager decides.
+
+**What the 4c-owned known entries are.** None of them is a cycle read `repeated`.
+
+| Known entry | v1 | v2 | Why v2 is coarser |
+|---|---|---|---|
+| `FoldedBCall` 30:15 `incAll b#B.1[*]#B.1⟨B⟩` | absent (v1 writes the path `b#B.1[*]⟨B⟩#B.0`, accepted `param`) | rejected `exclusive (approx)` | The call's `xreq` holds `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]` and its `#B.1` twin. At the actual `b`, an element of `incList`'s parameter, both sides image to one cell, `π1[*]#B.0⟲` (or `π1[*]#B.1⟲`), so the pair reads as a repeat: `lost`. The demand on the call's first write carries the call's whole `xreq`, so this one line is refused. §2.9 rule 3 is the fix. |
+| `FoldedBCallImported` `Walk` 19:15, the same line | as above | as above | The same, through the block. |
+| `LevelsApartRoutes` 23:15, the same line | as above | as above | The same. |
+| The other 14 lines of `FoldedBCall` 30:15 and `FoldedBCallImported` 19:15 | `accepted` / absent | absent / `accepted` | Canonical path text only (§2.2): v1 writes `#B.0[*]⟨B⟩#B.0`, v2 writes `#B.0[*]#B.0⟨B⟩`. The verdict is the same. They carry the 4c note only because they share the root. |
+| #1429, the mutual `wa a` (no fixture yet) | accepted `param` | accepted `param` | It does not reproduce on `74fbcc61e`, with the issue's types and bodies at the default allowance. The fixture is still owed. |
+
+Instrumented, over the ownership corpus (324 files and 49 projects):
+- `Calls.preimage`'s Tarjan walk never finds a cycle (0 of 373 roots), so a call's folded read never
+  saturates.
+- Read-off's `arrivalAggs` saturates in 13 roots: `CycleJoinRankWriter`, `FoldLevels`,
+  `FoldedWriteCall`, `FoldedBCall`, `FoldSymbolicCall`, `FoldedPreimageCall`, `LevelFresh`,
+  `LevelRecursiveUpdates`, `LevelsApartRoutes`, `MarkerAcross`, `RoseKidsHeld`, `WriteOneLevel` and
+  `LevelsApart`.
+- An oracle that reads each saturated cycle as **once** (unsound, scratch only) changes no verdict in those
+  13 roots. It changes one summary: `LevelRecursiveUpdates`, where three `res` paths go from `{lost}` to
+  `apart …, excl …`.
+
+So the certificate's ceiling on today's corpus is **zero verdicts**. §2.9 rule 3 alone removes every
+4c-owned refusal with v1's verdict (its *Measured*). With rule 3 and the oracle, the whole
+`test-blackbox` corpus (ownership, `run/`, `browser/` and core's parity) differs only in those three
+lines.
+
+**The plan's own witnesses** (a scratch module over `Tree = Node Tree (List Int) Tree | Leaf`, with
+`incAll` writing every list, `incP (P a b) = P (incAll a) (incAll b)` and `same` rebuilding a tree):
+
+| Probe | v1 | v2 | Oracle | Plan |
+|---|---|---|---|---|
+| `incP (P (same t) (same t))` | refused `disjoint` | refused `disjoint (approx)` | refused | refused |
+| `incP (P (same t) (same t2))` | refused `exclusive (approx)` | refused `disjoint (approx)` | refused | **accepted** |
+| `incAll (same t)` | refused `exclusive (approx)` | refused `disjoint (approx)` | refused | (accepted by the same rule) |
+| `incAll (unroll t)`, a cell repeated deeper | refused | refused `disjoint (approx)` | refused | refused |
+| `w = same t; incP (P w w)` | refused `disjoint` | refused `disjoint (approx)` | refused | refused |
+| `case incAll t of Node l xs r → Node l (List.push xs 2) r` | **accepted** `param` | refused `element … (approx)` | refused | **accepted** |
+
+The oracle does not accept a single witness. The loss is in two other places:
+- `same`'s class reads `{lost}` at `res#Node.1` because its arrivals hold `~π1#Node.0⟲` and `~π1#Node.2⟲`.
+  These are approximate cells: at a `⟲` step `Grafter.argAt` answers `recastWhole`, the actual's whole
+  reach (§2.13.9, #1219). At the call, `incAll`'s Disjoint reads the actual `same t` through the same
+  recast, so the call is refused `disjoint (approx)`. A certificate that counts occurrences once
+  changes neither.
+- The last probe, the parameter-derived knot, is a **holder** refusal, not a κ one. `incAll`'s `res` is a
+  knot whose root class holds every level's list (`res #Node.1 π1#Node.0#Node.1 π1#Node.0⟲#Node.1 π1#Node.1
+  …`), so `r` is taken to hold the root's `xs`. v1 accepts it, so it is a parity gap outside the corpus
+  (#1483).
+
+**The certificate, specified.** This is the design for the slice that builds it, whichever slice
+that is (the fork, below). It refines the plan above. Nothing above is withdrawn.
+
+- **What is proved.** For a member `f` of a group and a key `K` (a class of `f`'s `res`, named by its
+  canonical path, `Fold.classAt`), the certificate `A(f, K)` is an **aggregate**: the arrival keys at
+  `K` (each symbolic arrival with its multiplicity in {1, 2+}, each fresh arrival likewise), and the
+  condition that the multiset reads (§2.9's three parts). The claim `(fold, f, K)` says that in every
+  activation of `f`, of any depth, the source occurrences that the fold maps into `K` (the activation's
+  own sources at `K` and everything its group calls answer there, at every depth) are covered by
+  `A(f, K)` instantiated at that activation's parameters.
+- **The order of the lattice.** One aggregate is under another when each arrival's multiplicity is not
+  larger and the condition is not stronger. `F` is the transfer of one activation: its own sources plus
+  each group call's certificate instantiated through `E` (sum where they coexist, maximum over a choice's
+  arms, a set at one position for a union). `F` is monotone, because a sum, a maximum, substitution and
+  the multiset read are monotone.
+- **The induction (on activation depth).** Base: an activation whose sources at `K` reach no group view
+  (*Alternatives* above: transitively, by reachability). Step: if every inner activation (strictly
+  inside, so of smaller depth) is covered by `A`, the activation is covered by `F(A)`, and `F(A) ⊑ A`
+  gives coverage by `A`. So `A` is proved when the base is under `A` and `F(A) ⊑ A`, checked once on the
+  settled generation x*. A component with no base alternative is `waiting` and reads `lost` at its keys.
+  Multiplicity saturates at 2, so "repeated" is one value, and the height of the lattice is bounded by
+  2 · (arrival keys) plus the atom inventory.
+- **When.** During rounds a hypothesis node reads the member's **current** aggregate at `K` from the
+  port, version and all. That is a may-fact, and it is used for inference only: x grows as it does
+  today, and the read check (*Validation*) covers what a demand reads of it. After the stop rule's loop
+  ends, the Prover proves every `(fold, f, K)` that some walk read, on x*'s validation walks, before
+  publication. Where the proof fails (a component waiting, or `F(A) ⋢ A`), `lost` is joined into
+  `A(f, K)` and the group goes round again. That only weakens, so the loop still terminates. No
+  acceptance rests on an unproved aggregate.
+- **Widen and 4d.** The key is a canonical path, so it does not move between rounds, and 4d's drop of
+  covered rounds and arms does not change it, because it changes nodes and never paths. An aggregate is
+  a function of the denotation, below, so a drop that keeps `Summary.leq` keeps the read only if `leq`
+  also compares the aggregates. **`Summary.leq` and `kappaLeq` compare `A(f, K)` pointwise** (each
+  multiplicity, then the condition), and 4d's `dropCovered` reads them. Without that, an arm `[ x, x ]`
+  could be dropped under an arm `[ x ]` whose cells are the same: `Shape.leq` compares sets.
+- **Publication.** The class gains one entry per certified key: `(K, arrival keys with multiplicities,
+  fresh arrivals, condition)`. The summary line prints it as `cert K {keys} κ`. `Summary.eq` and
+  `Summary.leq` compare it. The block publishes the certified mark (Q3, decided) with a version bump.
+  Each arrival key is a structural cell (§3.6), and K is a structural canonical path. A key that does
+  not re-intern exactly reads `repeated` and `lost` (#1317, S6), never absent.
+- **Readers.** There are three, and each reads a certified knot in place of a saturated one:
+  1. read-off's `arrivalAggs`, at a view of a group class (the hypothesis node);
+  2. `Calls.preimage`, at a cycle that a settled class's certificate covers;
+  3. the graft through `⟲`. `Grafter.argAt` at a level step of an actual that is a view of a certified
+     class reads the aggregate's cells exactly in place of `recastWhole`'s approximate reach. The
+     Disjoint and `otherPaths` readers read the same cells. This third reader is new. Without it the
+     witnesses stay refused (the table above).
+- **Cost.** There is one goal per `(member, K)` that a walk read, and the alternatives are the
+  validation walk's sources at `K` (each read once, as the walk already does). There is one edge per
+  hypothesis node, and the aggregate work is the persistent multiset merges of §2.9 (O(log) per arrival).
+  In all, O(S_validation + H · A log A), where H counts hypothesis nodes and A counts arrival keys per
+  certificate. All of it is charged growth on the member that receives it (Q2). Rounds that only raise
+  a multiplicity or weaken a condition are bounded by the inventory, as *Termination* says.
+
+**Soundness by cycle shape** (each with the witness that refutes the unsafe reading).
+- *Self-recursive* (`same`, `incAll`). There is one member and one key per class. This is the induction
+  above, unchanged. `unroll` repeats a cell one level deeper, and the step's own sources hold it twice,
+  so its multiplicity is 2+ and the write is refused.
+- *Mutual* (`incAll`/`incList`, `A`/`C`). One Prover component holds the goals of both members. `K`
+  and `K′` correspond through `E` at each group call, and the induction runs over the joint activation
+  tree. A component in which only one member has a base is still proved, because every step reaches the
+  base through the other member's goal.
+- *Through records* (`P (same t) (same t)`, `B [ w ] [ w ]`). The record is built outside the component,
+  and its two coexisting hypothesis nodes sum. One actual `t` brings each symbolic arrival in twice: 2+,
+  refused. Two actuals `t`, `t2` bring two distinct arrivals: `apart`, accepted. That needs reader 3.
+- *Through `positions`* (`[ incAll b, …incList rest ]`). A positions node's sides coexist, so they
+  sum. #1471 keeps a member at most twice. Two is "repeated", so the aggregate of a member kept twice
+  equals the aggregate of one kept k > 2 times (Lemma C1).
+- *Through choice* (`if c then same l else same r`). The arms take the maximum, arm by arm. A choice
+  never adds, so a seed in one arm is once. 4d's drop of a covered arm keeps the maximum, because the
+  dropped arm's aggregate is under the kept one by `leq` (above).
+
+**Lemmas: the read does not change with the representation.** In each of the last four slices, a rule
+that was exact on paper changed a read when the representation changed. So each rule here has its
+lemma and a `runtime_safety` check that tests it through a reader that does not share its walk.
+- **C1, saturation.** The aggregate of a `positions` DAG depends only on each member's multiplicity
+  capped at 2. *Check:* for a positions node that #1471's constructor saturated, the aggregate is
+  computed again over the unsaturated sides that the constructor saw, and must be equal.
+- **C2, forcing and flattening.** The aggregate of a view equals the aggregate of its answer, and a
+  choice gives the same aggregate whether or not `joinAlternatives` flattened it, because `arrivalAggs`
+  is defined on the denotation (choice: maximum; union: a set at one position; parts: sum). *Check:* on
+  each proved goal, the step aggregate is computed a second time with every view forced and every
+  choice flattened into one list of arms, and must be equal.
+- **C3, drops.** A 4d drop does not change any `A(f, K)` that the class publishes. *Check:* every
+  `dropCovered` that removes an arm asserts `aggLeq(A_arm, A_kept)` at each certified key below the arm.
+- **C4, the block.** `decode(encode(A))` equals `A` where every key re-interns, and is `repeated`/`lost`
+  where one does not. *Check:* the existing block round trip (§3.6) compares the certified marks too.
+- **C5, the proof.** On each published certificate, `F(A) ⊑ A` is evaluated again from the published
+  class alone, without the Prover's memo, and must hold. This is the post-fixpoint check of #1195's
+  second comment, run where the class is used, not only where it is made.
+
+**The fork (the manager's decision).** The certificate as planned is not what the 4c-owned entries need,
+and it does not turn any witness green without reader 3.
+- **(A) 4c builds §2.9 rule 3 only.** It closes the three 4c-owned refusals with v1's verdicts. The
+  other 4c lines become canonical-path-text entries. The cost is one function in `Calls.zig` of about
+  100 lines, and the corpus diff is those three roots (measured, above). The certificate stays specified
+  here and is built as its own slice, with reader 3, before S4 first reads a certified knot. Cycles
+  keep reading `repeated` until then, which costs no corpus verdict today.
+- **(B) 4c builds rule 3, the certificate and reader 3 together.** That means the `fold` claim, two
+  readers made certificate-aware and a third added, the class entry, the printer and the block's version
+  bump. It buys only the witnesses above, and v1 refuses two of the three that should be accepted (precision
+  beyond v1). The
+  parameter-derived knot is a holder gap that none of this closes (#1483).
+- **Recommendation: (A).** It is the exact repair of what the corpus shows, it is small, and it is
+  measured. (B)'s size is not justified by any verdict that the corpus or v1 has. The plan's claim that
+  "the certificate gives a parameter-derived fold the actual's κ instead of `lost`" holds for κ only.
+  The witness it was meant to turn green is refused on holders.
+
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
 earned, and the group is unbuilt. A limit in any member's walk, in a delivery or in the validation
@@ -6429,7 +6658,7 @@ RecursiveSummaryGeneration's reorderings).
 |---|---|---|
 | 4a | Ports, ⊥, synchronous rounds, group calls by reference with `(port, version)` in `E`, stable labels, widen(x ⊔ F(x)), `Summary.eq` termination, validation as above, publication all at once, failure and cold re-check of a whole group, the coarse read vector recorded at each group call, and the stop rule's joint loop (the read check and `leq`, with `propagate` from 4b), run in 4a too, where every change wakes its readers. Its first commit gives a call of the walk's own group its own `.v2.unchecked` reason, `recursion`, so the to-do list is exact before any code lands. Any port change wakes every reader, and every walk past the second is growth (interim, Q1). Cycles stay `repeated`. | Every `recursion` line of every `.v2.unchecked` file is gone or carries another reason. Each changed root holds v1's verdicts, or has a known entry that names 4c (`repeated`) or S4 (`within`) as its owner (Q4). The 4a fixtures below are green, the counted ones as stated. The verdict diff over the corpus is reported. |
 | 4b | `Fix.propagate(Edges)`, run to quiescence after each round: argument and result edges (projections included), parameter images as chained edges, and marks, cells, atoms and occurrence facts as deltas. The wake rule: only a callee's new `res.shape` wakes an inference walk. The read check sends what demands and obligations read to the validation walk. | The counted families below meet their bounds. A per-member walk counter pins inference walks against delivered facts. `Rot` holds v1's refusal, and so does `o/RecursiveTupleGuards` at 19:17 and 21:17. No verdict or block changes from 4a except where a known entry says so. |
-| 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). | #1195's witnesses and the 4c fixtures are green. Every known entry that 4a gave to 4c is gone. #1195 closes. |
+| 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). *Specified 2026-10-31* (*The fold certificate, specified*): the 4c-owned refusals are §2.9 rule 3's, not a cycle's, and the certificate also needs a third reader, the graft through `⟲`. Under option (A), the manager's to take, 4c builds rule 3 and the certificate moves to a slice of its own before S4 reads a certified knot. | Under (A): `FoldedBCall`, `FoldedBCallImported` and `LevelsApartRoutes` hold v1's verdicts, their remaining lines are canonical-path-text entries, and #1429 has its fixture. Under (B), or for the certificate's own slice: #1195's witnesses and the 4c fixtures are green, and lemmas C1–C5 hold as `runtime_safety` checks. Every known entry that 4a gave to 4c is gone. #1195 closes. |
 | 4d | §2.3 *A port keeps no round that its last round covers*: `Summary.join` in `choice` mode takes the other side's `res` and κ when one side is under the other, and drops each arm of a top choice that the other side covers, with the κ home stated there. Only a class join does it. Proposed 2026-10-31, after 5a. | `run/TailModConsMerge` is checked at the default allowance, with no `.v2.unchecked` line for `mergeSort`. DerivedDeepPaths' `rose` likewise on 5a. No verdict changes over `bench/ownership-roots.mjs`'s roots except limits that become checked. #1423's `wa`/`wb` either hold 5a's figures or carry a known entry under #1372 (§2.3, option (a)). |
 | 4e | Arm sets and stable knot images (§2.3, the two pieces of option (b)). Only if the manager takes (b). | `wa`/`wb` within 5a's figures. `removeMin`'s round-2 port at its arm-set size (46 nodes). |
 
@@ -6628,6 +6857,21 @@ allowance, with no limit line.
     lanes, and it is reported (Q1).
   - `GroupSelfFold` again: unchanged.
 - **4c.**
+  - §2.9 rule 3 (*specified 2026-10-31*, built under either option of the fork). `o/LevelPositionsCall`
+    and its imported form `o/LevelPositionsCallImported`:
+    - `incList`'s `incAll b` over `B (List B) (List B)` is accepted `param`, as in v1. The `T (List T)`
+      twin is accepted already, and stays so;
+    - the actual `B [ B xs [] ] [ B xs [] ]` built in the caller fails (b), and Disjoint refuses it, as
+      in v1;
+    - an actual that is a rest of a repeating split (`List.push bs b` with `b` taken from `bs`) fails
+      (b) and is refused;
+    - two paths whose last steps are the same (`⟲#B.0` twice through different prefixes) fail (a) and
+      are refused;
+    - a choice of two leaves at `L` (`incAll (if c then b1 else b2)` with `b1`, `b2` heads of one
+      parameter) is one position and is accepted, as in v1. v2 refuses it today. The scratch prototype
+      accepts it.
+  - #1429's mutual `A`/`B` writer as `o/MutualWritersMutualTypes`, accepted `param` as in v1.
+  - The rest of this list is the certificate's, under (B) or in its own slice.
   - #1195's witnesses as `o/FoldCertificate`:
     - a deeper unrolling that repeats a cell (`f t = case t of Node l xs r → Node (f l) xs (Node
       Leaf xs Leaf)`): a writer over the result is refused;
