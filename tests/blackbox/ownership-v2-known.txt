@@ -869,6 +869,9 @@ tests/corpus/ownership/DerivedOverWriterThird [node] Key 19:26 #0 :: List.push l
 tests/corpus/ownership/DerivedOverWriterThird [node] Key 9:29 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
 tests/corpus/ownership/EvidenceDeep.beni [browser-inline] EvidenceDeep 17:42 #0 :: List.push xs :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
 tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 13:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ComparisonAlias.beni [node] ComparisonAlias 13:39 #0 :: List.push a :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments; one written as an alias, at its target's write
+tests/corpus/ownership/ComparisonAlias.beni [node] ComparisonAlias 18:21 #0 :: List.push a :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments; one written as an alias, at its target's write
+tests/corpus/ownership/ComparisonAliasImported [node] Inner 9:39 #0 :: List.push a :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments; one written as an alias, at its target's write
 #
 # A top-level alias of a function is a call of what it names (R-5.5.6, the owner's 2026-10-25
 # decision): v2 reports no pending line at the alias, and checks calls past v1's eight-name cap.
@@ -878,6 +881,9 @@ tests/corpus/ownership/AliasImported [node] Lib 9:9 #0 :: value Deep.w :: pendin
 tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 14:6 #0 :: value AliasWriter.writer :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
 tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 11:10 #0 :: value List.push :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
 tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 25:6 #0 :: value AliasWriterCall.w1 :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/ComparisonAlias.beni [node] ComparisonAlias 25:6 #0 :: value ComparisonAlias.sameLength :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/ComparisonAlias.beni [node] ComparisonAlias 29:11 #0 :: value ComparisonAlias.byLength :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/ComparisonAliasImported [node] Inner 13:6 #0 :: value Inner.sameLength :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
 tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 58:14 #0 :: AliasWriter.writer xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number
 tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 62:13 #0 :: AliasWriter.writer xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number
 tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 61:13 #0 :: AliasWriterCall.w1 xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number

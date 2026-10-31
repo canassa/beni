@@ -111,7 +111,9 @@ const layers = [_]Entry{
     // 1 840 since S3b slice 5e: a call through a function alias (the alias
     // not walked, the callee name followed) and a type's comparison told
     // for R-5.13.1.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
+    // 1 900: a comparison told by its well-known signature, through aliases,
+    // and a pub alias publishing its target's class.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1900 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

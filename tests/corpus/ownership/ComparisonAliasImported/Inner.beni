@@ -1,0 +1,17 @@
+import Helpers
+
+
+pub type T
+    = T (List Int)
+
+
+sameLength : T, T → Bool
+sameLength (T a) (T b) = List.length (List.push a 0) == List.length b
+
+
+pub eq : T, T → Bool
+eq = sameLength
+
+
+pub compare : T, T → Order
+compare = Helpers.always
