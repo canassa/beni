@@ -158,7 +158,6 @@ tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:8 #0 ::
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:29 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:37 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
 # v2 refuses where v1 accepted (S3b): a canonical path folds the recursive children.
-tests/corpus/ownership/Split.beni [node] Split 22:27 #0 :: Split.bumpHead <literal>[*] :: accepted :: rejected  bumpHead answers ~π1 approximately; a possible hold above a write counts (§2.11 item 3 (a), #1253)
 
 # v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a
 # derived or container comparison, and holds the user-written one pending.
@@ -1108,3 +1107,5 @@ tests/corpus/ownership/ViewCycleHolderImported [node] Main 33:21 #0 :: Trees.pus
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 48:23 #0 :: Trees.labelInner t#Rose.1[*]#Rose.0 :: absent :: accepted  canonical path text (§2.2): the same writes and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 48:23 #0 :: Trees.labelInner t⟨Rose⟩⁺#Rose.0 :: accepted :: absent  canonical path text (§2.2): the same writes and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 75:23 #0 :: Trees.pushInnerA a#A.1[*]#B.0 :: accepted :: rejected  v1 is unsound (#1491): `rest`, a view of the list the call writes, is read after it
+tests/corpus/ownership/AnsweredAboveElements.beni [node] AnsweredAboveElements 66:18 #0 :: AnsweredAboveElements.bumpHead <literal>[*] :: accepted :: rejected  #1492: a local element's contents count beside the `[*]` write (precision); v1 accepts
+tests/corpus/ownership/AnsweredAboveElementsImported [node] Main 44:18 #0 :: Rows.bumpHead <literal>[*] :: accepted :: rejected  #1492: a local element's contents count beside the `[*]` write (precision); v1 accepts
