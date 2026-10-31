@@ -924,16 +924,22 @@ Operations, memoised on their node arguments:
        acyclic images onto source nodes: `mPlain`'s `M [] (Just (M [ 1 ] (Just (M [ 2 ] Nothing))))`
        read `lost` at three paths that read `yes` (the counted test *a kids list at two depths of a
        widened tree*). Most of the prototype's 29.5 % on the sweep was those moves.
-    5. *`widen`'s output, by component.* `emit` makes every class image a new node, on a cycle or not.
-       So `widen` runs the rule per strongly connected component of the emitted graph, bottom up: each
-       member's references to the components below are moved to their targets, and a knot is moved by
-       its canonical form, as in step 3. *As built, a node on no cycle is not interned.* The prototype
-       interned it as `make` would. On master `46ede32b6` that changes 9 corpus verdicts in both
-       directions; `PushedTwiceLevels.g`'s write into `List.push bs x`, refused since §2.9 *The repeating
-       split*, becomes accepted. With knots alone, maps' and widen's, the move is exact there too. So
-       the acyclic interning is not taken. An accumulator such as `acc (n − 1) (N [ n ] [ n ] t t)`
-       remakes the same knots every round, and goes from 1 712 743 growth in 5 walks to 1 157 586 in 4
-       (1 053 726 → 661 881 with one list).
+    5. *`widen`'s output: only the root's knot moves* (as built, after #1513's review). `emit` makes every
+       class image a new node. The first build ran the rule per strongly connected component, bottom up,
+       and moved each knot. It rewrote, in place, the references of the raw nodes above a moved knot, and
+       it interned the acyclic ones. In-place rewriting is not exact: `proj`'s memo, and every other memo
+       keyed by node, may already hold an answer read from the record before the rewrite. The corrected
+       cross-check found it on the counted test *a kids list at two depths of a widened tree*. There, the
+       widened value's walk reached the raw knot through a stale `proj` entry. So no record is rewritten.
+       A knot moves only when it holds the root, and a knot below the root is recorded under its key but
+       stays where `emit` put it. The first text of this step blamed `PushedTwiceLevels` for the acyclic
+       interning. The review did not reproduce that with step 4a in force, and that claim is withdrawn.
+       The rewrite is the reason. As built: `acc (n − 1) (N [ n ] [ n ] t t)` settles in 4 walks, not 5
+       (691 681 records at one list, against 1 083 526). `rose` costs 39 694 records against 42 869. The
+       corpus's records fall 0.55 %, with no verdict, condition or summary change and 18 block encodings.
+       Stable.Store keeps the representatives of every knot it recorded, including a knot below a root
+       that later moved. That is only a cost of sharing: no move ever targets a node that is not its
+       key's representative, and `sideFact` refuses a target that has gained a fact.
 
     **The representation-change lemma.** Let σ be the move. Its precondition: for every member x, the
     record of x with every internal reference mapped by σ is the record of σ(x), every side fact of
@@ -968,8 +974,9 @@ Operations, memoised on their node arguments:
     - **Readers that compare the parts of one value by id** (the rule-3 walk that a choice's arms share,
       §2.9 *The repeating split*): σ moves only knots, onto knots of the same key. A knot's key names
       every external reference by its id, so two knots that σ makes one were one structure over the
-      same external nodes already. An acyclic node that the interning of step 5 made one with a part of
-      another value is what such a reader saw, and is why step 5 interns no acyclic node.
+      same external nodes already.
+    - **Memos keyed by node** (`proj`'s, `reach`'s, `rank`'s): σ never changes a record, so a memo
+      entry stays true of its node (step 5).
     - **`apartImage`** and §2.9 *Two positions of one image* read the cells two positions image to, not
       node ids (`KappaRead.apartImage` reads cell sets and their images only), and σ keeps cells.
       `map_shared` is set when σ gives two sources one image.
@@ -983,9 +990,13 @@ Operations, memoised on their node arguments:
     **The checks.** Under `runtime_safety`, each move asserts its precondition (`Stable.moveHolds`):
     each member's record, mapped, equals its target's record, the side words are equal, no target has a
     side fact, and σ is injective. That is O(members) per move. Under `-Downership-full-cross-check`,
-    `widenValue` widens again with nothing moved and read-off publishes again with nothing moved, each
-    on an account of its own and the same labels, and the two values' κ must be equal (`kappaLeq` both
-    ways). *Shown to fire:* a build that sends each member to the next class's target panics on the
+    `widenValue` reads the raw image before the move and the moved image after it, with no memo, on
+    an account of its own. It renames the raw κ by σ and requires both to read alike on the one moved
+    value (`kappaLeq` both ways). Like against like: the first text compared two copies of one value,
+    and `kappaLeq` between copies is not complete, because a snapshot keys entries at nodes outside the
+    value's records: a member's own positions, and projection images made on demand. The read-off's
+    side is *open* (#1513's review): it publishes twice, pairs the two copies node by node, and
+    compares, but the control, two raw publishes, already disagrees. It is not yet a meaningful check. *Shown to fire:* a build that sends each member to the next class's target panics on the
     precondition at DerivedDeepPaths' `rose` and the quadtree; a build without step 4a panics on the
     cross-check at `mPlain`. Unit tests show `moveHolds` refusing a member sent to a node of another
     record, two members sent to one target, and a graph whose side word differs.
@@ -6431,7 +6442,7 @@ L0  Ids
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
-| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 240 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and its cross-check; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 260 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and its cross-check; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |

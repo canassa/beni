@@ -347,6 +347,7 @@ pub fn mapKnot(t: anytype, gpa: Allocator, account: *Account, out: NodeId, entry
         const to = redir.get(e[1]) orelse continue;
         try account.reserve(.memo, 1);
         try t.memo_map.put(gpa, .from(e[0]), .from(to));
+
         if (t.map_src.contains(.from(e[0])) and (try t.map_images.getOrPut(gpa, .from(to))).found_existing) t.map_shared = true;
     }
 }
@@ -431,7 +432,6 @@ pub fn widened(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: 
             try comp.append(gpa, x);
             if (x == fin.v) break;
         }
-        for (comp.items) |x| try rewrite(t, gpa, account, x, &redir);
         // A node on no cycle stays as `emit` made it: interned, it can be one
         // node with a part of another value that a later reader compares by
         // id (§2.3, 4e step 5, `PushedTwiceLevels`).
@@ -439,40 +439,54 @@ pub fn widened(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: 
             try done.put(gpa, fin.v, 1);
             continue;
         }
+        // Only the root's knot moves: a knot below has raw parents, and
+        // moving it would mean rewriting them, which every node-keyed memo
+        // (`proj`'s first) may have read already. Recorded all the same.
         if (try canon(t, gpa, account, .from(fin.v), lo, extra, &done)) |r0| {
             var r = r0;
             defer r.deinit(gpa);
-            for (0..r.count()) |i| try redir.put(gpa, r.key(@intCast(i)), r.value(@intCast(i)));
+            if (r.contains(root.int())) for (0..r.count()) |i| try redir.put(gpa, r.key(@intCast(i)), r.value(@intCast(i)));
         }
         for (comp.items) |x| try done.put(gpa, x, 1);
     }
     return redir;
 }
 
-/// `x`'s references moved along σ, in place: `x` is a raw node of the graph
-/// being moved, named by that graph alone.
-fn rewrite(t: anytype, gpa: Allocator, account: *Account, x: u32, redir: *const Redirect) Error!void {
-    if (redir.count() == 0) return;
-    const d = t.get(.from(x));
-    switch (d.kind) {
-        .leaf, .view => {},
-        .node, .delta => {
-            const over = if (d.kind == .node) d.a else d.b;
-            var changed = false;
-            var it = t.overEntries(over);
-            while (it.next()) |e| changed = changed or redir.contains(e.node.int());
-            if (changed) {
-                var out: u32 = none;
-                var it2 = t.overEntries(over);
-                while (it2.next()) |e| out = try t.overPut(gpa, account, out, e.step, .from(redir.get(e.node.int()) orelse e.node.int()));
-                if (d.kind == .node) t.nodes.items(.a)[x] = out else t.nodes.items(.b)[x] = out;
-            }
-            if (d.kind == .delta) t.nodes.items(.a)[x] = redir.get(d.a) orelse d.a;
-        },
-        .recast => t.nodes.items(.a)[x] = redir.get(d.a) orelse d.a,
-        .@"union", .choice, .positions => {
-            t.nodes.items(.a)[x] = redir.get(d.a) orelse d.a;
-            t.nodes.items(.b)[x] = redir.get(d.b) orelse d.b;
-        },
+/// Adds to `pair` the renaming of the graph from `a` onto the graph from
+/// `b`, walked in lockstep: each pair of nodes met has one record but for
+/// its references, which pair in turn. False where the two are not one
+/// structure (a node paired with two nodes, or records that differ). The
+/// cross-check's way to read two copies of one value as one (§2.3, 4e).
+pub fn pairOnto(t: anytype, gpa: Allocator, pair: *Redirect, a: NodeId, b: NodeId) Allocator.Error!bool {
+    var stack: std.ArrayList([2]u32) = .empty;
+    defer stack.deinit(gpa);
+    var ra: std.ArrayList(u32) = .empty;
+    defer ra.deinit(gpa);
+    var rb: std.ArrayList(u32) = .empty;
+    defer rb.deinit(gpa);
+    var ha: std.ArrayList(u32) = .empty;
+    defer ha.deinit(gpa);
+    var hb: std.ArrayList(u32) = .empty;
+    defer hb.deinit(gpa);
+    try stack.append(gpa, .{ a.int(), b.int() });
+    while (stack.pop()) |x| {
+        if (pair.get(x[0])) |seen| {
+            if (seen != x[1]) return false;
+            continue;
+        }
+        try pair.put(gpa, x[0], x[1]);
+        ha.clearRetainingCapacity();
+        hb.clearRetainingCapacity();
+        try head(t, gpa, x[0], null, &ha);
+        try head(t, gpa, x[1], null, &hb);
+        try refs(t, gpa, x[0], &ra);
+        try refs(t, gpa, x[1], &rb);
+        if (!std.mem.eql(u32, ha.items, hb.items) or ra.items.len != rb.items.len) return false;
+        var j: usize = 0;
+        while (j < ra.items.len) : (j += 2) {
+            if (ra.items[j] != rb.items[j]) return false;
+            try stack.append(gpa, .{ ra.items[j + 1], rb.items[j + 1] });
+        }
     }
+    return true;
 }
