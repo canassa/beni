@@ -124,9 +124,6 @@ pub const Table = struct {
     /// it, read only by that call (each call its own number, #1372).
     prop_slice: std.ArrayList([2]u32) = .empty,
     prop_calls: u32 = 0,
-    /// Set by `Summary` while it joins two classes' results or supplies: a
-    /// join whose entry a call relabels for every caller (`propagate`'s skip).
-    class_join: bool = false,
     /// `propagate`'s join memo (§2.9, *The join memo*): a state `(joined
     /// node, class and mode bits, run)` whose walk is the same wherever it is
     /// met → the snapshot its walk puts at its position. Written only once
@@ -467,6 +464,17 @@ pub const Table = struct {
     /// node, its members' snapshots merged first, so its sides usually imply
     /// it). A fold's obligation is never implied.
     pub fn joinImplied(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, cur: Kappas, k: CondId) Error!bool {
+        // A call's view of a join reads its stored entry joined with its
+        // answer's read: implied where the answer's read is no stronger.
+        if (v.shapes.kind(n) == .view) {
+            const answer = try v.shapes.force(gpa, charge.account, n);
+            const ak = v.shapes.kind(answer);
+            if (ak != .@"union" and ak != .choice) return false;
+            for ([_]bool{ false, true }) |summary| {
+                if (!try t.leq(gpa, charge, k, try t.kappaOf(gpa, charge, v, cur, answer, summary))) return false;
+            }
+            return true;
+        }
         const nk = v.shapes.kind(n);
         if (nk != .@"union" and nk != .choice) return false;
         if (t.fold_cond.get(n) != null) return false;
@@ -477,6 +485,115 @@ pub const Table = struct {
             if (!try t.leq(gpa, charge, k, try t.join(gpa, charge, a, b))) return false;
         }
         return true;
+    }
+
+    /// `ctx` without the join entries that read-off would carry onto a new
+    /// projection (`imageless`: a union or choice the map did not meet) and
+    /// that the reads at their positions show implied (`joinImplied`): every
+    /// read the same, and no node made for them (§2.9 *Keyed where a reader
+    /// looks*). For a recursive group's read-off, where each round's class
+    /// would carry them into the next (#1466). Positions at or below a fold
+    /// are kept as they are. Post-order on an explicit stack.
+    pub fn withoutImpliedJoins(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, pred: anytype, imageless: *const fn (@TypeOf(pred), NodeId) Error!bool) Error!Kappas {
+        if (ctx == .none) return .none;
+        var memo: Ids.FixedDict(1) = .{};
+        defer memo.deinit(gpa);
+        const Frame = struct { at: Kappas, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        var drop: std.ArrayList(u32) = .empty;
+        defer drop.deinit(gpa);
+        var spread: std.ArrayList([2]u32) = .empty;
+        defer spread.deinit(gpa);
+        try stack.append(gpa, .{ .at = ctx, .expanded = false });
+        while (stack.pop()) |f| {
+            if (memo.get(.{f.at.int()}) != null) continue;
+            const p = t.position(f.at);
+            if (!f.expanded) {
+                try charge.reserve(gpa, .memo, 1);
+                try stack.append(gpa, .{ .at = f.at, .expanded = true });
+                if (p.fold == 0) {
+                    var lt = t.mapEntries(p.links);
+                    while (lt.next()) |e| try stack.append(gpa, .{ .at = .from(e.value), .expanded = false });
+                }
+                continue;
+            }
+            if (p.fold != 0) {
+                (try memo.getOrPut(gpa, .{f.at.int()})).value_ptr.* = f.at.int();
+                continue;
+            }
+            drop.clearRetainingCapacity();
+            spread.clearRetainingCapacity();
+            var it = t.mapEntries(p.here);
+            while (it.next()) |e| {
+                const nk = v.shapes.kind(.from(e.key));
+                if (nk != .@"union" and nk != .choice and nk != .view) continue;
+                if (!try imageless(pred, .from(e.key))) continue;
+                try charge.reserve(gpa, .inspection, 1);
+                if (try t.joinImplied(gpa, charge, v, .from(e.key), f.at, .from(e.value))) {
+                    try drop.append(gpa, e.key);
+                    continue;
+                }
+                // Not implied: the entry joins each side the map met, so its
+                // reads keep it with no projection made (a side read alone is
+                // read nowhere, §2.9). A side the map did not meet keeps the
+                // entry where it is, carried by projection.
+                const first = spread.items.len;
+                var all = true;
+                var sides: std.ArrayList(NodeId) = .empty;
+                defer sides.deinit(gpa);
+                try sides.append(gpa, if (nk == .view) try v.shapes.force(gpa, charge.account, .from(e.key)) else .from(e.key));
+                var seen: u32 = 0;
+                while (sides.pop()) |x| {
+                    seen += 1;
+                    try charge.reserve(gpa, .inspection, 1);
+                    const xk = v.shapes.kind(x);
+                    if (xk == .@"union" or xk == .choice or xk == .positions) {
+                        const d = v.shapes.get(x);
+                        try sides.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                        continue;
+                    }
+                    if (seen > 256 or try imageless(pred, x)) {
+                        all = false;
+                        break;
+                    }
+                    try spread.append(gpa, .{ x.int(), e.value });
+                }
+                if (!all) {
+                    spread.shrinkRetainingCapacity(first);
+                    continue;
+                }
+                try drop.append(gpa, e.key);
+            }
+            var here = p.here;
+            if (drop.items.len > 0) {
+                here = Ids.none_int;
+                var kt = t.mapEntries(p.here);
+                while (kt.next()) |e| {
+                    if (std.mem.indexOfScalar(u32, drop.items, e.key) != null) continue;
+                    here = try t.mapPut(gpa, charge, here, e.key, e.value);
+                }
+            }
+            for (spread.items) |x| {
+                const old = t.mapGet(here, x[0]);
+                try t.keyed(gpa, charge, .from(x[0]));
+                here = try t.mapPut(gpa, charge, here, x[0], if (old) |o| (try t.join(gpa, charge, .from(o), .from(x[1]))).int() else x[1]);
+            }
+            // A fold's links are the steps it saw, kept as they are.
+            var links: u32 = if (p.fold != 0) p.links else Ids.none_int;
+            var changed = here != p.here;
+            if (p.fold == 0) {
+                var lt = t.mapEntries(p.links);
+                while (lt.next()) |e| {
+                    const child: Kappas = .from(memo.get(.{e.value}).?);
+                    if (child.int() != e.value) changed = true;
+                    if (child != .none) links = try t.mapPut(gpa, charge, links, e.key, child.int());
+                }
+            }
+            const out: Kappas = if (!changed) f.at else try t.makePos(gpa, charge, .{ .here = here, .links = links, .fold = p.fold });
+            (try memo.getOrPut(gpa, .{f.at.int()})).value_ptr.* = out.int();
+        }
+        return .from(memo.get(.{ctx.int()}).?);
     }
 
     /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
@@ -541,11 +658,6 @@ pub const Table = struct {
     fn propagateWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         std.debug.assert(members.len == member_ctxs.len);
         const memo = !t.no_memo;
-        // A walk whose members are its joined node's own sides (no member
-        // flattened or merged into another node) stores no join entry its
-        // sides imply, at any position: each frame below is the projection of
-        // that root (§2.9 *Keyed where a reader looks*, `sidesHoldMembers`).
-        const skip = mode == .alternatives and members.len > 1 and (t.class_join or anyView(v, members)) and try t.sidesHoldMembers(gpa, charge, v, joined, members);
         const call = t.prop_calls;
         t.prop_calls += 1;
         var runs: std.ArrayList(NodeId) = .empty;
@@ -722,7 +834,7 @@ pub const Table = struct {
             // is the same, so its position is the snapshot that walk made,
             // linked as it is (§2.9, *The join memo*).
             if (f.clean) {
-                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined) | @as(u32, @intFromBool(skip)) << 4, run };
+                const key: [3]u32 = .{ f.node.int(), stateBits(f.summary, f.msummary, mode, f.node == joined), run };
                 try charge.reserve(gpa, .memo, 1);
                 if (if (t.no_memo) null else t.memo_prop.get(key)) |hit| {
                     try linked.append(gpa, .{ .path = f.path, .at = .from(hit) });
@@ -778,7 +890,7 @@ pub const Table = struct {
             // (Against the read without its fold obligation, so the snapshot
             // stores the obligation itself, #1128.)
             const plain = try v.shapes.force(gpa, charge.account, f.node);
-            const redundant = (v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, f.summary, null))) or (skip and try t.sidesHoldMembers(gpa, charge, v, f.node, runs.items[f.first..][0..f.len]));
+            const redundant = v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, f.summary, null));
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
@@ -956,35 +1068,6 @@ pub const Table = struct {
         const r = try v.shapes.rank(gpa, charge.account, n);
         return r >= 1 and r != Shape.Table.rank_unbounded;
     }
-
-    /// Whether a member is a call's view: a join whose entry would cross the
-    /// call's caller and its callers again (§2.9).
-    fn anyView(v: View, members: []const NodeId) bool {
-        for (members) |m| if (v.shapes.kind(m) == .view) return true;
-        return false;
-    }
-
-    /// Whether a join of alternatives' entry on union or choice `d` adds
-    /// nothing (§2.9 *Keyed where a reader looks*): every member node at its
-    /// position is `d` or one of its two sides, or holds nothing, and no fold
-    /// obligation rides on it. Each member's snapshot is merged into the
-    /// output first, so each side reads at most as strong as its member's
-    /// read, and `d`'s read, its sides' join, is at most the entry, the
-    /// members' reads joined. A record per member.
-    fn sidesHoldMembers(t: *Table, gpa: Allocator, charge: Charge, v: View, d: NodeId, members: []const NodeId) Error!bool {
-        const dk = v.shapes.kind(d);
-        if (dk != .@"union" and dk != .choice) return false;
-        if (members.len == 0 or t.fold_cond.get(d) != null) return false;
-        if ((try t.foldCondOf(gpa, charge, v, d)) != yes) return false;
-        const n = v.shapes.get(d);
-        for (members) |m| {
-            try charge.reserve(gpa, .inspection, 1);
-            if (m == d or m.int() == n.a or m.int() == n.b) continue;
-            if (try nothingAt(gpa, charge, v, m)) continue;
-            return false;
-        }
-        return true;
-    }
     /// An empty leaf: no object can be there.
     fn nothingAt(gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!bool {
         return v.shapes.isNothing(gpa, charge.account, n);
@@ -1026,11 +1109,11 @@ pub const Table = struct {
 /// its own (the transport keys that one), or no origin leads to one.
 /// Memoised per transport in `memo`, so each node is resolved once; on an
 /// explicit stack.
-pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, places: *@import("Place.zig").Table, cellt: *Cell.Table, n: NodeId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), NodeId) Error!?NodeId) Error!?NodeId {
+pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, places: *@import("Place.zig").Table, cellt: *Cell.Table, n: NodeId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), NodeId) Error!?NodeId, templates: bool) Error!?NodeId {
     // A join of alternatives keys a union or a choice, or a call's view of
     // one; a positions node is a literal's, which no transport carries.
     if (!t.isJoinNode(n)) return null;
-    const start = t.originHead(n) orelse return null;
+    const start = t.originHead(n, templates) orelse return null;
     if ((try image(ctx, n)) != null) return null;
     const open: u32 = Ids.none_int - 1;
     const Frame = struct { node: NodeId, origin: u32, env: u32 };
@@ -1080,7 +1163,7 @@ pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, pl
             returned = true;
             continue;
         }
-        const head = t.originHead(parent) orelse {
+        const head = t.originHead(parent, templates) orelse {
             (try memo.getOrPut(gpa, .{parent.int()})).value_ptr.* = Ids.none_int;
             top.origin = t.proj_origins.items[top.origin][2];
             continue;
@@ -4199,7 +4282,7 @@ const MapCarry = struct {
     fn projected(ctx: *anyopaque, x: NodeId) Error!?NodeId {
         const c: *MapCarry = @ptrCast(@alignCast(ctx));
         if (!c.with_projection) return null;
-        return projectedImage(&c.f.shapes, testing.allocator, &c.f.account, &c.f.places, &c.f.cells, x, &c.memo, ctx, node);
+        return projectedImage(&c.f.shapes, testing.allocator, &c.f.account, &c.f.places, &c.f.cells, x, &c.memo, ctx, node, true);
     }
     fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
         return k;
@@ -4287,4 +4370,25 @@ test "#1093: a join of two built records, their snapshots merged first, reads th
     const merged = try f.propagate(try f.conds.kappaMerge(gpa, f.charge(), ka, kb), j.c, &members, &.{ ka, kb }, .alternatives, false);
     try testing.expectEqual(yes, try f.kappa(merged, j.c, false));
     for (members, [_]Kappas{ ka, kb }) |m, km| try testing.expect(try f.conds.kappaLeq(gpa, f.charge(), f.view(), km, m, merged, j.c, false));
+}
+
+test "a class join keeps a join entry its sides' merged certificates would make stronger (#1459's review)" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const j = try joinedDag(&f);
+    // `x = a`, `u = union(a, b)`, `joined = choice(x, u)`. `ka` certifies
+    // `x`; `kb` only `b`, so `u` reads `lost` (its `a` has no certificate
+    // there). The members' snapshots merged give `a` `ka`'s certificate, so
+    // the sides alone would read `yes`: the shape says nothing of reads.
+    const x = j.a;
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, j.a, j.b);
+    const joined = try f.shapes.choice(gpa, &f.account, &f.cells.sets, x, u);
+    const ka = try f.setK(.none, x, yes);
+    const kb = try f.setK(.none, j.b, yes);
+    try testing.expectEqual(lost, try f.kappa(kb, u, false));
+    const merged = try f.conds.kappaMerge(gpa, f.charge(), ka, kb);
+    const out = try f.propagate(merged, joined, &.{ x, u }, &.{ ka, kb }, .alternatives, false);
+    try testing.expectEqual(lost, try f.kappa(out, joined, false));
 }

@@ -704,9 +704,7 @@ pub const Table = struct {
                 s.owned = s.owned and sb.?.owned;
                 // The two snapshots of one handed value joined into a new one.
                 const merged = try env.conds.kappaMerge(gpa, env.charge, sa.?.kappa, sb.?.kappa);
-                env.conds.class_join = true;
                 const joined = env.conds.propagate(gpa, env.charge, env.view(), merged, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
-                env.conds.class_join = false;
                 s.kappa = try joined;
                 try sup.append(gpa, s);
                 i += 1;
@@ -779,9 +777,7 @@ pub const Table = struct {
         // side of the joined DAG keeps its own entries (§2.9 *Keyed where a
         // reader looks*, #1093).
         const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
-        env.conds.class_join = true;
         const mj = env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
-        env.conds.class_join = false;
         const mj_ok = try mj;
         const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
         return .{ .node = w.node, .kappas = w.kappas };
