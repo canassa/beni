@@ -1,0 +1,24 @@
+-- ownership (project): `FoldedWriteCall` with the recursive group and
+-- `run` in another module (ownership-v2.md Appendix B, F×A; §8, slice 4's
+-- plan, 4a; #1394). `run a b` writes `T [ T a, T [ T b ] ]` through the
+-- group, so the verdicts are the same-module fixture's: `same` and
+-- `shallowCopy` are refused, `separate` and `fresh` accepted. Under v2
+-- `Trees`'s own call of `incT` in `run` is refused until #1253 (known
+-- entries).
+import Trees exposing (T)
+
+
+pub same : List T → T
+same xs = Trees.run xs xs
+
+
+pub shallowCopy : List T → T
+shallowCopy xs = Trees.run xs (List.copy xs)
+
+
+pub separate : List T, List T → T
+separate xs ys = Trees.run xs ys
+
+
+pub fresh : T
+fresh = Trees.run [ T [] ] [ T [] ]
