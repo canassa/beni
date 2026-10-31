@@ -1325,13 +1325,14 @@ pub const Table = struct {
         var id: ?NodeId = n;
         while (id) |x| : (id = v.shapes.chainNext(x)) {
             try charge.reserve(gpa, .memo, 1);
-            if (t.memo_chain.get(.{ ctx.int(), x.int() })) |hit| {
+            // A walk with no memo (the cross-check) joins the whole chain.
+            if (!t.no_memo) if (t.memo_chain.get(.{ ctx.int(), x.int() })) |hit| {
                 joined = if (hit == Ids.none_int) null else CondId.from(hit);
                 break;
-            }
+            };
             // The join stored at the view's last position, where this one
             // reads alike on its region (*A read at another position*).
-            if (t.home_chain.get(.{x.int()})) |h| if (h != ctx.int() and try t.readsAlike(gpa, charge, v, ctx, .from(h), try v.shapes.region(gpa, charge.account, x))) {
+            if (!t.no_memo) if (t.home_chain.get(.{x.int()})) |h| if (h != ctx.int() and try t.readsAlike(gpa, charge, v, ctx, .from(h), try v.shapes.region(gpa, charge.account, x))) {
                 const hit = t.memo_chain.get(.{ h, x.int() }).?;
                 joined = if (hit == Ids.none_int) null else CondId.from(hit);
                 try charge.reserve(gpa, .memo, 1);
@@ -1346,6 +1347,7 @@ pub const Table = struct {
             k -= 1;
             const x = views.items[k];
             if (t.kappaGet(ctx, x)) |s| joined = if (joined) |b| try t.join(gpa, charge, s, b) else s;
+            if (t.no_memo) continue;
             try charge.reserve(gpa, .memo, 1);
             (try t.memo_chain.getOrPut(gpa, .{ ctx.int(), x.int() })).value_ptr.* = if (joined) |b| b.int() else Ids.none_int;
             (try t.home_chain.getOrPut(gpa, .{x.int()})).value_ptr.* = ctx.int();
@@ -7382,6 +7384,103 @@ test "eqOn compares only the keys based on the region, the empty value always" {
     // A step `C` links and `R` does not is no equality either.
     const linked = try f.conds.kappaLink(gpa, f.charge(), r, Place.Step.elem, try f.setK(.none, outside, atom));
     try testing.expect(!try f.conds.eqOn(gpa, f.charge(), f.view(), linked, r, region));
+}
+
+test "a read at another position takes its home's entry only where the two read alike on the node's region" {
+    // `ownership-v2.md` §2.11 *A read at another position*: `u = union(a, b)`
+    // read at `h`, which stores `a ↦ shared`, is `u`'s home. A position that
+    // differs from `h` only outside the region reads what `h` reads; one that
+    // binds `a` or `b` otherwise must be read itself, never from the home.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const a = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 1, list, .list)}));
+    const b = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 2, list, .list)}));
+    const x = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, 3, list, .list)}));
+    const u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, a, b);
+    const h = try f.setK(.none, a, shared);
+    try testing.expectEqual(shared, try f.kappa(h, u, false));
+    // Outside the region: the home's entry, which is the read itself.
+    const outside = try f.setK(h, x, lost);
+    try testing.expectEqual(shared, try f.kappa(outside, u, false));
+    // On the region, `a` bound otherwise and `b` bound: read here.
+    const inside = try f.setK(try f.setK(.none, a, lost), b, lost);
+    try testing.expectEqual(lost, try f.kappa(inside, u, false));
+    // And with nothing stored on the region: what the leaves derive.
+    const bare = try f.setK(.none, x, shared);
+    f.conds.no_memo = true;
+    const fresh = try f.kappa(bare, u, false);
+    f.conds.no_memo = false;
+    try testing.expectEqual(fresh, try f.kappa(bare, u, false));
+    try testing.expect(fresh != shared);
+}
+
+test "a union tower read at a position one level larger each time costs its new level (the home's witness)" {
+    // `u_k = union(l_k, u_{k-1})` read at `c_k`, which binds `l_k` beside
+    // what `c_{k-1}` binds: `u_{k-1}` reads at `c_k` what it read at
+    // `c_{k-1}` (§2.11 *A read at another position*), so each level costs a
+    // constant. Read again at each position, the tower is quadratic.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    f.account.allowance = 1 << 26;
+    var costs: [2]u64 = undefined;
+    for ([_]u32{ 64, 256 }, 0..) |depth, run| {
+        var u = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(1_000_000 * (run + 1)), list, .list)}));
+        var c: Kappas = .none;
+        const before = f.account.total();
+        for (0..depth) |k| {
+            const l = try f.shapes.leaf(gpa, &f.account, list, try f.set(&.{try f.cells.site(gpa, &f.account, @intCast(1_000_000 * (run + 1) + k + 1), list, .list)}));
+            u = try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, l, u);
+            c = try f.setK(c, l, lost);
+            try testing.expectEqual(lost, try f.kappa(c, u, false));
+        }
+        costs[run] = f.account.total() - before;
+    }
+    // Four times the levels: about four times the records, never sixteen.
+    try testing.expect(costs[1] <= 6 * costs[0]);
+}
+
+test "read-off maps an entry map many positions share once (relabelMap's witness)" {
+    // §2.9: read-off maps κ submaps once under one correspondence. `m`
+    // positions, linked one below the other, each store a base map of 128
+    // entries and one entry of their own. Each shared map node is mapped
+    // once, so four times the positions is far less than four times the
+    // records; one walk of every entry of every position is four times.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    f.account.allowance = 1 << 26;
+    const Identity = struct {
+        fn node(_: *anyopaque, n: NodeId) Error!?NodeId {
+            return n;
+        }
+        fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
+            return k;
+        }
+    };
+    var dummy: u8 = 0;
+    const id: Table.Relabel = .{ .ctx = &dummy, .node = Identity.node, .cond = Identity.cond };
+    var base: u32 = Ids.none_int;
+    for (0..128) |k| base = try f.conds.mapPut(gpa, f.charge(), base, @intCast(k), lost.int());
+    var costs: [2]u64 = undefined;
+    for ([_]u32{ 16, 64 }, 0..) |m, run| {
+        var below: Kappas = .none;
+        for (0..m) |i| {
+            const here = try f.conds.mapPut(gpa, f.charge(), base, @intCast(10_000 * (run + 1) + i), lost.int());
+            const links = if (below == .none) Ids.none_int else try f.conds.mapPut(gpa, f.charge(), Ids.none_int, Place.Step.elem.word(), below.int());
+            below = try f.conds.makePos(gpa, f.charge(), .{ .here = here, .links = links, .fold = 0 });
+        }
+        const before = f.account.total();
+        try testing.expectEqual(below, try f.conds.kappaRelabel(gpa, f.charge(), below, id));
+        costs[run] = f.account.total() - before;
+    }
+    try testing.expect(costs[1] <= 2 * costs[0]);
 }
 
 test "#1121: two growing sets merged along their tries cost their new spines" {
