@@ -843,3 +843,41 @@ tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 50:5 
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>#Rose.0[*]#Rose.0 :: absent :: rejected  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>#Rose.0[*]#Rose.0⟨Rose⟩ :: absent :: rejected  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>⟨Rose⟩⁺#Rose.0 :: accepted :: absent  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
+||||||| parent of c5b2aed38 (✨ own2: refuse writing comparisons, call through function aliases)
+#
+# v2 refuses where v1 accepted: a type's `eq` or `compare` that writes what it is handed is
+# `comparison_changes_value` (R-5.13.1, ownership-v2.md §2.13.13 item 13); v1 has no such code.
+tests/corpus/ownership/CmpComponentsImported [node] Inner 9:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpCycleImported [node] Inner 9:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepImported [node] Inner 9:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepImported [node] Mid 14:23 #0 :: Inner.eq x#Inner.0 :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepImported [node] Outer2 14:23 #0 :: Inner.eq x#Inner.0 :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepImported [node] Outer3 14:23 #0 :: Mid.eq x#Mid.1#Inner.0 :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 12:34 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 16:34 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 13:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpFreshImported [node] Inner 9:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 14:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ComparisonWrites.beni [node] ComparisonWrites 14:31 #0 :: List.push a :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ComparisonWrites.beni [node] ComparisonWrites 23:21 #0 :: ComparisonWrites.grow a :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 12:29 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ContainerOverWriter [node] Key 19:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/ContainerOverWriter [node] Key 9:29 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/DerivedOverWriterImported [node] Key 19:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/DerivedOverWriterImported [node] Key 9:29 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/DerivedOverWriterThird [node] Key 19:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/DerivedOverWriterThird [node] Key 9:29 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/EvidenceDeep.beni [browser-inline] EvidenceDeep 17:42 #0 :: List.push xs :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 13:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
+#
+# A top-level alias of a function is a call of what it names (R-5.5.6, the owner's 2026-10-25
+# decision): v2 reports no pending line at the alias, and checks calls past v1's eight-name cap.
+tests/corpus/ownership/AliasGroupCall.beni [node] AliasGroupCall 25:9 #0 :: value AliasGroupCall.pushN :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasImported [node] Lib 5:10 #0 :: value List.push :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasImported [node] Lib 9:9 #0 :: value Deep.w :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 14:6 #0 :: value AliasWriter.writer :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 11:10 #0 :: value List.push :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 25:6 #0 :: value AliasWriterCall.w1 :: pending :: absent  R-5.5.6: an alias of a function is no escape of it; v1 makes it pending
+tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 58:14 #0 :: AliasWriter.writer xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number
+tests/corpus/ownership/AliasWriter.beni [browser-inline] AliasWriter 62:13 #0 :: AliasWriter.writer xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number
+tests/corpus/ownership/AliasWriterCall.beni [node] AliasWriterCall 61:13 #0 :: AliasWriterCall.w1 xs :: absent :: rejected  R-5.5.6: v1 stops at eight names and makes no line; v2 follows any number

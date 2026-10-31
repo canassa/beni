@@ -898,7 +898,8 @@ requirement or section number.
 - R-6.3 The causes, in print order, with their kinds (e exact, a approximate, p position, e/a exact only when the
   text shows it): `unknown` a, `escaped` a, `top-level` p, `captured-edit` a, `disjoint` e/a, `held-operand` e,
   `later-use` e, `alias` e, `captured` e, `element` a, `call` a, `supply` e/a, `need` e/a, `limit` a, `exclusive`
-  e/a, `once` e/a, `payload` a, `read-only` p, `level` a. Acceptance kinds: `fresh`, `call`, `param`,
+  e/a, `once` e/a, `payload` a, `read-only` p, `level` a, `comparison` p (a write in a type's `eq` or
+  `compare` of what it was handed, R-5.13.1; appended 2026-10-31). Acceptance kinds: `fresh`, `call`, `param`,
   `callback-param`, `once`, `entry`; the counter `assumed` counts acceptances resting on a callee with no facts,
   allowed only for a markup construction. A label of exact resting on any approximation is a defect [G #996 claims
   visible sharing for a limit; #313, #714 blame the wrong place]. (oc §8.3, §16.11, §18.10, §20.7, §28.5, §30.11;

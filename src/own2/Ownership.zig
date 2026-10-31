@@ -72,6 +72,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             .shared = mod.shared_of.items,
             .ctx = mod,
             .decl_of = Groups.Module.declOfCtx,
+            .callee_of = Groups.Module.calleeOfCtx,
             .ctor_of = Groups.Module.ctorIndexCtx,
             .is_append = Groups.Module.isListAppend,
         };
@@ -106,7 +107,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             var frame = frame_base;
             frame.decl = d;
             for (dr.lines) |l| {
-                const op = if (l.demand.callee_inst != Ids.none_int) (try Message.refName(frame, arena, l.demand.callee_inst)) orelse "call" else "";
+                const op = if (l.demand.callee_inst != Ids.none_int) (try Message.calleeName(frame, arena, l.demand.callee_inst)) orelse "call" else "";
                 try lines.append(arena, try Message.line(frame, arena, l, op));
             }
             if (in.format_summaries) {

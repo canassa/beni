@@ -729,6 +729,13 @@ pub const Module = struct {
         return self(ctx).declOf(inst);
     }
 
+    /// The `(module, decl)` a callee reference runs: `declOf`, then the
+    /// top-level aliases it names followed (R-5.5.6).
+    pub fn calleeOfCtx(ctx: *anyopaque, inst: u32) ?[2]u32 {
+        const mod = self(ctx);
+        return mod.aliasTarget(mod.declOf(inst) orelse return null);
+    }
+
     pub fn declOf(mod: *const Module, inst: u32) ?[2]u32 {
         const bir = mod.in.bir;
         const d = bir.instData(@fromBackingInt(inst));
@@ -744,16 +751,28 @@ pub const Module = struct {
         };
     }
 
-    /// The member of the group being solved that `inst`, a `call` or
-    /// `method_call`, names, or null.
-    fn groupMember(mod: *const Module, inst: u32) ?u32 {
-        const g = mod.group orelse return null;
+    /// The function a called declaration names through top-level aliases
+    /// (R-5.5.6, `Prepass.aliasTarget`).
+    pub fn aliasTarget(mod: *const Module, t: [2]u32) [2]u32 {
+        return Prepass.aliasTarget(mod.in.birs, mod.in.provenance, t);
+    }
+
+    /// The `(module, decl)` a call or method call runs, aliases followed.
+    fn calledDecl(mod: *const Module, inst: u32) ?[2]u32 {
         const bir = mod.in.bir;
         const t = switch (bir.instTag(@fromBackingInt(inst))) {
             .call => mod.declOf(bir.instData(@fromBackingInt(inst)).lhs),
             .method_call => mod.methodTarget(inst),
             else => null,
         } orelse return null;
+        return mod.aliasTarget(t);
+    }
+
+    /// The member of the group being solved that `inst`, a `call` or
+    /// `method_call`, names, or null.
+    fn groupMember(mod: *const Module, inst: u32) ?u32 {
+        const g = mod.group orelse return null;
+        const t = mod.calledDecl(inst) orelse return null;
         return if (t[0] == mod.in.module) g.index.get(.{t[1]}) else null;
     }
 
@@ -885,6 +904,8 @@ pub const Module = struct {
                 else => composed = true,
             }
         };
+        // A top-level alias is a call of what it names (R-5.5.6).
+        if (target) |t| target = mod.aliasTarget(t);
         var args: std.ArrayList(u32) = .empty;
         defer args.deinit(mod.gpa);
         try mod.argsOf(inst, &args);
@@ -1145,10 +1166,24 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     mod.adapter.account = &mod.base_account;
 }
 
-/// Whether declaration `di` is walked: a value with a body and no words.
-fn isWalked(bir: *const Bir, di: u32) bool {
+/// Whether declaration `di` is walked: a value with a body and no words,
+/// and no alias of a function, which is checked at its calls (R-5.5.6:
+/// a call of it is a call of what it names, `Module.aliasTarget`).
+fn isWalked(in: *const Input, di: u32) bool {
+    const bir = in.bir;
     const d = bir.decls[di];
-    return d.kind == .value and d.body != .none and bir.ownSlotsV2(d).len == 0;
+    if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) return false;
+    return !(Prepass.isAliasShape(bir, d) and isFunctionScheme(in, di));
+}
+
+/// Whether declaration `di`'s scheme is a function's.
+fn isFunctionScheme(in: *const Input, di: u32) bool {
+    if (di >= in.decl_scheme.len) return false;
+    const v = in.decl_scheme[di].unwrap() orelse return false;
+    return switch (in.store.resolvedContent(v)) {
+        .structure => |s| s == .func,
+        else => false,
+    };
 }
 
 /// R_f (§4.4): the declaration's `@ownership_summary_size`, else the
@@ -1162,7 +1197,7 @@ fn allowanceOf(bir: *const Bir, di: u32) u32 {
 fn groupMembers(gpa: Allocator, in: *const Input, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
     out.clearRetainingCapacity();
     for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |di| {
-        if (isWalked(in.bir, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
+        if (isWalked(in, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
     }
     // By name, not position (§3.8): the first walked pays a shared memo's miss.
     std.mem.sort(u32, out.items, in, struct {
@@ -1358,6 +1393,20 @@ fn declPlaces(mod: *Module, d: Bir.Decl, di: u32, out: *std.ArrayList(PlaceId)) 
     return Module.placeOfInst(mod, d.body.unwrap().?.int());
 }
 
+/// Whether `d` is a type's `eq` or `compare` (§2.13.13 item 13, R-5.13.1):
+/// the module's value of that name whose first parameter is of a type the
+/// module declares, pub or not (a private one answers dispatch inside its
+/// module, `userComparison`). The type is told by the parameter's place,
+/// as the checker tells it by the scheme's head (`Instances.writtenFor`).
+fn isComparison(mod: *const Module, d: Bir.Decl, param_places: []const PlaceId) bool {
+    if (d.kind != .value or param_places.len == 0) return false;
+    const name = mod.in.bir.symbol(d.name);
+    if (name != InternPool.WellKnown.eq.symbol() and name != InternPool.WellKnown.compare.symbol()) return false;
+    const p = param_places[0];
+    if (mod.places.kind(p) != .ctor or mod.places.head(p) >= mod.in.types.entries.len) return false;
+    return mod.in.types.entries[mod.places.head(p)].module.int() == mod.in.module;
+}
+
 fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Error!void {
     const gpa = mod.gpa;
     // S_f (§4.1): the written instructions, the source this owner's
@@ -1375,6 +1424,7 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
         .prepass = prepass,
         .param_places = param_places.items,
         .result_place = result_place,
+        .comparison = isComparison(mod, d, param_places.items),
     });
     r.class = res.class;
     r.unbuilt = res.unbuilt;
@@ -1592,6 +1642,7 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
         .param_places = g.param_places.items[run.start..][0..run.len],
         .result_place = g.result_places.items[k],
         .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+        .comparison = isComparison(mod, d, g.param_places.items[run.start..][0..run.len]),
     });
 }
 

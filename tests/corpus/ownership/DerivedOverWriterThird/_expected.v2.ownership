@@ -1,27 +1,28 @@
 module Key
-  9:29 List.push l: accepted param
-  19:26 List.push l: accepted param
-  account compare: source 29, baseline 272, growth 0 of 65536, total 272, continuation 149 of 29696, demands 74, direct_data lanes 2, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 33, step lanes 1
+  9:29 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  19:26 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  account compare: source 29, baseline 272, growth 0 of 65536, total 272, continuation 176 of 29696, demands 24, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 33, step lanes 1
   crossing: reads 0, redone 0, base moves 0
   summary compare: π1 R, π1#Key.0 RW
-  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 158 of 20480, demands 72, direct_data lanes 2, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 188 of 20480, demands 24, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
   summary eq: π1 R, π1#Key.0 RW
-  block: 496 bytes, hash 257d3acc82a09bfb
-  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  block: 496 bytes, hash aa0263721db47d46
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 module Main
   9:41 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 9:16
   9:41 call <Wrap …>#Wrap.0#Key.0: accepted fresh
   13:41 call <Wrap …>#Wrap.0#Key.0: rejected alias: xs holds it and is read at 13:16
   13:41 call <Wrap …>#Wrap.0#Key.0: accepted fresh
-  account derivedLt: source 23, baseline 227, growth 0 of 65536, total 227, continuation 89 of 23552, demands 56, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 6, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
+  account derivedLt: source 23, baseline 326, growth 0 of 65536, total 326, continuation 242 of 23552, demands 52, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
   crossing: reads 0, redone 0, base moves 0
-  summary derivedLt: π1 RA; res .1 π1
-  account derivedEq: source 23, baseline 227, growth 0 of 65536, total 227, continuation 89 of 23552, demands 56, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 6, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
-  summary derivedEq: π1 RA; res .1 π1
-  block: 592 bytes, hash 5f4e77af8ab88d60
+  summary derivedLt: π1 RAW; res .1 π1
+  account derivedEq: source 23, baseline 326, growth 0 of 65536, total 326, continuation 242 of 23552, demands 52, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
+  summary derivedEq: π1 RAW; res .1 π1
+  block: 616 bytes, hash edafc2df4df16ba9
   demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 module Wrap
-  block: 28 bytes, hash 20966739d18c0e27
+  block: 28 bytes, hash 04b3919ab94956da
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause alias 2
+cause comparison 2

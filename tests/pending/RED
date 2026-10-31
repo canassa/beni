@@ -194,7 +194,6 @@ tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 
 # CK-281: a write in a type's `eq` is accepted as a write of its own
 # parameter; `comparison_changes_value` does not exist yet; R-5.13.1.
-tests/pending/check/bad/inline/ComparisonWrites.beni exit=0 codes=none
 
 # CK-282: a prepend whose front item is a fresh constructor value or record
 # literal is taken as maybe its base; R-4.4.3.
@@ -207,7 +206,6 @@ tests/pending/ownership/RecordIndexExchange.beni exit=0 ownership-differs
 
 # CK-284: a top-level alias of a writer is called as the writer, through any
 # number of names; v1 makes the alias pending and stops at 8; R-5.5.6.
-tests/pending/ownership/AliasWriterCall.beni exit=0 ownership-differs
 
 # CK-285: `Task.resume` is read from its body over `Js`, so the list it
 # hands on is not given up and a later read is silent; R-5.10.12.

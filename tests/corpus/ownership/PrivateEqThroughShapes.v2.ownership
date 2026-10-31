@@ -1,5 +1,5 @@
 module PrivateEqThroughShapes
-  13:26 List.push l: accepted param
+  13:26 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
   17:22 PrivateEqThroughShapes.eq <Key …>#Key.0: rejected alias: xs holds it and is read at 17:13
   21:31 call <expression>.0#Key.0: rejected alias: xs holds it and is read at 21:15
   21:31 call <expression>.0#Key.0: accepted fresh
@@ -7,18 +7,19 @@ module PrivateEqThroughShapes
   25:31 call <expression>#Just.0#Key.0: accepted fresh
   29:27 List.eq <literal>[*]#Key.0: rejected alias: xs holds it and is read at 29:14
   29:27 List.eq <literal>[*]#Key.0: accepted fresh
-  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 158 of 20480, demands 72, direct_data lanes 2, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 188 of 20480, demands 24, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
   crossing: reads 0, redone 0, base moves 0
   summary eq: π1 R, π1#Key.0 RW
-  account direct: source 19, baseline 148, growth 0 of 65536, total 148, continuation 96 of 19456, demands 40, direct_data lanes 1, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 20
+  account direct: source 19, baseline 180, growth 0 of 65536, total 180, continuation 150 of 19456, demands 37, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 20
   summary direct: π1 RAW; res .1 π1
   account viaTuple: source 23, baseline 80, growth 0 of 65536, total 80, continuation 40 of 23552, demands 0, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 22
-  summary viaTuple: π1 RA; res .1 π1
+  summary viaTuple: π1 RAW; res .1 π1
   account viaMaybe: source 19, baseline 54, growth 0 of 65536, total 54, continuation 34 of 19456, demands 0, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 18
-  summary viaMaybe: π1 RA; res .1 π1
+  summary viaMaybe: π1 RAW; res .1 π1
   account viaList: source 18, baseline 78, growth 0 of 65536, total 78, continuation 57 of 18432, demands 0, direct_data lanes 1, call_view lanes 2, transfer_settlement lanes 17
-  summary viaList: π1 RA; res .1 π1
-  block: 780 bytes, hash b69a2711f9e639c0
-  demands 8: accepted 4 (fresh 3, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
-total 8: accepted 4 (fresh 3, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  summary viaList: π1 RAW; res .1 π1
+  block: 672 bytes, hash 15ff907d895ffbbe
+  demands 8: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 8: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause alias 4
+cause comparison 1

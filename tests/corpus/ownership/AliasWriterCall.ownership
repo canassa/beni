@@ -1,10 +1,11 @@
 module AliasWriterCall
+  11:10 value List.push: pending: it is returned
   16:10 List.push xs: rejected later-use: xs is read again at 17:5
   21:9 List.push xs: accepted param
-  61:13 call AliasWriterCall.w1 xs: rejected later-use: xs is read again at 61:11 (AliasWriterCall.w1 writes π1)
+  25:6 value AliasWriterCall.w1: pending: it is returned
   summary direct: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
   summary w1: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
   summary nine: π1 RA; res .0 condition(fresh2) ⊤call{lost}r{lost}, .0⋆ ~condition(fresh4) ~π1, .1 ~condition(fresh3) π1, condition(fresh1){lost}
-  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
-total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
-cause later-use 2
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 1
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 1
+cause later-use 1

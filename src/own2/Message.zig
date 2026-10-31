@@ -58,6 +58,9 @@ pub const Frame = struct {
     ctor_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
     /// Whether a call is `++` on lists, which v1 names `<++>`.
     is_append: ?*const fn (ctx: *anyopaque, inst: u32) bool = null,
+    /// The `(module, decl)` a callee reference runs, top-level aliases
+    /// followed (R-5.5.6): a call names the function the names reach.
+    callee_of: ?*const fn (ctx: *anyopaque, inst: u32) ?[2]u32 = null,
 };
 
 fn birOf(f: Frame) *const Bir {
@@ -80,6 +83,13 @@ fn data(f: Frame, i: u32) Bir.Inst.Data {
 }
 
 /// A value reference's `M.v`.
+/// A callee reference's `M.f`: the function it runs, through aliases.
+pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
+    const of = f.callee_of orelse return refName(f, a, i);
+    const md = of(f.ctx, i) orelse return null;
+    return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
+}
+
 pub fn refName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const md = f.decl_of(f.ctx, i) orelse return null;
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
@@ -232,6 +242,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .exclusive => w.writeAll("the elements of the list it was taken from may share one list"),
             .escaped => w.writeAll("it was given to JavaScript, or kept by a callee"),
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
+            .comparison => w.writeAll("a type's `eq` and `compare` may only read the values they are handed"),
             .top_level => blk: {
                 const md = sharedOf(f, o.cell);
                 break :blk if (md) |x| w.print("{s}.{s} is a top-level value", .{ f.names.module_names[x[0]], f.names.declName(x[0], x[1]) }) else w.writeAll("it is a top-level value");

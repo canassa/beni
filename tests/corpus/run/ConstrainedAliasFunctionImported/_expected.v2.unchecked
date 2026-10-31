@@ -1,5 +1,3 @@
 M same: lines 18-20 (not built: method_call)
 M sameL: lines 23-25 (not built: local)
-M sameP: lines 28-30 (not built: top)
-Main mine: lines 6-8 (not built: ext_value)
 Main main: lines 19-29 (not built: ext_value)

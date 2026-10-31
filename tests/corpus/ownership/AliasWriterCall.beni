@@ -1,12 +1,12 @@
--- CK-284: R-5.5.6 (owner 2026-10-25; v1 pins the opposite in
--- o/AliasWriter): a top-level alias of a writer is a call of the writer,
+-- ownership (v2; R-5.5.6, the owner's 2026-10-25 decision; ownership-v2.md
+-- §8 S3b slice 5e): a top-level alias of a writer is a call of the writer,
 -- through alias chains of any length, never pending. `direct` calls
 -- `writer = List.push` and reads `xs` after: `later-use` at the call, as a
--- direct `List.push` is. `nine` reaches `w1` through nine names: also
--- `later-use`. Red: v1 makes both aliases `pending: it is returned` (11:10,
--- 25:6), and past its eight-name cap `nine` calls a function it cannot
--- identify and makes no line at all. The golden claims the verdict lines
--- and the totals; its summary lines are master's.
+-- direct `List.push` is. `nine` reaches `w1` through nine names, each an
+-- alias of the one before: also `later-use`. v1 pins the opposite
+-- (o/AliasWriter): it makes both aliases `pending: it is returned`, and past
+-- its eight-name cap `nine` calls a function it cannot identify and makes no
+-- line at all.
 writer : List Int, Int → List Int
 writer = List.push
 

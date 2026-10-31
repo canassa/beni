@@ -1,0 +1,19 @@
+-- ownership (v2; R-5.5.6, ownership-v2.md §8 S3b slice 5e): aliases called
+-- from another module. `Lib.writer` names `List.push`; `Lib.chain` names
+-- `Lib.push1`, which names `Deep.w` in a third module. A call of either is
+-- a call of the function the names reach, read from its own module's
+-- block: `kept` and `keptChain` read `xs` after the call and are refused
+-- `later-use`; `owned` reads nothing after and is accepted.
+import Lib
+
+
+pub kept : List Int → List Int × List Int
+kept xs = ( Lib.writer xs 1, xs )
+
+
+pub keptChain : List Int → List Int × List Int
+keptChain xs = ( Lib.chain xs, xs )
+
+
+pub owned : List Int → List Int
+owned xs = Lib.chain xs
