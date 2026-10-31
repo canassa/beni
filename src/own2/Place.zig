@@ -550,10 +550,13 @@ pub const Table = struct {
     }
 
     /// The strongly connected components of the places from `first` on:
-    /// an iterative Tarjan over the child edges, O(E), numbering each
-    /// component after the table's count so ids never collide across
-    /// builds. Edges into older places are followed for membership but
-    /// those places keep their own component.
+    /// an iterative Tarjan over the child edges, O(E), each component named
+    /// by its root's place id plus one (0 is a place not settled), so ids
+    /// never collide across builds. A count at the build's start did not do
+    /// that: a later build started where an earlier one's second component
+    /// was, and a tuple and the list in it were one cycle (#1412). Edges into
+    /// older places are followed for membership but those places keep their
+    /// own component.
     fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
@@ -575,7 +578,6 @@ pub const Table = struct {
         var frames: std.ArrayList(Visit) = .empty;
         defer frames.deinit(gpa);
         var next: u32 = 0;
-        var component: u32 = t.count(); // ids past every place id
         var root: u32 = first;
         while (root < t.count()) : (root += 1) {
             if (index[root - first] != none) continue;
@@ -614,10 +616,9 @@ pub const Table = struct {
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
-                    sccs[m] = component;
+                    sccs[m] = p + 1;
                     if (m == p) break;
                 }
-                component += 1;
             }
         }
     }
@@ -630,6 +631,12 @@ pub const Table = struct {
         const s = t.steps(p);
         for (s.children) |c| if (c == p) return true;
         return false;
+    }
+
+    /// The strongly connected component of `p`: two places of one
+    /// component are on one cycle (`sameCycle`) when they are distinct.
+    pub fn sccOf(t: *const Table, p: PlaceId) u32 {
+        return t.places.items(.scc)[p.int()];
     }
 
     /// Whether `p` lies on a cycle of the place graph: one of its steps
