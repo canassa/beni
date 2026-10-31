@@ -173,6 +173,12 @@ pub const Table = struct {
     memo_dag: Ids.FixedDict(3) = .{},
     /// A view's chain join by `(ctx, view)` (`chainStored`), `none` for nothing.
     memo_chain: Ids.FixedDict(2) = .{},
+    /// The last position each view's chain join was stored at (`chainStored`),
+    /// and the last a `(dag or inner, node, class)` read was stored at
+    /// (`memoAt`): where a read at another position may take that entry
+    /// (§2.11 *Part 2*, *A read at another position*).
+    home_chain: Ids.FixedDict(1) = .{},
+    home_read: Ids.FixedDict(3) = .{},
     /// Positions `kappaHoldsView` found view-free, valid while the shape table's
     /// `ties` is `kview_free_epoch`.
     kview_free: Ids.FixedDict(1) = .{},
@@ -269,6 +275,8 @@ pub const Table = struct {
         t.fold_of.deinit(gpa);
         t.memo_dag.deinit(gpa);
         t.memo_chain.deinit(gpa);
+        t.home_chain.deinit(gpa);
+        t.home_read.deinit(gpa);
         t.kview_free.deinit(gpa);
         t.memo_merge.deinit(gpa);
         t.memo_inner.deinit(gpa);
@@ -1029,6 +1037,8 @@ pub const Table = struct {
         if (ctx == .none) return .none;
         var memo: Ids.FixedDict(1) = .{};
         defer memo.deinit(gpa);
+        var maps: Ids.FixedDict(1) = .{};
+        defer maps.deinit(gpa);
         // Post-order on an explicit stack (#1130): a snapshot's depth is the
         // source's, never native-stack depth. A position's children are
         // relabelled before it; a shared one once (the memo).
@@ -1049,31 +1059,50 @@ pub const Table = struct {
                 continue;
             }
             if (memo.get(.{f.at.int()}) != null) continue;
-            try t.relabelOne(gpa, charge, f.at, r, &memo);
+            try t.relabelOne(gpa, charge, f.at, r, &memo, &maps);
         }
         return .from(memo.get(.{ctx.int()}).?);
     }
 
+    /// An entry map with each key's node and condition mapped: the union of
+    /// its two halves' images, memoised per map node (`maps`), so a submap
+    /// that many positions share is mapped once (§2.9: read-off maps κ
+    /// submaps once under one correspondence). Two keys with one image
+    /// join their conditions. The recursion is the key width.
+    fn relabelMap(t: *Table, gpa: Allocator, charge: Charge, m: u32, r: Relabel, maps: *Ids.FixedDict(1)) Error!u32 {
+        if (m == Ids.none_int) return Ids.none_int;
+        try charge.reserve(gpa, .memo, 1);
+        if (maps.get(.{m})) |hit| return hit;
+        const n = t.mapNode(m);
+        const out: u32 = if (n.mask == 0) blk: {
+            try charge.reserve(gpa, .inspection, 1);
+            const img = (try r.node(r.ctx, .from(n.prefix))) orelse break :blk Ids.none_int;
+            const k = try r.cond(r.ctx, t, gpa, charge, .from(n.left));
+            try t.keyed(gpa, charge, img);
+            break :blk try t.mapPut(gpa, charge, Ids.none_int, img.int(), k.int());
+        } else try t.mapUnion(gpa, charge, .cond, try t.relabelMap(gpa, charge, n.left, r, maps), try t.relabelMap(gpa, charge, n.right, r, maps));
+        (try maps.getOrPut(gpa, .{m})).value_ptr.* = out;
+        return out;
+    }
+
     /// One position relabelled, its children's images in `memo` already.
-    fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1)) Error!void {
+    fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1), maps: *Ids.FixedDict(1)) Error!void {
         const p = t.position(ctx);
         var here: u32 = Ids.none_int;
         // `(image, source)` of each entry whose image stands for several
         // sources here.
         var met: std.ArrayList([2]NodeId) = .empty;
         defer met.deinit(gpa);
-        var it = t.mapEntries(p.here);
-        while (it.next()) |e| {
-            try charge.reserve(gpa, .inspection, 1);
-            const m = (try r.node(r.ctx, .from(e.key))) orelse continue;
-            const k = try r.cond(r.ctx, t, gpa, charge, .from(e.value));
-            const old = t.mapGet(here, m.int());
-            const v = if (old) |o| try t.join(gpa, charge, .from(o), k) else k;
-            try t.keyed(gpa, charge, m);
-            here = try t.mapPut(gpa, charge, here, m.int(), v.int());
-            if (r.present) |many| if (many(r.ctx, ctx, m) >= 2) {
-                if (r.source.?(r.ctx, ctx, .from(e.key))) |s| try met.append(gpa, .{ m, s });
-            };
+        here = try t.relabelMap(gpa, charge, p.here, r, maps);
+        if (r.present) |many| {
+            var it = t.mapEntries(p.here);
+            while (it.next()) |e| {
+                try charge.reserve(gpa, .inspection, 1);
+                const m = (try r.node(r.ctx, .from(e.key))) orelse continue;
+                if (many(r.ctx, ctx, m) >= 2) {
+                    if (r.source.?(r.ctx, ctx, .from(e.key))) |s| try met.append(gpa, .{ m, s });
+                }
+            }
         }
         // An image of several sources at this position is `lost` where one
         // of them has no entry: that source alone reads `lost` (§2.9), and
@@ -1143,6 +1172,41 @@ pub const Table = struct {
             .deep => &t.memo_deep,
         };
         (try m.getOrPut(gpa, key)).value_ptr.* = value;
+        if (which != .deep) (try t.home_read.getOrPut(gpa, .{ @backingInt(which), key[1], key[2] })).value_ptr.* = key[0];
+    }
+
+    /// `memoGet`, or the entry a read of the same node and class stored at
+    /// the last position it was read at, where that position reads alike
+    /// on the node's region (`readsAlike`): the read is a function of what
+    /// its one position stores on the region (§2.11 *Part 2*, *A read at
+    /// another position*). The entry is then stored under `key` too. Only
+    /// an entry made with no crossing is a home (`memoPut`).
+    fn memoAt(t: *Table, gpa: Allocator, charge: Charge, v: View, which: @FieldType(Pending, "which"), key: [3]u32) Error!?u32 {
+        if (t.memoGet(which, key)) |hit| return hit;
+        if (t.no_memo) return null;
+        const home = t.home_read.get(.{ @backingInt(which), key[1], key[2] }) orelse return null;
+        if (home == key[0]) return null;
+        const hit = t.memoGet(which, .{ home, key[1], key[2] }) orelse return null;
+        if (!try t.readsAlike(gpa, charge, v, .from(key[0]), .from(home), try v.shapes.region(gpa, charge.account, .from(key[1])))) return null;
+        try t.memoPut(gpa, which, key, hit, false);
+        return hit;
+    }
+
+    /// Whether a read at position `c` of a node of `region` reads what one
+    /// at `h` reads (*A read at another position*): one fold kind, and no
+    /// key of the region that the two entry maps bind differently
+    /// (`diffKeys`, memoised per pair of map nodes). A growth task (§4.1).
+    fn readsAlike(t: *Table, gpa: Allocator, asking: Charge, v: View, c: Kappas, h: Kappas, region: SetId) Error!bool {
+        if (c == h) return true;
+        const task = try asking.account.enter(gpa, null);
+        defer asking.account.leave(task);
+        const charge: Charge = .growth(asking.account);
+        const pc = t.position(c);
+        const ph = t.position(h);
+        if (pc.fold != ph.fold) return false;
+        const d = try t.diffKeys(gpa, charge, v, pc.here, ph.here);
+        if (d == .none) return true;
+        return !try v.shapes.node_sets.intersectsMemo(gpa, charge, &v.shapes.memo_node_meet, d, region);
     }
 
     fn memoGet(t: *const Table, which: @FieldType(Pending, "which"), key: [3]u32) ?u32 {
@@ -1265,6 +1329,15 @@ pub const Table = struct {
                 joined = if (hit == Ids.none_int) null else CondId.from(hit);
                 break;
             }
+            // The join stored at the view's last position, where this one
+            // reads alike on its region (*A read at another position*).
+            if (t.home_chain.get(.{x.int()})) |h| if (h != ctx.int() and try t.readsAlike(gpa, charge, v, ctx, .from(h), try v.shapes.region(gpa, charge.account, x))) {
+                const hit = t.memo_chain.get(.{ h, x.int() }).?;
+                joined = if (hit == Ids.none_int) null else CondId.from(hit);
+                try charge.reserve(gpa, .memo, 1);
+                (try t.memo_chain.getOrPut(gpa, .{ ctx.int(), x.int() })).value_ptr.* = hit;
+                break;
+            };
             try views.append(gpa, x);
         }
         // Back up it, each view's entry joined onto what lies joined it.
@@ -1275,6 +1348,7 @@ pub const Table = struct {
             if (t.kappaGet(ctx, x)) |s| joined = if (joined) |b| try t.join(gpa, charge, s, b) else s;
             try charge.reserve(gpa, .memo, 1);
             (try t.memo_chain.getOrPut(gpa, .{ ctx.int(), x.int() })).value_ptr.* = if (joined) |b| b.int() else Ids.none_int;
+            (try t.home_chain.getOrPut(gpa, .{x.int()})).value_ptr.* = ctx.int();
         }
         return joined;
     }
@@ -1466,7 +1540,7 @@ pub const Table = struct {
                     if (!isDag(v.shapes.kind(f.answer))) {
                         result = .{ .k = try t.kappaReadOne(gpa, charge, v, f.at, f.answer, f.summary, extra), .crossed = f.crossed };
                     } else {
-                        if (t.memoGet(.dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) })) |hit| {
+                        if (try t.memoAt(gpa, charge, v, .dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) })) |hit| {
                             result = .{ .k = if (extra) |e| try t.join(gpa, charge, e, .from(hit)) else .from(hit), .crossed = f.crossed };
                         } else {
                             // The answer's DAG, its sides' join first. Below a
@@ -1487,7 +1561,7 @@ pub const Table = struct {
                 },
                 .inner => if (f.stage == 0) {
                     // The task's one record (above) covers its memo lookups.
-                    if (t.memoGet(.inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) })) |hit| {
+                    if (try t.memoAt(gpa, charge, v, .inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) })) |hit| {
                         result = .{ .k = .from(hit), .crossed = false };
                     } else {
                         f.stage = 1;

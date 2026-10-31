@@ -1705,6 +1705,25 @@ Where κ is set, always **at the selected path p**:
   reuses the argument's aggregate, and only the wrapper's new allocation and edge extend it.
   Count same-module and imported helper forms, including helpers returning their argument unchanged.
 
+  *As built (#1419, #1420, S3b slice 5d1):* the reads of K find their home (§2.11 *Part 2*, *A read
+  at another position*). Read-off maps a snapshot's entry maps one radix node at a time, memoised
+  for each relabel (`Cond.relabelMap`). So a submap that many positions share is mapped once. The
+  per-entry walk stays only where `Shape.map` made one image of two sources (`map_shared`), because
+  there the presence count is per position. K's snapshot holds Θ(n²) `(position, node)` entries in
+  O(n log n) map nodes. With these two changes, K came to 284 / 257 / 231 records per
+  n·log₂(n + 2) at 10 / 20 / 40, where it had been 253 / 268 / 311, and K at 1 000 was accepted
+  with 1 574 608 records. Then *Keyed where a reader looks* (#1399) began to key every node of the
+  joined DAG at each level, which made K quadratic again (#1428). Counted at the default allowance
+  (`build_test.zig`, records per n·log₂(n + 2), never rising): `Rose [r]`, W, T, the mutual pair,
+  `Maybe`, and `wrap` same-module and imported, at 10 / 40 / 160 levels, and a push chain over a
+  parameter. Debt:
+  - `Rose [r, r]` is still quadratic (#1420): 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
+    refused at 80. Its together-join and its widen walk the tower's depth. Each projection of a
+    `positions` chain of depth d makes d new nodes, and each read walks them.
+  - The block writer, `Summary.Table.add`'s view check and the printer still walk K's entries one
+    by one, so their time is quadratic (#1426).
+  - T publishes one `apart` group per level, so its block is quadratic (#1427).
+
   Unrelated context products still use §4.1's general bound. These eight families must not hit the
   summary-growth allowance merely for their length. Counting the old quadratic as charged growth or
   raising the default is not a repair. Appendix B requires 10/100/1,000 levels, production limits,
@@ -2535,6 +2554,21 @@ of the same handle still add multiplicity through the path-multiset primitive.
     node of one DAG is read at one position, the read's `ctx` (a union's sides are at its path),
     under the read's `at_summary`. So the four things are a function of `(ctx, node, at_summary)`
     and are memoised under that key at every inner union, choice and positions node.
+    - *A read at another position (#1419, #1420).* The read depends on less than its key. It
+      depends on what its one position stores at the keys of the node's region (`Shape.region`:
+      the DAG and every part below it) and on whether that position is a fold. The walk reads
+      `ctx` at no other key and steps to no other position. A crossing reads `R` below, but by
+      *Argument 1* its value is the read at `ctx`. So for each `(node, at_summary)` the walk keeps
+      a *home*: the last position at which a read with no crossing stored an entry. Suppose a read
+      at another position `c` finds no entry. If `c` and the home read alike, the read takes the
+      home's entry and stores it under `c` too. They read alike when they have one fold kind and
+      the two entry maps bind no key of the region differently. `diffKeys` decides this; it is
+      memoised per pair of map nodes, so a position that is one level more costs its changed
+      spine. The chain join (`chainStored`) keeps a home for each view in the same way. In K each
+      level reads the unions of the earlier levels again at its new position. That position binds
+      only the new level's nodes, so each such read finds its home. In a chain of pushes over a
+      parameter, each read of the chain meets its argument's views at a new position in the same
+      way. Without the home, both were quadratic and were refused at 1 000 levels.
     - The repeats are kept as sets, where today they are a list. `apart` decides a cell met twice
       or more by one `sep`, so the count above two never changes it, and `dups_approx` keeps the
       approximation of any occurrence.
@@ -2597,7 +2631,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
     build, as it does for views.
   - The entry stored under `(position, view)` is that atom, so the memo is per `(view, κ position)`.
   - `xreq` is instantiated the same way, as an `inst` atom on the first write's `relies`.
-  - *With the chain join.* `chainStored` joins the stored entries of a view's chain as they are.
+  - *With the chain join.* `chainStored` joins the stored entries of a view's chain as they are,
+    memoised per `(position, view)` and, at another position, from the view's home (*A read at
+    another position*, part 2).
     The join of `inst` atoms is a formula over them, resolved after the join, so the 2a order holds:
     entries are joined before the kind's rule reads them.
   - *Who pays.* The reader that resolves, on its own lane, or past the lane's share in its
@@ -4654,7 +4690,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 500 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*; #1390: a part's split run and `covered`, §2.2 *Parts*; #1399: a join keys its members' entries where a reader looks, §2.9) |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 560 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*; #1390: a part's split run and `covered`, §2.2 *Parts*; #1399: a join keys its members' entries where a reader looks, §2.9; #1419: a read at another position and the relabel per submap, §2.9, §2.11) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
@@ -5846,7 +5882,7 @@ The historical *As built* notes stay intact; this table records what has moved s
 | Code evidence | Status and tracking | Specified contract |
 |---|---|---|
 | Widen opens union/positions on a cycle and checks each class's pre-fold multiplicity on every fold; propagation stores repeats as lost. | #1125 landed, repairing #1128's reported equal-cell case. Symbolic substitution and precise choice controls remain work for the common primitive. | §2.3; §2.9; I-κ. |
-| Apart reads are incremental aggregates; union reads (`dagKappa`) still walk a union's whole DAG per read context. | #1121: T and W n log n (counted 10/100/300); K's union reads and #1098's per-item/read-off lanes remain. | §2.9's total tower bound; §4.1. |
+| Apart reads are incremental aggregates; union reads (`dagKappa`) still walk a union's whole DAG per read context. | #1121: T and W n log n (counted 10/100/300); K's union reads and #1098's per-item/read-off lanes remain. Since S3b 5d1 a union read at a new position takes its home's entry (§2.11 *A read at another position*). K is quadratic again since #1399's keying (#1428). | §2.9's total tower bound; §4.1. |
 | Fold relabelling keeps its observed self-link steps. | #1133 landed, closes #1129. | §2.9, §3.4, §3.6. |
 | κ path copying/relabel/merge and call linking use explicit stacks; further shape/summary/reader walks and cyclic graft knots follow. | #1130 done in #1135; #1138 done in #1142. Keep deep/small-stack probes. | §2.3, §2.11, §3.9; R-7.12. |
 | Tarjan's graft walk builds cyclic parts as records of their own kind, reading only built images; off-cycle parts use constructors. | #1144 merged (`c709bf771`), closes #1143. No waiting or retry passes; the transitive-reader probes remain regressions. | §2.11 cyclic-record protocol; §3.9's remaining native join/leq bound. |

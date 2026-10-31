@@ -65,7 +65,9 @@ const layers = [_]Entry{
     // 4 460 since #1399: a join keys the members' entries where a reader
     // looks (`leafEntries`, memoised) and checks it under `runtime_safety`;
     // 4 500 with the memo.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4500 },
+    // 4 560 since #1419: a read at another position takes its home's
+    // entry, and read-off maps κ per submap (`relabelMap`).
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4560 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
