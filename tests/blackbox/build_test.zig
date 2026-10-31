@@ -10130,6 +10130,30 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.0 R, π1#Node.0#Node.1 RA, π1#Node.0⟲ RA, π1#Node.1 RA, π2 RA; res #Node.0 π2, #Node.0#Node.0 π1#Node.0⟲, #Node.0#Node.1 π1#Node.0#Node.1, #Node.0#Node.2 π2, #Node.1 π1#Node.1\n") != null);
 }
 
+test "the checker v2 refuses PushedTwiceLevels' writes through a list that holds one element twice" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.9 *The repeating split* refuses `g`'s write into `List.push bs x`
+    // and into the rest of a pattern over it. The fixture's golden holds
+    // v1's verdicts, which accept both, so it does not see v2 accept them:
+    // interning widen's acyclic images by their form did (§2.3, 4e step 5).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "tests/corpus/ownership/PushedTwiceLevels.beni" }, .{ .cwd = .inherit });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  37:13 PushedTwiceLevels.g <call List.push>: rejected exclusive") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  49:21 PushedTwiceLevels.g rest: rejected exclusive") != null);
+}
+
 test "the checker v2's growth is linear in a recursive tower's height: a one-member literal is its member's snapshot" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -11823,6 +11847,47 @@ test "the checker v2 keeps no round of a group's port that its last round covers
     // the limit must see it (4 045 records).
     try testing.expect(try accountField(dump.stdout, "mergeSort", "growth") <= 5_000);
     try testing.expect(try accountField(dump.stdout, "mergeSort", "total") < 45_000);
+}
+
+test "the checker v2 settles an accumulator of two equal subtrees in four walks" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The two pieces that (b) adds, prototyped (4e)*: `acc` puts `t`
+    // twice under a new node each round, and widen emits the same images
+    // every round. Interned by their canonical form (never onto a node of
+    // the widening's own source), they are the nodes an earlier round
+    // made, so the group settles in 4 walks: growth 661 881 with one list
+    // (1 157 586 with two), against 1 053 726 in 5 walks without (Debug,
+    // self-hosted). The bound is that figure and 10 %. One list only: the
+    // walk itself costs about 5 s here, past the 1 s test budget (#1512).
+    var growth: [1]u64 = undefined;
+    for ([_]u32{1}, &growth) |k, *g| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        const a = w.arena.allocator();
+        try src.appendSlice(a, "@ownership_summary_size(module, 2000000)\n\n\ntype T\n    = N ");
+        for (0..k) |_| try src.appendSlice(a, "(List Int) ");
+        try src.appendSlice(a, "T T\n    | L\n\n\npub acc : Int, T → T\nacc n t =\n    if n == 0 then\n        t\n    else\n        acc (n - 1) (N ");
+        for (0..k) |_| try src.appendSlice(a, "[ n ] ");
+        try src.appendSlice(a, "t t)\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit acc") == null);
+        try testing.expectEqual(@as(u64, 4), try accountField(dump.stdout, "acc", "walks"));
+        g.* = try accountField(dump.stdout, "acc", "growth");
+    }
+    try testing.expect(growth[0] <= 730_000);
 }
 
 /// `name`'s module text: a record that doubles at each of 11 levels, three

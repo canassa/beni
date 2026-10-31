@@ -46,6 +46,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const stamped = @import("../stamped.zig");
+const Stable = @import("Stable.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const OverId = Ids.OverId;
@@ -138,6 +139,8 @@ pub const Table = struct {
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
+    /// Stable images (§2.3, 4e): the graphs met by canonical form, and `map`'s trail.
+    stable: Stable.Store = .{},
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
@@ -271,6 +274,7 @@ pub const Table = struct {
         t.member_sets.deinit(gpa);
         t.drop_head.deinit(gpa);
         t.drop_links.deinit(gpa);
+        t.stable.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -2882,6 +2886,7 @@ pub const Table = struct {
         t.map_src.clear();
         t.map_images.clear();
         t.map_shared = false;
+        t.stable.clearTrail();
         return t.mapWalk(gpa, account, n, ctx, f);
     }
 
@@ -2928,6 +2933,12 @@ pub const Table = struct {
         return slot;
     }
 
+    /// `memo_map`'s put, on the trail a closed knot moves along (§2.3, 4e).
+    fn mapPut(t: *Table, gpa: Allocator, src: NodeId, img: NodeId) Allocator.Error!void {
+        try t.memo_map.put(gpa, src, img);
+        try t.stable.trail.append(gpa, .{ src.int(), img.int() });
+    }
+
     fn mapWalk(t: *Table, gpa: Allocator, account: *Account, root: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
         // On an explicit stack (#1138: a value is as deep as the source). A
         // node or a delta takes its image before its children, so a cyclic
@@ -2957,7 +2968,7 @@ pub const Table = struct {
                     continue;
                 }
                 switch (d.kind) {
-                    .leaf => try t.memo_map.put(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
+                    .leaf => try t.mapPut(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
                     .recast => {
                         // A lazy node's image is lazy too: its parts' images hold its cells.
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
@@ -2981,8 +2992,9 @@ pub const Table = struct {
                         try account.reserve(.shape, 1);
                         const out: NodeId = .from(t.count());
                         try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
-                        try t.memo_map.put(gpa, n, out);
+                        try t.mapPut(gpa, n, out);
                         try t.map_open.put(gpa, n, entered);
+                        try t.stable.trail_at.append(gpa, @intCast(t.stable.trail.items.len));
                         entered += 1;
                         try stack.append(gpa, .{ .node = n, .expanded = true });
                         // The children in order, then a delta's base: pushed in reverse.
@@ -3006,7 +3018,7 @@ pub const Table = struct {
                 var id: ?NodeId = n;
                 while (id) |x| : (id = if (t.kind(x) == .view) t.chainNext(x) else null) {
                     if (t.memo_map.get(x) != null) break;
-                    try t.memo_map.put(gpa, x, image);
+                    try t.mapPut(gpa, x, image);
                     try t.mapLowPut(gpa, x, low);
                 }
                 continue;
@@ -3024,7 +3036,7 @@ pub const Table = struct {
                     var id: ?NodeId = n;
                     while (id) |x| : (id = t.chainNext(x)) {
                         if (t.memo_map.get(x) != null) break;
-                        try t.memo_map.put(gpa, x, image);
+                        try t.mapPut(gpa, x, image);
                         try t.mapLowPut(gpa, x, low);
                     }
                 },
@@ -3032,7 +3044,7 @@ pub const Table = struct {
                     if (t.memo_map.get(n) != null) continue;
                     const in = t.memo_map.get(.from(d.a)).?;
                     // A whole recast stays whole, its reach relabelled (#1311).
-                    try t.memo_map.put(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
+                    try t.mapPut(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
                     try t.mapLowPut(gpa, n, t.mapLowWith(null, .from(d.a)));
                 },
                 .@"union", .choice, .positions => {
@@ -3051,7 +3063,7 @@ pub const Table = struct {
                         try t.nodes.append(gpa, rec);
                         break :blk id;
                     } else try t.make(gpa, account, rec);
-                    try t.memo_map.put(gpa, n, out);
+                    try t.mapPut(gpa, n, out);
                     try t.mapLowPut(gpa, n, low);
                 },
                 .node, .delta => {
@@ -3089,8 +3101,8 @@ pub const Table = struct {
                     // image is, as no back edge can name its slot.
                     t.map_open.put(gpa, n, map_closed) catch unreachable;
                     if (low) |l| {
-                        if (l.index < index) try t.map_low.put(gpa, n, l);
-                    } else try t.memo_map.put(gpa, n, try t.mapAdopt(gpa, out));
+                        if (l.index < index) try t.map_low.put(gpa, n, l) else try Stable.mapKnot(t, gpa, account, out, index);
+                    } else try t.mapPut(gpa, n, try t.mapAdopt(gpa, out));
                     try t.map_src.put(gpa, n, {});
                     if ((try t.map_images.getOrPut(gpa, t.memo_map.get(n).?)).found_existing) t.map_shared = true;
                 },
@@ -4966,7 +4978,7 @@ fn knotSide(f: *Fixture, n: NodeId) !NodeId {
     return error.TestUnexpectedResult;
 }
 
-test "#1372: an image on a knot is not interned: each map of a widened value ties its own knot" {
+test "#1372 F3 (4e): an image on a knot is the knot an equal map made before; the raw pass ties its own" {
     var f: Fixture = .{};
     f.init();
     defer f.deinit();
@@ -4993,15 +5005,21 @@ test "#1372: an image on a knot is not interned: each map of a widened value tie
     };
     const m1 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
     const m2 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    // With nothing moved (the cross-check's raw pass), a map ties a knot of
+    // its own.
+    f.shapes.stable.off = true;
+    const m3 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    f.shapes.stable.off = false;
     try testing.expect(m1 != w and m2 != w);
-    try testing.expect(m1 != m2);
-    // Each a knot of its own (#1253, #1382: the root's first return keys a
-    // class of its own, and the subtrees are the knot): the recursive child
-    // of each map's subtree class names that class's own image, and the two
-    // maps' knots are two records. The root is on no knot and only names
-    // its knot, so it is interned, and differs because its knot does.
-    var subs: [2]NodeId = undefined;
-    for ([_]NodeId{ m1, m2 }, 0..) |m, i| {
+    // The second map's knot has the first's form, so it is that knot, and
+    // the root on no knot is interned onto the first's (§2.3, 4e).
+    try testing.expectEqual(m1, m2);
+    try testing.expect(m3 != m1);
+    // Each a knot (#1253, #1382: the root's first return keys a class of
+    // its own, and the subtrees are the knot): the recursive child of each
+    // map's subtree class names that class's own image.
+    var subs: [3]NodeId = undefined;
+    for ([_]NodeId{ m1, m2, m3 }, 0..) |m, i| {
         const sub = try f.proj(m, s0);
         try testing.expect(sub != m);
         // The knot is the union's built side; `map` orders a union's sides
@@ -5011,8 +5029,57 @@ test "#1372: an image on a knot is not interned: each map of a widened value tie
         try testing.expectEqual(core, try knotSide(&f, child));
         subs[i] = core;
     }
-    try testing.expect(subs[0] != subs[1]);
-    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m2));
+    try testing.expectEqual(subs[0], subs[1]);
+    try testing.expect(subs[2] != subs[0]);
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m3));
+
+    // The raw knot has the form recorded: σ moves it onto the first map's,
+    // and its precondition holds.
+    const raw = subs[2];
+    var redir = (try Stable.canon(&f.shapes, gpa, &f.account, raw, raw.int(), null, null)) orelse return error.TestUnexpectedResult;
+    defer redir.deinit(gpa);
+    try testing.expectEqual(subs[0].int(), redir.get(raw.int()).?);
+    var members: std.ArrayList(u32) = .empty;
+    defer members.deinit(gpa);
+    for (0..redir.count()) |i| try members.append(gpa, redir.key(@intCast(i)));
+    try testing.expect(try Stable.moveHolds(&f.shapes, gpa, members.items, &redir, null));
+    // The check fires on a move that does not keep the records: the knot
+    // sent to a node of another record, or two members to one target.
+    const wrong = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    var bad: Stable.Redirect = .{};
+    defer bad.deinit(gpa);
+    for (0..redir.count()) |i| try bad.put(gpa, redir.key(@intCast(i)), redir.value(@intCast(i)));
+    try bad.put(gpa, raw.int(), wrong.int());
+    try testing.expect(!try Stable.moveHolds(&f.shapes, gpa, members.items, &bad, null));
+    if (members.items.len >= 2) {
+        var twice: Stable.Redirect = .{};
+        defer twice.deinit(gpa);
+        for (0..redir.count()) |i| try twice.put(gpa, redir.key(@intCast(i)), redir.value(@intCast(i)));
+        try twice.put(gpa, members.items[1], twice.get(members.items[0]).?);
+        try testing.expect(!try Stable.moveHolds(&f.shapes, gpa, members.items, &twice, null));
+    }
+    // A side word in the key (`fold_cond`): the same graph with another word
+    // has another form, and is not moved.
+    const Word = struct {
+        fn seven(_: *anyopaque, _: NodeId) u32 {
+            return 7;
+        }
+    };
+    var dummy: u8 = 0;
+    try testing.expectEqual(@as(?Stable.Redirect, null), try Stable.canon(&f.shapes, gpa, &f.account, raw, raw.int(), .{ .ctx = &dummy, .word = Word.seven }, null));
+
+    // A graph that reaches its target never has its key: a raw copy of the
+    // knot's entry, whose references name the knot itself, is on no cycle;
+    // it is not moved onto the knot, so no route meets a moved member and
+    // its target both (§2.3, 4e, the fold case of the lemma).
+    const k = subs[0];
+    try f.account.reserve(.shape, 1);
+    const copy: NodeId = .from(f.shapes.count());
+    try f.shapes.nodes.append(gpa, f.shapes.get(k));
+    try testing.expectEqual(@as(?Stable.Redirect, null), try Stable.canon(&f.shapes, gpa, &f.account, copy, copy.int(), null, null));
+    var moved = try Stable.widened(&f.shapes, gpa, &f.account, copy, copy.int(), null);
+    defer moved.deinit(gpa);
+    try testing.expect(moved.get(copy.int()) == null or moved.get(copy.int()).? != k.int());
 }
 
 test "#1372: joinAlternatives flattens a choice member into one set of distinct alternatives; joinChoice keeps it" {

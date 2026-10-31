@@ -48,6 +48,8 @@ const layers = [_]Entry{
     .{ .file = "Cell.zig", .layer = 2, .max_lines = 1240 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
+    // 4e: stable images, below the shape table it is given as `anytype`.
+    .{ .file = "Stable.zig", .layer = 2, .max_lines = 500 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
     // §5 says 3 600 since #1372: map's knot test and the flattening choice
     // join (§2.3); 3 350 since #1350, a view's instantiated place and a
@@ -55,7 +57,8 @@ const layers = [_]Entry{
     // 3 820 since #1420: positions saturate at two, their count maps, the
     // rebuild and the nodes it dropped (§2.3). 3 925 since #1467: a join's
     // reach leaves out its own cells, checked under runtime safety (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3970 },
+    // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3990 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -100,7 +103,9 @@ const layers = [_]Entry{
     // with its memos, and `widenValue`.
     // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
     // projection correspondence (§2.9 *Keyed where a reader looks*).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1197 },
+    // 1 240 since 4e: `widenValue` interns its image by canonical form,
+    // and its cross-check (§2.3, stable images).
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1240 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
