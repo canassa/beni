@@ -1,0 +1,97 @@
+-- ownership (project): see Main.beni. `incAll` and `incList` push onto
+-- every kids list of a `Rose`; the builders put one list `k` at two
+-- depths; `incA`, `incBs` and `incAs` do the same over the mutual pair.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub minimalOf : List Rose → Rose
+minimalOf k =
+    b = Rose [ Rose k, Rose [] ]
+    Rose [ …[ b ], Rose k ]
+
+
+pub kidsPushOf : List Rose → Rose
+kidsPushOf k =
+    a = Rose k
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    Rose (List.push [ c ] (Rose k))
+
+
+pub kidsSpreadOf : List Rose → Rose
+kidsSpreadOf k =
+    a = Rose k
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    Rose [ …[ c ], Rose k ]
+
+
+pub onePushOf : List Rose → Rose
+onePushOf k =
+    a = Rose k
+    b = Rose [ a ]
+    c = Rose [ b ]
+    Rose (List.push [ c ] (Rose k))
+
+
+pub nest : Rose → Rose
+nest r = Rose [ r ]
+
+
+-- A mutual pair: `A`'s `B`s hold `A`s again, and `incA` pushes onto the
+-- kids list of every `A`.
+pub type A
+    = A (List B)
+
+
+pub type B
+    = B (List A)
+
+
+pub incA : A → A
+incA a =
+    case a of
+        A bs →
+            A (incBs bs)
+
+
+-- The group walks past the default growth allowance (#1372): 79 297 and
+-- 75 940 growth in 12 and 11 walks, raised here by a tenth.
+@ownership_summary_size(88000)
+pub incBs : List B → List B
+incBs bs =
+    case bs of
+        [ B kids, …rest ] →
+            [ B (incAs (List.push kids (A []))), …incBs rest ]
+
+        [] →
+            []
+
+
+@ownership_summary_size(88000)
+pub incAs : List A → List A
+incAs xs =
+    case xs of
+        [ a, …rest ] →
+            [ incA a, …incAs rest ]
+
+        [] →
+            []

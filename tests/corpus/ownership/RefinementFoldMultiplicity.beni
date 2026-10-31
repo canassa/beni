@@ -1,0 +1,127 @@
+-- ownership: elements taken from a split of a recursive value and stored
+-- again at another depth, written by a recursive writer (ownership-v2.md
+-- Appendix B, R×F, the S3b half with a group writer; R-4.6.9, R-4.7.5).
+-- `incAll` pushes onto the kids list of every `Rose` at every depth, and
+-- `incList` walks a list of `Rose`; they are one group. `nestOne a`
+-- writes `Rose [ a ]`, so it writes `a`'s kids list and those below it.
+-- Over a fresh tree it is accepted (`freshOne`). Over `a` taken two
+-- levels down in `t`, with `t` read after, it is refused
+-- (`takenOneBeside`): v1 accepts it (its `nestOne` reads `a` only), a
+-- known entry for v1, and a `--sanitize-lists` run shows the stale read.
+-- With `t` not read after it is accepted (`takenOne`). `nestTwo a b`
+-- writes `Rose [ a, Rose [ b ] ]`: one taken element given twice is
+-- refused (`takenTwice`), and so is `regraft t`'s answer, `t` with its
+-- first kid one level down again (`regraftShared`), and `apartKids`'s
+-- answer over a tree whose two kids are one value (`apartShared`). Two
+-- distinct taken elements should be accepted, as two arguments
+-- (`takenTwo`) and in one answer (`apartFresh`); both checkers refuse
+-- them (#1503).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+nestOne : Rose → Rose
+nestOne a = incAll (Rose [ a ])
+
+
+pub freshOne : ⊤ → Rose
+freshOne ⊤ = nestOne (Rose [ Rose [] ])
+
+
+pub takenOneBeside : ⊤ → Rose × Rose
+takenOneBeside ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            ( nestOne a, t )
+
+        _ →
+            ( t, t )
+
+
+pub takenOne : ⊤ → Rose
+takenOne ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            nestOne a
+
+        _ →
+            t
+
+
+nestTwo : Rose, Rose → Rose
+nestTwo a b = incAll (Rose [ a, Rose [ b ] ])
+
+
+pub takenTwice : ⊤ → Rose
+takenTwice ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, …_ ], …_ ] →
+            nestTwo a a
+
+        _ →
+            t
+
+
+pub takenTwo : ⊤ → Rose
+takenTwo ⊤ =
+    t = Rose [ Rose [ Rose [ Rose [] ], Rose [ Rose [] ] ] ]
+    case t of
+        Rose [ Rose [ a, b, …_ ], …_ ] →
+            nestTwo a b
+
+        _ →
+            t
+
+
+regraft : Rose → Rose
+regraft t =
+    case t of
+        Rose [ k, …_ ] →
+            Rose [ t, Rose [ k ] ]
+
+        _ →
+            t
+
+
+pub regraftShared : ⊤ → Rose
+regraftShared ⊤ = incAll (regraft (Rose [ Rose [ Rose [] ] ]))
+
+
+apartKids : Rose → Rose
+apartKids t =
+    case t of
+        Rose [ a, b, …_ ] →
+            Rose [ a, Rose [ b ] ]
+
+        _ →
+            t
+
+
+pub apartFresh : ⊤ → Rose
+apartFresh ⊤ = incAll (apartKids (Rose [ Rose [ Rose [] ], Rose [ Rose [] ] ]))
+
+
+pub apartShared : ⊤ → Rose
+apartShared ⊤ =
+    s = Rose [ Rose [] ]
+    incAll (apartKids (Rose [ s, s ]))

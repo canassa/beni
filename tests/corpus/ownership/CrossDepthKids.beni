@@ -1,0 +1,177 @@
+-- ownership: one kids list at two depths of a value a recursive writer
+-- walks (ownership-v2.md Appendix B, C×F, the S3b half with a group
+-- writer; R-4.7.5, R-3.1; #1125). `incAll` pushes onto the kids list of
+-- every `Rose` at every depth, and `incList` walks a list of `Rose`; they
+-- are one group, and each needs the kids lists apart. The builders put
+-- `k` below a node at depth 2 and at depth 1, through a spread of a
+-- singleton (`minimalOf`), a push (`kidsPushOf`), a spread of a two-element
+-- list (`kidsSpreadOf`) and one-element literals (`onePushOf`): each
+-- written value is refused. `plainPush`, the same shape with separate kids
+-- lists, is accepted. `k` at two depths one, two and six levels apart is
+-- refused (`gap1`, `gap2`, `gap6`), with two lists accepted (`gap6Apart`).
+-- The same across a mutual pair `A`/`B` (`mutualShared`, refused;
+-- `mutualApart`, accepted).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+minimalOf : List Rose → Rose
+minimalOf k =
+    b = Rose [ Rose k, Rose [] ]
+    Rose [ …[ b ], Rose k ]
+
+
+kidsPushOf : List Rose → Rose
+kidsPushOf k =
+    a = Rose k
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    Rose (List.push [ c ] (Rose k))
+
+
+kidsSpreadOf : List Rose → Rose
+kidsSpreadOf k =
+    a = Rose k
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    Rose [ …[ c ], Rose k ]
+
+
+onePushOf : List Rose → Rose
+onePushOf k =
+    a = Rose k
+    b = Rose [ a ]
+    c = Rose [ b ]
+    Rose (List.push [ c ] (Rose k))
+
+
+pub minimal : ⊤ → Rose
+minimal ⊤ =
+    k = [ Rose [] ]
+    incAll (minimalOf k)
+
+
+pub kidsPush : ⊤ → Rose
+kidsPush ⊤ =
+    k = [ Rose [] ]
+    incAll (kidsPushOf k)
+
+
+pub kidsSpread : ⊤ → Rose
+kidsSpread ⊤ =
+    k = [ Rose [] ]
+    incAll (kidsSpreadOf k)
+
+
+pub onePush : ⊤ → Rose
+onePush ⊤ =
+    k = [ Rose [] ]
+    incAll (onePushOf k)
+
+
+pub plainPush : ⊤ → Rose
+plainPush ⊤ =
+    a = Rose [ Rose [] ]
+    b = Rose [ a, Rose [] ]
+    c = Rose [ b, Rose [] ]
+    incAll (Rose (List.push [ c ] (Rose [ Rose [] ])))
+
+
+nest : Rose → Rose
+nest r = Rose [ r ]
+
+
+pub gap1 : ⊤ → Rose
+gap1 ⊤ =
+    k = [ Rose [] ]
+    incAll (Rose [ Rose k, nest (Rose k) ])
+
+
+pub gap2 : ⊤ → Rose
+gap2 ⊤ =
+    k = [ Rose [] ]
+    incAll (Rose [ Rose k, nest (nest (Rose k)) ])
+
+
+pub gap6 : ⊤ → Rose
+gap6 ⊤ =
+    k = [ Rose [] ]
+    incAll (Rose [ Rose k, nest (nest (nest (nest (nest (nest (Rose k)))))) ])
+
+
+pub gap6Apart : ⊤ → Rose
+gap6Apart ⊤ =
+    k1 = [ Rose [] ]
+    k2 = [ Rose [] ]
+    incAll (Rose [ Rose k1, nest (nest (nest (nest (nest (nest (Rose k2)))))) ])
+
+
+-- A mutual pair: `A`'s `B`s hold `A`s again, and `incA` pushes onto the
+-- kids list of every `A`.
+type A
+    = A (List B)
+
+
+type B
+    = B (List A)
+
+
+incA : A → A
+incA a =
+    case a of
+        A bs →
+            A (incBs bs)
+
+
+-- The group walks past the default growth allowance (#1372): 79 297 and
+-- 75 940 growth in 12 and 11 walks, raised here by a tenth.
+@ownership_summary_size(88000)
+incBs : List B → List B
+incBs bs =
+    case bs of
+        [ B kids, …rest ] →
+            [ B (incAs (List.push kids (A []))), …incBs rest ]
+
+        [] →
+            []
+
+
+@ownership_summary_size(88000)
+incAs : List A → List A
+incAs xs =
+    case xs of
+        [ a, …rest ] →
+            [ incA a, …incAs rest ]
+
+        [] →
+            []
+
+
+pub mutualShared : ⊤ → A
+mutualShared ⊤ =
+    k = [ A [] ]
+    incA (A [ B k, B [ A [ B k ] ] ])
+
+
+pub mutualApart : ⊤ → A
+mutualApart ⊤ =
+    k1 = [ A [] ]
+    k2 = [ A [] ]
+    incA (A [ B k1, B [ A [ B k2 ] ] ])
