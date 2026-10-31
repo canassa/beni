@@ -1,4 +1,4 @@
-//! L15: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
+//! L16: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
 //! §5): check the modules it is handed (`Groups`), and say what each found
 //! as report lines (`Message`, `Report`). The caller — `Enforce`'s hook, the
 //! dump — prepares each module's inputs.

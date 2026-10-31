@@ -2088,7 +2088,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      and `.z`, and reading an arrival at the write's node as the write accepts `CallOtherPathsKeys` 16:5,
      `CallOtherPaths` 123:5 and `LevelPlacesCall` 44:5, which v1 refuses). The rule is now:
      - **A route carries its canonical path** in the parameter's place graph, from the root of the use,
-       each step by `extend` (`Transfer.routePath`).
+       each step by `extend` (`TransferBeside.routePath`).
      - **The written positions** are the write path's canonical paths (one, or a join's level paths,
        §2.1 *one position, one name*) paired with the actual's nodes the write's path reaches there,
        a join's sides included, **that stand at one position of the path** (`Written`). A route beside
@@ -2100,7 +2100,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        of `π1#Node.0⟲#Node.1` and owes no `excl` (the `[*]` of a list owes one; a constructor field does
        not). Over `Node (Node s [ 2 ] s) [] Leaf` the one node `s` stands at two positions of that path,
        so an arrival at `s`'s list may be its other position, the same list beside the write. So each
-       node there counts its **routes** from the actual, along the write's path (`Transfer.frontierAt`,
+       node there counts its **routes** from the actual, along the write's path (`TransferBeside.frontierAt`,
        `routesBelow`: one walk of the value below each `⟲`, a pass in topological order, each edge a
        `(node, step)` or a join's side, counts summed and capped at two, a node on a knot two). Every
        route to a position at the path goes through the path's positions above it, so these are all its
@@ -2109,7 +2109,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        either way, so nothing is lost. Pinned: `FoldedOnePosition` and `FoldedOnePositionImported`
        (one subtree twice, a parameter's list in it, two equal subtrees over one parameter list, a list
        projected from a literal beside the literal), each refused as v1 refuses it.
-     - **A value beside the write is read by position** (`Transfer.reachBeside`): from its path, each
+     - **A value beside the write is read by position** (`TransferBeside.reachBeside`): from its path, each
        `(node, path)` once, its own cells kept, its children's taken by projection at their paths, a
        written position skipped. A join (`union`, `choice`, `positions`) is read side by side at its
        path. A leaf, a `recast` or a `view`'s answer that is neither (whose parts no step of the place
@@ -2117,7 +2117,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      - **A symbolic value above the base** (rule (c)'s parameter cells, #1383's held or deep readings,
        #1386's splits): a parameter cell `d` of the value whose canonical cell is above the base's `c` holds
        the written object itself when the steps from `d`'s path down to `c`'s, taken from the value's
-       path, land on a written path (`Transfer.atWritten`). Then it holds nothing beside the write, but
+       path, land on a written path (`TransferBeside.atWritten`). Then it holds nothing beside the write, but
        where `c`'s path stands for several positions the frame owes `excl c` upward (rule (c)'s folded
        case), since it is then a symbolic value whose positions only the caller's callers can tell.
      - **Linear.** A route's path is dropped (`none`) below a place on no cycle beside the write's path:
@@ -2172,7 +2172,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `positionsAt`, `leafDepth` and `spineRefinements` read it then as at the call, and the call's
      `Beside` index is a memo of that value, made again per call. Escapes are not deferred (#1454).
    - **The trie `T(c)`**, after the walk and the liveness index, before `Demands.resolve`
-     (`Transfer.Frame.expandGroups`): the canonical paths at and above every parameter cell the
+     (`TransferGroups.expandGroups`): the canonical paths at and above every parameter cell the
      frame's escapes reach and the holders live at a group's call reach; the paths below `c` the call's
      other arguments reach; and the paths below `c` that a later use of a holder of a cell on `c`'s
      line reads (its use path from that cell, by `extend`). Only a holder live at the call, its life
@@ -2186,7 +2186,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      pending value that is no leaf across the call.
    - **The walk.** `u₀` is walked from `c` as `Calls.Routes` walks it, each route its own, its value
      and its canonical path carried. A route **merges** from the first node where its path is no
-     summary path and every route below it to a `W` takes **plain steps** (`Transfer.Plain`: a step
+     summary path and every route below it to a `W` takes **plain steps** (`TransferGroups.Plain`: a step
      `extend` appends, never a fold, a `[*]` or a `⟲`). From there it is a state: the use node, the
      deepest node of `T(c)` it passed (`t`), its **class** (on `t`, or the place of the step that
      left it), and the path's `sig` and place. `sig` is what `extend` reads to fold: the run of the
@@ -2390,7 +2390,7 @@ of the same handle still add multiplicity through the path-multiset primitive.
     `(choose True (ans { b = g.x }) g.y).c` and `{ b = ans { b = g.x } }.b.c` lost `g.x.c`, a
     write through `⟲` into a list of a recursive type that held a view was lost, and a block
     publishing `g xs = w1 xs` did not decode.
-  - *A step a place does not have* (`Transfer.projectAt`): a leaf, or a recast of one, is itself
+  - *A step a place does not have* (`TransferPattern.projectAt`): a leaf, or a recast of one, is itself
     there, a place-only recast, its cells exact; a built value is some value inside it, its reach
     read approximately (`recastWhole`), never its own cells, which its parts' are not among.
   - *A join's place does not depend on order* (`union`, `choice`, `positions`). Two sides at one
@@ -4486,7 +4486,7 @@ ancestor step that asks it already pays for on its own lane.
 Pattern materialisation, including positions-to-alternatives conversion and removal of symbolic
 projections, is value-sized work. Reserve its continuation before traversing it; no pattern atom pays for
 an earlier aggregate's whole DAG. *As built (#1224):* `Shape.without`, which a list pattern's
-`Transfer.bindList` calls to make one position of the contents into alternatives, enters
+`TransferPattern.bindList` calls to make one position of the contents into alternatives, enters
 `Shape.dagWalk` from a `positions`, `union` or `choice` node, like the walks above, so the rebuild is
 never the pattern's `transfer_settlement` lane. Measured on the source continuation (#1198), each
 declaration's whole account: fresh lists at 40 / 100 items take 8 345 / 22 792 records of continuation
@@ -4896,13 +4896,14 @@ import each other; upward needs go through interface structs passed down (`Class
 `Fix.Instance{ctx, step, join, leq}` for the driver, `Obligation.entry` records for `Entry`).
 
 ```
-L16 Enforce
-L15 Ownership
-L14 BlockRead
-L13 Report  Message  Hoists  Block
-L12 Groups  Entry  Refine
-L11 Walk
-L10 Transfer  Fix
+L17 Enforce
+L16 Ownership
+L15 BlockRead
+L14 Report  Message  Hoists  Block
+L13 Groups  Entry  Refine
+L12 Walk
+L11 Transfer
+L10 TransferFrame  TransferBeside  TransferPattern  TransferConstruct  TransferCall  TransferGroups  Fix
 L9  Calls  Demands
 L8  Rows  Holders
 L7  Summary
@@ -4936,19 +4937,25 @@ L0  Ids
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 810 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 380 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`) |
+| `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 960 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`) |
+| `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
+| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 350 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`) |
+| `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |
+| `TransferGroups.zig` | 10 | a use below a parameter's leaf, by node (§2.11 item 3, #1412): the groups expanded after the walk into one demand per state (`expandGroups`), and the plain-step `sig` (`Plain`) | `Group`, `CallSnap`, `Plain`, `expandGroups` | Ids, Place, Cell, Cond, Summary, Demands, Calls, Liveness | ≤ 740 (#1457: split out of `Transfer.zig`, 727 lines: it runs after the walk and calls the other paths and the constructions' `demand`) |
+| `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Walk.zig` | 11 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 12 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
-| `Entry.zig` | 12 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Refine.zig` | 12 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 13 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
-| `BlockRead.zig` | 14 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
-| `Hoists.zig` | 13 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
-| `Message.zig` | 13 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
-| `Report.zig` | 13 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 15 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 305 (S3b slice 4a: a group member's walks on its account line) |
-| `Enforce.zig` | 16 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
+| `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
+| `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
+| `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
+| `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
+| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
+| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
+| `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
+| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 305 (S3b slice 4a: a group member's walks on its account line) |
+| `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 **Input adapters.** `Groups` builds `Place.Source` and `Rows.Signature` together, reading
@@ -4956,7 +4963,7 @@ L0  Ids
 A list-of-functions signature gets callback-list behaviour only under explicit `once`, `many` or
 `unused`, preserving v1's rule; a plain/borrowed list is a plain argument. Unknown shapes remain
 pessimistic. Derived methods obtain component classes through the passed-down class resolver.
-These are input adapters at L12, available from S3a even before group solving lands in S3b.
+These are input adapters at L13, available from S3a even before group solving lands in S3b.
 
 **Callback proof interface.** `Cond` does not synchronously call `Calls`. When `apart`/`sep` reaches
 callback labels needing actual-class interpretation, it emits a `Facts.ProofRequest{owner, labels,
@@ -4975,7 +4982,16 @@ names into `Table`, so every caller still calls `Cond.Table`'s methods and reads
 import only below them (the algebra's names, storage's `Kappas`); a part's code calls the parts below it through
 the table and never one above it, which the split checked by script and the gate, reading imports, cannot see.
 
-There are **29 production files plus `rules_test.zig`, on 17 layers (L0–L16)**.
+**The transfer frame's seven files (#1457).** `Transfer.Frame` is one struct in seven files, in the same way:
+six parts on L10, each `Of(Frame)`, and `Transfer` itself on L11 (the fields, the binding of the six parts'
+names into `Frame`, the preliminary passes and the walk). In the order their code depends: `TransferFrame` (the
+accessors, the value helpers and the uses), `TransferBeside` (a write's other paths and what is beside it),
+`TransferPattern` (patterns and splits), `TransferConstruct` (constructions), `TransferCall` (call application)
+and `TransferGroups` (a use below a parameter's leaf, after the walk). The parts import no part, so all six sit
+on one layer; a part calls only the parts before it, checked by script, and every caller still reads
+`Transfer.Frame` and `Transfer`'s names.
+
+There are **35 production files plus `rules_test.zig`, on 18 layers (L0–L17)**.
 Targets count production lines before `const testing`, excluding tests; the implemented foundation/S2
 interfaces fix the imports here, including Summary→Facts and Liveness→Place. Tests may import helpers
 under the gate's test rules.
@@ -5438,7 +5454,7 @@ walk per member per pass of the stop rule. The rule applies in 4a too.
 
 *What the worklist iterates.* `Fix.worklist(Instance)` (§5) is the driver. `Groups` passes it
 `Instance{ctx, step, join, leq}`, where `step` is one walk of a member, so `Fix` (L10) never imports
-`Walk` (L11).
+`Walk` (L12).
 - **Round 1.** Every port starts at the empty class ⊥: `res` is nothing (`isNothing`), with no
   marks, no κ and `xreq` yes. ⊥ is for inference only (§2.12 *Recursive proofs*): nothing is
   published from a walk that read a port before the group settled.

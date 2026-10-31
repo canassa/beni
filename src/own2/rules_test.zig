@@ -108,6 +108,24 @@ const layers = [_]Entry{
     // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
     // route's stop at a parameter's leaf.
     .{ .file = "Calls.zig", .layer = 9, .max_lines = 1810 },
+    // 260 since #1457: the frame's accessors, value helpers and uses, split
+    // out of Transfer (§5).
+    .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
+    // 960 since #1457: a write's other paths and what is beside it
+    // (§2.11 item 3), split out of Transfer (§5).
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 960 },
+    // 340 since #1457: patterns and splits, split out of Transfer (§5).
+    .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
+    // 350 since #1457: constructions, split out of Transfer (§5).
+    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 350 },
+    // 170 since #1457: call application, split out of Transfer (§5).
+    .{ .file = "TransferCall.zig", .layer = 10, .max_lines = 170 },
+    // 740 since #1457: a use below a parameter's leaf, expanded after the
+    // walk, and the plain-step `sig`, split out of Transfer (§5).
+    .{ .file = "TransferGroups.zig", .layer = 10, .max_lines = 740 },
+    // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
+    // S3b's worklist and propagation raise it with their design commit.
+    .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write; 2 000 since #1367: an
     // answered value on the write's path, read beside the path.
@@ -116,11 +134,11 @@ const layers = [_]Entry{
     // 2 380 since #1253: the written position, by canonical path, and the
     // routes that tell a node at one position of it. 3 050 since #1412: a
     // use below a parameter's leaf, expanded after the walk by state.
-    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 3050 },
-    // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
-    // S3b's worklist and propagation raise it with their design commit.
-    .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },
-    .{ .file = "Walk.zig", .layer = 11, .max_lines = 1500 },
+    // 640 since #1457: the seven-file split (§5) leaves
+    // here the frame's fields, the bindings of the six parts' methods, the
+    // preliminary passes and the walk.
+    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 640 },
+    .{ .file = "Walk.zig", .layer = 12, .max_lines = 1500 },
     // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
     // calls of walked declarations; 1 330 since slice 3: imported classes,
     // and a block's places re-interned onto the adapter's.
@@ -138,32 +156,32 @@ const layers = [_]Entry{
     // alias chain taken hop by hop.
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
     // wake rule.
-    .{ .file = "Groups.zig", .layer = 12, .max_lines = 2200 },
-    .{ .file = "Entry.zig", .layer = 12, .max_lines = 900 },
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2200 },
+    .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
-    .{ .file = "Refine.zig", .layer = 12, .max_lines = 500 },
+    .{ .file = "Refine.zig", .layer = 13, .max_lines = 500 },
     // §5 says 1 660 since #1073 (1 650 since #1065/#1066): positions with their read κ, closed under the
     // map's entries, and the shared format; the reader is `BlockRead`, the
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
     // 1 770 since #1335: a knot whose cycle no child step closes.
-    .{ .file = "Block.zig", .layer = 13, .max_lines = 1770 },
-    .{ .file = "Hoists.zig", .layer = 13, .max_lines = 500 },
-    .{ .file = "Message.zig", .layer = 13, .max_lines = 900 },
-    .{ .file = "Report.zig", .layer = 13, .max_lines = 600 },
+    .{ .file = "Block.zig", .layer = 14, .max_lines = 1770 },
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 500 },
+    .{ .file = "Message.zig", .layer = 14, .max_lines = 900 },
+    .{ .file = "Report.zig", .layer = 14, .max_lines = 600 },
     // §5 says 950 since #1073: a snapshot rebuilt from its positions.
     // 1 050 since S3b slice 3: the commit re-interns the block's places.
     // 1 235 since #1335: a knot's members tied raw, set once it is read,
     // a forward name only on a cycle, and the safety check of each reach.
     // 1 280 since #1399: a projection decoded with its DAG's sides the other
     // way round is the reader's projection (`sameDag`).
-    .{ .file = "BlockRead.zig", .layer = 14, .max_lines = 1280 },
+    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1280 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
-    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 305 },
+    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 305 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
-    .{ .file = "Enforce.zig", .layer = 16, .max_lines = 500 },
+    .{ .file = "Enforce.zig", .layer = 17, .max_lines = 500 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -205,7 +223,7 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
+const no_name_compare = [_][]const u8{ "Transfer.zig", "TransferFrame.zig", "TransferBeside.zig", "TransferPattern.zig", "TransferConstruct.zig", "TransferCall.zig", "TransferGroups.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -436,7 +454,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 31), layers.len);
+    try testing.expectEqual(@as(usize, 37), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

@@ -1,4 +1,4 @@
-//! L14: reading the ownership block (`docs/design/ownership-v2.md` §3.6)
+//! L15: reading the ownership block (`docs/design/ownership-v2.md` §3.6)
 //! that `Block` writes, and the block's tests.
 //!
 //! `read` decodes into tables of its own first, on the codec's lane: its
