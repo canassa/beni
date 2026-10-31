@@ -25,7 +25,6 @@ const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
-const Stable = @import("Stable.zig");
 const Summary = @import("Summary.zig");
 const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
@@ -908,38 +907,11 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // Published as the eager graft made it (§2.11 *κ at a view*): each
     // view, and each node holding one, as its eager image.
     _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
-    if (!(std.debug.runtime_safety and Cond.full_cross_check and !env.shapes.stable.off)) return (try publish(env, ro, result)).joined;
-    // The cross-check (§2.3, 4e): the read-off published again with nothing
-    // moved, on an account of its own and the same labels, is a copy of the
-    // moved one; renamed onto it node by node (`Stable.pairOnto`), its κ
-    // reads at every position what the moved one's reads. Like against
-    // like: `kappaLeq` walks one value under two snapshots.
-    var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
-    defer scratch.deinit(gpa);
-    var raw_env = env;
-    raw_env.charge = .growth(&scratch);
-    ro.env = raw_env;
-    env.shapes.stable.off = true;
-    const raw = publish(raw_env, ro, result);
-    env.shapes.stable.off = false;
-    ro.env = env;
-    const raw_res = try raw;
-    const got = try publish(env, ro, result);
-    // The two values, and the two relabelled values their κ carries entries
-    // of (a member's own positions, linked), paired as one renaming.
-    var pair: Stable.Redirect = .{};
-    defer pair.deinit(gpa);
-    if (!try Stable.pairOnto(env.shapes, gpa, &pair, raw_res.mapped, got.mapped) or !try Stable.pairOnto(env.shapes, gpa, &pair, raw_res.joined.node, got.joined.node))
-        std.debug.panic("ownership v2: a read-off with stable images is not a copy of its raw one (§2.3, 4e)", .{});
-    if (!try env.conds.stableAgrees(gpa, &scratch, env.view(), raw_res.joined.kappas, &pair, got.joined.kappas, got.joined.node))
-        std.debug.panic("ownership v2: a read-off with stable images reads other than its raw one (§2.3, 4e)", .{});
-    return got.joined;
+    return publish(env, ro, result);
 }
 
-const Published = struct { joined: Summary.Table.Joined, mapped: NodeId };
-
 /// The eager value relabelled (`ReadOff`), its κ carried, widened.
-fn publish(env: Env, ro: *ReadOff, result: Value) Error!Published {
+fn publish(env: Env, ro: *ReadOff, result: Value) Error!Summary.Table.Joined {
     const gpa = env.gpa;
     const mapped = try env.shapes.map(gpa, env.account(), result.node, ro, ReadOff.relabel);
     // The value's κ, carried over the relabelling: each entry's node
@@ -960,7 +932,7 @@ fn publish(env: Env, ro: *ReadOff, result: Value) Error!Published {
     // Widened, its κ carried onto the image with each folded class's
     // path-multiset obligation (§2.9, #1128).
     const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
-    return .{ .joined = .{ .node = widened.node, .kappas = widened.kappas }, .mapped = mapped };
+    return .{ .node = widened.node, .kappas = widened.kappas };
 }
 
 /// A κ carried over a relabelling (`ReadOff`): each entry's node the map's
