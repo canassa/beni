@@ -1768,7 +1768,190 @@ Where κ is set, always **at the selected path p**:
   route. If it is alone at its output position, its completed subtree is independent of the enclosing
   route and may be linked from a memo. The root bit matters because a literal root reads reach, not
   only cells. Cyclic states require a key including the fold correspondence/obligations or stay off
-  this memo. Rank is a proof of route independence, never an exclusivity proof.
+  this memo: *The cyclic join memo* below is that key. Rank is a proof of route independence, never an
+  exclusivity proof.
+
+  **The cyclic join memo** [M 2026-10-31, #1372; specified, not built]. A state on or above a knot
+  `widen` tied has no finite rank, so the memo above never takes it, and its subwalk is walked again on
+  every path that reaches it. Measured on master `88512a2c9` (Debug, the module allowance raised to
+  4 194 304): the `case` join of walk 2 of `Dict.removeMin`, copied into a user module, walks 75 868
+  states at 29 624 output positions for 1 071 819 records, from 205 distinct `(node, bits, run)`. There
+  are only 95 distinct sets of states at a position. The unit of reuse is therefore the **output
+  position**, not the state. The states at a position are a recast and its inners, or the sides of a
+  union, projected along one step. So almost no position holds one state: 2.6 states per position in
+  `removeMin`, 3 to 4 in the quadtree. A subwalk of one state shares the positions below it with the
+  subwalks of its siblings. There, the first arrival decides the route of a state that both reach.
+
+  *The walk is position-major.* `propagate` walks one output position at a time, and walks it whole:
+  1. The states **delivered** to the position, in the order of delivery. The states of the parent
+     position deliver them in the order those states are walked, and each state delivers its frontier
+     in reverse, which is the order in which the depth-first stack popped them.
+  2. Its child positions, one at a time, each whole.
+  3. The **folded** states delivered to it (a fold that lands there, and the folded children of a
+     folded state), first in, first out, until there are none.
+
+  Every state that the parent position delivers arrives in the order the depth-first walk met it. So a
+  duplicate `(node, bits, run, position)` keeps its first arrival and its route. There is one difference.
+  The depth-first walk could meet a folded state at a position before a delivered sibling with the same
+  key, and it then dropped the sibling's unfolded walk. The position-major walk walks the delivered states
+  first, so a folded state never removes a delivered one. The folded state's walk adds nothing that the
+  delivered state's walk does not add, because both are collapsed into the owner of that position. A
+  depth-first walk instrumented to count that case found 0 cases on the 2 039 roots of
+  `bench/ownership-roots.mjs` (`allOwnership`). The position-major walk alone, with no memo, changes no
+  verdict or summary line on any of them.
+
+  *What a position's walk reads and writes outside it.* Only the states of the position `P` make positions
+  below `P`, and only states below `P` fold onto `P`. So the walk of `P` (its states, its descendants and
+  its folded states) reads one thing from outside: each state's **route** above `P`, at every unfolded
+  frame's lookup `route(child)`. Everything else that it reads (the members' snapshots, `fold_cond`, the
+  bases, the knots, the per-call memos) is the same anywhere in one call. It writes three kinds of things
+  outside `P`, and each one is at an ancestor at a height `h ≥ 1` above `P`: a fold mark (`fold_at`), a
+  step that a fold there saw, and a folded state delivered there.
+
+  *The key.* An entry is recorded when the walk of a position `P` finishes. Its key has two parts:
+  - The **run** of `P`. This is the ordered list of the states that pass deduplication at `P`. Each state
+    is `(node, class and mode bits, root bit, interned member run)`. The run is interned as a
+    cons list, so that equal runs are one id.
+  - The **fold signature**. Let `Q` be the set of nodes that the unfolded frames of `P`'s walk looked up
+    in their routes, including the `Q` of each hit below `P`. For each state `i` of the run, the
+    signature holds every `(i, q, h)` where `q ∈ Q`, `q` is not `i`'s own node, and `i`'s route maps `q`
+    to the ancestor at height `h` above `P`.
+
+  A position `P'` **hits** the entry only when its run is the same id, and its signature, computed at
+  `P'` with the entry's own `Q`, is equal element by element. A hash may index the comparison, but it
+  never replaces it. This is what *the fold is replayed* means. Every lookup of the recorded walk gives
+  the same answer at `P'`: a fold onto the ancestor at the same height, entered through the same state
+  of the run, or no fold. A fold onto `P` itself (`h = 0`) is part of the run. A route has one node per
+  ancestor, so the heights name distinct positions in both places. The walk below `P'` is then the walk
+  below `P` with `P` renamed to `P'` and each ancestor renamed by its height. Its states, their order,
+  their deduplication and their folds are the same. Two positions with one run and different signatures
+  are two entries, which are chained under the run. A position that holds a clean state is not an entry,
+  because the clean memo above owns it. A position whose states are all duplicates is not an entry
+  either.
+
+  *The entry, and its replay.* The entry keeps the following:
+  - The **internal records** of the walk: the positions below `P`, the entries, the linked member
+    positions, the fold steps at `P` and below, and the hits below `P`. Each is a range of the call's
+    own lists, because one position is walked contiguously.
+  - The **external effects**, as `(kind, h, value)`. A fold onto `P` or below is internal.
+  - `Q` and the signature.
+
+  A hit at `P'` walks nothing below `P'`. It applies each external effect at the ancestor of `P'` at
+  height `h`. A folded state delivered there is then walked there, and is deduplicated there, like any
+  folded state. The hit also adds `Q` to the `Q` of the position that encloses it. And it records `P'` as
+  a hit of the entry. When the enclosing entry is recorded, its own external effects are the effects of
+  its records and hits whose ancestor is above its root. So each effect rises once per height.
+
+  *The snapshot.* At the end of the call, a hit position stands for the subwalk of its entry:
+  - If `P'` is its own owner (`propagate` collapses each position below a fold into the highest fold on
+    its way, its owner), its position is the entry's
+    **local snapshot**. This is built from the internal records exactly as the call builds a position
+    with no fold above it, with owners counted from the entry's root. It is built once per entry.
+  - If `P'` is collapsed into an owner `O`, everything that the subwalk stores goes into `O`: its entries
+    are joined by node, the steps of its positions and of its folds go into `O`'s fold links, and its
+    linked member positions are merged into `O`. This is what the walk does with each collapsed position.
+    The **bundle** of an entry is built once, and it is applied once per `(O, entry)`.
+
+  An entry with a fold above its root always takes the second case, because its highest fold marks an
+  ancestor of `P'`. The local snapshot and the bundle contain only the records of the entry's own subwalk.
+  A position is collapsed only by folds that land on it or above it. So the snapshot of the call is the
+  snapshot that the walk without the memo makes. 5a's lone-member `kept` entries (#1459) belong to the
+  internal records. The local snapshot applies them under its own owners, at a position that is its own
+  owner and no fold. A bundle has none, because no position in a collapsed subwalk is its own owner.
+
+  *Failure, rollback and the cross-check.* Every table of the memo (runs, entries, `Q`, signatures, logs,
+  local snapshots, bundles) belongs to one call. A call that exhausts its account fails whole and leaves
+  nothing that another call reads. Outside the call, the memo writes only what the walk writes: run
+  interning keys, the clean memo's candidates at real positions, and the merge and map memos of the
+  snapshot it builds. It needs no validation and no fallback walk, because nothing outside the subwalk
+  of a position can change that subwalk. `-Downership-full-cross-check` walks every call again with
+  `no_memo`, so with no cyclic memo either, and compares the snapshots. A memo across calls would also
+  need the versions of `fold_cond`, the bases and the knots in its key, as `leafEntries`' versioned key
+  has. It is not specified.
+
+  *Interactions.*
+  - **#1425's per-call memos** (slices by run content, frontiers by `(node, class, slice)`, the run one
+    step below by run): the key uses the same interned run ids. The run one step below is interned once
+    for each `(run, step, inner place, class)` and travels with the frame, so a position's run costs a
+    constant number of records for each state. #1425's memos serve the states that the cyclic memo still
+    walks. They never make a hit.
+  - **#1430's port join** (`Summary.join` keeps the port's `res` and κ when the round's are under them):
+    nothing changes. The memo applies inside each `propagate` that the port join still makes.
+  - **5a's projection keying** (#1459): `leafEntries` is gone, so each state writes fewer entries. Each
+    remaining entry is keyed at `proj(joined, q)`, which is a node of the walk, so it is an internal
+    record. `kept` is described above.
+  - **The clean memo**: it is unchanged. A clean state is never part of an entry.
+
+  *Cost.* For one call, the walk is `O(Σ over entries of the walk of its own position)`, and there is one
+  entry for each distinct `(run, signature)`. The cost no longer grows with the number of paths. Each
+  position that is met, whether it is walked or hit, costs:
+  - `O(|run|)` for its key;
+  - `O(routes × height)` for each signature compared, where `routes` is the number of distinct parent
+    routes among the states of the run (states with one parent share one route above `P`);
+  - `O(|effects| × h)` for the replay of a hit.
+
+  The call's snapshot costs `O(real positions)`, plus each entry's local snapshot or bundle once, plus
+  each bundle's size once per `(O, entry)`. All of it is charged.
+
+  *Measured* (a prototype in a scratch copy, Debug self-hosted, `dump --stage=ownership --ownership=v2
+  --jobs=1`, module allowance 4 194 304; growth records). The first two columns are on master
+  `88512a2c9`. The last two are on #1459's head `b0172b081`, where `wa` settles.
+
+  | Case | Master | Master + memo | #1459 | #1459 + memo |
+  |---|---|---|---|---|
+  | `wa` / `wb` (`A (List Int) B B`, `B (List Int) A`) | limit / 2 461 162 | limit / 2 961 674 | 295 179 / 216 222 | 267 917 / 210 815 |
+  | quadtree self-map | 209 933 | 202 273 | 205 813 | 197 997 |
+  | T3 | 150 989 | 143 322 | 141 961 | 134 582 |
+  | `descend` (copied) | 398 623 | 405 131 | 266 653 | 260 419 |
+  | `removeMin` (copied) | limit | limit | limit | limit |
+  | `incCs` (`FoldedPreimageCall`) | 4 084 656 | 4 086 606 | 4 156 728 | 4 159 140 |
+
+  `wb`'s two master figures cannot be compared, because `wa` exhausts its account at a different round.
+  On master, `propagate`'s own records fall as follows:
+  - quadtree: 60 144 → 52 475 (775 → 326 states);
+  - T3: 60 731 → 53 143 (617 → 256 states);
+  - `descend`: 270 652 → 277 061 (3 004 → 1 083 states). The states that remain are the expensive
+    ones, so `descend`'s cost is distinct work.
+
+  `removeMin`'s joins in walk 2. On master the records are the walk's alone, before its snapshot; with
+  the memo they are the walk's and its snapshot's:
+
+  | Call | States: master → memo | Positions | Records: master → memo |
+  |---|---|---|---|
+  | 12 (the `case` join) | 75 868 → 1 248 | 29 624 → 582 | ≥ 1 071 819 → 139 768 |
+  | 13 | 75 876 → 1 318 | 29 624 → 623 | ≥ 1 080 730 → 148 601 |
+  | 15 | 39 315 → 1 517 | 14 318 → 625 | ≥ 531 200 → 127 090 |
+  | 16 | 61 642 → 1 987 | 23 931 → 918 | ≥ 821 045 → 171 684 |
+  | 17 | 25 278 → 1 095 | 9 753 → 501 | ≥ 341 324 → 86 717 |
+
+  On master, the account is exhausted at call 17. With the memo, the walk goes on to calls 19 to 24.
+  Each of these costs 1.1 to 3.5 M records, with 307 to 722 distinct position runs and 17 to 36 states
+  (folded states included) for each position walked. That is distinct work, which this memo cannot
+  remove. Even with an allowance of 67 108 864, `removeMin` is a limit, so other phases grow too.
+  `incCs` does not repeat anything: its largest calls walk 34 states with 34 distinct keys, at about
+  3 400 records per state. The memo does not help where a call's few states are expensive (one call of
+  `wb` on master walks 4 states for 126 336 records, almost all of it outside the states' own walk), or
+  where the states are all distinct.
+
+  Exactness: on all 2 039 roots of `allOwnership`, under `--ownership-everywhere --ownership=v2`, the
+  verdict and summary lines are byte for byte those of the base. This holds on master and on #1459. A
+  `-Downership-full-cross-check` build panics on none of these roots. On master, its lines are those of
+  the base. On #1459 they are too, except `DerivedDeepPaths`' `rose`, which is a limit under the
+  cross-check with and without the memo (#1458). Against #1459's own cross-check build, one root
+  differs: `MarkerAcross.keepRight`, a limit there (#1458), settles under the cross-check with the memo
+  (82 442 → 31 381 records), with its usual lines.
+
+  The memo's bookkeeping adds 0.37 % to the corpus's records (0.39 % on #1459). The worst case is
+  `writes/CapS`' `update`, from 12 363 to 16 468 records, and the best is `keepRight`, from 81 914 to
+  30 848. An implementation may make this bookkeeping cheaper, but it charges every key and signature
+  that it computes.
+
+  *Rejected: a memo per state in the depth-first walk.* The key `(node, bits, run)` with a fold signature
+  is exact only for a state that stays alone at its position. Otherwise, the siblings' subwalks meet the
+  replayed subwalk at the positions below it. A prototype checked aloneness when the call finished, and
+  walked the call again without the memo when the check failed. It also kept only subwalks that fold
+  nowhere above their root. In `removeMin`'s module, the states fell only from 282 703 to 280 820.
+  The quadtree, T3 and `descend` grew by 8 %, 2 % and 14 %, mostly from the walks that it repeated.
 
   `kappaMerge` uses `(operator, unordered cursor pair, map/correlation context)` as its key;
   `operator` is choice or coexistence. Cursor identity includes its immutable per-class arrival and
