@@ -870,30 +870,219 @@ Operations, memoised on their node arguments:
   - (c) Gate it on a group of one member. That is not principled, and it is not recommended.
 
   The manager decides between (a) and (b) (#1372). The recommendation is (a) now, then (b) as 4e.
+  *Measured 2026-10-31 (4e):* of (b), only stable images are exact. Arm sets are withdrawn, and
+  `wa`/`wb` already settle on master without them (below, *What 4e measured*).
   (a) makes `mergeSort` and DerivedDeepPaths' `rose` pass on both bases, and it loses nothing that the
   corpus checks.
 
-  **The two pieces that (b) adds, specified here and not prototyped:**
-  - **Arm sets.** A `choice` or `union` DAG is the balanced tree over the sorted, deduplicated list of its
-    arms. An arm is a node of another kind that its same-kind edges reach. Every constructor makes this
-    form, including `proj`'s, `map`'s, `eager`'s and decode's images, so equal arm sets are one `NodeId`.
-    The interior nodes are the sets of contiguous runs of the sorted list, so they are canonical as well.
-    The sort is by `NodeId`, which fixes ids only (§3.8). A `union` as a set is exact: the primitive reads
-    its sides as one position's set (*One reading of `union`*). `positions` is not flattened. It keeps
-    occurrences, and *Saturation at two* already bounds it. κ home: the same as the rule's above. An entry
-    at an interior node that the canonical tree does not have is conjoined into each arm below it, at its
-    position. `map`'s images stay raw, because the occurrence rule needs that. So `map` builds the image of
-    a choice or union DAG as the arm set of the images of its arms, once per DAG root, memoised by
-    `armCount`'s walk. That differs from the constructor-level flatten that #1463 tried, which made each
-    raw image again and cost more (209 535 records). Measured as an upper bound (the scratch analysis
-    counts arm sets on the dumped DAGs): `mergeSort`'s round-3 port 183 → 86 nodes, `wa`'s late port 548
-    → 67, `removeMin`'s round-2 port 119 → 46, and its expensive joins' DAGs 63–125 → 46–53.
-  - **Stable knot images (#1372 F3).** A widened knot is hash-consed by its canonical form: the SCC is
-    minimised by partition refinement over (kind, place, cells, the classes of its successors), and it is
-    interned by the sequence of its classes in a canonical DFS order from its entry. A knot equal to one
-    made before is that knot. Node-keyed memos and κ entries then hit across rounds. On DerivedDeepPaths'
-    `rose` on 5a's branch, 3 to 4 of the 8 nodes of each late read-off image already existed as structure.
-    On the quadtree, 2 of 58.
+  **The two pieces that (b) adds, prototyped (4e)** [M 2026-10-31, #1372, #1368]. The text below replaces
+  the first proposal, which was not prototyped. It was measured on master `a4accd406` (4d and 5a merged).
+  Only the first piece is kept.
+  - **Stable images (#1372 F3), kept.** A knot that `map` closes, and the graph that `widen` emits, is
+    interned by its canonical form (`widen`'s graph component by component, step 5).
+    1. *The graph.* For `map`, the graph is the raw images reachable from the knot's entry at its close
+       (the slot `map` allocated at entry, and every raw slot after it). For `widen`, it is every node
+       that `emit` made. A raw node is one that `make` did not intern. Every other node is external and
+       is compared by its id.
+    2. *The form.* The graph is minimised by partition refinement. The signature of a node is its kind,
+       place, its cells (none for a recast or a delta, as `make` keys them), every node-keyed side fact
+       that is not a function of the record (below), and the class or external id at each step, in the
+       record's order. The classes are numbered in a depth-first order from the entry. The key is the
+       sequence of the classes' signatures in that order, with each internal reference written as its
+       class number. *Cost:* O(members × refinement rounds) records for the refinement, and O(members)
+       for the key and the move, all charged as inspection.
+    3. *The rule.* When a knot of that key was made before, every member is moved onto the node of its
+       class in that knot: `map` moves each source's image (`memo_map`), and `widen` moves the root and
+       every `fold_cond` entry. Otherwise the knot is recorded under its key, with one representative per
+       class. A graph that is not minimal (two members in one class) is recorded and never moved, so the
+       move is injective on the members.
+    4. *Side facts in the key.* `fold_cond` is stored by node after `widenFold`, so `widenValue` runs the
+       rule after it stores them, and the key holds each member's `fold_cond`. The other node-keyed facts
+       are the positions node's *counted* bit, `dropsOf`, `eagerOf` and `birth`, the projection
+       correspondence (`proj_origin`) and the bases (`addConstruction`). A member that has any of these
+       is not moved, or the fact is in the key. In the prototype no member of `map`'s or `widen`'s
+       graphs had one other than `fold_cond`.
+    5. *The acyclic part of `widen`'s output.* `emit` makes every class image a new node, on a cycle or
+       not. So `widen` runs the rule per strongly connected component of the emitted graph, bottom up.
+       First, each member's references to the components below are moved to their canonical nodes. Then
+       a node on no cycle is interned as `make` would intern it, unless it has a `fold_cond`; such a node
+       stays as it is. A knot is moved by its canonical form, as in step 3. On the corpus this saves no
+       more than knots alone (−0.41 % against −0.42 %), and it changes two blocks (`FoldLevels` and
+       `LevelFresh`) and nothing that a reader reads. On the sweep it saves 29.5 % against 3.8 % (below),
+       because an accumulator such as `acc (n − 1) (N [ n ] [ n ] t t)` remakes the same acyclic image
+       every round: 1 744 021 records in 5 walks become 315 377 in 3.
+
+    **The representation-change lemma.** Let σ be the move. Its precondition: for every member x, the
+    record of x with every internal reference mapped by σ is the record of σ(x), every side fact of
+    step 4 is equal, and σ is injective on the members of each knot. On a node on no cycle σ may merge two
+    nodes, as `make` and `map`'s interning already do (#1372, cause A); a route never meets such a node
+    twice, so the fold below does not concern it. The snapshot a reader uses is keyed after the
+    move: `widenValue`'s `propagate` runs over σ(w), and read-off's transport follows `memo_map`, which
+    the move updates. Then each reader reads the same value on the stabilised form:
+    - **Set readers** (`cellsAt`, `reach`, `leq`'s γ, `rank`, `deep`'s frontier) and **widen/leq** read a
+      function of the records, and σ keeps the records. `leq` is memoised by pair, so a hit across
+      rounds is the gain. `widen`'s `occurs` counts by node. Two bisimilar members that σ makes one
+      node fall into one class, so the class has two members or one member reached twice: `many` is the
+      same.
+    - **`dagFacts`** reads repeats as the intersection of the sides' cells. **`Calls.preimage`**, per
+      `(node, canonical path)`, and **`KappaRead.sep`**, over pairs of cells, read cells. σ keeps the
+      cells.
+    - **`Cond.machine`**, per `(position, node)`, and the **5f trie**, by node, read node ids that σ
+      renames on both sides: the snapshot's keys and the value's nodes.
+    - **`arrivalAggs`** reads the fold μ, which is computed on the raw source before the move. Its images
+      move with σ.
+    - **`routesMax`/`frontierAt`** and `propagate`'s fold detect a fold when a route meets a node twice.
+      σ is injective on the members, so inside the moved graph a route meets a node twice exactly when it
+      did before. A route can also meet σ(x) and, elsewhere in the same value, the old knot it now equals.
+      That is a fold that the raw form did not have. This is one of two places where the lemma rests on
+      the check and not on the precondition. A knot equal to one in the same value is bisimilar to it, so
+      the walks below are the same. The fold joins the states that the two meetings deliver. Neither the
+      corpus nor the sweep met a case where they differ (below).
+    - **`apartImage`** and §2.9 *Two positions of one image* decide by the cells two positions image
+      to, and σ keeps cells. Where they compare node ids, σ can make two bisimilar images one node. That
+      is the second place the lemma rests on the check below; the corpus and the sweep show no change. `map_shared` and `map_images` are recomputed after the move, because σ can give two
+      sources one image.
+    - **BlockRead and the block codec** write structure, and decode makes a graph bisimilar to the
+      written one. The encoding can change where σ shares nodes. With knots only, no block changed over
+      the corpus.
+    - **The printer** names an alias (`#QN.1 = #QN.0`) by node identity. So its text can change where σ
+      makes two equal children two ids, or one. The quadtree's `quad` prints its four children in full
+      on the stabilised form, with the same conditions at every path. No corpus summary changed.
+
+    **The checks.** Under `runtime_safety`, each move asserts its precondition: each member's record,
+    mapped, equals its target's record, and each side fact is equal. That is O(members) per move. Under
+    `-Downership-full-cross-check`, `widenValue` and read-off's `map` also build the snapshot on the raw
+    form (with `no_memo`, as `propagateFrom` does), and compare every position's read with the stabilised
+    one's (`Cond.leq` both ways). That check covers the fold case above.
+
+  - **Arm sets, withdrawn.** A `choice` or `union` as the canonical tree over its sorted arms was
+    prototyped in the constructors: `choiceMake` and `unionMake`, and also in `map`'s images of
+    choice and union nodes. The tree is split before the arm of highest hash priority (a treap over the
+    gaps). So its shape depends on the set alone, and an insert makes O(log m) new nodes. The balanced
+    split of the first proposal makes about m new nodes per insert, because its midpoint moves. It is not
+    exact, and it gains little:
+    - *Choices, in the constructors.* This saves 0.22 % of the corpus, and it is −2.5 % on `wa`/`wb`.
+      κ moves in both directions. `CallOtherPathsSharedLeaf`'s `chosen` loses its `excl π2[*]` at `.1`.
+      That is the soundness boundary in *A choice member is flattened*: a published value's κ is carried
+      node by node (`kappaRelabel`, `eager`). So an entry at an interior choice node that the canonical
+      tree does not have is lost. `PatternPositions` loses one `apart`, `GroupAnswerCover` gains three
+      `lost`, and `ListPrependDeep` gains an `excl`. The κ home of the first proposal needs the snapshot,
+      which a shape constructor does not have. `Shape.joinAlternatives` already flattens a choice where
+      κ is read whole, and that is where flattening can be exact.
+    - *Unions, in the constructors.* They break convergence. The quadtree self-map does not settle in 90
+      walks (25.9 M records, against 5 walks). `descend` takes 1 244 802 records against 137 834, and T3
+      takes 224 273 against 158 229.
+    - *Unions and choices in `map`'s images only.* The corpus grows by 2.50 %. `wb` falls to 64 978
+      growth, which is inside the allowance, but `descend` takes 755 122 and the quadtree does not settle.
+      A union built through the constructor absorbs a member it holds (`unionHas`). That changes what
+      widen opens on a cycle (§2.3, *On the cycle*), so the rounds differ.
+
+  **What 4e measured** [M 2026-10-31]. Self-hosted Debug, `dump --stage=ownership --ownership=v2
+  --jobs=1`, the allowance at 10⁸, or 4 194 304 for `removeMin` and `wa`/`wb`. The scratch instrumentation
+  dumped every port and every `propagate` call. A scratch analyser counted each DAG raw, with choices as
+  arm sets, and with unions as sets too. It also counted the knot nodes a walk made, and how many of
+  them equal a node of an earlier dump.
+  - **Ports, raw / choices as sets / unions as sets too, at the last round.** `removeMin` 24 / 24 / 21
+    after round 1. `descend` 25 / 25 / 21. `wa` 47 / 44 / 42, `wb` 38 / 36 / 35. `rose` 5 / 5 / 5. The
+    quadtree 58 / 58 / 28. T3 91 / 91 / 47. Choices as sets save almost nothing, because
+    `joinAlternatives` already flattens the port's choices. Unions as sets halve the quadtree and T3, but
+    that representation is not exact (above).
+  - **Knot images.** Each walk makes 2 to 8 knot nodes. Among the dumped DAGs, only `rose`'s round 3
+    remakes knots it had before (3 of 3). The prototype's table, which sees every knot and not only the
+    dumped ones, moved 10 knots on `rose`, 12 on `wa`/`wb`, 4 on the quadtree, 2 on T3 and 5 on #1489.
+  - **States per position at the expensive joins** (states / positions / distinct `(node, bits, run)` /
+    distinct sets of states at a position):
+    - `removeMin`, walk 2 has five calls of 74 134, 74 134, 14 318, 23 949 and 9 811 positions. The first
+      is 190 575 / 74 134 / 444 / 161 over a joined DAG of 236 nodes, 2 686 592 records. Walk 2 costs
+      7.3 M records. At 10⁸ the group stops in walk 3 at `ownership_summary_size`.
+    - `descend`: 2 105 / 1 153 / 151 / 98.
+    - `wa`: 513 / 419 / 93 / 99.
+    - The quadtree: 239 / 71 / 63 / 27.
+    - T3: 261 / 141 / 49 / 35.
+  - **Where the records go.** `propagate` takes 60 % of `descend`'s records, 46 % of `wa`/`wb`'s, 31 % of
+    T3's and 16 % of the quadtree's. The rest of the quadtree's and T3's cost is the walk itself, as
+    §2.3 *What the rule does not reach* says.
+  - **Growth, by piece** (records in parentheses):
+
+    | case | master | stable knots | + acyclic (step 5) | choice arm sets | knots + choice arm sets | union sets in `map` |
+    |---|---|---|---|---|---|---|
+    | `removeMin` (4 194 304) | limit | limit | limit | limit | limit | limit |
+    | `descend` | 98 616 (137 834) | 98 682 | 98 674 | 99 414 | 99 480 | 715 904 |
+    | `wa` | 54 324 (81 245) | 53 966 | 53 951 | 52 965 | 52 717 | 45 313 |
+    | `wb` | 68 804 (90 442) | 68 195 | 68 180 | 66 820 | 66 451 | 64 978 |
+    | DerivedDeepPaths' `rose` | 14 068 (42 832) | **11 610** | 11 986 | 13 453 | 11 245 | 17 482 |
+    | quadtree | 200 499 (238 811) | **192 965** | 200 761 | 200 730 | 193 067 | does not settle |
+    | T3 | 118 843 (158 391) | 119 014 | 118 912 | 118 941 | 119 112 | 183 945 |
+    | `incCs` (4 194 304) | limit (`incAs` 4 186 143) | the same | | | | |
+    | the corpus's records | 6 619 688 | **−0.42 %** | −0.41 % | −0.22 % | | +2.50 % |
+    | the sweep's records | 95 306 884 | −3.8 % | **−29.5 %** | | | |
+
+    *The corpus:* the 2 053 roots of `bench/ownership-roots.mjs` (`allOwnership`,
+    `--ownership-everywhere`), with `account` and `crossing` lines left out. With stable knots, every
+    verdict, summary and block line is byte-identical. With choice arm sets, no verdict changes, but 20
+    summaries and 51 blocks do (above). *The sweep:* 400 random programs (a scratch generator: a type with one
+    or two lists and one to three recursive children, sometimes mutual; a writer with a branch, an
+    accumulator, and two callers that make demands). They were dumped on master and with each variant. Stable
+    knots: no verdict, summary or block line changes, and records fall 3.8 %. Knots with the acyclic part of
+    step 5: no verdict changes and no `{…}` condition changes, 7 summaries change text (names and aliases) and
+    81 blocks change encoding, and records fall 29.5 % (39 % over the 241 programs that pass). An earlier
+    sweep of 800 programs on 5a's head gave no verdict, summary or block change for stable knots. With choice
+    arm sets it gave 15 programs whose conditions changed.
+  - **F2 stacked on top** is not prototyped here. #1465's prototype was deleted. Its cost is
+    O(distinct (run, signature)) position walks, so the distinct sets of states at a position give a
+    lower bound. #1465 measured about 240 records per walked position on `removeMin`.
+    - `descend`'s three joins have 98 + 64 + 49 runs, against 1 153 + 208 + 180 positions. That puts its
+      `propagate` near 14 000 records against 80 000, and its growth near 32 000. So it is inside the
+      allowance, before signature splits.
+    - `wa`/`wb`: their joins have 72 + 99 runs against 180 + 419 positions, so F2 probably takes `wb`
+      inside the allowance. That is an estimate, not a measurement.
+    - `removeMin`'s walk 2 has 161 + 161 + 132 + 176 + 111 runs. Even with no signature split, that is
+      about 180 000 records for walk 2 alone. So F2 does not make it pass, which agrees with #1465 on
+      the older master.
+    - Stable knots change none of these counts: the joined DAGs and the states are the same.
+  - **The question for the manager (#1372; Q8 on #1421).** 4e does not reach its goals. `removeMin` and
+    `descend` are unchanged by both pieces. `wb` stays over the allowance: by 2 659 with stable knots, by 915
+    with both pieces. It goes inside the allowance only with a union representation that breaks the
+    quadtree. `wa`/`wb` already settle on master (6 / 7 walks). The late-round movement that 4d's report found was on 5a's earlier branch, and 5a's
+    final commits removed it. 4e keeps the walks at 6 / 7.
+    - (a) **Recommended:** land 4e as stable images alone (knots, and the acyclic part of step 5), with
+      the lemma and the checks above. No verdict or condition changes on the corpus or the sweep. It cuts
+      `rose` by 15 to 17 %, the quadtree by up to 4 %, and the sweep by 29.5 %. Then build F2 (#1465) as
+      the next slice, for `descend` and `wa`/`wb`.
+    - (b) Specify a fix for `removeMin` before more slices. Its joined DAG has 236 nodes, but its κ
+      snapshot has one entry set per path, 74 134 of them, and only 161 distinct sets of states. A
+      snapshot shared by `(node, run)`, as F2's local snapshot is, removes the output but not the walks.
+      The walks themselves would need to be per DAG node. That is a change to §2.9's positions, not to the
+      port. It needs no S4 labels.
+    - (c) Raise the allowance for `Dict` alone. That is not a fix: at 10⁸ the group still stops in walk 3.
+  - **The same measurement on #1289 and #1489** (5d2's cost failures, #1494). Neither is port growth
+    alone, and 4e does not fix either.
+    - *#1289, the chain `t_k = insert t_{k−1} k`.* `chain` is not a recursive group; `insert` settles in
+      5 walks. Read at its end, the chain is 9 830 / 25 662 / 76 800 / 269 081 / 1 131 398 records at
+      5 / 10 / 20 / 40 / 80 calls, Θ(n²). Published, it is 5 317 / 18 423 / 91 023 / 1 036 758 /
+      14 557 106 at 2 / 4 / 6 / 8 / 10 calls. Stable knots and arm sets each change these by under 0.3 %.
+      **The exponential is one `propagate` call**, over the published result. Its joined DAG grows
+      linearly (51 / 73 / 95 nodes at 4 / 6 / 8 calls, with 8 / 12 / 16 knot nodes). Its positions grow
+      about 3.7 times per call (147 / 2 035 / 30 227), while its distinct sets of states at a position
+      grow linearly (40 / 66 / 92). Each call's view has its own widened knot, with its own fresh cells,
+      so no two knots are equal and stable images cannot merge them. The walk folds only where a route
+      meets a node it has already passed. A knot nested in another one is a new node on the route, so
+      every nesting multiplies the paths. This is the regime of F2's position memo (#1465), not the
+      port's: its runs are linear. It is reported on #1289.
+    - *#1489, the two-branch insert.* This is port growth, but not only that. Raw, the port grows
+      13 / 11 / 48 / 97 / 145 / 217 / 319 / 417 nodes in rounds 1 to 8. As union sets it is 51 nodes from
+      round 4 on. The growth is unions over content-equal raw copies: `union(627, 231)` beside
+      `union(231, 627)`, a union that nests a member it already holds, and a `node` record equal to an
+      interned one under a new id each round. `map`'s raw union images make them. Union sets (in the
+      constructors and in `map`) hold the port at 55 to 63 nodes. But the group still does not settle: each round still adds a
+      choice arm, and each walk still costs about 180 000 records. The case join's `propagate` walks 2 077
+      positions over 73 runs, F2's regime again. So that piece fixes the port's size, but neither the
+      rounds nor the walk cost, and it breaks the quadtree (above). It is reported on #1489.
+    - *A wider view.* In the random sweep, base master reaches the 2 000 000 allowance on 159 of the 400
+      programs (338 of 800 in the first sweep). No variant changes that count. Almost
+      all of these are over a type with two or more recursive children: `f` over `N (List Int) T U T`,
+      or an accumulator `acc (n − 1) (N [ n ] t L)`. A type with one recursive child almost always passes.
+      Core's `Dict`, #1489 and the quadtree have this shape.
 
   **Options not taken.**
   - *A widen that folds no-cycle nesting into a knot.* Round k + 1's `res[*]` holds round k's `res[*]`
@@ -6757,7 +6946,7 @@ RecursiveSummaryGeneration's reorderings).
 | 4b | `Fix.propagate(Edges)`, run to quiescence after each round: argument and result edges (projections included), parameter images as chained edges, and marks, cells, atoms and occurrence facts as deltas. The wake rule: only a callee's new `res.shape` wakes an inference walk. The read check sends what demands and obligations read to the validation walk. | The counted families below meet their bounds. A per-member walk counter pins inference walks against delivered facts. `Rot` holds v1's refusal, and so does `o/RecursiveTupleGuards` at 19:17 and 21:17. No verdict or block changes from 4a except where a known entry says so. |
 | 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). *Specified 2026-10-31* (*The fold certificate, specified*): the 4c-owned refusals are §2.9 rule 3's, not a cycle's, and the certificate also needs a third reader, the graft through `⟲`. **Decided (A)** (the manager, 2026-10-31, on #1484): 4c builds rule 3, and the certificate with its third reader is #1485, which lands before S4 reads a certified knot. | Under (A): `FoldedBCall`, `FoldedBCallImported` and `LevelsApartRoutes` hold v1's verdicts, their remaining lines are canonical-path-text entries, and #1429 has its fixture. Under (B), or for the certificate's own slice: #1195's witnesses and the 4c fixtures are green, and lemmas C1–C5 hold as `runtime_safety` checks. Every known entry that 4a gave to 4c is gone. #1195 closes. |
 | 4d | §2.3 *A port keeps no round that its last round covers*: `Summary.join` in `choice` mode takes the other side's `res` and κ when one side is under the other, and drops each arm of a top choice that the other side covers, with the κ home stated there. Only a class join does it. Proposed 2026-10-31, after 5a. | `run/TailModConsMerge` is checked at the default allowance, with no `.v2.unchecked` line for `mergeSort`. DerivedDeepPaths' `rose` likewise on 5a. No verdict changes over `bench/ownership-roots.mjs`'s roots except limits that become checked. #1423's `wa`/`wb` either hold 5a's figures or carry a known entry under #1372 (§2.3, option (a)). |
-| 4e | Arm sets and stable knot images (§2.3, the two pieces of option (b)). Only if the manager takes (b). | `wa`/`wb` within 5a's figures. `removeMin`'s round-2 port at its arm-set size (46 nodes). |
+| 4e | Stable images (§2.3, *The two pieces that (b) adds, prototyped (4e)*): `map`'s closed knots interned by canonical form, and `widen`'s emitted graph component by component (a node on no cycle as `make` interns it, a knot by canonical form), `fold_cond` in the key, the move asserted under `runtime_safety` and the snapshot compared under `-Downership-full-cross-check`. Arm sets are withdrawn: they are not exact for κ, and as union sets they break the quadtree's convergence. *Proposed 2026-10-31; the manager decides (§2.3, *What 4e measured*).* | No verdict or `{…}` condition changes over `bench/ownership-roots.mjs`'s roots, and a block changes only in its encoding. DerivedDeepPaths' `rose` at or under the measured 11 986 growth. A counted test for the accumulator `acc (n − 1) (N [ n ] [ n ] t t)` (315 377 records in 3 walks, against 1 744 021 in 5). `removeMin` and `descend` are not 4e's: they are F2's (#1465) and the question in §2.3. |
 
 *As built, 4b (#1440).* What 4b builds, and where it departs from the plan above.
 - **Edges.** A walk records each call of its group (`Transfer.Context.onCall`): the callee, the
@@ -7181,7 +7370,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 | Issue | What | Recommendation |
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
-| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
+| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. *2026-10-31 (4e):* stable images are exact for every condition read, save 0.42 % of the corpus and 29.5 % of a random sweep. Arm sets are withdrawn. Neither piece touches `removeMin` or `descend`, #1289's exponential or #1489's walk cost (§2.3, *What 4e measured*). | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
 | #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact once a dropped node's entries are carried onto the node it returns (*The entries of a dropped node*). It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
@@ -7226,7 +7415,11 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    known limits (#1372). Before 4a, a limit in core always failed the corpus. *Recommendation:* no. S3b
    closes only when core has no known limit (see #1372 above). *Measured (2026-10-31):* 4d does not make
    `removeMin` or `descend` pass. Their remaining cost is `propagate`'s walk by position, so #1465's F2,
-   with 4e's arm sets, is what is still needed (§2.3, *What the rule does not reach*).
+   with 4e's arm sets, is what is still needed (§2.3, *What the rule does not reach*). *Measured again
+   (2026-10-31, 4e):* arm sets and stable knot images change neither function's joined DAGs nor their
+   states. F2 probably makes `descend` pass. It does not make `removeMin` pass: walk 2 has 741
+   distinct sets of states at a position, about 180 000 records even with no signature split. So core
+   needs F2 and a decision on §2.3's question (b), *What 4e measured*.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
