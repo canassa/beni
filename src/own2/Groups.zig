@@ -933,9 +933,19 @@ pub const Module = struct {
                 // earlier group, §8 S3b): its class, applied at this call. One
                 // past its limit is not built here.
                 if (t[0] == mod.in.module) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
-                // An imported alias: the class its own module publishes under its
-                // name, which is its target's, a private one too (R-5.5.6).
-                if (named) |n| if (n[0] != mod.in.module and !std.mem.eql(u32, &n, &t)) if (try mod.importedClass(n[0], n[1])) |c| return .{ .class = c };
+                // An imported alias: the class a module publishes under a name of
+                // the chain, which is its target's, a private one too, taken
+                // hop by hop: the first name whose module publishes an entry, so
+                // a chain through three modules finds one (R-5.5.6).
+                if (named) |n0| {
+                    var n = n0;
+                    var hops: usize = 0;
+                    for (mod.in.birs) |b| hops += b.decls.len;
+                    while (hops > 0 and !std.mem.eql(u32, &n, &t)) : (hops -= 1) {
+                        if (n[0] != mod.in.module) if (try mod.importedClass(n[0], n[1])) |c| return .{ .class = c };
+                        n = Prepass.aliasStep(mod.in.birs, mod.in.provenance, n) orelse break;
+                    }
+                }
                 // One of another module (S3b slice 3): the class its block
                 // publishes, applied the same way.
                 if (t[0] != mod.in.module) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
@@ -1433,22 +1443,36 @@ fn isComparisonDecl(in: *const Input, di: u32) bool {
         },
         else => return false,
     };
+    // `fitsWellKnown`'s shape: two parameters, each a variable (flex, rigid,
+    // `err`) or an application of the type, and a variable or the well-known
+    // result. The type is the one the applications name, a type of this
+    // module; with none, `==` may call it on any type the module declares.
     const params = in.store.vars(f.params);
     if (params.len != 2) return false;
-    const t = (appOf(in, params[0]) orelse return false).type;
-    if ((appOf(in, params[1]) orelse return false).type != t) return false;
-    if (t == .none or t.int() >= in.types.entries.len or in.types.entries[t.int()].module.int() != in.module) return false;
-    const r = appOf(in, f.result) orelse return false;
-    return r.args.len == 0 and r.type == if (is_eq) in.types.well_known.bool else in.types.well_known.order;
-}
-
-fn appOf(in: *const Input, v: Var) ?TypeStore.Structure.App {
-    return switch (in.store.resolvedContent(v)) {
+    var t: Types.TypeId = .none;
+    for (params) |p| switch (in.store.resolvedContent(p)) {
+        .flex, .rigid, .err => {},
         .structure => |s| switch (s) {
-            .app => |a| a,
-            else => null,
+            .app => |a| {
+                if (t != .none and a.type != t) return false;
+                t = a.type;
+            },
+            else => return false,
         },
-        else => null,
+        .alias => return false,
+    };
+    if (t == .none) {
+        var any = false;
+        for (in.types.entries) |e| any = any or (e.module.int() == in.module and e.kind != .alias);
+        if (!any) return false;
+    } else if (t.int() >= in.types.entries.len or in.types.entries[t.int()].module.int() != in.module) return false;
+    return switch (in.store.resolvedContent(f.result)) {
+        .flex, .rigid, .err => true,
+        .structure => |s| switch (s) {
+            .app => |a| a.args.len == 0 and a.type == if (is_eq) in.types.well_known.bool else in.types.well_known.order,
+            else => false,
+        },
+        .alias => false,
     };
 }
 

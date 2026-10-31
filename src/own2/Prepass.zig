@@ -321,20 +321,25 @@ pub fn aliasTarget(birs: []const *const Bir, provenance: []const Interface.Prove
     var t = t0;
     var budget: usize = 0;
     for (birs) |b| budget += b.decls.len;
-    while (budget > 0) : (budget -= 1) {
-        if (t[0] >= birs.len) return t;
-        const owner = birs[t[0]];
-        if (t[1] >= owner.decls.len or !isAliasShape(owner, owner.decls[t[1]])) return t;
-        const b = owner.decls[t[1]].body.unwrap().?;
-        const data = owner.instData(b);
-        t = switch (owner.instTag(b)) {
-            .top => .{ t[0], data.lhs },
-            .ext_value => .{ data.lhs, if (data.lhs < provenance.len) (provenance[data.lhs].valueDecl(data.rhs) orelse return t).int() else return t },
-            else => return t,
-        };
-    }
+    while (budget > 0) : (budget -= 1) t = aliasStep(birs, provenance, t) orelse return t;
     return t;
 }
+
+/// One name of an alias chain: the value `t` names, or null when `t` is no
+/// alias shape (the chain's end).
+pub fn aliasStep(birs: []const *const Bir, provenance: []const Interface.Provenance, t: [2]u32) ?[2]u32 {
+    if (t[0] >= birs.len) return null;
+    const owner = birs[t[0]];
+    if (t[1] >= owner.decls.len or !isAliasShape(owner, owner.decls[t[1]])) return null;
+    const b = owner.decls[t[1]].body.unwrap().?;
+    const data = owner.instData(b);
+    return switch (owner.instTag(b)) {
+        .top => .{ t[0], data.lhs },
+        .ext_value => .{ data.lhs, if (data.lhs < provenance.len) (provenance[data.lhs].valueDecl(data.rhs) orelse return null).int() else return null },
+        else => null,
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Tests: source lowered in-process, no checker (`dispatch` null).
 // ---------------------------------------------------------------------------

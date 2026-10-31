@@ -113,7 +113,9 @@ const layers = [_]Entry{
     // for R-5.13.1.
     // 1 900: a comparison told by its well-known signature, through aliases,
     // and a pub alias publishing its target's class.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1900 },
+    // 1 930: the well-known shape with type variables, and an imported
+    // alias chain taken hop by hop.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1930 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

@@ -1,0 +1,12 @@
+module ComparisonVariableParam
+  11:27 List.push a: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  15:14 ComparisonVariableParam.eq x#T.0: accepted param
+  account eq: source 16, baseline 247, growth 0 of 65536, total 247, continuation 162 of 16384, demands 24, direct_data lanes 2, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 17, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1#T.0 RW
+  account same: source 9, baseline 132, growth 0 of 65536, total 132, continuation 119 of 9216, demands 36, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 10, step lanes 1
+  summary same: π1 R, π1#T.0 RW, π2 R
+  block: 648 bytes, hash e49bf4a045670c0c
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause comparison 1
