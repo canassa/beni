@@ -1,0 +1,5 @@
+Main comparer: lines 16-18 (not built: local)
+Main local: lines 29-32 (not built: local)
+Main aliased: lines 35-39 (not built: local)
+Main loop: lines 42-47 (not built: local)
+Main main: lines 61-75 (not built: call)

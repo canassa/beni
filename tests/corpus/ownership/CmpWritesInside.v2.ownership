@@ -1,0 +1,23 @@
+module CmpWritesInside
+  14:26 List.push l: accepted param
+  18:38 call <expression>.0#Inner.0: accepted param
+  18:38 call <expression>.0#Inner.0: accepted fresh
+  22:40 call <expression>.0#Inner.0: rejected alias: xs holds it and is read at 22:21
+  22:40 call <expression>.0#Inner.0: accepted fresh
+  26:45 call <expression>.1#Inner.0: rejected alias: ys holds it and is read at 26:20
+  26:45 call <expression>.0#Inner.0: accepted param
+  26:45 call <expression>.1#Inner.0: accepted fresh
+  26:45 call <expression>.0#Inner.0: accepted fresh
+  account eq: source 20, baseline 241, growth 0 of 65536, total 241, continuation 160 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Inner.0 RW
+  account keepOther: source 27, baseline 88, growth 0 of 65536, total 88, continuation 39 of 27648, demands 0, direct_data lanes 2, call_view lanes 3, transfer_settlement lanes 26
+  summary keepOther: π1 RW, π2 RA; res .1 π2
+  account keepWritten: source 27, baseline 88, growth 0 of 65536, total 88, continuation 39 of 27648, demands 0, direct_data lanes 2, call_view lanes 3, transfer_settlement lanes 26
+  summary keepWritten: π1 RAW, π2 R; res .1 π1
+  account keepSecond: source 31, baseline 103, growth 0 of 65536, total 103, continuation 41 of 31744, demands 0, direct_data lanes 2, call_view lanes 5, transfer_settlement lanes 30
+  summary keepSecond: π1 RW, π2 RAW; res .1 π2
+  block: 1252 bytes, hash ee24da14f1927367
+  demands 9: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 9: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

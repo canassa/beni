@@ -1,0 +1,12 @@
+-- ownership (project): see Main.beni. `getSeed` answers a top-level value,
+-- `mapped` writes through a callback (S4's, so v2 leaves it unbuilt).
+pub seed : List Int
+seed = [ 1 ]
+
+
+pub getSeed : ⊤ → List Int
+getSeed ⊤ = seed
+
+
+pub mapped : List (List Int) → List (List Int)
+mapped xs = List.map xs λl → List.push l 1

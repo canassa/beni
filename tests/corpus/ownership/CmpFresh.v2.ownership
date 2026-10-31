@@ -1,0 +1,30 @@
+module CmpFresh
+  13:26 List.push l: accepted param
+  17:35 call <expression>.0#Inner.0: accepted param
+  17:35 call <expression>.0#Inner.0: accepted fresh
+  21:20 CmpFresh.viaTuple xs: rejected later-use: xs is read again at 21:18
+  25:27 List.eq <literal>[*]#Inner.0: accepted param
+  25:27 List.eq <literal>[*]#Inner.0: accepted fresh
+  29:19 CmpFresh.viaList xs: rejected later-use: xs is read again at 29:17
+  33:48 call <record>.left#Inner.0: accepted param
+  33:48 call <record>.left#Inner.0: accepted fresh
+  37:21 CmpFresh.viaRecord xs: rejected later-use: xs is read again at 37:19
+  account eq: source 20, baseline 241, growth 0 of 65536, total 241, continuation 160 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Inner.0 RW
+  account viaTuple: source 21, baseline 88, growth 0 of 65536, total 88, continuation 39 of 21504, demands 0, direct_data lanes 2, call_view lanes 3, transfer_settlement lanes 22
+  summary viaTuple: π1 RW, π2 R
+  account callerTuple: source 16, baseline 43, growth 0 of 65536, total 43, continuation 32 of 16384, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 15
+  summary callerTuple: π1 RAW; res .1 π1
+  account viaList: source 12, baseline 78, growth 0 of 65536, total 78, continuation 57 of 12288, demands 0, direct_data lanes 1, call_view lanes 2, transfer_settlement lanes 13
+  summary viaList: π1 RW
+  account callerList: source 15, baseline 35, growth 0 of 65536, total 35, continuation 29 of 15360, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 14
+  summary callerList: π1 RAW; res .1 π1
+  account viaRecord: source 17, baseline 100, growth 0 of 65536, total 100, continuation 42 of 17408, demands 0, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 18
+  summary viaRecord: π1 RW
+  account callerRecord: source 15, baseline 41, growth 0 of 65536, total 41, continuation 35 of 15360, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 14
+  summary callerRecord: π1 RAW; res .1 π1
+  block: 1112 bytes, hash 554adcba399d5078
+  demands 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 3

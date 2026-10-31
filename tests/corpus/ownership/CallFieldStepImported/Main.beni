@@ -1,0 +1,42 @@
+-- ownership (project): `CallFieldStep` with the callees in another module
+-- (ownership-v2.md §2.7, §2.10's read-off, §2.11 item 1, #1325). The block
+-- publishes `Steps.rxb2`'s class with the callee's step below its
+-- argument, `π1.x.b R`, so a push of a list that `g.x.b` holds, with `g`
+-- read later, is refused `alias`: one call, two calls (`rxb3` in this
+-- module over the imported one), a tuple part and a constructor field.
+import Steps exposing (Box)
+
+
+rxb3 k = Steps.rxb2 k.y
+
+
+pub twoCalls : List Int → Int
+twoCalls xs =
+    ys = [ 3 ]
+    g = { x = { a = ys, b = xs }, y = ys }
+    p = List.push xs 1
+    Steps.rxb2 g + List.length p
+
+
+pub threeCalls : List Int → Int
+threeCalls xs =
+    ys = [ 3 ]
+    k = { y = { x = { a = ys, b = xs }, y = ys }, z = ys }
+    p = List.push xs 1
+    rxb3 k + List.length p
+
+
+pub tuplePart : List Int → Int
+tuplePart xs =
+    ys = [ 3 ]
+    g = { x = ( ys, xs ), y = ys }
+    p = List.push xs 1
+    Steps.txb2 g + List.length p
+
+
+pub ctorField : List Int → Int
+ctorField xs =
+    ys = [ 3 ]
+    g = { x = Box xs 0, y = ys }
+    p = List.push xs 1
+    Steps.cxb2 g + List.length p

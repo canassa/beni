@@ -1,0 +1,19 @@
+pub type Key
+    = Key (List Int)
+
+
+pub compare : Key, Key → Order
+compare a b =
+    case a of
+        Key l →
+            if List.length (List.push l 1) > 0 then
+                LT
+            else
+                GT
+
+
+pub eq : Key, Key → Bool
+eq a b =
+    case a of
+        Key l →
+            List.length (List.push l 1) > 0

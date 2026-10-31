@@ -50,12 +50,19 @@ No byte or performance budget is waived. Checkpoint 67f7e61a9 adds scalar
 String-class lowering under the existing Html contract; browser behavior,
 prerendering, forced run hashes and full gates passed.
 
-The next checkpoint preserves partial symbolic continuation metadata and nominal
+Checkpoint eb89c341f preserves partial symbolic continuation metadata and nominal
 declaration heads before checker stores expire, with validated private cache rows.
 It does not yet check generated continuation bodies. The entry-discovery prototype
 remains unlanded: its replacement must use compact summaries and a delta fixed
 point rather than multiplying caller contexts. Complete-handler tail-write facts
 are being validated separately, including shared-work and path-limit fallback.
+The metadata checkpoint passes eight CLI/cache tests, eleven unit/fuzz tests and
+full unfiltered gates. The existing optimized 100k-line benchmark records plain
+and dispatch medians of 308,254 and 296,972 LOC/s; every candidate run exceeds
+250k, with identical source hashes and inference counters. The compact entry
+kernel has passed algorithm-level scaling/capture tests; checked-source
+integration and complete-handler tail facts remain under review.
+
 Neither changes production Task or authorizes worker execution. Remaining native
 callback consumers, per-entry realm and Wire proofs, and public launching stay
 gated. Every further accepted checkpoint stays on PR #1304.

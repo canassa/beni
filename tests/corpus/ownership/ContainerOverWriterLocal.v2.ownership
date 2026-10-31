@@ -1,0 +1,13 @@
+module ContainerOverWriterLocal
+  12:29 List.push l: accepted param
+  19:29 List.compare <literal>[*]#Key.0: rejected alias: xs holds it and is read at 19:16
+  19:29 List.compare <literal>[*]#Key.0: accepted fresh
+  account compare: source 29, baseline 272, growth 0 of 65536, total 272, continuation 149 of 29696, demands 74, direct_data lanes 2, liveness_index lanes 2, holder_index lanes 4, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 33, step lanes 1
+  crossing: reads 0, redone 0, base moves 0
+  summary compare: π1 R, π1#Key.0 RW
+  account viaListLt: source 18, baseline 78, growth 0 of 65536, total 78, continuation 57 of 18432, demands 0, direct_data lanes 1, call_view lanes 2, transfer_settlement lanes 17
+  summary viaListLt: π1 RA; res .1 π1
+  block: 852 bytes, hash 2d7e3a9a34f826ba
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

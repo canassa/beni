@@ -1,0 +1,25 @@
+-- ownership (project): see Main.beni. The unannotated callees, whose
+-- results sit at a type variable's place (#1350), and the types.
+pub type Tree
+    = Node { c : List Int, kids : List Tree }
+
+
+pub type Rose a
+    = Rose a (List (Rose a))
+
+
+pub ans r = r.b
+
+
+pub wfirst t =
+    case t of
+        Node r →
+            case r.kids of
+                [ Node q, …_ ] →
+                    List.push q.c 1
+
+                _ →
+                    []
+
+
+pub deep3 x = Rose x [ Rose x [ Rose x [] ] ]

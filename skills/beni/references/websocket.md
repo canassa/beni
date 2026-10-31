@@ -171,6 +171,14 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
   `WebSocket.attach socket schema value` keeps a value of the program's with it, and
   `WebSocket.attachment` reads it back; the attachment is at most 16 384 bytes, counted as two
   bytes per character (about 8 100 characters of ASCII), else `Err TooLarge`.
+- The object hibernates after some seconds with no event and no fiber that waits. Its sockets
+  stay open; its state is gone. The next event starts a new instance: `restore ctx` runs again,
+  `Object.sockets ctx` holds the sockets the host kept, and each socket's id, tags, protocol and
+  attachment are as they were. Keep what a socket needs in its attachment, not in the state. A
+  fiber that waits in the object (`Deferred.wait`, `Object.ask`) stops the hibernation, but on
+  Cloudflare the host still evicts an idle object: a spawned fiber keeps its object in memory for
+  about a minute after the object's last event (at least 60 seconds, less than 120), not for as
+  long as it waits. When the object is evicted, the fiber is lost with no event.
 - `Object.sockets ctx` lists the open sockets; `Object.autoReply ctx request response` makes the
   host answer one text with another, without an event; each text is at most 2 048 bytes, else
   `Err RequestTooLarge` or `Err ResponseTooLarge`. A tag is at most 256 bytes of UTF-8.
@@ -226,4 +234,4 @@ route ctx request =
             Worker.text 500 "ROOMS is not declared"
 ```
 
-Sources: `docs/design/boundary.md` §9.10, §9.11, §9.12 (g); `examples/chat/`; the modules' doc comments.
+Sources: `docs/design/boundary.md` §9.10, §9.11, §9.12 (e.5), §9.12 (g); `examples/chat/`; the modules' doc comments.

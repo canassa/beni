@@ -81,6 +81,8 @@ pub const Result = struct {
 pub fn walk(in: Input) Error!Result {
     const env = in.env;
     const gpa = env.gpa;
+    // The `inst` atoms queued before this walk are no frame's of it (§2.11).
+    env.conds.instFloor();
     var regions = try Regions.build(gpa, env.account(), in.phase, in.bir, in.decl, in.prepass);
     defer regions.deinit(gpa);
     var frame: Transfer.Frame = .{ .gpa = gpa, .env = env, .sums = in.sums, .ctx = in.ctx, .bir = in.bir, .decl = in.decl, .regions = &regions, .param_places = in.param_places };
@@ -110,7 +112,10 @@ pub fn walk(in: Input) Error!Result {
     }, outcomes);
     const lines = try gpa.alloc(Line, outcomes.len);
     errdefer gpa.free(lines);
-    var xreq = try env.conds.flat(gpa, env.charge, if (Cond.Table.fails(frame.xreq)) Cond.yes else frame.xreq);
+    // The frame's `xreq` is tested here: its `inst` atoms resolved first.
+    const frame_xreq = try env.conds.resolved(gpa, env.charge, frame.xreq);
+    try env.conds.assertResolved(gpa, env.charge, frame_xreq);
+    var xreq = try env.conds.flat(gpa, env.charge, if (Cond.Table.fails(frame_xreq)) Cond.yes else frame_xreq);
     for (frame.demands.items, outcomes, lines) |d, o, *l| {
         l.* = .{ .demand = d, .outcome = o };
         if (o.holder != none) l.holder = frame.holders.items[o.holder];
@@ -189,6 +194,8 @@ const ReadOff = struct {
             .within => return t.within(gpa, charge, .from(a.a)),
             .keep => return t.keep(gpa, charge, a.a),
             .writes => return t.writes(gpa, charge, a.a),
+            // `instantiate` resolves its condition first: no `inst` reaches here.
+            .inst => unreachable,
         }
     }
 
@@ -212,6 +219,359 @@ fn stepsOf(places: *const Place.Table, p: PathId, gpa: Allocator, out: *std.Arra
     while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try out.append(gpa, places.pathStep(at));
     std.mem.reverse(Place.Step, out.items);
 }
+
+/// A `call` use's reads in the caller's use shapes (§2.7, §2.10's
+/// read-off, #1325): the callee reads its argument at every path its
+/// `use` marks, so the class marks `R` at each, the callee's steps after
+/// the argument's. Built by one descent of the pair (callee use node,
+/// caller's node at the path) per installed path, the result one node put
+/// at the path by one path copy, so a call costs its use shape's width,
+/// never a rebuild from the root per marked path. A jump-free graft is
+/// memoised by `(callee node, caller node, place)`, so a use shape that is
+/// a DAG is grafted as a DAG.
+///
+/// **Cycles.** A callee's step can close a cycle of the caller's place
+/// graph above the argument: `viaT t = case t of T r → readKid r` where
+/// `readKid` reads `π1⟲.v`. The callee's `⟲` is replayed through `extend`,
+/// step by step around the place's cycles in the caller's graph, so the
+/// path is the one the inline walk makes (`π1⟲#T.0.v`, never
+/// `π1#T.0⟲.v`, which no demand queries). Such a path, and a plain step
+/// that `extend` folds into a `⟲` above, is not below the path being
+/// built: it is a jump, installed after the graft from the root.
+///
+/// A callee's deep read (a leaf of marks: every path below, §2.13.6; or a
+/// node marked `D`) is `R` and `D` at its path, in a node (§2.10, *A deep
+/// read across a call*, #1328): never a leaf, which would make a shallow
+/// `W` of the caller's at the same path deep (`S`), as v1 never does. A
+/// step the caller's place does not take is `R` where it stopped.
+const Graft = struct {
+    env: Env,
+    us: []NodeId,
+    places: []const PlaceId,
+    /// The set `{R}`.
+    r: SetId,
+    /// The set `{R, D}`: a callee's deep read (§2.10), made at its first
+    /// use, so a frame with none interns no `D` (#1328).
+    rd: SetId = .none,
+    /// `(callee node, caller node, place)` → the grafted node, jump-free
+    /// grafts only.
+    memo: Ids.FixedDict(3) = .{},
+    /// Per callee node: 1 when its subtree is plain `node`s marked `R` at
+    /// most, with no `⟲` step and no place on a cycle (`pure`).
+    pure_memo: Ids.FixedDict(1) = .{},
+    /// `(parameter, callee node, path)` installed: two parameters of one
+    /// place share their paths.
+    done: Ids.FixedDict(3) = .{},
+    jumps: std.ArrayList(Jump) = .empty,
+    /// A place's re-entries (`levels`), memoised by the path they start at.
+    level_memo: Ids.FixedDict(1) = .{},
+    level_runs: std.ArrayList([2]u32) = .empty,
+    level_paths: std.ArrayList(PathId) = .empty,
+    steps: std.ArrayList(Place.Step) = .empty,
+    way: std.ArrayList(Way) = .empty,
+    stack: std.ArrayList(Frame) = .empty,
+
+    const Jump = struct { u: NodeId, path: PathId };
+    const Way = struct { n: NodeId, place: PlaceId, here: SetId };
+    const Frame = struct {
+        u: NodeId,
+        path: PathId,
+        c: NodeId,
+        cells: SetId,
+        children: u32,
+        jump_free: bool,
+        it: Shape.Table.OverIterator,
+        /// The step this frame's node is put at in its parent.
+        step: Place.Step,
+    };
+
+    fn deinit(g: *Graft) void {
+        const gpa = g.env.gpa;
+        g.memo.deinit(gpa);
+        g.pure_memo.deinit(gpa);
+        g.done.deinit(gpa);
+        g.jumps.deinit(gpa);
+        g.level_memo.deinit(gpa);
+        g.level_runs.deinit(gpa);
+        g.level_paths.deinit(gpa);
+        g.steps.deinit(gpa);
+        g.way.deinit(gpa);
+        g.stack.deinit(gpa);
+    }
+
+    /// `u`, a callee's use shape, read at `base`, the argument's path of
+    /// parameter `k`.
+    fn compose(g: *Graft, k: u32, base: PathId, u: NodeId) Error!void {
+        if (k >= g.us.len or g.env.places.kind(g.places[k]) == .cross) return;
+        try g.jumps.append(g.env.gpa, .{ .u = u, .path = base });
+        while (g.jumps.pop()) |j| {
+            try g.env.charge.reserve(g.env.gpa, .inspection, 1);
+            const got = try g.done.getOrPut(g.env.gpa, .{ k, j.u.int(), j.path.int() });
+            if (got.found_existing) continue;
+            try g.install(k, j.path, j.u);
+        }
+    }
+
+    /// The graft of `u` at `path`, put into parameter `k`'s use shape.
+    fn install(g: *Graft, k: u32, path: PathId, u: NodeId) Error!void {
+        const e = g.env;
+        const gpa = e.gpa;
+        // A path in another place graph than the parameter's (a recast on
+        // the way) marks the parameter whole, as `Mark.at` does.
+        var root = path;
+        while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
+        if (e.places.pathPlace(root) != g.places[k]) {
+            g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], &.{}, .{ .r = true }, &.{});
+            return;
+        }
+        try stepsOf(e.places, path, gpa, &g.steps);
+        // Down to the path's node; a leaf on the way holds its marks below,
+        // and `markUse` joins `R` into it.
+        g.way.clearRetainingCapacity();
+        var n = g.us[k];
+        var place = g.places[k];
+        for (g.steps.items) |s| {
+            try e.charge.reserve(gpa, .shape, 1);
+            const here: SetId = if (n == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, n);
+            if (n != .none and e.shapes.kind(n) == .leaf and here != .none) {
+                g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], g.steps.items, .{ .r = true }, &.{});
+                return;
+            }
+            try g.way.append(gpa, .{ .n = n, .place = place, .here = here });
+            var child: NodeId = .none;
+            if (n != .none and e.shapes.kind(n) == .node) {
+                if (e.shapes.overGet(e.shapes.get(n).a, s)) |c| child = c;
+            }
+            n = child;
+            place = e.places.child(place, s) orelse unreachable;
+        }
+        var out = try g.graft(u, path, n);
+        var i = g.steps.items.len;
+        while (g.way.pop()) |lv| {
+            i -= 1;
+            const children: u32 = if (lv.n != .none and e.shapes.kind(lv.n) == .node) e.shapes.get(lv.n).a else Ids.none_int;
+            out = try e.shapes.node(gpa, e.account(), lv.place, lv.here, try e.shapes.overPut(gpa, e.account(), children, g.steps.items[i], out));
+        }
+        g.us[k] = out;
+    }
+
+    /// The caller's node `c` at `path` with `R` at every path `u` marks,
+    /// on an explicit stack (#1138); jumps are queued.
+    fn graft(g: *Graft, u: NodeId, path: PathId, c: NodeId) Error!NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        g.stack.clearRetainingCapacity();
+        var result: NodeId = .none;
+        if (try g.enter(u, path, c, Place.Step.level)) |hit| return hit;
+        while (g.stack.items.len > 0) {
+            const top = &g.stack.items[g.stack.items.len - 1];
+            if (top.it.next()) |ch| {
+                try e.charge.reserve(gpa, .inspection, 1);
+                if (ch.step.kind == .level) {
+                    const run = try g.levels(top.path);
+                    if (run[1] == 0) top.cells = try e.cells.sets.unionWith(gpa, e.charge, top.cells, g.r);
+                    for (g.level_paths.items[run[0]..][0..run[1]]) |t| try g.jumps.append(gpa, .{ .u = ch.node, .path = t });
+                    if (run[1] != 0) top.jump_free = false;
+                    continue;
+                }
+                const below = (try e.places.extend(gpa, e.charge, top.path, ch.step)) orelse {
+                    top.cells = try e.cells.sets.unionWith(gpa, e.charge, top.cells, g.r);
+                    continue;
+                };
+                if (e.places.pathParent(below) != top.path or e.places.pathStep(below).word() != ch.step.word()) {
+                    // Folded into a `⟲` above: not below this path.
+                    try g.jumps.append(gpa, .{ .u = ch.node, .path = below });
+                    top.jump_free = false;
+                    continue;
+                }
+                var cc: NodeId = .none;
+                if (top.c != .none and e.shapes.kind(top.c) == .node) {
+                    if (e.shapes.overGet(e.shapes.get(top.c).a, ch.step)) |x| cc = x;
+                }
+                if (try g.enter(ch.node, below, cc, ch.step)) |hit| {
+                    const t = &g.stack.items[g.stack.items.len - 1];
+                    t.children = try e.shapes.overPut(gpa, e.account(), t.children, ch.step, hit);
+                }
+                continue;
+            }
+            const done = g.stack.pop().?;
+            const place = e.places.pathPlace(done.path);
+            const node = try e.shapes.node(gpa, e.account(), place, done.cells, done.children);
+            if (done.jump_free) (try g.memo.getOrPut(gpa, .{ done.u.int(), done.c.int(), place.int() })).value_ptr.* = node.int();
+            if (g.stack.items.len == 0) {
+                result = node;
+                break;
+            }
+            const parent = &g.stack.items[g.stack.items.len - 1];
+            parent.children = try e.shapes.overPut(gpa, e.account(), parent.children, done.step, node);
+            parent.jump_free = parent.jump_free and done.jump_free;
+        }
+        return result;
+    }
+
+    /// Starts the graft of `u` at `path` over `c`: its answer when it needs
+    /// no descent (a memo hit, a caller leaf, a callee node that is not a
+    /// plain `node`), else a frame pushed and null.
+    fn enter(g: *Graft, u: NodeId, path: PathId, c: NodeId, step: Place.Step) Error!?NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        const place = e.places.pathPlace(path);
+        try e.charge.reserve(gpa, .memo, 1);
+        if (g.memo.get(.{ u.int(), c.int(), place.int() })) |hit| return NodeId.from(hit);
+        const here: SetId = if (c == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, c);
+        if (c != .none and e.shapes.kind(c) == .leaf and here != .none)
+            return try e.shapes.leaf(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, g.r));
+        // A read-only callee use at the same place, on no cycle, over a
+        // caller node with no children: the graft is the caller's cells over
+        // the callee's own children (a wrapper copies none of its callee's use).
+        if (e.shapes.place(u) == place and try g.pure(u)) {
+            const bare = c == .none or (e.shapes.kind(c) == .node and e.shapes.get(c).a == Ids.none_int);
+            if (bare) return try e.shapes.node(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, e.shapes.get(u).cells), e.shapes.get(u).a);
+        }
+        const d = e.shapes.get(u);
+        // A leaf of marks, or a node marked `D`, reads every path below.
+        const deep = (d.kind == .leaf and try marked(e, d.cells)) or try Summary.Table.deepRead(e, u);
+        if (deep and g.rd == .none) g.rd = try Summary.Table.marksSet(e, .{ .r = true, .deep_read = true }, &.{});
+        const cells = if (deep) try e.cells.sets.unionWith(gpa, e.charge, here, g.rd) else if (try marked(e, d.cells)) try e.cells.sets.unionWith(gpa, e.charge, here, g.r) else here;
+        const children: u32 = if (c != .none and e.shapes.kind(c) == .node) e.shapes.get(c).a else Ids.none_int;
+        if (d.kind != .node) return try e.shapes.node(gpa, e.account(), place, cells, children);
+        try g.stack.append(gpa, .{ .u = u, .path = path, .c = c, .cells = cells, .children = children, .jump_free = true, .it = e.shapes.overEntries(d.a), .step = step });
+        return null;
+    }
+
+    /// The paths at the place of `path` one or more steps around its cycles
+    /// of the caller's place graph, each as `extend` makes it (so as the
+    /// inline walk names it): `(start, len)` into `level_paths`. Empty when
+    /// the place is on no cycle. A walk of the canonical paths of the
+    /// place's strongly connected component, each once.
+    fn levels(g: *Graft, path: PathId) Error![2]u32 {
+        const e = g.env;
+        try e.charge.reserve(e.gpa, .memo, 1);
+        if (g.level_memo.get(.{path.int()})) |i| return g.level_runs.items[i];
+        // `Place.levelsOf` is the one walk of a path's levels (sealed first
+        // returns taken whole, #1253).
+        const r = try e.places.levelsOf(e.gpa, e.charge, path);
+        const start: u32 = @intCast(g.level_paths.items.len);
+        var i: u32 = 0;
+        while (i < r.len) : (i += 1) try g.level_paths.append(e.gpa, e.places.foldPath(r.start + i));
+        const run: [2]u32 = .{ start, r.len };
+        (try g.level_memo.getOrPut(e.gpa, .{path.int()})).value_ptr.* = @intCast(g.level_runs.items.len);
+        try g.level_runs.append(e.gpa, run);
+        return run;
+    }
+
+    /// Whether `u`'s subtree is plain `node`s whose cells are `R` and `D`
+    /// marks at most, with no `⟲` step and no place on a cycle: its graft
+    /// at its own place over nothing is itself. Memoised per node, on an
+    /// explicit stack (#1138); a child not settled (a cycle) is not pure.
+    fn pure(g: *Graft, u: NodeId) Error!bool {
+        const e = g.env;
+        const gpa = e.gpa;
+        if (g.pure_memo.get(.{u.int()})) |b| return b == 1;
+        const Item = struct { n: NodeId, expanded: bool };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .n = u, .expanded = false });
+        while (stack.pop()) |f| {
+            if (g.pure_memo.get(.{f.n.int()}) != null) continue;
+            const d = e.shapes.get(f.n);
+            if (!f.expanded and d.kind == .node) {
+                try e.charge.reserve(gpa, .inspection, 1);
+                try stack.append(gpa, .{ .n = f.n, .expanded = true });
+                var it = e.shapes.overEntries(d.a);
+                while (it.next()) |k| if (g.pure_memo.get(.{k.node.int()}) == null) try stack.append(gpa, .{ .n = k.node, .expanded = false });
+                continue;
+            }
+            var ok = d.kind == .node and !try g.cyclic(d.place);
+            if (ok) {
+                var ct = e.cells.sets.iterate(d.cells);
+                while (ct.next()) |x| {
+                    const c: CellId = .from(x.key);
+                    if (e.cells.origin(c) != .mark or (e.cells.markOf(c) != .r and e.cells.markOf(c) != .deep_read)) ok = false;
+                }
+                var it = e.shapes.overEntries(d.a);
+                while (it.next()) |k| {
+                    if (k.step.kind == .level or (g.pure_memo.get(.{k.node.int()}) orelse 0) != 1) ok = false;
+                }
+            }
+            (try g.pure_memo.getOrPut(gpa, .{f.n.int()})).value_ptr.* = @intFromBool(ok);
+        }
+        return g.pure_memo.get(.{u.int()}).? == 1;
+    }
+
+    /// Whether `p` is on a cycle of the place graph.
+    fn cyclic(g: *Graft, p: PlaceId) Error!bool {
+        const e = g.env;
+        const st = e.places.steps(p);
+        try e.charge.reserve(e.gpa, .inspection, 1);
+        for (st.children) |child| if (child == p or e.places.sameCycle(p, child)) return true;
+        return false;
+    }
+
+    fn marked(e: Env, cells: SetId) Error!bool {
+        var it = e.cells.sets.iterate(cells);
+        while (it.next()) |x| if (e.cells.origin(.from(x.key)) == .mark) return true;
+        return false;
+    }
+};
+
+/// Which source nodes of a read-off stand at each κ position (#1372's
+/// review): `(source position, image)` → how many distinct built sources
+/// at that position `Shape.map` made that image of. Two built nodes at one
+/// position that intern to one image must not let one's entry answer for
+/// the other's absence (`Cond.Relabel.present`). One walk of the value
+/// paired with its snapshot, each `(node, position)` once, a record each;
+/// a delta's base is walked at its delta's position and is no position of
+/// its own, so its children may be counted where an override hides them,
+/// which can only add `lost`.
+const Presence = struct {
+    count: Ids.FixedDict(2) = .{},
+    counted: Ids.FixedDict(2) = .{},
+    seen: Ids.FixedDict(3) = .{},
+
+    fn deinit(p: *Presence, gpa: Allocator) void {
+        p.count.deinit(gpa);
+        p.counted.deinit(gpa);
+        p.seen.deinit(gpa);
+    }
+
+    fn run(p: *Presence, env: anytype, root: NodeId, k: Cond.Kappas) Error!void {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const Item = struct { node: NodeId, at: Cond.Kappas, position: bool };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = root, .at = k, .position = true });
+        while (stack.pop()) |it| {
+            if (it.at == .none or it.node == .none) continue;
+            const got = try p.seen.getOrPut(gpa, .{ it.node.int(), it.at.int(), @intFromBool(it.position) });
+            if (got.found_existing) continue;
+            try env.charge.reserve(gpa, .inspection, 1);
+            var x = it.node;
+            if (shapes.kind(x) == .view) x = shapes.answerOf(x) orelse continue;
+            x = shapes.eagerOf(x);
+            const d = shapes.get(x);
+            switch (d.kind) {
+                .leaf, .view => {},
+                .recast => try stack.append(gpa, .{ .node = .from(d.a), .at = it.at, .position = true }),
+                .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .at = it.at, .position = true }, .{ .node = .from(d.b), .at = it.at, .position = true } }),
+                .node, .delta => {
+                    if (it.position) if (shapes.mapSource(x)) |s| if (shapes.memo_map.get(s)) |m| {
+                        const c = try p.counted.getOrPut(gpa, .{ it.at.int(), s.int() });
+                        if (!c.found_existing) {
+                            c.value_ptr.* = 1;
+                            const n = try p.count.getOrPut(gpa, .{ it.at.int(), m.int() });
+                            n.value_ptr.* = if (n.found_existing) n.value_ptr.* + 1 else 1;
+                        }
+                    };
+                    var e = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                    while (e.next()) |c| try stack.append(gpa, .{ .node = c.node, .at = env.conds.kappaChild(it.at, c.step), .position = true });
+                    if (d.kind == .delta) try stack.append(gpa, .{ .node = .from(d.a), .at = it.at, .position = false });
+                },
+            }
+        }
+    }
+};
 
 fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     const env = in.env;
@@ -244,6 +604,8 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
     // reads `π1.1.0`): at the cell's path, the use's own path below it.
     var use_steps: std.ArrayList(Place.Step) = .empty;
     defer use_steps.deinit(gpa);
+    var graft: Graft = .{ .env = env, .us = uses, .places = in.param_places, .r = try Summary.Table.marksSet(env, .{ .r = true }, &.{}) };
+    defer graft.deinit();
     for (frame.uses.items) |u| {
         if (u.local >= frame.locals.len or !frame.bound[u.local]) continue;
         const v = frame.locals[u.local];
@@ -253,13 +615,33 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try env.charge.reserve(gpa, .inspection, 1);
             var at = pq[1];
-            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse break;
+            var whole = true;
+            for (use_steps.items) |s| at = (try env.places.extend(gpa, env.charge, at, s)) orelse {
+                whole = false;
+                break;
+            };
             try Mark.at(env, uses, in.param_places, pq[0], at, .{ .r = true }, &steps);
+            // A `call` use reads the argument at every path its callee's
+            // `use` names (§2.7), so the class marks `R` there too, the
+            // callee's paths below the argument's (#1325: `rxb2 g = rb g.x`
+            // with `rb r = List.length r.b` reads `π1.x.b`, not only `π1.x`).
+            if (u.kind == .call and u.use_node != .none and whole) try graft.compose(pq[0], at, u.use_node);
         };
     }
+    // R: the parameter parts a consumed value holds, a temporary's too
+    // (#1330: `rbc { b = g.x }`, `rbx (pick g.x)`), at their own paths and
+    // the callee's use below them (`Transfer.Frame.readsOf`).
+    for (frame.param_reads.items) |rd| if (try paramOf(env, rd.cell)) |pq| {
+        try env.charge.reserve(gpa, .inspection, 1);
+        if (rd.use_node == .none) {
+            try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true }, &steps);
+        } else try graft.compose(pq[0], pq[1], rd.use_node);
+    };
     // W: a demand's base cells that are a parameter's.
     for (frame.demands.items) |d| {
-        var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node));
+        // A deep demand writes everything its base reaches (§2.8): a fresh value holding a parameter writes it.
+        const written = if (d.kind.isDeep()) try env.shapes.reach(gpa, env.account(), &env.cells.sets, d.base.node) else try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, d.base.node);
+        var it = env.cells.sets.iterate(written);
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };
@@ -292,22 +674,47 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .a = true }, &steps);
         };
+        // Published as the eager graft made it (§2.11 *κ at a view*): each
+        // view, and each node holding one, as its eager image.
+        _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
         const mapped = try env.shapes.map(gpa, env.account(), result.node, &ro, ReadOff.relabel);
         // The value's κ, carried over the relabelling: each entry's node
-        // relabelled, its path unchanged (§2.9).
+        // relabelled, its path unchanged (§2.9). A view's entries, and its
+        // raw answer's, join its image's.
         const Carry = struct {
             ro: *ReadOff,
-            fn node(ctx: *anyopaque, x: NodeId) ?NodeId {
+            presence: *Presence,
+            fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
-                return c.ro.env.shapes.memo_map.get(x);
+                const shapes = c.ro.env.shapes;
+                if (shapes.memo_map.get(x) orelse shapes.memo_map.get(shapes.eagerOf(x))) |m| return m;
+                // A view the map did not meet, on a chain it forced: its
+                // entries join the answer's (§2.11 *κ at a view*).
+                const answer = shapes.answerOf(x) orelse return null;
+                return shapes.memo_map.get(answer) orelse shapes.memo_map.get(shapes.eagerOf(answer));
+            }
+            /// The source `x` stands for at `pos`: one the walk found there.
+            /// A stale entry, kept for a node a join left elsewhere, counts
+            /// for none, so it cannot make up for a source with no entry.
+            fn source(ctx: *anyopaque, pos: Cond.Kappas, x: NodeId) ?NodeId {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                const s = c.ro.env.shapes.mapSource(x) orelse return null;
+                return if (c.presence.counted.get(.{ pos.int(), s.int() }) != null) s else null;
+            }
+            fn present(ctx: *anyopaque, pos: Cond.Kappas, m: NodeId) u32 {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return c.presence.count.get(.{ pos.int(), m.int() }) orelse 0;
             }
             fn cond(ctx: *anyopaque, _: *Cond.Table, _: std.mem.Allocator, _: Ids.Charge, k: Cond.CondId) Error!Cond.CondId {
                 const c: *@This() = @ptrCast(@alignCast(ctx));
                 return c.ro.cond(k);
             }
         };
-        var carry: Carry = .{ .ro = &ro };
-        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond });
+        var presence: Presence = .{};
+        defer presence.deinit(gpa);
+        if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
+        var carry: Carry = .{ .ro = &ro, .presence = &presence };
+        kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = Carry.source, .present = Carry.present });
         // Widened, its κ carried onto the image with each folded class's
         // path-multiset obligation (§2.9, #1128).
         const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);

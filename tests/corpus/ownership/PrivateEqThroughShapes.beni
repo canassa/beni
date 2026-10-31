@@ -1,0 +1,29 @@
+-- ownership (v2): a private `eq` still answers dispatch inside its own
+-- module, through a derived shape too (ownership-v2.md §2.13.13). It writes
+-- the list it is handed, so `==` on a tuple, a `Maybe` or a list of `Key`
+-- writes `xs` as `direct` does, and keeping `xs` beside it is refused.
+type Key
+    = Key (List Int)
+
+
+eq : Key, Key → Bool
+eq a b =
+    case a of
+        Key l →
+            List.length (List.push l 1) > 0
+
+
+pub direct : List Int → Bool × List Int
+direct xs = ( Key xs == Key [], xs )
+
+
+pub viaTuple : List Int → Bool × List Int
+viaTuple xs = ( ( Key xs, 0 ) == ( Key [], 0 ), xs )
+
+
+pub viaMaybe : List Int → Bool × List Int
+viaMaybe xs = ( Just (Key xs) == Nothing, xs )
+
+
+pub viaList : List Int → Bool × List Int
+viaList xs = ( [ Key xs ] == [], xs )

@@ -1,0 +1,14 @@
+import Inner
+
+
+pub type Mid
+    = Mid Int Inner.Inner
+
+
+pub eq : Mid, Mid → Bool
+eq a b =
+    case a of
+        Mid _ x →
+            case b of
+                Mid _ y →
+                    x == y

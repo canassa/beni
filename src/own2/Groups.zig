@@ -36,6 +36,7 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Cond = @import("Cond.zig");
 const Summary = @import("Summary.zig");
+const Calls = @import("Calls.zig");
 const Rows = @import("Rows.zig");
 const Prepass = @import("Prepass.zig");
 const Transfer = @import("Transfer.zig");
@@ -56,6 +57,7 @@ pub const Error = Ids.ChargeError;
 const Var = TypeStore.Var;
 const Step = Place.Step;
 const none = Ids.none_int;
+const cmp_unseen = none - 1;
 
 pub const Input = struct {
     gpa: Allocator,
@@ -72,6 +74,26 @@ pub const Input = struct {
     dispatch: ?*const Dispatch,
     /// Per global symbol, its rank in text order (§3.8).
     ranks: []const u32,
+    /// Per module, whether it is in the core package; its comparisons are
+    /// trusted to compose their evidence (§2.13.13).
+    core: []const bool = &.{},
+    /// Symbol text, to name a type's `eq`/`compare`.
+    interner: ?*const InternPool.Global = null,
+    /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
+    imports: ?Imports = null,
+
+    pub fn isCore(in: *const Input, m: u32) bool {
+        return m < in.core.len and in.core[m];
+    }
+};
+
+/// How a module reads another's classes (§3.6): module `m`'s block decoded
+/// into `mod`'s tables, per declaration of `m` its class an importer may
+/// apply or `.none`; null when `m` publishes no block, or one that does not
+/// decode (R-5.7.4: an unknown summary). Only a module `mod` imports is read.
+pub const Imports = struct {
+    ctx: *anyopaque,
+    read: *const fn (ctx: *anyopaque, mod: *Module, m: u32) Error!?[]ClassId,
 };
 
 // ---------------------------------------------------------------------------
@@ -129,7 +151,8 @@ pub const Adapter = struct {
     }
 
     fn leaf(a: *Adapter, slot: *u32, k: Place.Kind) Allocator.Error!u32 {
-        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = 0, .a = 0, .b = 0 });
+        // `⊤`'s head is no type's, so it is told from a crossing type's.
+        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = if (k == .cross) none else 0, .a = 0, .b = 0 });
         return slot.*;
     }
 
@@ -461,7 +484,8 @@ pub const Adapter = struct {
         }
         switch (e.kind) {
             .foreign => {
-                if (a.isPrimitive(t) or crossingWord(bir, decl)) return .{ .kind = .cross };
+                // Its head, so a block names which type crosses (§2.1).
+                if (a.isPrimitive(t) or crossingWord(bir, decl)) return .{ .kind = .cross, .head = n.head };
                 return .{ .kind = .@"opaque", .head = n.head };
             },
             .alias => return .{ .kind = .@"var" },
@@ -484,6 +508,68 @@ pub const Adapter = struct {
     pub fn placeOfVar(a: *Adapter, v: Var.Optional) Error!PlaceId {
         const id = if (v.unwrap()) |x| try a.ofVar(x) else try a.leaf(&a.var_id, .@"var");
         return a.places.of(a.gpa, a.account, a.source(), id);
+    }
+
+    /// The module's own place equal to `p`, a block's (§2.1: a block's
+    /// place re-interned onto the reader's graph, which is the same graph
+    /// because both were built from one definition), when its structure
+    /// names this adapter's node: a nominal type of no parameters, a
+    /// sequence or a cell of a named element, a record or a tuple of named
+    /// fields, a leaf. A parameterised constructor type's arguments are not
+    /// in a block, so its place stays the block's (S6, #1317). Checked by
+    /// `Place.equals`, so a node that differs is never taken for `p`.
+    pub fn ownPlace(a: *Adapter, p: PlaceId) Error!?PlaceId {
+        const places = a.places;
+        const pending = none - 1;
+        var memo: stamped.Column(PlaceId, u32) = .{};
+        defer memo.deinit(a.gpa);
+        var stack: std.ArrayList(struct { p: PlaceId, expanded: bool }) = .empty;
+        defer stack.deinit(a.gpa);
+        var kids: std.ArrayList(Kid) = .empty;
+        defer kids.deinit(a.gpa);
+        try stack.append(a.gpa, .{ .p = p, .expanded = false });
+        while (stack.pop()) |f| {
+            // A place met again while its parts are read (a cycle no nominal
+            // type closes) names nothing.
+            if (memo.get(f.p)) |m| if (m != pending or !f.expanded) continue;
+            const k = places.kind(f.p);
+            const h = places.head(f.p);
+            const st = places.steps(f.p);
+            // A crossing type by its head; `⊤`, whose head is none, a leaf.
+            const nominal_kind = k == .ctor or k == .list or k == .ref or k == .@"opaque" or (k == .cross and h != none);
+            const arity: u32 = if (nominal_kind and h < a.in.types.entries.len) a.in.types.entries[h].arity else 0;
+            // What the node needs first: a sequence's or a cell's element,
+            // a record's or a tuple's fields.
+            const needs = (k == .record or k == .tuple) or ((k == .list or k == .ref) and arity == 1 and st.steps.len == 1);
+            if (needs and !f.expanded) {
+                try memo.put(a.gpa, f.p, pending);
+                try stack.append(a.gpa, .{ .p = f.p, .expanded = true });
+                for (st.children) |c| if (!memo.contains(c)) try stack.append(a.gpa, .{ .p = c, .expanded = false });
+                continue;
+            }
+            const node: u32 = if (needs) blk: {
+                kids.clearRetainingCapacity();
+                for (st.steps, st.children) |s, c| {
+                    const id = memo.get(c) orelse none;
+                    if (id == none or id == pending) break :blk none;
+                    try kids.append(a.gpa, .{ .step = s, .id = id });
+                }
+                break :blk if (k == .record or k == .tuple) try a.structural(k, h, kids.items) else try a.nominal(@fromBackingInt(h), &.{kids.items[0].id}, none);
+            } else if (nominal_kind and h < a.in.types.entries.len and arity == 0)
+                try a.nominal(@fromBackingInt(h), &.{}, none)
+            else if (st.steps.len == 0) switch (k) {
+                .@"var" => try a.leaf(&a.var_id, .@"var"),
+                .cross => try a.leaf(&a.cross_id, .cross),
+                .closure => try a.leaf(&a.closure_id, .closure),
+                else => none,
+            } else none;
+            try memo.put(a.gpa, f.p, node);
+        }
+        const node = memo.get(p).?;
+        if (node == none) return null;
+        const q = try places.of(a.gpa, a.account, a.source(), node);
+        if (q != p and !try Place.Table.equals(places, p, places, q, a.gpa, .growth(a.account))) return null;
+        return q;
     }
 };
 
@@ -510,6 +596,8 @@ pub const Module = struct {
     shapes: Shape.Table = .{},
     conds: Cond.Table,
     sums: Summary.Table = .{},
+    /// The environments of the views calls answer (§2.11), read by `shapes`.
+    views: Calls.Views = undefined,
     adapter: Adapter,
     /// The account of the declaration being walked.
     account: *Ids.Account,
@@ -517,11 +605,24 @@ pub const Module = struct {
     shared: Ids.FixedDict(2) = .{},
     shared_of: std.ArrayList([2]u32) = .empty,
     results: std.ArrayList(DeclResult) = .empty,
+    /// Per declaration of the module: its index in `results`, or `none`.
+    result_of: []u32 = &.{},
     prepass_arena: std.heap.ArenaAllocator,
     /// The local index the walked declaration's locals start at.
     cur_locals: u32 = 0,
     /// What the module itself is charged: the condition table's constants.
     base_account: Ids.Account = .{},
+    /// Per imported module read, its classes by declaration (`Imports`);
+    /// null for one with no block that decodes. Read at its first call.
+    imported: stamped.Column(u32, ?[]ClassId) = .{},
+    imported_owned: std.ArrayList([]ClassId) = .empty,
+    /// A block's instruction `(module, inst)` → this module's id for it, past
+    /// its own instructions: a namespace no instruction of the module or of
+    /// another import meets (`Block.Remap.inst`).
+    import_insts: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+    /// Per (module, `eq` or `compare`): the module's value of that name,
+    /// `none` for no such value, `cmp_unseen` before the first look.
+    cmp_decl: []u32 = &.{},
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -530,6 +631,7 @@ pub const Module = struct {
         mod.shapes.deinit(gpa);
         mod.conds.deinit(gpa);
         mod.sums.deinit(gpa);
+        mod.views.deinit(gpa);
         mod.adapter.deinit();
         mod.shared.deinit(gpa);
         mod.shared_of.deinit(gpa);
@@ -538,8 +640,48 @@ pub const Module = struct {
             r.account.deinit(gpa);
         }
         mod.results.deinit(gpa);
+        gpa.free(mod.result_of);
         mod.prepass_arena.deinit();
         mod.base_account.deinit(gpa);
+        for (mod.imported_owned.items) |cs| gpa.free(cs);
+        mod.imported_owned.deinit(gpa);
+        mod.imported.deinit(gpa);
+        mod.import_insts.deinit(gpa);
+        gpa.free(mod.cmp_decl);
+    }
+
+    /// The `shared` index of declaration `md` (a block's shared cell).
+    pub fn sharedOf(mod: *Module, md: [2]u32) Allocator.Error!u32 {
+        const got = try mod.shared.getOrPut(mod.gpa, md);
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(mod.shared_of.items.len);
+            try mod.shared_of.append(mod.gpa, md);
+        }
+        return got.value_ptr.*;
+    }
+
+    /// Block instruction `inst` of module `m` in this module's namespace.
+    pub fn importInst(mod: *Module, m: u32, inst: u32) Allocator.Error!u32 {
+        const got = try mod.import_insts.getOrPut(mod.gpa, .{ m, inst });
+        if (!got.found_existing) got.value_ptr.* = @intCast(mod.in.bir.insts.len + mod.import_insts.count() - 1);
+        return got.value_ptr.*;
+    }
+
+    /// The class declaration `di` of module `m` publishes for its importers,
+    /// read from `m`'s block at the first call (§2.11: an imported call is a
+    /// same-module one); null when it publishes none they may apply.
+    fn importedClass(mod: *Module, m: u32, di: u32) Error!?ClassId {
+        const imports = mod.in.imports orelse return null;
+        if (!mod.imported.contains(m)) {
+            const cs = try imports.read(imports.ctx, mod, m);
+            if (cs) |c| mod.imported_owned.append(mod.gpa, c) catch |err| {
+                mod.gpa.free(c);
+                return err;
+            };
+            try mod.imported.put(mod.gpa, m, cs);
+        }
+        const cs = mod.imported.get(m).? orelse return null;
+        return if (di < cs.len and cs[di] != .none) cs[di] else null;
     }
 
     pub fn env(mod: *Module) Summary.Env {
@@ -606,6 +748,19 @@ pub const Module = struct {
         };
     }
 
+    /// The `(module, constructor index)` a constructor reference names, or
+    /// null: what a line calls a constructor application by (`<Node …>`).
+    pub fn ctorIndexCtx(ctx: *anyopaque, ref: u32) ?[2]u32 {
+        const mod = self(ctx);
+        const bir = mod.in.bir;
+        const d = bir.instData(@fromBackingInt(ref));
+        const at: [2]u32 = switch (bir.instTag(@fromBackingInt(ref))) {
+            .ctor => .{ mod.in.module, d.lhs },
+            .ext_ctor => if (d.lhs < mod.in.provenance.len and d.rhs < mod.in.provenance[d.lhs].ctor_index.len) .{ d.lhs, mod.in.provenance[d.lhs].ctor_index[d.rhs] } else return null,
+            else => return null,
+        };
+        return if (at[0] < mod.in.birs.len and at[1] < mod.in.birs[at[0]].ctors.len) at else null;
+    }
     fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
         const mod = self(ctx);
         const bir = mod.in.bir;
@@ -634,12 +789,7 @@ pub const Module = struct {
         if (decl.kind != .value or decl.params != 0) return null;
         const at = placeOfInst(ctx, ref) catch return null;
         if (mod.places.kind(at) == .closure) return null;
-        const got = mod.shared.getOrPut(mod.gpa, md) catch return null;
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(mod.shared_of.items.len);
-            mod.shared_of.append(mod.gpa, md) catch return null;
-        }
-        return got.value_ptr.*;
+        return mod.sharedOf(md) catch null;
     }
 
     fn isListAppend(ctx: *anyopaque, inst: u32) bool {
@@ -665,20 +815,26 @@ pub const Module = struct {
         const mod = self(ctx);
         const bir = mod.in.bir;
         var target: ?[2]u32 = null;
-        var derived = false;
+        // A comparison whose class is its components' (§2.13.13): derived or
+        // primitive, or a container's in core.
+        var composed = false;
+        var term: ?Dispatch.TermIndex = null;
         if (bir.instTag(@fromBackingInt(inst)) == .call) {
             const head = bir.instData(@fromBackingInt(inst)).lhs;
             if (ctorOf(ctx, head)) |c| return .{ .ctor = c[0] };
             target = mod.declOf(head);
         } else if (mod.in.dispatch) |dt| if (dt.siteOf(@fromBackingInt(inst))) |site| if (site.callee.unwrap()) |ti| {
+            term = ti;
             switch (dt.term(ti)) {
                 .top => |u| target = .{ mod.in.module, u.decl.int() },
                 .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| {
                     target = .{ u.module.int(), d.int() };
                 },
                 // A derived or primitive `eq`/`compare` (§2.13.13): its class
-                // composes its components' — none written by hand here.
-                else => derived = try mod.handWritten(dt, ti) == false,
+                // composes its components'.
+                // A parameter's or a codec's names no function here.
+                .param, .codec => {},
+                else => composed = true,
             }
         };
         var args: std.ArrayList(u32) = .empty;
@@ -688,14 +844,38 @@ pub const Module = struct {
             const owner = mod.in.birs[t[0]];
             const words = owner.ownSlotsV2(owner.decls[t[1]]);
             if (words.len != 0) return .{ .class = try mod.wordedClass(words, args.items, inst, t[0], owner.decls[t[1]]) };
-            // A container's `eq`/`compare` with no words (`List.eq`, written
-            // in JavaScript over its element evidence): the derived class when
-            // no evidence it is handed is written by hand (§2.13.13).
-            if (try mod.unwordedComparison(inst)) derived = true;
+            // A container's `eq`/`compare` in core (`List.eq`, written over
+            // its element evidence): its class is its components', whatever
+            // block it publishes, so the evidence it is handed is read.
+            if (mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call) {
+                const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
+                if (m.origin != .none) composed = true;
+            }
+            if (!composed) {
+                // A declaration of this module walked before this one (an
+                // earlier group, §8 S3b): its class, applied at this call. One
+                // of this group (recursion) or one past its limit is not built
+                // here.
+                if (t[0] == mod.in.module) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
+                // One of another module (S3b slice 3): the class its block
+                // publishes, applied the same way.
+                if (t[0] != mod.in.module) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
+            }
         }
-        if (derived and args.items.len == 2) {
-            const res = try placeOfInst(ctx, inst);
-            return .{ .class = try Rows.derivedClass(mod.env(), &mod.sums, try placeOfInst(ctx, args.items[0]), res, &.{}) };
+        // Evidence that names no function (a parameter's, a codec) hides its
+        // components.
+        if (composed) if (term) |ti| if (mod.in.dispatch) |dt| if (try mod.opaqueEvidence(dt, ti, inst)) {
+            composed = false;
+        };
+        if (composed and args.items.len == 2) {
+            var comps: std.ArrayList(Rows.Component) = .empty;
+            defer comps.deinit(mod.gpa);
+            // A user-written comparison reached through the type with no class
+            // leaves the call unbuilt: nothing is known of what it writes.
+            const at = try placeOfInst(ctx, args.items[0]);
+            if (try mod.componentClasses(at, inst, &comps)) {
+                return .{ .class = try Rows.derivedClass(mod.env(), &mod.sums, at, try placeOfInst(ctx, inst), comps.items) };
+            }
         }
         // Every argument and the result cross: nothing to track.
         if (mod.places.kind(try placeOfInst(ctx, inst)) != .cross) return .unbuilt;
@@ -705,6 +885,16 @@ pub const Module = struct {
         return .harmless;
     }
 
+    /// The class of declaration `di`'s walk when it is done, built and within its
+    /// limits; null before its walk, or when a limit stopped it.
+    pub fn walkedClass(mod: *const Module, di: u32) ?ClassId {
+        if (di >= mod.result_of.len or mod.result_of[di] == none) return null;
+        const r = mod.results.items[mod.result_of[di]];
+        // An unbuilt walk's class is the pessimistic one: applying it would
+        // check the call against a class the callee never earned.
+        if (r.failure != null or r.unbuilt != none or r.class == .none) return null;
+        return r.class;
+    }
     fn isSequence(mod: *const Module, at: PlaceId) bool {
         return mod.places.kind(at) == .list and mod.places.child(at, Step.elem) != null;
     }
@@ -713,33 +903,92 @@ pub const Module = struct {
         return mod.places.kind(at) == .ref and mod.places.child(at, Step.contents) != null;
     }
 
-    /// Whether an evidence term names a function written by hand (a `top`
-    /// or `ext` term anywhere in it): its class is a summary, S3b's.
-    /// Whether `inst` is an `==`/`<` method call whose dispatched callee
-    /// takes only derived or primitive evidence (nothing written by hand).
-    fn unwordedComparison(mod: *const Module, inst: u32) Allocator.Error!bool {
-        const bir = mod.in.bir;
-        if (bir.instTag(@fromBackingInt(inst)) != .method_call) return false;
-        const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
-        if (m.origin == .none) return false;
-        const dt = mod.in.dispatch orelse return false;
-        const site = dt.siteOf(@fromBackingInt(inst)) orelse return false;
-        const ti = site.callee.unwrap() orelse return false;
-        for (dt.argsOfTerm(ti)) |a| if (try mod.handWritten(dt, a)) return false;
-        return true;
-    }
-
-    fn handWritten(mod: *const Module, dt: *const Dispatch, root: Dispatch.TermIndex) Allocator.Error!bool {
+    /// Whether an evidence root of the comparison at `inst` is opaque: a
+    /// parameter's or a codec, anywhere in it.
+    fn opaqueEvidence(mod: *const Module, dt: *const Dispatch, ti: Dispatch.TermIndex, inst: u32) Allocator.Error!bool {
         var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
         defer stack.deinit(mod.gpa);
-        try stack.append(mod.gpa, root);
-        while (stack.pop()) |ti| {
-            switch (dt.term(ti)) {
-                .top, .ext, .param, .codec => return true,
-                else => try stack.appendSlice(mod.gpa, dt.argsOfTerm(ti)),
+        // Evidence is a DAG (`EvidenceDagBuildDepth32`): each term once.
+        var seen: stamped.Column(Dispatch.TermIndex, void) = .{};
+        defer seen.deinit(mod.gpa);
+        try stack.appendSlice(mod.gpa, dt.argsOfTerm(ti));
+        if (dt.siteOf(@fromBackingInt(inst))) |site| try stack.appendSlice(mod.gpa, dt.argsAt(site.evidence));
+        while (stack.pop()) |t| {
+            if (seen.contains(t)) continue;
+            try seen.put(mod.gpa, t, {});
+            switch (dt.term(t)) {
+                .param, .codec => return true,
+                else => try stack.appendSlice(mod.gpa, dt.argsOfTerm(t)),
             }
         }
         return false;
+    }
+
+    /// The classes of the user-written `eq`/`compare` the comparison at
+    /// `inst` reaches through its first argument's type (§2.13.13), each
+    /// with the place of the type that declares it: its derived row calls
+    /// each nominal component's own, and a component's own is the whole of
+    /// what that type does, so the walk does not go inside it. False when one
+    /// has no class an importer or this module may apply.
+    fn componentClasses(mod: *Module, root: PlaceId, inst: u32, out: *std.ArrayList(Rows.Component)) Error!bool {
+        const interner = mod.in.interner orelse return false;
+        const bir = mod.in.bir;
+        const name: []const u8 = blk: {
+            if (bir.instTag(@fromBackingInt(inst)) != .method_call) break :blk "";
+            const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
+            break :blk switch (m.origin) {
+                .eq, .neq => "eq",
+                .lt, .le, .gt, .ge => "compare",
+                .none => interner.slice(bir.symbol(m.name)),
+            };
+        };
+        // Another name (a field call, say) names no comparison of a type.
+        if (!std.mem.eql(u8, name, "eq") and !std.mem.eql(u8, name, "compare")) return true;
+        var seen: stamped.Column(u32, void) = .{};
+        defer seen.deinit(mod.gpa);
+        var stack: std.ArrayList(PlaceId) = .empty;
+        defer stack.deinit(mod.gpa);
+        try stack.append(mod.gpa, root);
+        while (stack.pop()) |p| {
+            if (seen.contains(p.int())) continue;
+            try seen.put(mod.gpa, p.int(), {});
+            if (mod.places.kind(p) == .ctor and mod.places.head(p) < mod.in.types.entries.len) {
+                const m = mod.in.types.entries[mod.places.head(p)].module.int();
+                if (!mod.in.isCore(m)) if (try mod.userComparison(interner, m, name)) |di| {
+                    const c = (if (m == mod.in.module) mod.walkedClass(di) else try mod.importedClass(m, di)) orelse return false;
+                    try out.append(mod.gpa, .{ .place = p, .class = c });
+                    continue;
+                };
+            }
+            try stack.appendSlice(mod.gpa, mod.places.steps(p).children);
+        }
+        return true;
+    }
+
+    /// The value `name` (`eq` or `compare`) of module `m`, pub or not: a type's
+    /// method is a value of the module that declares it, and a private one still
+    /// answers dispatch inside that module, through a derived row too (§2.13.13).
+    /// Found once per module and name, then remembered.
+    fn userComparison(mod: *Module, interner: *const InternPool.Global, m: u32, name: []const u8) Allocator.Error!?u32 {
+        const slot: usize = if (std.mem.eql(u8, name, "eq")) 0 else if (std.mem.eql(u8, name, "compare")) 1 else 1;
+        if (mod.cmp_decl.len == 0) {
+            mod.cmp_decl = try mod.gpa.alloc(u32, mod.in.birs.len * 2);
+            @memset(mod.cmp_decl, cmp_unseen);
+        }
+        const at = m * 2 + slot;
+        if (mod.cmp_decl[at] == cmp_unseen) {
+            const bir = mod.in.birs[m];
+            mod.cmp_decl[at] = none;
+            for (bir.decls, 0..) |d, di| {
+                if (d.kind != .value) continue;
+                if (std.mem.eql(u8, interner.slice(bir.symbol(d.name)), name)) {
+                    mod.cmp_decl[at] = @intCast(di);
+                    break;
+                }
+            }
+        }
+        const got = mod.cmp_decl[at];
+        return if (got == none) null else got;
     }
 
     /// A worded declaration's class at this call (§5's signature adapter):
@@ -789,6 +1038,8 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     const gpa = in.gpa;
     try initModule(in, mod);
     const prepass = try Prepass.run(gpa, mod.prepass_arena.allocator(), .{ .bir = in.bir, .dispatch = in.dispatch });
+    var pool: ColdPool = .{};
+    defer pool.deinit(gpa);
     for (prepass.order) |di| {
         const d = in.bir.decls[di];
         if (d.kind != .value or d.body == .none) continue;
@@ -797,20 +1048,14 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
         // module's, else the default.
         const allowance = if (d.summary_size != 0) d.summary_size else if (in.bir.summary_size != 0) in.bir.summary_size else Ids.Account.default_allowance;
         try mod.results.append(gpa, .{ .decl = di, .account = .{ .allowance = allowance } });
+        mod.result_of[di] = @intCast(mod.results.items.len - 1);
         const r = &mod.results.items[mod.results.items.len - 1];
         try walkIn(mod, d, &prepass, r);
         const stopped = r.failure != null and r.failure.? == .exhausted;
         if (!stopped and !cold_accounts) continue;
         var cold: DeclResult = .{ .decl = di, .account = .{ .allowance = allowance } };
         errdefer cold.account.deinit(gpa);
-        {
-            const alone = try gpa.create(Module);
-            defer gpa.destroy(alone);
-            try initModule(in, alone);
-            defer alone.deinit();
-            try walkIn(alone, d, &prepass, &cold);
-            gpa.free(cold.lines);
-        }
+        try coldRun(mod, &pool, di, &prepass, &cold);
         if (stopped and cold.failure == null) {
             // Within the limit alone: walked again here, unbounded, for its
             // class and lines in this module's tables.
@@ -825,6 +1070,90 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     }
     mod.account = &mod.base_account;
     mod.adapter.account = &mod.base_account;
+}
+
+/// The cold run's tables (§4.4, #1104): a module holding exactly the walks
+/// of a set of declarations, each once. A cold run whose callees include
+/// that set reuses it and walks only what is missing; any other starts
+/// afresh. So a dump's cold accounts cost each walk once along a chain of
+/// calls, and each cold run's tables hold exactly its callees' walks.
+const ColdPool = struct {
+    mod: ?*Module = null,
+    walked: []bool = &.{},
+
+    fn deinit(p: *ColdPool, gpa: Allocator) void {
+        if (p.mod) |m| {
+            m.deinit();
+            gpa.destroy(m);
+        }
+        gpa.free(p.walked);
+        p.* = .{};
+    }
+};
+
+/// `di` walked cold on `cold`'s account, after every declaration of an
+/// earlier group it reaches by calls (`.top` references and dispatched
+/// method calls). A callee the warm run stopped at a limit, or left
+/// unbuilt, is not walked: the cold run applies no class for it either.
+fn coldRun(mod: *Module, pool: *ColdPool, di: u32, prepass: *const Facts.Prepass, cold: *DeclResult) Allocator.Error!void {
+    const gpa = mod.gpa;
+    const in = mod.in;
+    const bir = in.bir;
+    const reached = try gpa.alloc(bool, bir.decls.len);
+    defer gpa.free(reached);
+    @memset(reached, false);
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, di);
+    while (stack.pop()) |x| {
+        const d = bir.decls[x];
+        for (d.inst_start.int()..d.inst_end.int()) |i| {
+            const md = mod.declOf(@intCast(i)) orelse continue;
+            const t = md[1];
+            if (md[0] != in.module or t >= bir.decls.len or reached[t] or prepass.group_of[t] >= prepass.group_of[di]) continue;
+            reached[t] = true;
+            try stack.append(gpa, t);
+        }
+    }
+    // Reuse the pool only when everything it holds is a callee of `di`.
+    if (pool.mod != null) for (pool.walked, 0..) |w, x| if (w and !reached[x]) {
+        pool.deinit(gpa);
+        break;
+    };
+    if (pool.mod == null) {
+        const m = try gpa.create(Module);
+        errdefer gpa.destroy(m);
+        try initModule(in, m);
+        pool.mod = m;
+        pool.walked = try gpa.alloc(bool, bir.decls.len);
+        @memset(pool.walked, false);
+    }
+    const alone = pool.mod.?;
+    for (prepass.order) |x| {
+        if (!reached[x] or pool.walked[x]) continue;
+        pool.walked[x] = true;
+        const d = bir.decls[x];
+        if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) continue;
+        const warm = mod.results.items[mod.result_of[x]];
+        try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
+        alone.result_of[x] = @intCast(alone.results.items.len - 1);
+        const r = &alone.results.items[alone.results.items.len - 1];
+        if (warm.failure != null or warm.unbuilt != none) {
+            r.failure = warm.failure;
+            r.unbuilt = warm.unbuilt;
+            continue;
+        }
+        try walkIn(alone, d, prepass, r);
+    }
+    try walkIn(alone, bir.decls[di], prepass, cold);
+    gpa.free(cold.lines);
+    cold.lines = &.{};
+    // `di` itself, for the next cold run that calls it.
+    pool.walked[di] = true;
+    try alone.results.append(gpa, .{ .decl = di, .class = cold.class, .unbuilt = cold.unbuilt, .failure = cold.failure });
+    alone.result_of[di] = @intCast(alone.results.items.len - 1);
+    alone.account = &alone.base_account;
+    alone.adapter.account = &alone.base_account;
 }
 
 /// Empty tables for `in`'s module.
@@ -843,6 +1172,13 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
         else => unreachable,
     };
     mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
+    mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
+    mod.shapes.instantiation = mod.views.instantiation();
+    mod.conds.shapes_hook = &mod.shapes;
+    mod.conds.resolver = mod.views.resolver();
+    mod.shapes.trackRelevance();
+    mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
+    @memset(mod.result_of, none);
 }
 
 /// Walk `d` in `mod`'s tables on `r`'s account; a limit is `r`'s failure.

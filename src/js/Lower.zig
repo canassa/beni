@@ -1731,6 +1731,14 @@ pub const Lowerer = struct {
         return l.add(.call, p, callee.int(), @backingInt(record));
     }
 
+    /// `call` for a `Js.apply`: the callee is a `Js.Value`, a host function
+    /// by type, and the node says so (`JsIr.Node.host`).
+    pub fn hostCall(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
+        const node = try l.call(callee, args, p);
+        l.b.markHost(node);
+        return node;
+    }
+
     pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
         if (field == l.well.tag) if (try l.tagOfChoice(target, n, p)) |chosen| return chosen;
@@ -11161,6 +11169,10 @@ pub const Lowerer = struct {
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
             W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),
+            W.lt => l.binary(.lt, v[0], v[1], p),
+            W.gt => l.binary(.gt, v[0], v[1], p),
+            W.le => l.binary(.le, v[0], v[1], p),
+            W.ge => l.binary(.ge, v[0], v[1], p),
             W.bitAnd => l.binary(.bit_and, v[0], v[1], p),
             W.bitOr => l.binary(.bit_or, v[0], v[1], p),
             W.bitXor => l.binary(.bit_xor, v[0], v[1], p),
@@ -11181,7 +11193,7 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
-            W.apply => l.call(v[0], rest, p),
+            W.apply => l.hostCall(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
@@ -19765,12 +19777,13 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try l.markupComponentCall(n, if (children) |c| node(c) else null));
     }
 
-    /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module. A `pub` one is an interface value. One that is not `pub` is
-    /// found by the vocabulary row (`Reach.privateExtractor`) and imported
-    /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
-    /// amended 2026-10-21). In the vocabulary module itself, either is
-    /// written by its local name. Reachability keeps either alive.
+    /// An event's payload extractor, a `foreign` or a beni declaration of
+    /// the vocabulary module (#883). A `pub` one is an interface value. One
+    /// that is not `pub` is found by the vocabulary row
+    /// (`Reach.privateExtractor`) and imported by its name, the way a
+    /// core-private value is (`checker-v2.md` §25.8, amended 2026-10-21). In
+    /// the vocabulary module itself, either is written by its local name.
+    /// Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -19785,7 +19798,7 @@ const markup_vtable: beni_markup.VTable = struct {
             return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
         }
         const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
-        // The event has a `via`, and the checker bound it to a `foreign` of
+        // The event has a `via`, and the checker bound it to a declaration of
         // the vocabulary module (§25.8), so finding no declaration is a
         // compiler bug. The identity a lowering writes for a null hands the
         // handler the event instead of the extractor's result.

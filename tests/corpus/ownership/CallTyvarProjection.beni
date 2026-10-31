@@ -1,0 +1,137 @@
+-- ownership: a field of an unannotated callee's result at a type
+-- variable's place keeps the callee's reads below it (ownership-v2.md
+-- §2.11 *Re-rooting at a parameter*, #1350). The call instantiates the
+-- variable to the actual's type, so `(pick g.x).c` with `pick r = r` is
+-- `g.x.c`, read exactly: `n2`'s class reads `π1.x.c`, and a push of the
+-- list `g.x.c` holds, with `g` read later, is refused `alias`. The same
+-- bound to a local (`bound`), as a `case` scrutinee (`scrutinee`), through
+-- a field selector (`ans r = r.b`), one step further (`ansU`), through two
+-- calls (`pick (pick g.x)`) and through a choice of two parameters
+-- (`choose`). `wp` writes through the projection, and `written` reads
+-- `xs` after it. `otherField` reads `g.y.c`, which does not hold the
+-- list, so the push is accepted (`nd` is annotated: #1327 refuses an
+-- unannotated twin).
+pick r = r
+
+
+n2 g = List.length (pick g.x).c
+
+
+pub inlineField : List Int → Int
+inlineField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n2 g + List.length p
+
+
+nb g =
+    t = (pick g.x).c
+    List.length t
+
+
+pub bound : List Int → Int
+bound xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    nb g + List.length p
+
+
+nc g =
+    case (pick g.x).c of
+        [] →
+            0
+
+        _ →
+            1
+
+
+pub scrutinee : List Int → Int
+scrutinee xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    nc g + List.length p
+
+
+ans r = r.b
+
+
+n3 g = List.length (ans { b = g.x }).c
+
+
+pub selector : List Int → Int
+selector xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n3 g + List.length p
+
+
+ansU r = r.b
+
+
+n4 g = List.length (ansU { b = g }).x.c
+
+
+pub selectorDeep : List Int → Int
+selectorDeep xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n4 g + List.length p
+
+
+n5 g = List.length (pick (pick g.x)).c
+
+
+pub twoCalls : List Int → Int
+twoCalls xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n5 g + List.length p
+
+
+choose b l r =
+    if b then
+        l
+    else
+        r
+
+
+n6 g = List.length (choose True g.y g.x).c
+
+
+pub chosen : List Int → Int
+chosen xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    n6 g + List.length p
+
+
+wp g =
+    t = (pick g.x).c
+    List.push t 1
+
+
+pub written : List Int → Int
+written xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = wp g
+    List.length xs + List.length p
+
+
+nd : { x : { c : List Int, d : List Int }, y : { c : List Int, d : List Int } } → Int
+nd g = List.length (pick g.y).c
+
+
+pub otherField : List Int → Int
+otherField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    nd g + List.length p

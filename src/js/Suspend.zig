@@ -102,6 +102,11 @@ pub const Pass = struct {
         return p.b.nodes.items(.pos)[n.int()];
     }
 
+    /// `JsIr.Node.host` of a `call`.
+    fn hostOf(p: *const Pass, n: Node.Index) bool {
+        return p.b.nodes.items(.host)[n.int()];
+    }
+
     fn word(p: *const Pass, at: u32) u32 {
         return p.b.extra.items[at];
     }
@@ -682,7 +687,11 @@ pub const Pass = struct {
             .call, .new_call => {
                 const callee = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const args = try p.cloneRange(p.rangeAt(d.rhs));
-                return p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
+                const copy = try p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
+                // A `Js.apply`'s call keeps its mark (`JsIr.Node.host`): §9
+                // item 6 reads it on the copy as on the original.
+                if (t == .call and p.hostOf(n)) p.b.markHost(copy);
+                return copy;
             },
             .object, .array, .template, .sequence => {
                 const r = try p.cloneRange(JsIr.inlineRange(d));

@@ -124,9 +124,12 @@ pub const Kind = enum(u8) {
 };
 
 /// What a `mark` cell says of a parameter path (§2.10's `use(i)` labels):
-/// read, kept in the result, escaped, written, written deeply (`S`), or one
-/// written field (`W{F}`), whose rank is the cell's `b`.
-pub const Mark = enum(u8) { r, a, e, w, deep, field };
+/// read, kept in the result, escaped, written, written deeply (`S`), one
+/// written field (`W{F}`), whose rank is the cell's `b`, or read at the path
+/// and every path below it (`D`, `deep_read`: a callee's deep read composed
+/// at a call, #1328), which `W` never takes. `deep_read` is last: a block
+/// writes a mark by its number.
+pub const Mark = enum(u8) { r, a, e, w, deep, field, deep_read };
 
 /// One cell. `a`, `b`, `c` by origin (§3.2): `site`: the instruction;
 /// `result`/`esc`: label + k; `param`/`env`/`shared`/`msg`: index + path;
@@ -188,6 +191,10 @@ pub const Table = struct {
     /// `(container, label)` → split.
     split_intern: Ids.FixedDict(2) = .{},
     sets: Radix = .{},
+    /// `R`, `D`, `A` once made: their readers never intern, so no `D` costs nothing.
+    mark_r: CellId = .none,
+    mark_d: CellId = .none,
+    mark_a: CellId = .none,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.cells.deinit(gpa);
@@ -304,7 +311,25 @@ pub const Table = struct {
     /// A use mark (`Mark`), with the field's rank for `field`; one cell per
     /// distinct mark, at no place.
     pub fn mark(t: *Table, gpa: Allocator, account: *Account, m: Mark, rank: u32) Error!CellId {
-        return t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
+        const id = try t.internCell(gpa, account, .mark, .none, @backingInt(m), if (m == .field) rank else 0, 0, .none, .none);
+        if (m == .r) t.mark_r = id;
+        if (m == .deep_read) t.mark_d = id;
+        if (m == .a) t.mark_a = id;
+        return id;
+    }
+
+    /// Whether `s` holds `D` (§2.10); `D` without `R` (no use shape's).
+    pub fn hasDeepRead(t: *const Table, s: SetId) bool {
+        return t.mark_d != .none and t.sets.member(s, t.mark_d.int());
+    }
+    /// Whether a caller's liveness reads every path below a use node of cells
+    /// `s`: `D` (§2.10), or `A`, an object the result holds (§2.7, *A part a
+    /// callee answers*). Read-off composes a callee's `use` as it is.
+    pub fn readsBelow(t: *const Table, s: SetId) bool {
+        return t.hasDeepRead(s) or (t.mark_a != .none and t.sets.member(s, t.mark_a.int()));
+    }
+    pub fn deepWithoutRead(t: *const Table, s: SetId) bool {
+        return t.hasDeepRead(s) and !(t.mark_r != .none and t.sets.member(s, t.mark_r.int()));
     }
 
     /// The mark a `mark` cell carries.
@@ -610,6 +635,9 @@ pub const RadixNode = struct {
 
 pub const Radix = struct {
     nodes: std.MultiArrayList(RadixNode) = .empty,
+    /// What a node is reserved as: a cell set's `set`, a node set's (the
+    /// crossing's `region` and `bases`) `memo`. Instrumentation only.
+    category: Ids.Category = .set,
     /// Hash-consing: equal contents have one canonical structure, and with
     /// every node interned by `(prefix, mask, left, right)` they have one
     /// id too.
@@ -630,7 +658,7 @@ pub const Radix = struct {
     /// its logical entry even when the physical node exists already, so
     /// what a request costs never depends on which owner built the node).
     fn make(r: *Radix, gpa: Allocator, charge: Charge, n: RadixNode) Error!SetId {
-        try charge.reserve(gpa, .set, 1);
+        try charge.reserve(gpa, r.category, 1);
         const got = try r.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
         const id: SetId = .from(@intCast(r.nodes.len));
@@ -796,6 +824,137 @@ pub const Radix = struct {
             return r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = nb.left, .right = rt });
         }
         return r.join(gpa, charge, na.prefix, a, nb.prefix, b);
+    }
+
+    /// `unionWith`, memoised per pair of set nodes at every level (§2.11 *κ
+    /// across a call*, `region`): two sets built over earlier ones meet, below
+    /// their changed spines, the pairs an earlier union met, and take them
+    /// from `memo`. A memo record per pair met; the recursion is the key
+    /// width, 33 frames.
+    pub fn unionMemo(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(2), a: SetId, b: SetId) Error!SetId {
+        if (a == .none) return b;
+        if (b == .none) return a;
+        if (a == b) return a;
+        const key: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(key)) |hit| return .from(hit);
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        const out: SetId = blk: {
+            if (na.mask == 0 or nb.mask == 0) break :blk try r.unionWith(gpa, charge, a, b);
+            if (na.mask == nb.mask and na.prefix == nb.prefix) {
+                const l = try r.unionMemo(gpa, charge, memo, na.left, nb.left);
+                const rt = try r.unionMemo(gpa, charge, memo, na.right, nb.right);
+                if (l == na.left and rt == na.right) break :blk a;
+                if (l == nb.left and rt == nb.right) break :blk b;
+                break :blk try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = rt });
+            }
+            if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) {
+                if (zeroBit(nb.prefix, na.mask)) {
+                    const l = try r.unionMemo(gpa, charge, memo, na.left, b);
+                    break :blk if (l == na.left) a else try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = l, .right = na.right });
+                }
+                const rt = try r.unionMemo(gpa, charge, memo, na.right, b);
+                break :blk if (rt == na.right) a else try r.make(gpa, charge, .{ .prefix = na.prefix, .mask = na.mask, .left = na.left, .right = rt });
+            }
+            if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) {
+                if (zeroBit(na.prefix, nb.mask)) {
+                    const l = try r.unionMemo(gpa, charge, memo, a, nb.left);
+                    break :blk if (l == nb.left) b else try r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = l, .right = nb.right });
+                }
+                const rt = try r.unionMemo(gpa, charge, memo, a, nb.right);
+                break :blk if (rt == nb.right) b else try r.make(gpa, charge, .{ .prefix = nb.prefix, .mask = nb.mask, .left = nb.left, .right = rt });
+            }
+            break :blk try r.join(gpa, charge, na.prefix, a, nb.prefix, b);
+        };
+        (try memo.getOrPut(gpa, key)).value_ptr.* = out.int();
+        return out;
+    }
+
+    /// A branch node's prefix and mask (`aggMergeSets` walks two tries).
+    pub fn radixNode(r: *const Radix, id: SetId) RadixNode {
+        return r.node(id);
+    }
+
+    /// Whether `key` is under the branch of `prefix` and `mask`, and on its
+    /// zero side.
+    pub fn under(_: *const Radix, key: u32, prefix: u32, mask: u32) bool {
+        return matches(key, prefix, mask);
+    }
+
+    pub fn zeroAt(_: *const Radix, key: u32, mask: u32) bool {
+        return zeroBit(key, mask);
+    }
+
+    /// Whether `a` and `b` share a key: a walk of the structure they have in
+    /// common, a record per node pair; the recursion is the key width.
+    pub fn intersects(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!bool {
+        if (a == .none or b == .none) return false;
+        if (a == b) return true;
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return r.member(a, nb.prefix);
+        if (na.mask == nb.mask and na.prefix == nb.prefix) return try r.intersects(gpa, charge, na.left, nb.left) or try r.intersects(gpa, charge, na.right, nb.right);
+        if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) return r.intersects(gpa, charge, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) return r.intersects(gpa, charge, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+        return false;
+    }
+
+    /// `intersects`, memoised per unordered pair of set nodes: two sets built
+    /// over earlier ones meet, below their changed spines, the pairs an
+    /// earlier test met. The recursion is the key width.
+    pub fn intersectsMemo(r: *const Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(2), a: SetId, b: SetId) Error!bool {
+        if (a == .none or b == .none) return false;
+        if (a == b) return true;
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return r.member(a, nb.prefix);
+        const key: [2]u32 = .{ @min(a.int(), b.int()), @max(a.int(), b.int()) };
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(key)) |hit| return hit == 1;
+        const out = blk: {
+            if (na.mask == nb.mask and na.prefix == nb.prefix) break :blk try r.intersectsMemo(gpa, charge, memo, na.left, nb.left) or try r.intersectsMemo(gpa, charge, memo, na.right, nb.right);
+            if (na.mask > nb.mask and matches(nb.prefix, na.prefix, na.mask)) break :blk try r.intersectsMemo(gpa, charge, memo, if (zeroBit(nb.prefix, na.mask)) na.left else na.right, b);
+            if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) break :blk try r.intersectsMemo(gpa, charge, memo, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+            break :blk false;
+        };
+        (try memo.getOrPut(gpa, key)).value_ptr.* = @intFromBool(out);
+        return out;
+    }
+
+    /// `s` with every bit approximate: memoised per set node in `memo`, a
+    /// branch rebuilt over its halves' images. The recursion is the key width.
+    pub fn approxAll(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(1), s: SetId) Error!SetId {
+        if (s == .none) return .none;
+        const n = r.node(s);
+        if (n.mask == 0) return if (n.left.int() == 1) s else r.make(gpa, charge, .{ .prefix = n.prefix, .mask = 0, .left = .from(1), .right = .none });
+        try charge.reserve(gpa, .memo, 1);
+        if (memo.get(.{s.int()})) |hit| return .from(hit);
+        const l = try r.approxAll(gpa, charge, memo, n.left);
+        const rt = try r.approxAll(gpa, charge, memo, n.right);
+        const out = if (l == n.left and rt == n.right) s else try r.make(gpa, charge, .{ .prefix = n.prefix, .mask = n.mask, .left = l, .right = rt });
+        (try memo.getOrPut(gpa, .{s.int()})).value_ptr.* = out.int();
+        return out;
+    }
+
+    /// Whether every key of `a` is a key of `b`, the bits aside: a walk of
+    /// the structure they share, a record per node pair; the recursion is
+    /// the key width.
+    pub fn keysWithin(r: *const Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!bool {
+        if (a == .none or a == b) return true;
+        if (b == .none) return false;
+        try inspect(gpa, charge);
+        const na = r.node(a);
+        const nb = r.node(b);
+        if (na.mask == 0) return r.member(b, na.prefix);
+        if (nb.mask == 0) return false;
+        if (na.mask == nb.mask and na.prefix == nb.prefix) return try r.keysWithin(gpa, charge, na.left, nb.left) and try r.keysWithin(gpa, charge, na.right, nb.right);
+        if (nb.mask > na.mask and matches(na.prefix, nb.prefix, nb.mask)) return r.keysWithin(gpa, charge, a, if (zeroBit(na.prefix, nb.mask)) nb.left else nb.right);
+        return false;
     }
 
     /// `a ⊑ b`: every key of `a` is in `b` with a bit no larger (exact is
@@ -1349,41 +1508,48 @@ test "⟲ matches a step onto its cycle: Rose, Maybe T and mutual recursion" {
         }
     };
     const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
-    // Rose: the root's children list is `#Rose.0`; its elements re-enter
-    // Rose and are `⟲`. The list aliases the subtrees, and so does a list
+    // Rose: a child's children list is `#Rose.0[*]#Rose.0`; its elements
+    // re-enter Rose below the first return (`#Rose.0[*]`, a plain path,
+    // #1253) and are `⟲`. The list aliases the subtrees, and so does a list
     // below.
     const rose = try places.of(gpa, &account, source, 0);
     const r0 = try places.ctorStep(gpa, &account, 0, 0);
-    const kids = try cx.param(1, rose, &.{r0});
-    const subtrees = try cx.param(1, rose, &.{ r0, Place.Step.elem });
+    const e = Place.Step.elem;
+    const child = try cx.param(1, rose, &.{ r0, e });
+    try testing.expect(places.pathStep(.from(cells.get(child).b)).kind != .level);
+    const kids = try cx.param(1, rose, &.{ r0, e, r0 });
+    const subtrees = try cx.param(1, rose, &.{ r0, e, r0, e });
     try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(subtrees).b)).kind);
     try testing.expectEqual(Alias.yes, cells.alias(&places, kids, subtrees));
-    const deep_kids = try cx.param(1, rose, &.{ r0, Place.Step.elem, r0 });
+    const deep_kids = try cx.param(1, rose, &.{ r0, e, r0, e, r0 });
     try testing.expectEqual(Alias.yes, cells.alias(&places, kids, deep_kids));
     try testing.expect(places.sameCycle(rose, places.child(rose, r0).?));
-    // Maybe T: the `Maybe` step is on T's cycle, the `List Int` is not.
+    // Maybe T, below the first return `#T.0#Just.0`: the `Maybe` step is
+    // on T's cycle, the `List Int` is not.
     const t = try places.of(gpa, &account, source, 2);
     const t0 = try places.ctorStep(gpa, &account, 0, 0);
     const t1 = try places.ctorStep(gpa, &account, 0, 1);
     const just = try places.ctorStep(gpa, &account, 1, 0);
-    const maybe = try cx.param(2, t, &.{t0});
-    const below_t = try cx.param(2, t, &.{ t0, just });
-    const own_list = try cx.param(2, t, &.{t1});
+    const maybe = try cx.param(2, t, &.{ t0, just, t0 });
+    const below_t = try cx.param(2, t, &.{ t0, just, t0, just });
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(below_t).b)).kind);
+    const own_list = try cx.param(2, t, &.{ t0, just, t1 });
     try testing.expectEqual(Alias.yes, cells.alias(&places, maybe, below_t));
     try testing.expectEqual(Alias.no, cells.alias(&places, own_list, below_t));
     try testing.expectEqual(Alias.no, cells.alias(&places, own_list, maybe));
-    // Mutual recursion: A's B, B's list and the A below are one cycle; A's
-    // `Leaf Int` is not.
+    // Mutual recursion, below the first return `#A.0#B.0[*]`: A's B, B's
+    // list and the A below are one cycle; A's `Leaf Int` is not.
     const a = try places.of(gpa, &account, source, 5);
     const a0 = try places.ctorStep(gpa, &account, 0, 0);
     const leaf = try places.ctorStep(gpa, &account, 1, 0);
     const b0 = try places.ctorStep(gpa, &account, 0, 0);
-    const b = try cx.param(3, a, &.{a0});
-    const b_list = try cx.param(3, a, &.{ a0, b0 });
-    const below_a = try cx.param(3, a, &.{ a0, b0, Place.Step.elem });
+    const b = try cx.param(3, a, &.{ a0, b0, e, a0 });
+    const b_list = try cx.param(3, a, &.{ a0, b0, e, a0, b0 });
+    const below_a = try cx.param(3, a, &.{ a0, b0, e, a0, b0, e });
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(.from(cells.get(below_a).b)).kind);
     try testing.expectEqual(Alias.yes, cells.alias(&places, b, below_a));
     try testing.expectEqual(Alias.yes, cells.alias(&places, b_list, below_a));
-    const a_leaf = try cx.param(3, a, &.{leaf});
+    const a_leaf = try cx.param(3, a, &.{ a0, b0, e, leaf });
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, below_a));
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, b));
 }
@@ -1440,10 +1606,13 @@ test "below, stepsTo and unrefined: containment by the trie, by refinement and t
         }
     };
     const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
-    const root = try cx.param(rose, &.{});
-    const kids = try cx.param(rose, &.{r0});
-    const subtrees = try cx.param(rose, &.{ r0, Place.Step.elem }); // r⟲
-    const deep_kids = try cx.param(rose, &.{ r0, Place.Step.elem, r0 }); // r⟲#Rose.0
+    // From a child, the first return to Rose (a plain path, #1253): its
+    // subtrees are below it, through `⟲`.
+    const el = Place.Step.elem;
+    const root = try cx.param(rose, &.{ r0, el });
+    const kids = try cx.param(rose, &.{ r0, el, r0 });
+    const subtrees = try cx.param(rose, &.{ r0, el, r0, el }); // c⟲
+    const deep_kids = try cx.param(rose, &.{ r0, el, r0, el, r0 }); // c⟲#Rose.0
     // A trie descendant is below its ancestor, never the other way.
     try testing.expect(cells.below(&places, kids, root));
     try testing.expect(!cells.below(&places, root, kids));

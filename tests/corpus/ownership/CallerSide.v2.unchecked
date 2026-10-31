@@ -1,7 +1,3 @@
-CallerSide twice: lines 20-21 (not built: call)
 CallerSide pushA: lines 24-25 (not built: record_update)
-CallerSide reads: lines 28-31 (not built: call)
-CallerSide chained: lines 34-35 (not built: call)
-CallerSide twiceRead: lines 38-39 (not built: call)
 CallerSide twin: lines 42-43 (not built: call)
 CallerSide apart: lines 46-47 (not built: call)

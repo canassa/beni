@@ -1,0 +1,64 @@
+-- ownership (project): see Main.beni. The callees: each writes one path of
+-- its parameter beside another it answers.
+pub type Box
+    = Box (List Int)
+
+
+pub type Pair
+    = Pair Box Box
+
+
+pub type Tree
+    = Leaf
+    | Br Tree (List Int) Tree
+
+
+kidsBox : Box → List Int
+kidsBox b =
+    case b of
+        Box xs →
+            List.push xs 1
+
+
+pub sizeBox : Box → Int
+sizeBox b =
+    case b of
+        Box xs →
+            List.length xs
+
+
+pub rightLeft : Pair → List Int × Box
+rightLeft p =
+    case p of
+        Pair l r →
+            ( kidsBox r, l )
+
+
+kids : Tree → List Int
+kids t =
+    case t of
+        Br _ xs _ →
+            List.push xs 1
+
+        Leaf →
+            []
+
+
+pub size : Tree → Int
+size t =
+    case t of
+        Br _ xs _ →
+            List.length xs
+
+        Leaf →
+            0
+
+
+pub rightLeftT : Tree → List Int × Tree
+rightLeftT t =
+    case t of
+        Br l _ r →
+            ( kids r, l )
+
+        Leaf →
+            ( [], Leaf )

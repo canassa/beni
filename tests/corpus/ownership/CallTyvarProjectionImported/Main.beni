@@ -1,0 +1,99 @@
+-- ownership (project): `CallTyvarProjection` with the callees in another
+-- module (ownership-v2.md §2.11 *Re-rooting at a parameter*, §3.6, #1350).
+-- The block publishes `Picks.pick`'s result at a type variable's place,
+-- and the call instantiates the variable to the actual's type, so
+-- `(Picks.pick g.x).c` reads `g.x.c` exactly, and a push of the list it
+-- holds, with `g` read later, is refused `alias`: through `pick`, a field
+-- selector (`ans`), one step further (`ansU`), two calls, a choice of two
+-- parameters (`choose`), a write through the projection (`wp`), and
+-- `Picks.inner`, which projects in its own module. `otherField` reads
+-- `g.y.c`, which does not hold the list, so the push is accepted.
+import Picks
+
+
+n2 g = List.length (Picks.pick g.x).c
+
+
+pub inlineField : List Int → Int
+inlineField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n2 g + List.length p
+
+
+n3 g = List.length (Picks.ans { b = g.x }).c
+
+
+pub selector : List Int → Int
+selector xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n3 g + List.length p
+
+
+n4 g = List.length (Picks.ansU { b = g }).x.c
+
+
+pub selectorDeep : List Int → Int
+selectorDeep xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n4 g + List.length p
+
+
+n5 g = List.length (Picks.pick (Picks.pick g.x)).c
+
+
+pub twoCalls : List Int → Int
+twoCalls xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n5 g + List.length p
+
+
+n6 g = List.length (Picks.choose True g.y g.x).c
+
+
+pub chosen : List Int → Int
+chosen xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    n6 g + List.length p
+
+
+wp g =
+    t = (Picks.pick g.x).c
+    List.push t 1
+
+
+pub written : List Int → Int
+written xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = wp g
+    List.length xs + List.length p
+
+
+pub innerCall : List Int → Int
+innerCall xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    Picks.inner g + List.length p
+
+
+nd : { x : { c : List Int, d : List Int }, y : { c : List Int, d : List Int } } → Int
+nd g = List.length (Picks.pick g.y).c
+
+
+pub otherField : List Int → Int
+otherField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    nd g + List.length p

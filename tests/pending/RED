@@ -330,3 +330,7 @@ tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
 # `Demands.resolve` inspects the push's alternatives on its own lane, so v2
 # reports an accounting invariant; ownership-v2.md §4.1.
 tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
+
+# CK-314 (#1097): a call costs its argument's width, the graft walking it;
+# the call view by reference makes it the callee's size; ownership-v2.md §2.11.
+scenario/CK-314 grows

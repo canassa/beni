@@ -1,0 +1,79 @@
+-- Names that never change and hold a host function, which item 6 of the
+-- release optimiser (`backend.md` §9) must not hand to a host in place of
+-- the lambda: `parseInt` read into a local `const` and called through
+-- `Js.apply` under `map`, which passes the index as its radix; the same
+-- read twice, so that item 1 keeps the binding; `Math.max` from the top
+-- level; a sibling's function behind a top-level alias and a local one,
+-- refused in this module, which declares the aliases, while a function
+-- `Spec` moves into its one caller in `Main` is planned there, where the
+-- alias is a callee (`emit/release/app/EtaReduceAlias` pins both shapes);
+-- `Object.prototype.toString` in a parameter, stored as a
+-- method and called with a receiver; and a module `Js.Ref`'s function,
+-- read after a write.
+import Js
+
+
+pub parsed : List String → List Int
+parsed xs =
+    p = Js.global "parseInt"
+    Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+
+
+pub parsedTwice : List String → List Int
+parsedTwice xs =
+    p = Js.global "parseInt"
+    first = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+    second = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+    List.append first second
+
+
+maxFn : Js.Value
+maxFn = Js.get (Js.global "Math") "max"
+
+
+pub maxed : List Int → List Int
+maxed xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
+
+
+foreign pure counted : Int → Int
+
+
+countedAlias : Int → Int
+countedAlias = counted
+
+
+pub viaAlias : List Int → List Int
+viaAlias xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
+
+
+pub viaLocalAlias : List Int → List Int
+viaLocalAlias xs =
+    c = counted
+    first = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → c x ])
+    second = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → c x ])
+    List.append first second
+
+
+forward : Js.Value → (Js.Value → Js.Value)
+forward m = λx → Js.apply m [ x ]
+
+
+pub receiver : ⊤ → String
+receiver _ =
+    toText = Js.get (Js.get (Js.global "Object") "prototype") "toString"
+    o = Js.object [ ( "tag", Js.from "o" ) ]
+    Js.set o "f" (Js.from (forward toText))
+    Js.to (Js.call o "f" [ Js.from 1 ])
+
+
+store : Js.Ref (Int → Int)
+store = Js.ref λx → x + 1
+
+
+pub viaRef : ⊤ → List Int
+viaRef _ =
+    f = λx → (Js.read store) x
+    before = f 1
+    Js.write store λx → x * 10
+    after = f 1
+    [ before, after ]

@@ -35,14 +35,19 @@ const layers = [_]Entry{
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 750 },
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1000 },
+    // §5 says 1 100 since #1345: the fold targets and levels of a read on a
+    // cycle, memoised per path.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1150 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 960 },
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1110 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 1960 },
+    // §5 says 3 600 since #1372: map's knot test and the flattening choice
+    // join (§2.3); 3 350 since #1350, a view's instantiated place and a
+    // join's place.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3600 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
@@ -50,21 +55,40 @@ const layers = [_]Entry{
     // 2 550 since #1128: the path-multiset primitive (arrivals, aggregates by
     // destination class, the fold conditions), which §3.4 puts in Cond.
     // 2 700 since #1199: the read's summaryExcl and the cell set per key.
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 2800 },
+    // 4 220 since #1335: `foldCondOf` by the cycle walk.
+    // §5 says 4 260 since #1372's review: a source with no entry reads
+    // `lost` where it shares an image (`Relabel.present`).
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4260 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
-    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1680 },
-    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 700 },
+    .{ .file = "Summary.zig", .layer = 5, .max_lines = 1710 },
+    // §5 says 750 since #1214: a path's uses grouped for a filter, and a
+    // child's range found by its one step.
+    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
+    .{ .file = "Exits.zig", .layer = 5, .max_lines = 250 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 1200 },
-    .{ .file = "Demands.zig", .layer = 6, .max_lines = 1280 },
-    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1500 },
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1800 },
+    // §5 says 1 900 since #1214: the holder index, below Demands, which reads
+    // it; with the frame types, the naive scan and the fallback hold listing.
+    // 2 010 since #1335: the same-path closure by the cycle walk.
+    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2010 },
+    // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
+    .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
+    // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
+    // 1 630 since #1386: a `sep` side below a constructor.
+    .{ .file = "Calls.zig", .layer = 7, .max_lines = 1710 },
+    // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
+    // #1386: two positions of one split beside a write.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 1940 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1500 },
-    // §5 says 1 100 since S3a: the source and signature adapters.
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1200 },
+    // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
+    // calls of walked declarations; 1 330 since slice 3: imported classes,
+    // and a block's places re-interned onto the adapter's.
+    // 1 410 since #1324: a comparison read through the user-written ones its
+    // type reaches (`componentClasses`).
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1410 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -73,14 +97,20 @@ const layers = [_]Entry{
     // map's entries, and the shared format; the reader is `BlockRead`, the
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
-    .{ .file = "Block.zig", .layer = 11, .max_lines = 1680 },
+    // 1 770 since #1335: a knot whose cycle no child step closes.
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 1770 },
     .{ .file = "Hoists.zig", .layer = 11, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 600 },
     // §5 says 950 since #1073: a snapshot rebuilt from its positions.
-    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 970 },
+    // 1 050 since S3b slice 3: the commit re-interns the block's places.
+    // 1 235 since #1335: a knot's members tied raw, set once it is read,
+    // a forward name only on a cycle, and the safety check of each reach.
+    .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1235 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
-    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
+    // 500 since #1398: the dump checks a module after its imports and reads
+    // the blocks it published itself.
+    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 500 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -122,7 +152,7 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Rows.zig" };
+const no_name_compare = [_][]const u8{ "Transfer.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -353,7 +383,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 26), layers.len);
+    try testing.expectEqual(@as(usize, 28), layers.len);
     try testing.expectEqual(@as(usize, 19), causes.len);
 }
 

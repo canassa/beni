@@ -1,0 +1,2 @@
+UnbuiltEq eq: lines 9-13 (not built: local)
+UnbuiltEq bad: lines 16-17 (not built: method_call)

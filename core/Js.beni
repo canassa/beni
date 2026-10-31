@@ -63,6 +63,26 @@ pub foreign pure isUndefined : unused Value → fresh bool
 pub foreign pure isNullish : unused Value → fresh bool
 
 
+--| `a < b`: JavaScript's comparison, written in place. Two numbers compare
+--| by value and two strings by their UTF-16 code units. Hand it nothing
+--| else: two objects compare as their text (`le` and `ge` are both true of
+--| two records), and a null-prototype object or a `Symbol` throws
+--| `TypeError` (`boundary.md` §4.2, *The comparisons*).
+pub foreign pure lt : unused a, unused a → fresh bool
+
+
+--| `a > b`.
+pub foreign pure gt : unused a, unused a → fresh bool
+
+
+--| `a <= b`.
+pub foreign pure le : unused a, unused a → fresh bool
+
+
+--| `a >= b`.
+pub foreign pure ge : unused a, unused a → fresh bool
+
+
 --| `a & b`.
 pub foreign pure bitAnd : int, int → int
 

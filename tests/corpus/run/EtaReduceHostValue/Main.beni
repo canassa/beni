@@ -1,0 +1,22 @@
+-- Item 6 of the release optimiser (`backend.md` §9) never hands a host a
+-- name whose value is a host function in place of the lambda: both builds
+-- print the same (`platform/Probe.beni` has the shapes).
+import Node
+import Probe
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) " "
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "parsed " ++ ints (Probe.parsed [ "10", "10", "10" ])
+        , "parsedTwice " ++ ints (Probe.parsedTwice [ "10", "10", "10" ])
+        , "maxed " ++ ints (Probe.maxed [ 1, 2 ])
+        , "viaAlias " ++ ints (Probe.viaAlias [ 1, 2 ])
+        , "viaLocalAlias " ++ ints (Probe.viaLocalAlias [ 1, 2 ])
+        , "receiver " ++ Probe.receiver ⊤
+        , "viaRef " ++ ints (Probe.viaRef ⊤)
+        ]

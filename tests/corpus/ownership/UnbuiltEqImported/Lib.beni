@@ -1,0 +1,9 @@
+pub type Key
+    = Key (List Int)
+
+
+pub eq : Key, Key → Bool
+eq a b =
+    case a of
+        Key l →
+            List.length (List.map (List.push l 1) λx → x + 1) > 0

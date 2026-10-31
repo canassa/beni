@@ -1,0 +1,10 @@
+module Lib
+  9:36 List.push l: accepted param
+  summary eq: π1 R, π1#Key.0 RW[storage]
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  7:24 call Lib.eq <Key …>#Key.0: rejected alias: xs holds it and is read at 7:11 (Lib.eq writes π1#Key.0)
+  summary bad2: π1 RAW[storage]; res .1 π1
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

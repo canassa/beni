@@ -1,0 +1,39 @@
+module CallNestedResult
+  14:26 List.push xs: accepted param
+  42:13 call CallNestedResult.touch0 a: rejected alias: xs holds it and is read at 42:24 (CallNestedResult.touch0 writes π1)
+  49:13 call CallNestedResult.touch0 a: rejected alias: xs holds it and is read at 49:24 (CallNestedResult.touch0 writes π1)
+  56:13 call CallNestedResult.touch0 a: rejected alias: xs holds it and is read at 56:24 (CallNestedResult.touch0 writes π1)
+  63:13 call CallNestedResult.touch0 a: accepted param (CallNestedResult.touch0 writes π1)
+  70:13 call CallNestedResult.tl <call CallNestedResult.w1>.0[*]: rejected alias: xs holds it and is read at 70:30 (CallNestedResult.tl writes π1.0[*])
+  77:13 call CallNestedResult.touch0 a: rejected alias: xs holds it and is read at 77:24 (CallNestedResult.touch0 writes π1)
+  84:13 call CallNestedResult.touch0 a: rejected alias: xs holds it and is read at 84:24 (CallNestedResult.touch0 writes π1)
+  91:13 call CallNestedResult.touch0 a: accepted param (CallNestedResult.touch0 writes π1)
+  91:24 call CallNestedResult.touch0 b: accepted param (CallNestedResult.touch0 writes π1)
+  91:35 call CallNestedResult.touch0 c: accepted param (CallNestedResult.touch0 writes π1)
+  91:46 call CallNestedResult.touch0 d: accepted param (CallNestedResult.touch0 writes π1)
+  95:16 call CallNestedResult.t2 <call CallNestedResult.w2>.0.0: rejected disjoint: another operand of the same operation reaches it (CallNestedResult.t2 writes π1.0.0)
+  95:16 call CallNestedResult.t2 <call CallNestedResult.w2>.0.1: rejected disjoint: another operand of the same operation reaches it (CallNestedResult.t2 writes π1.0.1)
+  95:16 call CallNestedResult.t2 <call CallNestedResult.w2>.1.0: rejected disjoint: another operand of the same operation reaches it (CallNestedResult.t2 writes π1.1.0)
+  95:16 call CallNestedResult.t2 <call CallNestedResult.w2>.1.1: rejected disjoint: another operand of the same operation reaches it (CallNestedResult.t2 writes π1.1.1)
+  102:13 call CallNestedResult.touch0 a: accepted param (CallNestedResult.touch0 writes π1)
+  summary touch0: π1 RW[storage]
+  summary w1: π1 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}r{shared}
+  summary w2: π1 RA; res .0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared}r{shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}r{shared}
+  summary w3: π1 RA; res .0 condition(fresh12) condition(fresh4){shared}r{shared}, .0.0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0.0 condition(fresh13) condition(fresh2) condition(fresh6) π1, .0.0.1 condition(fresh14) condition(fresh3) condition(fresh7) π1, .0.1 condition(fresh1){shared}r{shared} condition(fresh8), .0.1.0 condition(fresh15) condition(fresh2) condition(fresh9) π1, .0.1.1 condition(fresh10) condition(fresh16) condition(fresh3) π1, .1 condition(fresh17) condition(fresh4){shared}r{shared}, .1.0 condition(fresh1){shared}r{shared} condition(fresh5), .1.0.0 condition(fresh18) condition(fresh2) condition(fresh6) π1, .1.0.1 condition(fresh19) condition(fresh3) condition(fresh7) π1, .1.1 condition(fresh1){shared}r{shared} condition(fresh8), .1.1.0 condition(fresh2) condition(fresh20) condition(fresh9) π1, .1.1.1 condition(fresh10) condition(fresh21) condition(fresh3) π1, condition(fresh11){shared}r{shared}
+  summary idn: π1 RA; res π1
+  summary pair: π1 RA, π2 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π2, condition(fresh1){sep π1 π2}r{sep π1 π2}
+  summary sw: π1 R, π1.0 RA, π1.1 RA; res .0 condition(fresh2) π1.1, .1 condition(fresh3) π1.0, condition(fresh1){sep π1.0 π1.1}r{sep π1.0 π1.1}
+  summary twice: π1 RW[storage]
+  summary thrice: π1 RW[storage]
+  summary idPair: π1 RW[storage]
+  summary tl: π1 R, π1.0[*] RW[storage]; xreq excl π1.0
+  summary inList: π1 RW[storage]; xreq excl π1
+  summary mixed: π1 RW[storage]
+  summary swapped: π1 RW[storage]
+  summary t2: π1 R, π1.0.0 RW[storage], π1.0.1 RW[storage], π1.1.0 RW[storage], π1.1.1 RW[storage]
+  summary allLeaves: π1 RW[storage]
+  summary alone: π1 RW[storage]
+  demands 17: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 17: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause disjoint 4
+cause alias 6

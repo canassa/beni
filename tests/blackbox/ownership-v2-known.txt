@@ -33,10 +33,242 @@ tests/corpus/ownership/PolyRecTuples.beni [node] PolyRecTuples 23:26 #0 :: List.
 tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23 #0 :: List.push a :: accepted :: rejected  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
 #
 # A demand only one side reports.
-tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5 #0 :: Ref.set cell :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
-tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9 #0 :: Deferred.complete done :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row
+tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 20:25 #0 :: RefReadsKeptInRelease.readTwice cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; the caller is checked since S3b
+tests/corpus/run/RefMakeDistinct.beni RefMakeDistinct 19:5 #0 :: Ref.set a◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `main` is checked since S3b
+tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
 core List 1745:20 #0 :: List.focus func :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
 core List 1745:20 #0 :: List.focus i :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
+#
+# S3b (#1016): calls of walked declarations. v2 names a write below a recursive
+# value by its canonical path, where v1 names the step it took (`#Node.0⟨Tree⟩`,
+# `⟨Rose⟩⁺`): the same write, the same verdict, under another text.
+tests/corpus/ownership/LevelPlacesCall.beni [node] LevelPlacesCall 29:13 #0 :: LevelPlacesCall.two l#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/LevelPlacesCall.beni [node] LevelPlacesCall 44:5 #0 :: LevelPlacesCall.two <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 114:13 #0 :: CallOtherPaths.twoDepths l#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 123:5 #0 :: CallOtherPaths.viaLeft <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 127:20 #0 :: CallOtherPaths.viaLeft <Node …>#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/CallOtherPathsImported [node] Main 54:5 #0 :: Paths.viaLeft <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/CallOtherPathsImported [node] Main 58:20 #0 :: Paths.viaLeft <Node …>#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/CallOtherPathsImported [node] Paths 55:13 #0 :: Deep.twoDepths l#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesCall.beni [node] LevelPlacesCall 29:13 #0 :: LevelPlacesCall.two l#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesCall.beni [node] LevelPlacesCall 38:5 #0 :: LevelPlacesCall.viaLeft <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesCall.beni [node] LevelPlacesCall 44:5 #0 :: LevelPlacesCall.two <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 55:13 #0 :: LevelPlacesKinds.twoR k⟨Rose⟩#Rose.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 85:13 #0 :: LevelPlacesKinds.twoA n⟨A⟩#A.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 34:5 #0 :: LevelPlacesKinds.viaLeftKeep <Node …>#Node.0#Node.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 55:13 #0 :: LevelPlacesKinds.twoR k#Rose.1[*]#Rose.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 64:5 #0 :: LevelPlacesKinds.viaKid <Rose …>#Rose.1[*]⟨Rose⟩#Rose.0 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 64:5 #0 :: LevelPlacesKinds.viaKid <Rose …>#Rose.1[*]#Rose.0 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 85:13 #0 :: LevelPlacesKinds.twoA n#A.1#Just.0#A.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 94:5 #0 :: LevelPlacesKinds.viaNext <A …>#A.1#Just.0⟨A⟩#A.0 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 94:5 #0 :: LevelPlacesKinds.viaNext <A …>#A.1#Just.0#A.0 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1253)
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 34:5 #0 :: LevelPlacesKinds.viaLeftKeep <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 55:13 #0 :: LevelPlacesKinds.twoR k#Rose.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 64:5 #0 :: LevelPlacesKinds.viaKid <Rose …>⟨Rose⟩⁺#Rose.0 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 85:13 #0 :: LevelPlacesKinds.twoA n#A.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/LevelPlacesKinds.beni [node] LevelPlacesKinds 94:5 #0 :: LevelPlacesKinds.viaNext <A …>⟨A⟩⁺#A.0 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 40:10 #0 :: Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 47:10 #0 :: Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 54:10 #0 :: Parts.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 40:10 #0 :: Parts.rightLeft <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 47:10 #0 :: Parts.rightLeft <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsImported [node] Main 54:10 #0 :: Parts.rightLeft <Br …>#Br.2#Br.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 105:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 111:8 #0 :: ApartPaths.b8 <Br …>⟨Tree⟩#Br.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 116:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 123:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 150:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 105:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 111:8 #0 :: ApartPaths.b8 <Br …>#Br.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 116:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 123:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPaths.beni [node] ApartPaths 150:10 #0 :: ApartPaths.rightLeft <Br …>#Br.2#Br.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 44:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 56:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 68:18 #0 :: Parts.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 44:18 #0 :: Parts.rightLeftT <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 56:18 #0 :: Parts.rightLeftT <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBoundImported [node] Main 68:18 #0 :: Parts.rightLeftT <Br …>#Br.2#Br.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 145:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 157:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 169:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2⟨Tree⟩#Br.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 145:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 157:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2#Br.1 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/ApartPathsBound.beni [node] ApartPathsBound 169:18 #0 :: ApartPathsBound.rightLeftT <Br …>#Br.2#Br.1 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/SiblingSubtreesImported [node] Main 24:5 #0 :: Trees.pushKids <Node …>⟨Tree⟩⁺#Node.1 :: rejected :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesImported [node] Main 28:18 #0 :: Trees.pushKids <Node …>⟨Tree⟩⁺#Node.1 :: accepted :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesImported [node] Main 24:5 #0 :: Trees.pushKids <Node …>#Node.2#Node.1 :: absent :: rejected  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesImported [node] Main 28:18 #0 :: Trees.pushKids <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesImported [node] Main 28:18 #0 :: Trees.pushKids <Node …>#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 73:5 #0 :: SiblingSubtreesMutual.pushKids <A …>⟨A⟩⁺#A.1 :: rejected :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 77:18 #0 :: SiblingSubtreesMutual.pushKids <A …>⟨A⟩⁺#A.1 :: accepted :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 73:5 #0 :: SiblingSubtreesMutual.pushKids <A …>#A.2#B.0#A.1 :: absent :: rejected  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 77:18 #0 :: SiblingSubtreesMutual.pushKids <A …>#A.2#B.0#A.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 77:18 #0 :: SiblingSubtreesMutual.pushKids <A …>#A.0#B.0#A.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 80:5 #0 :: SiblingSubtrees.pushKids <Node …>⟨Tree⟩⁺#Node.1 :: rejected :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 84:18 #0 :: SiblingSubtrees.pushKids <Node …>⟨Tree⟩⁺#Node.1 :: accepted :: absent  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 80:5 #0 :: SiblingSubtrees.pushKids <Node …>#Node.2#Node.1 :: absent :: rejected  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 84:18 #0 :: SiblingSubtrees.pushKids <Node …>#Node.2#Node.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 84:18 #0 :: SiblingSubtrees.pushKids <Node …>#Node.0#Node.1 :: absent :: accepted  canonical path text (§2.2): v1 writes both subtrees' lists as one `⟨T⟩⁺` path, v2 one per subtree (#1253); the same writes and verdicts
+tests/corpus/ownership/CallOtherPaths.beni [node] CallOtherPaths 114:13 #0 :: CallOtherPaths.twoDepths l#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallOtherPathsImported [node] Paths 55:13 #0 :: Deep.twoDepths l#Node.0⟨Tree⟩#Node.1 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 38:9 #0 :: CallTyvarJoins.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 38:9 #0 :: CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 46:9 #0 :: CallTyvarJoins.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 46:9 #0 :: CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 55:9 #0 :: CallTyvarJoins.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoins.beni [node] CallTyvarJoins 55:9 #0 :: CallTyvarJoins.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 14:9 #0 :: Picks.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 14:9 #0 :: Picks.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 22:9 #0 :: Picks.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 22:9 #0 :: Picks.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 31:9 #0 :: Picks.wfirst t#Node.0.kids[*]#Node.0.c :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's
+tests/corpus/ownership/CallTyvarJoinsImported [node] Main 31:9 #0 :: Picks.wfirst t⟨Tree⟩⁺#Node.0.c :: rejected :: absent  canonical path text (§2.2): the same write and verdict as v1's
+# v2 accepts where v1 refused (S3b).
+tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 98:21 #0 :: LevelLimit.pushLen xs :: rejected :: accepted  v1's documented `level` limit; `xs` and `ys` are the caller's `a` and `b`
+tests/corpus/ownership/PatternWideCall.beni [node] PatternWideCall 1187:13 #0 :: List.push x :: rejected :: accepted  the shared list is a temporary no one reads after the push, as in-frame `case [ r, r ] of`, which v1 accepts too; v1 refuses on the callee's κ
+tests/corpus/ownership/PatternWideCall.beni [node] PatternWideCall 1202:20 #0 :: PatternWideCall.headPush <call>[*] :: rejected :: accepted  `headPush` relies on nothing: its `rows` is dead after the push, and the shared argument a temporary; v1 records `excl π1`
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:12 #0 :: EvidenceDagBuildDepth32.w5 x :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:8 #0 :: EvidenceDagBuildDepth32.w5 <call> :: rejected :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:29 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:37 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
+# v2 refuses where v1 accepted (S3b): a canonical path folds the recursive children.
+tests/corpus/ownership/Split.beni [node] Split 22:27 #0 :: Split.bumpHead <literal>[*] :: accepted :: rejected  bumpHead answers ~π1 approximately; a possible hold above a write counts (§2.11 item 3 (a), #1253)
+
+# v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a
+# derived or container comparison, and holds the user-written one pending.
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: List.compare <literal>[*]#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: value ContainerOverWriterLocal.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #1 :: List.compare <literal>[*]#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: List.eq <literal>[*]#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: value Key.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #1 :: List.eq <literal>[*]#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: List.compare <literal>[*]#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: value Key.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #1 :: List.compare <literal>[*]#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #0 :: <Wrap …>#Wrap.0#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 15:36 #1 :: <Wrap …>#Wrap.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #0 :: <Wrap …>#Wrap.0#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterImported [node] Main 19:36 #1 :: <Wrap …>#Wrap.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #0 :: <Wrap …>#Wrap.0#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 13:41 #1 :: <Wrap …>#Wrap.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #0 :: <Wrap …>#Wrap.0#Key.0 :: absent :: rejected  v2: the derived or container comparison writes what its user-written component writes (#1324)
+tests/corpus/ownership/DerivedOverWriterThird [node] Main 9:41 #1 :: <Wrap …>#Wrap.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+
+# v2 reads a private comparison through a derived or container one (ownership-v2.md §2.13.13).
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #0 :: <expression>.0#Key.0 :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 21:31 #1 :: <expression>.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <expression>#Just.0#Key.0 :: absent :: accepted  the fresh result of the same comparison
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 25:31 #0 :: <Just …>#Just.0#Key.0 :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: List.eq <literal>[*]#Key.0 :: absent :: rejected  the derived or container comparison writes what the private eq writes (#1324)
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: value PrivateEqThroughShapes.eq :: pending :: absent  v1 holds the private comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #1 :: List.eq <literal>[*]#Key.0 :: absent :: accepted  the fresh result of the same comparison
+
+# v2 composes a derived comparison from the user-written ones its type reaches, at the places they occur (ownership-v2.md §2.13.13).
+tests/corpus/ownership/CmpComponentsImported [node] Main 19:44 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 19:44 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 23:46 #0 :: <expression>.0#Inner.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 23:46 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #0 :: <expression>.1#Inner.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 27:57 #1 :: <expression>.1#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 31:45 #0 :: <expression>.0[*]#Inner.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 31:45 #1 :: <expression>.0[*]#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpComponentsImported [node] Main 40:77 #0 :: <expression>.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpComponentsImported [node] Main 40:77 #1 :: <expression>.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 18:38 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 18:38 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 22:40 #0 :: <expression>.0#Inner.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 22:40 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #0 :: <expression>.1#Inner.0 :: absent :: rejected  the derived comparison writes what its component writes, where the component occurs (#1331)
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+tests/corpus/ownership/CmpWritesInside.beni [node] CmpWritesInside 26:45 #1 :: <expression>.1#Inner.0 :: absent :: accepted  the fresh result of the same comparison, or the component write that nothing keeps
+# v2 writes a fresh value holding a parameter through a comparison's component; v1 loses the write (#1349).
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 17:35 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 17:35 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 21:20 #0 :: CmpFresh.viaTuple xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 25:27 #0 :: List.eq <literal>[*]#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 25:27 #0 :: value CmpFresh.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 25:27 #1 :: List.eq <literal>[*]#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 29:19 #0 :: CmpFresh.viaList xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 33:48 #0 :: <record>.left#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 33:48 #1 :: <record>.left#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 37:21 #0 :: CmpFresh.viaRecord xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFreshImported [node] Main 12:20 #0 :: Main.viaTuple xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFreshImported [node] Main 16:33 #0 :: List.eq <literal>[*]#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFreshImported [node] Main 16:33 #0 :: value Inner.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpFreshImported [node] Main 16:33 #1 :: List.eq <literal>[*]#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFreshImported [node] Main 20:19 #0 :: Main.viaList xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFreshImported [node] Main 24:54 #0 :: <record>.left#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFreshImported [node] Main 24:54 #1 :: <record>.left#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFreshImported [node] Main 28:21 #0 :: Main.viaRecord xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpFreshImported [node] Main 8:41 #0 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpFreshImported [node] Main 8:41 #1 :: <expression>.0#Inner.0 :: absent :: accepted  the component write itself, which nothing keeps
+# v2 writes a fresh value holding a parameter through a comparison's component under a recursive type; v1 loses the write (#1349).
+tests/corpus/ownership/CmpCycleImported [node] Main 20:41 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 20:41 #0 :: <Node …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 24:19 #0 :: Main.viaTree xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpCycleImported [node] Main 28:69 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 28:69 #0 :: <Node …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 32:23 #0 :: Main.viaDeepTree xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+tests/corpus/ownership/CmpCycleImported [node] Main 36:77 #0 :: <expression> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 36:77 #0 :: <Up …> :: absent :: accepted  the component write itself, which nothing keeps
+tests/corpus/ownership/CmpCycleImported [node] Main 40:21 #0 :: Main.viaMutual xs :: absent :: rejected  the caller keeps the list the comparison's component writes, v1 loses that write (#1349)
+
+# v2 composes a derived comparison from a component that writes below its first field (ownership-v2.md §2.13.13), and reads a deep demand as a write of everything its base reaches (§2.8).
+tests/corpus/ownership/CmpDeepImported [node] Main 13:16 #0 :: List.eq <literal>[*]#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 13:16 #0 :: List.eq os[*]#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 13:16 #0 :: value Outer2.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpDeepImported [node] Main 17:19 #0 :: Main.listOf os[*]#Outer2.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 22:47 #0 :: <expression>.0#Outer2.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 22:47 #1 :: <expression>.0#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 27:47 #0 :: <expression>.0#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 27:47 #1 :: <expression>.0#Outer2.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 31:28 #0 :: <expression>.0#Outer2.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 31:28 #1 :: <expression>.0#Outer2.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 35:53 #0 :: <expression>.0#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 35:53 #1 :: <expression>.0#Outer2.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 39:21 #0 :: Main.viaFn2 xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 43:17 #0 :: List.eq <literal>[*]#Outer3.1#Mid.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 43:17 #0 :: List.eq os[*]#Outer3.1#Mid.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepImported [node] Main 43:17 #0 :: value Outer3.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpDeepImported [node] Main 47:20 #0 :: Main.listOf3 os[*]#Outer3.1#Mid.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 53:9 #0 :: <expression>.0#Outer3.1#Mid.1#Inner.0 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepImported [node] Main 53:9 #1 :: <expression>.0#Outer3.1#Mid.1#Inner.0 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 16:16 #0 :: List.eq ds[*]#Deeper.1.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 16:16 #0 :: List.eq <literal>[*]#Deeper.1.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 16:16 #0 :: value CmpDeepWrite3.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 20:19 #0 :: CmpDeepWrite3.listOf ds[*]#Deeper.1.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 24:48 #0 :: <expression>.0#Deeper.1.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite3.beni [node] CmpDeepWrite3 24:48 #1 :: <expression>.0#Deeper.1.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 20:16 #0 :: List.eq ds[*]#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 20:16 #0 :: List.eq <literal>[*]#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 20:16 #0 :: value CmpDeepWrite.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 24:19 #0 :: CmpDeepWrite.listOf ds[*]#Deep.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 28:43 #0 :: <expression>.0#Deep.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 28:43 #1 :: <expression>.0#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 32:44 #0 :: <expression>.0#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 32:44 #1 :: <expression>.0#Deep.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 36:28 #0 :: <expression>.0#Deep.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 36:28 #1 :: <expression>.0#Deep.1.1 :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 40:37 #0 :: <expression>.0#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 40:37 #1 :: <expression>.0#Deep.1.1 :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+tests/corpus/ownership/CmpDeepWrite.beni [node] CmpDeepWrite 44:21 #0 :: CmpDeepWrite.viaFn2 xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 13:13 #0 :: RefMakeWrapped.wrapped xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 17:19 #0 :: Ref.make xs :: absent :: rejected  the caller keeps the list the comparison writes, deep below its component; v1 has no row for it
+tests/corpus/ownership/RefMakeWrapped.beni [node] RefMakeWrapped 9:14 #0 :: Ref.make <literal> :: absent :: accepted  the comparison's own demand, or the fresh result of the same call
+#
+# v2 makes one demand per path of a use's pair graph with the argument (ownership-v2.md §2.11 item 3): paths that meet one value are one demand, named by the last.
+tests/corpus/ownership/CallOtherPathsKeys.beni [node] CallOtherPathsKeys 16:5 #0 :: CallOtherPathsKeys.two <record>.x :: rejected :: absent  `x` and `z` hold one list: one demand, at `.z`, refused `disjoint` as both were (#1356)
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.0.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.0.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.0.1 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.0.1 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1

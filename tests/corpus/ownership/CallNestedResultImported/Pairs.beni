@@ -1,0 +1,50 @@
+-- ownership (project): see Main.beni. The unannotated callees, whose
+-- results hold a built argument at a type variable's place (#1364), and
+-- `inner`, which reads `w2`'s result in this module.
+pub touch0 : List Int → Int
+touch0 xs = List.length (List.push xs 1)
+
+
+pub w1 x = ( x, x )
+
+
+pub w2 x = w1 (w1 x)
+
+
+pub w3 x = w1 (w2 x)
+
+
+pub idn x = x
+
+
+pub pair x y = ( x, y )
+
+
+pub sw p =
+    case p of
+        ( l, r ) →
+            ( r, l )
+
+
+pub tl : List (List Int) × List (List Int) → Int
+tl p =
+    case p of
+        ( [ a ], _ ) →
+            touch0 a
+
+        _ →
+            0
+
+
+pub t2 : (List Int × List Int) × (List Int × List Int) → Int
+t2 p =
+    case p of
+        ( ( a, b ), ( c, d ) ) →
+            touch0 a + touch0 b + touch0 c + touch0 d
+
+
+pub inner : List Int → Int
+inner xs =
+    case w2 xs of
+        ( ( a, _ ), _ ) →
+            touch0 a + List.length xs

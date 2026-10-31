@@ -72,6 +72,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             .shared = mod.shared_of.items,
             .ctx = mod,
             .decl_of = Groups.Module.declOfCtx,
+            .ctor_of = Groups.Module.ctorIndexCtx,
         };
         // A worded declaration's class is its words (an asserted row):
         // its body is not checked here (§2.13.6's pins check it).
@@ -111,6 +112,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 const a = &dr.account;
                 var line: std.Io.Writer.Allocating = .init(arena);
                 line.writer.print("account {s}: source {d}, baseline {d}, growth {d} of {d}, total {d}, continuation {d} of {d}", .{ name, a.source, a.baseline, a.growth, a.allowance, a.total(), a.continuation, a.continuationCap() }) catch return error.OutOfMemory;
+                // Demands' resolve apart: a call's share is the rest (§2.11).
+                line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
+                if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
@@ -129,6 +133,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 if (steps != 0) line.writer.print(", step lanes {d}", .{steps}) catch return error.OutOfMemory;
                 try others.append(arena, line.written());
             }
+            // The crossing's counts (§2.11 *κ across a call*), once per module:
+            // the reads that crossed, those redone at `C` and `base_epoch`'s
+            // moves (the counted tests read them).
+            if (in.format_summaries and dr == &mod.results.items[0]) try others.append(arena, try std.fmt.allocPrint(arena, "crossing: reads {d}, redone {d}, base moves {d}", .{ mod.conds.crossed_reads, mod.conds.crossed_redos, mod.shapes.base_epoch }));
             if (in.format_summaries and dr.class != .none) {
                 var sn: SummaryNames = .{ .names = in.names, .module = mi.module, .shared = mod.shared_of.items };
                 var buf: std.Io.Writer.Allocating = .init(arena);
@@ -218,7 +226,8 @@ const Strings = struct {
 
     fn head(ctx: *anyopaque, h: u32) u32 {
         const s: *Strings = @ptrCast(@alignCast(ctx));
-        return s.intern(s.names.type_qualified(s.names.ctx, h));
+        // No type's head (`⊤`'s) is the empty name.
+        return s.intern(if (h == Ids.none_int) "" else s.names.type_qualified(s.names.ctx, h));
     }
 
     fn field(ctx: *anyopaque, rank: u32) u32 {
@@ -244,11 +253,16 @@ const Strings = struct {
 
 /// The module's block (§3.6, §8 S3a): every public value's class in
 /// declaration order, the string table first — `[count, (byte length,
-/// bytes in words)…]` — then `Block.write`'s words. Bytes in `arena`; null
-/// when a class could not be written (an owner past its limits).
+/// bytes in words)…]` — then the directory, `[count, (name, applies)…]`,
+/// one per class: its declaration's name (a string) and whether an importer
+/// may apply it, which a walk past a limit or left unbuilt may not (§2.11,
+/// S3b slice 3) — then `Block.write`'s words. Bytes in `arena`; null when a
+/// class could not be written (an owner past its limits).
 pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Module) Allocator.Error!?[]const u8 {
     var classes: std.ArrayList(Ids.ClassId) = .empty;
     defer classes.deinit(gpa);
+    var decls: std.ArrayList(u32) = .empty;
+    defer decls.deinit(gpa);
     mod.account = &mod.base_account;
     for (mod.in.bir.decls, 0..) |d, di| {
         if (!d.is_pub or !d.kind.isValue()) continue;
@@ -257,9 +271,13 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
             else => return null,
         }) orelse continue;
         try classes.append(gpa, c);
+        try decls.append(gpa, @intCast(di));
     }
     var s: Strings = .{ .gpa = gpa, .arena = arena, .names = names, .shared = mod.shared_of.items };
     defer s.deinit();
+    var dir: std.ArrayList(u32) = .empty;
+    try dir.append(arena, @intCast(decls.items.len));
+    for (decls.items) |di| try dir.appendSlice(arena, &.{ s.intern(names.declName(mod.in.module, di)), @intFromBool(mod.walkedClass(di) != null) });
     const block_names: Block.Names = .{ .place = .{ .ctx = &s, .head = Strings.head, .field = Strings.field }, .ctx = &s, .decl = Strings.decl };
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(gpa);
@@ -276,6 +294,7 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
         try out.appendNTimes(arena, 0, (t.len + 3) / 4);
         @memcpy(std.mem.sliceAsBytes(out.items[at..])[0..t.len], t);
     }
+    try out.appendSlice(arena, dir.items);
     try out.appendSlice(arena, words.items);
     return std.mem.sliceAsBytes(out.items);
 }

@@ -1,0 +1,17 @@
+-- ownership (v2 only): a hand-written `eq` whose walk was not built is not a
+-- derived comparison (ownership-v2.md §2.13.13). `eq` writes the list it is
+-- handed, so `==` on `Key` is not read-only; v2 leaves `bad` unchecked
+-- instead of reading `==` as derived and accepting `xs` kept beside it.
+type Key
+    = Key (List Int)
+
+
+pub eq : Key, Key → Bool
+eq a b =
+    case a of
+        Key l →
+            List.length (List.map (List.push l 1) λx → x + 1) > 0
+
+
+pub bad : List Int → Bool × List Int
+bad xs = ( Key xs == Key [], xs )

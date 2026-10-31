@@ -1,0 +1,17 @@
+module WidenChoiceBuiltArm
+  17:36 List.push xs: accepted param
+  25:10 call WidenChoiceBuiltArm.wrap t#Node.1: accepted param (WidenChoiceBuiltArm.wrap writes π1#Node.1)
+  27:13 List.push ys: accepted param
+  38:30 call WidenChoiceBuiltArm.gpw t#Node.1: accepted fresh (WidenChoiceBuiltArm.gpw writes π1#Node.1)
+  49:38 List.push xs: accepted param
+  57:10 call WidenChoiceBuiltArm.ins t#Node.1: accepted param (WidenChoiceBuiltArm.ins writes π1#Node.1)
+  59:13 List.push ys: accepted param
+  70:30 call WidenChoiceBuiltArm.gpi t#Node.1: accepted fresh (WidenChoiceBuiltArm.gpi writes π1#Node.1)
+  summary wrap: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A, π1#Node.2 RA; res #Node.0⟨Tree⟩#Node.0 ~condition(fresh6) π1#Node.0, #Node.0⟨Tree⟩#Node.1 fresh1, #Node.1 condition(fresh3) π1#Node.1, #Node.1[*] ~condition(fresh5) ~π1#Node.1[*], #Node.2 ~condition(fresh4) π1#Node.2, condition(fresh2){apart [π1#Node.0] [π1#Node.1 π1#Node.1[*]] [π1#Node.2]}r{sep π1#Node.0 π1#Node.1[*], sep π1#Node.0 π1#Node.2, sep π1#Node.2 π1#Node.1[*]}
+  summary gpw: π1 R, π1#Node.0 R, π1#Node.1 RAW[storage], π1#Node.1[*] RA, π1#Node.2 R; res [*] ~condition(fresh2) ~π1#Node.1[*], condition(fresh1) fresh1 π1#Node.1
+  summary hw: unused
+  summary ins: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A, π1#Node.2 RA, π2 RA; res #Node.0⟨Tree⟩#Node.1 ~condition(fresh8) π2, #Node.1 condition(fresh6) π1#Node.1 π2, #Node.1[*] ~condition(fresh7) ~π1#Node.1[*], #Node.2 condition(fresh2){sep π1#Node.0 π1#Node.2}r{sep π1#Node.0 π1#Node.2}, #Node.2⟨Tree⟩#Node.0 condition(fresh3) ~condition(fresh9) π1#Node.0, #Node.2⟨Tree⟩#Node.1 fresh1, #Node.2⟨Tree⟩#Node.2 condition(fresh4) ~condition(fresh10) π1#Node.2, condition(fresh5){apart [π1#Node.0 π1#Node.2] [π1#Node.1 π1#Node.1[*]] [π2]}r{sep π1#Node.0 π1#Node.1[*], sep π1#Node.2 π1#Node.1[*]}
+  summary gpi: π1 R, π1#Node.0 R, π1#Node.1 RAW[storage], π1#Node.1[*] RA, π1#Node.2 R; res [*] ~condition(fresh3) ~π1#Node.1[*], condition(fresh2) fresh2 ~fresh1 ~π1#Node.1
+  summary hi: unused
+  demands 8: accepted 8 (fresh 2, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 8: accepted 8 (fresh 2, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

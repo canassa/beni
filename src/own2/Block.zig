@@ -101,7 +101,12 @@ pub const magic: u32 = 0x324e574f;
 /// 7: a position's κ is what is stored there, never the read (#1069).
 /// 8: a position records what its snapshot is there, so the trie is rebuilt (#1073).
 /// 9: a fold is exact or collapsed, and keeps the steps it saw (#1113's review).
-pub const version: u32 = 10;
+/// 12: the published block's directory names each class's declaration and
+/// whether an importer may apply it (`Ownership.publish`, S3b slice 3).
+/// 13: a use shape's marks gain `D`, a deep read (§2.10, #1328).
+/// 14: a knot's side, base or inner may name any member, a cycle no child
+/// step closes (§2.11 *A cycle with no node on it*, #1335).
+pub const version: u32 = 14;
 
 pub const none: u32 = Ids.none_int;
 
@@ -135,6 +140,10 @@ pub const Remap = struct {
     /// The block's instruction id in the reader's namespace for it, so a
     /// label or a site of another module never meets one of the reader's.
     inst: *const fn (ctx: *anyopaque, inst: u32) u32,
+    /// The reader's own place equal to a block's place (§2.1: re-interned
+    /// onto its own graph), or null to keep the block's; asked once the
+    /// trial decoded, of places in the reader's tables.
+    own: ?*const fn (ctx: *anyopaque, p: PlaceId) Error!?PlaceId = null,
 
     pub const identity: Remap = .{ .place = .identity, .ctx = undefined, .decl = sameDecl, .inst = sameInst };
     fn sameDecl(_: *anyopaque, name: u32, ordinal: u32) ?u32 {
@@ -151,6 +160,51 @@ pub const codecBound = Refine.codecBound;
 /// What a scan of `n` tokens is charged: two words each, 16 to a record.
 fn scan(n: usize) u64 {
     return Refine.wordsCost(2 * n);
+}
+
+/// A knot member's side, base or inner that is no member of a cycle no
+/// child step closes (`entered`).
+pub const outside: u32 = none - 1;
+
+/// Whether every member of a knot is reached from outside by what its
+/// value is read from (§2.11 *A cycle with no node on it*): `parts[m]` are
+/// member `m`'s sides, base or inner, each another member's index,
+/// `outside` or `none`. A cycle nothing enters is no value a constructor
+/// makes (`recast(x)` of `x` itself), so it is no block. Linear: the
+/// caller reserves `5 * parts.len` words first.
+pub fn entered(gpa: Allocator, parts: []const [2]u32) Allocator.Error!bool {
+    const k = parts.len;
+    const in = try gpa.alloc(bool, k);
+    defer gpa.free(in);
+    // Each member's readers, threaded: `head[x]`, then `next[e]`, `e / 2`
+    // the member that reads `x`.
+    const head = try gpa.alloc(u32, k);
+    defer gpa.free(head);
+    const next = try gpa.alloc(u32, 2 * k);
+    defer gpa.free(next);
+    @memset(head, none);
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(gpa);
+    for (parts, 0..) |two, m| {
+        in[m] = false;
+        for (two, 0..) |x, i| {
+            if (x == outside) in[m] = true else if (x != none) {
+                next[2 * m + i] = head[x];
+                head[x] = @intCast(2 * m + i);
+            }
+        }
+        if (in[m]) try stack.append(gpa, @intCast(m));
+    }
+    var reached: usize = stack.items.len;
+    while (stack.pop()) |x| {
+        var e = head[x];
+        while (e != none) : (e = next[e]) if (!in[e / 2]) {
+            in[e / 2] = true;
+            reached += 1;
+            try stack.append(gpa, e / 2);
+        };
+    }
+    return reached == k;
 }
 
 /// The position class of the child at `s` of a position of class `summary`.
@@ -599,8 +653,14 @@ const Writer = struct {
                 while (it.next()) |e| try named.append(gpa, .{ .step = e.step, .rec = try w.pos(e.node, below(p.at_summary, e.step), p.owner, conds.kappaChild(cur, e.step)) });
                 try w.steps(named.items);
             },
-            .recast => try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur)),
+            // Whether it keeps its whole inner (`Shape.recastWhole`), then the inner.
+            .recast => {
+                try w.word(d.b);
+                try w.tok(.ref, try w.pos(.from(d.a), p.at_summary, p.owner, cur));
+            },
             .@"union", .choice, .positions => try w.group(&.{ try w.pos(.from(d.a), p.at_summary, p.owner, cur), try w.pos(.from(d.b), p.at_summary, p.owner, cur) }),
+            // A class is stored forced (§2.11): a view here is the codec's defect, loud.
+            .view => return w.invariant(),
         }
         // What is stored at the position, nothing else (§3.6): every reader
         // adds the derivation from the structure the reader rebuilds, and
@@ -669,6 +729,8 @@ const Writer = struct {
             },
             .recast => try out.append(gpa, .{ d.a, sb, none, 0, cur.int() }),
             .@"union", .choice, .positions => try out.appendSlice(gpa, &.{ .{ d.a, sb, none, 0, cur.int() }, .{ d.b, sb, none, 0, cur.int() } }),
+            // A class is stored forced (§2.11): a view here is the codec's defect, loud.
+            .view => return w.invariant(),
         }
         if (!all or cur == .none) return;
         // A fold's links are the steps it saw: sparse below it too.
@@ -956,6 +1018,7 @@ const Writer = struct {
                     .within => try w.ref(.label, a.a),
                     .apart => try w.ref(.set, a.a),
                     .keep, .writes => try w.word(a.a),
+                    .inst => unreachable, // a published κ is resolved (`Summary.Table.add` checks it)
                 }
             },
             .node => try w.position(w.positions.items[id]),
@@ -1384,8 +1447,10 @@ const Writer = struct {
 
     /// A knot's members in written order: by key, every part that is not a
     /// child step after what it names (a post-order walk of those parts from
-    /// each member in key order). A member met on its own walk is a cycle no
-    /// step closes, which no constructor makes.
+    /// each member in key order), but where those parts make a cycle no
+    /// child step closes (§2.11 *A cycle with no node on it*): a member met
+    /// on its own walk is named before it is written, and the reader ties
+    /// the members that name it raw (`BlockRead`).
     fn order(w: *Writer, s: u32) Error!void {
         const gpa = w.env.gpa;
         const c = w.sccs.items[s];
@@ -1399,6 +1464,7 @@ const Writer = struct {
         defer state.deinit(gpa);
         var stack: std.ArrayList(OFrame) = .empty;
         defer stack.deinit(gpa);
+        var cyclic = false;
         var kids: std.ArrayList(u32) = .empty;
         defer kids.deinit(gpa);
         for (ms) |root| {
@@ -1422,8 +1488,11 @@ const Writer = struct {
                 if (w.recs.items[target].scc != s) continue;
                 try w.take(1);
                 const got = try state.getOrPut(gpa, .{target});
+                // Done, or open: a cycle no child step closes (§2.11 *A
+                // cycle with no node on it*), whose member met again is
+                // named before it is written, as a child step's may be.
                 if (got.found_existing) {
-                    if (got.value_ptr.* == 0) return w.invariant();
+                    if (got.value_ptr.* == 0) cyclic = true;
                     continue;
                 }
                 got.value_ptr.* = 0;
@@ -1431,6 +1500,28 @@ const Writer = struct {
             }
         }
         @memcpy(ms, out.items);
+        // A cycle no child step closes is entered from outside it, as
+        // the reader checks (`entered`).
+        if (!cyclic) return;
+        var at: Ids.FixedDict(1) = .{};
+        defer at.deinit(gpa);
+        try w.take(Refine.wordsCost(7 * ms.len));
+        for (ms, 0..) |m, i| (try at.getOrPut(gpa, .{m})).value_ptr.* = @intCast(i);
+        const graph = try gpa.alloc([2]u32, ms.len);
+        defer gpa.free(graph);
+        for (ms, graph) |m, *g| {
+            g.* = .{ outside, none };
+            const kind = w.env.shapes.kind(w.positions.items[w.recs.items[m].id].node);
+            if (kind == .node or kind == .leaf) continue;
+            const ts = w.toksOf(m);
+            // The first part that is a position is the base or the inner;
+            // a union's, a choice's or a positions node's group its sides.
+            var first: usize = 0;
+            while (first < ts.len and ts[first].tag != .ref and ts[first].tag != .group) first += 1;
+            const sides = if (first < ts.len and ts[first].tag == .group) ts[first + 1 ..][0..2] else ts[first..][0..1];
+            for (sides, 0..) |t, j| g[j] = if (at.get(.{w.repOf(t.x)})) |x| x else outside;
+        }
+        if (!try entered(gpa, graph)) return w.invariant();
     }
 
     /// `order`'s frame for `r`, its strict parts listed once.

@@ -1,0 +1,46 @@
+-- ownership (project): `DeepReadAcrossCall` with the callees in another
+-- module (ownership-v2.md §2.10, *A deep read across a call*, §3.6,
+-- #1328). The block publishes `Reads.str`'s class with `D` at `π1.x`, so
+-- a push of a list that `g.x.a` holds, with `g` read later through
+-- `Reads.str`, is refused `alias`, as v1 refuses it: one call, two calls,
+-- beside a write at a sibling path, and a whole recursive value. A shallow
+-- write beside a deep read stays shallow (`shallowBeside`, accepted).
+import Reads exposing (Rose)
+
+
+pub viaHelper : Int → Int
+viaHelper n =
+    l = [ n ]
+    g = { x = { a = l, b = [] }, y = [] }
+    p = List.push l 5
+    String.length (Reads.str g) + List.length p
+
+
+pub viaTwo : Int → Int
+viaTwo n =
+    l = [ n ]
+    k = { inner = { x = { a = l, b = [] }, y = [] }, z = [] }
+    p = List.push l 5
+    String.length (Reads.str2 k) + List.length p
+
+
+pub besideWrite : Int → Int
+besideWrite n =
+    l = [ n ]
+    g = { x = { a = l, b = [] }, y = [] }
+    p = List.push l 5
+    Reads.readWrite g + List.length p
+
+
+pub recursive : Int → Int
+recursive n =
+    l = [ n ]
+    t = Rose [] [ Rose [] [ Rose l [] ] ]
+    p = List.push l 5
+    String.length (Reads.showRose t) + List.length p
+
+
+pub shallowBeside : Int → Int
+shallowBeside n =
+    l = [ n ]
+    Reads.showPush [ l, l ]

@@ -1,0 +1,8 @@
+module JoinHolds
+  9:9 List.push xs: rejected alias: h.f holds it and is read at 10:5
+  16:9 List.push xs: rejected alias: h holds it and is read at 17:5
+  summary j2: π2 RAW[storage], π2[*] RA, π3 RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 fresh501◦ fresh502◦, .1.f ~condition(fresh4) π2 π3, condition(fresh1){shared}
+  summary j1: π2 RAW[storage], π2[*] RA, π3 RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 ~condition(fresh4) π2 π3, condition(fresh1){shared}
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 2

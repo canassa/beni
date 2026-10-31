@@ -71,7 +71,7 @@ pub const Site = struct { call: u32 = none, ambient: u32 = none };
 
 /// Which boundary put a demand on its class (§15.2).
 /// `.value` is a top-level value other than `main` (§15.2 item 7).
-pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, method, signature };
+pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, method, signature, extractor };
 
 /// "This class must not suspend" (§15.1), recorded before the run: `v`
 /// carries the class, `site` is the instruction it is attributed to.
@@ -83,7 +83,11 @@ pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, meth
 /// a method the name of the type it is written for, in `field`. `.signature`: a
 /// function type an ordinary declaration's signature marks `sync` (§15.2 item
 /// 1, amended 2026-10-02), `site` its `type_fn` instruction, `decl` the
-/// declaration.
+/// declaration. `.extractor`: the payload extractor a vocabulary event names
+/// with `via`, beni or `foreign` (checker-v2.md §25.8, amended 2026-10-26): a
+/// lowering calls it while the event is dispatched, outside any fiber, so its
+/// class must be `sync`; `v` the extractor's scheme, `decl` the EVENT
+/// declaration, where the refusal points (`sync_boundary`).
 pub const Demand = struct {
     v: Var,
     kind: DemandKind,

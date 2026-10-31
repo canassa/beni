@@ -73,6 +73,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const stamped = @import("../stamped.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
@@ -738,27 +739,254 @@ fn usesMark(env: Env, use: NodeId, m: Cell.Mark) Error!bool {
     return env.cells.sets.member(r, (try env.cells.mark(env.gpa, env.account(), m, 0)).int());
 }
 
+/// One user-written comparison a derived `eq`/`compare` calls: its class,
+/// and the place of the type that declares it, inside the derived
+/// argument's place (that place itself when the whole argument is of it).
+pub const Component = struct { place: PlaceId, class: ClassId };
+
 /// A derived `eq`/`compare`'s class (§2.13.6, §2.13.13): both arguments
-/// read deeply, a crossing result; origin `asserted`. The derived method
-/// calls the components' own `eq`/`compare` (`components`, the classes of
-/// the user-written ones), so it is what they are: a component that lets
-/// its argument escape (`E` anywhere in its use) makes the derived
-/// argument `E` deep, and a component that writes makes it `writes`
-/// (R-5.13.1's `comparison_changes_value` then fires through it). A
-/// comparison cannot keep its argument in its result (`Bool`/`Order`
-/// cross), so `A` never arises.
-pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const ClassId) Error!ClassId {
-    var escapes = false;
+/// read as their components read them, a crossing result; origin
+/// `asserted`. The derived method calls the components' own
+/// `eq`/`compare`, so it is what they are: at the place of a component's
+/// type the argument is used as its class uses its parameters (so a write
+/// inside it, `#Inner.0 W`, reaches what a fresh value there holds), and
+/// everything else is read deeply. A component that is `writes` (unknown)
+/// makes the class so (R-5.13.1's `comparison_changes_value` then fires
+/// through it). A comparison cannot keep its argument in its result
+/// (`Bool`/`Order` cross), so `A` never arises.
+pub fn derivedClass(env: Env, sums: *Summary.Table, arg_place: PlaceId, result_place: PlaceId, components: []const Component) Error!ClassId {
     var writes = false;
     for (components) |c| {
         try env.charge.reserve(env.gpa, .inspection, 1);
-        writes = writes or sums.get(c).writes;
-        for (sums.paramUses(c)) |u| escapes = escapes or try usesMark(env, u, .e);
+        writes = writes or sums.get(c.class).writes;
     }
-    const use = if (crosses(env, arg_place)) NodeId.none else try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .e = escapes, .deep = true }, &.{});
+    // The use is built in growth, not in the call's baseline lane: its size is the type's, not the call's.
+    const kernel = try env.account().enter(env.gpa, null);
+    defer env.account().leave(kernel);
+    var use = NodeId.none;
+    if (!crosses(env, arg_place)) {
+        if (components.len == 0) {
+            use = try Summary.Table.markUse(env, .none, arg_place, &.{}, .{ .r = true, .deep = true }, &.{});
+        } else {
+            var b: UseBuild = .{ .env = env, .sums = sums, .components = components };
+            defer b.deinit();
+            use = try b.build(arg_place);
+        }
+    }
     const res = try env.shapes.nothing(env.gpa, env.account(), result_place);
     return sums.add(env, .{ .params = &.{ use, use }, .res = res, .writes = writes, .origin = .asserted });
 }
+
+/// Two use shapes of one place merged path by path: the marks of both at every
+/// path, a leaf standing for everything below it. `Shape.join` makes a `union`
+/// of two nodes, and a read-off of a use (`Calls.marked`) does not go into a
+/// union, so the writes below it would not be found.
+const UseMerge = struct {
+    env: Env,
+    memo: Ids.FixedDict(2) = .{},
+
+    fn deinit(m: *UseMerge) void {
+        m.memo.deinit(m.env.gpa);
+    }
+
+    fn merge(m: *UseMerge, a: NodeId, b: NodeId) Error!NodeId {
+        const env = m.env;
+        const gpa = env.gpa;
+        if (a == b or b == .none) return a;
+        if (a == .none) return b;
+        try env.charge.reserve(gpa, .shape, 1);
+        if (m.memo.get(.{ a.int(), b.int() })) |hit| return .from(hit);
+        const shapes = env.shapes;
+        const at = shapes.place(a);
+        const ca = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, a);
+        const cb = try shapes.cellsOf(gpa, env.account(), &env.cells.sets, b);
+        const cells = try env.cells.sets.unionWith(gpa, env.charge, ca, cb);
+        const ka = shapes.kind(a);
+        const kb = shapes.kind(b);
+        const out: NodeId = out: {
+            if (ka == .node and kb == .node and shapes.place(b) == at) {
+                var children: u32 = Ids.none_int;
+                var it = shapes.overEntries(shapes.get(a).a);
+                while (it.next()) |e| {
+                    const other = if (shapes.overGet(shapes.get(b).a, e.step)) |o| o else NodeId.none;
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, try m.merge(e.node, other));
+                }
+                var jt = shapes.overEntries(shapes.get(b).a);
+                while (jt.next()) |e| if (shapes.overGet(shapes.get(a).a, e.step) == null) {
+                    children = try shapes.overPut(gpa, env.account(), children, e.step, e.node);
+                };
+                break :out try shapes.node(gpa, env.account(), at, cells, children);
+            }
+            // A leaf stands for everything below it, and so does the merge of
+            // anything else: what both reach, deeply.
+            const ra = try shapes.reach(gpa, env.account(), &env.cells.sets, a);
+            const rb = try shapes.reach(gpa, env.account(), &env.cells.sets, b);
+            const deep = try Summary.Table.marksSet(env, .{ .deep = true }, &.{});
+            break :out try shapes.leaf(gpa, env.account(), at, try env.cells.sets.unionWith(gpa, env.charge, try env.cells.sets.unionWith(gpa, env.charge, ra, rb), deep));
+        };
+        (try m.memo.getOrPut(gpa, .{ a.int(), b.int() })).value_ptr.* = out.int();
+        return out;
+    }
+};
+
+/// The use shape of a derived comparison's argument, built once per place
+/// (a type may share its parts, `EvidenceDagBuildDepth32`, and cycle):
+/// `R` deep on every branch that leads to no component; at a component's
+/// place the use its class gives its parameter, so a write inside it reaches
+/// what a fresh value there holds (`#Inner.0 W`); `R` at the places between.
+/// A cycle of places is one deep leaf each, with the `E` and `W` of every
+/// component below it. Tarjan's walk on explicit stacks: a strongly connected
+/// set is settled when its head is done, after everything it reaches, so
+/// each place is built once, and what a result is is known before any record
+/// is allocated.
+const UseBuild = struct {
+    env: Env,
+    sums: *Summary.Table,
+    components: []const Component,
+    /// A place's (index, low link) while it is open.
+    open_at: stamped.Column(u32, [2]u32) = .{},
+    memo: stamped.Column(u32, Res) = .{},
+    is_comp: stamped.Column(u32, void) = .{},
+    frames: std.ArrayList(Frame) = .empty,
+    open: std.ArrayList(PlaceId) = .empty,
+    entered: u32 = 0,
+
+    const Res = struct { node: NodeId, e: bool, w: bool, any: bool };
+    const Frame = struct { place: PlaceId, next: u32 };
+
+    fn deinit(b: *UseBuild) void {
+        const gpa = b.env.gpa;
+        b.open_at.deinit(gpa);
+        b.memo.deinit(gpa);
+        b.is_comp.deinit(gpa);
+        b.frames.deinit(gpa);
+        b.open.deinit(gpa);
+    }
+
+    fn leaf(b: *UseBuild, p: PlaceId, m: Summary.Marks) Error!NodeId {
+        return b.env.shapes.leaf(b.env.gpa, b.env.account(), p, try Summary.Table.marksSet(b.env, m, &.{}));
+    }
+
+    fn build(b: *UseBuild, root: PlaceId) Error!NodeId {
+        const env = b.env;
+        const gpa = env.gpa;
+        for (b.components) |c| try b.is_comp.put(gpa, c.place.int(), {});
+        if (b.is_comp.contains(root.int())) {
+            try b.component(root);
+            return b.memo.get(root.int()).?.node;
+        }
+        try b.enter(root);
+        while (b.frames.items.len > 0) {
+            const top = &b.frames.items[b.frames.items.len - 1];
+            const kids = env.places.steps(top.place);
+            if (top.next < kids.children.len) {
+                const c = kids.children[top.next];
+                top.next += 1;
+                if (crosses(env, c) or b.memo.contains(c.int())) continue;
+                if (b.is_comp.contains(c.int())) {
+                    try b.component(c);
+                } else if (b.open_at.get(c.int())) |m| {
+                    // Open: on the set being walked.
+                    const mine = b.open_at.getPtr(top.place.int()).?;
+                    mine[1] = @min(mine[1], m[0]);
+                } else {
+                    try b.enter(c);
+                }
+                continue;
+            }
+            const done = b.frames.pop().?.place;
+            const mx = b.open_at.get(done.int()).?;
+            if (b.frames.items.len > 0) {
+                const parent = b.open_at.getPtr(b.frames.items[b.frames.items.len - 1].place.int()).?;
+                parent[1] = @min(parent[1], mx[1]);
+            }
+            if (mx[1] == mx[0]) {
+                var first = b.open.items.len - 1;
+                while (b.open.items[first] != done) first -= 1;
+                try b.settle(b.open.items[first..]);
+                b.open.shrinkRetainingCapacity(first);
+            }
+        }
+        return b.memo.get(root.int()).?.node;
+    }
+
+    fn enter(b: *UseBuild, p: PlaceId) Error!void {
+        try b.env.charge.reserve(b.env.gpa, .shape, 1);
+        try b.open_at.put(b.env.gpa, p.int(), .{ b.entered, b.entered });
+        b.entered += 1;
+        try b.open.append(b.env.gpa, p);
+        try b.frames.append(b.env.gpa, .{ .place = p, .next = 0 });
+    }
+
+    /// A component's place: the use its class gives its parameters, joined;
+    /// else, when that is at another place or absent, deep `R`, `E` and `W`.
+    fn component(b: *UseBuild, p: PlaceId) Error!void {
+        const env = b.env;
+        const gpa = env.gpa;
+        try env.charge.reserve(gpa, .shape, 1);
+        var uses: std.ArrayList(NodeId) = .empty;
+        defer uses.deinit(gpa);
+        var e = false;
+        var w = false;
+        for (b.components) |c| if (c.place == p) {
+            for (b.sums.paramUses(c.class)) |u| {
+                if (u == .none) continue;
+                e = e or try usesMark(env, u, .e);
+                w = w or try usesMark(env, u, .w);
+                if (std.mem.indexOfScalar(NodeId, uses.items, u) == null) try uses.append(gpa, u);
+            }
+        };
+        var node: NodeId = .none;
+        if (uses.items.len > 0) {
+            var mg: UseMerge = .{ .env = env };
+            defer mg.deinit();
+            node = uses.items[0];
+            for (uses.items[1..]) |u| node = try mg.merge(node, u);
+            if (env.shapes.place(node) != p) node = .none;
+        }
+        if (node == .none) node = try b.leaf(p, .{ .r = true, .e = e, .w = w, .deep = true });
+        try b.memo.put(gpa, p.int(), .{ .node = node, .e = e, .w = w, .any = true });
+    }
+
+    /// The open places `members`, one strongly connected set whose every
+    /// successor outside it is built.
+    fn settle(b: *UseBuild, members: []const PlaceId) Error!void {
+        const env = b.env;
+        const gpa = env.gpa;
+        var e = false;
+        var w = false;
+        var any = false;
+        var cyclic = members.len > 1;
+        for (members) |m| {
+            const kids = env.places.steps(m);
+            for (kids.children) |c| {
+                if (crosses(env, c)) continue;
+                if (b.memo.get(c.int())) |r| {
+                    e = e or r.e;
+                    w = w or r.w;
+                    any = any or r.any;
+                } else if (c == m) cyclic = true;
+            }
+        }
+        for (members) |m| {
+            try env.charge.reserve(gpa, .shape, 1);
+            var node: NodeId = undefined;
+            const flat = cyclic or !any;
+            if (flat) {
+                node = try b.leaf(m, .{ .r = true, .e = e, .w = w, .deep = true });
+            } else {
+                var children: u32 = Ids.none_int;
+                const kids = env.places.steps(m);
+                for (kids.steps, kids.children) |s, c| {
+                    if (crosses(env, c)) continue;
+                    children = try env.shapes.overPut(gpa, env.account(), children, s, b.memo.get(c.int()).?.node);
+                }
+                node = try env.shapes.node(gpa, env.account(), m, try Summary.Table.marksSet(env, .{ .r = true }, &.{}), children);
+            }
+            try b.memo.put(gpa, m.int(), .{ .node = node, .e = e, .w = w, .any = any });
+        }
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -1000,22 +1228,28 @@ test "a constructor's class and a derived method's class" {
     const one = try ctorClass(env, &f.sums, t, &.{ s0, s1 }, &.{ list, int }, false);
     try testing.expectEqual(Cond.yes, try env.kappa(f.sums.get(one).kappas, f.sums.get(one).res));
     try testing.expectEqual(Cond.Kind.atom, f.conds.kind(try env.kappa(f.sums.get(c).kappas, f.sums.get(c).res)));
-    // eq/compare over components whose `eq` only reads: both arguments
-    // read deeply, a crossing result.
+    // eq/compare over components whose `eq` only reads: both arguments are
+    // read as the component reads them (its own use, §2.13.13), with a
+    // crossing result.
     const reader = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.borrowed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq = try derivedClass(env, &f.sums, list, int, &.{reader});
+    const eq = try derivedClass(env, &f.sums, list, int, &.{.{ .place = list, .class = reader }});
     try testing.expectEqualStrings("summary eq: π1 R, π2 R (asserted)", try f.text(eq, "eq"));
-    try testing.expect(try Summary.Table.usedAt(env, f.sums.paramUses(eq)[0], &.{Step.elem}));
     try testing.expect(!f.sums.get(eq).writes);
     // A user-written component `eq` that lets its argument escape (through
-    // a wordless foreign) or writes it: the derived class says so.
+    // a wordless foreign) or writes it: the derived class says so (`S`, a
+    // write through the argument).
     const escaper = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq2 = try derivedClass(env, &f.sums, list, int, &.{ reader, escaper });
+    const eq2 = try derivedClass(env, &f.sums, list, int, &.{ .{ .place = list, .class = reader }, .{ .place = list, .class = escaper } });
     try testing.expectEqualStrings("summary eq2: π1 RE, π2 RE (asserted)", try f.text(eq2, "eq2"));
     const writer = try fromWords(env, &f.sums, .{ .params = &.{ .{ .place = list, .words = bits(&.{.consumed}) }, .{ .place = list, .words = bits(&.{.borrowed}) } }, .result = int });
-    const eq3 = try derivedClass(env, &f.sums, list, int, &.{writer});
+    const eq3 = try derivedClass(env, &f.sums, list, int, &.{.{ .place = list, .class = writer }});
     try testing.expect(f.sums.get(eq3).writes);
-    try testing.expectEqualStrings("summary eq3: π1 R, π2 R (asserted)", try f.text(eq3, "eq3"));
+    try testing.expectEqualStrings("summary eq3: π1 RS, π2 RS (asserted)", try f.text(eq3, "eq3"));
+    // A component at a sub-place: a writer for the `List Int` fields of `T`
+    // marks them, and the `Int` between them is read, never written.
+    const eq4 = try derivedClass(env, &f.sums, t, int, &.{.{ .place = list, .class = writer }});
+    try testing.expect(f.sums.get(eq4).writes);
+    try testing.expectEqualStrings("summary eq4: π1 R, π1#C.0 RS, π1#C.2 RS, π2 R, π2#C.0 RS, π2#C.2 RS (asserted)", try f.text(eq4, "eq4"));
 }
 
 // ---------------------------------------------------------------------------

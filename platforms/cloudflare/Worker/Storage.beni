@@ -103,5 +103,20 @@ kv ctx =
 
 
 -- `kv.put`: `False` for the host's `Error` "database or disk is full:
--- SQLITE_FULL", caught by that text alone; anything else thrown again.
-foreign impure kvPut : Js.Value, String, String → Bool
+-- SQLITE_FULL", caught by that text alone (`Js.catchIf`); anything else
+-- thrown again (`CLAUDE.md` rule 9).
+kvPut : Js.Value, String, String → Bool
+kvPut store key text =
+    Js.catchIf
+        (λ⊤ →
+            _ = Js.call store "put" [ Js.from key, Js.from text ]
+            True
+        )
+        (λerr →
+            Js.instanceOf err (Js.global "Error")
+                && Js.to
+                    (Js.call (Js.apply (Js.global "String") [ Js.get err "message" ]) "includes"
+                        [ Js.from "SQLITE_FULL" ]
+                    )
+        )
+        λ_ → False

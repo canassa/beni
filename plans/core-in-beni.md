@@ -24,7 +24,7 @@ spelling — it is kept minimal, and the step says why.
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
 | 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below. **The port decided 2026-10-02**: both intrinsics adopted, the growth taken to `hand-minify` first. **Landed 2026-10-02**, below (*Landed: L2, L3, L6 and L7*): release brotli −6 845 over every program, 3 programs larger by 1–34, every operation within noise |
-| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js` (**all but the keys gone 2026-10-02**, `plans/runtime-in-beni.md` step 7), `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
+| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js` (**all but the keys gone 2026-10-02**, `plans/runtime-in-beni.md` step 7), `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, the `cloudflare` platform's `Worker.js`, `Worker/Object.js` and `Worker/Storage.js` (**gone 2026-10-29**, `plans/runtime-in-beni.md` step 11; `runtime.js` stays), and the `node` platform | to come |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
@@ -1002,3 +1002,53 @@ program grows **+424** (91 smaller, 113 larger, worst `bench/corpus` +45, `Schem
 spec amendment stays unwritten, and `NestingEvidence` +34, `ListElementEq` +6 and
 `ConsPatterns` +1 stand as the residue for the owner. *Accepted by the owner, 2026-10-02*
 ("merge them"): the port landed with these three, against a release total of −6 845 B brotli.
+
+
+## Step 4b — the `browser` platform's keys (2026-10-26)
+
+**What moved.** `platforms/browser/Hosted.js` is gone (#877): `keyOf` and `compareKeys`, its last two
+exports, are beni over `Js`. `key` builds `{ t, c, v }` with `Js.object` — the type's identity
+(`Js.fingerprint`), the type's `compare` as a lambda over the `where` clause (`comparer`), the value —
+and `compare` orders two keys of different types by their identities with `Js.lt` (#882, the
+intrinsic the owner decided on 2026-10-02 for this piece), two keys of one type through the stored
+`compare` with `Js.apply`, under `Js.pure` as the sibling was `foreign pure`. `Key` stays a
+`foreign type`; the three keys are plain properties no beni record spells, so they pin no field name.
+
+**What it needed.** `Js.lt` (#1110). Nothing else: the `where` clause's evidence reaches the lambda,
+and the release optimiser specialises `key` per call site as it did `keyOf`'s caller.
+
+**Ownership.** `keyOf`'s trusted row (`String, aliased k → fresh Key`) is withdrawn; `key`'s row is
+inferred — `Js.from k` is `returned`, `Js.object` holds its fields `aliased`. The `WordsBrowser`
+goldens under `browser-tea` move their `keysHeld` summary, since the key now also holds its
+comparer; no verdict changes, and under `browser` they do not move. The fixture's flips test is
+retired: its remaining rows are `crossing`, with no flip; the `browser` platform's flips are the
+entry rows (`HostedEntry`, `EntryInitProgram`), and the other platforms' entry rows have no test
+that runs them (#1118).
+
+**Sizes** (release, brotli 11, the whole bundle; #1110's compiler against this step, the same sources,
+`zig-out/scratch/pages.mjs` over `tests/corpus/browser/` and `bench/size.mjs`):
+
+| | #1110 (`Js.lt`) | this branch | |
+|---|--:|--:|--:|
+| the 218 `tea/` pages, release brotli | 832 434 | **831 186** | −1 248 (−0.15 %) |
+| the 78 other `browser/` pages | 176 204 | 176 204 | 0 |
+| `bench/size.mjs`'s 19 pages and apps | 106 224 | **105 861** | −363 (−0.34 %) |
+| TodoMVC, bike-wars, conduit, steer | 9 007, 9 145, 27 852, 4 278 | **8 993, 9 056, 27 820, 4 248** | −14, −89, −32, −30 |
+| the 642 node lines | 1 345 352 | 1 345 352 | 0 |
+
+Of the 218 `tea/` pages, 52 are smaller (−1 to −76 B), 165 equal (they reach no key) and one larger,
+by 32 B at fewer raw bytes:
+
+| page | raw | brotli |
+|---|--:|--:|
+| `tea/LogCommandContext` | 29805 → 29785 (-20) | 9777 → 9809 (+32) |
+
+Every other line is byte for byte #1110's. What goes is the sibling file and its import glue; what
+comes is `key` and `compare` in the hoisted file beside their callers.
+
+**Shape.** The release key constructor of `tea/KeyOrder`: `{t:b,c:(b,c)=>a(b,c),v:c}`, `a` the
+evidence, against the sibling's `{ t: type, c: compare, v: value }`. The lambda is not eta-reduced,
+so a key costs one closure more than before — one allocation beside the key's own object, per keyed
+command or subscription per `update`. Issue #1111 asks the optimiser for the reduction, spec first.
+`compare` is the sibling's three branches: `===` on the keys, `!==` then `<` on the identities, the
+stored `compare` otherwise.

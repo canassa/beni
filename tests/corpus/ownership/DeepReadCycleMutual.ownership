@@ -1,0 +1,19 @@
+module DeepReadCycleMutual
+  32:9 List.push l: rejected alias: t#P.1⟨P⟩#P.0 holds it and is read at 33:5
+  62:9 List.push l: rejected alias: t#A.1⟨A⟩#A.0 holds it and is read at 63:5
+  80:9 List.push l: rejected alias: t#A.1⟨A⟩#A.0 holds it and is read at 81:5
+  106:9 List.push l: rejected alias: t#N.1⟨N⟩#N.0 holds it and is read at 107:5
+  128:9 List.push l: rejected alias: t#U.1[*].1⟨U⟩#U.0 holds it and is read at 129:20
+  summary h1: π1 R, π1⟨P⟩⁺#P.0 R
+  summary two: unused
+  summary g1: π1 R, π1⟨A⟩⁺#A.0 R
+  summary ringOne: unused
+  summary grandA: π1 R, π1⟨A⟩⁺#A.0 R
+  summary ringTwo: unused
+  summary grandMa: π1 R, π1⟨N⟩⁺#N.0 R
+  summary viaMaybe: unused
+  summary showSnd: π1 R, π1#U.1[*].1 R
+  summary sndHelper: unused
+  demands 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 5

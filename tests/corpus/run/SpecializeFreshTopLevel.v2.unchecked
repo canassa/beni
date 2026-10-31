@@ -1,3 +1,2 @@
 SpecializeFreshTopLevel make: lines 23-24 (not built: call)
 SpecializeFreshTopLevel positive: lines 27-36 (not built: local)
-SpecializeFreshTopLevel main: lines 54-55 (not built: call)

@@ -1226,8 +1226,69 @@ replySchema inner =
 
 -- The ids of the replies a value holds, by a walk of its records and
 -- lists: for a message posted to `self`, which holds them until its own
--- `received` returns ((e.10)).
-foreign impure repliesIn : Js.Value → Js.Value
+-- `received` returns ((e.10)). A handle is `{ id, instance, schema }` whose
+-- `instance` is an object record (`ask`); the walk stops at a host object,
+-- which a beni value never holds, and at anything seen before.
+repliesIn : Js.Value → Js.Value
+repliesIn value =
+    ids = Js.array []
+    seen = Js.construct (Js.global "Set") []
+    walkReplies ids seen (Js.array [ value ])
+    ids
+
+
+-- The walk, over a work list it pops from, so that a value's depth costs
+-- it nothing (a value nested 5 000 deep is walked; the recursive form fell
+-- at about 4 050 levels): a container's children are pushed in reverse,
+-- so the ids come out in the order a depth-first walk gives them.
+walkReplies : Js.Value, Js.Value, Js.Value → ⊤
+walkReplies ids seen work =
+    if Js.same (Js.get work "length") (Js.from 0) then
+        ⊤
+    else
+        v = Js.call work "pop" []
+        if Js.isNull v || not (Js.typeIs v "object") || Js.to (Js.call seen "has" [ v ]) then
+            ⊤
+        else
+            _ = Js.call seen "add" [ v ]
+            instance = Js.get v "instance"
+            if
+                Js.typeIs (Js.get v "id") "string"
+                    && not (Js.isUndefined instance)
+                    && not (Js.isUndefined (Js.get v "schema"))
+                    && not (Js.isNull instance)
+                    && Js.typeIs instance "object"
+                    && isArray (Js.get instance "mailbox")
+            then
+                _ = Js.call ids "push" [ Js.get v "id" ]
+                ⊤
+            else if isArray v then
+                pushReversed work v
+            else
+                proto = Js.call (Js.global "Object") "getPrototypeOf" [ v ]
+                if Js.same proto (Js.get (Js.global "Object") "prototype") || Js.isNull proto then
+                    pushReversed work (Js.call (Js.global "Object") "values" [ v ])
+        walkReplies ids seen work
+
+
+-- Push an array's elements onto the work list, last first: an index loop
+-- from the end, as `core/Task`'s `pushBack`, so the array is neither
+-- copied nor turned.
+pushReversed : Js.Value, Js.Value → ⊤
+pushReversed work elements = pushFrom work elements (Js.to (Js.get elements "length") - 1)
+
+
+pushFrom : Js.Value, Js.Value, Int → ⊤
+pushFrom work elements i =
+    if i < 0 then
+        ⊤
+    else
+        _ = Js.call work "push" [ Js.at elements i ]
+        pushFrom work elements (i - 1)
+
+
+isArray : Js.Value → Bool
+isArray v = Js.to (Js.call (Js.global "Array") "isArray" [ v ])
 
 
 -- ---- A defect ((f)) ---------------------------------------------------------

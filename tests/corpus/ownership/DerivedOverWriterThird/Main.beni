@@ -1,0 +1,13 @@
+-- ownership (project): `Wrap` is declared in a third module, so its derived
+-- comparisons are another module's (`ext_derived`). They still call
+-- `Key.compare` and `Key.eq`.
+import Key
+import Wrap
+
+
+pub derivedLt : List Int → Bool × List Int
+derivedLt xs = ( Wrap.Wrap (Key.Key xs) < Wrap.Wrap (Key.Key []), xs )
+
+
+pub derivedEq : List Int → Bool × List Int
+derivedEq xs = ( Wrap.Wrap (Key.Key xs) == Wrap.Wrap (Key.Key []), xs )

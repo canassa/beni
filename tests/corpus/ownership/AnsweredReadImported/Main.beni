@@ -1,0 +1,98 @@
+-- ownership (project): `AnsweredRead` with the callees in another module
+-- (ownership-v2.md §2.7, *A part a callee answers*, §3.6, #1370). The
+-- block publishes each callee's `A`, and a call that answers a part of
+-- its argument reads that part and every path below it for the caller's
+-- liveness. So a push of a list that the argument holds there, with the
+-- result read later, is refused, as v1 refuses it: read deeply, bound
+-- first, in a construction, through a pipeline, by a deep-reading
+-- callee, through a pattern, and on a cycle. A hold at a path the callee
+-- does not answer is accepted (`sibling`).
+import Answers exposing (Inner, Outer, Tree)
+
+
+pub idlRead : Int → Int
+idlRead n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (Debug.toString (Answers.idl k)) + List.length p
+
+
+pub wkidsRead : Int → Int
+wkidsRead n =
+    l = [ n ]
+    t = Outer { v = [], kids = [ Inner { w = l } ] }
+    p = List.push l 5
+    String.length (Debug.toString (Answers.wkids t)) + List.length p
+
+
+pub rkidsRead : Int → Int
+rkidsRead n =
+    l = [ n ]
+    t = { v = [], kids = [ l ] }
+    p = List.push l 5
+    String.length (Debug.toString (Answers.rkids t)) + List.length p
+
+
+pub bound : Int → Int
+bound n =
+    l = [ n ]
+    t = Outer { v = [], kids = [ Inner { w = l } ] }
+    p = List.push l 5
+    x = Answers.wkids t
+    String.length (Debug.toString x) + List.length p
+
+
+pub inTuple : Int → Int
+inTuple n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (Debug.toString ( Answers.idl k, 1 )) + List.length p
+
+
+pub piped : Int → Int
+piped n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (k ▷ Answers.idl ▷ Debug.toString) + List.length p
+
+
+pub viaShow : Int → Int
+viaShow n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    String.length (Answers.show (Answers.idl k)) + List.length p
+
+
+pub pattern : Int → Int
+pattern n =
+    l = [ n ]
+    k = [ l ]
+    p = List.push l 5
+    case Answers.idl k of
+        [ y ] →
+            List.length y + List.length p
+
+        _ →
+            0
+
+
+pub onCycle : Int → Int
+onCycle n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString (Answers.idl2 r.kids)) + List.length p
+
+
+pub sibling : Int → Int
+sibling n =
+    l = [ n ]
+    t = { v = l, kids = [ [ 1 ] ] }
+    p = List.push l 5
+    String.length (Debug.toString (Answers.rkids t)) + List.length p

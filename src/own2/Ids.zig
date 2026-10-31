@@ -314,6 +314,14 @@ pub const Account = struct {
     /// `continuation_per_atom`·I_f instead, and counted in B_f.
     continuation: u64 = 0,
     growth_by: [Category.count]u32 = @splat(0),
+    /// The records reserved while `in_demands`: Demands' resolve, which the
+    /// counted tests of §2.11 *κ across a call* leave out of a call's share
+    /// (#1214's). A condition resolved inside it is the call's and is not.
+    demands: u64 = 0,
+    in_demands: bool = false,
+    /// Holder covers that fell back to listing their holds (`Holders`, a
+    /// folded path): printed, so a fallback is never silent (#1214).
+    hold_listings: u32 = 0,
     baseline_by: [Category.count]u64 = @splat(0),
     /// Set by the first refusal and never cleared: the exhaustion marker of
     /// §4.4, which makes every later reservation fail at once.
@@ -376,6 +384,7 @@ pub const Account = struct {
 
     /// Reserve `n` records in the kernel `enter` named, or growth.
     pub fn reserve(a: *Account, category: Category, n: u32) AccountError!void {
+        if (a.in_demands) a.demands += n;
         if (a.lane_slot == none_int) return a.reserveGrowth(category, n);
         if (a.failed) |f| return f.err();
         const slot = &a.lanes.values.items[a.lane_slot];
@@ -413,6 +422,7 @@ pub const Account = struct {
     /// the 513th (or 33rd) record is the implementation defect
     /// `ownership_accounting_invariant`, never growth (§4.1).
     pub fn reserveLane(a: *Account, gpa: Allocator, lane: Lane, category: Category, n: u32) ChargeError!void {
+        if (a.in_demands) a.demands += n;
         if (a.failed) |f| return f.err();
         const slot = try a.lanes.getOrPut(gpa, .{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase), lane.step });
         if (!slot.found_existing) slot.value_ptr.* = 0;

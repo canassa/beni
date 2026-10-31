@@ -121,13 +121,13 @@ theorem flatInvariant_state_frame
       linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
     }
-    heapInts := by simpa only [heapSame] using inv.heapInts
     links := linksSame.trans inv.links
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := inv.liveTyped

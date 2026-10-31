@@ -550,6 +550,15 @@ callers that instantiate it. A value a `Js.to` yields is therefore either one Ja
 which the optimiser already treats as unknown, or one that went in at a `Js.from` and is wild. This
 changes nothing that privileged code may write or must check.
 
+*Amended 2026-10-29 (`backend.md` §9 item 6; the review of #1127):* **a host function given a beni
+function type through `Js.to` must ignore the arguments past the type's arity and `this`.** Under
+`--release` a lambda that forwards its parameters to such a name is printed as the name, so a host
+that calls the value — `map`, `then`, `replaceAll`, a listener — passes the function what it passed
+the lambda: more arguments than the type names, and a receiver. An emitted function reads neither;
+`parseInt` reads a radix and `Object.prototype.toString` reads `this`. A value called through
+`Js.apply` or `Js.call` is a `Js.Value` and under no such duty: item 6 leaves a lambda whose call is
+one as written, and a `const` that holds an import is never its callee.
+
 **A mutable local is a `Js.Ref`** (R47-2; there is no `let mut`):
 
 | declaration | rung | written as |
@@ -626,6 +635,21 @@ lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*
 and `v instanceof C`. Each is written in place as its operator. `rem` answers `NaN` for a zero
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
+
+**The comparisons, `lt`, `gt`, `le` and `ge`** (pure, specified 2026-10-23, #882; the owner's
+decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`, `a <= b` and
+`a >= b`, each written in place as its operator, as `same` is `===`: `lt : unused a, unused a →
+fresh bool`, both arguments one type variable and the answer a `bool` variable, since this module
+names no core type. Unchecked, as every `Js` declaration is: JavaScript orders two numbers by value
+and two strings by their UTF-16 code units, and nothing else by anything a caller wants: two
+records, two list views or two `Maybe`s are the one text `[object Object]`, so `le` and `ge` are
+both true of them, two arrays compare by their joined text, and a null-prototype object (the kind
+`core/Schema` makes) or a `Symbol` throws `TypeError`. So a caller hands them two numbers or two
+strings (*amended 2026-10-26, the review of #1110*). They exist for `Hosted`'s keys, which order two keys of different types by the
+text of their type identities (§9.8.3): the identities are ASCII, where `<` and `String.compare`
+agree, and beni's `<` on two `String`s would ship `String.compare`'s code-point walk to a page that
+compares no other string. Passed as a value, each is the sibling's function (`backend.md` §4, *The
+comparisons are operators*).
 
 **`fingerprint : k, order → name where k.compare : k, k → order`** (pure, 2026-10-02, the owner's
 decision on keys, §9.8.3) is **the identity of `k`'s type**: a string the compiler writes at the
@@ -1477,6 +1501,21 @@ of a vocabulary that runs JavaScript at an event is exactly as walled as everyth
 name. A build that reaches the event imports that name, or writes it in the vocabulary module
 itself, and the vocabulary module exports the declaration, as it exports a core-private value.
 The runtime's `identity` stays the extractor of an event with no `via`.
+
+*Amended 2026-10-23 (#883; `plans/core-in-beni.md`, step 4).* **A payload extractor may be a beni
+declaration** of the vocabulary module instead of a `foreign`: annotated, and written over `Js` as
+any platform value is — `targetValue e = Js.to (Js.get (Js.get (Js.from e) "target") "value")`.
+Everything above holds of it unchanged: its type is `E -> P` with `E` a `foreign type`
+(`checker-v2.md` §25.2); it may be `pub` or not; every lowering calls it synchronously while the
+event is dispatched (below); reachability keeps a non-`pub` one for an event that names it, and the
+vocabulary module exports it when it is live, exactly as for a non-`pub` `foreign`
+(`Reach.privateExtractor`). A declaration with no annotation is refused as a `via` that names
+nothing is (`unbound_variable`). **An extractor is `sync`** (*amended 2026-10-26*, the review of
+#925): every lowering calls it while the event is dispatched, outside any fiber, so one that may
+suspend — a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event
+whose `via` names it (`checker-v2.md` §25.8), checked once the effects are inferred, as the sync
+step above checks a function the sibling may call. What changes is that `html`'s extractors need
+no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes (#877).
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
@@ -3055,7 +3094,7 @@ arrival and departure (the driver's `flush` takes several selectors, each clicke
 one task); each of the three fails against a listener that adds itself or sends at once, or that
 starts after its key left.
 
-*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js`, `Sub.beni`,
+*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js` (gone 2026-10-26, below), `Sub.beni`,
 `Browser/Events.beni`, `Browser/Navigation.beni`; `platforms/browser-tea/Tea.beni`;
 `core/Task.beni`'s `onShutdown`; `tests/browser/driver.mjs`'s `--fiber-page`), as specified.
 A page whose subscriptions all wait pays a little for the split (`bench/size.mjs`'s `every`, a
@@ -3158,6 +3197,12 @@ fiber (`suspends`), for the test hook `fibered`.
 *Amended 2026-10-02 (§9.8.3, the type's identity):* `key` is beni, `keyOf (Js.fingerprint k EQ) k`
 over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`
 compares by identity, then by its type's `compare` — no longer "by value".
+
+*Amended 2026-10-26 (#877, after `Js.lt` #882):* the keys are beni, and `Hosted.js` is gone. `key`
+builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as a lambda over the
+`where` clause (`comparer`), the value — and `compare` orders two keys of different types by their
+identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
+type go through the stored `compare` with `Js.apply`, read back at `Order`.
 
 A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
 it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is
@@ -4396,6 +4441,18 @@ after it; each is deterministic, ordered by creation and by the scheduler's FIFO
 4. **Leftovers outside any fiber.** Finalisers a throw left on the outside-any-fiber record — a
    `bracket` whose use threw in `soon` work or in `init` — run last first, in one fiber the teardown
    starts for them after the sweep, under the same rules.
+   *(Amended 2026-10-23, #811: each of them starts with the slots that the outside-any-fiber record
+   has at that moment, in the fiber that runs them. The exception is the scheduler slot, which stays
+   the program's, because the fiber is the teardown's. A finaliser reads the slots of the fiber
+   that runs it. A scoped change's restore among the leftovers puts back the record's slots, so the
+   next finaliser reads the slots from before that change. So each one has the log context and the
+   clock that it would have had in a fiber of its own: a body with no fiber runs "exactly where its
+   fiber would have started" (§9.8.11), and a scoped change is put back "as an `onExit` finaliser
+   would" (proposal §17.5). Before, the fiber had no slots, and the release of a `bracket` in a
+   command body with no fiber logged with the default context. Cost: the teardown makes the change
+   only when `slotted` is set, in a statement of its own, so a release build in which nothing sets a
+   slot keeps none of it. Measured on 632 builds: in release only the 7 pages that set a slot change,
+   by +120 raw (−18 to +47 brotli); development +345 raw.)*
 5. **Nothing new runs.** A fiber spawned while *stopping* — by a finaliser, `spawnIn` a closed root,
    `start` — is cancelled before it runs, as a fiber spawned into a closed root scope is today
    (§9.8.7). `Task.soon` queues nothing. A `send` does nothing (`dead`); `Browser.flush` does nothing;
@@ -4889,9 +4946,25 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   restore of them into the fiber's list, under `update`'s finalisers. At the teardown, `update`'s
   finalisers run with `update`'s context, and then the caller's finalisers, such as the release of
   a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
-  `update` throws and leaves no finaliser, the old slots go back at once. (For a body with no
-  fiber, the teardown runs the finalisers in a fiber with no slots, so they have the default
-  context: #811.)
+  `update` throws and leaves no finaliser, the old slots go back at once. (A body with no fiber
+  gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
+  *(Amended 2026-10-24, #859: the caller can go on before the teardown. A throw out of an event
+  handler does not reach the code that fired the event: the DOM reports it, and the call returns.
+  A body that calls `Dom.focus` or `Dom.blur` thus goes on after the handler's `update` throws.
+  For a caller that has a log context, the old slots go back at once, also when `update` leaves
+  finalisers. Then one more entry goes on top of them, which sets the slots that `update` had at
+  the throw. When the body closes nothing after the throw, the teardown runs that entry first,
+  then `update`'s finalisers with `update`'s context, then the restore of the old slots, then the
+  caller's finalisers. The rest of the body has the body's context. Not covered: a scope that the
+  body closes after the throw, such as a `bracket` or the end of a body's kept context, takes the
+  entry on top off the list, not its own entry. So at the teardown `update`'s finalisers run with
+  the slots of that time, and the body's own release runs again (#921). A body in a fiber that
+  ends after the throw drops `update`'s finalisers, and they never run (#1154). Not covered: a
+  body with no log context of its own. `send` calls `withoutLogContext` only when
+  `Task.hasLogContext` is true, so `update`'s `annotate` writes the body's slots, and after the
+  throw the rest of the body has `update`'s context (#1153). Cost, measured on
+  634 builds: in release only the 8 pages that set a slot change, by +29 raw bytes (−49 to +11
+  brotli); development +89 raw.)*
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
@@ -5475,7 +5548,17 @@ the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 *Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
-`pub`.
+`pub`. *Amended 2026-10-23* (#558): under happy-dom, an element that an allow list places has the
+box that Chrome gives it, and every other element has the box at 0. The list: the document has no
+style sheet; the element is a `div` or a `span` whose inline style sets `position: absolute` or
+`fixed` and `left`, `top`, `width` and `height` as `Npx` or `0`, with no negative size; each
+ancestor is an `html`, `body`, `main`, `div` or `span`; the element and each ancestor name no
+inline property but those and `touch-action`, read from the `style` attribute's text and from each
+`setProperty`, because happy-dom drops a property that it does not know; and none is hidden
+(`tests/corpus/README.md`, *layout*, has the whole list). So the gates see the
+conversion of (c) in `browser/tea/PointerInput` and `browser/dom/PointerEvents`: a reader that drops the subtraction, or subtracts the target's box,
+fails them. `browser/inline/PointerPoint` has no such element, because `browser-inline` compiles no
+`style` yet, so only Chrome sees its conversion.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -6907,7 +6990,11 @@ entry file exports, one per `Worker.Object.define`, each a subclass of `DurableO
 `cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
 and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
 globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
-reaches `document`; check 3 is lexical and that is the edge it makes visible.
+reaches `document`; check 3 is lexical and that is the edge it makes visible. *As built
+2026-10-29 (`plans/runtime-in-beni.md` step 11):* the platform has no sibling of §4's shape left —
+`Worker.js`, `Worker/Object.js` and `Worker/Storage.js` are beni over `Js.catchIf` and a walk —
+and `runtime.js` is its one file of JavaScript; a beni module reaches those globals through
+`Js.global`.
 
 **(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
 compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
@@ -7427,11 +7514,46 @@ inside a handler queues it behind the events already waiting ((e.10)).
   hold is documented**: the lifecycle page says "Each operation prevents eviction until it
   completes or for up to 15 minutes from when it starts", so one timer holds the object for at
   most 15 minutes from when it was armed, and a fiber parked longer is #864 (re-arm the hold, or
-  accept the limit). Local workerd hibernates an idle object too: the review of #860 ran the
+  accept the limit). ***Measured 2026-10-29 at the edge (#864; the owner's answer to
+  `cf-workers-q14` was to re-arm every 14 minutes and measure):*** the hold does not last 15
+  minutes, nor 2. A plain-JavaScript probe Worker (`beni-probe-864`, deployed to the account's
+  `workers.dev` and deleted after; compatibility date 2026-05-18) with three Durable Object
+  classes and no socket: one with no timer, one with the platform's hold — one
+  `setTimeout(…, 2147483647)` armed in a request — and one with a 14-minute timer whose firing
+  arms the next and writes the time to storage. After 16 minutes with no request all three were
+  new instances, and the renewing one had written nothing: it was gone before its first renewal.
+  The long timer then kept its object for 60 s (the same instance, its count continued) and not
+  for 120 s (a new one), and a 14-minute timer did not keep its object for 8 minutes; the object
+  with no timer was new after 13 s, and the renewing object armed a second time had written no
+  renewal 14 minutes later either. So a pending timer keeps an object from hibernating (the
+  10 s) but not from the eviction of an idle object: the lifecycle page says "after 70-140
+  seconds of inactivity (no incoming requests or events)", and a timer's callback is not an
+  incoming event. Thus at the edge the guarantee above — a parked fiber is never stranded —
+  holds for a spawned fiber for at least 60 s and less than 120 s after the object's last event,
+  and a renewal every 14 minutes never runs. A fiber that waits inside its handler keeps that
+  handler's request open, an operation the page lets keep the object for up to 15 minutes; the
+  probe did not measure it. Whether a timer that fires — a renewal every 30 s, say — resets the
+  idle clock was not measured, since the deployed code had no short period; by the page's words
+  it does not, and an alarm, which is an incoming event, would. The next form is the owner's
+  decision (`cf-workers-q15`, #864).
+  Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
   this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
-  is what #593 stays open for.
+  is what #593 stays open for. ***Measured in the corpus 2026-10-23 (#593 closed):***
+  `workers/ObjectHibernate`, with the driver's `idle` step (16 s, past the 5 s step limit; (k)):
+  workerd evicts an idle object after a fixed 10 s of inactivity (`server.c++:2766`), and the
+  review of #905 measured the turn between 9.5 and 10 s, so 16 s is about 6 s past it.
+  Two objects of one class, one hibernatable socket each with a seat in its attachment, each
+  counting its requests in memory. After 16 s with no event, the object with no live fiber
+  answered as a new instance: `restore` ran again with the two sockets the host kept, its count
+  started at 1 again, one socket's attachment read back its seat and the other's its own id, the
+  same as `WebSocket.id` after the wake, and `/__beni/hold` said `free` before and after. The
+  object whose handler had parked a fiber on a `Deferred` — a gate no host
+  timer backs, so the platform's live-fiber timer alone kept it — answered as the same instance,
+  its count continued at 3, `held` before and after, and `free` once the gate opened and the
+  fiber ended. A peer's close after the wake reached the new instance's `closed`. Both builds,
+  under the pinned Miniflare (workerd 1.20260518.1).
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7630,7 +7752,9 @@ pub type AskError
   returns — the kernel reports an end, never a start, so the first fiber a handler spawns is seen
   there — and at each end through `onSchedulerCount`. `ObjectIsolation` reads it through the
   `--test-hooks` path `/__beni/hold` (`held` or `free`). That the timer prevents hibernation is
-  #593's probe, still owed, so #550 stays open until it settles.
+  #593's probe, still owed, so #550 stays open until it settles. *2026-10-29: at the edge it
+  prevents hibernation but not the idle eviction, 60 s kept and 120 s not ((e.5), measured,
+  #864).*
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
@@ -7640,7 +7764,8 @@ pub type AskError
   timer is one host `setTimeout`, re-armed as (e.5) says; under `--test-hooks` no host timer is
   armed and `/__beni/tick` is its firing ((k)).
 - **`post` and `ask` on the wire** ((e.10)): `post` to `self` goes into the mailbox with the ids of
-  the `Reply`s the message holds (a walk of its records and lists, `Object.js`); to another object
+  the `Reply`s the message holds (a walk of its records and lists, `Object.beni`'s `repliesIn`
+  since 2026-10-29, `Object.js` before); to another object
   it is `POST /__beni/post` on the stub with `x-beni-chain`, answered 204 after `received` ran.
   `ask` is `POST /__beni/ask` with `x-beni-ask: <uuid>`; the receiver keeps the pending ask by that
   id, `reply` prints the value with the schema captured at parse time and answers it 200, and the
@@ -7973,7 +8098,22 @@ fixture `workers/ObjectSocket`).*
   `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
   end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`
   (`tests/corpus/README.md`, *A Worker*). The `sec-websocket-accept` answers Miniflare's random
-  key and is shown as `(the key)`. Hibernation itself is not driven: #593.
+  key and is shown as `(the key)`. Hibernation itself is not driven: #593. *2026-10-23: it is,
+  by the `idle` step ((k)), and `ObjectHibernate` holds what follows.*
+- **After hibernation** (*measured 2026-10-23, `workers/ObjectHibernate`; #724 closed*): the
+  sockets accepted here stay open while the object is gone. At the next event the new instance's
+  `restore` sees them in `Object.sockets ctx` (two, where two were accepted), a message on one
+  reaches `message` with the socket's attachment, id, tags and protocol as they were — the id
+  attached before the idle equals `WebSocket.id` after it, the subprotocol `v1` answers
+  `protocol`, the tag names the room in `closed` — and a peer's close after the wake reaches
+  `closed` with its code and reason. The done-when of #724 is complete: the upgrade with tags and
+  a subprotocol, one refused, messages both ways, a close with a code and a reason from each
+  side, the attachment read back after a restart, `autoReply` without an event, the sockets
+  closed by a defect, and the client steps the platform's fixtures needed — `socket` with
+  protocols, `send` of text and binary, `close` with a code or a raw frame, `drop`, `receive`
+  one or a count, `idle`. Of §9.11 (l)'s list the raw frame for each fault of (f), stop reading,
+  ping and the flow-control steps drive workerd's own frame parser, not the platform, and are
+  not built: #917.
 
 **(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
 SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
@@ -8033,7 +8173,7 @@ pub type PutError
   byte per unit for a one-byte string and two for a two-byte one. Beni's ceiling of 2 000 000
   bytes at two per unit, about 1 000 000 units of key and text, stays under it for every string;
   an ASCII value could go to about 2 200 000 characters before the host refuses it*); `Full` is
-  `kvPut`'s one caught text; a read
+  `kvPut`'s one caught text (a `Js.catchIf` in `Storage.beni` since 2026-10-29); a read
   with another schema is `Err` with its issues; what one instance put, the instance after its
   abort reads in `restore`.
 
@@ -8162,7 +8302,11 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
   is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
   review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
-  once the driver has a step that idles 15 s; #593 stays open for that fixture. `wrangler dev
+  once the driver has a step that idles 15 s; #593 stays open for that fixture. 2026-10-23: the
+  driver has it, `{"idle": <ms>}`, no event, a script's idles summing to at most 60 000 ms under
+  the case's 120 s hang guard, and `workers/ObjectHibernate` holds the fact ((e.5), #593 closed):
+  workerd's eviction is a fixed 10 s of inactivity (`server.c++:2766`), measured by the review of
+  #905 as a turn between 9.5 and 10 s. `wrangler dev
   --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of the edge is
   measured by a deployed probe Worker on the owner's account, deleted after the measurement, where
   the local host differs — the client's disconnect, (d) — and by the corpus where it does not.*

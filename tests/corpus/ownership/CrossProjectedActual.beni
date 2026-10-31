@@ -1,0 +1,41 @@
+-- ownership: a read below a call's argument crosses into the argument's own
+-- snapshot only where the merged one says no more and no less on the keys
+-- based on the argument's region (ownership-v2.md §2.11 *κ across a call*,
+-- *Cross-check*). `x` is `p`'s element, a projection of `p` and no node of
+-- its DAG, and the literal `[ x ]` holds it: a key based on the region that
+-- is not in it, which `-Downership-full-cross-check` reads both ways. Both
+-- pushes are accepted, as v1 accepts them.
+merge : List (List Int), List (List Int) → List (List Int)
+merge a b = a ++ b
+
+
+pub repeated : ⊤ → Int
+repeated ⊤ =
+    p = [ [ 1 ], [ 2 ] ]
+    case p of
+        [ x, …_ ] →
+            case merge p [ x ] of
+                [ a, …_ ] →
+                    List.length (List.push a 0)
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub distinct : ⊤ → Int
+distinct ⊤ =
+    p = [ [ 1 ], [ 2 ] ]
+    case p of
+        [ x, …_ ] →
+            case merge p [ [ List.length x ] ] of
+                [ a, …_ ] →
+                    List.length (List.push a 0)
+
+                _ →
+                    0
+
+        _ →
+            0

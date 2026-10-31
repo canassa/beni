@@ -1,0 +1,5 @@
+import Lib
+
+
+pub type Wrap
+    = Wrap Lib.Key

@@ -1,4 +1,4 @@
-BesideSpreadHelper shared: lines 11-14 (not built: call)
-BesideSpreadHelper fresh: lines 17-18 (not built: call)
-BesideSpreadHelper sharedTuple: lines 21-24 (not built: call)
-BesideSpreadHelper freshTuple: lines 27-28 (not built: call)
+BesideSpreadHelper shared: lines 11-14 (not built: local)
+BesideSpreadHelper fresh: lines 17-18 (not built: local)
+BesideSpreadHelper sharedTuple: lines 21-24 (not built: local)
+BesideSpreadHelper freshTuple: lines 27-28 (not built: local)

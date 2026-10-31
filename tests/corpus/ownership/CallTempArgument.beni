@@ -1,0 +1,124 @@
+-- ownership: a callee's read below a parameter part is a read when the
+-- argument is a new value (ownership-v2.md §2.6, §2.7, §2.10's read-off,
+-- #1330). `wrapRec g = rbc { b = g.x }` with `rbc r = List.length r.b.c`
+-- reads `g.x.c`, so its class reads `π1.x.c`, and a push of a list that
+-- `g.x.c` holds, with `g` read later, is refused `alias`. The same through
+-- a tuple (`wrapTuple`), a constructor (`wrapCtor`), an inline call result
+-- (`inlineCall`), a field of one (`inlineField`) and a construction bound
+-- to a local (`viaLocal`); `boundCall` binds the call's result first. (`pick`
+-- is annotated: a type variable's result is read approximately, #1350.)
+-- `otherField` builds its record of `g.y`, which does not hold the list,
+-- so the push is accepted.
+rbc r = List.length r.b.c
+
+
+wrapRec g = rbc { b = g.x }
+
+
+pub recordArg : List Int → Int
+recordArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    wrapRec g + List.length p
+
+
+otherRec : { x : { c : List Int, d : List Int }, y : { c : List Int, d : List Int } } → Int
+otherRec g = rbc { b = g.y }
+
+
+pub otherField : List Int → Int
+otherField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = { c = ys, d = ys } }
+    p = List.push xs 1
+    otherRec g + List.length p
+
+
+tb ( _, r ) = List.length r.c
+
+
+wrapTuple g = tb ( 0, g.x )
+
+
+pub tupleArg : List Int → Int
+tupleArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    wrapTuple g + List.length p
+
+
+just m =
+    case m of
+        Just r →
+            List.length r.c
+
+        Nothing →
+            0
+
+
+wrapCtor g = just (Just g.x)
+
+
+pub ctorArg : List Int → Int
+ctorArg xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    wrapCtor g + List.length p
+
+
+pick : { c : List Int, d : List Int } → { c : List Int, d : List Int }
+pick r = r
+
+
+rbx r = List.length r.c
+
+
+n1 g = rbx (pick g.x)
+
+
+pub inlineCall : List Int → Int
+inlineCall xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n1 g + List.length p
+
+
+bound g =
+    t = pick g.x
+    rbx t
+
+
+pub boundCall : List Int → Int
+boundCall xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    bound g + List.length p
+
+
+n2 g = List.length (pick g.x).c
+
+
+pub inlineField : List Int → Int
+inlineField xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n2 g + List.length p
+
+
+viaLocal g =
+    h = { b = g.x }
+    rbc h
+
+
+pub localRec : List Int → Int
+localRec xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    viaLocal g + List.length p

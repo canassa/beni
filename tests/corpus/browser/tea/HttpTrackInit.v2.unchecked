@@ -1,6 +1,5 @@
 HttpTrackInit booted: lines 53-64 (not built: local)
 HttpTrackInit slow: lines 67-78 (not built: call)
-HttpTrackInit update: lines 81-91 (not built: call)
 HttpTrackInit subscriptions: lines 94-96 (not built: local)
 HttpTrackInit view: lines 99-103 (not built: local)
 HttpTrackInit main: lines 107-113 (not built: lambda)

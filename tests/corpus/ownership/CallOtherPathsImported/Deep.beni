@@ -1,0 +1,15 @@
+-- ownership (project): see Main.beni. `twoDepths` writes a tree's list and
+-- the list one level below it.
+pub type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub twoDepths : Tree → Int
+twoDepths t =
+    case t of
+        Node (Node _ a _) xs _ →
+            List.length (List.push xs 1) + List.length (List.push a 2)
+
+        _ →
+            0

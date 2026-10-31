@@ -1,0 +1,64 @@
+-- ownership (project): `DeepReadCycle` with the types and the callees in
+-- another module (ownership-v2.md §2.7, *A read that leaves its path on a
+-- cycle*, §3.6, #1345). A deep read at a path on a cycle of the place graph
+-- covers the `⟲` paths its levels fold into, above it: inline (`r.kids` of
+-- an imported `Tree`), through a helper whose block publishes `D` at
+-- `π1#Rose.1`, of mutually recursive types, two levels below the cycle's
+-- entry, and a callee's `⟲` read (`Shows.grand`) — each refused `alias`,
+-- as v1 refuses it. A hold at the root's own field is outside the read
+-- (`outside`, accepted).
+import Shows exposing (Leaf, Rose, Tree, Wood)
+
+
+pub inlineField : Int → Int
+inlineField n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString r.kids) + List.length p
+
+
+pub viaHelper : Int → Int
+viaHelper n =
+    l = [ n ]
+    t = Rose [] [ Rose l [] ]
+    p = List.push l 5
+    String.length (Shows.showKids t) + List.length p
+
+
+pub mutual : Int → Int
+mutual n =
+    l = [ n ]
+    t = Leaf [] (Wood [ Leaf [] (Wood [ Leaf l (Wood []) ]) ])
+    p = List.push l 5
+    String.length (Shows.showWood t) + List.length p
+
+
+pub twoBelow : Int → Int
+twoBelow n =
+    l = [ n ]
+    t = Leaf [] (Wood [ Leaf l (Wood []) ])
+    p = List.push l 5
+    String.length (Shows.showLeaves t) + List.length p
+
+
+pub viaGrand : Int → Int
+viaGrand n =
+    l = [ n ]
+    t = Tree { v = [], kids = [ Tree { v = [], kids = [ Tree { v = l, kids = [] } ] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            Shows.grand r.kids + List.length p
+
+
+pub outside : Int → Int
+outside n =
+    l = [ n ]
+    t = Tree { v = l, kids = [ Tree { v = [], kids = [] } ] }
+    case t of
+        Tree r →
+            p = List.push l 5
+            String.length (Debug.toString r.kids) + List.length p

@@ -1,0 +1,6 @@
+Main ahead: lines 12-16 (not built: local)
+Main stored: lines 19-28 (not built: local)
+Main lambdas: lines 31-40 (not built: local)
+Main named: lines 43-51 (not built: let_def)
+Main show: lines 54-55 (not built: local)
+Main main: lines 58-64 (not built: call)

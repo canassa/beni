@@ -1,0 +1,145 @@
+-- Item 6 of the release optimiser (`backend.md` §9): a lambda whose body
+-- forwards its own parameters, in order, each once, to a name that never
+-- changes is printed as that name. `viaEvidence` forwards to a `where`
+-- clause's evidence, `viaTop` to a top-level function (`gcd`: exported and a
+-- loop, so that its one call here is not written in place), `viaLocal` to a
+-- local `const` read twice, `viaAlias` through an alias item 1 folds,
+-- `viaMade` to a function made once and returned, `viaLoop` to the copy a
+-- tail-call loop takes of its parameter each iteration. The rest stay as
+-- written: `swapped` (reordered), `partial` (an argument missing), `twice`
+-- (one parameter read twice), `wrap` (a constructor, which has no callee),
+-- `pick` (a callee a `case` fills, a `let`), `viaLetAlias` (the same `let`
+-- behind an alias item 1 folds: the test runs on the name written) and
+-- `method` (a method callee, whose `this` the reduction would lose). A
+-- callee the build imports from a hand-written file — a sibling's function
+-- — stays as written too: `JsCompare`'s `viaValue`, and here `aliasOnce`
+-- and `aliasTwice`, which reach `Js.lt` through a local `const`, read once
+-- (item 1 folds it: the test runs on the name written) or twice (the
+-- `const` holds an import). `ahead` forwards to a `const` declared after
+-- the lambda, which is bound at its statement and not at the arrow's
+-- evaluation: kept, read once (item 1 moves it) or twice. Built with
+-- `--core --release`.
+import Js
+
+
+pub viaEvidence : a → (a, a → Order)
+    where a.compare : a, a → Order
+viaEvidence _ = λx y → x.compare y
+
+
+pub viaTop : ⊤ → (Int, Int → Int)
+viaTop _ = λa b → gcd a b
+
+
+pub gcd : Int, Int → Int
+gcd a b =
+    if b == 0 then
+        a
+    else
+        gcd b (Int.mod a b)
+
+
+pub viaLocal : Int → (Int, Int → Int) × (Int, Int → Int)
+viaLocal n =
+    f = λa b → a + b + n
+    ( f, λa b → f a b )
+
+
+pub viaAlias : Int → (Int, Int → Int) × (Int, Int → Int)
+viaAlias n =
+    f = λa b → a * b * n
+    g = f
+    ( f, λa b → g a b )
+
+
+pub swapped : (Int, Int → Int) → (Int, Int → Int)
+swapped f = λa b → f b a
+
+
+pub partial : (Int, Int → Int) → (Int → Int)
+partial f = λa → f a 1
+
+
+pub twice : (Int, Int → Int) → (Int → Int)
+twice f = λa → f a a
+
+
+pub wrap : ⊤ → (Int → Maybe Int)
+wrap _ = λa → Just a
+
+
+pub viaLoop : (Int, Int → Int), Int → (Int, Int → Int)
+viaLoop f n =
+    if n == 0 then
+        λa b → f a b
+    else
+        viaLoop (λa b → f b a) (n - 1)
+
+
+pub viaMade : Int → (Int → Int)
+viaMade n =
+    f = λa → a + n
+    λa → f a
+
+
+type Pick
+    = First
+    | Second
+    | Third
+
+
+pub pick : Pick, (Int → Int), (Int → Int) → (Int → Int)
+pick p f g =
+    h =
+        case p of
+            First →
+                f
+            Second →
+                g
+            Third →
+                λx → x
+    λa → h a
+
+
+pub viaLetAlias : Pick, (Int → Int), (Int → Int) → (Int → Int)
+viaLetAlias p f g =
+    h =
+        case p of
+            First →
+                f
+            Second →
+                g
+            Third →
+                λx → x
+    k = h
+    λa → k a
+
+
+pub method : Js.Value → (Js.Value → Js.Value)
+method o = λa → Js.call o "m" [ a ]
+
+
+pub aliasOnce : ⊤ → (Int, Int → Bool)
+aliasOnce _ =
+    c = Js.lt
+    λa b → c a b
+
+
+pub aliasTwice : ⊤ → (Int, Int → Bool) × (Int, Int → Bool)
+aliasTwice _ =
+    c = Js.lt
+    ( λa b → c a b, λa b → c a b )
+
+
+pub ahead : Int → (Int → Int) × (Int → Int)
+ahead n =
+    g = λx → h x
+    h = λx → x + n
+    ( g, h )
+
+
+pub aheadTwice : Int → (Int → Int) × (Int → Int) × (Int → Int)
+aheadTwice n =
+    g = λx → h x
+    h = λx → x + n
+    ( g, h, g )

@@ -1,0 +1,21 @@
+module CmpDeepWrite3
+  12:34 List.push l: accepted param
+  16:16 List.eq ds[*]#Deeper.1.1.1: accepted param
+  16:16 List.eq <literal>[*]#Deeper.1.1.1: accepted fresh
+  20:19 CmpDeepWrite3.listOf ds[*]#Deeper.1.1.1: rejected element: ds[*]#Deeper.1.1.1 holds it and is read at 20:17 (approx)
+  24:48 call <expression>.0#Deeper.1.1.1: rejected alias: xs holds it and is read at 24:13
+  24:48 call <expression>.0#Deeper.1.1.1: accepted fresh
+  account eq: source 38, baseline 460, growth 0 of 65536, total 460, continuation 296 of 38912, demands 30, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 41, step lanes 3
+  crossing: reads 0, redone 0, base moves 0
+  summary eq: π1 R, π1#Deeper.1.1.1 RW, π2 R, π2#Deeper.1.1.1 R
+  account listOf: source 9, baseline 48, growth 0 of 65536, total 48, continuation 36 of 9216, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 10
+  summary listOf: π1 R, π1[*] R, π1[*]#Deeper.1.1.1 RW
+  account callerList: source 15, baseline 41, growth 0 of 65536, total 41, continuation 35 of 15360, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 14
+  summary callerList: π1 RA, π1[*] R, π1[*]#Deeper.1.1.1 RW; res .1 π1
+  account nested: source 33, baseline 126, growth 0 of 65536, total 126, continuation 44 of 33792, demands 0, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 32
+  summary nested: π1 RAW; res .1 π1
+  block: 1896 bytes, hash a60a7176dd2d55cb
+  demands 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 1
+cause element 1

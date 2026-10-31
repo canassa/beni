@@ -1,0 +1,77 @@
+-- ownership: `SiblingSubtrees` through mutual recursion (ownership-v2.md
+-- §2.1, as amended for #1253). `A` holds two `B`s and a `B` holds an `A`:
+-- the first return to `A` (`π1#A.0#B.0`, `π1#A.2#B.0`) is a plain path, so
+-- the two `B`s of one `A` keep their own `A`s and lists. A write to `l`'s
+-- inner list beside `r` is accepted (`both`), and so is a writer of both
+-- through real calls (`pushKids`). Twins: `pushKids` over one list in both
+-- is refused (`sharedKids`), over two lists accepted (`distinctKids`).
+-- Before #1253 the levels below the root were one `π1⟲`, and `both` and
+-- `pushKids` were refused.
+type A
+    = A B (List Int) B
+    | AL
+
+
+type B
+    = B A
+    | BL
+
+
+kidsB : B → List Int
+kidsB b =
+    case b of
+        B (A _ xs _) →
+            List.push xs 1
+
+        _ →
+            []
+
+
+pub both : A → List Int × B
+both a =
+    case a of
+        A l _ r →
+            ( kidsB l, r )
+
+        AL →
+            ( [], BL )
+
+
+pushA : A → A
+pushA a =
+    case a of
+        A l xs r →
+            A l (List.push xs 1) r
+
+        AL →
+            AL
+
+
+pushB : B → B
+pushB b =
+    case b of
+        B x →
+            B (pushA x)
+
+        BL →
+            BL
+
+
+pub pushKids : A → A
+pushKids a =
+    case a of
+        A l xs r →
+            A (pushB l) xs (pushB r)
+
+        AL →
+            AL
+
+
+pub sharedKids : ⊤ → A
+sharedKids ⊤ =
+    xs = [ 1 ]
+    pushKids (A (B (A BL xs BL)) [] (B (A BL xs BL)))
+
+
+pub distinctKids : ⊤ → A
+distinctKids ⊤ = pushKids (A (B (A BL [ 1 ] BL)) [] (B (A BL [ 2 ] BL)))

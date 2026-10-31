@@ -25,3 +25,6 @@
 # storage, and the ticks start again from zero.
 {"path": "/counter/a/throw"}
 {"path": "/counter/a/get"}
+# An id round-trips through byId; a text that is no id is refused, not a crash.
+{"path": "/by-id/a"}
+{"path": "/bad-id"}

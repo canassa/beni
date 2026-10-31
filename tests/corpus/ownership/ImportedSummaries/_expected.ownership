@@ -1,0 +1,16 @@
+module Lib
+  12:13 call List.map xs[*]: accepted param (<lambda> writes what List.map supplies it)
+  12:30 List.push l: accepted callback-param (List.map supplies it owned)
+  summary getSeed: res shared(Lib.seed)
+  summary mapped: π1 R, π1[*] AW[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~π1[*][*], fresh3{excl π1}; xreq spine π1[*]
+  demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  12:10 List.push <call Lib.getSeed>: rejected top-level: Lib.seed is a top-level value
+  16:14 List.push <call List.copy>: accepted call
+  20:16 call Lib.mapped xs[*]: accepted param (Lib.mapped writes π1[*])
+  summary bump: res [*] ~shared(Lib.seed)[*], shared(Lib.seed)
+  summary bumpCopy: res [*] shared(Lib.seed)[*] ~condition(fresh2) ~fresh2{lost}, fresh1{lost}
+  summary viaMapped: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~π1[*][*], fresh3{excl π1}; xreq spine π1[*]
+  demands 3: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 5: accepted 4 (fresh 0, call 1, param 2, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause top-level 1

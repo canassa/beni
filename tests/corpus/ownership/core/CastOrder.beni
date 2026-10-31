@@ -1,0 +1,21 @@
+-- ownership (core): a cast's κ does not depend on declaration order
+-- (#1310). `[*]` of `Js.to (Js.from xs)`, written inline or through a
+-- call of `generic`, is a stepped recast that keeps its whole inner: some
+-- value inside `xs`, read approximately, so its κ is `lost` (§2.13.9). It
+-- was interned with the plain recast of `xs` at the same place, and the
+-- declaration that made the node first decided its cells for both, so the
+-- two results read `lost` in this order and `excl π1` in the other
+-- (`ordering_test.zig` checks both orders).
+import Js
+
+
+generic : List a → List a
+generic xs = Js.to (Js.from xs)
+
+
+pub inlineRoundTrip : List Int → List Int
+inlineRoundTrip xs = List.push (Js.to (Js.from xs)) 1
+
+
+pub genericRoundTrip : List Int → List Int
+genericRoundTrip xs = List.push (generic xs) 1

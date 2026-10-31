@@ -54,6 +54,8 @@ pub const Frame = struct {
     /// The `(module, decl)` a value reference names.
     ctx: *anyopaque,
     decl_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
+    /// The `(module, constructor index)` a constructor reference names.
+    ctor_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
 };
 
 fn birOf(f: Frame) *const Bir {
@@ -105,6 +107,15 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
     return text;
 }
 
+/// The base as written, and below it the path a writer call writes.
+fn writtenText(f: Frame, a: Allocator, d: Demands.Demand) Allocator.Error![]const u8 {
+    const base = try baseText(f, a, d.base_inst);
+    if (d.write_path == .none) return base;
+    var buf: std.Io.Writer.Allocating = .init(a);
+    buf.writer.writeAll(base) catch return error.OutOfMemory;
+    pathText(f, a, &buf.writer, d.write_path) catch return error.OutOfMemory;
+    return buf.written();
+}
 fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
     const d = data(f, i);
     return switch (tag(f, i)) {
@@ -113,7 +124,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .list => "<literal>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
-        .call => if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
+        .call => if (f.ctor_of(f.ctx, d.lhs)) |c| try std.fmt.allocPrint(a, "<{s} …>", .{f.names.interner.slice(f.names.birs[c[0]].symbol(f.names.birs[c[0]].ctors[c[1]].name))}) else if (try refName(f, a, d.lhs)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         .method_call => if (try refName(f, a, i)) |n| try std.fmt.allocPrint(a, "<call {s}>", .{n}) else "<call>",
         else => "<expression>",
     };
@@ -173,10 +184,12 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .later_use, .alias, .element => blk: {
                 const h = l.holder.?;
                 w.writeAll(localName(f, h.who)) catch return error.OutOfMemory;
-                // A hold at some level below the holder (a path ending in `⟲`)
-                // names the holder: it holds every level (v1's text).
+                // A hold at some level below the holder (a path that ends
+                // in a return to a place of the holder: `⟲`, or the first
+                // return, #1253) names the holder: it holds every level
+                // (v1's text).
                 var hp = o.holder_path;
-                if (hp != .none and f.places.pathParent(hp) != .none and f.places.pathStep(hp).kind == .level) hp = f.places.pathParent(hp);
+                while (hp != .none and f.places.isReturn(hp)) hp = f.places.returnedTo(hp);
                 if (o.cause != .later_use) pathText(f, a, w, hp) catch return error.OutOfMemory;
                 break :blk if (o.cause == .later_use)
                     w.print(" is read again at {d}:{d}", .{ up.line, up.col })
@@ -204,7 +217,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
         .position = f.names.position(f.names.ctx, f.module, d.token),
         .token = d.token,
         .op = op,
-        .base = try baseText(f, a, d.base_inst),
+        .base = try writtenText(f, a, d),
         .refused = o.verdict == .refused,
         .accepted = o.accepted,
         .cause = o.cause,

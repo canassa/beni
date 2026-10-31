@@ -111,9 +111,23 @@ pub const Options = struct {
     /// *Roots*). Read only through `rename`, which is what gives a name
     /// its ordinal.
     imported: ?*const Imported = null,
+    /// `--release`: the whole-program ordinals of names the build imports
+    /// from a hand-written file (`Emit.markHandWritten`). §9 item 6 never
+    /// writes one in place of a forwarding arrow (`resolve`). Null in a
+    /// development build, which runs no plan.
+    hand_written: ?*const Imported = null,
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
+    ///
+    /// The number comes from the stack a level costs. In the Debug test
+    /// binary (2026-10-29) one level is three frames, `rawRecursive`
+    /// 3 664 B, `expression` 240 B and `raw` 144 B, about 3.9 KB with the
+    /// return addresses, so 128 levels take about 0.5 MiB: half of
+    /// `small_stack.size`, the stack the depth tests run on, with the other
+    /// half for the printer's entry frames and for `testing.allocator`'s
+    /// stack-trace capture under an allocation. At 256 the levels alone took
+    /// about 1 000 KB of its 1 024 KB, and a frame 32 B larger overflowed it.
     recursion_limit: u32 = 128,
     /// A scope-hoisted build (§9, *One scope-hoisted file under
     /// `--release`*): the module's `import` and `export` statements are not
@@ -165,6 +179,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .rename = options.rename,
         .compact = options.compact,
         .imported = options.imported,
+        .hand_written = options.hand_written,
         .recursion_limit = options.recursion_limit,
         .unobserved = options.unobserved,
         .bare_globals = options.bare_globals,
@@ -477,6 +492,8 @@ const Printer = struct {
     compact: bool = false,
     /// `Options.imported`.
     imported: ?*const Imported = null,
+    /// `Options.hand_written`.
+    hand_written: ?*const Imported = null,
     /// The last byte pushed, for the token-adjacency guard. Only read in
     /// compact mode, where it is the whole of the tokenisation risk.
     last: u8 = 0,
@@ -485,6 +502,7 @@ const Printer = struct {
     work: std.ArrayList(Work) = .empty,
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
+    /// `Options.recursion_limit`.
     recursion_limit: u32 = 128,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
@@ -1237,6 +1255,22 @@ const Printer = struct {
         try p.terminate();
         try p.endLine(level);
         return last;
+    }
+
+    /// Whether `ident` names a function the build imports from a
+    /// hand-written file (`Options.hand_written`); false when the printer
+    /// was given no such set, as in a development build.
+    fn handWritten(p: *const Printer, ident: Index) bool {
+        const set = p.hand_written orelse return false;
+        const rename = p.rename orelse return false;
+        const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(ident).lhs));
+        // Only a qualified name is in the first namespace, where the set's
+        // ordinals live: `ordinal` of a local gives its slot in the
+        // function's own namespace, which means nothing here. A local — a
+        // parameter, a `const` of the body — is never an import's binding.
+        if (p.ir.name(n).module == .none) return false;
+        const ordinal = rename.ordinal(n) orelse return false;
+        return ordinal < set.bit_length and set.isSet(ordinal);
     }
 
     /// Whether an `export` list names `n`: always, unless `imported`
@@ -2346,11 +2380,29 @@ const Printer = struct {
     /// of single-use aliases outran it, print the name it stopped at — whose
     /// binding the plan had dropped — and a `--release` build printed an
     /// unrelated top-level's value.
+    ///
+    /// An `arrow` §9 item 6 reduces (`Opt.eta`) resolves to its callee's
+    /// `ident`, itself resolved already; an `ident` whose binding was an
+    /// arrow made once and used once resolves to that arrow, and then one
+    /// step further if the arrow reduces. Two steps at most, each total.
+    /// A third step cannot exist: a substitution's target is never itself
+    /// substituted (`Opt.compress`), `Opt.eta` declines a callee whose
+    /// substitution is substituted, and an arrow's replacement is always an
+    /// `ident`.
     fn resolve(p: *Printer, node: Index) Index {
-        if (p.ir.tag(node) != .ident) return node;
-        const target = p.plan.replacement(node) orelse return node;
-        std.debug.assert(p.ir.tag(target) != .ident or p.plan.replacement(target) == null);
-        return target;
+        var n = node;
+        if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;
+        if (p.ir.tag(n) == .arrow) {
+            // §9 item 6's veto: the join knows which names the build
+            // imports from a hand-written file, and `Opt` does not, so a
+            // forwarding arrow to one is written as the arrow it is.
+            const callee = p.plan.replacement(n) orelse return n;
+            if (p.handWritten(callee)) return n;
+            n = callee;
+        }
+        std.debug.assert(p.ir.tag(n) != .ident or p.plan.replacement(n) == null);
+        std.debug.assert(p.ir.tag(n) != .arrow or p.plan.replacement(n) == null);
+        return n;
     }
 
     /// Compact printing writes `x["key"]` as `x.key` where `key` is an
@@ -4206,11 +4258,13 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
     try testing.expect(!isReservedWord("newer"));
 }
 
-/// Twice the depth the printer fails at when it only recurses, on
-/// `small_stack.size`: with no switch to its work stack
-/// (`recursion_limit` unbounded) it printed 250 links on the Debug test
-/// binary and overflowed at 400. The default switches after 128 levels so
-/// future switch-frame growth leaves room on the unchanged small stack.
+/// Deeper than the printer can take by recursion on `small_stack.size`:
+/// with no switch to its work stack (`recursion_limit` unbounded) it printed
+/// 250 links on the Debug test binary and overflowed at 400, when the test
+/// was written. Its default 128 recursive levels take about half of that
+/// stack (`Options.recursion_limit` has the frames); 256 took nearly all of
+/// it, and the overflow a few more bytes per frame caused was found only as
+/// a hang (the segfault handler deadlocks the test process).
 const deep_chain = 800;
 
 test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {

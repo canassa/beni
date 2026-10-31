@@ -1,0 +1,19 @@
+module HolderIndex
+  23:17 construction x: rejected later-use: x is read again at 23:13
+  33:16 construction xs: rejected alias: late.list holds it and is read at 34:5
+  40:16 construction xs: rejected alias: holder.z holds it and is read at 41:5
+  48:16 construction base: rejected element: holder holds it and is read at 49:5 (approx)
+  54:15 construction xs: accepted param
+  56:16 construction first: rejected alias: holder.list holds it and is read at 57:5
+  70:10 List.push x1: rejected alias: a1.item holds it and is read at 74:11
+  71:10 List.push x2: rejected alias: a2.item holds it and is read at 75:11
+  93:10 List.push xs: accepted param
+  94:10 List.push ys: accepted param
+  112:10 List.push xs: rejected alias: t8.0.0.0.0.0.0.0.0.0 holds it and is read at 113:37
+  119:14 List.push base: rejected held-operand: the value at 119:7, evaluated before it, holds it until its consumer runs (approx)
+  demands 12: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 12: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause held-operand 1
+cause later-use 1
+cause alias 6
+cause element 1

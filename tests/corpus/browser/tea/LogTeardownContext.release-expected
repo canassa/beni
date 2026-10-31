@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <p id="shown">"idle"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- throws click #go
+console.info: the body {"request":"r1","step":"s2"}
+console.info: inner released {"request":"r1","step":"s2"}
+console.info: outer released {"request":"r1"}
+(threw: Error: TODO: body threw)
+<body>
+  <main>
+    <p id="shown">"going"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>

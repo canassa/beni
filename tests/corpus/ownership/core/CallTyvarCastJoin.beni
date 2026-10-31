@@ -1,0 +1,67 @@
+-- ownership (core): a polymorphic callee whose result joins its parameter
+-- with a cast (ownership-v2.md §2.11 *Re-rooting at a parameter*, §2.13.9,
+-- #1350). The join stands at the parameter's actual's place, and the
+-- cast's side, at a type variable's place, is read whole at a step. So
+-- `(mix True g.x v).c` reads `g.x.c` and a push of its list, with `g`
+-- read later, is refused; `w` writes `g.x.c` through such a join, and
+-- the call is refused while `xs` is read after it.
+import Js
+
+
+mix : Bool, a, Js.Value → a
+mix b x v =
+    if b then
+        x
+    else
+        Js.to v
+
+
+n g v = List.length (mix True g.x v).c
+
+
+pub viaMix : List Int, Js.Value → Int
+viaMix xs v =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n g v + List.length p
+
+
+mix2 : Bool, a → a
+mix2 b x =
+    if b then
+        x
+    else
+        Js.to (Js.from 0)
+
+
+n2 g = List.length (mix2 True g.x).c
+
+
+pub viaCast : List Int → Int
+viaCast xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = List.push xs 1
+    n2 g + List.length p
+
+
+mix3 : Bool, a → a
+mix3 b x =
+    if b then
+        x
+    else
+        Js.to (Js.from [ [ 1 ] ])
+
+
+w g =
+    v = mix3 True g.x
+    List.push v.c 1
+
+
+pub viaWrite : List Int → Int
+viaWrite xs =
+    ys = [ 3 ]
+    g = { x = { c = xs, d = ys }, y = ys }
+    p = w g
+    List.length xs + List.length p

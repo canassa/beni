@@ -1,0 +1,40 @@
+-- ownership (core): an element a `taken` result hands out, stored into
+-- another list (ownership-v2.md §2.11 item 6, §2.13.6, #1393). `takeAt`
+-- has `traverseAt`'s row: its result is an element of its first argument,
+-- which the call materialises as a list pattern does, `elem(a·ι)` under
+-- the split it makes. Stored by `List.set` or `List.push` into `b`, it is
+-- apart from `b`'s storage, as `[ x, …_ ]` is, and the stored list's κ
+-- records the elements' separation (`apart`, `excl`) for the callers that
+-- rely on it: both writes are accepted, as v1 accepts them. The element's
+-- type is a type variable. A caller that passes one list as both is
+-- refused `disjoint` at the call (`shared`, `pushShared`); distinct lists
+-- (`distinct`, `pushDistinct`) and fresh ones (`fresh`) are accepted.
+pub foreign pure takeAt : borrowed List a, borrowed Int → taken a
+
+
+copyOne : List a, Int, List a → List a
+copyOne a k b = List.set b 0 (takeAt a k)
+
+
+copyInto : List a, Int, List a → List a
+copyInto a k b = List.push b (takeAt a k)
+
+
+pub shared : List (List Int) → List (List Int)
+shared xs = copyOne xs 0 xs
+
+
+pub distinct : List (List Int), List (List Int) → List (List Int)
+distinct xs ys = copyOne xs 0 ys
+
+
+pub fresh : ⊤ → List (List Int)
+fresh ⊤ = copyOne [ [ 1 ] ] 0 [ [ 2 ] ]
+
+
+pub pushShared : List (List Int) → List (List Int)
+pushShared xs = copyInto xs 0 xs
+
+
+pub pushDistinct : List (List Int), List (List Int) → List (List Int)
+pushDistinct xs ys = copyInto xs 0 ys

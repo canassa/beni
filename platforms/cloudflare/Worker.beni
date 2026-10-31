@@ -615,9 +615,20 @@ validValue value = not (Js.to (Js.call (Js.regExp "[\\r\\n\\x00]" "") "test" [ J
 
 
 -- `new URL(target, base)`, whose `TypeError` from that call alone is the
--- fault (§9.12 (d)). In the sibling, because that catch names the host's
--- error.
-foreign impure resolveUrl : String, String → Maybe String
+-- fault (§9.12 (d)): `Js.catchIf` names it, and throws anything else
+-- again (`CLAUDE.md` rule 9).
+resolveUrl : String, String → Maybe String
+resolveUrl target base =
+    Js.catchIf
+        (λ⊤ →
+            Just
+                (Js.to
+                    (Js.get (Js.construct (Js.global "URL") [ Js.from target, Js.from base ]) "href"
+                    )
+                )
+        )
+        (λerr → Js.instanceOf err (Js.global "TypeError"))
+        λ_ → Nothing
 
 
 -- ---- The bindings -----------------------------------------------------------
@@ -711,9 +722,15 @@ byId ns idText =
             Err InvalidId
 
 
--- `idFromString`, whose `TypeError` is "Invalid Durable Object ID". In the
--- sibling, because that catch names the host's error.
-foreign impure idFromString : Js.Value, String → Maybe Js.Value
+-- `idFromString`, whose `TypeError` is "Invalid Durable Object ID":
+-- `Js.catchIf` names it, and throws anything else again (`CLAUDE.md`
+-- rule 9).
+idFromString : Js.Value, String → Maybe Js.Value
+idFromString namespace idText =
+    Js.catchIf
+        (λ⊤ → Just (Js.call namespace "idFromString" [ Js.from idText ]))
+        (λerr → Js.instanceOf err (Js.global "TypeError"))
+        λ_ → Nothing
 
 
 --| The object's id, 64 hex digits.
