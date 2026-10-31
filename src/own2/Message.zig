@@ -147,6 +147,21 @@ fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Alloca
     }
 }
 
+/// The nominal head a `⟲` is of: the type whose levels it folds. The level
+/// stays at the place it follows, which may be a record or a list inside the
+/// constructor (`#Tree.0⟨Tree⟩`), and such a place has no type of its
+/// own to name, so it is the nearest constructor place above on the same
+/// cycle (#1371).
+fn levelHead(places: *const Place.Table, p: Ids.PathId) u32 {
+    const here = places.pathPlace(p);
+    var at = p;
+    while (at != .none) : (at = places.pathParent(at)) {
+        const q = places.pathPlace(at);
+        if (places.kind(q) == .ctor and (q == here or places.sameCycle(q, here))) return places.head(q);
+    }
+    return places.head(here);
+}
+
 fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void {
     const places = f.places;
     const parent = places.pathParent(p);
@@ -159,7 +174,7 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
             const pair = places.ctorArgOf(s);
             try w.print("#{s}.{d}", .{ f.names.ctor(f.names.ctx, places.head(places.pathPlace(parent)), pair[0]), pair[1] });
         },
-        .level => try w.print("⟨{s}⟩", .{f.names.type_name(f.names.ctx, places.head(places.pathPlace(p)))}),
+        .level => try w.print("⟨{s}⟩", .{f.names.type_name(f.names.ctx, levelHead(places, p))}),
         .contents => try w.writeAll("◆"),
         .env => try w.writeAll("◇"),
         .slot => try w.print("⟨{d}⟩", .{s.payload}),
@@ -200,7 +215,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);
                 break :blk w.print("the value at {d}:{d}, evaluated before it, holds it until its consumer runs", .{ pp.line, pp.col });
             },
-            .disjoint => w.writeAll("another operand of the same operation reaches it"),
+            .disjoint => w.writeAll(if (o.other_paths) "another path of the same argument reaches it" else "another operand of the same operation reaches it"),
             // A demand relies only on its splits' κ (a callee's `xreq` is the frame's).
             .exclusive => w.writeAll("the elements of the list it was taken from may share one list"),
             .escaped => w.writeAll("it was given to JavaScript, or kept by a callee"),

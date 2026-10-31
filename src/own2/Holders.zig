@@ -85,7 +85,10 @@ pub const Demand = struct {
     operands: Ids.Range = .empty,
 };
 
-pub const Operand = struct { value: Value, inst: u32 };
+/// `other_paths`: the operand is the rest of the written argument itself, the
+/// paths a call's class does not write (`Transfer.otherPaths`), not another
+/// operand of the operation: what the message says it reaches (#1380).
+pub const Operand = struct { value: Value, inst: u32, other_paths: bool = false };
 
 pub const HolderKind = enum(u8) { binding, pending };
 
